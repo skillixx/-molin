@@ -33,6 +33,13 @@ skills
 docker compose -f infra/docker-compose.yml up -d
 ```
 
+## 创建数据库表
+
+```bash
+chmod +x scripts/create_mysql_tables.sh
+./scripts/create_mysql_tables.sh
+```
+
 ## 启动 API
 
 ```bash
@@ -47,3 +54,9 @@ GET /api/health
 GET /api/ready
 GET /api/version
 ```
+
+## 开发设计文档
+
+- [完整接口设计](docs/full-api-design.md)
+- [数据库表设计](docs/database-schema-design.md)
+- [基础架构环境说明](docs/base-architecture-environment.md)
