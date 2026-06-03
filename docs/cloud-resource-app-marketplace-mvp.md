@@ -123,7 +123,7 @@ Vue3 + Vite + TypeScript + Go + Gin + 原生 SQL + MySQL + Redis + RabbitMQ
 
 ```text
 auth-service
-  邮箱注册、手机号注册、邮箱登录、手机号登录、JWT、API Key
+  邮箱注册、手机号注册、邮箱登录、手机号登录、实名制认证、JWT、API Key
 
 iam-service
   用户、角色、权限、动态授权、访问控制
@@ -353,6 +353,7 @@ users
 - email_verified
 - phone
 - phone_verified
+- real_name_status
 - password_hash
 - status
 - wallet_id
@@ -377,6 +378,30 @@ user_login_logs
 - ip
 - user_agent
 - status
+- created_at
+
+identity_verifications
+- id
+- user_id
+- real_name
+- id_card_no_hash
+- id_card_no_masked
+- verification_type
+- provider
+- status
+- reject_reason
+- submitted_at
+- verified_at
+- created_at
+- updated_at
+
+identity_verification_logs
+- id
+- verification_id
+- user_id
+- action
+- operator_id
+- remark
 - created_at
 
 roles
@@ -436,6 +461,8 @@ role_change_logs
 - 用户至少绑定一个登录账号，邮箱注册必须验证邮箱，手机号注册必须验证短信验证码。
 - 同一用户后续可以绑定另一个登录方式，例如先用手机号注册，再绑定邮箱。
 - 登录接口支持密码登录，验证码登录可作为后续扩展。
+- 用户注册后默认 `real_name_status = unverified`，必须完成实名制认证后才能购买商品、租赁 GPU、调用 Token 和开通资产。
+- 实名认证信息需要脱敏和加密存储，身份证号只保存 hash 和 masked 值，不保存明文。
 
 ### 5.2 统一商品与应用售卖
 
@@ -1303,6 +1330,8 @@ POST /api/auth/login/email
 POST /api/auth/login/phone
 POST /api/auth/verification-codes/email
 POST /api/auth/verification-codes/phone
+POST /api/identity/verifications
+GET  /api/identity/verifications/latest
 GET  /api/me
 
 GET  /api/wallet
@@ -1366,6 +1395,9 @@ GET    /api/admin/users/:id/permission-overrides
 PATCH  /api/admin/users/:id/permission-overrides
 GET    /api/admin/users/:id/assets
 GET    /api/admin/users/:id/entitlements
+GET    /api/admin/identity-verifications
+GET    /api/admin/identity-verifications/:id
+PATCH  /api/admin/identity-verifications/:id/review
 
 GET    /api/admin/roles
 POST   /api/admin/roles
@@ -1452,6 +1484,7 @@ GET    /api/admin/audit-logs
 
 - 登录页。
 - 总览页。
+- 实名认证页。
 - 统一商品市场。
 - 商品详情。
 - 我的商品和服务。
@@ -1479,6 +1512,7 @@ GET    /api/admin/audit-logs
 
 - 仪表盘。
 - 用户管理。
+- 实名认证审核。
 - 角色管理。
 - 权限管理。
 - 用户动态授权。
@@ -1522,6 +1556,7 @@ GET    /api/admin/audit-logs
 - 建立数据库 migration。
 - 建立邮箱注册、手机号注册、邮箱登录、手机号登录。
 - 建立邮箱验证码、短信验证码。
+- 建立实名制认证提交和审核流程。
 - 建立用户、角色、权限模型。
 - 建立用户动态授权和权限缓存失效机制。
 - 建立后台基础布局。

@@ -6,7 +6,7 @@
 
 团队角色：
 
-- 后端 1：账号、认证、角色、权限、审计。
+- 后端 1：账号、认证、实名制认证、角色、权限、审计。
 - 后端 2：商品、订单、钱包、财务流水、按量计费。
 - 后端 3：用户资产、会员、应用接入、公告、帮助文档。
 - 前端 1：管理后台。
@@ -18,6 +18,7 @@
 
 ```text
 邮箱/手机号注册登录
+  -> 实名制认证
   -> 用户角色权限
   -> 商品配置
   -> 用户充值
@@ -81,12 +82,13 @@
 - 列表接口必须支持分页。
 - 重要列表需要支持筛选和时间范围查询。
 
-## 3. 后端 1：账号、认证、角色、权限、审计
+## 3. 后端 1：账号、认证、实名制认证、角色、权限、审计
 
 ### 3.1 负责模块
 
 ```text
 server/internal/modules/auth
+server/internal/modules/identity
 server/internal/modules/iam
 server/internal/modules/audit
 server/internal/middleware/auth
@@ -104,6 +106,8 @@ POST /api/auth/login/email
 POST /api/auth/login/phone
 POST /api/auth/logout
 POST /api/auth/refresh
+POST /api/identity/verifications
+GET  /api/identity/verifications/latest
 GET  /api/me
 PATCH /api/me/profile
 PATCH /api/me/password
@@ -119,8 +123,32 @@ PATCH /api/me/password
 - `refresh_token` 用于续期。
 - 支持用户后续绑定邮箱或手机号。
 - 登录日志必须记录 IP、User-Agent、登录方式和结果。
+- 用户注册后默认未实名。
+- 未实名用户不能购买商品、租赁 GPU、调用 Token 或开通资产。
+- 实名认证信息必须脱敏和加密存储。
 
-### 3.3 管理后台用户接口
+### 3.3 实名制认证接口
+
+```text
+POST /api/identity/verifications
+GET  /api/identity/verifications/latest
+
+GET   /api/admin/identity-verifications
+GET   /api/admin/identity-verifications/:id
+PATCH /api/admin/identity-verifications/:id/review
+```
+
+功能要求：
+
+- 用户注册后可以提交实名信息。
+- 实名信息包括真实姓名、证件类型、证件号、必要的认证材料。
+- 第一版可以先做人工审核模式，后续接第三方实名服务。
+- 审核通过后更新 `users.real_name_status = verified`。
+- 审核拒绝必须填写原因。
+- 身份证号不能明文存储，只保存 hash 和 masked。
+- 实名审核必须记录操作日志。
+
+### 3.4 管理后台用户接口
 
 ```text
 GET    /api/admin/users
@@ -131,6 +159,7 @@ PATCH  /api/admin/users/:id/roles
 GET    /api/admin/users/:id/permission-overrides
 PATCH  /api/admin/users/:id/permission-overrides
 GET    /api/admin/users/:id/login-logs
+GET    /api/admin/users/:id/identity
 ```
 
 功能要求：
@@ -141,7 +170,7 @@ GET    /api/admin/users/:id/login-logs
 - 可以给用户单独增加或禁用某个权限。
 - 用户角色或权限变化后必须清理权限缓存。
 
-### 3.4 角色权限接口
+### 3.5 角色权限接口
 
 ```text
 GET    /api/admin/roles
@@ -161,7 +190,7 @@ PATCH  /api/admin/roles/:id/permissions
 - 权限格式建议为 `resource:action`，例如 `product:create`。
 - 删除角色前必须检查是否已有用户绑定。
 
-### 3.5 审计日志接口
+### 3.6 审计日志接口
 
 ```text
 GET /api/admin/audit-logs
@@ -172,10 +201,13 @@ GET /api/admin/audit-logs
 - 记录操作人、操作对象、操作类型、请求 IP、请求参数摘要。
 - 支持按用户、模块、操作类型、时间范围筛选。
 
-### 3.6 交付验收
+### 3.7 交付验收
 
 - 邮箱注册可用。
 - 手机号注册可用。
+- 实名认证提交可用。
+- 实名认证审核可用。
+- 未实名用户无法购买商品。
 - 邮箱登录可用。
 - 手机号登录可用。
 - 管理员可以创建角色和权限。
@@ -216,6 +248,7 @@ GET    /api/admin/product-handlers
 功能要求：
 
 - 商品支持 `app`、`gpu`、`agent`、`skill`、`token`、`netdisk`、`membership`。
+- 商品购买前必须校验用户实名状态。
 - 商品套餐支持 `billing_type`，例如一次性、包月、按量。
 - 商品价格支持角色价格和会员价格。
 - 商品访问控制支持可见、可购买、可使用。
@@ -742,6 +775,7 @@ feature/user-console
 重点测试：
 
 - 注册登录。
+- 实名认证提交和审核。
 - 权限拦截。
 - 商品购买。
 - 钱包扣费。
@@ -766,6 +800,7 @@ feature/user-console
 上线前必须确认：
 
 - 所有核心接口有权限控制。
+- 购买、租赁、Token 调用等接口有实名状态校验。
 - 钱包扣费有事务。
 - 支付和扣费接口有幂等。
 - 关键操作有审计日志。
@@ -778,6 +813,7 @@ feature/user-console
 第一阶段只有满足下面条件才算完成：
 
 - 可以注册登录。
+- 可以提交和审核实名制认证。
 - 可以管理用户角色权限。
 - 可以创建商品和套餐。
 - 可以配置价格和角色权限。
@@ -834,6 +870,8 @@ POST /api/auth/login/email
 POST /api/auth/login/phone
 POST /api/auth/logout
 POST /api/auth/refresh
+POST /api/identity/verifications
+GET  /api/identity/verifications/latest
 GET  /api/me
 PATCH /api/me/profile
 PATCH /api/me/password
@@ -852,6 +890,10 @@ PATCH  /api/admin/users/:id/roles
 GET    /api/admin/users/:id/permission-overrides
 PATCH  /api/admin/users/:id/permission-overrides
 GET    /api/admin/users/:id/login-logs
+GET    /api/admin/users/:id/identity
+GET    /api/admin/identity-verifications
+GET    /api/admin/identity-verifications/:id
+PATCH  /api/admin/identity-verifications/:id/review
 ```
 
 角色权限接口：
@@ -1038,6 +1080,8 @@ JSON 字段：xxx_json
 
 ```text
 users
+identity_verifications
+identity_verification_logs
 verification_codes
 user_login_logs
 roles
@@ -1094,6 +1138,7 @@ help_articles
 ```text
 users.email
 users.phone
+identity_verifications.user_id
 roles.code
 permissions.code
 products.product_code
@@ -1177,6 +1222,7 @@ server/pkg/timeutil
 
 ```text
 /api/auth
+/api/identity
 /api/me
 /api/products
 /api/orders
@@ -1210,6 +1256,8 @@ PATCH /api/admin/products/:id -> product:update
 GET /api/admin/orders         -> order:list
 GET /api/admin/users          -> user:list
 PATCH /api/admin/users/:id    -> user:update
+GET /api/admin/identity-verifications -> identity:list
+PATCH /api/admin/identity-verifications/:id/review -> identity:review
 ```
 
 ### 16.4 事件总线
@@ -1323,6 +1371,7 @@ responseInterceptor
 登录页
 用户列表
 用户详情
+实名认证审核
 用户角色分配
 用户动态授权
 角色列表
@@ -1382,6 +1431,7 @@ responseInterceptor
 我的资产
 我的权益额度
 会员中心
+实名认证
 钱包余额
 账单流水
 系统公告
