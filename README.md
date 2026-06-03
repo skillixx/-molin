@@ -59,4 +59,5 @@ GET /api/version
 
 - [完整接口设计](docs/full-api-design.md)
 - [数据库表设计](docs/database-schema-design.md)
+- [数据量和分库分表规划](docs/data-scale-sharding-plan.md)
 - [基础架构环境说明](docs/base-architecture-environment.md)
