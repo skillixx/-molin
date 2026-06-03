@@ -131,6 +131,12 @@ iam-service
 app-service
   应用、应用版本、应用价格、应用权限
 
+product-service
+  统一商品、套餐、价格、角色可见性、购买入口
+
+business-router
+  按业务类型路由到应用、GPU、Agent、Skills、Token、网盘等处理器
+
 billing-service
   钱包、订单、支付、退款、流水、余额
 
@@ -154,6 +160,51 @@ user-console
 ```
 
 第一版可以用模块化单体实现，代码里按模块拆分。由于第一版已经包含 Token 网关和 agent / skills 市场，建议把 `billing`、`token-gateway`、`resource` 三个模块的边界先设计清楚，后续最先拆成独立服务。
+
+### 4.1 分层路由架构
+
+第一版架构建议采用分层路由形式，把通用交易能力和具体业务开通能力拆开。
+
+```text
+HTTP API 层
+  -> Auth / IAM 鉴权层
+  -> Product 商品路由层
+  -> Order / Billing 交易层
+  -> Business Provision 业务开通层
+  -> Resource / App / Agent / Skill / Token / NetDisk 等业务模块
+```
+
+分层职责：
+
+- `HTTP API 层`：只处理请求参数、响应格式、版本号。
+- `Auth / IAM 鉴权层`：统一处理登录态、API Key、角色、权限。
+- `Product 商品路由层`：根据 `product_type` 和 `product_code` 找到商品、套餐、价格和处理器。
+- `Order / Billing 交易层`：统一创建订单、扣余额、写流水、退款、对账。
+- `Business Provision 业务开通层`：把已支付订单交给对应业务处理器完成开通。
+- `业务模块`：只负责自己的业务规则，不直接操作钱包扣费。
+
+业务类型建议统一枚举：
+
+```text
+app
+gpu
+agent
+skill
+token
+netdisk
+```
+
+新增网盘售卖应用时，只需要：
+
+1. 在 `products` 注册 `product_type = netdisk` 的商品。
+2. 在 `product_plans` 配置容量、时长、流量等套餐。
+3. 在 `product_prices` 配置不同角色价格。
+4. 在 `product_role_access` 配置可见、可购买、可使用权限。
+5. 新增 `netdisk-service` 或 `netdisk` 模块。
+6. 注册 `netdisk` 的开通处理器。
+7. 实现 `Provision(order)`、`Renew(order)`、`Suspend(instance)`、`Cancel(instance)`。
+
+订单、钱包、角色权限、财务流水和后台查询不需要重做。
 
 ## 5. 核心数据模型
 
@@ -198,9 +249,58 @@ role_permissions
 - permission_id
 ```
 
-### 5.2 应用售卖
+### 5.2 统一商品与应用售卖
 
 ```text
+products
+- id
+- product_type
+- product_code
+- name
+- description
+- status
+- business_ref_id
+- created_at
+- updated_at
+
+product_plans
+- id
+- product_id
+- plan_code
+- name
+- billing_type
+- duration_days
+- quota_json
+- status
+- created_at
+- updated_at
+
+product_prices
+- id
+- product_plan_id
+- role_id
+- price_amount
+- currency
+- effective_from
+- effective_to
+
+product_role_access
+- id
+- product_id
+- role_id
+- can_view
+- can_buy
+- can_use
+
+product_provision_handlers
+- id
+- product_type
+- handler_code
+- service_name
+- status
+- created_at
+- updated_at
+
 applications
 - id
 - code
@@ -237,6 +337,13 @@ application_role_access
 - can_buy
 - can_use
 ```
+
+说明：
+
+- `products` 是统一售卖入口，应用、GPU、Agent、Skills、Token、网盘都先抽象成商品。
+- `business_ref_id` 指向具体业务表，例如 `applications.id`、`gpu_devices.id`、`agent_templates.id`。
+- `quota_json` 存储不同业务的套餐参数，例如网盘容量、GPU 时长、Token 额度、skill 授权时长。
+- 原有 `applications` 作为应用业务详情表保留，不直接承担所有商品交易逻辑。
 
 ### 5.3 订单与钱包
 
@@ -539,6 +646,56 @@ token_quota_accounts
 - updated_at
 ```
 
+### 5.8 网盘售卖应用示例
+
+网盘作为新增售卖应用时，不需要重做交易链路，只需要挂到统一商品和开通路由上。
+
+```text
+netdisk_plans
+- id
+- code
+- name
+- storage_gb
+- traffic_gb
+- max_files
+- duration_days
+- status
+- created_at
+- updated_at
+
+netdisk_instances
+- id
+- user_id
+- product_id
+- product_plan_id
+- order_id
+- storage_gb
+- used_storage_gb
+- traffic_gb
+- used_traffic_gb
+- status
+- started_at
+- expires_at
+- created_at
+- updated_at
+
+netdisk_events
+- id
+- instance_id
+- event_type
+- operator_id
+- remark
+- created_at
+```
+
+接入关系：
+
+```text
+products.product_type = netdisk
+products.business_ref_id = netdisk_plans.id
+product_provision_handlers.product_type = netdisk
+```
+
 ## 6. 核心业务流程
 
 ### 6.1 应用购买流程
@@ -554,6 +711,32 @@ token_quota_accounts
   -> 写入钱包流水
   -> 支付订单
   -> 开通应用权限
+```
+
+### 6.1.1 统一商品购买与开通流程
+
+```text
+用户选择商品
+  -> Product Router 根据 product_type 查询商品和套餐
+  -> IAM 检查角色可见、可购买、可使用权限
+  -> Pricing 读取角色对应价格
+  -> Order 创建统一订单
+  -> Billing 检查余额并扣费
+  -> 写入钱包流水
+  -> Provision Router 根据 product_type 调用业务处理器
+  -> 业务模块开通实例或授权
+  -> 返回购买结果
+```
+
+不同业务处理器示例：
+
+```text
+app       -> 开通应用访问权限
+gpu       -> 锁定设备并创建租赁实例
+agent     -> 创建用户 agent 或定制订单
+skill     -> 创建 skill 安装授权
+token     -> 增加 Token 额度或开启按量调用
+netdisk   -> 创建网盘空间、容量、有效期
 ```
 
 ### 6.2 GPU 租赁流程
@@ -644,6 +827,12 @@ GET  /api/apps/:id
 POST /api/apps/:id/purchase
 GET  /api/my/apps
 
+GET  /api/products
+GET  /api/products/:id
+GET  /api/products/:id/plans
+POST /api/products/:id/purchase
+GET  /api/my/products
+
 GET  /api/gpu/devices
 GET  /api/gpu/devices/:id
 POST /api/gpu/rentals
@@ -683,6 +872,14 @@ PATCH  /api/admin/apps/:id
 PATCH  /api/admin/apps/:id/access
 PATCH  /api/admin/apps/:id/prices
 
+GET    /api/admin/products
+POST   /api/admin/products
+PATCH  /api/admin/products/:id
+POST   /api/admin/products/:id/plans
+PATCH  /api/admin/products/:id/access
+PATCH  /api/admin/products/:id/prices
+GET    /api/admin/product-handlers
+
 GET    /api/admin/orders
 GET    /api/admin/wallet-transactions
 
@@ -719,6 +916,9 @@ GET    /api/admin/audit-logs
 
 - 登录页。
 - 总览页。
+- 统一商品市场。
+- 商品详情。
+- 我的商品和服务。
 - 应用市场。
 - 应用详情。
 - 我的应用。
@@ -740,6 +940,11 @@ GET    /api/admin/audit-logs
 - 用户管理。
 - 角色管理。
 - 权限管理。
+- 统一商品管理。
+- 商品套餐管理。
+- 商品价格配置。
+- 商品角色权限配置。
+- 商品开通处理器管理。
 - 应用管理。
 - 应用价格配置。
 - 订单管理。
@@ -766,9 +971,13 @@ GET    /api/admin/audit-logs
 - 建立用户、角色、权限模型。
 - 建立后台基础布局。
 
-### 第 2 周：权限与应用
+### 第 2 周：权限、商品路由与应用
 
 - 完成 RBAC。
+- 完成统一商品模型。
+- 完成商品套餐、价格、角色权限配置。
+- 完成商品购买路由。
+- 完成业务开通处理器接口。
 - 完成应用 CRUD。
 - 完成应用角色可见性。
 - 完成应用价格配置。
@@ -780,6 +989,7 @@ GET    /api/admin/audit-logs
 - 完成充值订单。
 - 完成消费订单。
 - 完成钱包流水。
+- 完成统一商品购买。
 - 完成应用购买。
 - 完成基础对账查询。
 
@@ -854,6 +1064,7 @@ GET    /api/admin/audit-logs
 - 生成表单和表格。
 - 生成权限校验中间件。
 - 生成 agent、skills、Token 网关的 CRUD 和后台页面。
+- 生成统一商品中心、商品路由和开通处理器接口。
 - 生成 OpenAI 兼容接口适配层的基础代码。
 - 生成单元测试。
 - 生成接口测试。
@@ -864,6 +1075,8 @@ GET    /api/admin/audit-logs
 
 - 钱包扣费事务。
 - 订单状态机。
+- 商品路由抽象。
+- 业务开通处理器幂等性。
 - GPU 设备状态机。
 - Agent 交付和版本管理。
 - Skills 包安全审核。
@@ -933,7 +1146,18 @@ GET    /api/admin/audit-logs
 web/admin-console
 web/user-console
 server/api
-server/internal
+server/internal/modules/auth
+server/internal/modules/iam
+server/internal/modules/product
+server/internal/modules/order
+server/internal/modules/billing
+server/internal/modules/provision
+server/internal/modules/app
+server/internal/modules/gpu
+server/internal/modules/agent
+server/internal/modules/skill
+server/internal/modules/token
+server/internal/modules/netdisk
 server/pkg
 server/migrations
 infra/docker-compose.yml
@@ -944,6 +1168,9 @@ infra/docker-compose.yml
 - 登录。
 - 用户管理。
 - 角色管理。
+- 统一商品中心。
+- 商品路由。
+- 开通处理器接口。
 - 应用管理。
 - 应用价格。
 - 钱包。
