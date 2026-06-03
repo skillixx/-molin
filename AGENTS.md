@@ -287,6 +287,56 @@ Human review is required for:
 - Idempotency.
 - Security-sensitive code.
 
+## Code Comment Rules
+
+All code comments for this project must be written in Chinese.
+
+Rules:
+
+- Do not write English comments in source code.
+- Comments must explain the logic and what the code is doing.
+- Comments should be clear and specific.
+- Avoid empty comments that only repeat the function or variable name.
+- Use comments for important business rules, transaction logic, permission checks, billing logic, identity verification logic, and asset-generation logic.
+
+Examples:
+
+```text
+Good: 校验用户是否已完成实名制认证，未实名用户不能购买商品。
+Bad: Check real-name status.
+Bad: Validate user.
+```
+
+## Feature Documentation Rules
+
+After finishing any feature, the developer must write feature documentation and development documentation in Chinese.
+
+Rules:
+
+- Do not write feature or development documentation in English.
+- Feature documentation must explain what the feature does, who uses it, and the core business rules.
+- Development documentation must explain code structure, key files, interfaces, data tables, state changes, and test points.
+- Documentation should be committed together with the feature or before feature acceptance.
+
+Required documentation after each feature:
+
+```text
+功能文档
+  - 功能说明
+  - 使用角色
+  - 业务规则
+  - 页面入口
+  - 接口清单
+
+开发文档
+  - 代码目录
+  - 核心文件
+  - 数据库表
+  - 状态流转
+  - 权限点
+  - 测试方式
+```
+
 ## Project Skills
 
 Project-specific skills live in `skills/`.
