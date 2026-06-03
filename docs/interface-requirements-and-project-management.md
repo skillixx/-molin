@@ -790,3 +790,717 @@ feature/user-console
 - 后台可以演示完整闭环。
 
 达不到这些，不要进入 GPU、Agent、Skills、Token 的大规模开发。
+
+## 14. 后端接口设计细化
+
+### 14.1 接口分层
+
+Go 后端接口建议按下面结构实现：
+
+```text
+HTTP Router
+  -> Request Middleware
+  -> Auth Middleware
+  -> Permission Middleware
+  -> Handler
+  -> Service
+  -> Repository
+  -> MySQL / Redis / RabbitMQ / MinIO
+```
+
+每个模块都按照同一套目录规范：
+
+```text
+server/internal/modules/{module}
+  handler.go
+  service.go
+  repository.go
+  model.go
+  dto.go
+  routes.go
+  errors.go
+```
+
+### 14.2 后端 1 接口明细
+
+账号认证接口：
+
+```text
+POST /api/auth/verification-codes/email
+POST /api/auth/verification-codes/phone
+POST /api/auth/register/email
+POST /api/auth/register/phone
+POST /api/auth/login/email
+POST /api/auth/login/phone
+POST /api/auth/logout
+POST /api/auth/refresh
+GET  /api/me
+PATCH /api/me/profile
+PATCH /api/me/password
+```
+
+后台用户接口：
+
+```text
+GET    /api/admin/users
+GET    /api/admin/users/:id
+POST   /api/admin/users
+PATCH  /api/admin/users/:id
+PATCH  /api/admin/users/:id/status
+GET    /api/admin/users/:id/roles
+PATCH  /api/admin/users/:id/roles
+GET    /api/admin/users/:id/permission-overrides
+PATCH  /api/admin/users/:id/permission-overrides
+GET    /api/admin/users/:id/login-logs
+```
+
+角色权限接口：
+
+```text
+GET    /api/admin/roles
+POST   /api/admin/roles
+GET    /api/admin/roles/:id
+PATCH  /api/admin/roles/:id
+DELETE /api/admin/roles/:id
+GET    /api/admin/permissions
+POST   /api/admin/permissions
+PATCH  /api/admin/roles/:id/permissions
+```
+
+审计接口：
+
+```text
+GET /api/admin/audit-logs
+```
+
+### 14.3 后端 2 接口明细
+
+商品接口：
+
+```text
+GET    /api/products
+GET    /api/products/:id
+GET    /api/products/:id/plans
+POST   /api/products/:id/purchase
+
+GET    /api/admin/products
+POST   /api/admin/products
+GET    /api/admin/products/:id
+PATCH  /api/admin/products/:id
+PATCH  /api/admin/products/:id/status
+GET    /api/admin/products/:id/plans
+POST   /api/admin/products/:id/plans
+PATCH  /api/admin/products/:id/plans/:plan_id
+PATCH  /api/admin/products/:id/access
+PATCH  /api/admin/products/:id/prices
+GET    /api/admin/product-handlers
+```
+
+订单接口：
+
+```text
+GET  /api/orders
+GET  /api/orders/:id
+POST /api/orders/:id/pay
+POST /api/orders/:id/cancel
+
+GET  /api/admin/orders
+GET  /api/admin/orders/:id
+```
+
+钱包和流水接口：
+
+```text
+GET   /api/wallet
+GET   /api/wallet/transactions
+POST  /api/recharge/orders
+
+GET   /api/admin/wallet-transactions
+GET   /api/admin/users/:id/wallet
+PATCH /api/admin/users/:id/wallet/freeze
+```
+
+按量计费接口：
+
+```text
+POST  /api/internal/product-usage-events
+GET   /api/product-consumption-records
+GET   /api/admin/product-billing-rules
+POST  /api/admin/product-billing-rules
+PATCH /api/admin/product-billing-rules/:id
+GET   /api/admin/product-consumption-records
+```
+
+### 14.4 后端 3 接口明细
+
+用户资产接口：
+
+```text
+GET /api/my/assets
+GET /api/my/assets/:id
+GET /api/my/entitlements
+
+GET /api/admin/user-assets
+GET /api/admin/user-entitlements
+GET /api/admin/asset-events
+GET /api/admin/users/:id/assets
+GET /api/admin/users/:id/entitlements
+```
+
+会员接口：
+
+```text
+GET   /api/memberships
+GET   /api/my/membership
+POST  /api/memberships/:id/purchase
+
+GET   /api/admin/membership-levels
+POST  /api/admin/membership-levels
+PATCH /api/admin/membership-levels/:id
+GET   /api/admin/membership-benefits
+POST  /api/admin/membership-benefits
+PATCH /api/admin/membership-benefits/:id
+GET   /api/admin/product-membership-rules
+POST  /api/admin/product-membership-rules
+PATCH /api/admin/product-membership-rules/:id
+GET   /api/admin/user-memberships
+```
+
+应用和内容接口：
+
+```text
+GET   /api/apps
+GET   /api/apps/:id
+POST  /api/apps/:id/purchase
+GET   /api/my/apps
+
+GET   /api/admin/apps
+POST  /api/admin/apps
+PATCH /api/admin/apps/:id
+PATCH /api/admin/apps/:id/access
+PATCH /api/admin/apps/:id/prices
+GET   /api/admin/application-adapters
+POST  /api/admin/application-adapters
+PATCH /api/admin/application-adapters/:id
+
+GET   /api/announcements
+GET   /api/help/categories
+GET   /api/help/articles
+GET   /api/help/articles/:id
+
+GET   /api/admin/announcements
+POST  /api/admin/announcements
+PATCH /api/admin/announcements/:id
+GET   /api/admin/help/categories
+POST  /api/admin/help/categories
+PATCH /api/admin/help/categories/:id
+GET   /api/admin/help/articles
+POST  /api/admin/help/articles
+PATCH /api/admin/help/articles/:id
+```
+
+## 15. 数据库设计和基础软件
+
+### 15.1 需要的软件
+
+第一阶段需要：
+
+```text
+MySQL 8
+Redis 7
+RabbitMQ
+MinIO
+Docker
+Docker Compose
+```
+
+用途：
+
+- `MySQL`：业务主库，存用户、商品、订单、钱包、资产。
+- `Redis`：登录态缓存、权限缓存、验证码缓存、限流。
+- `RabbitMQ`：订单支付成功、资产开通、消费计费等异步事件。
+- `MinIO`：帮助文档图片、应用图标、附件、导入导出文件。
+
+### 15.2 数据库命名规范
+
+```text
+表名：小写复数，例如 users、orders
+主键：id
+时间字段：created_at、updated_at
+状态字段：status
+金额字段：decimal(18, 6)
+JSON 字段：xxx_json
+```
+
+### 15.3 核心表分组
+
+账号权限：
+
+```text
+users
+verification_codes
+user_login_logs
+roles
+permissions
+user_roles
+role_permissions
+user_permission_overrides
+role_change_logs
+audit_logs
+```
+
+商品交易：
+
+```text
+products
+product_plans
+product_prices
+product_role_access
+product_provision_handlers
+product_billing_rules
+product_consumption_records
+orders
+order_items
+wallets
+wallet_transactions
+```
+
+资产会员：
+
+```text
+user_assets
+user_entitlements
+asset_events
+membership_levels
+membership_benefits
+user_memberships
+product_membership_rules
+```
+
+应用内容：
+
+```text
+applications
+application_adapters
+announcements
+help_categories
+help_articles
+```
+
+### 15.4 关键索引
+
+必须有唯一索引：
+
+```text
+users.email
+users.phone
+roles.code
+permissions.code
+products.product_code
+orders.order_no
+wallets.user_id
+product_consumption_records.idempotency_key
+```
+
+必须有普通索引：
+
+```text
+orders.user_id
+orders.status
+orders.created_at
+wallet_transactions.user_id
+wallet_transactions.created_at
+user_assets.user_id
+user_assets.status
+user_entitlements.user_id
+product_consumption_records.user_id
+product_consumption_records.created_at
+audit_logs.operator_id
+audit_logs.created_at
+```
+
+### 15.5 Migration 要求
+
+目录：
+
+```text
+server/migrations
+```
+
+命名：
+
+```text
+000001_create_users.up.sql
+000001_create_users.down.sql
+000002_create_iam.up.sql
+000002_create_iam.down.sql
+```
+
+要求：
+
+- 每个模块必须提供 migration。
+- migration 必须可重复在空库执行。
+- 禁止手动直接改测试库结构。
+
+## 16. 后端公共代码和路由网关
+
+### 16.1 公共代码目录
+
+```text
+server/internal/bootstrap
+server/internal/config
+server/internal/http
+server/internal/middleware
+server/internal/router
+server/internal/events
+server/internal/jobs
+server/internal/database
+server/internal/cache
+server/internal/storage
+server/pkg/response
+server/pkg/errors
+server/pkg/logger
+server/pkg/jwt
+server/pkg/password
+server/pkg/validator
+server/pkg/pagination
+server/pkg/idgen
+server/pkg/money
+server/pkg/timeutil
+```
+
+### 16.2 路由网关
+
+第一版不用独立 API Gateway 服务，先在 Go API 内做路由网关。
+
+路由分组：
+
+```text
+/api/auth
+/api/me
+/api/products
+/api/orders
+/api/wallet
+/api/my
+/api/admin
+/api/internal
+```
+
+网关中间件顺序：
+
+```text
+RequestID
+Logger
+Recovery
+CORS
+RateLimit
+Auth
+Permission
+Audit
+```
+
+### 16.3 权限中间件
+
+示例规则：
+
+```text
+GET /api/admin/products       -> product:list
+POST /api/admin/products      -> product:create
+PATCH /api/admin/products/:id -> product:update
+GET /api/admin/orders         -> order:list
+GET /api/admin/users          -> user:list
+PATCH /api/admin/users/:id    -> user:update
+```
+
+### 16.4 事件总线
+
+RabbitMQ 事件：
+
+```text
+order.paid
+order.cancelled
+asset.created
+asset.expired
+wallet.transaction.created
+product.usage.reported
+membership.activated
+```
+
+第一阶段必须实现：
+
+```text
+order.paid -> asset-service 创建资产
+product.usage.reported -> finance-consumer 扣费
+```
+
+### 16.5 公共响应和错误码
+
+错误码建议：
+
+```text
+0      success
+40000  bad request
+40001  unauthorized
+40003  forbidden
+40400  not found
+40900  conflict
+50000  internal error
+60001  insufficient balance
+60002  duplicate payment
+60003  invalid product status
+60004  asset not active
+60005  quota not enough
+```
+
+## 17. 前端展示功能、组件和公共代码仓库
+
+### 17.1 前端工程
+
+```text
+web/admin-console
+web/user-console
+web/shared
+```
+
+如果使用 monorepo，建议：
+
+```text
+web/packages/api-client
+web/packages/components
+web/packages/constants
+web/packages/utils
+web/packages/types
+```
+
+### 17.2 前端公共组件
+
+必须沉淀公共组件：
+
+```text
+AppLayout
+PageHeader
+DataTable
+SearchForm
+FilterBar
+StatusTag
+MoneyText
+DateTimeText
+ConfirmButton
+PermissionButton
+RoleSelector
+UserSelector
+ProductSelector
+PlanSelector
+PriceEditor
+JsonEditor
+AuditDrawer
+DetailDrawer
+FormModal
+UploadField
+```
+
+### 17.3 前端公共代码
+
+```text
+apiClient
+authStore
+permissionStore
+routeGuard
+formatMoney
+formatDateTime
+enumOptions
+paginationHelper
+errorHandler
+requestInterceptor
+responseInterceptor
+```
+
+### 17.4 管理后台功能页面
+
+账号权限：
+
+```text
+登录页
+用户列表
+用户详情
+用户角色分配
+用户动态授权
+角色列表
+角色权限配置
+权限列表
+审计日志
+```
+
+商品交易：
+
+```text
+商品列表
+商品编辑
+套餐配置
+价格配置
+角色可见配置
+会员规则配置
+订单列表
+订单详情
+钱包流水
+消费记录
+```
+
+资产会员：
+
+```text
+用户资产列表
+资产详情
+用户权益额度
+会员等级
+会员权益
+用户会员
+```
+
+应用内容：
+
+```text
+应用列表
+应用适配器
+公告列表
+公告编辑
+帮助分类
+帮助文档编辑
+```
+
+### 17.5 用户控制台功能页面
+
+```text
+邮箱注册
+手机号注册
+邮箱登录
+手机号登录
+总览页
+商品市场
+商品详情
+购买确认
+我的资产
+我的权益额度
+会员中心
+钱包余额
+账单流水
+系统公告
+帮助中心
+```
+
+### 17.6 前端路由权限
+
+管理后台路由要支持权限控制：
+
+```text
+/users              -> user:list
+/roles              -> role:list
+/products           -> product:list
+/orders             -> order:list
+/wallet-transactions -> wallet:list
+/assets             -> asset:list
+/memberships        -> membership:list
+/announcements      -> content:announcement:list
+/help               -> content:help:list
+```
+
+按钮也要支持权限控制：
+
+```text
+新增
+编辑
+删除
+启用
+禁用
+分配角色
+配置权限
+配置价格
+```
+
+## 18. 前后端联调要求
+
+### 18.1 API 文档
+
+每个后端负责人必须提供：
+
+- 接口路径。
+- 请求参数。
+- 响应示例。
+- 错误码。
+- 权限码。
+- 测试账号。
+
+推荐使用：
+
+```text
+Apifox
+Postman
+OpenAPI JSON
+```
+
+### 18.2 Mock 规则
+
+前端可以先用 mock，但必须和后端响应结构一致。
+
+Mock 文件建议：
+
+```text
+web/shared/mocks
+```
+
+### 18.3 联调顺序
+
+```text
+auth
+  -> iam
+  -> product
+  -> order
+  -> wallet
+  -> asset
+  -> membership
+  -> content
+```
+
+不要先联调复杂业务模块。
+
+## 19. 第一阶段代码交付物
+
+后端必须交付：
+
+- migration。
+- model。
+- repository。
+- service。
+- handler。
+- route。
+- middleware。
+- 单元测试。
+- 接口文档。
+
+前端必须交付：
+
+- 页面。
+- 表单。
+- 表格。
+- 权限按钮。
+- API client。
+- 状态管理。
+- 错误处理。
+- 路由守卫。
+
+运维必须交付：
+
+- Docker Compose。
+- MySQL 初始化。
+- Redis 配置。
+- RabbitMQ 配置。
+- MinIO 配置。
+- 环境变量模板。
+- 启动文档。
+
+产品 / 测试必须交付：
+
+- 业务规则。
+- 测试用例。
+- 演示脚本。
+- 验收报告。
