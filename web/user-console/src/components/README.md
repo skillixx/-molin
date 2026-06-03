@@ -1,3 +1,3 @@
-# User Components
+# 用户控制台组件
 
-Reusable user-console components live here, including product cards, purchase dialogs, wallet panels, asset lists, membership badges, announcements, and help-center widgets.
+这里存放用户控制台可复用组件，包括商品卡片、购买弹窗、钱包面板、资产列表、会员标识、公告和帮助中心组件。

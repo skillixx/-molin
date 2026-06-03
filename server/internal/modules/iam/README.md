@@ -1,3 +1,3 @@
-# IAM Module
+# IAM 权限模块
 
-Responsible for users, roles, permissions, dynamic permission overrides, permission cache invalidation, and permission middleware integration.
+负责用户、角色、权限、动态权限覆盖、权限缓存失效和权限中间件接入。

@@ -1,3 +1,3 @@
-# Audit Module
+# 审计模块
 
-Responsible for audit logs for admin operations, permission changes, identity reviews, billing operations, and other sensitive writes.
+负责管理操作、权限变更、实名审核、计费操作和其他敏感写操作的审计日志。

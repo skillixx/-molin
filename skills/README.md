@@ -1,19 +1,19 @@
-# Project Skills
+# 项目 Skills
 
-This directory contains the Codex skills selected for this project.
+这个目录存放当前项目选择使用的 Codex skills。
 
-## Included
+## 已包含
 
-- `define-goal`: break down product and engineering goals.
-- `openai-docs`: use official OpenAI docs for Token gateway and OpenAI-compatible API work.
-- `playwright`: run automated browser tests for admin and user consoles.
-- `playwright-interactive`: debug browser flows interactively.
-- `screenshot`: capture and inspect UI screenshots.
-- `security-best-practices`: review auth, IAM, billing, wallet, identity, and API security.
-- `security-threat-model`: model security threats for wallet, identity, Token gateway, and permissions.
-- `security-ownership-map`: define security ownership across backend, frontend, product, and ops.
-- `sentry`: plan and implement error monitoring.
+- `define-goal`：拆解产品目标和工程目标。
+- `openai-docs`：在开发 Token 网关和 OpenAI 兼容接口时查询官方 OpenAI 文档。
+- `playwright`：为管理后台和用户控制台执行浏览器自动化测试。
+- `playwright-interactive`：交互式调试浏览器流程。
+- `screenshot`：截图并检查页面效果。
+- `security-best-practices`：审查认证、IAM、计费、钱包、实名制和 API 安全。
+- `security-threat-model`：为钱包、实名制、Token 网关和权限系统做威胁建模。
+- `security-ownership-map`：定义后端、前端、产品和运维的安全责任边界。
+- `sentry`：规划和实现错误监控。
 
-## Not Included
+## 未包含
 
-Unrelated CAD, G-code, robot-description, and manufacturing skills are intentionally not copied here.
+CAD、G-code、机器人描述、制造相关的无关 skills 没有复制到这里。

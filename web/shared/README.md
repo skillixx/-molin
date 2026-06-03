@@ -1,11 +1,11 @@
-# Shared Frontend Code
+# 前端共享代码
 
-Shared frontend code for admin and user consoles.
+这里存放管理后台和用户控制台共用的前端代码。
 
-Suggested packages:
+建议拆分为：
 
-- `api-client`: HTTP client, request interceptor, response interceptor.
-- `components`: shared Vue components.
-- `constants`: enum options, permission codes, product types, status values.
-- `types`: shared TypeScript DTOs.
-- `utils`: formatters, validators, date helpers, money helpers.
+- `api-client`：HTTP 客户端、请求拦截器、响应拦截器。
+- `components`：共享 Vue 组件。
+- `constants`：枚举选项、权限码、商品类型、状态值。
+- `types`：共享 TypeScript DTO 类型。
+- `utils`：格式化、校验、日期处理、金额处理工具。

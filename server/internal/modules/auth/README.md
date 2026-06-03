@@ -1,3 +1,3 @@
-# Auth Module
+# 认证模块
 
-Responsible for email registration, phone registration, email login, phone login, verification codes, JWT, refresh tokens, logout, and current-user profile APIs.
+负责邮箱注册、手机号注册、邮箱登录、手机号登录、验证码、JWT、Refresh Token、退出登录和当前用户信息接口。

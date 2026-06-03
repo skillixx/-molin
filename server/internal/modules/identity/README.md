@@ -1,3 +1,3 @@
-# Identity Module
+# 实名认证模块
 
-Responsible for real-name identity verification submission, review workflow, verification status, encrypted identity data, and identity audit logs.
+负责实名制认证提交、审核流程、实名状态、实名数据加密存储和实名审核日志。

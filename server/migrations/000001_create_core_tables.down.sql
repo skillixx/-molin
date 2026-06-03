@@ -1,1 +1,1 @@
--- Core schema rollback placeholder.
+-- 核心表结构回滚占位。

@@ -1,3 +1,3 @@
-# Product Module
+# 商品模块
 
-Responsible for unified products, product plans, role access, membership pricing rules, product handlers, and product purchase entry points.
+负责统一商品、商品套餐、角色访问规则、会员价格规则、商品处理器和商品购买入口。

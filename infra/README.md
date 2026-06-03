@@ -1,15 +1,15 @@
-# Infrastructure
+# 基础设施
 
-This directory contains local development infrastructure.
+这个目录用于存放本地开发基础设施。
 
-## Services
+## 服务
 
-- MySQL 8: business database.
-- Redis 7: verification codes, permission cache, rate limits.
-- RabbitMQ: async events for order payment, asset provisioning, and usage billing.
-- MinIO: files, icons, identity attachments, and help-doc media.
+- MySQL 8：业务数据库。
+- Redis 7：验证码、权限缓存、限流。
+- RabbitMQ：订单支付、资产开通、按量计费等异步事件。
+- MinIO：文件、图标、实名附件、帮助文档媒体资源。
 
-## Start
+## 启动
 
 ```bash
 docker compose -f infra/docker-compose.yml up -d

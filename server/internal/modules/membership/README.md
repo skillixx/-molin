@@ -1,3 +1,3 @@
-# Membership Module
+# 会员模块
 
-Responsible for membership levels, membership benefits, user memberships, and membership rules that affect product access and pricing.
+负责会员等级、会员权益、用户会员，以及影响商品访问和价格的会员规则。

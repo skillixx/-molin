@@ -1,3 +1,3 @@
-# Admin Components
+# 管理后台组件
 
-Reusable admin components live here, including tables, filters, dialogs, permission buttons, status tags, price editors, and audit drawers.
+这里存放管理后台可复用组件，包括表格、筛选器、弹窗、权限按钮、状态标签、价格编辑器和审计抽屉。

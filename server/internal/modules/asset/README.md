@@ -1,3 +1,3 @@
-# Asset Module
+# 用户资产模块
 
-Responsible for user assets, entitlements, quota, expiration, asset events, and purchase-success asset provisioning.
+负责用户资产、用户权益额度、额度使用、到期时间、资产事件和购买成功后的资产开通。

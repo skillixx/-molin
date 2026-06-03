@@ -1,46 +1,46 @@
-# Molin Cloud Platform
+# Molin 云管理平台
 
-Molin Cloud Platform is a Vue3 + Go + MySQL management platform for product sales, billing, user assets, identity verification, applications, membership, and future GPU / Agent / Skills / Token gateway modules.
+Molin 云管理平台是一个基于 Vue3 + Go + MySQL 的管理平台，用于商品售卖、计费、用户资产、实名制认证、应用管理、会员体系，以及后续 GPU、Agent、Skills、Token 网关等模块。
 
-## Project Layout
+## 项目目录
 
 ```text
 server
-  Go API service.
+  Go API 服务。
 
 web/admin-console
-  Vue3 admin console.
+  Vue3 管理后台。
 
 web/user-console
-  Vue3 user console.
+  Vue3 用户控制台。
 
 web/shared
-  Shared frontend packages.
+  前端共享代码。
 
 infra
-  Local development infrastructure.
+  本地开发基础设施。
 
 docs
-  Planning, interface, assignment, and architecture documents.
+  规划、接口、任务分配和架构文档。
 
 skills
-  Project-specific Codex skills.
+  项目专用 Codex skills。
 ```
 
-## Local Infrastructure
+## 本地基础环境
 
 ```bash
 docker compose -f infra/docker-compose.yml up -d
 ```
 
-## Run API
+## 启动 API
 
 ```bash
 cd server
 go run ./cmd/api
 ```
 
-Health checks:
+健康检查接口：
 
 ```text
 GET /api/health

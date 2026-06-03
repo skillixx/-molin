@@ -1,3 +1,3 @@
-# Billing Module
+# 计费模块
 
-Responsible for wallets, wallet transactions, recharge orders, freezes, refunds, balance checks, and transaction consistency.
+负责钱包、钱包流水、充值订单、金额冻结、退款、余额检查和事务一致性。

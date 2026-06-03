@@ -1,3 +1,3 @@
-# Content Module
+# 内容模块
 
-Responsible for system announcements, help categories, help articles, publish workflow, visibility scope, and content search.
+负责系统公告、帮助分类、帮助文档、发布流程、可见范围和内容搜索。

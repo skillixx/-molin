@@ -1,3 +1,2 @@
--- Core schema placeholder.
--- Development teams should replace this with users, roles, permissions,
--- products, orders, wallets, assets, and identity verification tables.
+-- 核心表结构占位。
+-- 开发团队需要在这里补充用户、角色、权限、商品、订单、钱包、资产和实名认证等表结构。

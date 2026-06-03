@@ -1,3 +1,3 @@
-# Order Module
+# 订单模块
 
-Responsible for order creation, payment state transitions, cancellation, idempotency, and order query APIs.
+负责订单创建、支付状态流转、订单取消、幂等处理和订单查询接口。
