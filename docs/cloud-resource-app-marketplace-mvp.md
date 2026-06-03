@@ -126,7 +126,7 @@ auth-service
   登录、注册、JWT、API Key
 
 iam-service
-  用户、角色、权限、访问控制
+  用户、角色、权限、动态授权、访问控制
 
 app-service
   应用、应用版本、应用价格、应用权限
@@ -145,6 +145,9 @@ billing-service
 
 finance-consumer-router
   产品消费事件接收、计费规则匹配、扣费、流水、对账
+
+asset-service
+  用户资产、产品实例、权益额度、到期时间、资产事件
 
 resource-service
   GPU 设备、设备分组、租赁、释放、状态同步
@@ -196,6 +199,14 @@ HTTP API 层
 - `Business Provision 业务开通层`：把已支付订单交给对应业务处理器完成开通。
 - `Finance Consumer Router 消费计费层`：接收各业务模块产生的消费事件，匹配计费规则并生成扣费流水。
 - `业务模块`：只负责自己的业务规则，不直接操作钱包扣费。
+
+权限设计需要支持动态调整：
+
+- 用户角色可以随时增删。
+- 角色权限可以随时增删。
+- 用户可以配置临时权限、额外权限或禁用权限。
+- 应用、商品、会员、资产访问都统一走实时权限判定。
+- 权限变更要写入审计日志，并让 Redis 权限缓存失效。
 
 业务类型建议统一枚举：
 
@@ -372,7 +383,33 @@ role_permissions
 - id
 - role_id
 - permission_id
+
+user_permission_overrides
+- id
+- user_id
+- permission_id
+- effect
+- reason
+- expires_at
+- created_by
+- created_at
+- updated_at
+
+role_change_logs
+- id
+- user_id
+- role_id
+- action
+- operator_id
+- reason
+- created_at
 ```
+
+说明：
+
+- `user_permission_overrides.effect` 支持 `allow` 和 `deny`。
+- 权限判定顺序建议为：用户禁用权限 > 用户额外授权 > 角色权限 > 商品/会员规则。
+- 每次角色和权限变化都必须写审计日志，并清理用户权限缓存。
 
 ### 5.2 统一商品与应用售卖
 
@@ -616,6 +653,70 @@ admins
 ```
 
 帮助文档要支持分类、草稿、发布、下线、排序和搜索。
+
+### 5.2.2 用户资产与权益管理
+
+用户资产中心负责回答三个问题：
+
+- 用户买过什么。
+- 用户现在能用什么。
+- 用户还剩多少额度、何时到期、是否欠费或冻结。
+
+```text
+user_assets
+- id
+- user_id
+- asset_type
+- product_id
+- product_plan_id
+- source_order_id
+- business_instance_id
+- status
+- started_at
+- expires_at
+- created_at
+- updated_at
+
+user_entitlements
+- id
+- user_id
+- asset_id
+- entitlement_type
+- product_id
+- quota_total
+- quota_used
+- quota_unit
+- status
+- started_at
+- expires_at
+- created_at
+- updated_at
+
+asset_events
+- id
+- asset_id
+- user_id
+- event_type
+- before_status
+- after_status
+- operator_id
+- remark
+- created_at
+```
+
+资产类型建议：
+
+```text
+app_access
+gpu_instance
+agent_instance
+skill_license
+token_quota
+netdisk_instance
+membership
+```
+
+会员制应用、按量付费应用和普通购买应用都应该生成 `user_assets`。如果产品带额度，例如 Token、网盘容量、agent 调用次数，则同时生成 `user_entitlements`。
 
 ### 5.3 订单与钱包
 
@@ -1140,6 +1241,31 @@ netdisk   -> 创建网盘空间、容量、有效期
   -> 记录查看量和操作日志
 ```
 
+### 6.9 应用访问、会员和资产校验流程
+
+```text
+用户访问某个应用
+  -> Auth 校验登录态
+  -> IAM 实时计算用户角色和权限
+  -> Product 查询应用对应商品规则
+  -> Membership 判断是否需要会员、会员等级是否满足
+  -> Asset 查询 user_assets 是否存在有效资产
+  -> Entitlement 查询额度是否足够
+  -> 如果是按量付费，Finance Consumer Router 记录消费事件并扣费
+  -> 如果是会员内含，扣减会员权益额度或直接放行
+  -> 返回访问结果
+```
+
+动态调整用户角色或权限后：
+
+```text
+管理员修改用户角色或权限
+  -> 写入 user_roles 或 user_permission_overrides
+  -> 写入 role_change_logs 和 audit_logs
+  -> 清理用户权限缓存
+  -> 下次访问实时重新计算权限
+```
+
 ## 7. API 草案
 
 ### 用户端
@@ -1164,6 +1290,9 @@ GET  /api/products/:id
 GET  /api/products/:id/plans
 POST /api/products/:id/purchase
 GET  /api/my/products
+GET  /api/my/assets
+GET  /api/my/assets/:id
+GET  /api/my/entitlements
 GET  /api/memberships
 GET  /api/my/membership
 POST /api/memberships/:id/purchase
@@ -1201,10 +1330,17 @@ GET  /api/token/usage
 ```text
 GET    /api/admin/users
 PATCH  /api/admin/users/:id/status
+GET    /api/admin/users/:id/roles
+PATCH  /api/admin/users/:id/roles
+GET    /api/admin/users/:id/permission-overrides
+PATCH  /api/admin/users/:id/permission-overrides
+GET    /api/admin/users/:id/assets
+GET    /api/admin/users/:id/entitlements
 
 GET    /api/admin/roles
 POST   /api/admin/roles
 PATCH  /api/admin/roles/:id
+PATCH  /api/admin/roles/:id/permissions
 
 GET    /api/admin/apps
 POST   /api/admin/apps
@@ -1236,6 +1372,9 @@ GET    /api/admin/product-membership-rules
 POST   /api/admin/product-membership-rules
 PATCH  /api/admin/product-membership-rules/:id
 GET    /api/admin/user-memberships
+GET    /api/admin/user-assets
+GET    /api/admin/user-entitlements
+GET    /api/admin/asset-events
 
 GET    /api/admin/orders
 GET    /api/admin/wallet-transactions
@@ -1286,6 +1425,8 @@ GET    /api/admin/audit-logs
 - 统一商品市场。
 - 商品详情。
 - 我的商品和服务。
+- 我的资产。
+- 我的权益额度。
 - 会员中心。
 - 系统公告。
 - 帮助中心。
@@ -1310,6 +1451,9 @@ GET    /api/admin/audit-logs
 - 用户管理。
 - 角色管理。
 - 权限管理。
+- 用户动态授权。
+- 用户资产管理。
+- 用户权益额度管理。
 - 统一商品管理。
 - 商品套餐管理。
 - 商品价格配置。
@@ -1348,6 +1492,7 @@ GET    /api/admin/audit-logs
 - 建立数据库 migration。
 - 建立登录注册。
 - 建立用户、角色、权限模型。
+- 建立用户动态授权和权限缓存失效机制。
 - 建立后台基础布局。
 
 ### 第 2 周：权限、商品路由与应用
@@ -1375,6 +1520,8 @@ GET    /api/admin/audit-logs
 - 完成产品计费规则。
 - 完成产品消费记录。
 - 完成会员商品购买和会员权益校验。
+- 完成用户资产和权益生成。
+- 完成用户资产查询。
 - 完成应用购买。
 - 完成基础对账查询。
 
@@ -1461,6 +1608,7 @@ GET    /api/admin/audit-logs
 - 生成 agent、skills、Token 网关的 CRUD 和后台页面。
 - 生成统一商品中心、商品路由和开通处理器接口。
 - 生成会员等级、会员权益、公告、帮助文档管理页面。
+- 生成用户资产、用户权益额度和动态授权管理页面。
 - 生成 OpenAI 兼容接口适配层的基础代码。
 - 生成单元测试。
 - 生成接口测试。
@@ -1474,6 +1622,8 @@ GET    /api/admin/audit-logs
 - 商品路由抽象。
 - 业务开通处理器幂等性。
 - 会员权益和商品价格优先级。
+- 动态权限生效顺序和缓存失效。
+- 用户资产、权益额度和财务流水一致性。
 - 公告可见范围和帮助文档发布权限。
 - GPU 设备状态机。
 - Agent 交付和版本管理。
@@ -1530,6 +1680,7 @@ GET    /api/admin/audit-logs
 - Agent 服务独立。
 - Skills 服务独立。
 - 会员服务独立。
+- 用户资产服务独立。
 - 内容管理服务独立。
 - 读写分离。
 - Redis 缓存。
@@ -1561,6 +1712,7 @@ server/internal/modules/skill
 server/internal/modules/token
 server/internal/modules/netdisk
 server/internal/modules/membership
+server/internal/modules/asset
 server/internal/modules/content
 server/pkg
 server/migrations
@@ -1578,6 +1730,7 @@ infra/docker-compose.yml
 - 应用适配器。
 - 财务消费路由。
 - 会员等级和权益。
+- 用户资产和权益额度。
 - 系统公告和帮助文档。
 - 应用管理。
 - 应用价格。
