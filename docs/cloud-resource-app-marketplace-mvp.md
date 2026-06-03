@@ -158,6 +158,12 @@ skill-service
 token-gateway
   Token 上游供应商、模型路由、调用鉴权、用量统计、成本核算
 
+membership-service
+  会员等级、会员权益、会员价格、会员订阅、到期续费
+
+content-service
+  系统公告、帮助文档、分类、发布、置顶、可见范围
+
 admin-console
   运营后台
 
@@ -200,6 +206,7 @@ agent
 skill
 token
 netdisk
+membership
 ```
 
 新增网盘售卖应用时，只需要：
@@ -296,6 +303,34 @@ agent     -> 按调用次数、Token、定制服务扣费
 skill     -> 按授权周期、调用次数、增值功能扣费
 ```
 
+### 4.4 会员制售卖预留
+
+会员制不要单独游离在商品体系外，应该和商品、权限、价格、财务统一打通。
+
+会员制支持四种模式：
+
+```text
+member_only
+  仅会员可购买或使用某应用
+
+member_discount
+  会员购买某应用享受折扣
+
+member_price
+  会员使用独立价格
+
+member_included
+  会员权益内包含某应用、额度或功能
+```
+
+会员本身也作为一种商品：
+
+```text
+products.product_type = membership
+```
+
+这样会员购买、续费、退款、流水、发票都走统一订单和钱包链路。某个应用是否采用会员制，只需要配置应用商品和会员权益规则，不需要重写应用购买流程。
+
 ## 5. 核心数据模型
 
 ### 5.1 用户与权限
@@ -369,8 +404,10 @@ product_prices
 - id
 - product_plan_id
 - role_id
+- membership_level_id
 - price_amount
 - currency
+- discount_rate
 - effective_from
 - effective_to
 
@@ -434,6 +471,49 @@ product_consumption_records
 - idempotency_key
 - created_at
 
+membership_levels
+- id
+- code
+- name
+- level_order
+- status
+- created_at
+- updated_at
+
+membership_benefits
+- id
+- membership_level_id
+- benefit_type
+- target_product_id
+- target_product_type
+- benefit_config_json
+- status
+- created_at
+- updated_at
+
+user_memberships
+- id
+- user_id
+- membership_level_id
+- source_order_id
+- status
+- started_at
+- expires_at
+- auto_renew
+- created_at
+- updated_at
+
+product_membership_rules
+- id
+- product_id
+- membership_level_id
+- rule_type
+- discount_rate
+- included_quota_json
+- status
+- created_at
+- updated_at
+
 applications
 - id
 - code
@@ -480,6 +560,62 @@ application_role_access
 - `application_adapters` 负责让新应用扩展式接入，业务系统不直接改订单和钱包代码。
 - `product_billing_rules` 负责把产品用量转换成金额。
 - `product_consumption_records` 负责记录每一次产品消费，便于财务对账、用户账单和运营分析。
+- `membership_levels`、`membership_benefits`、`user_memberships` 负责会员等级、权益和用户会员状态。
+- `product_membership_rules` 负责某个商品是否会员专属、会员折扣、会员价或会员内含。
+
+### 5.2.1 系统公告与帮助文档
+
+```text
+announcements
+- id
+- title
+- content
+- type
+- priority
+- status
+- visible_scope
+- target_roles_json
+- start_at
+- end_at
+- created_by
+- created_at
+- updated_at
+
+help_categories
+- id
+- parent_id
+- name
+- sort_order
+- status
+- created_at
+- updated_at
+
+help_articles
+- id
+- category_id
+- title
+- content
+- summary
+- tags_json
+- status
+- sort_order
+- view_count
+- created_by
+- published_at
+- created_at
+- updated_at
+```
+
+公告可见范围建议：
+
+```text
+all
+roles
+members
+admins
+```
+
+帮助文档要支持分类、草稿、发布、下线、排序和搜索。
 
 ### 5.3 订单与钱包
 
@@ -970,6 +1106,40 @@ netdisk   -> 创建网盘空间、容量、有效期
   -> 返回模型结果
 ```
 
+### 6.7 会员购买与应用售卖流程
+
+```text
+用户购买会员商品
+  -> Product Router 识别 product_type = membership
+  -> 创建订单
+  -> Billing 扣费并写入钱包流水
+  -> Provision Router 开通 user_memberships
+  -> 根据 membership_benefits 生效权益
+```
+
+用户购买会员制应用时：
+
+```text
+用户选择应用商品
+  -> IAM 检查角色权限
+  -> Membership 检查用户会员状态
+  -> Product Pricing 匹配会员专属价、会员折扣或会员内含规则
+  -> 如果 member_included 且额度充足，直接开通或扣权益额度
+  -> 如果需要支付，走统一订单和钱包扣费
+  -> Provision Router 开通应用权限
+```
+
+### 6.8 公告和帮助文档发布流程
+
+```text
+运营创建公告或帮助文档
+  -> 保存草稿
+  -> 设置可见范围、角色、会员范围和发布时间
+  -> 发布
+  -> 用户端按权限拉取
+  -> 记录查看量和操作日志
+```
+
 ## 7. API 草案
 
 ### 用户端
@@ -994,6 +1164,14 @@ GET  /api/products/:id
 GET  /api/products/:id/plans
 POST /api/products/:id/purchase
 GET  /api/my/products
+GET  /api/memberships
+GET  /api/my/membership
+POST /api/memberships/:id/purchase
+
+GET  /api/announcements
+GET  /api/help/categories
+GET  /api/help/articles
+GET  /api/help/articles/:id
 
 GET  /api/gpu/devices
 GET  /api/gpu/devices/:id
@@ -1048,6 +1226,16 @@ GET    /api/admin/product-billing-rules
 POST   /api/admin/product-billing-rules
 PATCH  /api/admin/product-billing-rules/:id
 GET    /api/admin/product-consumption-records
+GET    /api/admin/membership-levels
+POST   /api/admin/membership-levels
+PATCH  /api/admin/membership-levels/:id
+GET    /api/admin/membership-benefits
+POST   /api/admin/membership-benefits
+PATCH  /api/admin/membership-benefits/:id
+GET    /api/admin/product-membership-rules
+POST   /api/admin/product-membership-rules
+PATCH  /api/admin/product-membership-rules/:id
+GET    /api/admin/user-memberships
 
 GET    /api/admin/orders
 GET    /api/admin/wallet-transactions
@@ -1076,6 +1264,16 @@ POST   /api/admin/token/models
 PATCH  /api/admin/token/models/:id
 GET    /api/admin/token/usage
 
+GET    /api/admin/announcements
+POST   /api/admin/announcements
+PATCH  /api/admin/announcements/:id
+GET    /api/admin/help/categories
+POST   /api/admin/help/categories
+PATCH  /api/admin/help/categories/:id
+GET    /api/admin/help/articles
+POST   /api/admin/help/articles
+PATCH  /api/admin/help/articles/:id
+
 GET    /api/admin/audit-logs
 ```
 
@@ -1088,6 +1286,9 @@ GET    /api/admin/audit-logs
 - 统一商品市场。
 - 商品详情。
 - 我的商品和服务。
+- 会员中心。
+- 系统公告。
+- 帮助中心。
 - 应用市场。
 - 应用详情。
 - 我的应用。
@@ -1114,9 +1315,15 @@ GET    /api/admin/audit-logs
 - 商品价格配置。
 - 商品角色权限配置。
 - 商品开通处理器管理。
+- 会员等级管理。
+- 会员权益管理。
+- 商品会员规则配置。
 - 应用接入适配器管理。
 - 产品计费规则管理。
 - 产品消费记录。
+- 系统公告管理。
+- 帮助文档分类管理。
+- 帮助文档内容管理。
 - 应用管理。
 - 应用价格配置。
 - 订单管理。
@@ -1150,6 +1357,7 @@ GET    /api/admin/audit-logs
 - 完成商品套餐、价格、角色权限配置。
 - 完成商品购买路由。
 - 完成业务开通处理器接口。
+- 完成会员等级、会员权益和商品会员规则模型。
 - 完成应用适配器注册接口。
 - 完成应用 CRUD。
 - 完成应用角色可见性。
@@ -1166,10 +1374,19 @@ GET    /api/admin/audit-logs
 - 完成产品消费事件接入。
 - 完成产品计费规则。
 - 完成产品消费记录。
+- 完成会员商品购买和会员权益校验。
 - 完成应用购买。
 - 完成基础对账查询。
 
-### 第 4 周：GPU 租赁
+### 第 4 周：内容管理
+
+- 完成系统公告管理。
+- 完成帮助文档分类管理。
+- 完成帮助文档内容管理。
+- 完成用户端公告展示。
+- 完成用户端帮助中心。
+
+### 第 5 周：GPU 租赁
 
 - 完成 GPU 设备管理。
 - 完成设备状态流转。
@@ -1177,7 +1394,7 @@ GET    /api/admin/audit-logs
 - 完成到期释放任务。
 - 完成用户端租赁页面。
 
-### 第 5 周：Agent 定制市场
+### 第 6 周：Agent 定制市场
 
 - 完成 agent 模板管理。
 - 完成 agent 角色价格配置。
@@ -1185,7 +1402,7 @@ GET    /api/admin/audit-logs
 - 完成 agent 定制订单。
 - 完成 agent 调用记录。
 
-### 第 6 周：Skills 技能市场
+### 第 7 周：Skills 技能市场
 
 - 完成 skills 管理。
 - 完成 skill 版本管理。
@@ -1193,7 +1410,7 @@ GET    /api/admin/audit-logs
 - 完成用户购买和安装 skill。
 - 完成 agent 绑定 skill。
 
-### 第 7 周：Token 上游聚合网关
+### 第 8 周：Token 上游聚合网关
 
 - 完成 Token 上游供应商管理。
 - 完成模型管理。
@@ -1203,7 +1420,7 @@ GET    /api/admin/audit-logs
 - 完成成本和售价核算。
 - 完成余额或额度扣费。
 
-### 第 8 周：运营后台完善
+### 第 9 周：运营后台完善
 
 - 完成订单后台。
 - 完成财务后台。
@@ -1214,12 +1431,14 @@ GET    /api/admin/audit-logs
 - 完成审计日志。
 - 完成基础数据报表。
 
-### 第 9 到 10 周：测试与上线
+### 第 10 到 11 周：测试与上线
 
 - 接口测试。
 - 权限测试。
 - 账务测试。
 - 并发扣费测试。
+- 会员购买、续费、权益校验测试。
+- 系统公告和帮助文档发布测试。
 - 设备状态流转测试。
 - Agent 定制订单测试。
 - Skills 安装和绑定测试。
@@ -1241,6 +1460,7 @@ GET    /api/admin/audit-logs
 - 生成权限校验中间件。
 - 生成 agent、skills、Token 网关的 CRUD 和后台页面。
 - 生成统一商品中心、商品路由和开通处理器接口。
+- 生成会员等级、会员权益、公告、帮助文档管理页面。
 - 生成 OpenAI 兼容接口适配层的基础代码。
 - 生成单元测试。
 - 生成接口测试。
@@ -1253,6 +1473,8 @@ GET    /api/admin/audit-logs
 - 订单状态机。
 - 商品路由抽象。
 - 业务开通处理器幂等性。
+- 会员权益和商品价格优先级。
+- 公告可见范围和帮助文档发布权限。
 - GPU 设备状态机。
 - Agent 交付和版本管理。
 - Skills 包安全审核。
@@ -1290,13 +1512,13 @@ GET    /api/admin/audit-logs
 使用 AI 辅助，第一版可运营 MVP 预计：
 
 ```text
-8 到 10 周
+9 到 11 周
 ```
 
 更稳妥的商业试运营版本：
 
 ```text
-12 到 16 周
+13 到 17 周
 ```
 
 如果后续要支撑 10 万用户、5 万设备、2000 个应用，建议在 MVP 验证后再做：
@@ -1307,6 +1529,8 @@ GET    /api/admin/audit-logs
 - Token 网关服务独立。
 - Agent 服务独立。
 - Skills 服务独立。
+- 会员服务独立。
+- 内容管理服务独立。
 - 读写分离。
 - Redis 缓存。
 - 队列削峰。
@@ -1336,6 +1560,8 @@ server/internal/modules/agent
 server/internal/modules/skill
 server/internal/modules/token
 server/internal/modules/netdisk
+server/internal/modules/membership
+server/internal/modules/content
 server/pkg
 server/migrations
 infra/docker-compose.yml
@@ -1351,6 +1577,8 @@ infra/docker-compose.yml
 - 开通处理器接口。
 - 应用适配器。
 - 财务消费路由。
+- 会员等级和权益。
+- 系统公告和帮助文档。
 - 应用管理。
 - 应用价格。
 - 钱包。
