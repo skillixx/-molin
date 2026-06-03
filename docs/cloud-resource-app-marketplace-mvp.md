@@ -9,14 +9,14 @@
 - 用户可以注册、登录、充值、消费。
 - 平台可以管理用户、角色、应用、价格、订单、余额和设备。
 - 用户可以购买应用服务，也可以租用 GPU 裸金属设备。
+- 用户可以购买、定制和使用 agent。
+- 用户可以购买、安装和管理 skills 技能。
+- 平台可以接入多个 Token 上游供应商，并统一售卖模型调用能力。
 - 不同角色看到不同应用、不同价格、不同权限。
 - 所有财务动作都有流水，方便对账和追责。
 
 暂不放进第一版的能力：
 
-- 完整 agent 定制市场。
-- skills 技能市场。
-- Token 上游聚合网关。
 - 复杂 GPU 自动调度。
 - 多区域灾备。
 - 分库分表。
@@ -37,6 +37,14 @@
 - 查看可租用 GPU 设备。
 - 提交 GPU 租赁订单。
 - 查看租赁状态。
+- 查看 agent 市场。
+- 购买 agent 模板。
+- 创建和定制自己的 agent。
+- 查看 skills 技能市场。
+- 购买和安装 skills。
+- 查看 Token 模型服务。
+- 购买 Token 套餐或按量调用。
+- 查看 agent、skills、Token 的使用量和消费记录。
 
 ### 2.2 管理后台
 
@@ -50,6 +58,11 @@
 - 订单管理。
 - 设备管理。
 - GPU 租赁管理。
+- Agent 模板管理。
+- Agent 定制订单管理。
+- Skills 技能管理。
+- Token 上游供应商管理。
+- Token 模型、价格、路由和用量管理。
 - 操作审计日志。
 
 ### 2.3 权限范围
@@ -63,6 +76,9 @@
 - 应用可见权限。
 - 应用购买权限。
 - GPU 租赁权限。
+- Agent 查看、购买、创建、发布权限。
+- Skills 查看、购买、安装、发布权限。
+- Token 模型调用权限。
 - 价格策略权限。
 
 角色示例：
@@ -121,6 +137,15 @@ billing-service
 resource-service
   GPU 设备、设备分组、租赁、释放、状态同步
 
+agent-service
+  Agent 模板、用户 agent、定制订单、版本、发布
+
+skill-service
+  Skills 技能、版本、安装、授权、上下架
+
+token-gateway
+  Token 上游供应商、模型路由、调用鉴权、用量统计、成本核算
+
 admin-console
   运营后台
 
@@ -128,7 +153,7 @@ user-console
   用户控制台
 ```
 
-第一版可以用模块化单体实现，代码里按模块拆分。等业务稳定后，再把 billing、resource 拆成独立服务。
+第一版可以用模块化单体实现，代码里按模块拆分。由于第一版已经包含 Token 网关和 agent / skills 市场，建议把 `billing`、`token-gateway`、`resource` 三个模块的边界先设计清楚，后续最先拆成独立服务。
 
 ## 5. 核心数据模型
 
@@ -330,6 +355,190 @@ fault
 offline
 ```
 
+### 5.5 Agent 定制市场
+
+```text
+agent_templates
+- id
+- code
+- name
+- description
+- category
+- base_prompt
+- default_model_id
+- status
+- created_by
+- created_at
+- updated_at
+
+agent_template_prices
+- id
+- agent_template_id
+- role_id
+- price_amount
+- currency
+- billing_type
+- effective_from
+- effective_to
+
+user_agents
+- id
+- user_id
+- template_id
+- name
+- description
+- system_prompt
+- model_id
+- status
+- version
+- created_at
+- updated_at
+
+agent_customization_orders
+- id
+- order_no
+- user_id
+- agent_template_id
+- requirement
+- status
+- quoted_amount
+- order_id
+- assigned_operator_id
+- delivered_at
+- created_at
+- updated_at
+
+agent_usage_logs
+- id
+- user_id
+- agent_id
+- model_id
+- input_tokens
+- output_tokens
+- total_tokens
+- cost_amount
+- created_at
+```
+
+### 5.6 Skills 技能市场
+
+```text
+skills
+- id
+- code
+- name
+- description
+- category
+- status
+- publisher_id
+- created_at
+- updated_at
+
+skill_versions
+- id
+- skill_id
+- version
+- manifest_json
+- package_url
+- changelog
+- status
+- created_at
+
+skill_prices
+- id
+- skill_id
+- role_id
+- price_amount
+- currency
+- billing_type
+- effective_from
+- effective_to
+
+user_skill_installs
+- id
+- user_id
+- skill_id
+- skill_version_id
+- status
+- installed_at
+- expires_at
+
+agent_skill_bindings
+- id
+- agent_id
+- skill_id
+- skill_version_id
+- enabled
+- created_at
+```
+
+### 5.7 Token 上游聚合网关
+
+```text
+token_providers
+- id
+- code
+- name
+- base_url
+- auth_type
+- encrypted_api_key
+- status
+- priority
+- created_at
+- updated_at
+
+token_models
+- id
+- provider_id
+- model_code
+- display_name
+- context_window
+- input_price_per_1k
+- output_price_per_1k
+- sale_input_price_per_1k
+- sale_output_price_per_1k
+- status
+- created_at
+- updated_at
+
+token_model_routes
+- id
+- logical_model_code
+- provider_model_id
+- weight
+- priority
+- status
+- created_at
+- updated_at
+
+token_usage_logs
+- id
+- request_id
+- user_id
+- provider_id
+- model_id
+- logical_model_code
+- input_tokens
+- output_tokens
+- total_tokens
+- provider_cost_amount
+- sale_amount
+- latency_ms
+- status
+- error_code
+- created_at
+
+token_quota_accounts
+- id
+- user_id
+- logical_model_code
+- remaining_tokens
+- monthly_limit_tokens
+- status
+- created_at
+- updated_at
+```
+
 ## 6. 核心业务流程
 
 ### 6.1 应用购买流程
@@ -375,6 +584,48 @@ offline
 提交事务
 ```
 
+### 6.4 Agent 定制流程
+
+```text
+用户选择 agent 模板
+  -> 检查角色可见和购买权限
+  -> 提交定制需求
+  -> 创建定制订单
+  -> 平台报价或读取标准价格
+  -> 用户支付
+  -> 运营人员交付 agent
+  -> 用户验收
+  -> agent 状态改为 available
+```
+
+### 6.5 Skills 购买安装流程
+
+```text
+用户选择 skill
+  -> 检查角色可见和购买权限
+  -> 读取角色对应价格
+  -> 创建订单
+  -> 扣减钱包
+  -> 写入钱包流水
+  -> 创建 user_skill_installs
+  -> 用户绑定到指定 agent
+```
+
+### 6.6 Token 网关调用流程
+
+```text
+用户或 agent 发起模型调用
+  -> 校验 API Key / 登录态
+  -> 校验角色和模型调用权限
+  -> 校验余额或 Token 额度
+  -> 选择上游供应商和模型路由
+  -> 请求上游模型
+  -> 记录 Token 用量、延迟、状态
+  -> 计算成本和销售金额
+  -> 扣减钱包或 Token 额度
+  -> 返回模型结果
+```
+
 ## 7. API 草案
 
 ### 用户端
@@ -398,6 +649,22 @@ GET  /api/gpu/devices/:id
 POST /api/gpu/rentals
 GET  /api/gpu/rentals
 GET  /api/gpu/rentals/:id
+
+GET  /api/agents/templates
+GET  /api/agents/templates/:id
+POST /api/agents/customization-orders
+GET  /api/my/agents
+POST /api/my/agents
+PATCH /api/my/agents/:id
+
+GET  /api/skills
+GET  /api/skills/:id
+POST /api/skills/:id/purchase
+POST /api/my/agents/:id/skills
+
+GET  /api/token/models
+POST /api/token/chat/completions
+GET  /api/token/usage
 ```
 
 ### 管理后台
@@ -424,6 +691,25 @@ POST   /api/admin/gpu/devices
 PATCH  /api/admin/gpu/devices/:id
 GET    /api/admin/gpu/rentals
 
+GET    /api/admin/agent-templates
+POST   /api/admin/agent-templates
+PATCH  /api/admin/agent-templates/:id
+GET    /api/admin/agent-customization-orders
+PATCH  /api/admin/agent-customization-orders/:id
+
+GET    /api/admin/skills
+POST   /api/admin/skills
+PATCH  /api/admin/skills/:id
+POST   /api/admin/skills/:id/versions
+
+GET    /api/admin/token/providers
+POST   /api/admin/token/providers
+PATCH  /api/admin/token/providers/:id
+GET    /api/admin/token/models
+POST   /api/admin/token/models
+PATCH  /api/admin/token/models/:id
+GET    /api/admin/token/usage
+
 GET    /api/admin/audit-logs
 ```
 
@@ -438,6 +724,13 @@ GET    /api/admin/audit-logs
 - 我的应用。
 - GPU 租赁。
 - 我的 GPU 实例。
+- Agent 市场。
+- Agent 定制。
+- 我的 Agent。
+- Skills 市场。
+- 我的 Skills。
+- Token 模型服务。
+- Token 用量统计。
 - 账户余额。
 - 账单流水。
 
@@ -453,6 +746,14 @@ GET    /api/admin/audit-logs
 - 财务流水。
 - GPU 设备管理。
 - GPU 租赁管理。
+- Agent 模板管理。
+- Agent 定制订单。
+- Skills 技能管理。
+- Skills 版本管理。
+- Token 供应商管理。
+- Token 模型管理。
+- Token 路由管理。
+- Token 用量与成本分析。
 - 审计日志。
 
 ## 9. 开发计划
@@ -490,21 +791,53 @@ GET    /api/admin/audit-logs
 - 完成到期释放任务。
 - 完成用户端租赁页面。
 
-### 第 5 周：运营后台完善
+### 第 5 周：Agent 定制市场
+
+- 完成 agent 模板管理。
+- 完成 agent 角色价格配置。
+- 完成用户 agent 创建和编辑。
+- 完成 agent 定制订单。
+- 完成 agent 调用记录。
+
+### 第 6 周：Skills 技能市场
+
+- 完成 skills 管理。
+- 完成 skill 版本管理。
+- 完成 skill 角色价格配置。
+- 完成用户购买和安装 skill。
+- 完成 agent 绑定 skill。
+
+### 第 7 周：Token 上游聚合网关
+
+- 完成 Token 上游供应商管理。
+- 完成模型管理。
+- 完成模型路由。
+- 完成调用鉴权。
+- 完成 Token 用量统计。
+- 完成成本和售价核算。
+- 完成余额或额度扣费。
+
+### 第 8 周：运营后台完善
 
 - 完成订单后台。
 - 完成财务后台。
 - 完成设备后台。
+- 完成 agent 后台。
+- 完成 skills 后台。
+- 完成 Token 网关后台。
 - 完成审计日志。
 - 完成基础数据报表。
 
-### 第 6 周：测试与上线
+### 第 9 到 10 周：测试与上线
 
 - 接口测试。
 - 权限测试。
 - 账务测试。
 - 并发扣费测试。
 - 设备状态流转测试。
+- Agent 定制订单测试。
+- Skills 安装和绑定测试。
+- Token 网关路由、限流、扣费测试。
 - Docker 部署。
 - 灰度上线。
 
@@ -520,6 +853,8 @@ GET    /api/admin/audit-logs
 - 生成管理后台页面。
 - 生成表单和表格。
 - 生成权限校验中间件。
+- 生成 agent、skills、Token 网关的 CRUD 和后台页面。
+- 生成 OpenAI 兼容接口适配层的基础代码。
 - 生成单元测试。
 - 生成接口测试。
 - 生成部署脚本。
@@ -530,6 +865,10 @@ GET    /api/admin/audit-logs
 - 钱包扣费事务。
 - 订单状态机。
 - GPU 设备状态机。
+- Agent 交付和版本管理。
+- Skills 包安全审核。
+- Token 上游密钥加密、路由和限流。
+- Token 成本核算和扣费一致性。
 - 权限模型。
 - 支付回调。
 - 对账逻辑。
@@ -562,13 +901,13 @@ GET    /api/admin/audit-logs
 使用 AI 辅助，第一版可运营 MVP 预计：
 
 ```text
-4 到 6 周
+8 到 10 周
 ```
 
 更稳妥的商业试运营版本：
 
 ```text
-8 到 10 周
+12 到 16 周
 ```
 
 如果后续要支撑 10 万用户、5 万设备、2000 个应用，建议在 MVP 验证后再做：
@@ -576,6 +915,9 @@ GET    /api/admin/audit-logs
 - 账务服务独立。
 - 设备服务独立。
 - 订单服务独立。
+- Token 网关服务独立。
+- Agent 服务独立。
+- Skills 服务独立。
 - 读写分离。
 - Redis 缓存。
 - 队列削峰。
@@ -606,5 +948,7 @@ infra/docker-compose.yml
 - 应用价格。
 - 钱包。
 - 订单。
-
-GPU 租赁在账务闭环完成后再接入。
+- GPU 租赁。
+- Agent 模板和定制订单。
+- Skills 技能市场。
+- Token 上游聚合网关。
