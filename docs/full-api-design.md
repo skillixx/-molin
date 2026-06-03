@@ -2,7 +2,9 @@
 
 ## 1. 通用约定
 
-### 1.1 响应结构
+### 1.1 基础响应结构
+
+所有接口统一返回：
 
 ```json
 {
@@ -13,7 +15,9 @@
 }
 ```
 
-### 1.2 分页结构
+### 1.2 分页返回结构
+
+列表接口的 `data` 使用：
 
 ```json
 {
@@ -32,7 +36,31 @@ X-Request-ID: req_xxx
 Idempotency-Key: idem_xxx
 ```
 
-`Idempotency-Key` 用于购买、支付、充值、按量计费、资产开通等关键写操作。
+说明：
+
+- `Authorization`：需要登录的接口必须传。
+- `X-Request-ID`：可选，不传则后端生成。
+- `Idempotency-Key`：购买、支付、充值、按量计费、资产开通等关键写操作必须传。
+
+### 1.4 通用错误码
+
+```text
+0      成功
+40000  请求参数错误
+40001  未登录
+40003  无权限
+40400  资源不存在
+40900  数据冲突
+50000  系统内部错误
+60001  余额不足
+60002  重复支付
+60003  商品状态不可用
+60004  资产未生效
+60005  权益额度不足
+70001  未完成实名制认证
+70002  实名认证审核中
+70003  实名认证被拒绝
+```
 
 ## 2. 认证和实名接口
 
@@ -42,22 +70,19 @@ Idempotency-Key: idem_xxx
 POST /api/auth/verification-codes/email
 ```
 
-请求：
+Body 参数：
 
-```json
-{
-  "email": "user@example.com",
-  "scene": "register"
-}
-```
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| email | string | 是 | 邮箱地址 |
+| scene | string | 是 | 场景：register、login、bind、reset_password |
 
-响应：
+返回 data：
 
-```json
-{
-  "sent": true
-}
-```
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| sent | boolean | 是否发送成功 |
+| expires_in | integer | 有效秒数 |
 
 ### 2.2 发送短信验证码
 
@@ -65,22 +90,19 @@ POST /api/auth/verification-codes/email
 POST /api/auth/verification-codes/phone
 ```
 
-请求：
+Body 参数：
 
-```json
-{
-  "phone": "13800138000",
-  "scene": "register"
-}
-```
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| phone | string | 是 | 手机号 |
+| scene | string | 是 | 场景：register、login、bind、reset_password |
 
-响应：
+返回 data：
 
-```json
-{
-  "sent": true
-}
-```
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| sent | boolean | 是否发送成功 |
+| expires_in | integer | 有效秒数 |
 
 ### 2.3 邮箱注册
 
@@ -88,25 +110,22 @@ POST /api/auth/verification-codes/phone
 POST /api/auth/register/email
 ```
 
-请求：
+Body 参数：
 
-```json
-{
-  "email": "user@example.com",
-  "password": "password",
-  "verification_code": "123456"
-}
-```
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| email | string | 是 | 邮箱地址 |
+| password | string | 是 | 密码 |
+| verification_code | string | 是 | 邮箱验证码 |
 
-响应：
+返回 data：
 
-```json
-{
-  "user_id": 1,
-  "email": "user@example.com",
-  "real_name_status": "unverified"
-}
-```
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| user_id | integer | 用户 ID |
+| email | string | 邮箱 |
+| real_name_status | string | 实名状态，默认 unverified |
+| status | string | 用户状态 |
 
 ### 2.4 手机号注册
 
@@ -114,25 +133,22 @@ POST /api/auth/register/email
 POST /api/auth/register/phone
 ```
 
-请求：
+Body 参数：
 
-```json
-{
-  "phone": "13800138000",
-  "password": "password",
-  "verification_code": "123456"
-}
-```
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| phone | string | 是 | 手机号 |
+| password | string | 是 | 密码 |
+| verification_code | string | 是 | 短信验证码 |
 
-响应：
+返回 data：
 
-```json
-{
-  "user_id": 1,
-  "phone": "13800138000",
-  "real_name_status": "unverified"
-}
-```
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| user_id | integer | 用户 ID |
+| phone | string | 手机号 |
+| real_name_status | string | 实名状态，默认 unverified |
+| status | string | 用户状态 |
 
 ### 2.5 邮箱登录
 
@@ -140,24 +156,31 @@ POST /api/auth/register/phone
 POST /api/auth/login/email
 ```
 
-请求：
+Body 参数：
 
-```json
-{
-  "email": "user@example.com",
-  "password": "password"
-}
-```
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| email | string | 是 | 邮箱地址 |
+| password | string | 是 | 密码 |
 
-响应：
+返回 data：
 
-```json
-{
-  "access_token": "xxx",
-  "refresh_token": "yyy",
-  "expires_in": 7200
-}
-```
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| access_token | string | 访问令牌 |
+| refresh_token | string | 刷新令牌 |
+| expires_in | integer | access_token 有效秒数 |
+| user | object | 用户摘要 |
+
+user 字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | integer | 用户 ID |
+| email | string | 邮箱 |
+| phone | string | 手机号 |
+| real_name_status | string | 实名状态 |
+| status | string | 用户状态 |
 
 ### 2.6 手机号登录
 
@@ -165,131 +188,316 @@ POST /api/auth/login/email
 POST /api/auth/login/phone
 ```
 
-请求：
+Body 参数：
 
-```json
-{
-  "phone": "13800138000",
-  "password": "password"
-}
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| phone | string | 是 | 手机号 |
+| password | string | 是 | 密码 |
+
+返回 data 同邮箱登录。
+
+### 2.7 退出登录
+
+```text
+POST /api/auth/logout
 ```
 
-响应同邮箱登录。
+Body 参数：
 
-### 2.7 刷新令牌
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| refresh_token | string | 否 | 需要失效的刷新令牌 |
+
+返回 data：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| logged_out | boolean | 是否退出成功 |
+
+### 2.8 刷新令牌
 
 ```text
 POST /api/auth/refresh
 ```
 
-请求：
+Body 参数：
 
-```json
-{
-  "refresh_token": "yyy"
-}
-```
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| refresh_token | string | 是 | 刷新令牌 |
 
-响应同登录接口。
+返回 data 同登录接口。
 
-### 2.8 当前用户
+### 2.9 当前用户
 
 ```text
 GET /api/me
 ```
 
-响应：
+请求参数：无。
 
-```json
-{
-  "id": 1,
-  "email": "user@example.com",
-  "phone": "13800138000",
-  "real_name_status": "verified",
-  "roles": ["normal_user"],
-  "permissions": ["product:list"]
-}
+返回 data：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | integer | 用户 ID |
+| email | string | 邮箱 |
+| phone | string | 手机号 |
+| email_verified | boolean | 邮箱是否验证 |
+| phone_verified | boolean | 手机号是否验证 |
+| real_name_status | string | 实名状态 |
+| status | string | 用户状态 |
+| roles | array | 角色 code 列表 |
+| permissions | array | 权限 code 列表 |
+
+### 2.10 修改当前用户资料
+
+```text
+PATCH /api/me/profile
 ```
 
-### 2.9 提交实名认证
+Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| nickname | string | 否 | 昵称 |
+| avatar_url | string | 否 | 头像地址 |
+
+返回 data：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| updated | boolean | 是否更新成功 |
+
+### 2.11 修改密码
+
+```text
+PATCH /api/me/password
+```
+
+Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| old_password | string | 是 | 旧密码 |
+| new_password | string | 是 | 新密码 |
+
+返回 data：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| updated | boolean | 是否更新成功 |
+
+### 2.12 提交实名认证
 
 ```text
 POST /api/identity/verifications
 ```
 
-请求：
+Body 参数：
 
-```json
-{
-  "real_name": "张三",
-  "id_card_no": "110101199001011234",
-  "verification_type": "id_card",
-  "attachments": [
-    {
-      "file_key": "identity/front.png",
-      "file_type": "id_card_front"
-    }
-  ]
-}
-```
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| real_name | string | 是 | 真实姓名 |
+| id_card_no | string | 是 | 身份证号，后端只保存 hash 和 masked |
+| verification_type | string | 是 | 认证类型，默认 id_card |
+| attachments | array | 否 | 认证附件 |
 
-响应：
+attachments 字段：
 
-```json
-{
-  "verification_id": 1,
-  "status": "pending"
-}
-```
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| file_key | string | 是 | MinIO 文件 key |
+| file_type | string | 是 | 文件类型，例如 id_card_front |
 
-### 2.10 查询最新实名认证
+返回 data：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| verification_id | integer | 实名认证记录 ID |
+| status | string | 审核状态 |
+
+### 2.13 查询最新实名认证
 
 ```text
 GET /api/identity/verifications/latest
 ```
 
-响应：
+请求参数：无。
 
-```json
-{
-  "id": 1,
-  "status": "pending",
-  "reject_reason": null,
-  "submitted_at": "2026-06-03T00:00:00Z"
-}
-```
+返回 data：
 
-## 3. 管理后台账号权限接口
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | integer | 实名认证记录 ID |
+| status | string | 审核状态 |
+| reject_reason | string | 拒绝原因 |
+| submitted_at | string | 提交时间 |
+| verified_at | string | 审核通过时间 |
 
-### 3.1 用户管理
+## 3. 管理后台账号、实名、权限接口
 
-```text
-GET    /api/admin/users
-GET    /api/admin/users/:id
-POST   /api/admin/users
-PATCH  /api/admin/users/:id
-PATCH  /api/admin/users/:id/status
-GET    /api/admin/users/:id/roles
-PATCH  /api/admin/users/:id/roles
-GET    /api/admin/users/:id/permission-overrides
-PATCH  /api/admin/users/:id/permission-overrides
-GET    /api/admin/users/:id/login-logs
-GET    /api/admin/users/:id/identity
-```
-
-用户列表筛选参数：
+### 3.1 用户列表
 
 ```text
-email
-phone
-status
-real_name_status
-role_code
-page
-page_size
+GET /api/admin/users
 ```
 
-### 3.2 角色权限
+Query 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| email | string | 否 | 邮箱筛选 |
+| phone | string | 否 | 手机号筛选 |
+| status | string | 否 | 用户状态 |
+| real_name_status | string | 否 | 实名状态 |
+| role_code | string | 否 | 角色 code |
+| page | integer | 否 | 页码 |
+| page_size | integer | 否 | 每页数量 |
+
+返回 data.items 字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | integer | 用户 ID |
+| email | string | 邮箱 |
+| phone | string | 手机号 |
+| real_name_status | string | 实名状态 |
+| status | string | 用户状态 |
+| roles | array | 角色列表 |
+| created_at | string | 创建时间 |
+
+### 3.2 用户详情
+
+```text
+GET /api/admin/users/:id
+```
+
+Path 参数：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | integer | 用户 ID |
+
+返回 data：用户完整信息、角色、权限、钱包摘要、资产摘要。
+
+### 3.3 创建后台用户
+
+```text
+POST /api/admin/users
+```
+
+Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| email | string | 否 | 邮箱 |
+| phone | string | 否 | 手机号 |
+| password | string | 是 | 初始密码 |
+| role_ids | array | 否 | 角色 ID 列表 |
+| status | string | 否 | 用户状态 |
+
+返回 data：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| user_id | integer | 用户 ID |
+
+### 3.4 修改用户
+
+```text
+PATCH /api/admin/users/:id
+```
+
+Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| email | string | 否 | 邮箱 |
+| phone | string | 否 | 手机号 |
+| status | string | 否 | 用户状态 |
+
+返回 data：`updated`。
+
+### 3.5 修改用户状态
+
+```text
+PATCH /api/admin/users/:id/status
+```
+
+Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| status | string | 是 | active 或 disabled |
+| reason | string | 否 | 操作原因 |
+
+返回 data：`updated`。
+
+### 3.6 用户角色
+
+```text
+GET   /api/admin/users/:id/roles
+PATCH /api/admin/users/:id/roles
+```
+
+PATCH Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| role_ids | array | 是 | 角色 ID 列表 |
+| reason | string | 否 | 调整原因 |
+
+GET 返回 data：角色列表。
+
+PATCH 返回 data：`updated`。
+
+### 3.7 用户动态权限
+
+```text
+GET   /api/admin/users/:id/permission-overrides
+PATCH /api/admin/users/:id/permission-overrides
+```
+
+PATCH Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| items | array | 是 | 权限覆盖列表 |
+
+items 字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| permission_id | integer | 是 | 权限 ID |
+| effect | string | 是 | allow 或 deny |
+| reason | string | 否 | 原因 |
+| expires_at | string | 否 | 过期时间 |
+
+GET 返回 data：权限覆盖列表。
+
+PATCH 返回 data：`updated`。
+
+### 3.8 用户登录日志
+
+```text
+GET /api/admin/users/:id/login-logs
+```
+
+Query 参数：page、page_size。
+
+返回 data.items：登录时间、登录方式、账号、IP、User-Agent、状态。
+
+### 3.9 用户实名信息
+
+```text
+GET /api/admin/users/:id/identity
+```
+
+返回 data：实名状态、最近一次实名记录、脱敏证件号、审核时间。
+
+### 3.10 角色管理
 
 ```text
 GET    /api/admin/roles
@@ -297,150 +505,331 @@ POST   /api/admin/roles
 GET    /api/admin/roles/:id
 PATCH  /api/admin/roles/:id
 DELETE /api/admin/roles/:id
-GET    /api/admin/permissions
-POST   /api/admin/permissions
-PATCH  /api/admin/roles/:id/permissions
 ```
 
-### 3.3 实名审核
+POST / PATCH Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| code | string | 是 | 角色 code |
+| name | string | 是 | 角色名称 |
+| description | string | 否 | 描述 |
+
+返回 data：角色信息或 `updated`。
+
+### 3.11 权限管理
 
 ```text
-GET   /api/admin/identity-verifications
-GET   /api/admin/identity-verifications/:id
+GET  /api/admin/permissions
+POST /api/admin/permissions
+```
+
+POST Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| code | string | 是 | 权限 code，例如 product:create |
+| name | string | 是 | 权限名称 |
+| resource | string | 是 | 资源 |
+| action | string | 是 | 动作 |
+
+返回 data：权限信息。
+
+### 3.12 配置角色权限
+
+```text
+PATCH /api/admin/roles/:id/permissions
+```
+
+Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| permission_ids | array | 是 | 权限 ID 列表 |
+
+返回 data：`updated`。
+
+### 3.13 实名审核列表
+
+```text
+GET /api/admin/identity-verifications
+```
+
+Query 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| user_id | integer | 否 | 用户 ID |
+| status | string | 否 | 审核状态 |
+| real_name | string | 否 | 真实姓名 |
+| page | integer | 否 | 页码 |
+| page_size | integer | 否 | 每页数量 |
+
+返回 data.items：实名记录列表。
+
+### 3.14 实名审核详情
+
+```text
+GET /api/admin/identity-verifications/:id
+```
+
+返回 data：实名记录详情、附件、审核日志。
+
+### 3.15 审核实名
+
+```text
 PATCH /api/admin/identity-verifications/:id/review
 ```
 
-审核请求：
+Body 参数：
 
-```json
-{
-  "action": "approve",
-  "reject_reason": ""
-}
-```
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| action | string | 是 | approve 或 reject |
+| reject_reason | string | 否 | 拒绝原因，reject 时必填 |
 
-拒绝请求：
+返回 data：`reviewed`。
 
-```json
-{
-  "action": "reject",
-  "reject_reason": "证件信息不清晰"
-}
-```
-
-### 3.4 审计日志
+### 3.16 审计日志
 
 ```text
 GET /api/admin/audit-logs
 ```
 
-筛选参数：
+Query 参数：operator_id、module、action、created_from、created_to、page、page_size。
+
+返回 data.items：审计日志列表。
+
+## 4. 商品、订单、钱包和计费接口
+
+### 4.1 商品列表
 
 ```text
-operator_id
-module
-action
-created_from
-created_to
-page
-page_size
+GET /api/products
 ```
 
-## 4. 商品、订单、钱包接口
+Query 参数：product_type、keyword、page、page_size。
 
-### 4.1 用户端商品
+返回 data.items：商品 ID、类型、code、名称、描述、状态、最低价格、是否可购买。
+
+### 4.2 商品详情
 
 ```text
-GET  /api/products
-GET  /api/products/:id
-GET  /api/products/:id/plans
+GET /api/products/:id
+```
+
+返回 data：商品详情、套餐、价格、会员规则、用户是否可购买。
+
+### 4.3 商品套餐
+
+```text
+GET /api/products/:id/plans
+```
+
+返回 data.items：套餐 ID、套餐 code、名称、计费类型、时长、额度、价格。
+
+### 4.4 购买商品
+
+```text
 POST /api/products/:id/purchase
-GET  /api/my/products
 ```
 
-购买请求：
+Header：必须传 `Idempotency-Key`。
 
-```json
-{
-  "plan_id": 1,
-  "quantity": 1
-}
-```
+Body 参数：
 
-购买响应：
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| plan_id | integer | 是 | 套餐 ID |
+| quantity | integer | 是 | 数量 |
+| remark | string | 否 | 备注 |
 
-```json
-{
-  "order_id": 1,
-  "order_no": "ORD202606030001",
-  "status": "paid",
-  "asset_id": 1
-}
-```
+返回 data：order_id、order_no、status、asset_id。
 
-### 4.2 管理后台商品
+### 4.5 我的商品
 
 ```text
-GET    /api/admin/products
-POST   /api/admin/products
-GET    /api/admin/products/:id
-PATCH  /api/admin/products/:id
-PATCH  /api/admin/products/:id/status
-GET    /api/admin/products/:id/plans
-POST   /api/admin/products/:id/plans
-PATCH  /api/admin/products/:id/plans/:plan_id
-PATCH  /api/admin/products/:id/access
-PATCH  /api/admin/products/:id/prices
-GET    /api/admin/product-handlers
+GET /api/my/products
 ```
 
-创建商品请求：
+Query 参数：product_type、status、page、page_size。
 
-```json
-{
-  "product_type": "app",
-  "product_code": "demo_app",
-  "name": "演示应用",
-  "description": "用于第一阶段售卖闭环",
-  "business_ref_id": 1
-}
-```
+返回 data.items：商品、资产、到期时间、状态。
 
-### 4.3 订单
+### 4.6 管理后台商品列表
 
 ```text
-GET  /api/orders
-GET  /api/orders/:id
+GET /api/admin/products
+```
+
+Query 参数：product_type、status、keyword、page、page_size。
+
+返回 data.items：商品列表。
+
+### 4.7 创建商品
+
+```text
+POST /api/admin/products
+```
+
+Body 参数：product_type、product_code、name、description、business_ref_id、status。
+
+返回 data：product_id。
+
+### 4.8 商品详情和修改
+
+```text
+GET   /api/admin/products/:id
+PATCH /api/admin/products/:id
+PATCH /api/admin/products/:id/status
+```
+
+PATCH Body 参数：name、description、business_ref_id、status。
+
+返回 data：商品详情或 `updated`。
+
+### 4.9 商品套餐管理
+
+```text
+GET   /api/admin/products/:id/plans
+POST  /api/admin/products/:id/plans
+PATCH /api/admin/products/:id/plans/:plan_id
+```
+
+Body 参数：plan_code、name、billing_type、duration_days、quota_json、status。
+
+返回 data：套餐信息或 `updated`。
+
+### 4.10 商品访问规则
+
+```text
+PATCH /api/admin/products/:id/access
+```
+
+Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| items | array | 是 | 角色访问规则 |
+
+items 字段：role_id、can_view、can_buy、can_use。
+
+返回 data：`updated`。
+
+### 4.11 商品价格
+
+```text
+PATCH /api/admin/products/:id/prices
+```
+
+Body 参数：items。
+
+items 字段：product_plan_id、role_id、membership_level_id、price_amount、currency、discount_rate、effective_from、effective_to。
+
+返回 data：`updated`。
+
+### 4.12 商品处理器
+
+```text
+GET /api/admin/product-handlers
+```
+
+返回 data.items：product_type、handler_code、service_name、status。
+
+### 4.13 订单列表和详情
+
+```text
+GET /api/orders
+GET /api/orders/:id
+GET /api/admin/orders
+GET /api/admin/orders/:id
+```
+
+Query 参数：order_type、status、created_from、created_to、page、page_size。
+
+返回 data：订单信息、订单明细、支付时间、关联资产。
+
+### 4.14 支付订单
+
+```text
 POST /api/orders/:id/pay
-POST /api/orders/:id/cancel
-GET  /api/admin/orders
-GET  /api/admin/orders/:id
 ```
 
-### 4.4 钱包
+Header：必须传 `Idempotency-Key`。
+
+Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| pay_method | string | 是 | wallet |
+
+返回 data：order_id、status、wallet_transaction_id、asset_id。
+
+### 4.15 取消订单
 
 ```text
-GET   /api/wallet
-GET   /api/wallet/transactions
-POST  /api/recharge/orders
-GET   /api/admin/wallet-transactions
+POST /api/orders/:id/cancel
+```
+
+Body 参数：reason。
+
+返回 data：`cancelled`。
+
+### 4.16 钱包信息
+
+```text
+GET /api/wallet
+```
+
+返回 data：wallet_id、balance_amount、frozen_amount、currency。
+
+### 4.17 钱包流水
+
+```text
+GET /api/wallet/transactions
+GET /api/admin/wallet-transactions
+```
+
+Query 参数：type、direction、created_from、created_to、page、page_size。
+
+返回 data.items：流水 ID、金额、方向、余额快照、关联订单、时间。
+
+### 4.18 创建充值订单
+
+```text
+POST /api/recharge/orders
+```
+
+Body 参数：amount、payment_method。
+
+返回 data：order_id、order_no、amount、status。
+
+### 4.19 用户钱包后台接口
+
+```text
 GET   /api/admin/users/:id/wallet
 PATCH /api/admin/users/:id/wallet/freeze
 ```
 
-充值请求：
+冻结 Body 参数：amount、reason。
 
-```json
-{
-  "amount": "1000.00",
-  "payment_method": "manual"
-}
-```
+返回 data：钱包信息或 `updated`。
 
-### 4.5 按量计费
+### 4.20 按量计费事件
 
 ```text
-POST  /api/internal/product-usage-events
+POST /api/internal/product-usage-events
+```
+
+Header：必须传 `Idempotency-Key`。
+
+Body 参数：event_id、user_id、product_id、product_plan_id、instance_id、usage_type、usage_amount、usage_unit、occurred_at、idempotency_key。
+
+返回 data：consumption_record_id、wallet_transaction_id、amount。
+
+### 4.21 计费规则和消费记录
+
+```text
 GET   /api/product-consumption-records
 GET   /api/admin/product-billing-rules
 POST  /api/admin/product-billing-rules
@@ -448,23 +837,11 @@ PATCH /api/admin/product-billing-rules/:id
 GET   /api/admin/product-consumption-records
 ```
 
-消费事件请求：
+计费规则 Body 参数：product_id、product_plan_id、usage_type、usage_unit、price_amount、currency、billing_mode、free_quota、status。
 
-```json
-{
-  "event_id": "evt_001",
-  "user_id": 1,
-  "product_id": 1,
-  "product_plan_id": 1,
-  "instance_id": "asset_1",
-  "usage_type": "token_input",
-  "usage_amount": "1000",
-  "usage_unit": "token",
-  "idempotency_key": "usage_evt_001"
-}
-```
+返回 data：规则信息、消费记录列表或 `updated`。
 
-## 5. 用户资产、会员、应用、内容接口
+## 5. 用户资产、会员、应用和内容接口
 
 ### 5.1 用户资产
 
@@ -479,7 +856,11 @@ GET /api/admin/users/:id/assets
 GET /api/admin/users/:id/entitlements
 ```
 
-### 5.2 会员
+Query 参数：asset_type、status、product_id、page、page_size。
+
+返回 data：资产列表、资产详情、权益额度、资产事件。
+
+### 5.2 会员接口
 
 ```text
 GET   /api/memberships
@@ -497,7 +878,15 @@ PATCH /api/admin/product-membership-rules/:id
 GET   /api/admin/user-memberships
 ```
 
-### 5.3 应用
+会员等级 Body 参数：code、name、level_order、status。
+
+会员权益 Body 参数：membership_level_id、benefit_type、target_product_id、target_product_type、benefit_config_json、status。
+
+商品会员规则 Body 参数：product_id、membership_level_id、rule_type、discount_rate、included_quota_json、status。
+
+返回 data：会员等级、权益、用户会员或 `updated`。
+
+### 5.3 应用接口
 
 ```text
 GET   /api/apps
@@ -513,6 +902,12 @@ GET   /api/admin/application-adapters
 POST  /api/admin/application-adapters
 PATCH /api/admin/application-adapters/:id
 ```
+
+应用 Body 参数：code、name、type、description、status。
+
+应用适配器 Body 参数：app_code、app_name、app_type、adapter_type、service_name、callback_url、supported_actions_json、usage_event_types_json、status。
+
+返回 data：应用信息、适配器信息或 `updated`。
 
 ### 5.4 公告和帮助文档
 
@@ -532,6 +927,14 @@ POST  /api/admin/help/articles
 PATCH /api/admin/help/articles/:id
 ```
 
+公告 Body 参数：title、content、type、priority、status、visible_scope、target_roles_json、start_at、end_at。
+
+帮助分类 Body 参数：parent_id、name、sort_order、status。
+
+帮助文章 Body 参数：category_id、title、content、summary、tags_json、status、sort_order。
+
+返回 data：公告、分类、文章或 `updated`。
+
 ## 6. 后续扩展接口
 
 ### 6.1 GPU
@@ -547,6 +950,12 @@ POST   /api/admin/gpu/devices
 PATCH  /api/admin/gpu/devices/:id
 GET    /api/admin/gpu/rentals
 ```
+
+设备 Body 参数：device_no、region、gpu_model、gpu_count、status、price_per_hour、price_per_day。
+
+租赁 Body 参数：device_id、billing_mode、duration。
+
+返回 data：设备信息、租赁订单和租赁状态。
 
 ### 6.2 Agent
 
@@ -564,6 +973,14 @@ GET   /api/admin/agent-customization-orders
 PATCH /api/admin/agent-customization-orders/:id
 ```
 
+Agent 模板 Body 参数：code、name、description、base_prompt、status。
+
+用户 Agent Body 参数：template_id、name、system_prompt、model_id、status。
+
+定制订单 Body 参数：agent_template_id、requirement。
+
+返回 data：模板、用户 Agent、定制订单信息。
+
 ### 6.3 Skills
 
 ```text
@@ -576,6 +993,14 @@ POST  /api/admin/skills
 PATCH /api/admin/skills/:id
 POST  /api/admin/skills/:id/versions
 ```
+
+Skill Body 参数：code、name、description、category、status。
+
+Skill 版本 Body 参数：version、manifest_json、package_url、changelog、status。
+
+绑定 Body 参数：skill_id、skill_version_id、enabled。
+
+返回 data：Skill、版本、购买或绑定结果。
 
 ### 6.4 Token
 
@@ -592,22 +1017,10 @@ PATCH /api/admin/token/models/:id
 GET   /api/admin/token/usage
 ```
 
-## 7. 错误码
+供应商 Body 参数：code、name、base_url、auth_type、encrypted_api_key、status。
 
-```text
-0      成功
-40000  请求参数错误
-40001  未登录
-40003  无权限
-40400  资源不存在
-40900  数据冲突
-50000  系统内部错误
-60001  余额不足
-60002  重复支付
-60003  商品状态不可用
-60004  资产未生效
-60005  权益额度不足
-70001  未完成实名制认证
-70002  实名认证审核中
-70003  实名认证被拒绝
-```
+模型 Body 参数：provider_id、model_code、display_name、context_window、status。
+
+Chat 请求 Body 参数：model、messages、stream、temperature、max_tokens。
+
+返回 data：模型列表、OpenAI 兼容响应、Token 用量统计。
