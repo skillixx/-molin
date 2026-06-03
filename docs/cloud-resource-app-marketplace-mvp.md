@@ -137,8 +137,14 @@ product-service
 business-router
   按业务类型路由到应用、GPU、Agent、Skills、Token、网盘等处理器
 
+application-adapter
+  新应用接入适配器、应用能力声明、开通/停用/续费回调
+
 billing-service
   钱包、订单、支付、退款、流水、余额
+
+finance-consumer-router
+  产品消费事件接收、计费规则匹配、扣费、流水、对账
 
 resource-service
   GPU 设备、设备分组、租赁、释放、状态同步
@@ -171,6 +177,7 @@ HTTP API 层
   -> Product 商品路由层
   -> Order / Billing 交易层
   -> Business Provision 业务开通层
+  -> Finance Consumer Router 消费计费层
   -> Resource / App / Agent / Skill / Token / NetDisk 等业务模块
 ```
 
@@ -181,6 +188,7 @@ HTTP API 层
 - `Product 商品路由层`：根据 `product_type` 和 `product_code` 找到商品、套餐、价格和处理器。
 - `Order / Billing 交易层`：统一创建订单、扣余额、写流水、退款、对账。
 - `Business Provision 业务开通层`：把已支付订单交给对应业务处理器完成开通。
+- `Finance Consumer Router 消费计费层`：接收各业务模块产生的消费事件，匹配计费规则并生成扣费流水。
 - `业务模块`：只负责自己的业务规则，不直接操作钱包扣费。
 
 业务类型建议统一枚举：
@@ -205,6 +213,88 @@ netdisk
 7. 实现 `Provision(order)`、`Renew(order)`、`Suspend(instance)`、`Cancel(instance)`。
 
 订单、钱包、角色权限、财务流水和后台查询不需要重做。
+
+### 4.2 应用扩展式接入
+
+应用不要和订单、钱包、角色权限强绑定。每个新应用只需要按标准适配器接入。
+
+应用适配器需要声明：
+
+```text
+AppDescriptor
+- app_code
+- app_name
+- app_type
+- supported_plan_fields
+- supported_actions
+- provision_mode
+- callback_url
+- usage_event_types
+```
+
+应用适配器需要实现：
+
+```text
+Provision(order, product, plan)
+Renew(instance, order)
+Suspend(instance, reason)
+Resume(instance)
+Cancel(instance)
+QueryUsage(instance, period)
+```
+
+这样后面新增网盘、对象存储、数据库、API 套餐、SaaS 工具时，只需要：
+
+1. 新增应用模块或外部应用对接配置。
+2. 注册应用适配器。
+3. 配置商品、套餐、价格、角色权限。
+4. 配置财务消费规则。
+5. 前端使用统一商品页面或增加少量业务详情页。
+
+### 4.3 财务按产品消费快速对接
+
+财务系统不要只支持“购买时扣费”，还要支持“使用中按量扣费”。所有产品消费都转换成统一消费事件。
+
+统一消费事件：
+
+```text
+ProductUsageEvent
+- event_id
+- user_id
+- product_type
+- product_code
+- product_plan_id
+- instance_id
+- usage_type
+- usage_amount
+- usage_unit
+- occurred_at
+- idempotency_key
+```
+
+财务消费路由处理：
+
+```text
+业务模块上报 ProductUsageEvent
+  -> Finance Consumer Router 校验幂等键
+  -> 匹配 product_billing_rules
+  -> 计算消费金额
+  -> 检查余额或额度
+  -> 扣费或冻结
+  -> 写入 wallet_transactions
+  -> 写入 product_consumption_records
+  -> 返回计费结果
+```
+
+这种结构下，Token、GPU、网盘、agent 调用、skills 调用都可以走统一消费对接：
+
+```text
+token     -> 按 input_tokens / output_tokens 扣费
+gpu       -> 按小时、天、月扣费
+netdisk   -> 按容量、流量、用户数、时长扣费
+agent     -> 按调用次数、Token、定制服务扣费
+skill     -> 按授权周期、调用次数、增值功能扣费
+```
 
 ## 5. 核心数据模型
 
@@ -301,6 +391,49 @@ product_provision_handlers
 - created_at
 - updated_at
 
+application_adapters
+- id
+- app_code
+- app_name
+- app_type
+- adapter_type
+- service_name
+- callback_url
+- supported_actions_json
+- usage_event_types_json
+- status
+- created_at
+- updated_at
+
+product_billing_rules
+- id
+- product_id
+- product_plan_id
+- usage_type
+- usage_unit
+- price_amount
+- currency
+- billing_mode
+- free_quota
+- status
+- created_at
+- updated_at
+
+product_consumption_records
+- id
+- event_id
+- user_id
+- product_id
+- product_plan_id
+- instance_id
+- usage_type
+- usage_amount
+- usage_unit
+- amount
+- wallet_transaction_id
+- idempotency_key
+- created_at
+
 applications
 - id
 - code
@@ -344,6 +477,9 @@ application_role_access
 - `business_ref_id` 指向具体业务表，例如 `applications.id`、`gpu_devices.id`、`agent_templates.id`。
 - `quota_json` 存储不同业务的套餐参数，例如网盘容量、GPU 时长、Token 额度、skill 授权时长。
 - 原有 `applications` 作为应用业务详情表保留，不直接承担所有商品交易逻辑。
+- `application_adapters` 负责让新应用扩展式接入，业务系统不直接改订单和钱包代码。
+- `product_billing_rules` 负责把产品用量转换成金额。
+- `product_consumption_records` 负责记录每一次产品消费，便于财务对账、用户账单和运营分析。
 
 ### 5.3 订单与钱包
 
@@ -767,6 +903,31 @@ netdisk   -> 创建网盘空间、容量、有效期
 提交事务
 ```
 
+### 6.3.1 产品消费计费流程
+
+```text
+业务模块产生消费事件
+  -> 上报 ProductUsageEvent
+  -> 校验 idempotency_key 防重复扣费
+  -> 根据 product_id、plan_id、usage_type 匹配计费规则
+  -> 计算消费金额
+  -> 开启数据库事务
+  -> 扣减钱包余额或扣减产品额度
+  -> 写入 wallet_transactions
+  -> 写入 product_consumption_records
+  -> 提交事务
+  -> 返回计费结果
+```
+
+接入新产品时，财务侧只需要新增：
+
+- 产品计费规则。
+- 消费事件类型。
+- 账单展示字段。
+- 对账维度。
+
+不需要为每个应用重新开发一套扣费逻辑。
+
 ### 6.4 Agent 定制流程
 
 ```text
@@ -821,6 +982,7 @@ GET  /api/me
 GET  /api/wallet
 GET  /api/wallet/transactions
 POST /api/recharge/orders
+GET  /api/product-consumption-records
 
 GET  /api/apps
 GET  /api/apps/:id
@@ -879,6 +1041,13 @@ POST   /api/admin/products/:id/plans
 PATCH  /api/admin/products/:id/access
 PATCH  /api/admin/products/:id/prices
 GET    /api/admin/product-handlers
+GET    /api/admin/application-adapters
+POST   /api/admin/application-adapters
+PATCH  /api/admin/application-adapters/:id
+GET    /api/admin/product-billing-rules
+POST   /api/admin/product-billing-rules
+PATCH  /api/admin/product-billing-rules/:id
+GET    /api/admin/product-consumption-records
 
 GET    /api/admin/orders
 GET    /api/admin/wallet-transactions
@@ -945,6 +1114,9 @@ GET    /api/admin/audit-logs
 - 商品价格配置。
 - 商品角色权限配置。
 - 商品开通处理器管理。
+- 应用接入适配器管理。
+- 产品计费规则管理。
+- 产品消费记录。
 - 应用管理。
 - 应用价格配置。
 - 订单管理。
@@ -978,6 +1150,7 @@ GET    /api/admin/audit-logs
 - 完成商品套餐、价格、角色权限配置。
 - 完成商品购买路由。
 - 完成业务开通处理器接口。
+- 完成应用适配器注册接口。
 - 完成应用 CRUD。
 - 完成应用角色可见性。
 - 完成应用价格配置。
@@ -990,6 +1163,9 @@ GET    /api/admin/audit-logs
 - 完成消费订单。
 - 完成钱包流水。
 - 完成统一商品购买。
+- 完成产品消费事件接入。
+- 完成产品计费规则。
+- 完成产品消费记录。
 - 完成应用购买。
 - 完成基础对账查询。
 
@@ -1151,7 +1327,9 @@ server/internal/modules/iam
 server/internal/modules/product
 server/internal/modules/order
 server/internal/modules/billing
+server/internal/modules/finance_consumer
 server/internal/modules/provision
+server/internal/modules/application_adapter
 server/internal/modules/app
 server/internal/modules/gpu
 server/internal/modules/agent
@@ -1171,6 +1349,8 @@ infra/docker-compose.yml
 - 统一商品中心。
 - 商品路由。
 - 开通处理器接口。
+- 应用适配器。
+- 财务消费路由。
 - 应用管理。
 - 应用价格。
 - 钱包。
