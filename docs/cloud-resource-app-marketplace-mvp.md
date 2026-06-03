@@ -123,7 +123,7 @@ Vue3 + Vite + TypeScript + Go + Gin + 原生 SQL + MySQL + Redis + RabbitMQ
 
 ```text
 auth-service
-  登录、注册、JWT、API Key
+  邮箱注册、手机号注册、邮箱登录、手机号登录、JWT、API Key
 
 iam-service
   用户、角色、权限、动态授权、访问控制
@@ -350,12 +350,34 @@ products.product_type = membership
 users
 - id
 - email
+- email_verified
 - phone
+- phone_verified
 - password_hash
 - status
 - wallet_id
 - created_at
 - updated_at
+
+verification_codes
+- id
+- target_type
+- target_value
+- code
+- scene
+- expires_at
+- used_at
+- created_at
+
+user_login_logs
+- id
+- user_id
+- login_type
+- login_account
+- ip
+- user_agent
+- status
+- created_at
 
 roles
 - id
@@ -410,6 +432,10 @@ role_change_logs
 - `user_permission_overrides.effect` 支持 `allow` 和 `deny`。
 - 权限判定顺序建议为：用户禁用权限 > 用户额外授权 > 角色权限 > 商品/会员规则。
 - 每次角色和权限变化都必须写审计日志，并清理用户权限缓存。
+- 邮箱和手机号都可以作为登录账号，`users.email` 和 `users.phone` 都需要唯一索引。
+- 用户至少绑定一个登录账号，邮箱注册必须验证邮箱，手机号注册必须验证短信验证码。
+- 同一用户后续可以绑定另一个登录方式，例如先用手机号注册，再绑定邮箱。
+- 登录接口支持密码登录，验证码登录可作为后续扩展。
 
 ### 5.2 统一商品与应用售卖
 
@@ -1271,8 +1297,12 @@ netdisk   -> 创建网盘空间、容量、有效期
 ### 用户端
 
 ```text
-POST /api/auth/register
-POST /api/auth/login
+POST /api/auth/register/email
+POST /api/auth/register/phone
+POST /api/auth/login/email
+POST /api/auth/login/phone
+POST /api/auth/verification-codes/email
+POST /api/auth/verification-codes/phone
 GET  /api/me
 
 GET  /api/wallet
@@ -1490,7 +1520,8 @@ GET    /api/admin/audit-logs
 
 - 建立前后端工程。
 - 建立数据库 migration。
-- 建立登录注册。
+- 建立邮箱注册、手机号注册、邮箱登录、手机号登录。
+- 建立邮箱验证码、短信验证码。
 - 建立用户、角色、权限模型。
 - 建立用户动态授权和权限缓存失效机制。
 - 建立后台基础布局。
