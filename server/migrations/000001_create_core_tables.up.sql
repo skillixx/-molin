@@ -1,0 +1,3 @@
+-- Core schema placeholder.
+-- Development teams should replace this with users, roles, permissions,
+-- products, orders, wallets, assets, and identity verification tables.
