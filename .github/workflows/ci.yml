@@ -71,12 +71,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: npm
-          cache-dependency-path: web/admin-console/package-lock.json
 
       - name: 安装依赖
         working-directory: web/admin-console
-        run: npm ci
+        run: npm install
 
       - name: TypeScript 类型检查
         working-directory: web/admin-console
@@ -98,12 +96,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: npm
-          cache-dependency-path: web/user-console/package-lock.json
 
       - name: 安装依赖
         working-directory: web/user-console
-        run: npm ci
+        run: npm install
 
       - name: TypeScript 类型检查
         working-directory: web/user-console
