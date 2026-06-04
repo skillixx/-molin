@@ -8,7 +8,7 @@ services:
       MYSQL_USER: molin
       MYSQL_PASSWORD: molin_password
     ports:
-      - "3306:3306"
+      - "13306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
       - ./mysql/init:/docker-entrypoint-initdb.d
@@ -17,7 +17,7 @@ services:
     image: redis:7
     container_name: molin-redis
     ports:
-      - "6379:6379"
+      - "16379:6379"
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -26,8 +26,8 @@ services:
       RABBITMQ_DEFAULT_USER: molin
       RABBITMQ_DEFAULT_PASS: molin_password
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "5673:5672"
+      - "15673:15672"
 
   minio:
     image: minio/minio
@@ -37,8 +37,8 @@ services:
       MINIO_ROOT_USER: molin
       MINIO_ROOT_PASSWORD: molin_password
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "19000:9000"
+      - "19001:9001"
     volumes:
       - minio-data:/data
 

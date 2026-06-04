@@ -34,12 +34,12 @@ cd web/user-console && npm install && npm run dev
 
 | 服务 | 连接地址 | 账号 | 密码 |
 |---|---|---|---|
-| MySQL | `127.0.0.1:3306` 库名 `molin` | `molin` | `molin_password` |
-| Redis | `127.0.0.1:6379` | — | 无密码 |
-| RabbitMQ | `127.0.0.1:5672` | `molin` | `molin_password` |
-| RabbitMQ 管理界面 | `http://127.0.0.1:15672` | `molin` | `molin_password` |
-| MinIO | `127.0.0.1:9000` | `molin` | `molin_password` |
-| MinIO 控制台 | `http://127.0.0.1:9001` | `molin` | `molin_password` |
+| MySQL | `127.0.0.1:13306` 库名 `molin` | `molin` | `molin_password` |
+| Redis | `127.0.0.1:16379` | — | 无密码 |
+| RabbitMQ | `127.0.0.1:5673` | `molin` | `molin_password` |
+| RabbitMQ 管理界面 | `http://127.0.0.1:15673` | `molin` | `molin_password` |
+| MinIO | `127.0.0.1:19000` | `molin` | `molin_password` |
+| MinIO 控制台 | `http://127.0.0.1:19001` | `molin` | `molin_password` |
 | Go API | `http://127.0.0.1:8080` | — | — |
 | 管理后台（Vite） | `http://127.0.0.1:5173` | — | — |
 | 用户控制台（Vite） | `http://127.0.0.1:5174` | — | — |
