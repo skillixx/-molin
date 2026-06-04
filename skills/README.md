@@ -5,7 +5,10 @@
 ## 已包含
 
 - `define-goal`：拆解产品目标和工程目标。
+- `find-skills`：查找和评估适合项目的新技能。
 - `openai-docs`：在开发 Token 网关和 OpenAI 兼容接口时查询官方 OpenAI 文档。
+- `vue`：开发 Vue3、TypeScript、Composition API、`script setup` 相关页面和组件。
+- `agent-docs-api-openapi`：生成和维护 OpenAPI / Swagger 接口文档。
 - `playwright`：为管理后台和用户控制台执行浏览器自动化测试。
 - `playwright-interactive`：交互式调试浏览器流程。
 - `screenshot`：截图并检查页面效果。
