@@ -163,16 +163,22 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 | 任务 | 文件 | 状态 |
 |---|---|---|
-| 本地开发环境 docker-compose（MySQL/Redis/RabbitMQ/MinIO） | `infra/docker-compose.yml` | ⬜ 待完成 |
-| 生产环境 docker-compose（含健康检查和网络隔离） | `infra/docker-compose.prod.yml` | ⬜ 待完成 |
-| 后端服务 Dockerfile（多阶段构建，非 root 用户运行） | `infra/Dockerfile.server` | ⬜ 待完成 |
-| 管理后台 Nginx Dockerfile | `infra/Dockerfile.admin-console` | ⬜ 待完成 |
-| 用户控制台 Nginx Dockerfile（含 SSE proxy_buffering off） | `infra/Dockerfile.user-console` | ⬜ 待完成 |
-| Nginx 配置 — 管理后台 | `infra/nginx/admin.conf` | ⬜ 待完成 |
-| Nginx 配置 — 用户控制台（含 SSE 长连接支持） | `infra/nginx/user.conf` | ⬜ 待完成 |
-| 环境变量模板（含安全变量说明） | `infra/.env.example` | ⬜ 待完成 |
-| GitHub Actions CI 流水线（后端测试 + 前端构建 × 3 并行） | `.github/workflows/ci.yml` | ⬜ 待完成 |
-| 数据库建表脚本 | `scripts/create_mysql_tables.sh` | ⬜ 待完成 |
+| 本地开发环境 docker-compose（MySQL/Redis/RabbitMQ/MinIO） | `infra/docker-compose.yml` | ✅ 已完成 |
+| 生产环境 docker-compose（含健康检查和网络隔离） | `infra/docker-compose.prod.yml` | ✅ 已完成 |
+| 后端服务 Dockerfile（多阶段构建，非 root 用户运行） | `infra/Dockerfile.server` | ✅ 已完成 |
+| 管理后台 Nginx Dockerfile | `infra/Dockerfile.admin-console` | ✅ 已完成 |
+| 用户控制台 Nginx Dockerfile（含 SSE proxy_buffering off） | `infra/Dockerfile.user-console` | ✅ 已完成 |
+| Nginx 配置 — 管理后台 | `infra/nginx/admin.conf` | ✅ 已完成 |
+| Nginx 配置 — 用户控制台（含 SSE 长连接支持） | `infra/nginx/user.conf` | ✅ 已完成 |
+| Nginx 配置 — API 反向代理 | `infra/nginx/api.conf` | ✅ 已完成 |
+| 环境变量模板（含安全变量说明） | `infra/.env.example` | ✅ 已完成 |
+| GitHub Actions CI 流水线（后端测试 + 前端构建，PR 触发） | `.github/workflows/ci.yml` | ✅ 已完成 |
+| GitHub Actions 测试环境自动部署（push main 触发） | `.github/workflows/deploy-test.yml` | ✅ 已完成 |
+| 等待服务就绪脚本 | `scripts/wait-for-it.sh` | ✅ 已完成 |
+| 数据库 Migration 执行脚本 | `scripts/migrate.sh` | ✅ 已完成 |
+| 数据库建表脚本 | `scripts/create_mysql_tables.sh` | ✅ 已完成 |
+| 测试服务器基础服务部署（MySQL/Redis/RabbitMQ/MinIO 运行中） | `8.130.9.163` | ✅ 已完成 |
+| 测试数据库初始化（42 张业务表建表完成） | `molin_test` | ✅ 已完成 |
 | 生产部署 checklist 执行 | `infra/CLAUDE.md` 部署清单 | ⬜ 待完成 |
 
 ### 产品经理（代码合并与审核）
