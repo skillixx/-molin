@@ -33,14 +33,33 @@
 - 对象存储：MinIO。
 - 本地环境：Docker Compose。
 
+## 团队角色
+
+| 角色 | 负责范围 | Agent 文件 |
+|---|---|---|
+| 后端 A | auth / identity / iam / audit | `server/internal/modules/auth/CLAUDE.md` 等 |
+| 后端 B | product / order / billing / finance_consumer | `server/internal/modules/billing/CLAUDE.md` 等 |
+| 后端 C | asset / membership / app / content | `server/internal/modules/asset/CLAUDE.md` 等 |
+| 前端 A | web/admin-console | `web/admin-console/CLAUDE.md` |
+| 前端 B | web/user-console | `web/user-console/CLAUDE.md` |
+| 运维 | infra / CI/CD / 部署 | `infra/CLAUDE.md` |
+| 产品经理 | 代码合并 / 评审 / 验收 | `docs/pm-CLAUDE.md` |
+| 测试 | 接口测试 / 功能验收 | `docs/qa-CLAUDE.md` |
+
 ## 重要文档
 
 - `README.md`：项目概览和快速启动说明。
 - `docs/cloud-resource-app-marketplace-mvp.md`：产品和 MVP 规划。
 - `docs/development-execution-plan.md`：开发执行计划。
 - `docs/team-task-assignment.md`：团队角色和任务分配。
-- `docs/interface-requirements-and-project-management.md`：接口需求、数据库设计、项目管理、演示和测试方案。
-- `docs/base-architecture-environment.md`：基础架构环境和代码文件说明。
+- `docs/full-api-design.md`：完整接口设计。
+- `docs/database-schema-design.md`：数据库表设计。
+- `docs/git-workflow.md`：Git 工作流与代码评审规范。
+- `docs/test-plan.md`：测试计划与验收 Checklist。
+- `docs/pm-CLAUDE.md`：产品经理 Agent — 合并与评审规范。
+- `docs/qa-CLAUDE.md`：测试 Agent — 功能测试与验收规范。
+- `infra/CLAUDE.md`：运维 Agent — 部署与环境规范。
+- `infra/.env.example`：环境变量模板（参考此文件，不要提交 .env.local）。
 - `skills/README.md`：项目专用 Codex skills 说明。
 
 ## 仓库目录

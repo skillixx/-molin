@@ -4,31 +4,39 @@
 
 第一阶段不要先做页面堆砌，也不要先做 GPU、Agent、Skills、Token 这些复杂业务。应该先把平台底座做稳。
 
-推荐顺序：
+三阶段交付计划：
 
 ```text
-基础工程
-  -> 用户与权限
-  -> 统一商品中心
-  -> 订单与钱包
-  -> 用户资产与权益
-  -> 应用售卖
-  -> 会员制
-  -> 公告和帮助文档
-  -> GPU 租赁
-  -> Agent 市场
-  -> Skills 市场
-  -> Token 网关
+第一阶段（Week 1–4）：平台底座 + 应用售卖
+  基础工程 + 认证（auth + user_sessions）
+  -> 用户与权限（iam + identity）
+  -> 统一商品中心（product）
+  -> 订单与钱包（billing + 支付回调）
+  -> 用户资产与权益（asset）
+  -> 应用售卖闭环（app + provision）
+  -> 会员制（membership）
+  -> 公告和帮助文档（content）
+
+第二阶段（Week 5–7）：GPU 租赁
+  -> GPU 设备管理与状态机（resource）
+  -> 租赁订单和按量计费
+  -> 到期释放任务
+
+第三阶段（Week 8–12）：Agent / Skills / Token 网关
+  -> Agent 定制市场（agent）
+  -> Skills 技能市场（skill）
+  -> Token 上游聚合网关（token_gateway）
 ```
 
 最先开发的不是某个应用，而是这四个底座：
 
-- `IAM`：用户、角色、权限、动态授权。
+- `Auth`：用户、会话（user_sessions）、Refresh Token、登录/注册。
+- `IAM`：角色、权限、动态授权、权限缓存。
 - `Product`：统一商品、套餐、价格、会员规则。
-- `Billing`：订单、钱包、流水、扣费。
+- `Billing`：订单、钱包、流水、乐观锁扣费、支付回调。
 - `Asset`：用户资产、权益额度、到期状态。
 
-这四个底座决定后面所有应用能不能快速接入。
+这五个底座决定后面所有应用能不能快速接入。
 
 ## 2. 第一阶段目标
 
@@ -273,49 +281,62 @@
 
 建议按周推进：
 
-### 第 1 周
+### Week 1：基础工程 + 认证
 
-- 建工程。
-- 建数据库。
-- 邮箱注册和手机号注册。
-- 邮箱登录和手机号登录。
-- 实名制认证提交和审核。
-- 用户、角色、权限。
-- 后台基础布局。
+- 建前后端工程骨架。
+- 建数据库 migration（第一批：users、user_sessions、verification_codes、user_login_logs、roles、permissions、user_roles、role_permissions、wallets）。
+- 邮箱注册、手机号注册、邮箱登录、手机号登录。
+- 邮箱验证码、短信验证码（防刷限流：10 req/min / IP）。
+- JWT Access Token + Refresh Token（user_sessions 持久化，hash 存储）。
+- 退出登录（吊销 user_sessions）、刷新令牌。
+- 实名制认证提交和审核流程（id_card_no_hmac，HMAC-SHA256）。
+- 用户动态授权和权限缓存失效机制（Redis key: perm:user:{user_id}，TTL 5 min）。
+- 后台基础布局（登录页、菜单骨架）。
 - 用户端基础布局。
 
-### 第 2 周
+### Week 2：商品、权限与应用
 
-- 统一商品。
-- 商品套餐。
-- 商品价格。
-- 商品角色权限。
-- 订单。
-- 钱包。
+- 完成 RBAC（角色、权限、配置角色权限）。
+- 完成统一商品模型（products、product_plans、product_prices、product_role_access）。
+- 完成商品购买路由和业务开通处理器接口（provision）。
+- 完成会员等级、会员权益和商品会员规则模型。
+- 完成应用适配器注册接口（application_adapters）。
+- 完成应用 CRUD（applications 表，只含业务详情字段，不含套餐/价格/权限）。
+- 用户端应用市场骨架。
 
-### 第 3 周
+### Week 3：订单、钱包与资产
 
-- 商品购买。
-- 钱包扣费。
-- 财务流水。
-- 用户资产。
-- 用户权益。
-- 第一个应用售卖闭环。
+- 完成钱包（乐观锁扣费：SELECT FOR UPDATE + version 字段）。
+- 完成充值订单创建和支付回调接口（POST /api/payments/notify/:provider，幂等 + 签名校验）。
+- 完成消费订单和钱包流水（wallet_transactions）。
+- 完成统一商品购买。
+- 完成产品消费事件接入和计费规则（finance_consumer，幂等键：idempotency_key 唯一索引）。
+- 完成会员商品购买和会员权益校验。
+- 完成用户资产和权益生成（user_assets、user_entitlements）。
+- 完成应用购买（第一个应用售卖闭环）。
+- 完成基础对账查询。
 
-### 第 4 周
+### Week 4：内容、会员与完善
 
-- 会员等级。
-- 会员权益。
-- 会员制应用购买。
-- 系统公告。
-- 帮助文档。
+- 完成系统公告和帮助文档（content）。
+- 完成用户端会员中心页面。
+- 完善管理后台（订单管理、财务流水、用户资产管理）。
+- 完成并测试第一个完整应用售卖闭环。
+- 第一阶段验收。
 
-### 第 5 周以后
+### Week 5–7：GPU 租赁（第二阶段）
 
-- GPU 租赁。
-- Agent 定制市场。
-- Skills 技能市场。
-- Token 上游聚合网关。
+- GPU 设备管理和状态机（available → reserved → deploying → running → releasing → released）。
+- 租赁订单（按量计费接入 finance_consumer）。
+- 到期释放定时任务。
+- 用户端租赁页面和我的实例。
+- 管理后台设备和租赁管理。
+
+### Week 8–12：Agent / Skills / Token 网关（第三阶段）
+
+- Agent 模板管理、用户 Agent 创建和定制订单（agent）。
+- Skills 管理、版本、购买、安装、Agent 绑定（skill）。
+- Token 供应商管理（api_key AES-256-GCM 加密）、模型路由（weight + priority）、断路器（熔断切换备用路由）、流式调用（SSE，不缓冲 response body）、用量统计（token_gateway）。
 
 ## 10. AI 开发使用方式
 

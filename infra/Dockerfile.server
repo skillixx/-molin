@@ -1,0 +1,45 @@
+# Go API 服务生产镜像 — 多阶段构建
+# 构建命令：docker build -f infra/Dockerfile.server -t molin-api .
+
+# ---- 构建阶段 ----
+FROM golang:1.22-alpine AS builder
+
+# 安装 git（go mod download 可能需要）
+RUN apk add --no-cache git
+
+WORKDIR /build
+
+# 先复制依赖文件，利用 Docker 层缓存
+COPY server/go.mod server/go.sum ./
+RUN go mod download
+
+# 复制源码
+COPY server/ .
+
+# 静态编译，不依赖 libc
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -ldflags="-w -s" -o api ./cmd/api
+
+# ---- 运行阶段 ----
+FROM alpine:3.19
+
+# 时区和 HTTPS 证书
+RUN apk add --no-cache tzdata ca-certificates && \
+    cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone
+
+WORKDIR /app
+
+# 只复制编译产物
+COPY --from=builder /build/api .
+
+# 非 root 用户运行
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -q --spider http://localhost:8080/api/health || exit 1
+
+CMD ["./api"]

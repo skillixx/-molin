@@ -15,57 +15,80 @@
 - 不同角色看到不同应用、不同价格、不同权限。
 - 所有财务动作都有流水，方便对账和追责。
 
-暂不放进第一版的能力：
+## 2. 分阶段交付范围
 
+> **重要原则：** GPU 租赁、Agent 定制市场、Skills 技能市场、Token 网关各自都有足够的复杂度，不应全部放进第一轮 MVP。先把平台底座做稳，再接入各业务模块。
+
+### 第一阶段：平台底座 + 应用售卖（Week 1–4）
+
+目标：跑通完整的商品购买闭环，支撑基本运营。
+
+**用户端**
+
+- 用户注册（邮箱 / 手机号）、登录、退出、刷新令牌。
+- 查看和修改个人资料、修改密码。
+- 提交实名认证、查看认证状态。
+- 查看账户余额。
+- 查看充值记录、消费记录。
+- 充值（余额充值，支持微信支付 / 支付宝）。
+- 查看可购买应用。
+- 购买应用服务（一次性 / 按周期）。
+- 查看已购买服务和资产。
+- 系统公告展示。
+- 帮助中心。
+
+**管理后台**
+
+- 用户管理（查询、状态变更、角色分配）。
+- 实名认证审核。
+- 角色管理、权限管理、用户动态授权。
+- 应用管理、应用价格配置、应用角色可见性管理。
+- 统一商品管理、套餐配置、价格配置、角色权限配置。
+- 会员等级、会员权益、商品会员规则管理。
+- 钱包流水查询、订单管理。
+- 用户资产管理、权益额度管理。
+- 应用适配器管理。
+- 系统公告管理、帮助文档管理。
+- 审计日志。
+
+**暂不放进第一阶段的能力**
+
+- GPU 租赁。
+- Agent 定制市场。
+- Skills 技能市场。
+- Token 网关。
 - 复杂 GPU 自动调度。
 - 多区域灾备。
 - 分库分表。
 - 企业级审批流。
 
-这些可以在平台稳定后作为第二、第三阶段扩展。
+### 第二阶段：GPU 租赁（Week 5–7）
 
-## 2. 第一版功能范围
+底座稳定后接入：
 
-### 2.1 用户端
+- GPU 设备管理（上架、下架、维护、故障、状态流转）。
+- GPU 租赁订单（按小时 / 按天 / 按月）。
+- 设备状态同步（状态机：available → reserved → deploying → running → releasing → released）。
+- 租赁到期自动释放任务。
+- 按量计费接入统一财务消费路由。
+- 用户端：GPU 市场、租赁详情、我的实例。
+- 管理后台：设备管理、租赁管理、设备事件。
 
-- 用户注册、登录、退出。
-- 查看账户余额。
-- 查看充值记录、消费记录。
-- 查看可购买应用。
-- 购买应用服务。
-- 查看已购买服务。
-- 查看可租用 GPU 设备。
-- 提交 GPU 租赁订单。
-- 查看租赁状态。
-- 查看 agent 市场。
-- 购买 agent 模板。
-- 创建和定制自己的 agent。
-- 查看 skills 技能市场。
-- 购买和安装 skills。
-- 查看 Token 模型服务。
-- 购买 Token 套餐或按量调用。
-- 查看 agent、skills、Token 的使用量和消费记录。
+### 第三阶段：Agent / Skills / Token 网关（Week 8–12）
 
-### 2.2 管理后台
+- Agent 模板管理、用户 Agent 创建与定制、定制订单。
+- Skills 技能市场、版本管理、用户安装与授权、Agent 绑定 Skill。
+- Token 上游供应商管理、模型路由、调用鉴权、用量统计、成本核算。
+- 三个模块都挂在统一商品和财务消费路由上，不重写交易链路。
 
-- 用户管理。
-- 角色管理。
-- 权限管理。
-- 应用管理。
-- 应用价格管理。
-- 应用角色可见性管理。
-- 钱包流水查询。
-- 订单管理。
-- 设备管理。
-- GPU 租赁管理。
-- Agent 模板管理。
-- Agent 定制订单管理。
-- Skills 技能管理。
-- Token 上游供应商管理。
-- Token 模型、价格、路由和用量管理。
-- 操作审计日志。
+### 不进任何阶段（长期规划）
 
-### 2.3 权限范围
+- 复杂 GPU 自动调度。
+- 多区域灾备。
+- 分库分表（有专项规划文档）。
+- 企业级审批流。
+
+## 3. 权限范围
 
 第一版使用 RBAC 为主，保留 ABAC 扩展字段。
 
@@ -83,102 +106,97 @@
 
 角色示例：
 
-- platform_admin：平台管理员。
-- finance_admin：财务管理员。
-- ops_admin：运维管理员。
-- app_admin：应用管理员。
-- normal_user：普通用户。
-- vip_user：高级用户。
-- reseller：渠道商。
+- `platform_admin`：平台管理员。
+- `finance_admin`：财务管理员。
+- `ops_admin`：运维管理员。
+- `app_admin`：应用管理员。
+- `normal_user`：普通用户。
+- `vip_user`：高级用户。
+- `reseller`：渠道商。
 
-## 3. 推荐技术栈
-
-建议第一版采用：
-
-- 前端：Vue3 + Vite + TypeScript。
-- 管理后台 UI：Element Plus 或 Naive UI。
-- 用户控制台 UI：Element Plus 或 Naive UI。
-- 后端：Go。
-- Go Web 框架：Gin、Fiber 或 Hertz。
-- ORM / SQL：GORM 或原生 SQL。
-- 数据库：MySQL。
-- 缓存：Redis。
-- 队列：RabbitMQ 或 Kafka。
-- 对象存储：MinIO。
-- 部署：Docker Compose 起步，后续迁移 Kubernetes。
-
-第一版推荐：
+权限优先级（由高到低）：
 
 ```text
-Vue3 + Vite + TypeScript + Go + Gin + MySQL + Redis + RabbitMQ
+用户显式禁用权限 (deny)
+  > 用户显式授权 (allow override)
+  > 角色权限
+  > 商品 / 会员规则
 ```
 
-如果后端希望更高性能、更直接控制 SQL，可以采用：
+## 4. 推荐技术栈
+
+第一版采用：
 
 ```text
-Vue3 + Vite + TypeScript + Go + Gin + 原生 SQL + MySQL + Redis + RabbitMQ
+Vue3 + Vite + TypeScript + Element Plus
+Go + Gin + GORM
+MySQL 8
+Redis 7
+RabbitMQ
+MinIO
 ```
 
-## 4. 系统模块
+部署：Docker Compose 起步，后续迁移 Kubernetes。
+
+## 5. 系统模块
 
 ```text
-auth-service
-  邮箱注册、手机号注册、邮箱登录、手机号登录、实名制认证、JWT、API Key
+auth
+  邮箱注册、手机号注册、邮箱登录、手机号登录、实名制认证、JWT、Refresh Token、API Key
 
-iam-service
-  用户、角色、权限、动态授权、访问控制
+iam
+  用户、角色、权限、动态授权、访问控制、权限缓存
 
-app-service
-  应用、应用版本、应用价格、应用权限
+app
+  应用业务详情（icon、callback_url、描述等非交易字段）
 
-product-service
-  统一商品、套餐、价格、角色可见性、购买入口
+product
+  统一商品、套餐、价格、角色可见性、会员规则、购买入口、开通路由
 
-business-router
-  按业务类型路由到应用、GPU、Agent、Skills、Token、网盘等处理器
+provision
+  业务开通处理器接口、各 product_type 对应处理器
 
-application-adapter
-  新应用接入适配器、应用能力声明、开通/停用/续费回调
+billing
+  钱包、订单、支付、退款、流水、余额、乐观锁扣费
 
-billing-service
-  钱包、订单、支付、退款、流水、余额
+finance_consumer
+  产品消费事件接收、计费规则匹配、扣费、流水、幂等、对账
 
-finance-consumer-router
-  产品消费事件接收、计费规则匹配、扣费、流水、对账
-
-asset-service
+asset
   用户资产、产品实例、权益额度、到期时间、资产事件
 
-resource-service
-  GPU 设备、设备分组、租赁、释放、状态同步
-
-agent-service
-  Agent 模板、用户 agent、定制订单、版本、发布
-
-skill-service
-  Skills 技能、版本、安装、授权、上下架
-
-token-gateway
-  Token 上游供应商、模型路由、调用鉴权、用量统计、成本核算
-
-membership-service
+membership
   会员等级、会员权益、会员价格、会员订阅、到期续费
 
-content-service
+content
   系统公告、帮助文档、分类、发布、置顶、可见范围
 
-admin-console
-  运营后台
+audit
+  审计日志、操作记录
 
-user-console
-  用户控制台
+identity
+  实名制认证、附件、审核流程
+
+-- 第二阶段 --
+
+resource
+  GPU 设备、设备分组、租赁、释放、状态同步
+
+-- 第三阶段 --
+
+agent
+  Agent 模板、用户 agent、定制订单、版本、发布
+
+skill
+  Skills 技能、版本、安装、授权、上下架
+
+token_gateway
+  Token 上游供应商、模型路由、调用鉴权、用量统计、成本核算
 ```
 
-第一版可以用模块化单体实现，代码里按模块拆分。由于第一版已经包含 Token 网关和 agent / skills 市场，建议把 `billing`、`token-gateway`、`resource` 三个模块的边界先设计清楚，后续最先拆成独立服务。
+第一阶段用模块化单体实现，代码按模块拆分。`billing`、`token_gateway`、`resource` 三个模块的边界先设计清楚，后续最先拆成独立服务。
 
-### 4.1 分层路由架构
-
-第一版架构建议采用分层路由形式，把通用交易能力和具体业务开通能力拆开。
+### 5.1 分层路由架构
 
 ```text
 HTTP API 层
@@ -187,12 +205,12 @@ HTTP API 层
   -> Order / Billing 交易层
   -> Business Provision 业务开通层
   -> Finance Consumer Router 消费计费层
-  -> Resource / App / Agent / Skill / Token / NetDisk 等业务模块
+  -> Resource / App / Agent / Skill / Token 等业务模块
 ```
 
 分层职责：
 
-- `HTTP API 层`：只处理请求参数、响应格式、版本号。
+- `HTTP API 层`：只处理请求参数、响应格式、版本号、限流。
 - `Auth / IAM 鉴权层`：统一处理登录态、API Key、角色、权限。
 - `Product 商品路由层`：根据 `product_type` 和 `product_code` 找到商品、套餐、价格和处理器。
 - `Order / Billing 交易层`：统一创建订单、扣余额、写流水、退款、对账。
@@ -200,43 +218,25 @@ HTTP API 层
 - `Finance Consumer Router 消费计费层`：接收各业务模块产生的消费事件，匹配计费规则并生成扣费流水。
 - `业务模块`：只负责自己的业务规则，不直接操作钱包扣费。
 
-权限设计需要支持动态调整：
+### 5.2 应用与商品的边界
 
-- 用户角色可以随时增删。
-- 角色权限可以随时增删。
-- 用户可以配置临时权限、额外权限或禁用权限。
-- 应用、商品、会员、资产访问都统一走实时权限判定。
-- 权限变更要写入审计日志，并让 Redis 权限缓存失效。
-
-业务类型建议统一枚举：
+**重要约定：`applications` 表只存储应用的业务字段，所有商品交易逻辑统一走 `products` 体系。**
 
 ```text
-app
-gpu
-agent
-skill
-token
-netdisk
-membership
+applications（业务详情表）
+  只保存：icon、description、callback_url、adapter_config 等非交易字段
+  通过 products.business_ref_id 关联
+
+products（统一商品表）
+  保存：product_type、price、plan、role_access、billing_rules
+  product_type = app 时，business_ref_id 指向 applications.id
 ```
 
-新增网盘售卖应用时，只需要：
+不单独维护 `application_plans`、`application_prices`、`application_role_access`，这些全部走 `product_plans`、`product_prices`、`product_role_access`，避免双套配置混乱。
 
-1. 在 `products` 注册 `product_type = netdisk` 的商品。
-2. 在 `product_plans` 配置容量、时长、流量等套餐。
-3. 在 `product_prices` 配置不同角色价格。
-4. 在 `product_role_access` 配置可见、可购买、可使用权限。
-5. 新增 `netdisk-service` 或 `netdisk` 模块。
-6. 注册 `netdisk` 的开通处理器。
-7. 实现 `Provision(order)`、`Renew(order)`、`Suspend(instance)`、`Cancel(instance)`。
+### 5.3 应用扩展式接入
 
-订单、钱包、角色权限、财务流水和后台查询不需要重做。
-
-### 4.2 应用扩展式接入
-
-应用不要和订单、钱包、角色权限强绑定。每个新应用只需要按标准适配器接入。
-
-应用适配器需要声明：
+每个新应用只需要按标准适配器接入：
 
 ```text
 AppDescriptor
@@ -261,17 +261,19 @@ Cancel(instance)
 QueryUsage(instance, period)
 ```
 
-这样后面新增网盘、对象存储、数据库、API 套餐、SaaS 工具时，只需要：
+新增网盘时，只需要：
 
-1. 新增应用模块或外部应用对接配置。
-2. 注册应用适配器。
-3. 配置商品、套餐、价格、角色权限。
-4. 配置财务消费规则。
-5. 前端使用统一商品页面或增加少量业务详情页。
+1. 在 `products` 注册 `product_type = netdisk` 的商品。
+2. 在 `product_plans` 配置容量、时长、流量等套餐。
+3. 在 `product_prices` 配置不同角色价格。
+4. 在 `product_role_access` 配置可见、可购买、可使用权限。
+5. 新增 `netdisk` 模块。
+6. 注册 `netdisk` 的开通处理器。
+7. 实现 `Provision`、`Renew`、`Suspend`、`Cancel`。
 
-### 4.3 财务按产品消费快速对接
+订单、钱包、角色权限、财务流水和后台查询不需要重做。
 
-财务系统不要只支持“购买时扣费”，还要支持“使用中按量扣费”。所有产品消费都转换成统一消费事件。
+### 5.4 财务按产品消费快速对接
 
 统一消费事件：
 
@@ -304,7 +306,7 @@ ProductUsageEvent
   -> 返回计费结果
 ```
 
-这种结构下，Token、GPU、网盘、agent 调用、skills 调用都可以走统一消费对接：
+不同业务消费对接：
 
 ```text
 token     -> 按 input_tokens / output_tokens 扣费
@@ -314,25 +316,7 @@ agent     -> 按调用次数、Token、定制服务扣费
 skill     -> 按授权周期、调用次数、增值功能扣费
 ```
 
-### 4.4 会员制售卖预留
-
-会员制不要单独游离在商品体系外，应该和商品、权限、价格、财务统一打通。
-
-会员制支持四种模式：
-
-```text
-member_only
-  仅会员可购买或使用某应用
-
-member_discount
-  会员购买某应用享受折扣
-
-member_price
-  会员使用独立价格
-
-member_included
-  会员权益内包含某应用、额度或功能
-```
+### 5.5 会员制售卖预留
 
 会员本身也作为一种商品：
 
@@ -340,11 +324,20 @@ member_included
 products.product_type = membership
 ```
 
-这样会员购买、续费、退款、流水、发票都走统一订单和钱包链路。某个应用是否采用会员制，只需要配置应用商品和会员权益规则，不需要重写应用购买流程。
+会员制支持四种模式：
 
-## 5. 核心数据模型
+```text
+member_only       仅会员可购买或使用某应用
+member_discount   会员购买享受折扣
+member_price      会员使用独立价格
+member_included   会员权益内包含某应用、额度或功能
+```
 
-### 5.1 用户与权限
+这样会员购买、续费、退款、流水都走统一订单和钱包链路。某个应用是否采用会员制，只需要配置商品会员规则，不需要重写应用购买流程。
+
+## 6. 核心数据模型
+
+### 6.1 用户与会话
 
 ```text
 users
@@ -353,19 +346,42 @@ users
 - email_verified
 - phone
 - phone_verified
-- real_name_status
+- nickname
+- avatar_url
+- real_name_status       -- unverified / pending / verified / rejected
 - password_hash
-- status
+- status                 -- active / disabled
 - wallet_id
 - created_at
 - updated_at
 
+user_sessions
+- id
+- user_id
+- refresh_token_hash     -- HMAC-SHA256(refresh_token, server_secret)，不存明文
+- user_agent
+- ip
+- expires_at
+- revoked_at             -- 主动退出或封禁用户时写入
+- created_at
+```
+
+说明：
+
+- Refresh Token 必须持久化，否则退出登录和封禁用户时无法吊销。
+- `refresh_token_hash` 使用 `HMAC-SHA256(token, server_secret)`，`server_secret` 通过环境变量注入，不入库。
+- 登录时创建会话记录，退出时写入 `revoked_at`，刷新时校验 `revoked_at` 是否为空。
+- 管理员封禁用户时，批量写入该用户所有活跃会话的 `revoked_at`。
+
+### 6.2 验证码与登录日志
+
+```text
 verification_codes
 - id
-- target_type
+- target_type            -- email / phone
 - target_value
 - code
-- scene
+- scene                  -- register / login / bind / reset_password
 - expires_at
 - used_at
 - created_at
@@ -373,22 +389,27 @@ verification_codes
 user_login_logs
 - id
 - user_id
-- login_type
+- login_type             -- email / phone
 - login_account
 - ip
 - user_agent
-- status
+- status                 -- success / failed
+- fail_reason
 - created_at
+```
 
+### 6.3 实名认证
+
+```text
 identity_verifications
 - id
 - user_id
 - real_name
-- id_card_no_hash
-- id_card_no_masked
-- verification_type
-- provider
-- status
+- id_card_no_hmac        -- HMAC-SHA256(id_card_no, server_secret)，用于查重
+- id_card_no_masked      -- 保留前6后4，中间用 * 替换，用于展示
+- verification_type      -- id_card
+- provider               -- manual / third_party
+- status                 -- pending / verified / rejected
 - reject_reason
 - submitted_at
 - verified_at
@@ -403,7 +424,17 @@ identity_verification_logs
 - operator_id
 - remark
 - created_at
+```
 
+说明：
+
+- 身份证号严禁明文存储。中国身份证号格式已知，直接 SHA-256 可被穷举攻击，**必须使用 HMAC-SHA256 加服务端密钥**，密钥通过环境变量管理，不入库、不入配置文件。
+- `id_card_no_hmac` 用于查重（同一身份证号是否已实名过其他账号）。
+- `id_card_no_masked` 用于管理后台审核展示，保留前 6 位（地区）和后 4 位（出生年 + 序列最后两位），中间全部替换为 `*`。
+
+### 6.4 权限
+
+```text
 roles
 - id
 - code
@@ -414,7 +445,7 @@ roles
 
 permissions
 - id
-- code
+- code                   -- 格式：resource:action，例如 product:create
 - name
 - resource
 - action
@@ -435,7 +466,7 @@ user_permission_overrides
 - id
 - user_id
 - permission_id
-- effect
+- effect                 -- allow / deny
 - reason
 - expires_at
 - created_by
@@ -446,35 +477,43 @@ role_change_logs
 - id
 - user_id
 - role_id
-- action
+- action                 -- grant / revoke
 - operator_id
 - reason
+- created_at
+
+audit_logs
+- id
+- operator_id
+- operator_type          -- user / admin
+- module
+- action
+- target_type
+- target_id
+- before_json
+- after_json
+- ip
+- user_agent
 - created_at
 ```
 
 说明：
 
-- `user_permission_overrides.effect` 支持 `allow` 和 `deny`。
-- 权限判定顺序建议为：用户禁用权限 > 用户额外授权 > 角色权限 > 商品/会员规则。
-- 每次角色和权限变化都必须写审计日志，并清理用户权限缓存。
-- 邮箱和手机号都可以作为登录账号，`users.email` 和 `users.phone` 都需要唯一索引。
-- 用户至少绑定一个登录账号，邮箱注册必须验证邮箱，手机号注册必须验证短信验证码。
-- 同一用户后续可以绑定另一个登录方式，例如先用手机号注册，再绑定邮箱。
-- 登录接口支持密码登录，验证码登录可作为后续扩展。
-- 用户注册后默认 `real_name_status = unverified`，必须完成实名制认证后才能购买商品、租赁 GPU、调用 Token 和开通资产。
-- 实名认证信息需要脱敏和加密存储，身份证号只保存 hash 和 masked 值，不保存明文。
+- 每次角色和权限变化都必须写审计日志，并清理用户权限 Redis 缓存。
+- 权限缓存 key 建议：`perm:user:{user_id}`，TTL 5 分钟，角色变更时主动删除。
+- `user_permission_overrides.effect` 支持 `allow` 和 `deny`，`deny` 优先级高于 `allow`。
 
-### 5.2 统一商品与应用售卖
+### 6.5 统一商品与应用
 
 ```text
 products
 - id
-- product_type
+- product_type           -- app / gpu / agent / skill / token / netdisk / membership
 - product_code
 - name
 - description
-- status
-- business_ref_id
+- status                 -- draft / active / inactive / archived
+- business_ref_id        -- 指向 applications.id / gpu_devices.id 等业务表
 - created_at
 - updated_at
 
@@ -483,9 +522,9 @@ product_plans
 - product_id
 - plan_code
 - name
-- billing_type
-- duration_days
-- quota_json
+- billing_type           -- one_time / subscription / pay_as_you_go
+- duration_days          -- 订阅型有效天数，按量付费为 0
+- quota_json             -- 不同业务套餐参数，例如 {"storage_gb": 100}
 - status
 - created_at
 - updated_at
@@ -493,21 +532,21 @@ product_plans
 product_prices
 - id
 - product_plan_id
-- role_id
-- membership_level_id
-- price_amount
-- currency
-- discount_rate
+- role_id                -- NULL 表示默认价格
+- membership_level_id    -- NULL 表示非会员价
+- price_amount           -- DECIMAL(18,6)
+- currency               -- CNY
+- discount_rate          -- 折扣率，1.0 表示无折扣
 - effective_from
-- effective_to
+- effective_to           -- NULL 表示永久有效
 
 product_role_access
 - id
 - product_id
 - role_id
-- can_view
-- can_buy
-- can_use
+- can_view               -- 是否可见
+- can_buy                -- 是否可购买
+- can_use                -- 是否可使用
 
 product_provision_handlers
 - id
@@ -523,7 +562,7 @@ application_adapters
 - app_code
 - app_name
 - app_type
-- adapter_type
+- adapter_type           -- internal / external
 - service_name
 - callback_url
 - supported_actions_json
@@ -540,8 +579,8 @@ product_billing_rules
 - usage_unit
 - price_amount
 - currency
-- billing_mode
-- free_quota
+- billing_mode           -- per_unit / tiered
+- free_quota             -- 免费额度
 - status
 - created_at
 - updated_at
@@ -558,9 +597,32 @@ product_consumption_records
 - usage_unit
 - amount
 - wallet_transaction_id
-- idempotency_key
+- idempotency_key        -- 唯一索引，防重复扣费
 - created_at
 
+applications
+- id
+- code
+- name
+- type
+- description
+- icon_url
+- callback_url
+- adapter_config_json    -- 应用特有配置，非交易字段
+- status
+- created_at
+- updated_at
+```
+
+说明：
+
+- `applications` 只保存应用业务详情（icon、callback_url、adapter_config），**不单独维护 application_plans、application_prices、application_role_access**，所有价格和权限配置统一走 `product_plans`、`product_prices`、`product_role_access`。
+- `product_prices` 同时有 `role_id` 和 `membership_level_id`：两者同时为 NULL 是默认价；只有 `role_id` 是角色价；只有 `membership_level_id` 是会员价；两者都有是特定角色 + 会员价。优先级：会员专属价 > 角色价 > 默认价。
+- `product_consumption_records.idempotency_key` 必须建唯一索引。
+
+### 6.6 会员
+
+```text
 membership_levels
 - id
 - code
@@ -586,7 +648,7 @@ user_memberships
 - user_id
 - membership_level_id
 - source_order_id
-- status
+- status                 -- active / expired / cancelled
 - started_at
 - expires_at
 - auto_renew
@@ -597,73 +659,143 @@ product_membership_rules
 - id
 - product_id
 - membership_level_id
-- rule_type
+- rule_type              -- member_only / member_discount / member_price / member_included
 - discount_rate
 - included_quota_json
 - status
 - created_at
 - updated_at
+```
 
-applications
+### 6.7 订单与钱包
+
+```text
+wallets
 - id
-- code
-- name
-- type
-- description
-- status
+- user_id
+- balance_amount         -- DECIMAL(18,6)
+- frozen_amount          -- DECIMAL(18,6)
+- currency               -- CNY
+- version                -- 乐观锁版本号
 - created_at
 - updated_at
 
-application_plans
+wallet_transactions
 - id
-- application_id
-- name
-- billing_type
-- duration_days
-- quota
-- status
+- wallet_id
+- user_id
+- type                   -- recharge / consume / refund / freeze / unfreeze
+- direction              -- in / out
+- amount                 -- DECIMAL(18,6)
+- balance_after          -- DECIMAL(18,6)，记录交易后余额快照
+- related_order_id
+- remark
+- created_at
 
-application_prices
+orders
 - id
-- application_plan_id
-- role_id
-- price_amount
+- order_no               -- 唯一，格式例如 ORD20260604XXXXXXXX
+- user_id
+- order_type             -- purchase / recharge / refund
+- status                 -- pending / paid / cancelled / refunded / failed
+- amount                 -- DECIMAL(18,6)
 - currency
-- effective_from
-- effective_to
+- paid_at
+- cancelled_at
+- refund_amount          -- DECIMAL(18,6)
+- refunded_at
+- created_at
+- updated_at
 
-application_role_access
+order_items
 - id
-- application_id
-- role_id
-- can_view
-- can_buy
-- can_use
+- order_id
+- item_type
+- item_id
+- item_name
+- quantity
+- unit_price             -- DECIMAL(18,6)
+- total_price            -- DECIMAL(18,6)
+
+payment_callbacks
+- id
+- order_id
+- provider               -- wechat / alipay
+- provider_trade_no      -- 第三方支付流水号
+- notify_body            -- 原始回调报文（加密存储）
+- status                 -- received / processed / ignored
+- processed_at
+- created_at
 ```
 
 说明：
 
-- `products` 是统一售卖入口，应用、GPU、Agent、Skills、Token、网盘都先抽象成商品。
-- `business_ref_id` 指向具体业务表，例如 `applications.id`、`gpu_devices.id`、`agent_templates.id`。
-- `quota_json` 存储不同业务的套餐参数，例如网盘容量、GPU 时长、Token 额度、skill 授权时长。
-- 原有 `applications` 作为应用业务详情表保留，不直接承担所有商品交易逻辑。
-- `application_adapters` 负责让新应用扩展式接入，业务系统不直接改订单和钱包代码。
-- `product_billing_rules` 负责把产品用量转换成金额。
-- `product_consumption_records` 负责记录每一次产品消费，便于财务对账、用户账单和运营分析。
-- `membership_levels`、`membership_benefits`、`user_memberships` 负责会员等级、权益和用户会员状态。
-- `product_membership_rules` 负责某个商品是否会员专属、会员折扣、会员价或会员内含。
+- 所有充值、消费、退款都必须写入 `wallet_transactions`。
+- 钱包扣费必须使用事务和乐观锁（`SELECT ... WHERE version = ? FOR UPDATE` 后 `UPDATE ... SET version = version + 1`）。
+- `balance_amount` 只是当前余额快照，不是唯一账务依据；真实余额可从 `wallet_transactions` 累计重建。
+- 充值订单依赖第三方支付回调完成，`payment_callbacks` 记录每次回调原始报文，支持幂等重放。
+- 第三方支付 notify URL 必须独立存在，不依赖前端跳转，详见 API 设计。
 
-### 5.2.1 系统公告与帮助文档
+### 6.8 用户资产与权益
+
+```text
+user_assets
+- id
+- user_id
+- asset_type             -- app_access / gpu_instance / agent_instance / skill_license / token_quota / netdisk_instance / membership
+- product_id
+- product_plan_id
+- source_order_id
+- business_instance_id
+- status                 -- active / expired / frozen / cancelled
+- started_at
+- expires_at
+- created_at
+- updated_at
+
+user_entitlements
+- id
+- user_id
+- asset_id
+- entitlement_type
+- product_id
+- quota_total            -- DECIMAL(18,6)
+- quota_used             -- DECIMAL(18,6)
+- quota_unit             -- tokens / gb / requests / ...
+- status
+- started_at
+- expires_at
+- created_at
+- updated_at
+
+asset_events
+- id
+- asset_id
+- user_id
+- event_type             -- created / activated / suspended / expired / cancelled / renewed
+- before_status
+- after_status
+- operator_id
+- remark
+- created_at
+```
+
+说明：
+
+- 会员制应用、按量付费应用和普通购买应用都应该生成 `user_assets`。
+- 如果产品带额度（Token、网盘容量、Agent 调用次数），则同时生成 `user_entitlements`。
+
+### 6.9 内容管理
 
 ```text
 announcements
 - id
 - title
 - content
-- type
+- type                   -- notice / maintenance / promotion
 - priority
-- status
-- visible_scope
+- status                 -- draft / published / offline
+- visible_scope          -- all / roles / members / admins
 - target_roles_json
 - start_at
 - end_at
@@ -687,7 +819,7 @@ help_articles
 - content
 - summary
 - tags_json
-- status
+- status                 -- draft / published / offline
 - sort_order
 - view_count
 - created_by
@@ -696,138 +828,7 @@ help_articles
 - updated_at
 ```
 
-公告可见范围建议：
-
-```text
-all
-roles
-members
-admins
-```
-
-帮助文档要支持分类、草稿、发布、下线、排序和搜索。
-
-### 5.2.2 用户资产与权益管理
-
-用户资产中心负责回答三个问题：
-
-- 用户买过什么。
-- 用户现在能用什么。
-- 用户还剩多少额度、何时到期、是否欠费或冻结。
-
-```text
-user_assets
-- id
-- user_id
-- asset_type
-- product_id
-- product_plan_id
-- source_order_id
-- business_instance_id
-- status
-- started_at
-- expires_at
-- created_at
-- updated_at
-
-user_entitlements
-- id
-- user_id
-- asset_id
-- entitlement_type
-- product_id
-- quota_total
-- quota_used
-- quota_unit
-- status
-- started_at
-- expires_at
-- created_at
-- updated_at
-
-asset_events
-- id
-- asset_id
-- user_id
-- event_type
-- before_status
-- after_status
-- operator_id
-- remark
-- created_at
-```
-
-资产类型建议：
-
-```text
-app_access
-gpu_instance
-agent_instance
-skill_license
-token_quota
-netdisk_instance
-membership
-```
-
-会员制应用、按量付费应用和普通购买应用都应该生成 `user_assets`。如果产品带额度，例如 Token、网盘容量、agent 调用次数，则同时生成 `user_entitlements`。
-
-### 5.3 订单与钱包
-
-```text
-wallets
-- id
-- user_id
-- balance_amount
-- frozen_amount
-- currency
-- version
-- created_at
-- updated_at
-
-wallet_transactions
-- id
-- wallet_id
-- user_id
-- type
-- direction
-- amount
-- balance_after
-- related_order_id
-- remark
-- created_at
-
-orders
-- id
-- order_no
-- user_id
-- order_type
-- status
-- amount
-- currency
-- paid_at
-- cancelled_at
-- created_at
-- updated_at
-
-order_items
-- id
-- order_id
-- item_type
-- item_id
-- item_name
-- quantity
-- unit_price
-- total_price
-```
-
-账务要求：
-
-- 所有充值、消费、退款都必须写入 `wallet_transactions`。
-- 钱包扣费必须使用事务和乐观锁。
-- `balance_amount` 只是当前余额快照，不是唯一账务依据。
-- 每笔订单都要能追溯到钱包流水。
-
-### 5.4 GPU 设备租赁
+### 6.10 GPU 设备租赁（第二阶段）
 
 ```text
 gpu_devices
@@ -842,9 +843,9 @@ gpu_devices
 - ram_gb
 - disk_gb
 - network_spec
-- status
-- price_per_hour
-- price_per_day
+- status                 -- available / reserved / deploying / running / expired / releasing / maintenance / fault / offline
+- price_per_hour         -- DECIMAL(18,6)
+- price_per_day          -- DECIMAL(18,6)
 - created_at
 - updated_at
 
@@ -854,12 +855,12 @@ gpu_rentals
 - user_id
 - device_id
 - order_id
-- status
+- status                 -- pending / active / releasing / released / cancelled
 - start_at
 - end_at
 - actual_release_at
-- billing_mode
-- total_amount
+- billing_mode           -- hourly / daily / monthly
+- total_amount           -- DECIMAL(18,6)
 - created_at
 - updated_at
 
@@ -874,21 +875,7 @@ gpu_device_events
 - created_at
 ```
 
-设备状态建议：
-
-```text
-available
-reserved
-deploying
-running
-expired
-releasing
-maintenance
-fault
-offline
-```
-
-### 5.5 Agent 定制市场
+### 6.11 Agent 定制市场（第三阶段）
 
 ```text
 agent_templates
@@ -904,16 +891,6 @@ agent_templates
 - created_at
 - updated_at
 
-agent_template_prices
-- id
-- agent_template_id
-- role_id
-- price_amount
-- currency
-- billing_type
-- effective_from
-- effective_to
-
 user_agents
 - id
 - user_id
@@ -922,7 +899,7 @@ user_agents
 - description
 - system_prompt
 - model_id
-- status
+- status                 -- draft / active / suspended
 - version
 - created_at
 - updated_at
@@ -933,8 +910,8 @@ agent_customization_orders
 - user_id
 - agent_template_id
 - requirement
-- status
-- quoted_amount
+- status                 -- pending / quoted / paid / in_progress / delivered / accepted / cancelled
+- quoted_amount          -- DECIMAL(18,6)
 - order_id
 - assigned_operator_id
 - delivered_at
@@ -949,11 +926,11 @@ agent_usage_logs
 - input_tokens
 - output_tokens
 - total_tokens
-- cost_amount
+- cost_amount            -- DECIMAL(18,6)
 - created_at
 ```
 
-### 5.6 Skills 技能市场
+### 6.12 Skills 技能市场（第三阶段）
 
 ```text
 skills
@@ -977,16 +954,6 @@ skill_versions
 - status
 - created_at
 
-skill_prices
-- id
-- skill_id
-- role_id
-- price_amount
-- currency
-- billing_type
-- effective_from
-- effective_to
-
 user_skill_installs
 - id
 - user_id
@@ -1005,7 +972,7 @@ agent_skill_bindings
 - created_at
 ```
 
-### 5.7 Token 上游聚合网关
+### 6.13 Token 上游聚合网关（第三阶段）
 
 ```text
 token_providers
@@ -1013,8 +980,8 @@ token_providers
 - code
 - name
 - base_url
-- auth_type
-- encrypted_api_key
+- auth_type              -- api_key / oauth
+- api_key_encrypted      -- AES-256-GCM 加密，密钥通过环境变量管理
 - status
 - priority
 - created_at
@@ -1026,27 +993,27 @@ token_models
 - model_code
 - display_name
 - context_window
-- input_price_per_1k
-- output_price_per_1k
-- sale_input_price_per_1k
-- sale_output_price_per_1k
+- input_price_per_1k     -- DECIMAL(18,6)，上游成本价
+- output_price_per_1k    -- DECIMAL(18,6)，上游成本价
+- sale_input_price_per_1k  -- DECIMAL(18,6)，用户售价
+- sale_output_price_per_1k -- DECIMAL(18,6)，用户售价
 - status
 - created_at
 - updated_at
 
 token_model_routes
 - id
-- logical_model_code
+- logical_model_code     -- 对外暴露的逻辑模型名，例如 gpt-4o
 - provider_model_id
-- weight
-- priority
+- weight                 -- 负载均衡权重
+- priority               -- 同等 weight 时按 priority 排序
 - status
 - created_at
 - updated_at
 
 token_usage_logs
 - id
-- request_id
+- request_id             -- 全局唯一请求 ID
 - user_id
 - provider_id
 - model_id
@@ -1054,10 +1021,11 @@ token_usage_logs
 - input_tokens
 - output_tokens
 - total_tokens
-- provider_cost_amount
-- sale_amount
+- provider_cost_amount   -- DECIMAL(18,6)，实际上游成本
+- sale_amount            -- DECIMAL(18,6)，向用户收取的金额
 - latency_ms
-- status
+- is_stream              -- 是否流式请求
+- status                 -- success / failed / timeout
 - error_code
 - created_at
 
@@ -1072,278 +1040,167 @@ token_quota_accounts
 - updated_at
 ```
 
-### 5.8 网盘售卖应用示例
+说明：
 
-网盘作为新增售卖应用时，不需要重做交易链路，只需要挂到统一商品和开通路由上。
+- `api_key_encrypted` 使用 **AES-256-GCM** 加密存储，加密密钥通过环境变量 `TOKEN_PROVIDER_KEY` 注入，不入库、不入配置文件、不入代码仓库。
+- 密钥轮换时需要重新加密所有 `api_key_encrypted` 字段，建议记录密钥版本号（`key_version`）字段便于轮换迁移。
+- Token 网关调用上游时需实现断路器（失败率超阈值时切换路由），`token_model_routes` 的 `priority` 用于 fallback 顺序。
+- 流式请求（`is_stream = true`）需特别确认中间件不缓冲 response body，否则 SSE 流式响应会失效。
 
-```text
-netdisk_plans
-- id
-- code
-- name
-- storage_gb
-- traffic_gb
-- max_files
-- duration_days
-- status
-- created_at
-- updated_at
+## 7. 核心业务流程
 
-netdisk_instances
-- id
-- user_id
-- product_id
-- product_plan_id
-- order_id
-- storage_gb
-- used_storage_gb
-- traffic_gb
-- used_traffic_gb
-- status
-- started_at
-- expires_at
-- created_at
-- updated_at
-
-netdisk_events
-- id
-- instance_id
-- event_type
-- operator_id
-- remark
-- created_at
-```
-
-接入关系：
-
-```text
-products.product_type = netdisk
-products.business_ref_id = netdisk_plans.id
-product_provision_handlers.product_type = netdisk
-```
-
-## 6. 核心业务流程
-
-### 6.1 应用购买流程
-
-```text
-用户选择应用
-  -> 检查角色是否可见
-  -> 检查角色是否可购买
-  -> 读取角色对应价格
-  -> 创建订单
-  -> 检查余额
-  -> 扣减钱包
-  -> 写入钱包流水
-  -> 支付订单
-  -> 开通应用权限
-```
-
-### 6.1.1 统一商品购买与开通流程
+### 7.1 统一商品购买与开通流程
 
 ```text
 用户选择商品
   -> Product Router 根据 product_type 查询商品和套餐
-  -> IAM 检查角色可见、可购买、可使用权限
-  -> Pricing 读取角色对应价格
-  -> Order 创建统一订单
-  -> Billing 检查余额并扣费
-  -> 写入钱包流水
+  -> IAM 检查角色可见、可购买权限
+  -> Pricing 读取角色 / 会员对应价格
+  -> Order 创建统一订单（状态：pending）
+  -> Billing 检查余额并扣费（乐观锁事务）
+  -> 写入 wallet_transactions
+  -> 更新 Order 状态为 paid
   -> Provision Router 根据 product_type 调用业务处理器
   -> 业务模块开通实例或授权
+  -> 生成 user_assets / user_entitlements
   -> 返回购买结果
 ```
 
-不同业务处理器示例：
+### 7.2 充值与支付回调流程
 
 ```text
-app       -> 开通应用访问权限
-gpu       -> 锁定设备并创建租赁实例
-agent     -> 创建用户 agent 或定制订单
-skill     -> 创建 skill 安装授权
-token     -> 增加 Token 额度或开启按量调用
-netdisk   -> 创建网盘空间、容量、有效期
+用户发起充值
+  -> 创建充值订单（status = pending）
+  -> 生成第三方支付跳转链接或二维码
+  -> 用户完成支付
+  -> 第三方支付平台异步回调 POST /api/payments/notify/:provider
+  -> 校验签名
+  -> 校验幂等（provider_trade_no 是否已处理）
+  -> 写入 payment_callbacks
+  -> 开启数据库事务
+    -> 更新 Order 状态为 paid
+    -> 钱包余额加款
+    -> 写入 wallet_transactions（type = recharge, direction = in）
+  -> 提交事务
+  -> 返回第三方支付平台成功响应
 ```
 
-### 6.2 GPU 租赁流程
+说明：
 
-```text
-用户选择设备规格
-  -> 查询可用设备
-  -> 锁定设备
-  -> 创建租赁订单
-  -> 检查余额
-  -> 扣减或冻结金额
-  -> 设备状态改为 reserved
-  -> 开始部署
-  -> 部署成功后改为 running
-  -> 到期释放
-  -> 写入设备事件
-```
+- 前端跳转回调（return_url）仅用于展示，不作为充值完成的依据。
+- 支付回调必须幂等，同一 `provider_trade_no` 收到多次回调只处理一次。
+- 回调接口无需登录态，但必须校验签名。
 
-### 6.3 财务扣费流程
+### 7.3 财务扣费流程
 
 ```text
 开启数据库事务
-  -> 查询钱包并锁定版本
-  -> 判断余额是否足够
-  -> 更新钱包余额和 version
+  -> SELECT wallet WHERE user_id = ? FOR UPDATE
+  -> 校验余额是否 >= 扣款金额
+  -> UPDATE wallet SET balance_amount = balance_amount - ?, version = version + 1 WHERE id = ? AND version = ?
+  -> 如果 UPDATE 影响行数 = 0，说明并发冲突，重试或返回错误
   -> 写入 wallet_transactions
   -> 更新订单状态
 提交事务
 ```
 
-### 6.3.1 产品消费计费流程
+### 7.4 产品消费计费流程
 
 ```text
 业务模块产生消费事件
-  -> 上报 ProductUsageEvent
-  -> 校验 idempotency_key 防重复扣费
-  -> 根据 product_id、plan_id、usage_type 匹配计费规则
+  -> 上报 ProductUsageEvent（含 idempotency_key）
+  -> Finance Consumer Router 校验 idempotency_key（查 product_consumption_records）
+  -> 如果已存在，直接返回原结果（幂等）
+  -> 根据 product_id、plan_id、usage_type 匹配 product_billing_rules
   -> 计算消费金额
   -> 开启数据库事务
-  -> 扣减钱包余额或扣减产品额度
-  -> 写入 wallet_transactions
-  -> 写入 product_consumption_records
+    -> 扣减钱包余额或扣减 user_entitlements.quota_used
+    -> 写入 wallet_transactions
+    -> 写入 product_consumption_records
   -> 提交事务
   -> 返回计费结果
 ```
 
-接入新产品时，财务侧只需要新增：
-
-- 产品计费规则。
-- 消费事件类型。
-- 账单展示字段。
-- 对账维度。
-
-不需要为每个应用重新开发一套扣费逻辑。
-
-### 6.4 Agent 定制流程
+### 7.5 会员购买与应用售卖流程
 
 ```text
-用户选择 agent 模板
-  -> 检查角色可见和购买权限
-  -> 提交定制需求
-  -> 创建定制订单
-  -> 平台报价或读取标准价格
-  -> 用户支付
-  -> 运营人员交付 agent
-  -> 用户验收
-  -> agent 状态改为 available
+用户购买会员商品
+  -> Product Router 识别 product_type = membership
+  -> 创建订单，Billing 扣费，写入钱包流水
+  -> Provision Router 开通 user_memberships
+  -> 根据 membership_benefits 生效权益
+
+用户选择会员制应用
+  -> IAM 检查角色权限
+  -> Membership 检查用户会员状态
+  -> Product Pricing 匹配会员专属价、折扣或内含规则
+  -> 如果 member_included 且额度充足，扣减权益额度，直接开通
+  -> 如果需要支付，走统一订单和钱包扣费
+  -> Provision Router 开通应用权限
 ```
 
-### 6.5 Skills 购买安装流程
-
-```text
-用户选择 skill
-  -> 检查角色可见和购买权限
-  -> 读取角色对应价格
-  -> 创建订单
-  -> 扣减钱包
-  -> 写入钱包流水
-  -> 创建 user_skill_installs
-  -> 用户绑定到指定 agent
-```
-
-### 6.6 Token 网关调用流程
+### 7.6 Token 网关调用流程（第三阶段）
 
 ```text
 用户或 agent 发起模型调用
   -> 校验 API Key / 登录态
   -> 校验角色和模型调用权限
   -> 校验余额或 Token 额度
-  -> 选择上游供应商和模型路由
-  -> 请求上游模型
-  -> 记录 Token 用量、延迟、状态
+  -> 根据 logical_model_code 和路由权重选择上游供应商
+  -> 如果上游不可用（断路器熔断），按 priority 切换到备用路由
+  -> 请求上游模型（流式或非流式）
+  -> 记录 token_usage_logs（request_id、tokens、延迟、状态）
   -> 计算成本和销售金额
-  -> 扣减钱包或 Token 额度
-  -> 返回模型结果
+  -> 上报 ProductUsageEvent → Finance Consumer Router 扣费
+  -> 返回模型结果（流式接口直接透传，不缓冲 response body）
 ```
 
-### 6.7 会员购买与应用售卖流程
+## 8. API 设计摘要
+
+### 8.1 中间件
+
+所有请求经过：
 
 ```text
-用户购买会员商品
-  -> Product Router 识别 product_type = membership
-  -> 创建订单
-  -> Billing 扣费并写入钱包流水
-  -> Provision Router 开通 user_memberships
-  -> 根据 membership_benefits 生效权益
+RequestID -> Logger -> Recovery -> RateLimit -> Auth（非公开接口）-> Permission（需权限接口）
 ```
 
-用户购买会员制应用时：
+限流策略建议：
 
 ```text
-用户选择应用商品
-  -> IAM 检查角色权限
-  -> Membership 检查用户会员状态
-  -> Product Pricing 匹配会员专属价、会员折扣或会员内含规则
-  -> 如果 member_included 且额度充足，直接开通或扣权益额度
-  -> 如果需要支付，走统一订单和钱包扣费
-  -> Provision Router 开通应用权限
+全局：1000 req/s per IP
+认证接口（注册、登录、验证码）：10 req/min per IP
+支付回调接口：不限流（但需签名校验）
+Token 网关：按用户级别限流，在 token_quota_accounts 中维护月度限额
 ```
 
-### 6.8 公告和帮助文档发布流程
+### 8.2 用户端接口
 
 ```text
-运营创建公告或帮助文档
-  -> 保存草稿
-  -> 设置可见范围、角色、会员范围和发布时间
-  -> 发布
-  -> 用户端按权限拉取
-  -> 记录查看量和操作日志
-```
-
-### 6.9 应用访问、会员和资产校验流程
-
-```text
-用户访问某个应用
-  -> Auth 校验登录态
-  -> IAM 实时计算用户角色和权限
-  -> Product 查询应用对应商品规则
-  -> Membership 判断是否需要会员、会员等级是否满足
-  -> Asset 查询 user_assets 是否存在有效资产
-  -> Entitlement 查询额度是否足够
-  -> 如果是按量付费，Finance Consumer Router 记录消费事件并扣费
-  -> 如果是会员内含，扣减会员权益额度或直接放行
-  -> 返回访问结果
-```
-
-动态调整用户角色或权限后：
-
-```text
-管理员修改用户角色或权限
-  -> 写入 user_roles 或 user_permission_overrides
-  -> 写入 role_change_logs 和 audit_logs
-  -> 清理用户权限缓存
-  -> 下次访问实时重新计算权限
-```
-
-## 7. API 草案
-
-### 用户端
-
-```text
+-- 认证 --
+POST /api/auth/verification-codes/email
+POST /api/auth/verification-codes/phone
 POST /api/auth/register/email
 POST /api/auth/register/phone
 POST /api/auth/login/email
 POST /api/auth/login/phone
-POST /api/auth/verification-codes/email
-POST /api/auth/verification-codes/phone
+POST /api/auth/logout
+POST /api/auth/refresh
+GET  /api/me
+PATCH /api/me/profile
+PATCH /api/me/password
+
+-- 实名 --
 POST /api/identity/verifications
 GET  /api/identity/verifications/latest
-GET  /api/me
 
+-- 钱包与充值 --
 GET  /api/wallet
 GET  /api/wallet/transactions
 POST /api/recharge/orders
 GET  /api/product-consumption-records
 
-GET  /api/apps
-GET  /api/apps/:id
-POST /api/apps/:id/purchase
-GET  /api/my/apps
-
+-- 商品与资产 --
 GET  /api/products
 GET  /api/products/:id
 GET  /api/products/:id/plans
@@ -1352,21 +1209,29 @@ GET  /api/my/products
 GET  /api/my/assets
 GET  /api/my/assets/:id
 GET  /api/my/entitlements
+
+-- 会员 --
 GET  /api/memberships
 GET  /api/my/membership
 POST /api/memberships/:id/purchase
 
+-- 内容 --
 GET  /api/announcements
 GET  /api/help/categories
 GET  /api/help/articles
 GET  /api/help/articles/:id
 
+-- 支付回调（无需登录，签名校验） --
+POST /api/payments/notify/:provider
+
+-- GPU（第二阶段） --
 GET  /api/gpu/devices
 GET  /api/gpu/devices/:id
 POST /api/gpu/rentals
 GET  /api/gpu/rentals
 GET  /api/gpu/rentals/:id
 
+-- Agent（第三阶段） --
 GET  /api/agents/templates
 GET  /api/agents/templates/:id
 POST /api/agents/customization-orders
@@ -1374,20 +1239,26 @@ GET  /api/my/agents
 POST /api/my/agents
 PATCH /api/my/agents/:id
 
+-- Skills（第三阶段） --
 GET  /api/skills
 GET  /api/skills/:id
 POST /api/skills/:id/purchase
 POST /api/my/agents/:id/skills
 
+-- Token 网关（第三阶段） --
 GET  /api/token/models
 POST /api/token/chat/completions
 GET  /api/token/usage
 ```
 
-### 管理后台
+### 8.3 管理后台接口
 
 ```text
+-- 用户与权限 --
 GET    /api/admin/users
+POST   /api/admin/users
+GET    /api/admin/users/:id
+PATCH  /api/admin/users/:id
 PATCH  /api/admin/users/:id/status
 GET    /api/admin/users/:id/roles
 PATCH  /api/admin/users/:id/roles
@@ -1395,25 +1266,26 @@ GET    /api/admin/users/:id/permission-overrides
 PATCH  /api/admin/users/:id/permission-overrides
 GET    /api/admin/users/:id/assets
 GET    /api/admin/users/:id/entitlements
+GET    /api/admin/users/:id/login-logs
 GET    /api/admin/identity-verifications
 GET    /api/admin/identity-verifications/:id
 PATCH  /api/admin/identity-verifications/:id/review
-
 GET    /api/admin/roles
 POST   /api/admin/roles
 PATCH  /api/admin/roles/:id
+DELETE /api/admin/roles/:id
 PATCH  /api/admin/roles/:id/permissions
+GET    /api/admin/permissions
+POST   /api/admin/permissions
+GET    /api/admin/audit-logs
 
-GET    /api/admin/apps
-POST   /api/admin/apps
-PATCH  /api/admin/apps/:id
-PATCH  /api/admin/apps/:id/access
-PATCH  /api/admin/apps/:id/prices
-
+-- 商品与计费 --
 GET    /api/admin/products
 POST   /api/admin/products
+GET    /api/admin/products/:id
 PATCH  /api/admin/products/:id
 POST   /api/admin/products/:id/plans
+PATCH  /api/admin/products/:id/plans/:plan_id
 PATCH  /api/admin/products/:id/access
 PATCH  /api/admin/products/:id/prices
 GET    /api/admin/product-handlers
@@ -1424,6 +1296,8 @@ GET    /api/admin/product-billing-rules
 POST   /api/admin/product-billing-rules
 PATCH  /api/admin/product-billing-rules/:id
 GET    /api/admin/product-consumption-records
+
+-- 会员 --
 GET    /api/admin/membership-levels
 POST   /api/admin/membership-levels
 PATCH  /api/admin/membership-levels/:id
@@ -1438,33 +1312,17 @@ GET    /api/admin/user-assets
 GET    /api/admin/user-entitlements
 GET    /api/admin/asset-events
 
+-- 订单与财务 --
 GET    /api/admin/orders
 GET    /api/admin/wallet-transactions
+GET    /api/admin/payment-callbacks
 
-GET    /api/admin/gpu/devices
-POST   /api/admin/gpu/devices
-PATCH  /api/admin/gpu/devices/:id
-GET    /api/admin/gpu/rentals
+-- 应用 --
+GET    /api/admin/apps
+POST   /api/admin/apps
+PATCH  /api/admin/apps/:id
 
-GET    /api/admin/agent-templates
-POST   /api/admin/agent-templates
-PATCH  /api/admin/agent-templates/:id
-GET    /api/admin/agent-customization-orders
-PATCH  /api/admin/agent-customization-orders/:id
-
-GET    /api/admin/skills
-POST   /api/admin/skills
-PATCH  /api/admin/skills/:id
-POST   /api/admin/skills/:id/versions
-
-GET    /api/admin/token/providers
-POST   /api/admin/token/providers
-PATCH  /api/admin/token/providers/:id
-GET    /api/admin/token/models
-POST   /api/admin/token/models
-PATCH  /api/admin/token/models/:id
-GET    /api/admin/token/usage
-
+-- 内容 --
 GET    /api/admin/announcements
 POST   /api/admin/announcements
 PATCH  /api/admin/announcements/:id
@@ -1475,248 +1333,139 @@ GET    /api/admin/help/articles
 POST   /api/admin/help/articles
 PATCH  /api/admin/help/articles/:id
 
-GET    /api/admin/audit-logs
+-- GPU（第二阶段） --
+GET    /api/admin/gpu/devices
+POST   /api/admin/gpu/devices
+PATCH  /api/admin/gpu/devices/:id
+GET    /api/admin/gpu/rentals
+
+-- Agent（第三阶段） --
+GET    /api/admin/agent-templates
+POST   /api/admin/agent-templates
+PATCH  /api/admin/agent-templates/:id
+GET    /api/admin/agent-customization-orders
+PATCH  /api/admin/agent-customization-orders/:id
+
+-- Skills（第三阶段） --
+GET    /api/admin/skills
+POST   /api/admin/skills
+PATCH  /api/admin/skills/:id
+POST   /api/admin/skills/:id/versions
+
+-- Token 网关（第三阶段） --
+GET    /api/admin/token/providers
+POST   /api/admin/token/providers
+PATCH  /api/admin/token/providers/:id
+GET    /api/admin/token/models
+POST   /api/admin/token/models
+PATCH  /api/admin/token/models/:id
+GET    /api/admin/token/routes
+POST   /api/admin/token/routes
+PATCH  /api/admin/token/routes/:id
+GET    /api/admin/token/usage
 ```
-
-## 8. 第一版页面
-
-用户控制台：
-
-- 登录页。
-- 总览页。
-- 实名认证页。
-- 统一商品市场。
-- 商品详情。
-- 我的商品和服务。
-- 我的资产。
-- 我的权益额度。
-- 会员中心。
-- 系统公告。
-- 帮助中心。
-- 应用市场。
-- 应用详情。
-- 我的应用。
-- GPU 租赁。
-- 我的 GPU 实例。
-- Agent 市场。
-- Agent 定制。
-- 我的 Agent。
-- Skills 市场。
-- 我的 Skills。
-- Token 模型服务。
-- Token 用量统计。
-- 账户余额。
-- 账单流水。
-
-管理后台：
-
-- 仪表盘。
-- 用户管理。
-- 实名认证审核。
-- 角色管理。
-- 权限管理。
-- 用户动态授权。
-- 用户资产管理。
-- 用户权益额度管理。
-- 统一商品管理。
-- 商品套餐管理。
-- 商品价格配置。
-- 商品角色权限配置。
-- 商品开通处理器管理。
-- 会员等级管理。
-- 会员权益管理。
-- 商品会员规则配置。
-- 应用接入适配器管理。
-- 产品计费规则管理。
-- 产品消费记录。
-- 系统公告管理。
-- 帮助文档分类管理。
-- 帮助文档内容管理。
-- 应用管理。
-- 应用价格配置。
-- 订单管理。
-- 财务流水。
-- GPU 设备管理。
-- GPU 租赁管理。
-- Agent 模板管理。
-- Agent 定制订单。
-- Skills 技能管理。
-- Skills 版本管理。
-- Token 供应商管理。
-- Token 模型管理。
-- Token 路由管理。
-- Token 用量与成本分析。
-- 审计日志。
 
 ## 9. 开发计划
 
-### 第 1 周：基础工程
+### 第一阶段：平台底座 + 应用售卖（Week 1–4）
+
+#### Week 1：基础工程 + 认证
 
 - 建立前后端工程。
-- 建立数据库 migration。
-- 建立邮箱注册、手机号注册、邮箱登录、手机号登录。
-- 建立邮箱验证码、短信验证码。
-- 建立实名制认证提交和审核流程。
-- 建立用户、角色、权限模型。
-- 建立用户动态授权和权限缓存失效机制。
-- 建立后台基础布局。
+- 建立数据库 migration（核心表：users、user_sessions、verification_codes、roles、permissions、user_roles、role_permissions、wallets）。
+- 邮箱注册、手机号注册、邮箱登录、手机号登录。
+- 邮箱验证码、短信验证码。
+- JWT Access Token + Refresh Token（user_sessions 持久化）。
+- 退出登录（吊销 refresh token）、刷新令牌。
+- 实名制认证提交和审核流程。
+- 用户动态授权和权限缓存失效机制。
+- 后台基础布局（登录页、菜单骨架）。
 
-### 第 2 周：权限、商品路由与应用
+#### Week 2：商品、权限与应用
 
-- 完成 RBAC。
-- 完成统一商品模型。
-- 完成商品套餐、价格、角色权限配置。
-- 完成商品购买路由。
-- 完成业务开通处理器接口。
+- 完成 RBAC（角色、权限、配置）。
+- 完成统一商品模型（products、product_plans、product_prices、product_role_access）。
+- 完成商品购买路由和业务开通处理器接口。
 - 完成会员等级、会员权益和商品会员规则模型。
 - 完成应用适配器注册接口。
-- 完成应用 CRUD。
-- 完成应用角色可见性。
-- 完成应用价格配置。
-- 完成用户端应用市场。
+- 完成应用 CRUD（applications 表，仅业务详情字段）。
+- 用户端应用市场骨架。
 
-### 第 3 周：订单与钱包
+#### Week 3：订单、钱包与资产
 
-- 完成钱包。
-- 完成充值订单。
-- 完成消费订单。
-- 完成钱包流水。
+- 完成钱包（乐观锁扣费、充值、流水）。
+- 完成充值订单和支付回调接口（`POST /api/payments/notify/:provider`）。
+- 完成消费订单、钱包流水。
 - 完成统一商品购买。
-- 完成产品消费事件接入。
-- 完成产品计费规则。
-- 完成产品消费记录。
+- 完成产品消费事件接入和计费规则。
 - 完成会员商品购买和会员权益校验。
 - 完成用户资产和权益生成。
-- 完成用户资产查询。
 - 完成应用购买。
 - 完成基础对账查询。
 
-### 第 4 周：内容管理
+#### Week 4：内容、会员与完善
 
-- 完成系统公告管理。
-- 完成帮助文档分类管理。
-- 完成帮助文档内容管理。
-- 完成用户端公告展示。
-- 完成用户端帮助中心。
+- 完成系统公告和帮助文档。
+- 完成用户端会员中心页面。
+- 完善管理后台（订单管理、财务流水、用户资产管理）。
+- 完成第一个完整应用售卖闭环测试。
 
-### 第 5 周：GPU 租赁
+### 第二阶段：GPU 租赁（Week 5–7）
 
-- 完成 GPU 设备管理。
-- 完成设备状态流转。
-- 完成租赁订单。
-- 完成到期释放任务。
-- 完成用户端租赁页面。
+- GPU 设备管理、状态机。
+- 租赁订单（按量计费接入统一财务消费路由）。
+- 到期释放定时任务。
+- 用户端租赁页面和我的实例。
+- 管理后台设备和租赁管理。
 
-### 第 6 周：Agent 定制市场
+### 第三阶段：Agent / Skills / Token 网关（Week 8–12）
 
-- 完成 agent 模板管理。
-- 完成 agent 角色价格配置。
-- 完成用户 agent 创建和编辑。
-- 完成 agent 定制订单。
-- 完成 agent 调用记录。
+- Agent 模板管理、用户 Agent 创建和定制订单。
+- Skills 管理、版本、购买、安装、Agent 绑定。
+- Token 供应商管理、模型路由、断路器、流式调用、用量统计。
 
-### 第 7 周：Skills 技能市场
+### 测试与上线（Week 13–14）
 
-- 完成 skills 管理。
-- 完成 skill 版本管理。
-- 完成 skill 角色价格配置。
-- 完成用户购买和安装 skill。
-- 完成 agent 绑定 skill。
-
-### 第 8 周：Token 上游聚合网关
-
-- 完成 Token 上游供应商管理。
-- 完成模型管理。
-- 完成模型路由。
-- 完成调用鉴权。
-- 完成 Token 用量统计。
-- 完成成本和售价核算。
-- 完成余额或额度扣费。
-
-### 第 9 周：运营后台完善
-
-- 完成订单后台。
-- 完成财务后台。
-- 完成设备后台。
-- 完成 agent 后台。
-- 完成 skills 后台。
-- 完成 Token 网关后台。
-- 完成审计日志。
-- 完成基础数据报表。
-
-### 第 10 到 11 周：测试与上线
-
-- 接口测试。
-- 权限测试。
-- 账务测试。
-- 并发扣费测试。
+- 接口测试、权限测试。
+- 账务测试、并发扣费测试（重点：乐观锁冲突、幂等重试）。
 - 会员购买、续费、权益校验测试。
-- 系统公告和帮助文档发布测试。
+- 支付回调幂等测试。
 - 设备状态流转测试。
-- Agent 定制订单测试。
-- Skills 安装和绑定测试。
 - Token 网关路由、限流、扣费测试。
 - Docker 部署。
 - 灰度上线。
 
 ## 10. AI 开发方式
 
-建议把 AI 当成研发团队里的初级到中级开发助手，而不是架构负责人。
-
 适合交给 AI：
 
-- 生成 CRUD。
-- 生成数据库 migration。
-- 生成接口 controller/service。
-- 生成管理后台页面。
-- 生成表单和表格。
+- 生成 CRUD（migration、model、repository、service、handler、route）。
+- 生成管理后台表格和表单页面。
 - 生成权限校验中间件。
-- 生成 agent、skills、Token 网关的 CRUD 和后台页面。
-- 生成统一商品中心、商品路由和开通处理器接口。
-- 生成会员等级、会员权益、公告、帮助文档管理页面。
-- 生成用户资产、用户权益额度和动态授权管理页面。
-- 生成 OpenAI 兼容接口适配层的基础代码。
-- 生成单元测试。
-- 生成接口测试。
+- 生成 OpenAI 兼容接口适配层。
+- 生成单元测试、接口测试。
 - 生成部署脚本。
-- 生成文档。
 
 必须人工把关：
 
-- 钱包扣费事务。
+- 钱包扣费事务和乐观锁。
 - 订单状态机。
 - 商品路由抽象。
 - 业务开通处理器幂等性。
 - 会员权益和商品价格优先级。
 - 动态权限生效顺序和缓存失效。
 - 用户资产、权益额度和财务流水一致性。
-- 公告可见范围和帮助文档发布权限。
+- 支付回调签名校验和幂等处理。
 - GPU 设备状态机。
 - Agent 交付和版本管理。
 - Skills 包安全审核。
-- Token 上游密钥加密、路由和限流。
+- Token 上游密钥加密、路由和断路器。
 - Token 成本核算和扣费一致性。
-- 权限模型。
-- 支付回调。
-- 对账逻辑。
-- 数据库索引。
+- 数据库索引设计。
 - 高并发容量设计。
-- 安全策略。
+- 安全策略（HMAC、AES-GCM、限流）。
 
-推荐 AI 工作流：
-
-```text
-产品负责人写业务规则
-  -> AI 生成 PRD 和接口草案
-  -> 技术负责人审设计
-  -> AI 生成代码
-  -> 开发人员审代码
-  -> AI 生成测试
-  -> CI 自动验证
-  -> 人工验收关键流程
-```
-
-## 11. 第一版团队与时间
+## 11. 团队与时间
 
 最低配置：
 
@@ -1725,84 +1474,53 @@ GET    /api/admin/audit-logs
 - 1 名产品/测试。
 - 1 名运维兼职。
 
-使用 AI 辅助，第一版可运营 MVP 预计：
+使用 AI 辅助，第一阶段平台底座 + 应用售卖预计：
 
 ```text
-9 到 11 周
+4 周
 ```
 
-更稳妥的商业试运营版本：
+完整三阶段（含 GPU + Agent/Skills/Token 网关）：
 
 ```text
-13 到 17 周
+13 到 15 周
 ```
 
-如果后续要支撑 10 万用户、5 万设备、2000 个应用，建议在 MVP 验证后再做：
+商业试运营稳定版本（含完整测试、安全加固）：
 
-- 账务服务独立。
-- 设备服务独立。
-- 订单服务独立。
-- Token 网关服务独立。
-- Agent 服务独立。
-- Skills 服务独立。
-- 会员服务独立。
-- 用户资产服务独立。
-- 内容管理服务独立。
-- 读写分离。
-- Redis 缓存。
-- 队列削峰。
-- 设备状态异步同步。
-- 分布式任务调度。
-- 审计和风控。
+```text
+16 到 20 周
+```
 
 ## 12. 下一步
 
-建议下一步直接创建工程：
+建议下一步直接开始：
 
 ```text
 web/admin-console
 web/user-console
-server/api
 server/internal/modules/auth
 server/internal/modules/iam
+server/internal/modules/identity
 server/internal/modules/product
-server/internal/modules/order
+server/internal/modules/provision
 server/internal/modules/billing
 server/internal/modules/finance_consumer
-server/internal/modules/provision
-server/internal/modules/application_adapter
-server/internal/modules/app
-server/internal/modules/gpu
-server/internal/modules/agent
-server/internal/modules/skill
-server/internal/modules/token
-server/internal/modules/netdisk
-server/internal/modules/membership
 server/internal/modules/asset
+server/internal/modules/membership
 server/internal/modules/content
-server/pkg
+server/internal/modules/audit
 server/migrations
 infra/docker-compose.yml
 ```
 
-第一轮代码优先实现：
+第一批优先实现（按顺序）：
 
-- 登录。
-- 用户管理。
-- 角色管理。
-- 统一商品中心。
-- 商品路由。
-- 开通处理器接口。
-- 应用适配器。
-- 财务消费路由。
-- 会员等级和权益。
-- 用户资产和权益额度。
-- 系统公告和帮助文档。
-- 应用管理。
-- 应用价格。
-- 钱包。
-- 订单。
-- GPU 租赁。
-- Agent 模板和定制订单。
-- Skills 技能市场。
-- Token 上游聚合网关。
+1. 登录和用户管理（auth + iam）。
+2. 角色和权限管理（iam）。
+3. 统一商品中心和商品路由（product）。
+4. 钱包和订单（billing）。
+5. 充值和支付回调（billing）。
+6. 产品消费事件和计费规则（finance_consumer）。
+7. 用户资产和权益额度（asset）。
+8. 应用管理和应用售卖闭环（app + provision）。

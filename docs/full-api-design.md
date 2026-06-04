@@ -42,6 +42,43 @@ Idempotency-Key: idem_xxx
 - `X-Request-ID`：可选，不传则后端生成。
 - `Idempotency-Key`：购买、支付、充值、按量计费、资产开通等关键写操作必须传。
 
+### 1.4 限流策略
+
+所有请求经过以下中间件链：
+
+```text
+RequestID -> Logger -> Recovery -> RateLimit -> Auth（非公开接口）-> Permission（需权限接口）
+```
+
+限流规则：
+
+| 接口分类 | 限制 | 说明 |
+|---|---|---|
+| 全局 | 1000 req/s / IP | 超出返回 429 |
+| 注册 / 登录 / 验证码 | 10 req/min / IP | 防暴力破解 |
+| 充值创建订单 | 20 req/min / 用户 | 防重复充值 |
+| 支付回调 | 不限流 | 第三方平台回调，需签名校验 |
+| Token 网关调用 | 按 token_quota_accounts.monthly_limit_tokens | 用户级别月度配额 |
+
+限流响应头：
+
+```text
+X-RateLimit-Limit: 1000
+X-RateLimit-Remaining: 950
+X-RateLimit-Reset: 1748000000
+```
+
+超限响应：
+
+```json
+{
+  "code": 42900,
+  "message": "rate limit exceeded",
+  "data": null,
+  "request_id": "req_xxx"
+}
+```
+
 ### 1.4 通用错误码
 
 ```text
@@ -800,9 +837,58 @@ Query 参数：type、direction、created_from、created_to、page、page_size�
 POST /api/recharge/orders
 ```
 
-Body 参数：amount、payment_method。
+Body 参数：
 
-返回 data：order_id、order_no、amount、status。
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| amount | string | 是 | 充值金额，字符串传递避免浮点精度问题，例如 "100.00" |
+| payment_method | string | 是 | wechat / alipay |
+| return_url | string | 否 | 前端跳转回调 URL，仅用于展示，不作为充值完成依据 |
+
+返回 data：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| order_id | integer | 充值订单 ID |
+| order_no | string | 订单号 |
+| amount | string | 充值金额 |
+| status | string | pending |
+| pay_url | string | 支付链接或二维码内容（由具体支付渠道决定格式） |
+
+### 4.19 支付回调（第三方支付平台异步通知）
+
+```text
+POST /api/payments/notify/:provider
+```
+
+Path 参数：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| provider | string | wechat / alipay |
+
+说明：
+
+- 此接口无需登录态（`Authorization` 不需要）。
+- 必须校验第三方签名（微信支付用 RSA-OAEP / AEAD_AES_256_GCM，支付宝用 RSA2），签名校验失败直接返回 HTTP 400。
+- 必须幂等：同一 `provider_trade_no` 收到多次回调只处理一次（查 `payment_callbacks` 表）。
+- 处理完成后必须按第三方协议返回成功标志（如微信支付返回 `{"code":"SUCCESS","message":"成功"}`），否则第三方平台会持续重试。
+- 严禁在回调处理中做耗时操作，应写入 `payment_callbacks` 后异步处理充值入账。
+
+幂等处理流程：
+
+```text
+收到回调
+  -> 校验签名
+  -> 写入 payment_callbacks（status = received）
+  -> 查询 payment_callbacks 是否已存在 processed 记录（按 provider + provider_trade_no）
+  -> 如已处理，直接返回成功
+  -> 查询关联 order，校验订单状态和金额
+  -> 开启事务：更新 order 状态、钱包加款、写入 wallet_transactions
+  -> 更新 payment_callbacks.status = processed
+  -> 提交事务
+  -> 返回第三方成功响应
+```
 
 ### 4.19 用户钱包后台接口
 
@@ -1014,13 +1100,44 @@ PATCH /api/admin/token/providers/:id
 GET   /api/admin/token/models
 POST  /api/admin/token/models
 PATCH /api/admin/token/models/:id
+GET   /api/admin/token/routes
+POST  /api/admin/token/routes
+PATCH /api/admin/token/routes/:id
 GET   /api/admin/token/usage
 ```
 
-供应商 Body 参数：code、name、base_url、auth_type、encrypted_api_key、status。
+供应商 Body 参数：
 
-模型 Body 参数：provider_id、model_code、display_name、context_window、status。
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| code | string | 是 | 供应商唯一 code |
+| name | string | 是 | 供应商名称 |
+| base_url | string | 是 | API 基础 URL |
+| auth_type | string | 是 | api_key / oauth |
+| api_key_plaintext | string | 否 | 明文 API Key，后端加密后存储，接口不返回 |
+| status | string | 是 | active / inactive |
+| priority | integer | 否 | 默认路由优先级 |
 
-Chat 请求 Body 参数：model、messages、stream、temperature、max_tokens。
+说明：接口接收 `api_key_plaintext`，后端使用 `AES-256-GCM` 加密后存入 `api_key_encrypted`，**接口响应绝不返回任何形式的明文 API Key**。
+
+模型 Body 参数：provider_id、model_code、display_name、context_window、input_price_per_1k、output_price_per_1k、sale_input_price_per_1k、sale_output_price_per_1k、status。
+
+模型路由 Body 参数：logical_model_code、provider_model_id、weight、priority、status。
+
+Chat 请求 Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| model | string | 是 | 逻辑模型名，例如 gpt-4o |
+| messages | array | 是 | 消息列表，兼容 OpenAI messages 格式 |
+| stream | boolean | 否 | 是否流式返回，默认 false |
+| temperature | number | 否 | 采样温度 |
+| max_tokens | integer | 否 | 最大输出 Token 数 |
+
+说明：
+
+- `stream = true` 时响应使用 Server-Sent Events（SSE）格式，`Content-Type: text/event-stream`。
+- 网关层不缓冲流式响应 body，直接透传上游 SSE 数据；确认所有中间件（Logger、Recovery）不会缓冲响应 body。
+- 路由选择：根据 `logical_model_code` 查找 `token_model_routes`，按 `weight` 加权随机选择上游；若选中的上游断路器熔断，按 `priority` 升序取下一个。
 
 返回 data：模型列表、OpenAI 兼容响应、Token 用量统计。

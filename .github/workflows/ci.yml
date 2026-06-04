@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ---- 后端 CI ----
+  backend:
+    name: 后端构建与测试
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root_password
+          MYSQL_DATABASE: molin_test
+          MYSQL_USER: molin
+          MYSQL_PASSWORD: molin_password
+        ports: ["3306:3306"]
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: --health-cmd="redis-cli ping" --health-interval=10s --health-retries=3
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: server/go.sum
+
+      - name: 安装依赖
+        working-directory: server
+        run: go mod download
+
+      - name: 代码检查（go vet）
+        working-directory: server
+        run: go vet ./...
+
+      - name: 运行单元测试
+        working-directory: server
+        env:
+          APP_ENV: test
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_DATABASE: molin_test
+          MYSQL_USER: molin
+          MYSQL_PASSWORD: molin_password
+          REDIS_ADDR: 127.0.0.1:6379
+          JWT_SECRET: test_jwt_secret_for_ci_only_32chars
+          REFRESH_TOKEN_SECRET: test_refresh_secret_for_ci_32chars
+          ID_CARD_HMAC_SECRET: test_hmac_secret_for_ci_only_32c
+        run: go test -v -race -count=1 ./...
+
+      - name: 构建确认
+        working-directory: server
+        run: go build -o /dev/null ./cmd/api
+
+  # ---- 前端 CI ----
+  frontend-admin:
+    name: 管理后台构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/admin-console/package-lock.json
+
+      - name: 安装依赖
+        working-directory: web/admin-console
+        run: npm ci
+
+      - name: TypeScript 类型检查
+        working-directory: web/admin-console
+        run: npm run type-check
+
+      - name: ESLint 检查
+        working-directory: web/admin-console
+        run: npm run lint
+
+      - name: 生产构建
+        working-directory: web/admin-console
+        run: npm run build
+
+  frontend-user:
+    name: 用户控制台构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/user-console/package-lock.json
+
+      - name: 安装依赖
+        working-directory: web/user-console
+        run: npm ci
+
+      - name: TypeScript 类型检查
+        working-directory: web/user-console
+        run: npm run type-check
+
+      - name: ESLint 检查
+        working-directory: web/user-console
+        run: npm run lint
+
+      - name: 生产构建
+        working-directory: web/user-console
+        run: npm run build

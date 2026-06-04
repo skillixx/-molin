@@ -1,0 +1,114 @@
+# 生产环境 Docker Compose
+# 使用前：确保 .env.prod 文件已准备好（参考 infra/.env.example）
+# 启动命令：docker compose -f infra/docker-compose.prod.yml --env-file .env.prod up -d
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: molin-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: molin-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis-data:/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: molin-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-molin}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks: [internal]
+
+  minio:
+    image: minio/minio
+    container_name: molin-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    volumes:
+      - minio-data:/data
+    networks: [internal]
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.server
+    container_name: molin-api
+    restart: unless-stopped
+    env_file: ../.env.prod
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  admin-console:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.admin-console
+    container_name: molin-admin
+    restart: unless-stopped
+    ports:
+      - "3001:80"
+    depends_on: [api]
+    networks: [internal, external]
+
+  user-console:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.user-console
+    container_name: molin-user
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on: [api]
+    networks: [internal, external]
+
+volumes:
+  mysql-data:
+  redis-data:
+  rabbitmq-data:
+  minio-data:
+
+networks:
+  internal:
+    driver: bridge
+  external:
+    driver: bridge
