@@ -17,21 +17,26 @@ jobs:
           host:     ${{ secrets.TEST_SERVER_HOST }}
           username: ${{ secrets.TEST_SERVER_USER }}
           key:      ${{ secrets.TEST_SERVER_SSH_KEY }}
-          port:     ${{ secrets.TEST_SERVER_PORT || 22 }}
+          port:     10001
           # 部署步骤：拉取最新代码 → 重新构建镜像 → 滚动重启服务
           script: |
             set -euo pipefail
 
-            PROJECT_DIR="${{ secrets.TEST_PROJECT_DIR || '/opt/molin' }}"
+            PROJECT_DIR="/opt/molin"
             cd "$PROJECT_DIR"
 
             echo "=== 拉取最新代码 ==="
             git pull origin main
 
             echo "=== 执行数据库 Migration ==="
-            # 加载测试环境变量后执行 migration
-            export $(grep -v '^#' .env.test | xargs)
-            ./scripts/migrate.sh up
+            # 用 migrate 官方镜像执行 migration，无需在服务器安装 Go
+            source .env.test
+            docker run --rm --network host \
+              -v "$PROJECT_DIR/server/migrations:/migrations" \
+              migrate/migrate \
+              -path /migrations \
+              -database "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(127.0.0.1:3306)/${MYSQL_DATABASE}?multiStatements=true" \
+              up
 
             echo "=== 重新构建并启动服务 ==="
             docker compose -f infra/docker-compose.prod.yml \
