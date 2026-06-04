@@ -14,9 +14,9 @@
 
 | 序号 | 阶段 | 任务描述 | 分支 | 状态 | 备注 |
 |---|---|---|---|---|---|
-| A-01 | Week 1 | 邮箱/手机号注册、登录、登出、Token 刷新 | `feature/backend-a-auth-register-login` | ✅ 已完成 | 直接提交 main（已知晓，后续走 PR）|
-| A-02 | Week 1 | 角色 CRUD、权限 CRUD、RBAC 用户绑定 | `feature/backend-a-iam-role-permission` | ✅ 已完成 | 同上 |
-| A-03 | Week 1 | 实名认证提交接口、审核接口、HMAC 存储 | `feature/backend-a-identity-realname` | ✅ 已完成 | 同上 |
+| A-01 | Week 1 | 邮箱/手机号注册、登录、登出、Token 刷新 | `feature/backend-a-auth-register-login` | ✅ 已完成 | 直接提交 main；代码审查通过；1 个警告（验证码通过 Header 区分环境）|
+| A-02 | Week 1 | 角色 CRUD、权限 CRUD、RBAC 用户绑定 | `feature/backend-a-iam-role-permission` | ✅ 已完成 | 直接提交 main；已修复缓存 deny 绕过安全 Bug（commit 538a525）|
+| A-03 | Week 1 | 实名认证提交接口、审核接口、HMAC 存储 | `feature/backend-a-identity-realname` | ✅ 已完成 | 直接提交 main；代码审查通过；HMAC+masked 安全规范符合要求 |
 | A-04 | Week 1 | 审计日志 service（供各模块调用写入） | `feature/backend-a-audit-log` | ⏳ 待开始 | 仅有 README，无实现代码 |
 | A-05 | Week 2 | 封禁/解封用户、强制登出所有会话 | `feature/backend-a-auth-ban-unlock` | ⏳ 待开始 | |
 | A-06 | Week 2 | 管理员批量权限变更、角色管理接口 | `feature/backend-a-iam-admin-api` | ⏳ 待开始 | |
@@ -119,7 +119,7 @@
 
 | 开发者 | 总任务数 | 已完成 | 进行中 | 待开始 |
 |---|---|---|---|---|
-| 后端工程师甲 | 6 | 3 | 0 | 3 |
+| 后端工程师甲 | 6 | 3（已审查）| 0 | 3 |
 | 后端工程师乙 | 6 | 0 | 0 | 6 |
 | 后端工程师丙 | 5 | 0 | 0 | 5 |
 | 前端工程师甲 | 7 | 0 | 0 | 7 |
