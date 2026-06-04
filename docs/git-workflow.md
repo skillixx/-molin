@@ -202,7 +202,70 @@ hotfix/{描述}
   -> 测试通过后立即部署
 ```
 
-## 8. 产品经理每周工作
+## 8. 开发者分支对应表
+
+每位开发者只在自己负责的模块分支上工作。**开始开发前必须确认身份和当前分支。**
+
+### 8.1 分支命名规则
+
+```text
+feature/{开发者标识}-{模块}-{功能描述}
+
+开发者标识：
+  backend-a   — 后端 A
+  backend-b   — 后端 B
+  backend-c   — 后端 C
+  frontend-a  — 前端 A
+  frontend-b  — 前端 B
+  ops         — 运维
+```
+
+### 8.2 各开发者分支示例
+
+| 开发者 | 负责模块 | 分支示例 |
+|---|---|---|
+| 后端 A | auth / iam / identity | `feature/backend-a-auth-register-login` |
+| 后端 A | auth / iam / identity | `feature/backend-a-iam-rbac-permission` |
+| 后端 A | auth / iam / identity | `feature/backend-a-identity-realname` |
+| 后端 B | product / order / billing | `feature/backend-b-product-model` |
+| 后端 B | product / order / billing | `feature/backend-b-billing-wallet-deduct` |
+| 后端 B | product / order / billing | `feature/backend-b-order-state-machine` |
+| 后端 C | asset / membership / app / content | `feature/backend-c-asset-management` |
+| 后端 C | asset / membership / app / content | `feature/backend-c-provision-handler` |
+| 后端 C | asset / membership / app / content | `feature/backend-c-content-cms` |
+| 前端 A | web/admin-console | `feature/frontend-a-admin-login-layout` |
+| 前端 A | web/admin-console | `feature/frontend-a-admin-user-management` |
+| 前端 B | web/user-console | `feature/frontend-b-user-register-login` |
+| 前端 B | web/user-console | `feature/frontend-b-marketplace-purchase` |
+| 运维 | infra / CI/CD | `feature/ops-ci-pipeline` |
+
+### 8.3 开发前检查步骤（必须执行）
+
+```bash
+# 1. 确认当前在正确分支
+git branch --show-current
+
+# 2. 如果分支不对，从 main 切出新分支
+git checkout main
+git pull origin main
+git checkout -b feature/{开发者标识}-{模块}-{功能描述}
+
+# 3. 确认分支干净，无未提交的改动
+git status
+```
+
+### 8.4 开发完成后（提交 PR 前）
+
+```bash
+# 1. 推送分支
+git push -u origin feature/{分支名}
+
+# 2. 在 GitHub 创建 PR，标题格式：[模块] 功能描述
+# 3. 更新 README.md 的开发进度表（见下方要求）
+# 4. 通知产品经理进行 Review
+```
+
+## 9. 产品经理每周工作
 
 ```text
 周一：
