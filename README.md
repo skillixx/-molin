@@ -28,6 +28,48 @@ cd web/user-console && npm install && npm run dev
 
 ---
 
+## 开发环境连接信息
+
+### 本地开发（docker-compose 启动后）
+
+| 服务 | 连接地址 | 账号 | 密码 |
+|---|---|---|---|
+| MySQL | `127.0.0.1:3306` 库名 `molin` | `molin` | `molin_password` |
+| Redis | `127.0.0.1:6379` | — | 无密码 |
+| RabbitMQ | `127.0.0.1:5672` | `molin` | `molin_password` |
+| RabbitMQ 管理界面 | `http://127.0.0.1:15672` | `molin` | `molin_password` |
+| MinIO | `127.0.0.1:9000` | `molin` | `molin_password` |
+| MinIO 控制台 | `http://127.0.0.1:9001` | `molin` | `molin_password` |
+| Go API | `http://127.0.0.1:8080` | — | — |
+| 管理后台（Vite） | `http://127.0.0.1:5173` | — | — |
+| 用户控制台（Vite） | `http://127.0.0.1:5174` | — | — |
+
+本地环境变量参考 `infra/.env.example`，复制为 `infra/.env.local` 后填写实际值。
+
+### 测试服务器（8.130.9.163）
+
+**SSH 连接：**
+```bash
+ssh -p 10001 pc-w1@8.130.9.163
+# 密码：Root123!
+```
+
+**测试服务（推送 main 后自动部署）：**
+
+| 服务 | 连接地址 | 账号 | 密码 |
+|---|---|---|---|
+| MySQL | `8.130.9.163:3306` 库名 `molin_test` | `molin` | `molin_test_2024` |
+| Redis | `8.130.9.163:6379` | — | 无密码 |
+| RabbitMQ | `8.130.9.163:5672` | `molin` | `molin_test_2024` |
+| RabbitMQ 管理界面 | `http://8.130.9.163:15672` | `molin` | `molin_test_2024` |
+| MinIO | `8.130.9.163:9000` | `molin` | `molin_test_2024` |
+| MinIO 控制台 | `http://8.130.9.163:9001` | `molin` | `molin_test_2024` |
+| Go API（部署后） | `http://8.130.9.163:8080` | — | — |
+
+> 测试环境 `.env.test` 保存在服务器 `/opt/molin/.env.test`，不入库。
+
+---
+
 ## 项目目录
 
 ```text
