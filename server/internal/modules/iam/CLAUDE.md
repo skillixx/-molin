@@ -2,132 +2,224 @@
 
 ## 职责边界
 
-只负责：角色、权限、用户角色分配、用户权限覆盖、权限缓存、角色变更日志。
+只负责：角色 CRUD、权限 CRUD、用户角色分配、用户权限覆盖、权限计算、权限 Redis 缓存。
 
-不负责：JWT 生成/校验（auth 模块）、具体业务权限点定义（由各业务模块定义 permission code）。
+不负责：登录鉴权（auth 模块）、商品访问规则（product 模块）。
 
-## 需要创建的文件
+---
+
+## Week 1 任务清单
 
 ```text
-model/
-  role.go           -- roles, permissions, user_roles, role_permissions, user_permission_overrides
-  change_log.go     -- role_change_logs
+□ model/role.go             — roles, permissions, user_roles, role_permissions, user_permission_overrides, role_change_logs
+□ repository/role_repo.go   — 角色 CRUD
+□ repository/permission_repo.go — 权限 CRUD
+□ repository/user_role_repo.go  — 用户角色关联
+□ repository/override_repo.go   — 用户权限覆盖
+□ service/iam_service.go    — 权限计算（4 步优先级）
+□ service/cache_service.go  — Redis 缓存写入/失效
+□ handler/iam_handler.go
+□ dto/iam_dto.go
+□ route.go
+□ server/internal/middleware/permission.go — 权限校验中间件
 
-repository/
-  role_repo.go          -- 角色 CRUD
-  permission_repo.go    -- 权限 CRUD
-  user_role_repo.go     -- 用户角色 CRUD，含批量查询
-  override_repo.go      -- 用户权限覆盖 CRUD，含过期校验
-
-service/
-  iam_service.go        -- 权限计算、角色分配、变更日志写入
-  cache_service.go      -- Redis 权限缓存读写失效
-
-handler/
-  iam_handler.go        -- Admin Handler
-
-dto/
-  iam_dto.go
-
-route.go
+Migration：
+□ server/migrations/000002_create_iam_tables.up.sql
 ```
 
-## 关键类型
+---
+
+## 权限计算逻辑（核心，严格实现）
 
 ```go
-type Role struct {
-    ID          uint64
-    Code        string   // 例如 platform_admin / normal_user
-    Name        string
-    Description string
-    CreatedAt   time.Time
-    UpdatedAt   time.Time
-}
-
-type Permission struct {
-    ID       uint64
-    Code     string   // 格式：resource:action，例如 product:create
-    Name     string
-    Resource string
-    Action   string
-    CreatedAt time.Time
-    UpdatedAt time.Time
-}
-
-type UserPermissionOverride struct {
-    ID           uint64
-    UserID       uint64
-    PermissionID uint64
-    Effect       string    // allow / deny
-    Reason       string
-    ExpiresAt    *time.Time
-    CreatedBy    uint64
-    CreatedAt    time.Time
-    UpdatedAt    time.Time
-}
-```
-
-## 权限计算逻辑（必须按此优先级）
-
-```go
-func (s *IAMService) HasPermission(ctx context.Context, userID uint64, permCode string) (bool, error) {
-    // 1. 查用户权限覆盖（过滤掉已过期的记录）
-    overrides := s.getActiveOverrides(userID, permCode)
+// service/iam_service.go
+// CheckPermission 按 4 步优先级计算用户是否拥有 permCode 权限：
+// 1. 用户显式 deny → 禁止（最高优先级）
+// 2. 用户显式 allow → 允许
+// 3. 角色权限中包含 → 允许
+// 4. 默认 → 禁止
+func (s *IAMService) CheckPermission(ctx context.Context, userID uint64, permCode string) bool {
+    // 先查缓存
+    if cached, ok := s.cache.GetUserPerms(ctx, userID); ok {
+        return evalPerms(cached, permCode)
+    }
+    overrides, _ := s.overrideRepo.FindByUser(ctx, userID)
     for _, o := range overrides {
-        if o.Effect == "deny"  { return false, nil }
-        if o.Effect == "allow" { return true, nil  }
+        if o.PermissionCode == permCode {
+            if o.Effect == "deny" {
+                return false
+            }
+            if o.Effect == "allow" {
+                return true
+            }
+        }
     }
-    // 2. 查角色权限
-    roles := s.getUserRoles(userID)
-    for _, roleID := range roles {
-        if s.roleHasPermission(roleID, permCode) { return true, nil }
+    rolePerms, _ := s.GetUserRolePermissions(ctx, userID)
+    for _, p := range rolePerms {
+        if p.Code == permCode {
+            return true
+        }
     }
-    return false, nil
+    return false
 }
 ```
 
-## Redis 缓存约定
+## 权限缓存
 
-```text
-Key:    perm:user:{userID}
-Value:  []string  -- 该用户拥有的 permission code 列表（含 override 计算结果）
-TTL:    5 分钟
+```go
+// Redis key 格式：perm:user:{userID}
+// TTL：5 分钟
+// 触发失效：修改用户角色、修改角色权限、修改用户权限覆盖
+
+const permCacheKeyFmt = "perm:user:%d"
+const permCacheTTL = 5 * time.Minute
+
+func (s *CacheService) InvalidateUserPerms(ctx context.Context, userID uint64) {
+    key := fmt.Sprintf(permCacheKeyFmt, userID)
+    s.redis.Del(ctx, key)
+}
 ```
 
-缓存失效时机：
-- 修改用户角色
-- 修改角色权限
-- 修改用户权限覆盖
+## 权限校验中间件
 
-失效方式：`DEL perm:user:{userID}`，下次请求重新计算并写入缓存。
+```go
+// server/internal/middleware/permission.go
+// RequirePerm 在 RequireAuth 之后使用，校验当前用户是否有 permCode 权限。
+func RequirePerm(iamSvc IAMChecker, permCode string, next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        userID := UserIDFromContext(r.Context())
+        if !iamSvc.CheckPermission(r.Context(), userID, permCode) {
+            response.Error(w, http.StatusForbidden, 40003, "无操作权限")
+            return
+        }
+        next.ServeHTTP(w, r)
+    })
+}
+```
+
+---
+
+## Migration
+
+### server/migrations/000002_create_iam_tables.up.sql
+
+```sql
+CREATE TABLE IF NOT EXISTS roles (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  code VARCHAR(128) NOT NULL,
+  name VARCHAR(128) NOT NULL,
+  description VARCHAR(512) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_roles_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS permissions (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  code VARCHAR(191) NOT NULL,
+  name VARCHAR(128) NOT NULL,
+  resource VARCHAR(128) NOT NULL,
+  action VARCHAR(64) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_permissions_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS user_roles (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  role_id BIGINT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_user_roles (user_id, role_id),
+  KEY idx_user_roles_role_id (role_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS role_permissions (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  role_id BIGINT UNSIGNED NOT NULL,
+  permission_id BIGINT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_role_permissions (role_id, permission_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS user_permission_overrides (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  permission_id BIGINT UNSIGNED NOT NULL,
+  effect VARCHAR(16) NOT NULL,
+  reason VARCHAR(512) NULL,
+  expires_at DATETIME NULL,
+  created_by BIGINT UNSIGNED NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_user_permission_overrides (user_id, permission_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS role_change_logs (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  role_id BIGINT UNSIGNED NOT NULL,
+  action VARCHAR(32) NOT NULL,
+  operator_id BIGINT UNSIGNED NULL,
+  reason VARCHAR(512) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_role_change_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  operator_id BIGINT UNSIGNED NULL,
+  module VARCHAR(64) NOT NULL,
+  action VARCHAR(64) NOT NULL,
+  target_type VARCHAR(64) NULL,
+  target_id VARCHAR(128) NULL,
+  ip VARCHAR(64) NULL,
+  request_summary JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_audit_operator_id (operator_id),
+  KEY idx_audit_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+---
 
 ## 接口清单
 
 ```text
 GET    /api/admin/roles
 POST   /api/admin/roles
-GET    /api/admin/roles/:id
-PATCH  /api/admin/roles/:id
+PUT    /api/admin/roles/:id
 DELETE /api/admin/roles/:id
-PATCH  /api/admin/roles/:id/permissions
 GET    /api/admin/permissions
-POST   /api/admin/permissions
 GET    /api/admin/users/:id/roles
-PATCH  /api/admin/users/:id/roles
+POST   /api/admin/users/:id/roles
+DELETE /api/admin/users/:id/roles/:role_id
 GET    /api/admin/users/:id/permission-overrides
-PATCH  /api/admin/users/:id/permission-overrides
+POST   /api/admin/users/:id/permission-overrides
+DELETE /api/admin/users/:id/permission-overrides/:override_id
+GET    /api/admin/audit-logs
 ```
 
-## 权限中间件（server/internal/middleware/permission.go）
+## 权限码规范
 
-```go
-// 从 JWT Claims 取 userID
-// 调用 iam_service.HasPermission(ctx, userID, requiredPermCode)
-// 无权限返回 403，code = 40003
-```
+格式：`resource:action`
 
-## 依赖关系
-
-- 依赖 `server/pkg/redis` — 权限缓存
-- 依赖 `modules/audit/service` — 角色变更时写审计日志
-- 不依赖其他业务模块
+| 权限码 | 说明 |
+|---|---|
+| user:list | 查用户列表 |
+| user:edit | 编辑用户 |
+| user:disable | 封禁用户 |
+| role:manage | 管理角色 |
+| product:create | 创建商品 |
+| product:edit | 编辑商品 |
+| order:list | 查订单 |
+| wallet:view | 查钱包 |
+| identity:review | 审核实名 |
+| content:manage | 管理公告/帮助文档 |

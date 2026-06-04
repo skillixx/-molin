@@ -4,107 +4,136 @@
 
 只负责：按 product_type 路由到对应业务处理器、调用 asset 模块创建资产。
 
-不负责：下单（order 模块）、扣费（billing 模块）、具体业务逻辑（由各 Provisioner 实现）。
+不负责：扣费（billing）、订单状态（order）、具体业务（app/gpu/agent 各自实现 ProvisionHandler 接口）。
 
-## 需要创建的文件
+---
+
+## Week 3 任务清单
 
 ```text
-interface.go              -- ProvisionHandler 接口定义
-
-service/
-  provision_service.go    -- 按 product_type 分发到对应 Provisioner
-  app_provisioner.go      -- 应用类型开通处理器（第一阶段实现）
-
-route.go                  -- 内部路由（不对外暴露）
+□ service/provision_service.go    — 注册 handler、路由 Provision 调用
+□ handler/app_provisioner.go      — 应用商品开通处理器（第一阶段实现）
+□ server/internal/bootstrap/app.go — 注册各 handler 到 ProvisionService
 ```
 
-## 核心接口（所有业务模块 Provisioner 必须实现）
+---
+
+## ProvisionHandler 接口（所有商品类型必须实现）
 
 ```go
-// interface.go
+// service/provision_service.go
+
+// ProvisionHandler 是所有商品类型的开通接口。
+// 新商品类型接入时只需实现此接口，并在 bootstrap/app.go 中注册。
 type ProvisionHandler interface {
-    // 首次开通
-    Provision(ctx context.Context, req ProvisionRequest) (*ProvisionResult, error)
-    // 续费
-    Renew(ctx context.Context, assetID uint64, orderID uint64) error
-    // 暂停（欠费、管理员操作）
-    Suspend(ctx context.Context, assetID uint64, reason string) error
-    // 恢复
+    Provision(ctx context.Context, req ProvisionReq) (*ProvisionResult, error)
+    Renew(ctx context.Context, assetID uint64, planID uint64) error
+    Suspend(ctx context.Context, assetID uint64) error
     Resume(ctx context.Context, assetID uint64) error
-    // 取消（退款、到期）
     Cancel(ctx context.Context, assetID uint64) error
 }
 
-type ProvisionRequest struct {
+type ProvisionReq struct {
     OrderID   uint64
-    UserID    uint64
     ProductID uint64
     PlanID    uint64
-    Product   product.Product
-    Plan      product.ProductPlan
+    UserID    uint64
 }
 
 type ProvisionResult struct {
     AssetID            uint64
-    BusinessInstanceID *uint64   // 业务实例 ID，例如 gpu_rentals.id
-    Status             string    // active / pending
+    BusinessInstanceID string  // 可选，有实例概念的商品填入
+    ExpiresAt          *time.Time
 }
 ```
 
-## 路由分发
+## ProvisionService 路由
 
 ```go
 // service/provision_service.go
-func (s *ProvisionService) Provision(ctx context.Context, req ProvisionRequest) (*ProvisionResult, error) {
-    handler, ok := s.handlers[req.Product.ProductType]
+
+type ProvisionService struct {
+    handlers map[string]ProvisionHandler  // product_type → handler
+    assetSvc AssetService
+}
+
+// RegisterHandler 在 bootstrap 阶段注册各商品类型的处理器。
+func (s *ProvisionService) RegisterHandler(productType string, h ProvisionHandler) {
+    s.handlers[productType] = h
+}
+
+// Provision 按 product_type 路由到对应处理器，开通成功后创建资产。
+func (s *ProvisionService) Provision(ctx context.Context, orderID, productID, planID, userID uint64) error {
+    product, _ := s.productRepo.FindByID(ctx, productID)
+    handler, ok := s.handlers[product.ProductType]
     if !ok {
-        return nil, ErrUnsupportedProductType
+        return fmt.Errorf("未找到商品类型 %s 的开通处理器", product.ProductType)
     }
-    result, err := handler.Provision(ctx, req)
-    if err != nil { return nil, err }
-
-    // 统一创建 user_assets（无论哪种业务类型）
-    assetID, err := s.assetService.Create(ctx, asset.CreateAssetRequest{
-        UserID:             req.UserID,
-        AssetType:          toAssetType(req.Product.ProductType),
-        ProductID:          req.ProductID,
-        ProductPlanID:      req.PlanID,
-        SourceOrderID:      req.OrderID,
-        BusinessInstanceID: result.BusinessInstanceID,
-        Status:             result.Status,
-        ExpiresAt:          calcExpiresAt(req.Plan),
+    result, err := handler.Provision(ctx, ProvisionReq{
+        OrderID: orderID, ProductID: productID, PlanID: planID, UserID: userID,
     })
-    result.AssetID = assetID
-    return result, err
+    if err != nil {
+        return err
+    }
+    // 创建用户资产（所有商品类型统一从这里创建）
+    plan, _ := s.planRepo.FindByID(ctx, planID)
+    var expiresAt *time.Time
+    if plan.DurationDays != nil {
+        t := time.Now().AddDate(0, 0, *plan.DurationDays)
+        expiresAt = &t
+    }
+    _, err = s.assetSvc.CreateAsset(ctx, asset.CreateAssetReq{
+        UserID:             userID,
+        AssetType:          product.ProductType,
+        ProductID:          productID,
+        PlanID:             planID,
+        OrderID:            orderID,
+        BusinessInstanceID: result.BusinessInstanceID,
+        ExpiresAt:          expiresAt,
+        QuotaConfig:        plan.QuotaJSON,
+    })
+    return err
 }
 ```
 
-## 注册 Provisioner
+## AppProvisioner（第一阶段实现）
 
 ```go
-// server/internal/bootstrap/app.go 启动时注册
-provisionService.Register("app", appProvisioner)
-// 第二阶段
-provisionService.Register("gpu", gpuProvisioner)
-// 第三阶段
-provisionService.Register("agent", agentProvisioner)
-provisionService.Register("skill", skillProvisioner)
-provisionService.Register("token", tokenProvisioner)
-```
+// handler/app_provisioner.go
 
-## 应用 Provisioner（第一阶段实现）
-
-```go
-// service/app_provisioner.go
-func (p *AppProvisioner) Provision(ctx context.Context, req ProvisionRequest) (*ProvisionResult, error) {
-    // 应用类型只需要生成访问权限记录，不需要启动实例
-    // 直接返回 active 状态，asset 由 provision_service 统一创建
-    return &ProvisionResult{Status: "active"}, nil
+// AppProvisioner 处理应用类商品的开通。
+// 应用类商品不需要启动实例，开通即激活，直接返回成功。
+type AppProvisioner struct {
+    appRepo AppRepository
 }
+
+func (p *AppProvisioner) Provision(ctx context.Context, req ProvisionReq) (*ProvisionResult, error) {
+    // 应用类商品：确认应用状态正常即可，无需实际启动
+    app, err := p.appRepo.FindByProductID(ctx, req.ProductID)
+    if err != nil {
+        return nil, err
+    }
+    if app.Status != "active" {
+        return nil, errors.New("应用当前不可用")
+    }
+    return &ProvisionResult{}, nil
+}
+
+func (p *AppProvisioner) Renew(_ context.Context, _ uint64, _ uint64) error  { return nil }
+func (p *AppProvisioner) Suspend(_ context.Context, _ uint64) error           { return nil }
+func (p *AppProvisioner) Resume(_ context.Context, _ uint64) error            { return nil }
+func (p *AppProvisioner) Cancel(_ context.Context, _ uint64) error            { return nil }
 ```
 
-## 依赖关系
+## 在 bootstrap/app.go 中注册
 
-- 依赖 `modules/asset/service` — 统一创建用户资产
-- 依赖 `modules/membership/service` — 会员类型开通
-- 被 `modules/product/handler` 调用 — 购买成功后触发开通
+```go
+// server/internal/bootstrap/app.go
+
+// 在 NewApp() 中初始化各模块后注册：
+provisionSvc := provision.NewProvisionService(productRepo, planRepo, assetSvc)
+provisionSvc.RegisterHandler("application", app.NewAppProvisioner(appRepo))
+// 后续注册：
+// provisionSvc.RegisterHandler("gpu", gpu.NewGPUProvisioner(...))
+// provisionSvc.RegisterHandler("agent", agent.NewAgentProvisioner(...))
+```

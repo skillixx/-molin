@@ -4,132 +4,229 @@
 
 Vue3 + Vite + TypeScript + Element Plus + Pinia + Vue Router + Axios
 
-## 必须遵守的约定
+---
 
-- 所有 API 请求封装在 `src/api/` 下，页面不直接调用 axios。
-- 所有状态放在 `src/stores/`，组件不保存业务状态。
-- 所有 TypeScript 类型定义放在 `src/types/`。
-- 页面路由配置在 `src/router/index.ts`，所有需要登录的路由加 `requiresAuth: true`。
-- Element Plus 组件统一使用中文文案。
+## Week 1 任务清单（按顺序）
 
-## API 层约定
+```text
+基础设施：
+□ 安装依赖：npm install element-plus pinia axios vue-router@4
+□ 配置 Element Plus 全局注册（含中文 locale）
+□ 配置 Pinia
+
+API 层：
+□ src/api/http.ts          — Axios 实例 + 请求/响应拦截器
+□ src/api/auth.ts          — login / logout / refreshToken / getMe
+□ src/api/user.ts          — listUsers / getUser / updateUserStatus
+□ src/api/role.ts          — listRoles / createRole / listPermissions / updateRolePermissions
+□ src/api/identity.ts      — listVerifications / reviewVerification
+
+Store：
+□ src/stores/auth.ts       — accessToken / currentUser / isLoggedIn / login() / logout()
+□ src/stores/app.ts        — sideMenuCollapsed / pageTitle
+
+类型定义：
+□ src/types/api.ts         — PageResponse<T> / ApiResponse<T>
+□ src/types/user.ts        — User / Role / Permission
+□ src/types/product.ts     — Product / Plan / Price
+□ src/types/order.ts       — Order / WalletTransaction
+□ src/types/asset.ts       — UserAsset / UserEntitlement
+
+页面（Week 1）：
+□ src/views/auth/LoginView.vue        — 登录页
+□ src/components/layout/AdminLayout.vue   — 整体布局（侧边栏 + 顶栏）
+□ src/components/layout/SideMenu.vue      — 导航菜单
+□ src/components/layout/TopBar.vue        — 顶栏（用户名、退出）
+□ src/components/common/DataTable.vue     — 通用表格（分页）
+□ src/components/common/SearchForm.vue    — 通用搜索
+□ src/views/user/UserListView.vue     — 用户列表
+□ src/views/iam/RoleListView.vue      — 角色管理
+
+路由：
+□ src/router/index.ts      — 全路由 + beforeEach 守卫
+```
+
+## Week 2 任务清单
+
+```text
+□ src/api/product.ts / order.ts / wallet.ts / asset.ts / membership.ts / content.ts / audit.ts
+□ src/views/iam/PermissionListView.vue
+□ src/views/identity/VerificationListView.vue / VerificationDetailView.vue
+□ src/views/product/ProductListView.vue / ProductFormView.vue
+□ src/views/product/PlanFormView.vue / PriceFormView.vue / AccessFormView.vue
+□ src/views/order/OrderListView.vue / OrderDetailView.vue
+□ src/views/wallet/TransactionListView.vue
+□ src/views/asset/AssetListView.vue
+□ src/views/content/AnnouncementListView.vue / HelpArticleView.vue
+```
+
+---
+
+## 核心代码模板
+
+### src/api/http.ts
 
 ```typescript
-// src/api/http.ts — Axios 实例，所有 api 文件引用此实例
 import axios from 'axios'
+import { ElMessage } from 'element-plus'
+import { useAuthStore } from '@/stores/auth'
+import router from '@/router'
 
-const http = axios.create({ baseURL: '/api' })
+const http = axios.create({
+  baseURL: '/api',
+  timeout: 10000,
+})
 
-// 请求拦截器：自动添加 Authorization header
+// 请求拦截：自动注入 Bearer Token
 http.interceptors.request.use(config => {
   const token = useAuthStore().accessToken
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
 
-// 响应拦截器：
-// - 401 → 清除 token，跳转登录页
-// - 其他错误 → 统一弹出 ElMessage.error(response.data.message)
-// - 返回 response.data.data
+// 响应拦截：统一错误处理
+http.interceptors.response.use(
+  res => res.data.data,
+  async err => {
+    const status = err.response?.status
+    if (status === 401) {
+      useAuthStore().logout()
+      router.push('/login')
+    } else {
+      ElMessage.error(err.response?.data?.message || '请求失败')
+    }
+    return Promise.reject(err)
+  }
+)
+
+export default http
 ```
 
-## 路由守卫
+### src/stores/auth.ts
 
 ```typescript
-// src/router/index.ts
-router.beforeEach((to, from, next) => {
-  const authStore = useAuthStore()
-  if (to.meta.requiresAuth && !authStore.isLoggedIn) {
-    next({ name: 'Login' })
-  } else if (to.name === 'Login' && authStore.isLoggedIn) {
-    next({ name: 'Dashboard' })
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+import { login as apiLogin, logout as apiLogout, getMe } from '@/api/auth'
+import type { User } from '@/types/user'
+
+export const useAuthStore = defineStore('auth', () => {
+  const accessToken = ref(localStorage.getItem('access_token') || '')
+  const currentUser = ref<User | null>(null)
+
+  const isLoggedIn = computed(() => !!accessToken.value)
+
+  async function login(email: string, password: string) {
+    const data = await apiLogin({ email, password })
+    accessToken.value = data.access_token
+    localStorage.setItem('access_token', data.access_token)
+    localStorage.setItem('refresh_token', data.refresh_token)
+    currentUser.value = await getMe()
+  }
+
+  function logout() {
+    accessToken.value = ''
+    currentUser.value = null
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('refresh_token')
+  }
+
+  return { accessToken, currentUser, isLoggedIn, login, logout }
+})
+```
+
+### src/router/index.ts — 路由守卫
+
+```typescript
+import { createRouter, createWebHistory } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+
+const router = createRouter({
+  history: createWebHistory(),
+  routes: [
+    { path: '/login', component: () => import('@/views/auth/LoginView.vue') },
+    {
+      path: '/',
+      component: () => import('@/components/layout/AdminLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        { path: '', redirect: '/dashboard' },
+        { path: 'dashboard', component: () => import('@/views/dashboard/DashboardView.vue') },
+        { path: 'users', component: () => import('@/views/user/UserListView.vue') },
+        { path: 'roles', component: () => import('@/views/iam/RoleListView.vue') },
+        { path: 'permissions', component: () => import('@/views/iam/PermissionListView.vue') },
+        { path: 'identity', component: () => import('@/views/identity/VerificationListView.vue') },
+        { path: 'products', component: () => import('@/views/product/ProductListView.vue') },
+        { path: 'orders', component: () => import('@/views/order/OrderListView.vue') },
+        { path: 'transactions', component: () => import('@/views/wallet/TransactionListView.vue') },
+        { path: 'assets', component: () => import('@/views/asset/AssetListView.vue') },
+        { path: 'announcements', component: () => import('@/views/content/AnnouncementListView.vue') },
+      ]
+    }
+  ]
+})
+
+router.beforeEach((to, _, next) => {
+  const auth = useAuthStore()
+  if (to.meta.requiresAuth && !auth.isLoggedIn) {
+    next('/login')
+  } else if (to.path === '/login' && auth.isLoggedIn) {
+    next('/')
   } else {
     next()
   }
 })
+
+export default router
 ```
 
-## 目录结构
-
-```text
-src/
-  api/
-    http.ts           -- Axios 实例（已有，检查是否需要更新）
-    auth.ts           -- login() / logout() / refreshToken()
-    user.ts           -- listUsers() / getUser() / updateUser() / updateUserStatus()
-    role.ts           -- listRoles() / createRole() / updateRolePermissions()
-    identity.ts       -- listVerifications() / reviewVerification()
-    product.ts        -- listProducts() / createProduct() / updatePlans() / updatePrices()
-    order.ts          -- listOrders() / getOrder()
-    wallet.ts         -- listTransactions() / getUserWallet()
-    asset.ts          -- listAssets() / listEntitlements()
-    membership.ts     -- listLevels() / createLevel() / listBenefits()
-    content.ts        -- listAnnouncements() / createAnnouncement() / listArticles()
-    audit.ts          -- listAuditLogs()
-  types/
-    api.ts            -- PageResponse<T>、ApiResponse<T> 通用类型
-    user.ts           -- User、Role、Permission TS 类型
-    product.ts        -- Product、Plan、Price TS 类型
-    order.ts          -- Order、WalletTransaction TS 类型
-    asset.ts          -- UserAsset、UserEntitlement TS 类型
-  stores/
-    auth.ts           -- accessToken、currentUser、isLoggedIn、login()、logout()
-    app.ts            -- sideMenuCollapsed、pageTitle
-  views/
-    auth/LoginView.vue
-    dashboard/DashboardView.vue
-    user/UserListView.vue
-    user/UserDetailView.vue
-    iam/RoleListView.vue
-    iam/PermissionListView.vue
-    identity/VerificationListView.vue
-    product/ProductListView.vue
-    product/ProductFormView.vue
-    product/PlanFormView.vue
-    product/PriceFormView.vue
-    order/OrderListView.vue
-    wallet/TransactionListView.vue
-    asset/AssetListView.vue
-    membership/LevelListView.vue
-    content/AnnouncementListView.vue
-    content/HelpArticleView.vue
-    audit/AuditLogView.vue
-  components/
-    layout/AdminLayout.vue    -- el-container 布局
-    layout/SideMenu.vue       -- el-menu
-    layout/TopBar.vue         -- 用户名 + 退出按钮
-    common/DataTable.vue      -- 封装 el-table + el-pagination
-    common/SearchForm.vue     -- 封装 el-form 搜索条
-    common/StatusTag.vue      -- el-tag 状态显示
-    common/ConfirmDialog.vue  -- el-dialog 确认弹窗
-  router/index.ts
-```
-
-## 通用表格组件模板
+### src/components/common/DataTable.vue（通用表格）
 
 ```vue
-<!-- components/common/DataTable.vue -->
 <template>
   <div>
-    <el-table :data="data" v-loading="loading" stripe>
+    <el-table :data="data" v-loading="loading" border stripe>
       <slot />
     </el-table>
     <el-pagination
-      v-model:current-page="currentPage"
-      v-model:page-size="pageSize"
+      v-if="total > 0"
+      class="mt-4"
       :total="total"
-      layout="total, sizes, prev, pager, next"
-      @change="emit('change', { page: currentPage, pageSize })"
+      :page-size="pageSize"
+      :current-page="page"
+      layout="total, prev, pager, next"
+      @current-change="$emit('page-change', $event)"
     />
   </div>
 </template>
+
+<script setup lang="ts">
+defineProps<{
+  data: any[]
+  loading: boolean
+  total: number
+  page: number
+  pageSize: number
+}>()
+defineEmits<{ 'page-change': [page: number] }>()
+</script>
 ```
 
-## Week 1–2 优先实现
+---
 
-1. `api/http.ts` — Axios 实例
-2. `stores/auth.ts` — 登录状态
-3. `components/layout/AdminLayout.vue` — 后台布局
-4. `views/auth/LoginView.vue` — 登录页
-5. `views/user/UserListView.vue` — 用户列表
-6. `views/iam/RoleListView.vue` — 角色管理
+## 安装依赖命令
+
+```bash
+cd web/admin-console
+npm install element-plus @element-plus/icons-vue
+npm install pinia axios
+npm install -D @types/node unplugin-vue-components unplugin-auto-import
+```
+
+## 规范要求
+
+- 所有页面文案使用中文。
+- 表格分页固定 pageSize=20。
+- 所有 API 调用放在 `src/api/` 下，页面只调用 API 函数，不直接用 axios。
+- 状态码 40001/40003/60001/70001 等统一在响应拦截器中处理，不在页面重复处理。
+- 删除、封禁等破坏性操作必须显示 ElMessageBox.confirm 二次确认。

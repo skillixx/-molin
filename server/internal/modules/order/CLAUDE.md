@@ -4,85 +4,100 @@
 
 只负责：商品购买订单和充值订单的创建、状态流转、查询。
 
-不负责：钱包扣费（billing 模块）、资产生成（asset 模块）、具体业务开通（provision 模块）。
+不负责：钱包扣费（billing 模块）、资产生成（asset 模块）。
 
-## 需要创建的文件
+---
+
+## Week 2 任务清单
 
 ```text
-model/
-  order.go          -- orders, order_items
+□ model/order.go              — orders, order_items
+□ repository/order_repo.go    — 创建、按单号/幂等键查询、状态更新
+□ service/order_service.go    — Create / MarkPaid / MarkCancelled / MarkFailed
+□ handler/order_handler.go    — 用户查订单、管理员查订单
+□ dto/order_dto.go
+□ route.go
 
-repository/
-  order_repo.go     -- 订单 CRUD，含按 order_no 查询
-
-service/
-  order_service.go  -- Create / Pay / Cancel / Refund
-
-handler/
-  order_handler.go
-
-dto/
-  order_dto.go
-
-route.go
+Migration：
+□ 包含在 000005_create_billing_tables.up.sql（后端 B 统一写）
 ```
 
-## 关键类型
+---
+
+## 订单状态机（严格遵守，不允许其他状态跳转）
+
+```text
+pending  →  paid        （支付成功）
+pending  →  cancelled   （用户取消或超时）
+pending  →  failed      （扣费失败）
+paid     →  refunded    （退款，第一阶段暂不实现）
+```
+
+## 订单号格式
 
 ```go
-type Order struct {
-    ID           uint64
-    OrderNo      string    // 唯一，格式：ORD + YYYYMMDD + 随机8位大写字母数字
-    UserID       uint64
-    OrderType    string    // purchase / recharge / refund
-    Status       string    // pending / paid / cancelled / refunded / failed
-    Amount       decimal.Decimal
-    Currency     string
-    PaidAt       *time.Time
-    CancelledAt  *time.Time
-    RefundAmount decimal.Decimal
-    RefundedAt   *time.Time
-    CreatedAt    time.Time
-    UpdatedAt    time.Time
+// pkg/idgen/order_no.go
+// 格式：ORD + YYYYMMDD + 8 位随机大写字母数字
+// 示例：ORD202406041A3B9C2F
+func GenerateOrderNo() string {
+    date := time.Now().Format("20060102")
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    b := make([]byte, 8)
+    for i := range b {
+        n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(chars))))
+        b[i] = chars[n.Int64()]
+    }
+    return "ORD" + date + string(b)
 }
 ```
 
-## 订单状态机（必须严格遵守，不允许跳跃）
-
-```text
-pending  --[扣费成功]-->  paid
-pending  --[超时/取消]--> cancelled
-pending  --[系统错误]-->  failed
-paid     --[退款]------> refunded
-```
-
-禁止的流转：
-- paid → cancelled（必须先退款）
-- refunded → 任何状态
-- failed → 任何状态
-
-## 订单号生成规则
+## 核心代码模板
 
 ```go
-// server/pkg/idgen/order_no.go
-// 格式：ORD + YYYYMMDD + 8位随机大写字母数字
-// 例如：ORD202606040A3B7F2E
-// 生成后在数据库创建时加唯一约束，冲突则重试
+// service/order_service.go
+
+func (s *OrderService) Create(ctx context.Context, userID, productID, planID uint64, amount decimal.Decimal, idempotencyKey string) (*model.Order, error) {
+    order := &model.Order{
+        OrderNo:        idgen.GenerateOrderNo(),
+        UserID:         userID,
+        OrderType:      "product",
+        Status:         "pending",
+        Amount:         amount,
+        Currency:       "CNY",
+        IdempotencyKey: idempotencyKey,
+    }
+    if err := s.repo.Create(ctx, order); err != nil {
+        return nil, err
+    }
+    return order, nil
+}
+
+// MarkPaid 将订单标记为已支付，只允许从 pending 流转。
+func (s *OrderService) MarkPaid(ctx context.Context, orderID uint64) error {
+    result := s.db.Model(&model.Order{}).
+        Where("id = ? AND status = ?", orderID, "pending").
+        Updates(map[string]interface{}{
+            "status":  "paid",
+            "paid_at": time.Now(),
+        })
+    if result.RowsAffected == 0 {
+        return ErrInvalidStatusTransition
+    }
+    return result.Error
+}
 ```
+
+---
 
 ## 接口清单
 
 ```text
-GET  /api/orders
-GET  /api/orders/:id
-POST /api/orders/:id/pay       -- 钱包支付（调用 billing.Deduct）
-POST /api/orders/:id/cancel
-GET  /api/admin/orders
-GET  /api/admin/orders/:id
+GET  /api/orders           -- 用户查自己的订单列表
+GET  /api/orders/:id       -- 用户查单个订单
+GET  /api/admin/orders     -- 管理员查所有订单
+GET  /api/admin/orders/:id -- 管理员查订单详情
 ```
 
-## 依赖关系
+## 注意：充值订单
 
-- 被 `modules/product/handler` 依赖 — 购买接口调用 OrderService.Create
-- 依赖 `modules/billing/service` — 支付时调用 WalletService.Deduct
-- 依赖 `server/pkg/idgen` — 生成订单号
+充值订单（recharge_order）也放在 orders 表，order_type = 'recharge'，由 billing 模块的 RechargeService 调用 OrderService.Create 创建。支付回调处理完成后通过 OrderService.MarkPaid 更新状态。
