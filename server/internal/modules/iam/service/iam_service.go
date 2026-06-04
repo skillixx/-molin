@@ -33,15 +33,13 @@ func NewIAMService(
 }
 
 // CheckPermission 按 4 步优先级计算用户是否拥有 permCode 权限：
-// 1. 用户显式 deny → 禁止（最高优先级）
-// 2. 用户显式 allow → 允许
-// 3. 角色权限包含 → 允许
+// 1. 用户显式 deny → 禁止（最高优先级，始终查 DB 确保实时生效）
+// 2. 用户显式 allow → 允许（同上）
+// 3. 角色权限包含 → 允许（走 Redis 缓存，未命中时查 DB 并回填）
 // 4. 默认 → 禁止
+// 注意：override 不进缓存，缓存只存角色权限码，保证 deny 覆盖不被缓存绕过。
 func (s *IAMService) CheckPermission(ctx context.Context, userID uint64, permCode string) bool {
-	if cached, ok := s.cacheSvc.GetUserPerms(ctx, userID); ok {
-		return evalPerms(cached, permCode)
-	}
-
+	// 步骤 1-2：始终从 DB 检查显式覆盖，不走缓存（覆盖需实时生效）
 	overrides, _ := s.overrideRepo.FindByUser(ctx, userID)
 	for _, o := range overrides {
 		if o.PermissionCode == permCode {
@@ -54,13 +52,19 @@ func (s *IAMService) CheckPermission(ctx context.Context, userID uint64, permCod
 		}
 	}
 
-	rolePerms, _ := s.getUserRolePermissions(ctx, userID)
-	for _, p := range rolePerms {
-		if p.Code == permCode {
-			return true
-		}
+	// 步骤 3：角色权限从缓存读取
+	if cached, ok := s.cacheSvc.GetUserPerms(ctx, userID); ok {
+		return evalPerms(cached, permCode)
 	}
-	return false
+
+	// 缓存未命中：查 DB 并回填缓存
+	rolePerms, _ := s.getUserRolePermissions(ctx, userID)
+	codes := make([]string, len(rolePerms))
+	for i, p := range rolePerms {
+		codes[i] = p.Code
+	}
+	s.cacheSvc.SetUserPerms(ctx, userID, codes)
+	return evalPerms(codes, permCode)
 }
 
 // GetUserRoleIDs 返回用户的角色 ID 列表，供 product 等模块使用。
