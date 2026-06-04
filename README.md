@@ -157,6 +157,64 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | 我的资产 + 钱包 + 充值 | `src/views/assets/` / `src/views/wallet/` | ⬜ 待开发 |
 | 会员中心 + 公告 + 帮助中心 | `src/views/membership/` / `src/views/content/` | ⬜ 待开发 |
 
+### 运维（infra / CI/CD 部署环境）
+
+> 负责本地开发环境、生产部署、CI 流水线、Nginx 配置、环境变量管理。
+
+| 任务 | 文件 | 状态 |
+|---|---|---|
+| 本地开发环境 docker-compose（MySQL/Redis/RabbitMQ/MinIO） | `infra/docker-compose.yml` | ⬜ 待完成 |
+| 生产环境 docker-compose（含健康检查和网络隔离） | `infra/docker-compose.prod.yml` | ⬜ 待完成 |
+| 后端服务 Dockerfile（多阶段构建，非 root 用户运行） | `infra/Dockerfile.server` | ⬜ 待完成 |
+| 管理后台 Nginx Dockerfile | `infra/Dockerfile.admin-console` | ⬜ 待完成 |
+| 用户控制台 Nginx Dockerfile（含 SSE proxy_buffering off） | `infra/Dockerfile.user-console` | ⬜ 待完成 |
+| Nginx 配置 — 管理后台 | `infra/nginx/admin.conf` | ⬜ 待完成 |
+| Nginx 配置 — 用户控制台（含 SSE 长连接支持） | `infra/nginx/user.conf` | ⬜ 待完成 |
+| 环境变量模板（含安全变量说明） | `infra/.env.example` | ⬜ 待完成 |
+| GitHub Actions CI 流水线（后端测试 + 前端构建 × 3 并行） | `.github/workflows/ci.yml` | ⬜ 待完成 |
+| 数据库建表脚本 | `scripts/create_mysql_tables.sh` | ⬜ 待完成 |
+| 生产部署 checklist 执行 | `infra/CLAUDE.md` 部署清单 | ⬜ 待完成 |
+
+### 产品经理（代码合并与审核）
+
+> 负责 PR 业务逻辑审核、功能验收、每周合并节奏管理。
+
+| 任务 | 阶段 | 状态 |
+|---|---|---|
+| Week 1 PR 审核：auth / iam / identity（后端 A） | Week 1 | ⬜ 待审核 |
+| Week 1 PR 审核：管理后台登录布局（前端 A） | Week 1 | ⬜ 待审核 |
+| Week 1 PR 审核：用户控制台登录注册（前端 B） | Week 1 | ⬜ 待审核 |
+| Week 2 PR 审核：product / order / billing（后端 B） | Week 2 | ⬜ 待审核 |
+| Week 2 PR 审核：管理后台商品/用户/审核页（前端 A） | Week 2 | ⬜ 待审核 |
+| Week 2 PR 审核：用户控制台商品市场/购买（前端 B） | Week 2 | ⬜ 待审核 |
+| Week 3 PR 审核：asset / provision / membership（后端 C） | Week 3 | ⬜ 待审核 |
+| Week 3 PR 审核：管理后台资产/钱包/订单（前端 A） | Week 3 | ⬜ 待审核 |
+| Week 3 PR 审核：用户控制台资产/钱包/会员（前端 B） | Week 3 | ⬜ 待审核 |
+| Week 4 PR 审核：内容/应用/定时任务（后端 C） | Week 4 | ⬜ 待审核 |
+| 每周五主持验收，确认合并范围 | 持续 | ⬜ 进行中 |
+| 维护角色清单、权限清单、状态枚举文档 | 持续 | ⬜ 进行中 |
+
+### 测试（功能验收与质量保障）
+
+> 负责接口测试、并发安全测试、前端 E2E 验收。
+
+| 任务 | 阶段 | 状态 |
+|---|---|---|
+| Week 1 验收：注册/登录/实名/角色权限接口 | Week 1 | ⬜ 待测试 |
+| Week 1 验收：管理后台登录和布局 | Week 1 | ⬜ 待测试 |
+| Week 1 验收：用户控制台注册登录实名认证 | Week 1 | ⬜ 待测试 |
+| Week 2 验收：商品浏览/购买/钱包扣费接口 | Week 2 | ⬜ 待测试 |
+| Week 2 验收：价格优先级（会员>角色>默认） | Week 2 | ⬜ 待测试 |
+| Week 2 验收：并发扣费安全（10 并发仅正确数量成功） | Week 2 | ⬜ 待测试 |
+| Week 2 验收：购买幂等（相同 Idempotency-Key 不重复扣费） | Week 2 | ⬜ 待测试 |
+| Week 2 验收：支付回调幂等（重放通知不重复记账） | Week 2 | ⬜ 待测试 |
+| Week 3 验收：资产生成/权益消耗/到期流程 | Week 3 | ⬜ 待测试 |
+| Week 3 验收：会员权益和折扣生效 | Week 3 | ⬜ 待测试 |
+| Week 3 验收：权限绕过测试（无权限返回 40003） | Week 3 | ⬜ 待测试 |
+| Week 4 验收：公告/帮助文档/应用上下架 | Week 4 | ⬜ 待测试 |
+| Week 4 全链路回归（注册→购买→资产→到期） | Week 4 | ⬜ 待测试 |
+| 每周输出测试报告（通过率/缺陷数） | 持续 | ⬜ 进行中 |
+
 ---
 
 ## 进度状态说明
