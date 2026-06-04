@@ -55,6 +55,7 @@
 - `docs/full-api-design.md`：完整接口设计。
 - `docs/database-schema-design.md`：数据库表设计。
 - `docs/git-workflow.md`：Git 工作流与代码评审规范。
+- `docs/tools.md`：项目工具文档（工具作用、使用者、涉及功能和常用命令）。
 - `docs/test-plan.md`：测试计划与验收 Checklist。
 - `docs/pm-CLAUDE.md`：产品经理 Agent — 合并与评审规范。
 - `docs/qa-CLAUDE.md`：测试 Agent — 功能测试与验收规范。
