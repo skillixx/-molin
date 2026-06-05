@@ -1,5 +1,104 @@
 # User Console — 前端 B 负责
 
+## 产品基本信息
+
+| 项目 | 内容 |
+|---|---|
+| 网站名称 | **墨灵** |
+| 开发公司 | 爱斯琴网络科技有限公司 |
+| 本模块定位 | 墨灵用户控制台，供注册用户使用，负责注册登录、实名认证、商品购买、我的资产、钱包、会员中心等 |
+
+> 所有页面 title、注册/登录页 Logo 文字、顶部导航品牌名等，统一使用"**墨灵**"，公司署名使用"爱斯琴网络科技有限公司"。
+
+---
+
+## 环境与依赖版本规范
+
+### Node.js / npm 要求
+
+| 工具 | 要求版本 | 说明 |
+|---|---|---|
+| Node.js | **>= 20 LTS**（推荐 v22 LTS） | 当前开发机为 v24.16.0，不得低于 v20 |
+| npm | **>= 10** | 当前开发机为 v11.13.0 |
+
+> 建议使用 [nvm](https://github.com/nvm-sh/nvm) 管理 Node 版本，项目根目录已有 `.nvmrc` 或直接使用 `node >= 20` 的环境。
+
+### 依赖版本锁定（package.json 基准）
+
+**生产依赖：**
+
+| 包名 | 版本范围 | 用途 |
+|---|---|---|
+| `vue` | `^3.5.0` | 核心框架 |
+| `vue-router` | `^4.3.0` | 路由（锁定 v4，v5 有 breaking change） |
+| `pinia` | `^2.1.0` | 状态管理（锁定 v2，v3 有 breaking change） |
+| `element-plus` | `^2.7.0` | UI 组件库 |
+| `@element-plus/icons-vue` | `^2.3.0` | Element Plus 图标库 |
+| `axios` | `^1.7.0` | HTTP 请求 |
+| `uuid` | `^11.0.0` | 生成幂等键（购买请求 Idempotency-Key） |
+| `vite` | `^5.0.0` | 构建工具（锁定 v5，v6+ 有 breaking change） |
+| `@vitejs/plugin-vue` | `^5.0.0` | Vite 的 Vue 插件 |
+
+**开发依赖：**
+
+| 包名 | 版本范围 | 用途 |
+|---|---|---|
+| `typescript` | `^5.4.0` | 类型系统（锁定 v5，v6 有 breaking change） |
+| `vue-tsc` | `^2.1.0` | Vue 的 TypeScript 检查 |
+| `eslint` | `^9.11.0` | 代码规范检查 |
+| `eslint-plugin-vue` | `^9.28.0` | Vue 的 ESLint 插件 |
+| `@vue/eslint-config-typescript` | `^13.0.0` | Vue + TS 的 ESLint 配置 |
+| `unplugin-vue-components` | `^0.27.0` | 组件自动按需引入 |
+| `unplugin-auto-import` | `^0.18.0` | API 自动按需引入 |
+| `@types/node` | `^20.0.0` | Node 类型定义 |
+| `@types/uuid` | `^10.0.0` | uuid 类型定义 |
+
+### 安装命令
+
+```bash
+cd web/user-console
+npm install
+# 补充尚未在 package.json 中的依赖：
+npm install @element-plus/icons-vue axios uuid
+npm install -D unplugin-vue-components unplugin-auto-import @types/uuid
+```
+
+### 版本管理原则
+
+- **禁止**随意升级含 `^` 前缀的大版本（如 vue-router v4 → v5），升级前须经产品经理确认并更新本文档
+- 新增依赖前先在此处登记版本，保持团队环境一致
+- `package-lock.json` **必须**提交到 git，不得 `.gitignore`
+
+---
+
+## 主题风格规范
+
+**方案：深色 + 蓝紫渐变（科技感）**
+
+| 项目 | 值 |
+|---|---|
+| 页面背景 | `#0A0F1E`（近黑深蓝，不用纯黑） |
+| 主色 / 渐变起点 | `#6366F1`（靛蓝） |
+| 主色 / 渐变终点 | `#8B5CF6`（紫） |
+| 强调色 | `#06B6D4`（青绿，用于余额显示、资产状态、价格高亮） |
+| 卡片背景 | 半透明磨砂玻璃（`background: rgba(255,255,255,0.04); backdrop-filter: blur(12px)`） |
+| 卡片边框 | `1px solid rgba(99,102,241,0.2)`（微弱蓝色边框） |
+| 主文字 | `#F1F5F9` |
+| 次要文字 | `#94A3B8` |
+
+**视觉效果要求：**
+- 主按钮（注册、购买、充值等）使用蓝→紫渐变背景，hover 时加亮或反向流动
+- 商品卡片 hover 时增加彩色光晕（`box-shadow: 0 0 24px rgba(99,102,241,0.3)`）
+- 页面背景可叠加极细点阵或网格纹理（opacity 0.03–0.05）
+- 钱包余额、资产有效期等关键数字用青绿色 `#06B6D4` 高亮展示
+- 顶部导航 Logo "墨灵" 使用渐变文字（`background-clip: text`，蓝→紫渐变）
+
+**风格定位：** 科技感强、沉浸、高端 — 对标 Midjourney / Vercel 用户侧风格
+
+**适合场景：** 用户控制台面向 C 端用户，深色科技风提升产品质感和品牌记忆点，渐变色在商品展示和购买流程中增强视觉吸引力
+
+---
+
 ## 技术栈
 
 Vue3 + Vite + TypeScript + Element Plus + Pinia + Vue Router + Axios
