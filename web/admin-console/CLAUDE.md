@@ -319,6 +319,53 @@ npm install pinia axios
 npm install -D @types/node unplugin-vue-components unplugin-auto-import
 ```
 
+## 响应式适配规范（PC 端 + 移动端 Web）
+
+管理后台以 PC 为主，但必须保证在平板和手机上可正常访问、操作。
+
+### 断点定义
+
+| 断点名 | 屏幕宽度 | 目标设备 |
+|---|---|---|
+| `xs` | < 768px | 手机竖屏 |
+| `sm` | 768px – 1024px | 平板、手机横屏 |
+| `md` | 1024px – 1280px | 小屏笔记本 |
+| `lg` | ≥ 1280px | PC 主要场景 |
+
+### 布局规则
+
+- 侧边栏在 `sm` 及以下自动收起，改为顶部汉堡菜单（`el-drawer` 弹出）
+- 表格在 `xs` 下改为卡片列表展示，或使用横向滚动容器（`overflow-x: auto`）
+- 搜索表单在 `xs` 下每行只放 1 个字段（`el-col :xs="24"`），PC 端多列并排
+
+### 使用 Element Plus 栅格
+
+```vue
+<el-row :gutter="16">
+  <!-- PC 4 列，平板 2 列，手机 1 列 -->
+  <el-col :xs="24" :sm="12" :md="8" :lg="6">...</el-col>
+</el-row>
+```
+
+### 禁止事项
+
+- 禁止使用固定像素宽度（如 `width: 1200px`）作为页面最外层容器
+- 禁止使用绝对定位遮挡移动端内容
+- 可交互元素（按钮、输入框）最小点击区域 **44×44px**（移动端手指触控）
+
+### CSS 媒体查询写法
+
+```css
+/* 以移动优先（mobile-first）方式覆盖 */
+.sidebar { width: 100%; }
+
+@media (min-width: 768px) {
+  .sidebar { width: 240px; }
+}
+```
+
+---
+
 ## 规范要求
 
 - 所有页面文案使用中文。

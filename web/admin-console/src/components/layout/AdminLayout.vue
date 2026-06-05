@@ -1,0 +1,108 @@
+<template>
+  <!-- 后台整体布局：侧边栏 + 顶栏 + 内容区 -->
+  <div class="admin-layout">
+    <!-- 侧边栏 -->
+    <aside
+      class="aside"
+      :class="{ 'aside--collapsed': appStore.sideMenuCollapsed }"
+    >
+      <SideMenu :collapsed="appStore.sideMenuCollapsed" />
+    </aside>
+
+    <!-- 右侧主区域 -->
+    <div class="main-area">
+      <!-- 顶部导航栏 -->
+      <TopBar />
+
+      <!-- 页面内容 -->
+      <main class="page-content">
+        <!-- 背景纹理 -->
+        <div class="bg-grid" />
+        <router-view />
+      </main>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import SideMenu from './SideMenu.vue'
+import TopBar from './TopBar.vue'
+import { useAppStore } from '@/stores/app'
+import { useRoute, useRouter } from 'vue-router'
+import { watch } from 'vue'
+
+const appStore = useAppStore()
+const route = useRoute()
+const router = useRouter()
+
+// 路由切换时更新页面标题
+watch(
+  () => route.meta.title,
+  (title) => {
+    if (title) {
+      appStore.setPageTitle(title as string)
+    }
+  },
+  { immediate: true }
+)
+
+// 确保 router 可用（供子组件使用）
+void router
+</script>
+
+<style scoped>
+.admin-layout {
+  display: flex;
+  height: 100vh;
+  background-color: #0A0F1E;
+  color: #F1F5F9;
+  overflow: hidden;
+}
+
+/* 侧边栏 */
+.aside {
+  width: 220px;
+  min-height: 100vh;
+  background: rgba(255, 255, 255, 0.03);
+  border-right: 1px solid rgba(99, 102, 241, 0.2);
+  transition: width 0.25s ease;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.aside--collapsed {
+  width: 64px;
+}
+
+/* 右侧主区域 */
+.main-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 内容区 */
+.page-content {
+  flex: 1;
+  padding: 24px;
+  overflow-y: auto;
+  position: relative;
+}
+
+/* 背景点阵纹理 */
+.bg-grid {
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 28px 28px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 内容需要在纹理上层 */
+.page-content > :deep(*:not(.bg-grid)) {
+  position: relative;
+  z-index: 1;
+}
+</style>
