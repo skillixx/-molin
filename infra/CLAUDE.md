@@ -44,6 +44,41 @@ cd web/user-console && npm install && npm run dev
 
 本地开发使用 `infra/.env.local`（不入库），参考 `infra/.env.example`。
 
+## 测试服务器
+
+| 项目 | 值 |
+|---|---|
+| 公网 IP | `8.130.9.163` |
+| SSH 端口 | `10003` |
+| SSH 用户 | `pc` |
+| 项目目录 | `~/molin/` |
+
+```bash
+# SSH 连接
+sshpass -p '$TEST_SSH_PASS' ssh -p 10003 pc@8.130.9.163
+
+# 编译 API 并上传到测试服务器
+cd server
+GOOS=linux GOARCH=amd64 go build -o ../molin-api ./cmd/api
+sshpass -p '$TEST_SSH_PASS' scp -P 10003 ../molin-api pc@8.130.9.163:~/molin/molin-api
+
+# 重启测试服务器 API
+sshpass -p '$TEST_SSH_PASS' ssh -p 10003 pc@8.130.9.163 \
+  "pkill molin-api 2>/dev/null; sleep 1; \
+   export \$(grep -v '^#' ~/molin/infra/.env.test | xargs) && \
+   nohup ~/molin/molin-api > ~/molin/api.log 2>&1 &"
+
+# 查看 API 日志
+sshpass -p '$TEST_SSH_PASS' ssh -p 10003 pc@8.130.9.163 'tail -20 ~/molin/api.log'
+
+# 直连测试服务器 MySQL
+mysql -h 8.130.9.163 -P 13306 -u molin -p$TEST_MYSQL_PASS molin
+```
+
+测试服务器的 Docker 基础服务端口与本地开发完全一致（偏移方案）：MySQL 13306、Redis 16379、RabbitMQ 5673/15673、MinIO 19000/19001。
+
+环境变量文件 `infra/.env.test` 已配置指向 `8.130.9.163`，**必须加入 .gitignore**，禁止入库。
+
 ## 需要创建的文件
 
 ```text
