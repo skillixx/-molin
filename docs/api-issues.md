@@ -13,7 +13,7 @@
 | BUG-01 | IAM | `GET /api/admin/users/{id}/roles` | 响应字段为 Go 结构体大写（`ID`、`UserID`、`RoleID`），缺少角色 `code`、`name`，不符合 API 响应规范 | P2 | 已修复（2026-06-05） |
 | BUG-02 | IAM | `POST /api/admin/users/{id}/roles` | 重复分配同一角色时触发 DB 唯一键冲突，应返回 `409` 但实际返回 `500` | P1 | 已修复（2026-06-05） |
 | TODO-01 | IAM / Identity | 所有列表接口 | 当前全量返回数据，无分页支持，数据量大时存在性能风险 | P2 | 已修复（2026-06-05） |
-| TODO-02 | IAM | `GET /api/admin/users/{id}/permission-overrides` | 全量返回权限覆盖列表，无分页结构，与其他列表接口规范不一致 | P2 | 待修复 |
+| TODO-02 | IAM | `GET /api/admin/users/{id}/permission-overrides` | 全量返回权限覆盖列表，无分页结构，与其他列表接口规范不一致 | P2 | 已修复（2026-06-05） |
 
 ---
 
@@ -105,7 +105,52 @@ GET /api/admin/identity-verifications?page=1&page_size=20
 
 ---
 
+### TODO-02 — permission-overrides 列表缺少分页
+
+**接口：** `GET /api/admin/users/{id}/permission-overrides`
+
+**问题描述：** 原接口直接返回数组，无分页结构，与其他列表接口（roles、permissions 等）规范不一致。
+
+**修复前响应：**
+```json
+{
+  "code": 0,
+  "data": [
+    { "id": 1, "permission_id": 1, "effect": "deny", "reason": "...", "created_at": "..." }
+  ]
+}
+```
+
+**修复后响应：**
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "list": [...],
+    "pagination": {
+      "page": 1,
+      "page_size": 20,
+      "total": 0
+    }
+  }
+}
+```
+
+**验收用例（2026-06-05）：**
+
+| 用例 | 请求 | 期望 | 实际 | 结果 |
+|---|---|---|---|---|
+| 不带分页参数 | `GET /api/admin/users/13/permission-overrides` | code=0，page=1，page_size=20，list 为空 | 完全符合 | 通过 |
+| 带 page_size=2 | `GET .../permission-overrides?page=1&page_size=2` | code=0，page_size=2，list 为空 | 完全符合 | 通过 |
+| 超范围页码 page=999 | `GET .../permission-overrides?page=999&page_size=10` | code=0，page=999，list 为空 | 完全符合 | 通过 |
+| 无 Token | 不带 Authorization Header | code=40001，"未登录" | 完全符合 | 通过 |
+
+**验收结论：** 通过（2026-06-05）。4 条用例全部符合期望，分页结构与其他列表接口规范一致。
+
+---
+
 ## 处理原则
 
 - **P1（BUG-02）**：影响生产稳定性，建议在下一个 PR 中修复后重新验收
-- **P2（BUG-01、TODO-01）**：不影响核心功能，可排入下一迭代
+- **P2（BUG-01、TODO-01、TODO-02）**：不影响核心功能，可排入下一迭代

@@ -154,9 +154,15 @@ func (s *IAMService) DeletePermissionOverride(ctx context.Context, overrideID, u
 	return nil
 }
 
-// GetPermissionOverrides 获取用户权限覆盖列表。
+// GetPermissionOverrides 获取用户权限覆盖列表（不分页，兼容旧调用）。
 func (s *IAMService) GetPermissionOverrides(ctx context.Context, userID uint64) ([]model.UserPermissionOverride, error) {
 	return s.overrideRepo.FindByUser(ctx, userID)
+}
+
+// GetPermissionOverridesPaged 分页获取用户权限覆盖列表，返回当前页数据及总条数。
+// offset 和 limit 由调用方通过 pagination.Parse(r) 计算后传入。
+func (s *IAMService) GetPermissionOverridesPaged(ctx context.Context, userID uint64, offset, limit int) ([]model.UserPermissionOverride, int64, error) {
+	return s.overrideRepo.ListByUserPaged(ctx, userID, offset, limit)
 }
 
 func (s *IAMService) getUserRolePermissions(ctx context.Context, userID uint64) ([]model.Permission, error) {

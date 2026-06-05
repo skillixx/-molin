@@ -193,18 +193,24 @@ func (h *IAMHandler) RevokeRole(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetPermissionOverrides GET /api/admin/users/{id}/permission-overrides
+// 支持分页参数 ?page=1&page_size=20，不传则使用默认值。
 func (h *IAMHandler) GetPermissionOverrides(w http.ResponseWriter, r *http.Request) {
 	userID, err := pathUint64(r, "id")
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, "无效用户 ID")
 		return
 	}
-	overrides, err := h.iamSvc.GetPermissionOverrides(r.Context(), userID)
+	// 解析分页参数，默认 page=1 page_size=20，最大 page_size=100
+	p := pagination.Parse(r)
+	overrides, total, err := h.iamSvc.GetPermissionOverridesPaged(r.Context(), userID, p.Offset(), p.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return
 	}
-	response.JSON(w, http.StatusOK, overrides)
+	response.JSON(w, http.StatusOK, PagedResp{
+		List:       overrides,
+		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
+	})
 }
 
 // SetPermissionOverride POST /api/admin/users/{id}/permission-overrides
