@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS users (
   phone_verified TINYINT(1) NOT NULL DEFAULT 0,
   password_hash VARCHAR(255) NOT NULL,
   real_name_status VARCHAR(32) NOT NULL DEFAULT 'unverified',
+  real_name VARCHAR(128) NULL,
   status VARCHAR(32) NOT NULL DEFAULT 'active',
   wallet_id BIGINT UNSIGNED NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -42,7 +43,7 @@ CREATE TABLE IF NOT EXISTS verification_codes (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   target_type VARCHAR(32) NOT NULL,
   target_value VARCHAR(191) NOT NULL,
-  code VARCHAR(16) NOT NULL,
+  code VARCHAR(64) NOT NULL,
   scene VARCHAR(32) NOT NULL,
   expires_at DATETIME NOT NULL,
   used_at DATETIME NULL,
@@ -65,6 +66,21 @@ CREATE TABLE IF NOT EXISTS user_login_logs (
   PRIMARY KEY (id),
   KEY idx_login_logs_user_id (user_id),
   KEY idx_login_logs_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 用户会话表：存储 Refresh Token HMAC hash，支持退出和封禁吊销。
+CREATE TABLE IF NOT EXISTS user_sessions (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT UNSIGNED NOT NULL,
+  refresh_token_hash VARCHAR(128) NOT NULL,
+  user_agent VARCHAR(512) NULL,
+  ip VARCHAR(64) NULL,
+  expires_at DATETIME NOT NULL,
+  revoked_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_user_sessions_user_id (user_id),
+  UNIQUE KEY uk_user_sessions_refresh_token_hash (refresh_token_hash)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 实名认证表：保存实名审核状态，证件号不能明文保存。

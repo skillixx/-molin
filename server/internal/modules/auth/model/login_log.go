@@ -13,3 +13,5 @@ type LoginLog struct {
 	Status       string    `gorm:"size:32;not null"` // success / failed
 	CreatedAt    time.Time `gorm:"index"`
 }
+
+func (LoginLog) TableName() string { return "user_login_logs" }
