@@ -8,8 +8,15 @@ import (
 	"molin/server/internal/middleware"
 	"molin/server/internal/modules/identity/dto"
 	"molin/server/internal/modules/identity/service"
+	"molin/server/pkg/pagination"
 	"molin/server/pkg/response"
 )
+
+// PagedResp 通用分页响应结构，包含列表数据和分页元数据。
+type PagedResp struct {
+	List       interface{}       `json:"list"`
+	Pagination pagination.Result `json:"pagination"`
+}
 
 // IdentityHandler 处理实名认证相关 HTTP 请求。
 type IdentityHandler struct {
@@ -54,13 +61,18 @@ func (h *IdentityHandler) GetMyVerification(w http.ResponseWriter, r *http.Reque
 }
 
 // ListPending GET /api/admin/identity-verifications
+// 支持分页参数 ?page=1&page_size=20，不传则使用默认值。
 func (h *IdentityHandler) ListPending(w http.ResponseWriter, r *http.Request) {
-	list, err := h.identitySvc.ListPending(r.Context())
+	p := pagination.Parse(r)
+	list, total, err := h.identitySvc.ListPendingPaged(r.Context(), p.Offset(), p.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return
 	}
-	response.JSON(w, http.StatusOK, list)
+	response.JSON(w, http.StatusOK, PagedResp{
+		List:       list,
+		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
+	})
 }
 
 // GetDetail GET /api/admin/identity-verifications/{id}

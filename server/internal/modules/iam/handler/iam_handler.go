@@ -11,8 +11,15 @@ import (
 	"molin/server/internal/modules/iam/model"
 	"molin/server/internal/modules/iam/repository"
 	"molin/server/internal/modules/iam/service"
+	"molin/server/pkg/pagination"
 	"molin/server/pkg/response"
 )
+
+// PagedResp 通用分页响应结构，包含列表数据和分页元数据。
+type PagedResp struct {
+	List       interface{}       `json:"list"`
+	Pagination pagination.Result `json:"pagination"`
+}
 
 // IAMHandler 处理角色、权限、用户角色分配相关 HTTP 请求。
 type IAMHandler struct {
@@ -24,17 +31,22 @@ func NewIAMHandler(iamSvc *service.IAMService) *IAMHandler {
 }
 
 // ListRoles GET /api/admin/roles
+// 支持分页参数 ?page=1&page_size=20，不传则使用默认值。
 func (h *IAMHandler) ListRoles(w http.ResponseWriter, r *http.Request) {
-	roles, err := h.iamSvc.ListRoles(r.Context())
+	p := pagination.Parse(r)
+	roles, total, err := h.iamSvc.ListRolesPaged(r.Context(), p.Offset(), p.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return
 	}
-	resp := make([]dto.RoleResp, len(roles))
+	list := make([]dto.RoleResp, len(roles))
 	for i, role := range roles {
-		resp[i] = dto.RoleResp{ID: role.ID, Code: role.Code, Name: role.Name, Description: role.Description}
+		list[i] = dto.RoleResp{ID: role.ID, Code: role.Code, Name: role.Name, Description: role.Description}
 	}
-	response.JSON(w, http.StatusOK, resp)
+	response.JSON(w, http.StatusOK, PagedResp{
+		List:       list,
+		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
+	})
 }
 
 // CreateRole POST /api/admin/roles
@@ -87,36 +99,42 @@ func (h *IAMHandler) DeleteRole(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListPermissions GET /api/admin/permissions
+// 支持分页参数 ?page=1&page_size=20，不传则使用默认值。
 func (h *IAMHandler) ListPermissions(w http.ResponseWriter, r *http.Request) {
-	perms, err := h.iamSvc.ListPermissions(r.Context())
+	p := pagination.Parse(r)
+	perms, total, err := h.iamSvc.ListPermissionsPaged(r.Context(), p.Offset(), p.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return
 	}
-	resp := make([]dto.PermissionResp, len(perms))
-	for i, p := range perms {
-		resp[i] = dto.PermissionResp{ID: p.ID, Code: p.Code, Name: p.Name, Resource: p.Resource, Action: p.Action}
+	list := make([]dto.PermissionResp, len(perms))
+	for i, perm := range perms {
+		list[i] = dto.PermissionResp{ID: perm.ID, Code: perm.Code, Name: perm.Name, Resource: perm.Resource, Action: perm.Action}
 	}
-	response.JSON(w, http.StatusOK, resp)
+	response.JSON(w, http.StatusOK, PagedResp{
+		List:       list,
+		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
+	})
 }
 
 // GetUserRoles GET /api/admin/users/{id}/roles
-// 返回用户已分配角色的详情（id、code、name、created_at），而非关联表原始字段。
+// 返回用户已分配角色的详情（id、code、name、created_at），支持分页参数 ?page=1&page_size=20。
 func (h *IAMHandler) GetUserRoles(w http.ResponseWriter, r *http.Request) {
 	userID, err := pathUint64(r, "id")
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, "无效用户 ID")
 		return
 	}
-	roles, err := h.iamSvc.GetUserRoles(r.Context(), userID)
+	p := pagination.Parse(r)
+	roles, total, err := h.iamSvc.GetUserRolesPaged(r.Context(), userID, p.Offset(), p.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return
 	}
 	// 将 model.Role 映射为符合 API 规范的 DTO，确保返回小写 JSON 字段
-	resp := make([]dto.UserRoleResp, len(roles))
+	list := make([]dto.UserRoleResp, len(roles))
 	for i, role := range roles {
-		resp[i] = dto.UserRoleResp{
+		list[i] = dto.UserRoleResp{
 			ID:          role.ID,
 			Code:        role.Code,
 			Name:        role.Name,
@@ -124,7 +142,10 @@ func (h *IAMHandler) GetUserRoles(w http.ResponseWriter, r *http.Request) {
 			CreatedAt:   role.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		}
 	}
-	response.JSON(w, http.StatusOK, resp)
+	response.JSON(w, http.StatusOK, PagedResp{
+		List:       list,
+		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
+	})
 }
 
 // AssignRole POST /api/admin/users/{id}/roles

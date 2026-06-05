@@ -31,6 +31,22 @@ func (r *PermissionRepository) FindByID(ctx context.Context, id uint64) (*model.
 	return &p, nil
 }
 
+// ListPaged 分页查询权限列表，返回当前页数据及总条数。
+func (r *PermissionRepository) ListPaged(ctx context.Context, offset, limit int) ([]model.Permission, int64, error) {
+	var perms []model.Permission
+	var total int64
+	db := r.db.WithContext(ctx).Model(&model.Permission{})
+	// 先查总数
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	// 再查分页数据
+	if err := db.Offset(offset).Limit(limit).Find(&perms).Error; err != nil {
+		return nil, 0, err
+	}
+	return perms, total, nil
+}
+
 // FindByRoleIDs 查询一批角色拥有的所有权限（JOIN role_permissions）。
 func (r *PermissionRepository) FindByRoleIDs(ctx context.Context, roleIDs []uint64) ([]model.Permission, error) {
 	if len(roleIDs) == 0 {
