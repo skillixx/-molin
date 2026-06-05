@@ -65,6 +65,13 @@ func (r *UserRepository) UpdatePassword(ctx context.Context, userID uint64, pass
 		Update("password_hash", passwordHash).Error
 }
 
+// UpdateStatus 更新用户账号状态（active / disabled），用于封禁/解封流程。
+func (r *UserRepository) UpdateStatus(ctx context.Context, userID uint64, status string) error {
+	return r.db.WithContext(ctx).Model(&model.User{}).
+		Where("id = ?", userID).
+		Update("status", status).Error
+}
+
 // UpdateRealNameStatus 审核通过后同步更新用户实名状态（由 identity 模块调用）。
 func (r *UserRepository) UpdateRealNameStatus(db *gorm.DB, userID uint64, status, realName string) error {
 	return db.Model(&model.User{}).

@@ -49,7 +49,8 @@ func NewApp() (*App, error) {
 	verificationRepo := authrep.NewVerificationRepository(gormDB)
 	loginLogRepo := authrep.NewLoginLogRepository(gormDB)
 	verifySvc := authsvc.NewVerificationService(verificationRepo)
-	authService := authsvc.NewAuthService(userRepo, sessionRepo, verifySvc, loginLogRepo, cfg)
+	// 传入 redisClient，用于封禁用户黑名单（P1-01 修复）
+	authService := authsvc.NewAuthService(userRepo, sessionRepo, verifySvc, loginLogRepo, cfg, redisClient)
 
 	// ——— IAM 模块 ———
 	roleRepo := iamrep.NewRoleRepository(gormDB)
@@ -77,10 +78,10 @@ func NewApp() (*App, error) {
 		response.JSON(w, http.StatusOK, map[string]string{"version": "0.1.0"})
 	})
 
-	// 注册各模块路由
+	// 注册各模块路由（authService 实现 BanChecker 接口，用于封禁黑名单检查）
 	authmod.RegisterRoutes(mux, authService, verifySvc, cfg)
-	iammod.RegisterRoutes(mux, iamService, cfg.JWTSecret)
-	identitymod.RegisterRoutes(mux, identityService, iamService, cfg.JWTSecret)
+	iammod.RegisterRoutes(mux, iamService, cfg.JWTSecret, authService)
+	identitymod.RegisterRoutes(mux, identityService, iamService, cfg.JWTSecret, authService)
 
 	// 全局中间件（最外层）
 	handler := middleware.RequestID(middleware.Recovery(middleware.Logger(mux)))

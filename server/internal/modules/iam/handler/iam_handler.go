@@ -179,6 +179,12 @@ func (h *IAMHandler) SetPermissionOverride(w http.ResponseWriter, r *http.Reques
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
+	// 枚举校验 effect 字段：只允许 "allow" 或 "deny"，防止非标准值（如 "DENY"、"Allow"）
+	// 绕过精确匹配导致 deny override 静默失效
+	if req.Effect != "allow" && req.Effect != "deny" {
+		response.Error(w, http.StatusBadRequest, 40000, "effect 只能为 allow 或 deny")
+		return
+	}
 	// 查权限码
 	perms, _ := h.iamSvc.ListPermissions(r.Context())
 	permCode := ""

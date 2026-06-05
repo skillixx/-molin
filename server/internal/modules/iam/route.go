@@ -9,12 +9,13 @@ import (
 )
 
 // RegisterRoutes 将 iam 模块路由注册到 mux（所有接口需要登录 + role:manage 权限）。
-func RegisterRoutes(mux *http.ServeMux, iamSvc *service.IAMService, jwtSecret string) {
+// banChecker 用于封禁黑名单检查，防止被封禁用户使用存量 Access Token 访问管理接口。
+func RegisterRoutes(mux *http.ServeMux, iamSvc *service.IAMService, jwtSecret string, banChecker middleware.BanChecker) {
 	h := handler.NewIAMHandler(iamSvc)
 
-	// 需要登录 + role:manage 权限
+	// 需要登录 + role:manage 权限（同时检查封禁黑名单）
 	admin := func(next http.HandlerFunc) http.Handler {
-		return middleware.RequireAuth(jwtSecret,
+		return middleware.RequireAuth(jwtSecret, banChecker,
 			middleware.RequirePerm(iamSvc, "role:manage", http.HandlerFunc(next)))
 	}
 
