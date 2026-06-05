@@ -2,6 +2,14 @@
 
 Molin 云管理平台基于 Vue3 + Go + MySQL，支持商品售卖、计费、用户资产、实名认证、应用管理、会员体系，以及后续 GPU、Agent、Skills、Token 网关等模块。
 
+**技术栈：** Go 1.22（后端 API）+ Vue 3 / TypeScript（前端）+ MySQL 8 + Redis 7 + RabbitMQ + MinIO
+
+**已上线模块（Week 1，2026-06-05 验收通过）：**
+
+- auth（10 个接口）：邮箱/手机号注册与登录、验证码发送、JWT 刷新、退出登录、用户信息、修改密码
+- iam（11 个接口）：角色 CRUD、权限列表、用户角色分配/撤销、用户权限覆盖 CRUD、RBAC 4步优先级权限计算
+- identity（5 个接口）：用户提交实名认证、查询实名状态、管理员查审核列表/详情、管理员审核通过/拒绝
+
 ---
 
 ## 快速启动
@@ -108,6 +116,11 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | [测试计划](docs/test-plan.md) | 接口测试用例、并发安全测试、验收 Checklist |
 | [产品和 MVP 规划](docs/cloud-resource-app-marketplace-mvp.md) | 三阶段交付计划 |
 | [开发执行计划](docs/development-execution-plan.md) | Week 1–12 节奏 |
+| [Auth 接口测试文档](docs/api-test-auth.md) | Auth 模块手动测试用例（Week 1） |
+| [IAM 接口测试文档](docs/api-test-iam.md) | IAM 模块手动测试用例（Week 1） |
+| [Identity 接口测试文档](docs/api-test-identity.md) | Identity 模块手动测试用例（Week 1） |
+| [分页设计规范](docs/api-pagination-standard.md) | 列表接口统一分页参数和响应结构 |
+| [接口问题追踪](docs/api-issues.md) | 已发现接口问题清单及修复记录 |
 
 ---
 
@@ -128,24 +141,26 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 ## 开发进度
 
-> 最后更新：2026-06-04
-> 当前阶段：**第一阶段 Week 1 — 尚未开始编码**
+> 最后更新：2026-06-05
+> 当前阶段：**第一阶段 Week 1 — 已验收通过（2026-06-05），Week 2 待启动**
 
 ### 后端 A（auth / iam / identity）
 
+> Week 1 已完成，全部通过验收（2026-06-05）。26 个接口（auth 10 + iam 11 + identity 5），4 个 P1 安全问题已修复并复审通过。
+
 | 任务 | 文件 | 状态 |
 |---|---|---|
-| pkg 基础设施（DB/Redis/crypto/jwt） | `server/pkg/` | ⬜ 待开发 |
-| 用户注册（邮箱/手机号） | `modules/auth/` | ⬜ 待开发 |
-| 用户登录 + JWT + Refresh Token | `modules/auth/` | ⬜ 待开发 |
-| 退出登录 + Token 吊销 | `modules/auth/` | ⬜ 待开发 |
-| 角色 + 权限 CRUD | `modules/iam/` | ⬜ 待开发 |
-| 权限计算（4 步优先级）+ Redis 缓存 | `modules/iam/` | ⬜ 待开发 |
-| RequireAuth + RequirePerm 中间件 | `server/internal/middleware/` | ⬜ 待开发 |
-| 实名认证提交（HMAC 身份证号） | `modules/identity/` | ⬜ 待开发 |
-| 实名认证审核（管理员） | `modules/identity/` | ⬜ 待开发 |
-| Migration 000001–000003 | `server/migrations/` | ⬜ 待开发 |
-| bootstrap 接入 auth/iam/identity | `server/internal/bootstrap/app.go` | ⬜ 待开发 |
+| pkg 基础设施（DB/Redis/crypto/jwt） | `server/pkg/` | ✅ 已完成 |
+| 用户注册（邮箱/手机号） | `modules/auth/` | ✅ 已完成 |
+| 用户登录 + JWT + Refresh Token | `modules/auth/` | ✅ 已完成 |
+| 退出登录 + Token 吊销 | `modules/auth/` | ✅ 已完成 |
+| 角色 + 权限 CRUD | `modules/iam/` | ✅ 已完成 |
+| 权限计算（4 步优先级）+ Redis 缓存 | `modules/iam/` | ✅ 已完成 |
+| RequireAuth + RequirePerm 中间件 | `server/internal/middleware/` | ✅ 已完成 |
+| 实名认证提交（HMAC 身份证号） | `modules/identity/` | ✅ 已完成 |
+| 实名认证审核（管理员） | `modules/identity/` | ✅ 已完成 |
+| Migration 000001–000003 | `server/migrations/` | ✅ 已完成 |
+| bootstrap 接入 auth/iam/identity | `server/internal/bootstrap/app.go` | ✅ 已完成 |
 
 ### 后端 B（product / order / billing / finance_consumer）
 
@@ -229,7 +244,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 | 任务 | 阶段 | 状态 |
 |---|---|---|
-| Week 1 PR 审核：auth / iam / identity（后端 A） | Week 1 | ⬜ 待审核 |
+| Week 1 PR 审核：auth / iam / identity（后端 A） | Week 1 | ✅ 已完成（2026-06-05）|
 | Week 1 PR 审核：管理后台登录布局（前端 A） | Week 1 | ⬜ 待审核 |
 | Week 1 PR 审核：用户控制台登录注册（前端 B） | Week 1 | ⬜ 待审核 |
 | Week 2 PR 审核：product / order / billing（后端 B） | Week 2 | ⬜ 待审核 |
@@ -248,7 +263,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 | 任务 | 阶段 | 状态 |
 |---|---|---|
-| Week 1 验收：注册/登录/实名/角色权限接口 | Week 1 | ⬜ 待测试 |
+| Week 1 验收：注册/登录/实名/角色权限接口 | Week 1 | ✅ 已完成（33/33 通过，2026-06-05）|
 | Week 1 验收：管理后台登录和布局 | Week 1 | ⬜ 待测试 |
 | Week 1 验收：用户控制台注册登录实名认证 | Week 1 | ⬜ 待测试 |
 | Week 2 验收：商品浏览/购买/钱包扣费接口 | Week 2 | ⬜ 待测试 |
@@ -275,6 +290,48 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | ❌ | 阻塞（标注阻塞原因） |
 
 > **更新规则**：每次开发完成并提交 PR 后，开发者（或 AI 辅助）必须将对应任务状态更新为 ✅，并在表格备注中写明合并的 PR 编号。
+
+---
+
+## 安全约定
+
+以下约定由全体后端开发者遵守，产品经理在 PR 合并前逐项核查。
+
+| 数据项 | 存储方式 | 禁止 |
+|---|---|---|
+| 身份证号 | HMAC-SHA256（密钥 `ID_CARD_HMAC_SECRET`）+ masked 值（前6后4）| 明文存储；SHA-256/MD5 直接 hash |
+| Refresh Token | HMAC-SHA256（密钥 `REFRESH_TOKEN_SECRET`）写入 `user_sessions` 表 | 明文存储 |
+| 密码 | bcrypt | 明文存储；MD5/SHA-256 |
+| OTP 验证码 | SHA-256 hex hash 后存库，比对时同样 hash 再比对 | 明文存库 |
+| JWT 密钥 | 环境变量注入，不入库不硬编码 | 源码中硬编码 |
+| Token 供应商 API Key | AES-256-GCM 加密存储，API 响应中不返回该字段 | 明文存储或响应泄露 |
+
+**封禁机制：** 封禁用户时写入 Redis 黑名单（`blocked:user:{id}`），TTL 与 Access Token 有效期对齐；`RequireAuth` 中间件在解析 Token 后查黑名单，命中返回 401。
+
+**会话管理：** 退出登录将 `user_sessions` 记录的 `revoked_at` 置为当前时间；修改密码后吊销所有会话。
+
+---
+
+## 分页规范
+
+所有列表接口必须遵守统一分页规范，详见 [`docs/api-pagination-standard.md`](docs/api-pagination-standard.md)。
+
+**核心约定：**
+
+- 请求参数：`page`（默认 1）和 `page_size`（默认 20，最大 100），通过 Query String 传入
+- 响应结构：`data.list`（空时返回 `[]` 而非 `null`）+ `data.pagination.{page, page_size, total}`
+- 后端工具包：`server/pkg/pagination/pagination.go`，提供 `Parse(r)` 和 `Offset()` 方法
+- Week 2 起所有新增列表接口，**开发阶段就必须按规范实现分页**，不允许先全量返回再补分页
+
+**Week 1 分页状态：**
+
+| 接口 | 状态 |
+|---|---|
+| `GET /api/admin/roles` | ✅ 已支持分页 |
+| `GET /api/admin/permissions` | ✅ 已支持分页 |
+| `GET /api/admin/users/{id}/roles` | ✅ 已支持分页 |
+| `GET /api/admin/identity-verifications` | ✅ 已支持分页 |
+| `GET /api/admin/users/{id}/permission-overrides` | ✅ 已支持分页 |
 
 ---
 
