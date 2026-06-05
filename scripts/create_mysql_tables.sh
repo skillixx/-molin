@@ -170,6 +170,7 @@ CREATE TABLE IF NOT EXISTS user_permission_overrides (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   user_id BIGINT UNSIGNED NOT NULL,
   permission_id BIGINT UNSIGNED NOT NULL,
+  permission_code VARCHAR(191) NOT NULL DEFAULT '',
   effect VARCHAR(16) NOT NULL,
   reason VARCHAR(512) NULL,
   expires_at DATETIME NULL,
