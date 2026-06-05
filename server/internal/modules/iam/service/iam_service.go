@@ -115,9 +115,10 @@ func (s *IAMService) ListPermissions(ctx context.Context) ([]model.Permission, e
 	return s.permissionRepo.List(ctx)
 }
 
-// GetUserRoles 获取用户已分配的角色。
-func (s *IAMService) GetUserRoles(ctx context.Context, userID uint64) ([]model.UserRole, error) {
-	return s.userRoleRepo.FindByUser(ctx, userID)
+// GetUserRoles 获取用户已分配的角色详情（含 code、name）。
+// 通过 JOIN roles 表返回角色信息，而非 user_roles 关联表原始记录。
+func (s *IAMService) GetUserRoles(ctx context.Context, userID uint64) ([]model.Role, error) {
+	return s.userRoleRepo.FindRolesByUser(ctx, userID)
 }
 
 // SetPermissionOverride 设置用户权限覆盖并清除缓存。

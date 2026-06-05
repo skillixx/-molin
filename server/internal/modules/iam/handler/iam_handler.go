@@ -2,12 +2,14 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
 	"molin/server/internal/middleware"
 	"molin/server/internal/modules/iam/dto"
 	"molin/server/internal/modules/iam/model"
+	"molin/server/internal/modules/iam/repository"
 	"molin/server/internal/modules/iam/service"
 	"molin/server/pkg/response"
 )
@@ -99,6 +101,7 @@ func (h *IAMHandler) ListPermissions(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetUserRoles GET /api/admin/users/{id}/roles
+// 返回用户已分配角色的详情（id、code、name、created_at），而非关联表原始字段。
 func (h *IAMHandler) GetUserRoles(w http.ResponseWriter, r *http.Request) {
 	userID, err := pathUint64(r, "id")
 	if err != nil {
@@ -110,7 +113,18 @@ func (h *IAMHandler) GetUserRoles(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return
 	}
-	response.JSON(w, http.StatusOK, roles)
+	// 将 model.Role 映射为符合 API 规范的 DTO，确保返回小写 JSON 字段
+	resp := make([]dto.UserRoleResp, len(roles))
+	for i, role := range roles {
+		resp[i] = dto.UserRoleResp{
+			ID:          role.ID,
+			Code:        role.Code,
+			Name:        role.Name,
+			Description: role.Description,
+			CreatedAt:   role.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		}
+	}
+	response.JSON(w, http.StatusOK, resp)
 }
 
 // AssignRole POST /api/admin/users/{id}/roles
@@ -127,6 +141,11 @@ func (h *IAMHandler) AssignRole(w http.ResponseWriter, r *http.Request) {
 	}
 	operatorID := middleware.UserIDFromContext(r.Context())
 	if err := h.iamSvc.AssignRole(r.Context(), userID, req.RoleID, operatorID, req.Reason); err != nil {
+		// 重复分配：该用户已拥有此角色，返回 409 Conflict
+		if errors.Is(err, repository.ErrUserRoleExists) {
+			response.Error(w, http.StatusConflict, 40900, "该用户已拥有此角色")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, 50000, "分配失败")
 		return
 	}
