@@ -1,0 +1,32 @@
+/* 墨灵用户控制台 — CSS 主题变量 */
+:root {
+  /* 背景色 */
+  --color-bg: #0A0F1E;
+  --color-bg-card: rgba(255, 255, 255, 0.04);
+  --color-bg-card-hover: rgba(255, 255, 255, 0.07);
+
+  /* 主色调：靛蓝 → 紫渐变 */
+  --color-primary: #6366F1;
+  --color-primary-end: #8B5CF6;
+  --gradient-primary: linear-gradient(135deg, #6366F1, #8B5CF6);
+
+  /* 强调色：青绿（价格/余额/状态） */
+  --color-accent: #06B6D4;
+
+  /* 边框与阴影 */
+  --color-border: rgba(99, 102, 241, 0.2);
+  --color-border-hover: rgba(99, 102, 241, 0.5);
+  --shadow-glow: 0 0 24px rgba(99, 102, 241, 0.3);
+  --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.4);
+
+  /* 文字 */
+  --color-text: #F1F5F9;
+  --color-text-muted: #94A3B8;
+  --color-text-disabled: #475569;
+
+  /* 状态色 */
+  --color-warning: #F59E0B;
+  --color-success: #10B981;
+  --color-danger: #EF4444;
+  --color-info: #06B6D4;
+}
