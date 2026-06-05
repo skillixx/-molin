@@ -10,7 +10,7 @@
 | 测试环境 | `http://8.130.9.163:8080` |
 | 测试工具 | Apipost |
 | 测试日期 | 2026-06-05 |
-| 测试结论 | 全部通过（含 BUG-01/02/TODO-01 修复验收） |
+| 测试结论 | 全部通过（含 BUG-01/02/TODO-01/TODO-02 修复验收） |
 
 ---
 
@@ -335,24 +335,59 @@ Base URL：http://8.130.9.163:8080
 - **方法：** `GET`
 - **URL：** `/api/admin/users/{id}/permission-overrides`
 - **是否需要 Token：** 是（admin）
+- **查询参数：** `page`（默认 1）、`page_size`（默认 20）
 - **无需 Body**
 
-- **成功响应（200）：**
+- **成功响应（200，有数据时）：**
 
 ```json
 {
   "code": 0,
-  "data": [
-    {
-      "id": 1,
-      "permission_id": 1,
-      "effect": "deny",
-      "reason": "手动测试覆盖",
-      "created_at": "2026-06-05T..."
+  "message": "ok",
+  "data": {
+    "list": [
+      {
+        "id": 1,
+        "permission_code": "role:manage",
+        "effect": "deny",
+        "reason": "手动测试覆盖",
+        "created_at": "2026-06-05T..."
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "page_size": 20,
+      "total": 1
     }
-  ]
+  }
 }
 ```
+
+- **成功响应（200，无数据时）：**
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "list": [],
+    "pagination": {
+      "page": 1,
+      "page_size": 20,
+      "total": 0
+    }
+  }
+}
+```
+
+- **分页参数验收（TODO-02 修复验收，2026-06-05）：**
+
+| 用例 | 请求 | 期望 | 实际 | 结果 |
+|---|---|---|---|---|
+| 不带分页参数 | `GET .../permission-overrides` | code=0，page=1，page_size=20 | 符合 | 通过 |
+| 带 page_size=2 | `GET .../permission-overrides?page=1&page_size=2` | code=0，page_size=2 | 符合 | 通过 |
+| 超范围页码 page=999 | `GET .../permission-overrides?page=999&page_size=10` | code=0，list 为空 | 符合 | 通过 |
+| 无 Token | 不带 Authorization Header | code=40001，未登录 | 符合 | 通过 |
 
 > 记下覆盖记录的 `id`，接口 10 删除时会用到。
 
@@ -411,7 +446,9 @@ Base URL：http://8.130.9.163:8080
 7.  DELETE /api/admin/users/{id}/roles/{role_id}  → 撤销一个角色
 8.  POST /api/admin/users/{id}/permission-overrides  → 设置 deny 覆盖
     POST /api/admin/users/{id}/permission-overrides  → 测试 effect="DENY" 被拦截（期望 400）
-9.  GET  /api/admin/users/{id}/permission-overrides  → 记下 override id
+9.  GET  /api/admin/users/{id}/permission-overrides  → 验证分页结构（TODO-02 修复验收），记下 override id
+    GET  /api/admin/users/{id}/permission-overrides?page=1&page_size=2  → 验证 page_size 生效
+    GET  /api/admin/users/{id}/permission-overrides?page=999&page_size=10  → 超范围返回空列表
 10. DELETE /api/admin/users/{id}/permission-overrides/{override_id}  → 删除覆盖
 11. DELETE /api/admin/roles/{id}            → 删除 test_role
 ```
@@ -438,6 +475,7 @@ Base URL：http://8.130.9.163:8080
 | IAM-BUG-01 | `GET /api/admin/users/{id}/roles` | 响应字段为大写（`ID`、`UserID`、`RoleID`），缺少角色 `code`、`name`，不符合 API 响应规范 | P2 | 已修复 |
 | IAM-BUG-02 | `POST /api/admin/users/{id}/roles` | 重复分配同一角色时触发 DB 唯一键冲突，应返回 `409` 但实际返回 `500` | P1 | 已修复 |
 | IAM-TODO-01 | 所有列表接口 | 当前全量返回数据，无分页支持 | P2 | 已修复 |
+| IAM-TODO-02 | `GET /api/admin/users/{id}/permission-overrides` | 全量返回权限覆盖列表，无分页结构，与其他列表接口规范不一致 | P2 | 已修复（2026-06-05） |
 
 ---
 
