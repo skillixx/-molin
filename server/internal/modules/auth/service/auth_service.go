@@ -5,7 +5,10 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 
 	"molin/server/internal/config"
 	"molin/server/internal/modules/auth/dto"
@@ -23,13 +26,18 @@ var (
 	ErrWrongPassword      = errors.New("密码错误")
 )
 
-// AuthService 负责注册、登录、退出、刷新令牌、修改密码。
+// blockedUserKeyFmt 封禁用户在 Redis 中的 key 格式。
+// TTL 与 Access Token 有效期一致，Token 自然过期后黑名单也同步失效。
+const blockedUserKeyFmt = "blocked:user:%d"
+
+// AuthService 负责注册、登录、退出、刷新令牌、修改密码、封禁/解封用户。
 type AuthService struct {
-	userRepo    *repository.UserRepository
-	sessionRepo *repository.SessionRepository
-	verifySvc   *VerificationService
+	userRepo     *repository.UserRepository
+	sessionRepo  *repository.SessionRepository
+	verifySvc    *VerificationService
 	loginLogRepo *repository.LoginLogRepository
-	cfg         config.Config
+	cfg          config.Config
+	redis        *redis.Client
 }
 
 func NewAuthService(
@@ -38,13 +46,15 @@ func NewAuthService(
 	verifySvc *VerificationService,
 	loginLogRepo *repository.LoginLogRepository,
 	cfg config.Config,
+	redisClient *redis.Client,
 ) *AuthService {
 	return &AuthService{
-		userRepo:    userRepo,
-		sessionRepo: sessionRepo,
-		verifySvc:   verifySvc,
+		userRepo:     userRepo,
+		sessionRepo:  sessionRepo,
+		verifySvc:    verifySvc,
 		loginLogRepo: loginLogRepo,
-		cfg:         cfg,
+		cfg:          cfg,
+		redis:        redisClient,
 	}
 }
 
@@ -223,6 +233,47 @@ func (s *AuthService) recordLogin(ctx context.Context, userID *uint64, loginType
 		UserAgent:    ua,
 		Status:       status,
 	})
+}
+
+// BanUser 封禁用户：将 userID 写入 Redis 黑名单，TTL 与 Access Token 有效期一致。
+// 封禁后其存量 Access Token 在 TTL 内将被 RequireAuth 中间件拦截，返回 401。
+// 同时吊销该用户全部 Refresh Token，阻止其刷新获得新 Token。
+func (s *AuthService) BanUser(ctx context.Context, userID uint64) error {
+	// 1. 数据库标记用户为 disabled
+	if err := s.userRepo.UpdateStatus(ctx, userID, "disabled"); err != nil {
+		return err
+	}
+	// 2. 将 userID 写入 Redis 黑名单，TTL = Access Token 有效期
+	key := fmt.Sprintf(blockedUserKeyFmt, userID)
+	ttl := time.Duration(s.cfg.JWTExpireSeconds) * time.Second
+	if err := s.redis.Set(ctx, key, "1", ttl).Err(); err != nil {
+		return fmt.Errorf("写入封禁黑名单失败: %w", err)
+	}
+	// 3. 吊销该用户所有 Refresh Token，防止其刷新令牌获得新 Access Token
+	return s.sessionRepo.RevokeAllByUser(ctx, userID)
+}
+
+// UnbanUser 解封用户：从 Redis 黑名单移除，并将用户状态恢复为 active。
+func (s *AuthService) UnbanUser(ctx context.Context, userID uint64) error {
+	// 1. 删除 Redis 黑名单 key（立即解除拦截）
+	key := fmt.Sprintf(blockedUserKeyFmt, userID)
+	if err := s.redis.Del(ctx, key).Err(); err != nil {
+		return fmt.Errorf("删除封禁黑名单失败: %w", err)
+	}
+	// 2. 恢复数据库状态
+	return s.userRepo.UpdateStatus(ctx, userID, "active")
+}
+
+// IsUserBlocked 查询 Redis 黑名单，判断用户是否处于封禁状态。
+// 供 RequireAuth 中间件调用。
+func (s *AuthService) IsUserBlocked(ctx context.Context, userID uint64) bool {
+	key := fmt.Sprintf(blockedUserKeyFmt, userID)
+	val, err := s.redis.Get(ctx, key).Result()
+	if err != nil {
+		// key 不存在或 Redis 故障，默认放行（保可用性优先；故障时封禁通过 DB status 兜底）
+		return false
+	}
+	return val == "1"
 }
 
 func generateRandomToken() string {

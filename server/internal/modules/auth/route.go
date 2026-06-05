@@ -11,7 +11,7 @@ import (
 
 // RegisterRoutes 将 auth 模块路由注册到 mux。
 func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc *service.VerificationService, cfg config.Config) {
-	h := handler.NewAuthHandler(authSvc, verifySvc)
+	h := handler.NewAuthHandler(authSvc, verifySvc, cfg)
 
 	// 无需鉴权的接口
 	mux.HandleFunc("POST /api/auth/verification-codes/email", h.SendEmailCode)
@@ -22,9 +22,9 @@ func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc 
 	mux.HandleFunc("POST /api/auth/login/phone", h.LoginPhone)
 	mux.HandleFunc("POST /api/auth/refresh", h.Refresh)
 
-	// 需要登录的接口
+	// 需要登录的接口（同时检查封禁黑名单）
 	auth := func(next http.HandlerFunc) http.Handler {
-		return middleware.RequireAuth(cfg.JWTSecret, http.HandlerFunc(next))
+		return middleware.RequireAuth(cfg.JWTSecret, authSvc, http.HandlerFunc(next))
 	}
 	mux.Handle("POST /api/auth/logout", auth(h.Logout))
 	mux.Handle("GET /api/me", auth(h.GetMe))

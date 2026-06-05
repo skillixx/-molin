@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"molin/server/internal/config"
 	"molin/server/internal/middleware"
 	"molin/server/internal/modules/auth/dto"
 	"molin/server/internal/modules/auth/service"
@@ -12,12 +13,13 @@ import (
 
 // AuthHandler 处理认证相关 HTTP 请求。
 type AuthHandler struct {
-	authSvc  *service.AuthService
+	authSvc   *service.AuthService
 	verifySvc *service.VerificationService
+	cfg       config.Config
 }
 
-func NewAuthHandler(authSvc *service.AuthService, verifySvc *service.VerificationService) *AuthHandler {
-	return &AuthHandler{authSvc: authSvc, verifySvc: verifySvc}
+func NewAuthHandler(authSvc *service.AuthService, verifySvc *service.VerificationService, cfg config.Config) *AuthHandler {
+	return &AuthHandler{authSvc: authSvc, verifySvc: verifySvc, cfg: cfg}
 }
 
 // SendEmailCode POST /api/auth/verification-codes/email
@@ -32,9 +34,10 @@ func (h *AuthHandler) SendEmailCode(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusInternalServerError, 50000, "发送失败")
 		return
 	}
-	// 非生产环境在响应中返回 code，方便调试；生产环境通过邮件服务发出
+	// 非生产环境在响应中返回明文验证码，方便本地调试；
+	// 判断依据为服务端 config.AppEnv，完全忽略客户端请求头（防止绕过生产保护）
 	data := map[string]string{}
-	if r.Header.Get("X-Env") != "production" {
+	if h.cfg.AppEnv != "production" {
 		data["code"] = code
 	}
 	response.JSON(w, http.StatusOK, data)
@@ -52,8 +55,10 @@ func (h *AuthHandler) SendPhoneCode(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusInternalServerError, 50000, "发送失败")
 		return
 	}
+	// 非生产环境在响应中返回明文验证码，方便本地调试；
+	// 判断依据为服务端 config.AppEnv，完全忽略客户端请求头（防止绕过生产保护）
 	data := map[string]string{}
-	if r.Header.Get("X-Env") != "production" {
+	if h.cfg.AppEnv != "production" {
 		data["code"] = code
 	}
 	response.JSON(w, http.StatusOK, data)

@@ -9,6 +9,7 @@ import (
 
 	"molin/server/internal/modules/auth/model"
 	"molin/server/internal/modules/auth/repository"
+	"molin/server/pkg/crypto"
 )
 
 var ErrInvalidCode = errors.New("验证码错误或已过期")
@@ -22,30 +23,35 @@ func NewVerificationService(repo *repository.VerificationRepository) *Verificati
 	return &VerificationService{repo: repo}
 }
 
-// Send 生成 6 位数字验证码并存库，实际发送由调用方对接 SMS/邮件服务。
-// 返回明文 code（本地/测试环境可记录日志，生产环境由邮件服务发出）。
+// Send 生成 6 位数字验证码，存库前用 SHA-256 哈希（防止 DB 泄露后 OTP 可直接使用）。
+// 返回明文 rawCode，由调用方通过 SMS/邮件发给用户；明文不入库。
 func (s *VerificationService) Send(ctx context.Context, targetType, targetValue, scene string) (string, error) {
-	code := generateCode(6)
+	rawCode := generateCode(6)
+	// 存库前对明文 OTP 做 SHA-256 哈希；OTP 短时效，SHA-256 无需 HMAC 密钥
+	codeHash := crypto.SHA256Hex(rawCode)
 	v := &model.VerificationCode{
 		TargetType:  targetType,
 		TargetValue: targetValue,
-		Code:        code,
+		Code:        codeHash, // 只存 hash，不存明文
 		Scene:       scene,
 		ExpiresAt:   time.Now().Add(10 * time.Minute),
 	}
 	if err := s.repo.Create(ctx, v); err != nil {
 		return "", err
 	}
-	return code, nil
+	// 返回明文供调用方发送给用户
+	return rawCode, nil
 }
 
 // Check 校验验证码，通过后立即标记为已使用（防止重放）。
+// 校验时对用户输入做相同的 SHA-256 哈希后与库中值比对。
 func (s *VerificationService) Check(ctx context.Context, targetType, targetValue, scene, code string) error {
 	v, err := s.repo.FindValid(ctx, targetType, targetValue, scene)
 	if err != nil || v == nil {
 		return ErrInvalidCode
 	}
-	if v.Code != code {
+	// 对输入值做 SHA-256 后比对，与存库值保持一致
+	if crypto.SHA256Hex(code) != v.Code {
 		return ErrInvalidCode
 	}
 	return s.repo.MarkUsed(ctx, v.ID)
