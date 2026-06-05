@@ -108,7 +108,7 @@ func (s *IdentityService) GetMyVerification(ctx context.Context, userID uint64) 
 	return toResp(v), nil
 }
 
-// ListPending 管理员查看待审核列表。
+// ListPending 管理员查看待审核列表（不分页，兼容旧调用）。
 func (s *IdentityService) ListPending(ctx context.Context) ([]dto.VerificationResp, error) {
 	list, err := s.repo.ListPending(ctx)
 	if err != nil {
@@ -119,6 +119,19 @@ func (s *IdentityService) ListPending(ctx context.Context) ([]dto.VerificationRe
 		resp[i] = *toResp(&v)
 	}
 	return resp, nil
+}
+
+// ListPendingPaged 管理员分页查看待审核列表，返回当前页数据及总条数。
+func (s *IdentityService) ListPendingPaged(ctx context.Context, offset, limit int) ([]dto.VerificationResp, int64, error) {
+	list, total, err := s.repo.ListPendingPaged(ctx, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	resp := make([]dto.VerificationResp, len(list))
+	for i, v := range list {
+		resp[i] = *toResp(&v)
+	}
+	return resp, total, nil
 }
 
 // GetVerification 管理员查认证详情。

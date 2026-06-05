@@ -116,25 +116,39 @@ Base URL：http://8.130.9.163:8080
 - **方法：** `GET`
 - **URL：** `/api/admin/identity-verifications`
 - **是否需要 Token：** 是（admin，需 `identity:review` 权限）
-- **无需 Body**
+- **查询参数：** `page`（默认 1）、`page_size`（默认 20）
 
 - **成功响应（200）：**
 
 ```json
 {
   "code": 0,
-  "data": [
-    {
-      "id": 1,
-      "user_id": 13,
-      "real_name": "张三",
-      "id_card_no_masked": "330102********1234",
-      "status": "pending",
-      "submitted_at": "2026-06-05T..."
+  "message": "ok",
+  "data": {
+    "list": [
+      {
+        "id": 3,
+        "real_name": "张三",
+        "id_card_no_masked": "110101********1234",
+        "status": "pending"
+      },
+      {
+        "id": 8,
+        "real_name": "张勃勃",
+        "id_card_no_masked": "610502********4434",
+        "status": "pending"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "page_size": 10,
+      "total": 6
     }
-  ]
+  }
 }
 ```
+
+> TODO-01 已修复：接口新增分页支持，通过 `page` 和 `page_size` 参数控制返回条数。
 
 ---
 
@@ -214,7 +228,7 @@ Base URL：http://8.130.9.163:8080
 1. POST /api/identity/verifications          → 提交实名（记下认证 id）
 2. POST /api/identity/verifications          → 重复提交，验证 409 拦截
 3. GET  /api/identity/verifications/me       → 查询状态为 pending
-4. GET  /api/admin/identity-verifications    → 管理员查待审列表
+4. GET  /api/admin/identity-verifications    → 管理员查待审列表，验证分页结构
 5. GET  /api/admin/identity-verifications/1  → 管理员查详情
 6. PATCH /api/admin/identity-verifications/1/review  → 审核通过（approve: true）
 7. GET  /api/identity/verifications/me       → 验证 status 变为 verified

@@ -36,3 +36,13 @@ type OverrideReq struct {
 	Effect       string  `json:"effect"` // allow / deny
 	Reason       *string `json:"reason,omitempty"`
 }
+
+// UserRoleResp 用户已分配角色的响应 DTO（GET /api/admin/users/{id}/roles）。
+// 返回角色详情而非关联表原始字段，符合 API 规范。
+type UserRoleResp struct {
+	ID          uint64  `json:"id"`
+	Code        string  `json:"code"`
+	Name        string  `json:"name"`
+	Description *string `json:"description,omitempty"`
+	CreatedAt   string  `json:"created_at"`
+}

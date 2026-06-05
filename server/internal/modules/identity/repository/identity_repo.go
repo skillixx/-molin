@@ -63,9 +63,25 @@ func (r *IdentityRepository) CreateLog(db *gorm.DB, log *model.IdentityVerificat
 	return db.Create(log).Error
 }
 
-// ListPending 管理员查看待审核列表。
+// ListPending 管理员查看待审核列表（不分页，兼容旧调用）。
 func (r *IdentityRepository) ListPending(ctx context.Context) ([]model.IdentityVerification, error) {
 	var list []model.IdentityVerification
 	err := r.db.WithContext(ctx).Where("status = 'pending'").Order("created_at ASC").Find(&list).Error
 	return list, err
+}
+
+// ListPendingPaged 管理员分页查看待审核列表，返回当前页数据及总条数。
+func (r *IdentityRepository) ListPendingPaged(ctx context.Context, offset, limit int) ([]model.IdentityVerification, int64, error) {
+	var list []model.IdentityVerification
+	var total int64
+	db := r.db.WithContext(ctx).Model(&model.IdentityVerification{}).Where("status = 'pending'")
+	// 先查总数
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	// 再查分页数据，按提交时间升序排列
+	if err := db.Order("created_at ASC").Offset(offset).Limit(limit).Find(&list).Error; err != nil {
+		return nil, 0, err
+	}
+	return list, total, nil
 }

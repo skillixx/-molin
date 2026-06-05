@@ -90,9 +90,14 @@ func (s *IAMService) RevokeRole(ctx context.Context, userID, roleID uint64) erro
 	return nil
 }
 
-// ListRoles 列出所有角色。
+// ListRoles 列出所有角色（不分页，兼容旧调用）。
 func (s *IAMService) ListRoles(ctx context.Context) ([]model.Role, error) {
 	return s.roleRepo.List(ctx)
+}
+
+// ListRolesPaged 分页查询角色列表，返回当前页数据及总条数。
+func (s *IAMService) ListRolesPaged(ctx context.Context, offset, limit int) ([]model.Role, int64, error) {
+	return s.roleRepo.ListPaged(ctx, offset, limit)
 }
 
 // CreateRole 创建角色。
@@ -110,14 +115,25 @@ func (s *IAMService) DeleteRole(ctx context.Context, id uint64) error {
 	return s.roleRepo.Delete(ctx, id)
 }
 
-// ListPermissions 列出所有权限码。
+// ListPermissions 列出所有权限码（不分页，兼容旧调用）。
 func (s *IAMService) ListPermissions(ctx context.Context) ([]model.Permission, error) {
 	return s.permissionRepo.List(ctx)
 }
 
-// GetUserRoles 获取用户已分配的角色。
-func (s *IAMService) GetUserRoles(ctx context.Context, userID uint64) ([]model.UserRole, error) {
-	return s.userRoleRepo.FindByUser(ctx, userID)
+// ListPermissionsPaged 分页查询权限列表，返回当前页数据及总条数。
+func (s *IAMService) ListPermissionsPaged(ctx context.Context, offset, limit int) ([]model.Permission, int64, error) {
+	return s.permissionRepo.ListPaged(ctx, offset, limit)
+}
+
+// GetUserRoles 获取用户已分配的角色详情（含 code、name），不分页，兼容旧调用。
+// 通过 JOIN roles 表返回角色信息，而非 user_roles 关联表原始记录。
+func (s *IAMService) GetUserRoles(ctx context.Context, userID uint64) ([]model.Role, error) {
+	return s.userRoleRepo.FindRolesByUser(ctx, userID)
+}
+
+// GetUserRolesPaged 分页查询用户已分配的角色详情，返回当前页数据及总条数。
+func (s *IAMService) GetUserRolesPaged(ctx context.Context, userID uint64, offset, limit int) ([]model.Role, int64, error) {
+	return s.userRoleRepo.FindRolesByUserPaged(ctx, userID, offset, limit)
 }
 
 // SetPermissionOverride 设置用户权限覆盖并清除缓存。
