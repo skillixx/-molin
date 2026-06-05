@@ -4,6 +4,8 @@
  * 根据 status 自动渲染对应颜色的标签
  * 适用于：实名状态、资产状态等
  */
+import { computed } from 'vue'
+
 interface Props {
   status: 'unverified' | 'pending' | 'verified' | 'rejected' | 'active' | 'expired' | 'suspended' | string
 }

@@ -4,7 +4,7 @@
  * 支持邮箱密码登录和手机号验证码快捷登录
  * 登录成功后跳转到商品市场
  */
-import { ref, reactive } from 'vue'
+import { ref, reactive, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'

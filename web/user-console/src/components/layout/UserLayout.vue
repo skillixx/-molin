@@ -5,6 +5,7 @@
  * - 主内容区 router-view
  * - 实名认证提示横幅（未认证时展示）
  */
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import TopNav from './TopNav.vue'

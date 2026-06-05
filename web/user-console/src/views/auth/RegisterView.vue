@@ -4,7 +4,7 @@
  * 支持邮箱注册和手机号注册两种方式（el-tabs 切换）
  * 注册成功后自动登录，跳转到商品市场
  */
-import { ref, reactive } from 'vue'
+import { ref, reactive, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
@@ -36,8 +36,8 @@ const phoneForm = reactive({
 // 验证码倒计时
 const emailCountdown = ref(0)
 const phoneCountdown = ref(0)
-let emailTimer: ReturnType<typeof setInterval>
-let phoneTimer: ReturnType<typeof setInterval>
+let emailTimer: ReturnType<typeof setInterval> | undefined
+let phoneTimer: ReturnType<typeof setInterval> | undefined
 
 // 提交状态
 const submitting = ref(false)

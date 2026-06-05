@@ -4,6 +4,7 @@
  * 安全约定：进入本页前路由守卫已检查实名认证状态
  * 购买请求必须携带 Idempotency-Key（UUID v4）
  */
+import { onMounted } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'

@@ -5,6 +5,8 @@
  * TODO: Week 2 接入 GET /api/products，替换为真实数据
  */
 
+import { ref, onMounted } from 'vue'
+
 // 骨架屏数量
 const skeletonCount = 6
 // 模拟加载状态（Week 2 替换为真实接口调用）

@@ -5,6 +5,7 @@
  * - 右：用户头像 + 下拉菜单（实名认证 / 退出登录）
  * - 毛玻璃背景 + 底部细边框
  */
+import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
