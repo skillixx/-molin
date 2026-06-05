@@ -362,6 +362,75 @@ npm install pinia axios uuid
 npm install -D @types/uuid @types/node
 ```
 
+## 响应式适配规范（PC 端 + 移动端 Web）
+
+用户控制台面向 C 端用户，**移动端是一级场景**，必须优先保证手机体验，同时在 PC 上也完整可用。
+
+### 断点定义
+
+| 断点名 | 屏幕宽度 | 目标设备 |
+|---|---|---|
+| `xs` | < 768px | 手机竖屏（主要场景） |
+| `sm` | 768px – 1024px | 手机横屏、平板 |
+| `md` | 1024px – 1280px | 小屏笔记本 |
+| `lg` | ≥ 1280px | PC 宽屏 |
+
+### 布局规则
+
+- 顶部导航在 `xs` 下折叠为汉堡菜单，菜单项以 `el-drawer` 全屏弹出
+- 商品卡片列表：`xs` 单列、`sm` 两列、`md+` 三列或四列
+- 表单（注册/登录/实名认证）：`xs` 全宽，`lg` 居中限宽 480px
+- 底部导航栏（手机）：`xs` 下固定底部，显示 主页/市场/资产/我的 四个入口
+
+### 使用 Element Plus 栅格
+
+```vue
+<el-row :gutter="16">
+  <!-- 商品卡片：手机 1 列，平板 2 列，PC 3 列 -->
+  <el-col :xs="24" :sm="12" :lg="8" v-for="item in list" :key="item.id">
+    <ProductCard :product="item" />
+  </el-col>
+</el-row>
+```
+
+### 禁止事项
+
+- 禁止使用固定像素宽度（如 `width: 1200px`）作为页面最外层容器
+- 禁止使用 `hover` 作为唯一交互方式（移动端无 hover）
+- 可交互元素（按钮、输入框、链接）最小点击区域 **44×44px**
+- 图片必须加 `max-width: 100%` 防止溢出
+
+### CSS 写法（mobile-first）
+
+```css
+/* 默认样式面向手机 */
+.product-grid { grid-template-columns: 1fr; gap: 12px; }
+
+/* 平板覆盖 */
+@media (min-width: 768px) {
+  .product-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* PC 覆盖 */
+@media (min-width: 1024px) {
+  .product-grid { grid-template-columns: repeat(3, 1fr); gap: 20px; }
+}
+```
+
+### 手机端底部导航示例
+
+```vue
+<!-- 仅在 xs 断点显示 -->
+<nav class="bottom-nav" v-if="isMobile">
+  <router-link to="/overview">主页</router-link>
+  <router-link to="/marketplace">市场</router-link>
+  <router-link to="/assets">资产</router-link>
+  <router-link to="/wallet">我的</router-link>
+</nav>
+```
+
+---
+
 ## 规范要求
 
 - 所有购买请求必须携带 `Idempotency-Key` 请求头（UUID v4）。
