@@ -32,63 +32,54 @@ const router = createRouter({
           component: () => import('@/views/dashboard/DashboardView.vue'),
           meta: { requiresAuth: true, title: '仪表盘' },
         },
-        // 用户管理
         {
           path: 'users',
           name: 'UserList',
           component: () => import('@/views/user/UserListView.vue'),
           meta: { requiresAuth: true, title: '用户管理' },
         },
-        // 角色管理
         {
           path: 'roles',
           name: 'RoleList',
           component: () => import('@/views/iam/RoleListView.vue'),
           meta: { requiresAuth: true, title: '角色管理' },
         },
-        // 权限管理（Week 2）
         {
           path: 'permissions',
           name: 'PermissionList',
           component: () => import('@/views/iam/PermissionListView.vue'),
           meta: { requiresAuth: true, title: '权限管理' },
         },
-        // 实名审核（Week 2）
         {
           path: 'identity',
           name: 'IdentityList',
           component: () => import('@/views/identity/VerificationListView.vue'),
           meta: { requiresAuth: true, title: '实名审核', permission: 'identity:review' },
         },
-        // 商品管理（Week 2）
         {
           path: 'products',
           name: 'ProductList',
           component: () => import('@/views/product/ProductListView.vue'),
           meta: { requiresAuth: true, title: '商品管理' },
         },
-        // 订单管理（Week 3）
         {
           path: 'orders',
           name: 'OrderList',
           component: () => import('@/views/order/OrderListView.vue'),
           meta: { requiresAuth: true, title: '订单管理' },
         },
-        // 钱包流水（Week 3）
         {
           path: 'transactions',
           name: 'TransactionList',
           component: () => import('@/views/wallet/TransactionListView.vue'),
           meta: { requiresAuth: true, title: '钱包流水' },
         },
-        // 资产管理（Week 3-4）
         {
           path: 'assets',
           name: 'AssetList',
           component: () => import('@/views/asset/AssetListView.vue'),
           meta: { requiresAuth: true, title: '用户资产' },
         },
-        // 公告管理（Week 4）
         {
           path: 'announcements',
           name: 'AnnouncementList',
@@ -126,13 +117,12 @@ router.beforeEach(async (to, _from, next) => {
     await auth.restoreUser()
   }
 
-  // 权限检查（meta.permission 存在时）
+  // 权限检查（meta.permission 存在时，无权限跳 403，不跳登录页）
   const requiredPermission = to.meta.permission as string | undefined
-  if (requiredPermission && auth.currentUser) {
-    // 此处实际权限判断逻辑待接入用户权限列表
-    // 目前仅做 admin 角色判断，后续扩展
-    // 无权限时跳转 403，不跳登录页
-    // next('/403')
+  if (requiredPermission) {
+    // 待后续扩展：接入用户权限列表后在此校验
+    // 如需拦截：next('/403'); return
+    void requiredPermission
   }
 
   next()

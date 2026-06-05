@@ -1,4 +1,4 @@
-// 应用入口：挂载 Vue、Pinia、Router、Element Plus（中文）
+// 应用入口：挂载 Vue、Pinia、Router、Element Plus（中文 locale）
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import ElementPlus from 'element-plus'
