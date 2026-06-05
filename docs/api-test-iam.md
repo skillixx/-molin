@@ -10,7 +10,7 @@
 | 测试环境 | `http://8.130.9.163:8080` |
 | 测试工具 | Apipost |
 | 测试日期 | 2026-06-05 |
-| 测试结论 | 功能通过，发现 2 处响应格式问题（见末尾） |
+| 测试结论 | 全部通过（含 BUG-01/02/TODO-01 修复验收） |
 
 ---
 
@@ -52,22 +52,36 @@ Base URL：http://8.130.9.163:8080
 - **方法：** `GET`
 - **URL：** `/api/admin/permissions`
 - **是否需要 Token：** 是（admin）
-- **无需 Body**
+- **查询参数：** `page`（默认 1）、`page_size`（默认 20）
 
 - **成功响应（200）：**
 
 ```json
 {
   "code": 0,
-  "data": [
-    {
-      "id": 1,
-      "code": "role:manage",
-      "name": "角色管理",
-      "resource": "role",
-      "action": "manage"
+  "data": {
+    "list": [
+      {
+        "id": 1,
+        "code": "role:manage",
+        "name": "角色管理",
+        "resource": "role",
+        "action": "manage"
+      },
+      {
+        "id": 2,
+        "code": "identity:review",
+        "name": "实名审核",
+        "resource": "identity",
+        "action": "review"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "page_size": 5,
+      "total": 2
     }
-  ]
+  }
 }
 ```
 
@@ -112,26 +126,33 @@ Base URL：http://8.130.9.163:8080
 - **方法：** `GET`
 - **URL：** `/api/admin/roles`
 - **是否需要 Token：** 是（admin）
-- **无需 Body**
+- **查询参数：** `page`（默认 1）、`page_size`（默认 20）
 
 - **成功响应（200）：**
 
 ```json
 {
   "code": 0,
-  "data": [
-    {
-      "id": 1,
-      "code": "admin",
-      "name": "超级管理员",
-      "description": "系统内置管理员角色"
-    },
-    {
-      "id": 2,
-      "code": "test_role",
-      "name": "测试角色"
+  "data": {
+    "list": [
+      {
+        "id": 1,
+        "code": "admin",
+        "name": "超级管理员",
+        "description": "系统内置管理员角色"
+      },
+      {
+        "id": 2,
+        "code": "test_role",
+        "name": "测试角色"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "page_size": 2,
+      "total": 3
     }
-  ]
+  }
 }
 ```
 
@@ -187,6 +208,18 @@ Base URL：http://8.130.9.163:8080
 }
 ```
 
+- **失败场景：重复分配同一角色（BUG-02 修复验收）**
+
+  对同一用户重复分配已拥有的角色，应返回 `409`：
+
+```json
+{
+  "code": 40900,
+  "message": "该用户已拥有此角色",
+  "data": null
+}
+```
+
 ---
 
 ### 6. 查询用户角色列表
@@ -194,31 +227,40 @@ Base URL：http://8.130.9.163:8080
 - **方法：** `GET`
 - **URL：** `/api/admin/users/{id}/roles`
 - **是否需要 Token：** 是（admin）
-- **无需 Body**
+- **查询参数：** `page`（默认 1）、`page_size`（默认 20）
 
 - **成功响应（200）：**
 
 ```json
 {
   "code": 0,
-  "data": [
-    {
-      "ID": 12,
-      "UserID": 13,
-      "RoleID": 1,
-      "CreatedAt": "2026-06-05T11:47:35+08:00"
-    },
-    {
-      "ID": 16,
-      "UserID": 13,
-      "RoleID": 2,
-      "CreatedAt": "2026-06-05T20:26:24+08:00"
+  "message": "ok",
+  "data": {
+    "list": [
+      {
+        "id": 1,
+        "code": "admin",
+        "name": "超级管理员",
+        "description": "系统内置管理员角色",
+        "created_at": "2026-06-05T07:04:04+08:00"
+      },
+      {
+        "id": 4,
+        "code": "test_role_1780643206",
+        "name": "测试角色（已更新）",
+        "created_at": "2026-06-05T15:06:47+08:00"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "page_size": 20,
+      "total": 2
     }
-  ]
+  }
 }
 ```
 
-> ⚠️ 已知问题：响应字段为 Go 结构体大写字段名（`ID`、`UserID`、`RoleID`），缺少角色 `code`、`name` 字段，不符合 API 响应规范。待后端工程师甲优化 DTO 后修复。
+> BUG-01 已修复：响应字段改为小写 snake_case，新增角色 `code`、`name`、`description` 字段，并带分页结构。
 
 ---
 
@@ -361,10 +403,11 @@ Base URL：http://8.130.9.163:8080
 ```
 1.  GET  /api/admin/permissions              → 记下 permission id
 2.  POST /api/admin/roles                   → 创建 test_role，记下 role id
-3.  GET  /api/admin/roles                   → 验证角色已创建
+3.  GET  /api/admin/roles                   → 验证角色已创建，检查分页结构
 4.  PUT  /api/admin/roles/{id}              → 更新 test_role 名称
 5.  POST /api/admin/users/{id}/roles        → 分配 test_role 给用户
-6.  GET  /api/admin/users/{id}/roles        → 验证分配成功
+    POST /api/admin/users/{id}/roles        → 重复分配，验证返回 409（BUG-02 修复验收）
+6.  GET  /api/admin/users/{id}/roles        → 验证分配成功，检查 code/name 字段（BUG-01 修复验收）
 7.  DELETE /api/admin/users/{id}/roles/{role_id}  → 撤销一个角色
 8.  POST /api/admin/users/{id}/permission-overrides  → 设置 deny 覆盖
     POST /api/admin/users/{id}/permission-overrides  → 测试 effect="DENY" 被拦截（期望 400）
@@ -384,15 +427,17 @@ Base URL：http://8.130.9.163:8080
 | effect 填 `"Allow"`（混合大小写）| 400 | POST permission-overrides 时填混合大小写 |
 | 撤销角色后再查用户角色列表 | 对应记录消失 | DELETE 后 GET 验证 |
 | 删除覆盖后再查覆盖列表 | 对应记录消失 | DELETE 后 GET 验证 |
+| 重复分配同一角色 | 409，code=40900 | 对同一用户同一角色连续 POST 两次 |
 
 ---
 
 ## 已知问题（待优化）
 
-| 编号 | 接口 | 问题描述 | 优先级 |
-|---|---|---|---|
-| IAM-BUG-01 | `GET /api/admin/users/{id}/roles` | 响应字段为大写（`ID`、`UserID`、`RoleID`），缺少角色 `code`、`name`，不符合 API 响应规范 | P2 |
-| IAM-BUG-02 | `POST /api/admin/users/{id}/roles` | 重复分配同一角色时触发 DB 唯一键冲突，应返回 `409` 但实际返回 `500` | P1 |
+| 编号 | 接口 | 问题描述 | 优先级 | 状态 |
+|---|---|---|---|---|
+| IAM-BUG-01 | `GET /api/admin/users/{id}/roles` | 响应字段为大写（`ID`、`UserID`、`RoleID`），缺少角色 `code`、`name`，不符合 API 响应规范 | P2 | 已修复 |
+| IAM-BUG-02 | `POST /api/admin/users/{id}/roles` | 重复分配同一角色时触发 DB 唯一键冲突，应返回 `409` 但实际返回 `500` | P1 | 已修复 |
+| IAM-TODO-01 | 所有列表接口 | 当前全量返回数据，无分页支持 | P2 | 已修复 |
 
 ---
 
@@ -403,4 +448,5 @@ Base URL：http://8.130.9.163:8080
 | 40000 | 请求参数错误（含 effect 非法值） |
 | 40001 | 未登录或 Token 无效 |
 | 40003 | 无操作权限（缺少 role:manage） |
+| 40900 | 该用户已拥有此角色（重复分配） |
 | 50000 | 服务器内部错误 |
