@@ -131,15 +131,18 @@ func (s *PaymentService) HandleNotify(ctx context.Context, provider string, rawB
 	}
 
 	// 6. 事务：更新订单状态 → 充值入账 → 写流水 → 标记已处理
+	// 注意：使用事务外查到的 order.Status 快照判断幂等，不依赖 MarkPaidByOrderNo 返回值。
+	// 原因：MarkPaidByOrderNo 对 pending 订单执行 UPDATE 后，返回对象 Status 已变为 "paid"，
+	// 若用返回值判断 "Status==paid" 会误判首次充值为重复，导致钱永远入不了账。
+	originalStatus := order.Status
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		// 更新订单为 paid（状态机：pending → paid）
-		paidOrder, err := s.orderSvc.MarkPaidByOrderNo(tx, orderNo)
-		if err != nil {
-			return err
-		}
-		// 若订单已经不是 pending（之前已处理），幂等返回，阻止重复充值
-		if paidOrder.Status == "paid" && paidOrder.PaidAt != nil {
+		// 若事务外查到的订单状态已非 pending，说明并发场景中已被其他请求处理，幂等返回
+		if originalStatus != "pending" {
 			return nil
+		}
+		// 更新订单为 paid（状态机：pending → paid）
+		if _, err := s.orderSvc.MarkPaidByOrderNo(tx, orderNo); err != nil {
+			return err
 		}
 
 		// 充值入账（Recharge 内部也使用乐观锁，此处直接调用 walletSvc 内部方法）
