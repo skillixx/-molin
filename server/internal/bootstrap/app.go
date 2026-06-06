@@ -98,8 +98,8 @@ func NewApp() (*App, error) {
 	iammod.RegisterRoutes(mux, iamService, cfg.JWTSecret, authService)
 	identitymod.RegisterRoutes(mux, identityService, iamService, cfg.JWTSecret, authService)
 
-	// 注册 billing 模块（钱包、充值、支付回调）
-	billingmod.RegisterRoutes(mux, gormDB, cfg.JWTSecret, authService, iamService)
+	// 注册 billing 模块（钱包、充值、支付回调），传入 notify_body 加密密钥
+	billingmod.RegisterRoutes(mux, gormDB, cfg.JWTSecret, authService, iamService, cfg.NotifyBodyKey)
 
 	// 注册 order 模块（订单查询）
 	ordermod.RegisterRoutes(mux, gormDB, cfg.JWTSecret, authService, iamService)

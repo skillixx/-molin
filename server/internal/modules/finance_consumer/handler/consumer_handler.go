@@ -87,15 +87,21 @@ func (h *ConsumerHandler) HandleUsageEvent(w http.ResponseWriter, r *http.Reques
 }
 
 // isAllowedIP 检查请求 IP 是否在白名单中。
+// IP 提取优先级：
+//  1. X-Real-IP（Nginx 设置的真实 IP，客户端无法伪造）
+//  2. RemoteAddr（直连时的真实 IP）
+// 不使用 X-Forwarded-For，该头可由客户端任意伪造，存在安全风险。
 func (h *ConsumerHandler) isAllowedIP(r *http.Request) bool {
+	// 优先使用 X-Real-IP（Nginx 反向代理场景下由 Nginx 注入，客户端无法伪造）
+	clientIP := strings.TrimSpace(r.Header.Get("X-Real-IP"))
+	if clientIP == "" {
+		// 无 X-Real-IP（直连场景），从 RemoteAddr 提取
+		clientIP = extractIP(r.RemoteAddr)
+	}
+
 	if len(h.allowedIPs) == 0 {
 		// 未配置白名单时，仅允许本机访问
-		return strings.HasPrefix(r.RemoteAddr, "127.0.0.1:") || strings.HasPrefix(r.RemoteAddr, "[::1]:")
-	}
-	clientIP := extractIP(r.RemoteAddr)
-	// 也检查 X-Forwarded-For（内网代理场景）
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		clientIP = strings.TrimSpace(strings.Split(forwarded, ",")[0])
+		return clientIP == "127.0.0.1" || clientIP == "::1"
 	}
 	for _, allowedIP := range h.allowedIPs {
 		if clientIP == allowedIP {

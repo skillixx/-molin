@@ -31,7 +31,8 @@ func NewOrderService(db *gorm.DB, repo *repository.OrderRepository) *OrderServic
 }
 
 // Create 创建订单（幂等保护：若 idempotency_key 已存在则返回已有订单）。
-func (s *OrderService) Create(ctx context.Context, userID, productID, planID uint64, amount decimal.Decimal, orderType, idempotencyKey string) (*model.Order, error) {
+// remark 为订单备注，可传空字符串。
+func (s *OrderService) Create(ctx context.Context, userID, productID, planID uint64, amount decimal.Decimal, orderType, idempotencyKey string, remark string) (*model.Order, error) {
 	var productIDPtr, planIDPtr *uint64
 	if productID > 0 {
 		productIDPtr = &productID
@@ -50,6 +51,10 @@ func (s *OrderService) Create(ctx context.Context, userID, productID, planID uin
 		Amount:         amount,
 		Currency:       "CNY",
 		IdempotencyKey: idempotencyKey,
+	}
+	// 写入备注字段（非空时）
+	if remark != "" {
+		order.Remark = &remark
 	}
 
 	if err := s.repo.Create(ctx, order); err != nil {

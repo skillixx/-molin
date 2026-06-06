@@ -134,12 +134,17 @@ func (h *ProductHandler) Purchase(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误，plan_id 必填")
 		return
 	}
+	// quantity 默认值为 1（传 0 或不传视为 1）
+	if req.Quantity <= 0 {
+		req.Quantity = 1
+	}
 
-	result, err := h.purchaseSvc.Purchase(r.Context(), userID, productID, req.PlanID, idempotencyKey)
+	result, err := h.purchaseSvc.Purchase(r.Context(), userID, productID, req.PlanID, idempotencyKey, req.Quantity, req.Remark)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrRealNameRequired):
-			response.Error(w, http.StatusForbidden, 70001, "需要先完成实名认证")
+			// 实名认证是业务前置条件，非权限问题，返回 400
+			response.Error(w, http.StatusBadRequest, 70001, "需要先完成实名认证")
 		case errors.Is(err, service.ErrNoAccess):
 			response.Error(w, http.StatusForbidden, 40003, "无购买权限")
 		case errors.Is(err, billingsvc.ErrInsufficientBalance):

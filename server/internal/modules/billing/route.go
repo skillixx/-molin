@@ -14,12 +14,14 @@ import (
 )
 
 // RegisterRoutes 将 billing 模块路由注册到 mux。
+// notifyBodyKey 为支付回调报文 AES-256-GCM 加密密钥（32 字节），从 cfg.NotifyBodyKey 传入。
 func RegisterRoutes(
 	mux *http.ServeMux,
 	db *gorm.DB,
 	jwtSecret string,
 	banChecker middleware.BanChecker,
 	iamSvc middleware.IAMChecker,
+	notifyBodyKey string,
 ) {
 	// 初始化仓库
 	walletRepo := repository.NewWalletRepository(db)
@@ -32,11 +34,11 @@ func RegisterRoutes(
 	orderSvc := ordersvc.NewOrderService(db, orderRepo)
 	wechatVerifier := service.NewWechatVerifier()
 	alipayVerifier := service.NewAlipayVerifier()
-	paymentSvc := service.NewPaymentService(db, paymentRepo, walletSvc, orderRepo, orderSvc, wechatVerifier, alipayVerifier)
+	paymentSvc := service.NewPaymentService(db, paymentRepo, walletSvc, orderRepo, orderSvc, wechatVerifier, alipayVerifier, notifyBodyKey)
 
 	// 初始化处理器
 	billingH := handler.NewBillingHandler(walletSvc, paymentSvc, txRepo)
-	adminBillingH := handler.NewAdminBillingHandler(walletSvc, walletRepo, txRepo, paymentRepo)
+	adminBillingH := handler.NewAdminBillingHandler(walletSvc, walletRepo, txRepo, paymentRepo, notifyBodyKey)
 	paymentH := handler.NewPaymentHandler(paymentSvc)
 
 	// 认证中间件
