@@ -424,7 +424,7 @@ Body 参数：
 POST /api/admin/auth/verify-phone
 ```
 
-需要：Bearer Token（已登录的管理员账号）。
+需要：Bearer Token + `user:manage` 权限（仅限管理员账号）。
 
 Body 参数：
 
@@ -433,6 +433,7 @@ Body 参数：
 | code | string | 是 | 手机验证码（scene=admin_verify） |
 
 返回 data：`null`（HTTP 200 表示认证成功，记录 admin_phone_verified_at）。
+普通用户调用返回 403（错误码 40003）。
 
 ### 2.17 管理员邮箱双重认证
 
@@ -440,7 +441,7 @@ Body 参数：
 POST /api/admin/auth/verify-email
 ```
 
-需要：Bearer Token（已登录的管理员账号）。前置条件：手机号认证必须在有效期内。
+需要：Bearer Token + `user:manage` 权限（仅限管理员账号）。前置条件：手机号认证必须在有效期内。
 
 Body 参数：
 

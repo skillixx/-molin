@@ -2,7 +2,6 @@
 
 CREATE TABLE IF NOT EXISTS users (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  username VARCHAR(64) NULL,
   email VARCHAR(191) NULL,
   email_verified TINYINT(1) NOT NULL DEFAULT 0,
   phone VARCHAR(32) NULL,
@@ -12,12 +11,9 @@ CREATE TABLE IF NOT EXISTS users (
   real_name VARCHAR(128) NULL,
   status VARCHAR(32) NOT NULL DEFAULT 'active',
   wallet_id BIGINT UNSIGNED NULL,
-  admin_phone_verified_at DATETIME NULL,
-  admin_email_verified_at DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY uk_users_username (username),
   UNIQUE KEY uk_users_email (email),
   UNIQUE KEY uk_users_phone (phone)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

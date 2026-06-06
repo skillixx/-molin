@@ -10,7 +10,8 @@ import (
 )
 
 // RegisterRoutes 将 auth 模块路由注册到 mux。
-func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc *service.VerificationService, cfg config.Config) {
+// iamChecker 用于管理员双重认证接口的角色权限校验。
+func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc *service.VerificationService, cfg config.Config, iamChecker middleware.IAMChecker) {
 	h := handler.NewAuthHandler(authSvc, verifySvc, cfg)
 
 	// 无需鉴权的接口
@@ -35,7 +36,11 @@ func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc 
 	mux.Handle("PATCH /api/me/phone", auth(h.UpdatePhone))
 	mux.Handle("PATCH /api/me/email", auth(h.UpdateEmail))
 
-	// 管理员双重认证接口（需登录，角色校验由调用方判断）
-	mux.Handle("POST /api/admin/auth/verify-phone", auth(h.AdminVerifyPhone))
-	mux.Handle("POST /api/admin/auth/verify-email", auth(h.AdminVerifyEmail))
+	// 管理员双重认证接口（需登录 + user:manage 权限，仅限管理员账号）
+	adminAuth := func(next http.HandlerFunc) http.Handler {
+		return middleware.RequireAuth(cfg.JWTSecret, authSvc,
+			middleware.RequirePerm(iamChecker, "user:manage", http.HandlerFunc(next)))
+	}
+	mux.Handle("POST /api/admin/auth/verify-phone", adminAuth(h.AdminVerifyPhone))
+	mux.Handle("POST /api/admin/auth/verify-email", adminAuth(h.AdminVerifyEmail))
 }
