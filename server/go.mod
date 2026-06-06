@@ -16,6 +16,7 @@ require (
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
+	github.com/shopspring/decimal v1.4.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 )

@@ -10,12 +10,19 @@ import (
 	authmod "molin/server/internal/modules/auth"
 	authrep "molin/server/internal/modules/auth/repository"
 	authsvc "molin/server/internal/modules/auth/service"
+	billingmod "molin/server/internal/modules/billing"
+	billingsvc "molin/server/internal/modules/billing/service"
+	billingrepo "molin/server/internal/modules/billing/repository"
+	financemod "molin/server/internal/modules/finance_consumer"
 	iammod "molin/server/internal/modules/iam"
 	iamrep "molin/server/internal/modules/iam/repository"
 	iamsvc "molin/server/internal/modules/iam/service"
 	identitymod "molin/server/internal/modules/identity"
 	identityrep "molin/server/internal/modules/identity/repository"
 	identitysvc "molin/server/internal/modules/identity/service"
+	ordermod "molin/server/internal/modules/order"
+	productmod "molin/server/internal/modules/product"
+	productrep "molin/server/internal/modules/product/repository"
 	"molin/server/pkg/cache"
 	"molin/server/pkg/db"
 	"molin/server/pkg/response"
@@ -64,6 +71,14 @@ func NewApp() (*App, error) {
 	identityRepo := identityrep.NewIdentityRepository(gormDB)
 	identityService := identitysvc.NewIdentityService(identityRepo, userRepo, gormDB, cfg)
 
+	// ——— Billing 模块（WalletService 供 product 购买接口注入）———
+	walletRepo := billingrepo.NewWalletRepository(gormDB)
+	txRepo := billingrepo.NewTransactionRepository(gormDB)
+	walletService := billingsvc.NewWalletService(gormDB, walletRepo, txRepo)
+
+	// ——— Product 模块（用户信息适配器，用于实名校验）———
+	userRepoAdapter := productrep.NewUserRepoAdapter(gormDB)
+
 	// ——— 构建路由 ———
 	mux := http.NewServeMux()
 
@@ -82,6 +97,19 @@ func NewApp() (*App, error) {
 	authmod.RegisterRoutes(mux, authService, verifySvc, cfg, iamService)
 	iammod.RegisterRoutes(mux, iamService, cfg.JWTSecret, authService)
 	identitymod.RegisterRoutes(mux, identityService, iamService, cfg.JWTSecret, authService)
+
+	// 注册 billing 模块（钱包、充值、支付回调）
+	billingmod.RegisterRoutes(mux, gormDB, cfg.JWTSecret, authService, iamService)
+
+	// 注册 order 模块（订单查询）
+	ordermod.RegisterRoutes(mux, gormDB, cfg.JWTSecret, authService, iamService)
+
+	// 注册 product 模块（商品、套餐、价格、购买）
+	// walletService 实现 BillingService 接口（提供 Deduct 方法）
+	productmod.RegisterRoutes(mux, gormDB, cfg.JWTSecret, authService, iamService, walletService, userRepoAdapter)
+
+	// 注册 finance_consumer 模块（内部消费事件接口，IP 白名单保护）
+	financemod.RegisterRoutes(mux, gormDB)
 
 	// 全局中间件（最外层）
 	handler := middleware.RequestID(middleware.Recovery(middleware.Logger(mux)))
