@@ -72,9 +72,10 @@ func RegisterRoutes(
 	mux.Handle("POST /api/products/{id}/purchase", auth(userHandler.Purchase))
 
 	// 管理端路由（需要登录 + 对应权限）
-	mux.Handle("GET /api/admin/products", adminAuth("product:create", adminHandler.ListProducts))
+	// 只读接口使用 product:view 权限码，创建接口使用 product:create
+	mux.Handle("GET /api/admin/products", adminAuth("product:view", adminHandler.ListProducts))
 	mux.Handle("POST /api/admin/products", adminAuth("product:create", adminHandler.CreateProduct))
-	mux.Handle("GET /api/admin/products/{id}", adminAuth("product:create", adminHandler.GetProduct))
+	mux.Handle("GET /api/admin/products/{id}", adminAuth("product:view", adminHandler.GetProduct))
 	mux.Handle("PATCH /api/admin/products/{id}", adminAuth("product:edit", adminHandler.UpdateProduct))
 	mux.Handle("PATCH /api/admin/products/{id}/status", adminAuth("product:edit", adminHandler.UpdateProductStatus))
 	mux.Handle("GET /api/admin/products/{id}/plans", adminAuth("product:create", adminHandler.ListPlans))

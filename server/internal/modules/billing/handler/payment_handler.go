@@ -38,10 +38,11 @@ func (h *PaymentHandler) HandleNotify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.paymentSvc.HandleNotify(r.Context(), provider, rawBody); err != nil {
+	if err := h.paymentSvc.HandleNotify(r.Context(), provider, rawBody, r.Header); err != nil {
 		switch {
-		case errors.Is(err, service.ErrInvalidSignature):
-			response.Error(w, http.StatusForbidden, 40003, "签名校验失败")
+		case errors.Is(err, service.ErrInvalidSignature), errors.Is(err, service.ErrMissingSignature):
+			// 签名错误/缺少签名是请求参数问题，返回 400（不是权限问题，不用 403）
+			response.Error(w, http.StatusBadRequest, 40000, "签名校验失败")
 		case errors.Is(err, service.ErrUnsupportedProvider):
 			response.Error(w, http.StatusBadRequest, 40000, "不支持的支付渠道")
 		default:

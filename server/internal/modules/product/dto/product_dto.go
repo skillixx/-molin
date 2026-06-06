@@ -71,7 +71,9 @@ type ReplaceAccessReq struct {
 
 // PurchaseReq 购买请求体（Idempotency-Key 在请求头中，此结构体用于 Body）。
 type PurchaseReq struct {
-	PlanID uint64 `json:"plan_id"`
+	PlanID   uint64 `json:"plan_id"`
+	Quantity int    `json:"quantity"` // 购买数量，默认为 1；传 0 或不传均视为 1
+	Remark   string `json:"remark,omitempty"` // 购买备注（可选）
 }
 
 // PurchaseResult 购买结果。

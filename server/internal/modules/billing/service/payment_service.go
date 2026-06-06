@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"net/http"
 
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
@@ -13,6 +15,7 @@ import (
 	"molin/server/internal/modules/billing/repository"
 	orderrepo "molin/server/internal/modules/order/repository"
 	ordersvc "molin/server/internal/modules/order/service"
+	"molin/server/pkg/crypto"
 )
 
 // ErrInvalidSignature 签名校验失败。
@@ -20,6 +23,9 @@ var ErrInvalidSignature = errors.New("支付签名校验失败")
 
 // ErrUnsupportedProvider 不支持的支付渠道。
 var ErrUnsupportedProvider = errors.New("不支持的支付渠道")
+
+// ErrMissingSignature 缺少签名字段（拒绝明显伪造请求）。
+var ErrMissingSignature = errors.New("缺少签名字段")
 
 // notifyBody 解析支付回调报文的通用字段（不同渠道有差异，此处简化）。
 type notifyBody struct {
@@ -39,9 +45,12 @@ type PaymentService struct {
 	orderSvc        *ordersvc.OrderService
 	wechatVerifier  *WechatVerifier
 	alipayVerifier  *AlipayVerifier
+	// notifyBodyKey 支付回调报文 AES-256-GCM 加密密钥（32 字节）；为空时降级为明文并记录 warn。
+	notifyBodyKey   []byte
 }
 
 // NewPaymentService 创建支付服务实例。
+// notifyBodyKey 从环境变量 NOTIFY_BODY_KEY 读取（32 字节），未配置时降级明文并 warn。
 func NewPaymentService(
 	db *gorm.DB,
 	paymentRepo *repository.PaymentRepository,
@@ -50,8 +59,9 @@ func NewPaymentService(
 	orderSvc *ordersvc.OrderService,
 	wechatVerifier *WechatVerifier,
 	alipayVerifier *AlipayVerifier,
+	notifyBodyKey string,
 ) *PaymentService {
-	return &PaymentService{
+	svc := &PaymentService{
 		db:             db,
 		paymentRepo:    paymentRepo,
 		walletSvc:      walletSvc,
@@ -60,16 +70,36 @@ func NewPaymentService(
 		wechatVerifier: wechatVerifier,
 		alipayVerifier: alipayVerifier,
 	}
+	if notifyBodyKey == "" {
+		log.Println("[WARN] NOTIFY_BODY_KEY 未配置，支付回调报文将以明文存储，存在安全风险")
+	} else {
+		svc.notifyBodyKey = []byte(notifyBodyKey)
+	}
+	return svc
+}
+
+// encryptNotifyBody 对回调报文加密；未配置 key 时降级为明文。
+func (s *PaymentService) encryptNotifyBody(rawBody []byte) string {
+	if len(s.notifyBodyKey) == 0 {
+		return string(rawBody)
+	}
+	encrypted, err := crypto.Encrypt(string(rawBody), s.notifyBodyKey)
+	if err != nil {
+		// 加密失败时降级为明文，保证业务不中断，但记录 warn
+		log.Printf("[WARN] notify_body 加密失败，降级为明文存储: %v", err)
+		return string(rawBody)
+	}
+	return encrypted
 }
 
 // HandleNotify 处理支付平台回调（签名校验 + 幂等处理）。
 // 安全规范：
 //  1. 必须先校验签名，校验失败立即拒绝
 //  2. 同一 provider_trade_no 幂等处理，不重复入账
-//  3. notify_body 存储原始回调报文
-func (s *PaymentService) HandleNotify(ctx context.Context, provider string, rawBody []byte) error {
+//  3. notify_body 加密存储回调报文
+func (s *PaymentService) HandleNotify(ctx context.Context, provider string, rawBody []byte, header http.Header) error {
 	// 1. 签名校验（必须在任何业务逻辑之前）
-	if err := s.verify(provider, rawBody); err != nil {
+	if err := s.verify(provider, rawBody, header); err != nil {
 		return err
 	}
 
@@ -85,12 +115,12 @@ func (s *PaymentService) HandleNotify(ctx context.Context, provider string, rawB
 		return fmt.Errorf("订单不存在: %s", orderNo)
 	}
 
-	// 4. 幂等写入回调记录（received 状态）
+	// 4. 幂等写入回调记录（received 状态），notify_body 加密存储
 	callback := &model.PaymentCallback{
 		OrderID:         order.ID,
 		Provider:        provider,
 		ProviderTradeNo: providerTradeNo,
-		NotifyBody:      string(rawBody),
+		NotifyBody:      s.encryptNotifyBody(rawBody),
 		Status:          "received",
 	}
 	_ = s.paymentRepo.Upsert(ctx, callback)
@@ -101,15 +131,18 @@ func (s *PaymentService) HandleNotify(ctx context.Context, provider string, rawB
 	}
 
 	// 6. 事务：更新订单状态 → 充值入账 → 写流水 → 标记已处理
+	// 注意：使用事务外查到的 order.Status 快照判断幂等，不依赖 MarkPaidByOrderNo 返回值。
+	// 原因：MarkPaidByOrderNo 对 pending 订单执行 UPDATE 后，返回对象 Status 已变为 "paid"，
+	// 若用返回值判断 "Status==paid" 会误判首次充值为重复，导致钱永远入不了账。
+	originalStatus := order.Status
 	return s.db.Transaction(func(tx *gorm.DB) error {
-		// 更新订单为 paid（状态机：pending → paid）
-		paidOrder, err := s.orderSvc.MarkPaidByOrderNo(tx, orderNo)
-		if err != nil {
-			return err
+		// 若事务外查到的订单状态已非 pending，说明并发场景中已被其他请求处理，幂等返回
+		if originalStatus != "pending" {
+			return nil
 		}
-		// 若订单已经不是 pending（之前已处理），幂等返回
-		if paidOrder.Status == "paid" && paidOrder.PaidAt != nil {
-			// 已是 paid 状态，可能是并发重复回调，检查是否需要入账
+		// 更新订单为 paid（状态机：pending → paid）
+		if _, err := s.orderSvc.MarkPaidByOrderNo(tx, orderNo); err != nil {
+			return err
 		}
 
 		// 充值入账（Recharge 内部也使用乐观锁，此处直接调用 walletSvc 内部方法）
@@ -163,12 +196,12 @@ func (s *PaymentService) rechargeTx(tx *gorm.DB, userID uint64, amount decimal.D
 }
 
 // verify 按渠道调用对应签名校验器。
-func (s *PaymentService) verify(provider string, rawBody []byte) error {
+func (s *PaymentService) verify(provider string, rawBody []byte, header http.Header) error {
 	switch provider {
 	case "wechat":
-		return s.wechatVerifier.Verify(rawBody)
+		return s.wechatVerifier.Verify(rawBody, header)
 	case "alipay":
-		return s.alipayVerifier.Verify(rawBody)
+		return s.alipayVerifier.Verify(rawBody, header)
 	default:
 		return ErrUnsupportedProvider
 	}
@@ -198,7 +231,7 @@ func (s *PaymentService) parse(provider string, rawBody []byte) (orderNo, provid
 // CreateRechargeOrder 创建充值订单（调用 order 模块创建 recharge 类型订单）。
 // 返回模拟的支付 URL（Week 2 阶段不对接真实支付，仅创建订单）。
 func (s *PaymentService) CreateRechargeOrder(ctx context.Context, userID uint64, amount decimal.Decimal, idempotencyKey string) (string, uint64, error) {
-	order, err := s.orderSvc.Create(ctx, userID, 0, 0, amount, "recharge", idempotencyKey)
+	order, err := s.orderSvc.Create(ctx, userID, 0, 0, amount, "recharge", idempotencyKey, "")
 	if err != nil {
 		return "", 0, err
 	}

@@ -63,11 +63,14 @@ func NewPurchaseService(
 //  2. 校验购买权限（product_role_access.can_buy，code=40003）
 //  3. 计算用户实际价格（会员价 > 角色价 > 默认价）
 //  4. 幂等检查（Idempotency-Key 唯一索引，重复请求返回已有订单）
-//  5. 创建订单（pending 状态）
+//  5. 创建订单（pending 状态，remark 写入订单备注）
 //  6. 钱包扣费（乐观锁，最多重试 3 次）
 //  7. 更新订单为 paid
 //  8. 触发商品开通（异步，不阻塞响应）
-func (s *PurchaseService) Purchase(ctx context.Context, userID, productID, planID uint64, idempotencyKey string) (*dto.PurchaseResult, error) {
+//
+// quantity 暂时不影响计价逻辑（TODO: Week 3 按数量计算总价）。
+// remark 写入订单备注字段。
+func (s *PurchaseService) Purchase(ctx context.Context, userID, productID, planID uint64, idempotencyKey string, quantity int, remark string) (*dto.PurchaseResult, error) {
 	// 1. 实名校验
 	realNameStatus, err := s.userRepo.GetRealNameStatus(ctx, userID)
 	if err != nil {
@@ -101,9 +104,10 @@ func (s *PurchaseService) Purchase(ctx context.Context, userID, productID, planI
 		}, nil
 	}
 
-	// 5. 创建订单（pending 状态）。
+	// 5. 创建订单（pending 状态），写入 remark 备注。
 	// 若 idempotency_key 并发竞争导致唯一索引冲突，Create 内部会重查返回已有订单。
-	order, err := s.orderSvc.Create(ctx, userID, productID, planID, price, "product", idempotencyKey)
+	// TODO: Week 3 按 quantity 计算总价（当前 quantity 暂不参与计价）
+	order, err := s.orderSvc.Create(ctx, userID, productID, planID, price, "product", idempotencyKey, remark)
 	if err != nil {
 		return nil, err
 	}

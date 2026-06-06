@@ -37,6 +37,9 @@ type Config struct {
 
 	// 管理员双重认证有效期（小时），超时后需重新认证
 	AdminVerifyExpireHours int
+
+	// 支付回调报文加密密钥（32 字节，AES-256-GCM），未配置时记录 warn 并降级为明文
+	NotifyBodyKey string
 }
 
 func Load() Config {
@@ -65,6 +68,8 @@ func Load() Config {
 		IDCardHMACSecret: getenv("ID_CARD_HMAC_SECRET", ""),
 
 		AdminVerifyExpireHours: getenvInt("ADMIN_VERIFY_EXPIRE_HOURS", 24),
+
+		NotifyBodyKey: getenv("NOTIFY_BODY_KEY", ""),
 	}
 }
 
