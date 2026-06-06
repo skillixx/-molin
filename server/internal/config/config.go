@@ -34,6 +34,9 @@ type Config struct {
 
 	// 身份证号 HMAC（禁止使用 SHA-256/MD5 直接哈希）
 	IDCardHMACSecret string
+
+	// 管理员双重认证有效期（小时），超时后需重新认证
+	AdminVerifyExpireHours int
 }
 
 func Load() Config {
@@ -60,6 +63,8 @@ func Load() Config {
 		RefreshTokenExpireDays: getenvInt("REFRESH_TOKEN_EXPIRE_DAYS", 30),
 
 		IDCardHMACSecret: getenv("ID_CARD_HMAC_SECRET", ""),
+
+		AdminVerifyExpireHours: getenvInt("ADMIN_VERIFY_EXPIRE_HOURS", 24),
 	}
 }
 

@@ -253,8 +253,8 @@ func (s *AuthService) GetMe(ctx context.Context, userID uint64) (*dto.UserInfo, 
 		PhoneVerified:      user.PhoneVerified,
 		RealNameStatus:     user.RealNameStatus,
 		Status:             user.Status,
-		AdminPhoneVerified: user.AdminPhoneVerifiedAt != nil,
-		AdminEmailVerified: user.AdminEmailVerifiedAt != nil,
+		AdminPhoneVerified: isAdminVerifyValid(user.AdminPhoneVerifiedAt, s.cfg.AdminVerifyExpireHours),
+		AdminEmailVerified: isAdminVerifyValid(user.AdminEmailVerifiedAt, s.cfg.AdminVerifyExpireHours),
 		CreatedAt:          user.CreatedAt,
 	}
 
@@ -438,8 +438,8 @@ func (s *AuthService) AdminVerifyEmail(ctx context.Context, userID uint64, code 
 	if err != nil {
 		return ErrUnauthorized
 	}
-	// 检查手机号已认证（顺序要求）
-	if user.AdminPhoneVerifiedAt == nil {
+	// 检查手机号已认证且未过期（顺序要求）
+	if !isAdminVerifyValid(user.AdminPhoneVerifiedAt, s.cfg.AdminVerifyExpireHours) {
 		return ErrAdminPhoneNotVerified
 	}
 	if user.Email == nil {
@@ -467,8 +467,8 @@ func (s *AuthService) UpdateUsername(ctx context.Context, userID uint64, req dto
 
 // UpdatePhone 修改手机号（验证码校验后更新，标记已验证）。
 func (s *AuthService) UpdatePhone(ctx context.Context, userID uint64, req dto.UpdatePhoneReq) error {
-	// 1. 校验新手机号收到的验证码（scene: register，表示绑定新号码）
-	if err := s.verifySvc.Check(ctx, "phone", req.Phone, "register", req.Code); err != nil {
+	// 1. 校验新手机号收到的验证码（scene: bind_phone，专用于绑定/更换手机号场景）
+	if err := s.verifySvc.Check(ctx, "phone", req.Phone, "bind_phone", req.Code); err != nil {
 		return ErrInvalidCode
 	}
 	// 2. 检查新手机号是否已被其他账号使用
@@ -484,8 +484,8 @@ func (s *AuthService) UpdatePhone(ctx context.Context, userID uint64, req dto.Up
 
 // UpdateEmail 修改邮箱（验证码校验后更新，标记已验证）。
 func (s *AuthService) UpdateEmail(ctx context.Context, userID uint64, req dto.UpdateEmailReq) error {
-	// 1. 校验新邮箱收到的验证码（scene: register，表示绑定新邮箱）
-	if err := s.verifySvc.Check(ctx, "email", req.Email, "register", req.Code); err != nil {
+	// 1. 校验新邮箱收到的验证码（scene: bind_email，专用于绑定/更换邮箱场景）
+	if err := s.verifySvc.Check(ctx, "email", req.Email, "bind_email", req.Code); err != nil {
 		return ErrInvalidCode
 	}
 	// 2. 检查新邮箱是否已被其他账号使用
@@ -497,6 +497,17 @@ func (s *AuthService) UpdateEmail(ctx context.Context, userID uint64, req dto.Up
 		return err
 	}
 	return s.userRepo.UpdateEmailVerified(ctx, userID)
+}
+
+// isAdminVerifyValid 判断管理员认证时间戳是否在有效期内（expireHours=0 表示永不过期）。
+func isAdminVerifyValid(verifiedAt *time.Time, expireHours int) bool {
+	if verifiedAt == nil {
+		return false
+	}
+	if expireHours <= 0 {
+		return true
+	}
+	return time.Since(*verifiedAt) < time.Duration(expireHours)*time.Hour
 }
 
 func generateRandomToken() string {
