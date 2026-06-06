@@ -20,14 +20,15 @@ func NewPaymentRepository(db *gorm.DB) *PaymentRepository {
 	return &PaymentRepository{db: db}
 }
 
-// Upsert 幂等写入支付回调记录（provider + provider_trade_no 联合唯一，重复时更新 notify_body 和 status）。
+// Upsert 幂等写入支付回调记录（provider + provider_trade_no 联合唯一，重复时只更新 notify_body）。
+// 注意：不能更新 status 字段，否则已处理的回调（processed）会被重置为 received，导致重复入账。
 func (r *PaymentRepository) Upsert(ctx context.Context, callback *model.PaymentCallback) error {
 	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{
 			{Name: "provider"},
 			{Name: "provider_trade_no"},
 		},
-		DoUpdates: clause.AssignmentColumns([]string{"notify_body", "status", "updated_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"notify_body", "updated_at"}),
 	}).Create(callback).Error
 }
 

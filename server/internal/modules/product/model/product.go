@@ -61,6 +61,9 @@ type ProductRoleAccess struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// TableName 指定表名，防止 GORM 自动复数化为 product_role_accesses。
+func (ProductRoleAccess) TableName() string { return "product_role_access" }
+
 // ProductBillingRule 商品计费规则表，对应 product_billing_rules 表。
 type ProductBillingRule struct {
 	ID            uint64          `gorm:"primaryKey;autoIncrement" json:"id"`
