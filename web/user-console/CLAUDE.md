@@ -115,7 +115,9 @@ Vue3 + Vite + TypeScript + Element Plus + Pinia + Vue Router + Axios
 
 API 层：
 □ src/api/http.ts          — Axios 实例（含 Token 自动刷新拦截器）
-□ src/api/auth.ts          — register / login / logout / refresh / getMe
+□ src/api/auth.ts          — register（统一）/ registerEmail / registerPhone / loginEmail / loginPhone /
+                              logout / refresh / getMe / resetPassword /
+                              updateUsername / updatePhone / updateEmail（★Week1新增）
 □ src/api/identity.ts      — submitVerification / getMyVerification
 □ src/api/product.ts       — listProducts / getProduct / purchaseProduct
 
@@ -125,13 +127,15 @@ Store：
 
 类型定义：
 □ src/types/api.ts         — PageResponse<T> / ApiResponse<T>
-□ src/types/auth.ts        — User / TokenPair
+□ src/types/auth.ts        — User（含 username/脱敏手机邮箱/admin_phone_verified/admin_email_verified/last_login_at）/ TokenPair
 □ src/types/product.ts     — Product / Plan / Price
 □ src/types/asset.ts       — UserAsset / UserEntitlement
 
 页面（Week 1）：
-□ src/views/auth/RegisterView.vue      — 注册页（邮箱/手机号切换）
+□ src/views/auth/RegisterView.vue      — 注册页（推荐用统一注册接口，手机+邮箱双OTP，可选用户名）
 □ src/views/auth/LoginView.vue         — 登录页
+□ src/views/auth/ResetPasswordView.vue — 密码重置页（OTP方式，手机或邮箱二选一）★新增
+□ src/views/profile/ProfileView.vue    — 个人信息页（修改用户名/手机/邮箱）★新增
 □ src/views/identity/VerificationView.vue  — 实名认证提交
 □ src/components/layout/UserLayout.vue — 整体布局（顶栏 + 内容区）
 □ src/components/layout/TopNav.vue     — 顶部导航（Logo、菜单、余额显示）
@@ -438,3 +442,98 @@ npm install -D @types/uuid @types/node
 - 购买流程：选套餐 → 显示价格预览 → 确认 → 后端扣费 → 跳转我的资产。
 - 钱包余额变化后调用 `walletStore.fetchBalance()` 实时刷新展示。
 - Token 自动刷新静默处理，用户无感知。
+
+---
+
+## Auth 接口速查（Week 1 新接口，★ 为本次新增）
+
+### ★ 统一注册
+
+```typescript
+// POST /api/auth/register
+// 推荐用此接口，同时绑定手机+邮箱，双OTP验证
+async function register(params: {
+  phone: string
+  email: string
+  password: string
+  phone_code: string   // scene=register 的短信验证码
+  email_code: string   // scene=register 的邮箱验证码
+  username?: string    // 可选，2-32位字母/数字/下划线
+}): Promise<{ access_token: string; refresh_token: string; expires_in: number }>
+```
+
+注册成功后 `phone_verified` 和 `email_verified` 自动为 `true`。
+
+### ★ OTP 密码重置
+
+```typescript
+// POST /api/auth/password/reset
+// 无需登录；重置成功后该用户所有 Refresh Token 被吊销
+async function resetPassword(params: {
+  target: string       // 手机号或邮箱
+  target_type: 'phone' | 'email'
+  code: string         // scene=reset_password 的验证码
+  new_password: string
+}): Promise<null>
+```
+
+### GET /api/me 响应字段（新增字段）
+
+```typescript
+interface User {
+  id: number
+  username: string | null        // 用户名（未设置时为 null）
+  email: string | null           // 脱敏邮箱，如 "ab***@example.com"
+  phone: string | null           // 脱敏手机，如 "138****5678"
+  email_verified: boolean
+  phone_verified: boolean
+  real_name_status: 'unverified' | 'pending' | 'verified' | 'rejected'
+  status: 'active' | 'disabled'
+  admin_phone_verified: boolean  // 管理员手机认证是否在有效期内
+  admin_email_verified: boolean  // 管理员邮箱认证是否在有效期内
+  created_at: string             // ISO 8601
+  last_login_at: string | null   // ISO 8601
+}
+```
+
+### ★ 修改用户名
+
+```typescript
+// PATCH /api/me/username   需要 Bearer Token
+async function updateUsername(username: string): Promise<null>
+// 用户名规则：2-32位字母/数字/下划线，全局唯一，409=重复
+```
+
+### ★ 修改手机号
+
+```typescript
+// PATCH /api/me/phone   需要 Bearer Token
+// 前置：先向新手机号发送 scene=bind_phone 的短信验证码
+async function updatePhone(params: {
+  phone: string  // 新手机号
+  code: string   // 新手机号收到的验证码
+}): Promise<null>
+// 成功后 phone_verified 自动置为 true
+```
+
+### ★ 修改邮箱
+
+```typescript
+// PATCH /api/me/email   需要 Bearer Token
+// 前置：先向新邮箱发送 scene=bind_email 的邮箱验证码
+async function updateEmail(params: {
+  email: string  // 新邮箱
+  code: string   // 新邮箱收到的验证码
+}): Promise<null>
+// 成功后 email_verified 自动置为 true
+```
+
+### 验证码场景（scene）汇总
+
+| scene 值 | 用途 | 接口 |
+|---|---|---|
+| `register` | 注册时验证手机/邮箱 | 统一注册 / 邮箱注册 / 手机注册 |
+| `reset_password` | 重置密码 | OTP密码重置 |
+| `bind_phone` | 绑定/修改手机号 | PATCH /api/me/phone |
+| `bind_email` | 绑定/修改邮箱 | PATCH /api/me/email |
+| `admin_verify` | 管理员双重认证 | 管理员双重认证接口 |

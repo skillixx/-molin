@@ -67,9 +67,11 @@ server/internal/modules/asset/
 
 ### 3.1 认证模块
 
+**原有接口：**
+
 | 用例 | 接口 | 输入 | 期望结果 |
 |---|---|---|---|
-| 邮箱注册成功 | POST /api/auth/register/email | 正确邮箱、密码、验证码 | 200，返回 access_token |
+| 邮箱注册成功 | POST /api/auth/register/email | 正确邮箱、密码、验证码 | 201，返回 access_token |
 | 重复邮箱注册 | POST /api/auth/register/email | 已注册邮箱 | 409，code=40900 |
 | 验证码错误 | POST /api/auth/register/email | 错误验证码 | 400，code=40000 |
 | 邮箱登录成功 | POST /api/auth/login/email | 正确邮箱、密码 | 200，返回 token 对 |
@@ -78,6 +80,74 @@ server/internal/modules/asset/
 | 刷新令牌 | POST /api/auth/refresh | 有效 refresh_token | 200，新 access_token |
 | 用吊销的 Token 刷新 | POST /api/auth/refresh | 已退出的 refresh_token | 401 |
 | 验证码限流 | POST /api/auth/verification-codes/email | 连续 11 次 | 第 11 次返回 429 |
+
+**★ 统一注册（POST /api/auth/register）：**
+
+| 用例 | 输入 | 期望结果 |
+|---|---|---|
+| 统一注册成功（手机+邮箱双OTP） | 正确手机/邮箱/密码/双验证码 | 201，返回 token 对，phone_verified/email_verified=true |
+| 手机号重复 | 已注册手机号 | 409，code=40900 |
+| 邮箱重复 | 已注册邮箱 | 409，code=40900 |
+| 用户名重复 | 已存在用户名 | 409，code=40900 |
+| 手机验证码错误 | 错误 phone_code | 400，code=40000 |
+| 邮箱验证码错误 | 错误 email_code | 400，code=40000 |
+| 用户名过短（1位） | username="a" | 400 |
+| 用户名过长（33位） | username 超长 | 400 |
+| 用户名含非法字符 | username 含空格/特殊符号 | 400 |
+
+**★ OTP 密码重置（POST /api/auth/password/reset）：**
+
+| 用例 | 输入 | 期望结果 |
+|---|---|---|
+| 手机 OTP 重置成功 | 正确手机号、验证码、新密码 | 200；旧密码无法登录；新密码可登录 |
+| 邮箱 OTP 重置成功 | 正确邮箱、验证码、新密码 | 200；旧密码无法登录 |
+| 重置后旧 Refresh Token 失效 | 使用旧 refresh_token 刷新 | 401（全部会话已吊销） |
+| 验证码错误 | 错误 code | 400，code=40000 |
+| 不存在的手机/邮箱 | 未注册账号 | 400 |
+| 非法 target_type | target_type="wechat" | 400 |
+
+**★ 修改用户名（PATCH /api/me/username）：**
+
+| 用例 | 输入 | 期望结果 |
+|---|---|---|
+| 修改成功 | 合法新用户名 | 200；GET /api/me 返回新用户名 |
+| 用户名重复 | 已存在用户名 | 409，code=40900 |
+| 用户名非法 | 含特殊字符 | 400 |
+| 无 Token | 无 Authorization 头 | 401 |
+
+**★ 修改手机号（PATCH /api/me/phone）：**
+
+| 用例 | 输入 | 期望结果 |
+|---|---|---|
+| 修改成功 | 新手机号 + 正确验证码（scene=bind_phone） | 200；phone_verified=true |
+| 验证码错误 | 错误 code | 400，code=40000 |
+| 无 Token | 无 Authorization 头 | 401 |
+
+**★ 修改邮箱（PATCH /api/me/email）：**
+
+| 用例 | 输入 | 期望结果 |
+|---|---|---|
+| 修改成功 | 新邮箱 + 正确验证码（scene=bind_email） | 200；email_verified=true |
+| 验证码错误 | 错误 code | 400，code=40000 |
+| 无 Token | 无 Authorization 头 | 401 |
+
+**★ 管理员手机双重认证（POST /api/admin/auth/verify-phone）：**
+
+| 用例 | 输入 | 期望结果 |
+|---|---|---|
+| 认证成功 | 管理员 Token + 正确验证码（scene=admin_verify） | 200；admin_phone_verified=true |
+| 验证码错误 | 正确 Token + 错误验证码 | 400，code=40000 |
+| 无 Token | 无 Authorization 头 | 401 |
+| 普通用户访问 | 无 user:manage 权限的 Token | 403，code=40003 |
+
+**★ 管理员邮箱双重认证（POST /api/admin/auth/verify-email）：**
+
+| 用例 | 输入 | 期望结果 |
+|---|---|---|
+| 认证成功 | 管理员 Token + 手机已认证 + 正确邮箱验证码 | 200；admin_email_verified=true |
+| 验证码错误 | 正确 Token + 错误验证码 | 400，code=40000 |
+| 无 Token | 无 Authorization 头 | 401 |
+| 普通用户访问 | 无 user:manage 权限的 Token | 403，code=40003 |
 
 ### 3.2 实名认证
 

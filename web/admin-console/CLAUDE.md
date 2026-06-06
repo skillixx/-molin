@@ -112,7 +112,8 @@ Vue3 + Vite + TypeScript + Element Plus + Pinia + Vue Router + Axios
 
 API 层：
 □ src/api/http.ts          — Axios 实例 + 请求/响应拦截器
-□ src/api/auth.ts          — login / logout / refreshToken / getMe
+□ src/api/auth.ts          — login / logout / refreshToken / getMe /
+                              adminVerifyPhone / adminVerifyEmail（★Week1新增，管理员双重认证）
 □ src/api/user.ts          — listUsers / getUser / updateUserStatus
 □ src/api/role.ts          — listRoles / createRole / listPermissions / updateRolePermissions
 □ src/api/identity.ts      — listVerifications / reviewVerification
@@ -123,7 +124,7 @@ Store：
 
 类型定义：
 □ src/types/api.ts         — PageResponse<T> / ApiResponse<T>
-□ src/types/user.ts        — User / Role / Permission
+□ src/types/user.ts        — User（含 username/脱敏手机邮箱/admin_phone_verified/admin_email_verified/last_login_at）/ Role / Permission
 □ src/types/product.ts     — Product / Plan / Price
 □ src/types/order.ts       — Order / WalletTransaction
 □ src/types/asset.ts       — UserAsset / UserEntitlement
@@ -373,3 +374,66 @@ npm install -D @types/node unplugin-vue-components unplugin-auto-import
 - 所有 API 调用放在 `src/api/` 下，页面只调用 API 函数，不直接用 axios。
 - 状态码 40001/40003/60001/70001 等统一在响应拦截器中处理，不在页面重复处理。
 - 删除、封禁等破坏性操作必须显示 ElMessageBox.confirm 二次确认。
+
+---
+
+## Auth 接口速查（Week 1 新接口，★ 为本次新增）
+
+### GET /api/me 响应字段（新增字段）
+
+```typescript
+interface User {
+  id: number
+  username: string | null         // 用户名（未设置时为 null）
+  email: string | null            // 脱敏邮箱，如 "ab***@example.com"
+  phone: string | null            // 脱敏手机，如 "138****5678"
+  email_verified: boolean
+  phone_verified: boolean
+  real_name_status: 'unverified' | 'pending' | 'verified' | 'rejected'
+  status: 'active' | 'disabled'
+  admin_phone_verified: boolean   // 管理员手机认证是否在有效期内
+  admin_email_verified: boolean   // 管理员邮箱认证是否在有效期内
+  created_at: string              // ISO 8601
+  last_login_at: string | null    // ISO 8601
+}
+```
+
+### ★ 管理员手机双重认证
+
+```typescript
+// POST /api/admin/auth/verify-phone
+// 需要 Bearer Token + user:manage 权限
+// 前置：向管理员自己的手机号发送 scene=admin_verify 短信验证码
+async function adminVerifyPhone(code: string): Promise<null>
+// 成功后 admin_phone_verified 变为 true（有效期由服务端 ADMIN_VERIFY_EXPIRE_HOURS 控制，默认24小时）
+```
+
+### ★ 管理员邮箱双重认证
+
+```typescript
+// POST /api/admin/auth/verify-email
+// 需要 Bearer Token + user:manage 权限
+// 前置：手机认证必须已在有效期内（先完成 verify-phone），再向管理员自己的邮箱发送 scene=admin_verify 验证码
+async function adminVerifyEmail(code: string): Promise<null>
+// 成功后 admin_email_verified 变为 true
+```
+
+### 管理员双重认证完整流程
+
+```text
+1. 发送手机验证码：POST /api/auth/verification-codes/phone { target: 管理员手机号, scene: "admin_verify" }
+2. 提交手机认证：POST /api/admin/auth/verify-phone { code: "XXXXXX" }
+3. 发送邮箱验证码：POST /api/auth/verification-codes/email { target: 管理员邮箱, scene: "admin_verify" }
+4. 提交邮箱认证：POST /api/admin/auth/verify-email { code: "XXXXXX" }
+认证有效期：24小时（服务端配置 ADMIN_VERIFY_EXPIRE_HOURS）
+```
+
+### 错误码参考
+
+| 错误码 | 含义 |
+|---|---|
+| 40001 | 未登录或 Token 无效 |
+| 40003 | 权限不足（普通用户访问管理员接口） |
+| 40000 | 验证码错误或已过期 |
+| 40900 | 邮箱/手机号/用户名重复 |
+| 42900 | 请求频率超限 |

@@ -6,7 +6,7 @@ Molin 云管理平台基于 Vue3 + Go + MySQL，支持商品售卖、计费、�
 
 **已上线模块（Week 1，2026-06-05 验收通过）：**
 
-- auth（10 个接口）：邮箱/手机号注册与登录、验证码发送、JWT 刷新、退出登录、用户信息、修改密码
+- auth（17 个接口）：邮箱/手机号/统一注册、登录、验证码发送、JWT 刷新、退出、OTP密码重置、用户信息、修改密码/用户名/手机/邮箱、管理员双重认证（手机+邮箱）
 - iam（11 个接口）：角色 CRUD、权限列表、用户角色分配/撤销、用户权限覆盖 CRUD、RBAC 4步优先级权限计算
 - identity（5 个接口）：用户提交实名认证、查询实名状态、管理员查审核列表/详情、管理员审核通过/拒绝
 
@@ -146,7 +146,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 ### 后端 A（auth / iam / identity）
 
-> Week 1 已完成，全部通过验收（2026-06-05）。26 个接口（auth 10 + iam 11 + identity 5），4 个 P1 安全问题已修复并复审通过。
+> Week 1 已完成，全部通过验收（2026-06-05）。33 个接口（auth 17 + iam 11 + identity 5），4 个 P1 安全问题已修复并复审通过。
 
 | 任务 | 文件 | 状态 |
 |---|---|---|
@@ -161,6 +161,11 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | 实名认证审核（管理员） | `modules/identity/` | ✅ 已完成 |
 | Migration 000001–000003 | `server/migrations/` | ✅ 已完成 |
 | bootstrap 接入 auth/iam/identity | `server/internal/bootstrap/app.go` | ✅ 已完成 |
+| 统一注册接口（手机+邮箱双OTP+用户名） | `modules/auth/` | ✅ 已完成 |
+| OTP 密码重置（手机或邮箱） | `modules/auth/` | ✅ 已完成 |
+| 管理员双重认证（手机+邮箱） | `modules/auth/` | ✅ 已完成 |
+| 个人信息中心（修改用户名/手机/邮箱） | `modules/auth/` | ✅ 已完成 |
+| Migration 000005（users 表 username + admin_verify 字段） | `server/migrations/` | ✅ 已完成 |
 
 ### 后端 B（product / order / billing / finance_consumer）
 
@@ -173,7 +178,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | 支付回调幂等处理（核心） | `modules/billing/service/payment_service.go` | ⬜ 待开发 |
 | 购买入口完整链路 | `modules/product/service/purchase_service.go` | ⬜ 待开发 |
 | 消费事件幂等 | `modules/finance_consumer/` | ⬜ 待开发 |
-| Migration 000004–000005 | `server/migrations/` | ⬜ 待开发 |
+| Migration 000004、000006（billing/asset 表） | `server/migrations/` | ⬜ 待开发 |
 
 ### 后端 C（asset / provision / membership / app / content）
 

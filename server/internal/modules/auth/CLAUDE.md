@@ -12,34 +12,35 @@
 
 ```text
 基础设施（先于所有模块）：
-□ server/pkg/db/db.go           — MySQL 连接池（GORM）
-□ server/pkg/cache/redis.go     — Redis 客户端
-□ server/pkg/crypto/password.go — bcrypt hash/verify
-□ server/pkg/crypto/hmac.go     — HMAC-SHA256
-□ server/pkg/jwt/jwt.go         — Access Token 生成/校验
-□ server/internal/config/config.go — 补充 DB/Redis/JWT 配置字段
+✅ server/pkg/db/db.go           — MySQL 连接池（GORM）
+✅ server/pkg/cache/redis.go     — Redis 客户端
+✅ server/pkg/crypto/password.go — bcrypt hash/verify
+✅ server/pkg/crypto/hmac.go     — HMAC-SHA256
+✅ server/pkg/jwt/jwt.go         — Access Token 生成/校验
+✅ server/internal/config/config.go — 补充 DB/Redis/JWT/AdminVerifyExpireHours 配置字段
 
 Auth 模块：
-□ model/user.go
-□ model/session.go
-□ model/verification.go
-□ model/login_log.go
-□ repository/user_repo.go
-□ repository/session_repo.go
-□ repository/verification_repo.go
-□ repository/login_log_repo.go
-□ service/auth_service.go
-□ service/verification_service.go
-□ handler/auth_handler.go
-□ dto/auth_dto.go
-□ route.go
+✅ model/user.go                 — 含 username / admin_phone_verified_at / admin_email_verified_at
+✅ model/session.go
+✅ model/verification.go
+✅ model/login_log.go
+✅ repository/user_repo.go
+✅ repository/session_repo.go
+✅ repository/verification_repo.go
+✅ repository/login_log_repo.go
+✅ service/auth_service.go       — 含统一注册、OTP密码重置、管理员双重认证、修改用户名/手机/邮箱
+✅ service/verification_service.go
+✅ handler/auth_handler.go
+✅ dto/auth_dto.go
+✅ route.go
 
 Migration：
-□ server/migrations/000001_create_auth_tables.up.sql
-□ server/migrations/000001_create_auth_tables.down.sql
+✅ server/migrations/000001_create_auth_tables.up.sql
+✅ server/migrations/000001_create_auth_tables.down.sql
+✅ server/migrations/000005_add_username_admin_verify.up.sql — users 表新增 username / admin_phone_verified_at / admin_email_verified_at
 
 Bootstrap 接入：
-□ server/internal/bootstrap/app.go — 注入 DB / Redis / auth 路由
+✅ server/internal/bootstrap/app.go — 注入 DB / Redis / auth 路由（含 iamService 传参，用于管理员双重认证权限校验）
 ```
 
 ---
@@ -228,6 +229,10 @@ type Config struct {
 
     // 身份证号 HMAC
     IDCardHMACSecret string
+
+    // 管理员双重认证有效期（小时），默认 24
+    // env: ADMIN_VERIFY_EXPIRE_HOURS
+    AdminVerifyExpireHours int
 }
 ```
 
@@ -243,17 +248,20 @@ package model
 import "time"
 
 type User struct {
-    ID             uint64     `gorm:"primaryKey;autoIncrement"`
-    Email          *string    `gorm:"uniqueIndex;size:191"`
-    EmailVerified  bool       `gorm:"default:false"`
-    Phone          *string    `gorm:"uniqueIndex;size:32"`
-    PhoneVerified  bool       `gorm:"default:false"`
-    PasswordHash   string     `gorm:"size:255;not null"`
-    RealNameStatus string     `gorm:"size:32;default:unverified"` // unverified/pending/verified/rejected
-    Status         string     `gorm:"size:32;default:active"`     // active/disabled
-    WalletID       *uint64
-    CreatedAt      time.Time
-    UpdatedAt      time.Time
+    ID                   uint64     `gorm:"primaryKey;autoIncrement"`
+    Username             *string    `gorm:"uniqueIndex;size:64"`        // 2-32位字母/数字/下划线，全局唯一
+    Email                *string    `gorm:"uniqueIndex;size:191"`
+    EmailVerified        bool       `gorm:"default:false"`
+    Phone                *string    `gorm:"uniqueIndex;size:32"`
+    PhoneVerified        bool       `gorm:"default:false"`
+    PasswordHash         string     `gorm:"size:255;not null"`
+    RealNameStatus       string     `gorm:"size:32;default:unverified"` // unverified/pending/verified/rejected
+    Status               string     `gorm:"size:32;default:active"`     // active/disabled
+    WalletID             *uint64
+    AdminPhoneVerifiedAt *time.Time // 管理员手机认证时间，NULL 或超过 AdminVerifyExpireHours 视为未认证
+    AdminEmailVerifiedAt *time.Time // 管理员邮箱认证时间，NULL 或超过 AdminVerifyExpireHours 视为未认证
+    CreatedAt            time.Time
+    UpdatedAt            time.Time
 }
 ```
 
@@ -473,17 +481,46 @@ go get github.com/google/uuid
 ## 接口清单
 
 ```text
-POST /api/auth/verification-codes/email    -- 发送邮箱验证码
-POST /api/auth/verification-codes/phone    -- 发送短信验证码
-POST /api/auth/register/email             -- 邮箱注册
-POST /api/auth/register/phone             -- 手机号注册
+-- 无需鉴权 --
+POST /api/auth/verification-codes/email    -- 发送邮箱验证码（scene: register/reset_password/bind_email/admin_verify）
+POST /api/auth/verification-codes/phone    -- 发送短信验证码（scene: register/reset_password/bind_phone/admin_verify）
+POST /api/auth/register/email             -- 邮箱注册（兼容旧接口，可选 username）
+POST /api/auth/register/phone             -- 手机号注册（兼容旧接口，可选 username）
+POST /api/auth/register                   -- 统一注册（手机+邮箱双OTP，可选 username）★新增
 POST /api/auth/login/email                -- 邮箱登录
 POST /api/auth/login/phone                -- 手机号登录
-POST /api/auth/logout                     -- 退出（吊销 Refresh Token）
 POST /api/auth/refresh                    -- 刷新 Access Token
-GET  /api/me                              -- 当前登录用户信息
+POST /api/auth/password/reset             -- OTP 密码重置（支持手机或邮箱，重置后吊销全部会话）★新增
+
+-- 需要 Bearer Token --
+POST /api/auth/logout                     -- 退出（吊销 Refresh Token）
+GET  /api/me                              -- 当前登录用户信息（含 username/脱敏手机邮箱/admin_*_verified 等新字段）
 PATCH /api/me/password                    -- 修改密码
+PATCH /api/me/username                    -- 修改用户名（2-32位字母/数字/下划线）★新增
+PATCH /api/me/phone                       -- 修改手机号（需先发 scene=bind_phone 验证码）★新增
+PATCH /api/me/email                       -- 修改邮箱（需先发 scene=bind_email 验证码）★新增
+
+-- 需要 Bearer Token + user:manage 权限（仅限管理员） --
+POST /api/admin/auth/verify-phone         -- 管理员手机双重认证（scene=admin_verify）★新增
+POST /api/admin/auth/verify-email         -- 管理员邮箱双重认证（需手机先通过，scene=admin_verify）★新增
 ```
+
+## GET /api/me 返回字段（完整）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | integer | 用户 ID |
+| username | string\|null | 用户名（注册时未填则为 null） |
+| email | string\|null | 邮箱（脱敏：@前保留2位，其余 `***`，如 `ab***@example.com`） |
+| phone | string\|null | 手机号（脱敏：前3后4，中间 `****`，如 `138****5678`） |
+| email_verified | boolean | 邮箱是否已验证 |
+| phone_verified | boolean | 手机号是否已验证 |
+| real_name_status | string | 实名状态（unverified / pending / verified / rejected） |
+| status | string | 账号状态（active / disabled） |
+| admin_phone_verified | boolean | 管理员手机认证是否在有效期内（超过 ADMIN_VERIFY_EXPIRE_HOURS 自动 false） |
+| admin_email_verified | boolean | 管理员邮箱认证是否在有效期内（超过 ADMIN_VERIFY_EXPIRE_HOURS 自动 false） |
+| created_at | string | 注册时间（ISO 8601） |
+| last_login_at | string\|null | 最后登录时间（ISO 8601） |
 
 ## 错误码
 
@@ -491,6 +528,7 @@ PATCH /api/me/password                    -- 修改密码
 |---|---|
 | 40001 | 未登录或 token 无效 |
 | 40002 | token 已过期 |
-| 40900 | 邮箱/手机号已被注册 |
+| 40003 | 权限不足（普通用户访问管理员接口返回此码） |
+| 40900 | 邮箱/手机号/用户名已被注册 |
 | 40000 | 验证码错误或已过期 |
 | 42900 | 请求频率超限 |
