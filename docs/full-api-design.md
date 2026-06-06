@@ -112,7 +112,7 @@ Body 参数：
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
 | email | string | 是 | 邮箱地址 |
-| scene | string | 是 | 场景：register、login、bind、reset_password |
+| scene | string | 是 | 场景：register、login、bind_email、bind_phone、reset_password、admin_verify |
 
 返回 data：
 
@@ -132,7 +132,7 @@ Body 参数：
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
 | phone | string | 是 | 手机号 |
-| scene | string | 是 | 场景：register、login、bind、reset_password |
+| scene | string | 是 | 场景：register、login、bind_email、bind_phone、reset_password、admin_verify |
 
 返回 data：
 
@@ -153,7 +153,8 @@ Body 参数：
 |---|---|---:|---|
 | email | string | 是 | 邮箱地址 |
 | password | string | 是 | 密码 |
-| verification_code | string | 是 | 邮箱验证码 |
+| code | string | 是 | 邮箱验证码 |
+| username | string | 否 | 用户名（2-32位字母/数字/下划线，全局唯一） |
 
 返回 data：
 
@@ -176,7 +177,8 @@ Body 参数：
 |---|---|---:|---|
 | phone | string | 是 | 手机号 |
 | password | string | 是 | 密码 |
-| verification_code | string | 是 | 短信验证码 |
+| code | string | 是 | 短信验证码 |
+| username | string | 否 | 用户名（2-32位字母/数字/下划线，全局唯一） |
 
 返回 data：
 
@@ -279,14 +281,17 @@ GET /api/me
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | integer | 用户 ID |
-| email | string | 邮箱 |
-| phone | string | 手机号 |
-| email_verified | boolean | 邮箱是否验证 |
-| phone_verified | boolean | 手机号是否验证 |
-| real_name_status | string | 实名状态 |
-| status | string | 用户状态 |
-| roles | array | 角色 code 列表 |
-| permissions | array | 权限 code 列表 |
+| username | string | 用户名（可为 null） |
+| email | string | 邮箱（脱敏：@前保留2位，其余替换为 `***`） |
+| phone | string | 手机号（脱敏：前3后4，中间替换为 `****`） |
+| email_verified | boolean | 邮箱是否已验证 |
+| phone_verified | boolean | 手机号是否已验证 |
+| real_name_status | string | 实名状态（unverified / pending / verified / rejected） |
+| status | string | 账号状态（active / disabled） |
+| admin_phone_verified | boolean | 管理员手机认证是否有效（超过有效期自动变 false） |
+| admin_email_verified | boolean | 管理员邮箱认证是否有效（超过有效期自动变 false） |
+| created_at | string | 注册时间（ISO 8601） |
+| last_login_at | string | 最后登录时间（ISO 8601，可为 null） |
 
 ### 2.10 修改当前用户资料
 
@@ -372,6 +377,130 @@ GET /api/identity/verifications/latest
 | reject_reason | string | 拒绝原因 |
 | submitted_at | string | 提交时间 |
 | verified_at | string | 审核通过时间 |
+
+### 2.14 统一注册（手机+邮箱+用户名）
+
+```text
+POST /api/auth/register
+```
+
+Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| username | string | 否 | 用户名（2-32位字母/数字/下划线，全局唯一） |
+| phone | string | 是 | 手机号 |
+| email | string | 是 | 邮箱地址 |
+| password | string | 是 | 密码 |
+| phone_code | string | 是 | 手机验证码（scene=register） |
+| email_code | string | 是 | 邮箱验证码（scene=register） |
+
+返回 data：同登录接口（access_token / refresh_token / expires_in）。
+
+注册成功后 phone_verified 和 email_verified 自动置为 true。
+
+### 2.15 OTP 密码重置
+
+```text
+POST /api/auth/password/reset
+```
+
+Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| target | string | 是 | 手机号或邮箱地址 |
+| target_type | string | 是 | 类型：phone 或 email |
+| code | string | 是 | 验证码（scene=reset_password） |
+| new_password | string | 是 | 新密码 |
+
+返回 data：`null`（HTTP 200 表示成功）。
+
+重置成功后该用户所有 Refresh Token 自动吊销，强制重新登录。
+
+### 2.16 管理员手机号双重认证
+
+```text
+POST /api/admin/auth/verify-phone
+```
+
+需要：Bearer Token（已登录的管理员账号）。
+
+Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| code | string | 是 | 手机验证码（scene=admin_verify） |
+
+返回 data：`null`（HTTP 200 表示认证成功，记录 admin_phone_verified_at）。
+
+### 2.17 管理员邮箱双重认证
+
+```text
+POST /api/admin/auth/verify-email
+```
+
+需要：Bearer Token（已登录的管理员账号）。前置条件：手机号认证必须在有效期内。
+
+Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| code | string | 是 | 邮箱验证码（scene=admin_verify） |
+
+返回 data：`null`（HTTP 200 表示认证成功，记录 admin_email_verified_at）。
+
+认证有效期由环境变量 `ADMIN_VERIFY_EXPIRE_HOURS` 控制（默认 24 小时），超期后需重新认证。
+
+### 2.18 修改用户名
+
+```text
+PATCH /api/me/username
+```
+
+需要：Bearer Token。
+
+Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| username | string | 是 | 新用户名（2-32位字母/数字/下划线，全局唯一） |
+
+返回 data：`null`（HTTP 200 表示修改成功）。
+
+### 2.19 修改手机号
+
+```text
+PATCH /api/me/phone
+```
+
+需要：Bearer Token。先向新手机号发送验证码（scene=bind_phone），再提交本接口。
+
+Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| phone | string | 是 | 新手机号 |
+| code | string | 是 | 新手机号收到的验证码（scene=bind_phone） |
+
+返回 data：`null`（HTTP 200 表示修改成功，phone_verified 自动置为 true）。
+
+### 2.20 修改邮箱
+
+```text
+PATCH /api/me/email
+```
+
+需要：Bearer Token。先向新邮箱发送验证码（scene=bind_email），再提交本接口。
+
+Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| email | string | 是 | 新邮箱地址 |
+| code | string | 是 | 新邮箱收到的验证码（scene=bind_email） |
+
+返回 data：`null`（HTTP 200 表示修改成功，email_verified 自动置为 true）。
 
 ## 3. 管理后台账号、实名、权限接口
 
