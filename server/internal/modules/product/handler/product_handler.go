@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"molin/server/internal/middleware"
+	billingsvc "molin/server/internal/modules/billing/service"
 	"molin/server/internal/modules/product/dto"
 	"molin/server/internal/modules/product/model"
 	"molin/server/internal/modules/product/service"
@@ -141,6 +142,8 @@ func (h *ProductHandler) Purchase(w http.ResponseWriter, r *http.Request) {
 			response.Error(w, http.StatusForbidden, 70001, "需要先完成实名认证")
 		case errors.Is(err, service.ErrNoAccess):
 			response.Error(w, http.StatusForbidden, 40003, "无购买权限")
+		case errors.Is(err, billingsvc.ErrInsufficientBalance):
+			response.Error(w, http.StatusBadRequest, 60001, "余额不足")
 		case errors.Is(err, service.ErrNoPriceConfigured):
 			response.Error(w, http.StatusBadRequest, 40000, "该套餐未配置价格")
 		default:
