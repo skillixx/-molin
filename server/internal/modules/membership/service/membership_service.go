@@ -1,0 +1,130 @@
+package service
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"gorm.io/gorm"
+
+	"molin/server/internal/modules/membership/model"
+	"molin/server/internal/modules/membership/repository"
+)
+
+// MembershipService 会员服务，处理会员等级管理和用户会员查询。
+// 注意：不导入 product/service 包，避免循环导入。
+// bootstrap/app.go 中使用 adapter 将本服务适配为 productservice.MembershipService 接口。
+type MembershipService struct {
+	db          *gorm.DB
+	levelRepo   *repository.LevelRepository
+	benefitRepo *repository.BenefitRepository
+	memberRepo  *repository.UserMembershipRepository
+}
+
+// NewMembershipService 创建会员服务实例。
+func NewMembershipService(db *gorm.DB) *MembershipService {
+	return &MembershipService{
+		db:          db,
+		levelRepo:   repository.NewLevelRepository(db),
+		benefitRepo: repository.NewBenefitRepository(db),
+		memberRepo:  repository.NewUserMembershipRepository(db),
+	}
+}
+
+// GetActiveMembership 查询用户当前有效会员。
+// 查询条件：status = active AND (expires_at IS NULL OR expires_at > NOW())
+// 返回 nil 表示用户无有效会员。
+func (s *MembershipService) GetActiveMembership(ctx context.Context, userID uint64) (*model.UserMembership, error) {
+	return s.memberRepo.FindActive(ctx, userID)
+}
+
+// CreateUserMembership 开通用户会员（由 provision 模块通过接口调用）。
+func (s *MembershipService) CreateUserMembership(ctx context.Context, userID, levelID, assetID uint64, expiresAt *time.Time) error {
+	// 校验等级是否存在且激活
+	level, err := s.levelRepo.FindByID(ctx, levelID)
+	if err != nil {
+		return fmt.Errorf("会员等级不存在: %w", err)
+	}
+	if level.Status != "active" {
+		return fmt.Errorf("会员等级 %s 已停用", level.LevelCode)
+	}
+
+	now := time.Now()
+	m := &model.UserMembership{
+		UserID:    userID,
+		LevelID:   levelID,
+		Status:    "active",
+		StartedAt: now,
+		ExpiresAt: expiresAt,
+	}
+	if assetID > 0 {
+		m.AssetID = &assetID
+	}
+
+	return s.memberRepo.Create(ctx, m)
+}
+
+// ListLevels 查询所有 active 会员等级（用户端）。
+func (s *MembershipService) ListLevels(ctx context.Context) ([]*model.MembershipLevel, error) {
+	return s.levelRepo.ListActive(ctx)
+}
+
+// AdminListLevels 查询所有会员等级（管理端，不过滤状态）。
+func (s *MembershipService) AdminListLevels(ctx context.Context) ([]*model.MembershipLevel, error) {
+	return s.levelRepo.ListAll(ctx)
+}
+
+// CreateLevel 创建会员等级（管理端）。
+func (s *MembershipService) CreateLevel(ctx context.Context, levelCode, name string, description *string, sortOrder int) (*model.MembershipLevel, error) {
+	level := &model.MembershipLevel{
+		LevelCode:   levelCode,
+		Name:        name,
+		Description: description,
+		SortOrder:   sortOrder,
+		Status:      "active",
+	}
+	if err := s.levelRepo.Create(ctx, level); err != nil {
+		return nil, fmt.Errorf("创建会员等级失败: %w", err)
+	}
+	return level, nil
+}
+
+// UpdateLevel 修改会员等级（管理端）。
+func (s *MembershipService) UpdateLevel(ctx context.Context, id uint64, updates map[string]interface{}) error {
+	return s.levelRepo.Update(ctx, id, updates)
+}
+
+// ListBenefits 查询权益列表（支持按 levelID 过滤，管理端）。
+func (s *MembershipService) ListBenefits(ctx context.Context, levelID uint64) ([]*model.MembershipBenefit, error) {
+	return s.benefitRepo.FindByLevelID(ctx, levelID)
+}
+
+// CreateBenefit 创建权益（管理端）。
+func (s *MembershipService) CreateBenefit(ctx context.Context, levelID uint64, benefitType, benefitValue string) (*model.MembershipBenefit, error) {
+	// 校验等级存在
+	if _, err := s.levelRepo.FindByID(ctx, levelID); err != nil {
+		return nil, fmt.Errorf("会员等级不存在: %w", err)
+	}
+
+	benefit := &model.MembershipBenefit{
+		LevelID:      levelID,
+		BenefitType:  benefitType,
+		BenefitValue: benefitValue,
+		Status:       "active",
+	}
+	if err := s.benefitRepo.Create(ctx, benefit); err != nil {
+		return nil, fmt.Errorf("创建权益失败: %w", err)
+	}
+	return benefit, nil
+}
+
+// UpdateBenefit 修改权益（管理端）。
+func (s *MembershipService) UpdateBenefit(ctx context.Context, id uint64, updates map[string]interface{}) error {
+	return s.benefitRepo.Update(ctx, id, updates)
+}
+
+// AdminListUserMemberships 查询用户会员列表（管理端，支持 user_id 过滤）。
+func (s *MembershipService) AdminListUserMemberships(ctx context.Context, userID uint64, page, pageSize int) ([]*model.UserMembership, int64, error) {
+	offset := (page - 1) * pageSize
+	return s.memberRepo.ListByUserID(ctx, userID, offset, pageSize)
+}

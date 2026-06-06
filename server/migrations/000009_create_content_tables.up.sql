@@ -1,0 +1,46 @@
+-- 公告表：平台公告管理
+CREATE TABLE IF NOT EXISTS announcements (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  title VARCHAR(512) NOT NULL,
+  content TEXT NOT NULL,
+  visible_scope VARCHAR(32) NOT NULL DEFAULT 'all',
+  target_roles_json JSON NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'draft',
+  start_at DATETIME NULL,
+  end_at DATETIME NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  created_by BIGINT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_announcements_status (status),
+  KEY idx_announcements_start_at (start_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 帮助文档分类表
+CREATE TABLE IF NOT EXISTS help_categories (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  name VARCHAR(191) NOT NULL,
+  description TEXT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  status VARCHAR(32) NOT NULL DEFAULT 'active',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 帮助文章表
+CREATE TABLE IF NOT EXISTS help_articles (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  category_id BIGINT UNSIGNED NOT NULL,
+  title VARCHAR(512) NOT NULL,
+  content LONGTEXT NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  status VARCHAR(32) NOT NULL DEFAULT 'draft',
+  created_by BIGINT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_help_articles_category_id (category_id),
+  KEY idx_help_articles_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
