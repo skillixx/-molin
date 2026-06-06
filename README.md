@@ -141,8 +141,8 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 ## 开发进度
 
-> 最后更新：2026-06-05
-> 当前阶段：**第一阶段 Week 1 — 已验收通过（2026-06-05），Week 2 待启动**
+> 最后更新：2026-06-06
+> 当前阶段：**第一阶段 Week 1 已验收（2026-06-05），Week 2 已完成待验收（2026-06-06）**
 
 ### 后端 A（auth / iam / identity）
 
@@ -171,14 +171,14 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 | 任务 | 文件 | 状态 |
 |---|---|---|
-| 统一商品模型（CRUD + 套餐 + 价格） | `modules/product/` | ⬜ 待开发 |
-| 价格优先级计算（会员>角色>默认） | `modules/product/service/pricing_service.go` | ⬜ 待开发 |
-| 订单创建 + 状态机 | `modules/order/` | ⬜ 待开发 |
-| 钱包乐观锁扣费（核心） | `modules/billing/service/wallet_service.go` | ⬜ 待开发 |
-| 支付回调幂等处理（核心） | `modules/billing/service/payment_service.go` | ⬜ 待开发 |
-| 购买入口完整链路 | `modules/product/service/purchase_service.go` | ⬜ 待开发 |
-| 消费事件幂等 | `modules/finance_consumer/` | ⬜ 待开发 |
-| Migration 000004、000006（billing/asset 表） | `server/migrations/` | ⬜ 待开发 |
+| 统一商品模型（CRUD + 套餐 + 价格） | `modules/product/` | ✅ 已完成 |
+| 价格优先级计算（会员>角色>默认） | `modules/product/service/pricing_service.go` | ✅ 已完成 |
+| 订单创建 + 状态机 | `modules/order/` | ✅ 已完成 |
+| 钱包乐观锁扣费（核心） | `modules/billing/service/wallet_service.go` | ✅ 已完成 |
+| 支付回调幂等处理（核心） | `modules/billing/service/payment_service.go` | ✅ 已完成 |
+| 购买入口完整链路 | `modules/product/service/purchase_service.go` | ✅ 已完成 |
+| 消费事件幂等 | `modules/finance_consumer/` | ✅ 已完成 |
+| Migration 000004、000006（billing/asset 表） | `server/migrations/` | ✅ 已完成 |
 
 ### 后端 C（asset / provision / membership / app / content）
 
