@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -18,12 +19,18 @@ import (
 	pkgjwt "molin/server/pkg/jwt"
 )
 
+// usernameRegexp 用户名校验正则：只允许字母、数字、下划线，长度 2-32 位。
+var usernameRegexp = regexp.MustCompile(`^[a-zA-Z0-9_]{2,32}$`)
+
 var (
-	ErrEmailAlreadyExists = errors.New("邮箱已被注册")
-	ErrPhoneAlreadyExists = errors.New("手机号已被注册")
-	ErrUnauthorized       = errors.New("未登录或凭证无效")
-	ErrUserDisabled       = errors.New("账号已被禁用")
-	ErrWrongPassword      = errors.New("密码错误")
+	ErrEmailAlreadyExists    = errors.New("邮箱已被注册")
+	ErrPhoneAlreadyExists    = errors.New("手机号已被注册")
+	ErrUsernameAlreadyExists = errors.New("用户名已被使用")
+	ErrUsernameInvalid       = errors.New("用户名只能包含字母、数字和下划线，长度2-32位")
+	ErrUnauthorized          = errors.New("未登录或凭证无效")
+	ErrUserDisabled          = errors.New("账号已被禁用")
+	ErrWrongPassword         = errors.New("密码错误")
+	ErrAdminPhoneNotVerified = errors.New("请先完成手机号认证")
 )
 
 // blockedUserKeyFmt 封禁用户在 Redis 中的 key 格式。
@@ -58,7 +65,22 @@ func NewAuthService(
 	}
 }
 
-// RegisterEmail 邮箱注册。
+// validateUsername 校验用户名格式，并检查唯一性。
+// 若 username 为空字符串则跳过校验（用户名为可选字段）。
+func (s *AuthService) validateUsername(ctx context.Context, username string) error {
+	if username == "" {
+		return nil
+	}
+	if !usernameRegexp.MatchString(username) {
+		return ErrUsernameInvalid
+	}
+	if exists, _ := s.userRepo.ExistsByUsername(ctx, username); exists {
+		return ErrUsernameAlreadyExists
+	}
+	return nil
+}
+
+// RegisterEmail 邮箱注册（兼容原有接口，支持可选 Username）。
 func (s *AuthService) RegisterEmail(ctx context.Context, req dto.RegisterEmailReq) (*dto.TokenPair, error) {
 	if err := s.verifySvc.Check(ctx, "email", req.Email, "register", req.Code); err != nil {
 		return nil, ErrInvalidCode
@@ -66,18 +88,25 @@ func (s *AuthService) RegisterEmail(ctx context.Context, req dto.RegisterEmailRe
 	if exists, _ := s.userRepo.ExistsByEmail(ctx, req.Email); exists {
 		return nil, ErrEmailAlreadyExists
 	}
+	// 校验可选 username
+	if err := s.validateUsername(ctx, req.Username); err != nil {
+		return nil, err
+	}
 	hash, err := crypto.HashPassword(req.Password)
 	if err != nil {
 		return nil, err
 	}
 	user := &model.User{Email: &req.Email, PasswordHash: hash}
+	if req.Username != "" {
+		user.Username = &req.Username
+	}
 	if err := s.userRepo.Create(ctx, user); err != nil {
 		return nil, err
 	}
 	return s.generateTokenPair(ctx, user)
 }
 
-// RegisterPhone 手机号注册。
+// RegisterPhone 手机号注册（兼容原有接口，支持可选 Username）。
 func (s *AuthService) RegisterPhone(ctx context.Context, req dto.RegisterPhoneReq) (*dto.TokenPair, error) {
 	if err := s.verifySvc.Check(ctx, "phone", req.Phone, "register", req.Code); err != nil {
 		return nil, ErrInvalidCode
@@ -85,11 +114,62 @@ func (s *AuthService) RegisterPhone(ctx context.Context, req dto.RegisterPhoneRe
 	if exists, _ := s.userRepo.ExistsByPhone(ctx, req.Phone); exists {
 		return nil, ErrPhoneAlreadyExists
 	}
+	// 校验可选 username
+	if err := s.validateUsername(ctx, req.Username); err != nil {
+		return nil, err
+	}
 	hash, err := crypto.HashPassword(req.Password)
 	if err != nil {
 		return nil, err
 	}
 	user := &model.User{Phone: &req.Phone, PasswordHash: hash}
+	if req.Username != "" {
+		user.Username = &req.Username
+	}
+	if err := s.userRepo.Create(ctx, user); err != nil {
+		return nil, err
+	}
+	return s.generateTokenPair(ctx, user)
+}
+
+// Register 统一注册（手机+邮箱+用户名，需双验证码）。
+func (s *AuthService) Register(ctx context.Context, req dto.RegisterReq) (*dto.TokenPair, error) {
+	// 1. 校验手机验证码
+	if err := s.verifySvc.Check(ctx, "phone", req.Phone, "register", req.PhoneCode); err != nil {
+		return nil, ErrInvalidCode
+	}
+	// 2. 校验邮箱验证码
+	if err := s.verifySvc.Check(ctx, "email", req.Email, "register", req.EmailCode); err != nil {
+		return nil, ErrInvalidCode
+	}
+	// 3. 检查手机号唯一性
+	if exists, _ := s.userRepo.ExistsByPhone(ctx, req.Phone); exists {
+		return nil, ErrPhoneAlreadyExists
+	}
+	// 4. 检查邮箱唯一性
+	if exists, _ := s.userRepo.ExistsByEmail(ctx, req.Email); exists {
+		return nil, ErrEmailAlreadyExists
+	}
+	// 5. 校验并检查用户名唯一性（用户名必填）
+	if err := s.validateUsername(ctx, req.Username); err != nil {
+		return nil, err
+	}
+	// 6. 密码 hash
+	hash, err := crypto.HashPassword(req.Password)
+	if err != nil {
+		return nil, err
+	}
+	// 7. 创建用户
+	user := &model.User{
+		Phone:        &req.Phone,
+		PhoneVerified: true,
+		Email:        &req.Email,
+		EmailVerified: true,
+		PasswordHash: hash,
+	}
+	if req.Username != "" {
+		user.Username = &req.Username
+	}
 	if err := s.userRepo.Create(ctx, user); err != nil {
 		return nil, err
 	}
@@ -159,19 +239,44 @@ func (s *AuthService) Refresh(ctx context.Context, rawRefreshToken string) (*dto
 	return s.generateTokenPair(ctx, user)
 }
 
-// GetMe 获取当前用户信息。
+// GetMe 获取当前用户信息（含脱敏手机/邮箱、最后登录时间）。
 func (s *AuthService) GetMe(ctx context.Context, userID uint64) (*dto.UserInfo, error) {
 	user, err := s.userRepo.FindByID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	return &dto.UserInfo{
-		ID:             user.ID,
-		Email:          user.Email,
-		Phone:          user.Phone,
-		RealNameStatus: user.RealNameStatus,
-		Status:         user.Status,
-	}, nil
+
+	info := &dto.UserInfo{
+		ID:                 user.ID,
+		Username:           user.Username,
+		EmailVerified:      user.EmailVerified,
+		PhoneVerified:      user.PhoneVerified,
+		RealNameStatus:     user.RealNameStatus,
+		Status:             user.Status,
+		AdminPhoneVerified: isAdminVerifyValid(user.AdminPhoneVerifiedAt, s.cfg.AdminVerifyExpireHours),
+		AdminEmailVerified: isAdminVerifyValid(user.AdminEmailVerifiedAt, s.cfg.AdminVerifyExpireHours),
+		CreatedAt:          user.CreatedAt,
+	}
+
+	// 手机号脱敏处理
+	if user.Phone != nil {
+		masked := dto.MaskPhone(*user.Phone)
+		info.Phone = &masked
+	}
+	// 邮箱脱敏处理
+	if user.Email != nil {
+		masked := dto.MaskEmail(*user.Email)
+		info.Email = &masked
+	}
+
+	// 查询最后一次登录成功时间
+	lastLog, err := s.loginLogRepo.FindLastSuccessByUser(ctx, userID)
+	if err == nil && lastLog != nil {
+		info.LastLoginAt = &lastLog.CreatedAt
+	}
+	// 若无登录记录或查询出错，LastLoginAt 保持 nil，不影响主流程
+
+	return info, nil
 }
 
 // ChangePassword 修改密码后吊销所有会话，强制重新登录。
@@ -274,6 +379,135 @@ func (s *AuthService) IsUserBlocked(ctx context.Context, userID uint64) bool {
 		return false
 	}
 	return val == "1"
+}
+
+// ResetPassword OTP 验证后重置密码，同时吊销该用户所有会话，强制重新登录。
+func (s *AuthService) ResetPassword(ctx context.Context, req dto.ResetPasswordReq) error {
+	// 1. 根据 target_type 校验 OTP
+	if err := s.verifySvc.Check(ctx, req.TargetType, req.Target, "reset_password", req.Code); err != nil {
+		return ErrInvalidCode
+	}
+	// 2. 根据 target_type 查找用户
+	var user *model.User
+	var err error
+	switch req.TargetType {
+	case "email":
+		user, err = s.userRepo.FindByEmail(ctx, req.Target)
+	case "phone":
+		user, err = s.userRepo.FindByPhone(ctx, req.Target)
+	default:
+		return ErrInvalidCode
+	}
+	if err != nil {
+		return ErrUnauthorized
+	}
+	// 3. 更新密码 hash
+	newHash, err := crypto.HashPassword(req.NewPassword)
+	if err != nil {
+		return err
+	}
+	if err := s.userRepo.UpdatePassword(ctx, user.ID, newHash); err != nil {
+		return err
+	}
+	// 4. 吊销该用户所有 Refresh Token，强制重新登录
+	return s.sessionRepo.RevokeAllByUser(ctx, user.ID)
+}
+
+// AdminVerifyPhone 管理员手机号认证（验证码校验后记录认证时间）。
+func (s *AuthService) AdminVerifyPhone(ctx context.Context, userID uint64, code string) error {
+	// 查找用户，确保存在
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return ErrUnauthorized
+	}
+	if user.Phone == nil {
+		return ErrUnauthorized
+	}
+	// 校验手机验证码（scene: admin_verify）
+	if err := s.verifySvc.Check(ctx, "phone", *user.Phone, "admin_verify", code); err != nil {
+		return ErrInvalidCode
+	}
+	// 记录认证时间
+	return s.userRepo.UpdateAdminPhoneVerified(ctx, userID)
+}
+
+// AdminVerifyEmail 管理员邮箱认证（需手机号已认证，验证码校验后记录认证时间）。
+func (s *AuthService) AdminVerifyEmail(ctx context.Context, userID uint64, code string) error {
+	// 查找用户
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return ErrUnauthorized
+	}
+	// 检查手机号已认证且未过期（顺序要求）
+	if !isAdminVerifyValid(user.AdminPhoneVerifiedAt, s.cfg.AdminVerifyExpireHours) {
+		return ErrAdminPhoneNotVerified
+	}
+	if user.Email == nil {
+		return ErrUnauthorized
+	}
+	// 校验邮箱验证码（scene: admin_verify）
+	if err := s.verifySvc.Check(ctx, "email", *user.Email, "admin_verify", code); err != nil {
+		return ErrInvalidCode
+	}
+	// 记录认证时间
+	return s.userRepo.UpdateAdminEmailVerified(ctx, userID)
+}
+
+// UpdateUsername 修改用户名（校验格式和唯一性后更新）。
+func (s *AuthService) UpdateUsername(ctx context.Context, userID uint64, req dto.UpdateUsernameReq) error {
+	if err := s.validateUsername(ctx, req.Username); err != nil {
+		return err
+	}
+	// username 为必填字段，不允许清空
+	if req.Username == "" {
+		return ErrUsernameInvalid
+	}
+	return s.userRepo.UpdateUsername(ctx, userID, req.Username)
+}
+
+// UpdatePhone 修改手机号（验证码校验后更新，标记已验证）。
+func (s *AuthService) UpdatePhone(ctx context.Context, userID uint64, req dto.UpdatePhoneReq) error {
+	// 1. 校验新手机号收到的验证码（scene: bind_phone，专用于绑定/更换手机号场景）
+	if err := s.verifySvc.Check(ctx, "phone", req.Phone, "bind_phone", req.Code); err != nil {
+		return ErrInvalidCode
+	}
+	// 2. 检查新手机号是否已被其他账号使用
+	if exists, _ := s.userRepo.ExistsByPhone(ctx, req.Phone); exists {
+		return ErrPhoneAlreadyExists
+	}
+	// 3. 更新手机号并标记已验证
+	if err := s.userRepo.UpdatePhone(ctx, userID, req.Phone); err != nil {
+		return err
+	}
+	return s.userRepo.UpdatePhoneVerified(ctx, userID)
+}
+
+// UpdateEmail 修改邮箱（验证码校验后更新，标记已验证）。
+func (s *AuthService) UpdateEmail(ctx context.Context, userID uint64, req dto.UpdateEmailReq) error {
+	// 1. 校验新邮箱收到的验证码（scene: bind_email，专用于绑定/更换邮箱场景）
+	if err := s.verifySvc.Check(ctx, "email", req.Email, "bind_email", req.Code); err != nil {
+		return ErrInvalidCode
+	}
+	// 2. 检查新邮箱是否已被其他账号使用
+	if exists, _ := s.userRepo.ExistsByEmail(ctx, req.Email); exists {
+		return ErrEmailAlreadyExists
+	}
+	// 3. 更新邮箱并标记已验证
+	if err := s.userRepo.UpdateEmail(ctx, userID, req.Email); err != nil {
+		return err
+	}
+	return s.userRepo.UpdateEmailVerified(ctx, userID)
+}
+
+// isAdminVerifyValid 判断管理员认证时间戳是否在有效期内（expireHours=0 表示永不过期）。
+func isAdminVerifyValid(verifiedAt *time.Time, expireHours int) bool {
+	if verifiedAt == nil {
+		return false
+	}
+	if expireHours <= 0 {
+		return true
+	}
+	return time.Since(*verifiedAt) < time.Duration(expireHours)*time.Hour
 }
 
 func generateRandomToken() string {
