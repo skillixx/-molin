@@ -176,10 +176,118 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, nil)
 }
 
+// Register POST /api/auth/register — 统一注册（手机+邮箱+用户名，需双验证码）
+func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
+	var req dto.RegisterReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	pair, err := h.authSvc.Register(r.Context(), req)
+	if err != nil {
+		handleAuthError(w, err)
+		return
+	}
+	response.JSON(w, http.StatusCreated, pair)
+}
+
+// ResetPassword POST /api/auth/password/reset — OTP 验证后重置密码（无需旧密码）
+func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req dto.ResetPasswordReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	if err := h.authSvc.ResetPassword(r.Context(), req); err != nil {
+		handleAuthError(w, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, nil)
+}
+
+// AdminVerifyPhone POST /api/admin/auth/verify-phone — 管理员手机号认证
+func (h *AuthHandler) AdminVerifyPhone(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	var req dto.AdminVerifyReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	if err := h.authSvc.AdminVerifyPhone(r.Context(), userID, req.Code); err != nil {
+		handleAuthError(w, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, nil)
+}
+
+// AdminVerifyEmail POST /api/admin/auth/verify-email — 管理员邮箱认证（需先完成手机号认证）
+func (h *AuthHandler) AdminVerifyEmail(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	var req dto.AdminVerifyReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	if err := h.authSvc.AdminVerifyEmail(r.Context(), userID, req.Code); err != nil {
+		handleAuthError(w, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, nil)
+}
+
+// UpdateUsername PATCH /api/me/username — 修改用户名
+func (h *AuthHandler) UpdateUsername(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	var req dto.UpdateUsernameReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	if err := h.authSvc.UpdateUsername(r.Context(), userID, req); err != nil {
+		handleAuthError(w, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, nil)
+}
+
+// UpdatePhone PATCH /api/me/phone — 修改手机号（需新号码验证码）
+func (h *AuthHandler) UpdatePhone(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	var req dto.UpdatePhoneReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	if err := h.authSvc.UpdatePhone(r.Context(), userID, req); err != nil {
+		handleAuthError(w, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, nil)
+}
+
+// UpdateEmail PATCH /api/me/email — 修改邮箱（需新邮箱验证码）
+func (h *AuthHandler) UpdateEmail(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	var req dto.UpdateEmailReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	if err := h.authSvc.UpdateEmail(r.Context(), userID, req); err != nil {
+		handleAuthError(w, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, nil)
+}
+
 func handleAuthError(w http.ResponseWriter, err error) {
 	switch err {
 	case service.ErrEmailAlreadyExists, service.ErrPhoneAlreadyExists:
 		response.Error(w, http.StatusConflict, 40900, err.Error())
+	case service.ErrUsernameAlreadyExists:
+		response.Error(w, http.StatusConflict, 40900, err.Error())
+	case service.ErrUsernameInvalid:
+		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 	case service.ErrUnauthorized:
 		response.Error(w, http.StatusUnauthorized, 40001, err.Error())
 	case service.ErrUserDisabled:
@@ -187,6 +295,8 @@ func handleAuthError(w http.ResponseWriter, err error) {
 	case service.ErrWrongPassword:
 		response.Error(w, http.StatusUnauthorized, 40001, "邮箱或密码错误")
 	case service.ErrInvalidCode:
+		response.Error(w, http.StatusBadRequest, 40000, err.Error())
+	case service.ErrAdminPhoneNotVerified:
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 	default:
 		response.Error(w, http.StatusInternalServerError, 50000, "服务器内部错误")

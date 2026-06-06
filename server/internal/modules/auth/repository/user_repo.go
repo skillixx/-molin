@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"gorm.io/gorm"
 	"molin/server/internal/modules/auth/model"
@@ -80,4 +81,72 @@ func (r *UserRepository) UpdateRealNameStatus(db *gorm.DB, userID uint64, status
 			"real_name_status": status,
 			"real_name":        realName,
 		}).Error
+}
+
+// ExistsByUsername 检查用户名是否已存在。
+func (r *UserRepository) ExistsByUsername(ctx context.Context, username string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.User{}).Where("username = ?", username).Count(&count).Error
+	return count > 0, err
+}
+
+// FindByUsername 根据用户名查找用户。
+func (r *UserRepository) FindByUsername(ctx context.Context, username string) (*model.User, error) {
+	var user model.User
+	err := r.db.WithContext(ctx).Where("username = ?", username).First(&user).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// UpdateUsername 更新用户的用户名。
+func (r *UserRepository) UpdateUsername(ctx context.Context, userID uint64, username string) error {
+	return r.db.WithContext(ctx).Model(&model.User{}).
+		Where("id = ?", userID).
+		Update("username", username).Error
+}
+
+// UpdatePhone 更新用户的手机号。
+func (r *UserRepository) UpdatePhone(ctx context.Context, userID uint64, phone string) error {
+	return r.db.WithContext(ctx).Model(&model.User{}).
+		Where("id = ?", userID).
+		Update("phone", phone).Error
+}
+
+// UpdateEmail 更新用户的邮箱。
+func (r *UserRepository) UpdateEmail(ctx context.Context, userID uint64, email string) error {
+	return r.db.WithContext(ctx).Model(&model.User{}).
+		Where("id = ?", userID).
+		Update("email", email).Error
+}
+
+// UpdatePhoneVerified 将用户手机号标记为已验证。
+func (r *UserRepository) UpdatePhoneVerified(ctx context.Context, userID uint64) error {
+	return r.db.WithContext(ctx).Model(&model.User{}).
+		Where("id = ?", userID).
+		Update("phone_verified", true).Error
+}
+
+// UpdateEmailVerified 将用户邮箱标记为已验证。
+func (r *UserRepository) UpdateEmailVerified(ctx context.Context, userID uint64) error {
+	return r.db.WithContext(ctx).Model(&model.User{}).
+		Where("id = ?", userID).
+		Update("email_verified", true).Error
+}
+
+// UpdateAdminPhoneVerified 记录管理员手机号认证通过时间。
+func (r *UserRepository) UpdateAdminPhoneVerified(ctx context.Context, userID uint64) error {
+	now := time.Now()
+	return r.db.WithContext(ctx).Model(&model.User{}).
+		Where("id = ?", userID).
+		Update("admin_phone_verified_at", now).Error
+}
+
+// UpdateAdminEmailVerified 记录管理员邮箱认证通过时间。
+func (r *UserRepository) UpdateAdminEmailVerified(ctx context.Context, userID uint64) error {
+	now := time.Now()
+	return r.db.WithContext(ctx).Model(&model.User{}).
+		Where("id = ?", userID).
+		Update("admin_email_verified_at", now).Error
 }
