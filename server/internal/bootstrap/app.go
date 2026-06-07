@@ -9,6 +9,7 @@ import (
 	"molin/server/internal/httpserver"
 	"molin/server/internal/jobs"
 	"molin/server/internal/middleware"
+	appmod "molin/server/internal/modules/app"
 	assetmod "molin/server/internal/modules/asset"
 	assetdto "molin/server/internal/modules/asset/dto"
 	assetsvc "molin/server/internal/modules/asset/service"
@@ -234,6 +235,9 @@ func NewApp() (*App, error) {
 
 	// 注册 content 模块（公告 + 帮助文档）
 	contentmod.RegisterRoutes(mux, gormDB, cfg.JWTSecret, authService, iamService, iamRoleGetter, membershipChecker)
+
+	// 注册 app 模块（应用业务详情 + 适配器管理；与 product 模块的商品/套餐解耦）
+	appmod.RegisterRoutes(mux, gormDB, cfg.JWTSecret, authService, iamService)
 
 	// 启动定时任务：到期资产处理（后台 goroutine，随应用生命周期运行）
 	go jobs.NewExpireAssetsJob(gormDB).Start(context.Background())
