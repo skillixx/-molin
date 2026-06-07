@@ -20,3 +20,10 @@ func (s *MembershipStub) GetActive(ctx context.Context, userID uint64) (*service
 	// TODO: Week 3/4 由后端丙接入 membership 模块实现真实会员查询
 	return nil, nil
 }
+
+// HasActiveLevelIn 始终返回 false，表示用户无任何有效会员资格。
+// 占位阶段：若商品配置了会员专属价，会员专属门槛校验将拦截所有用户购买（与"无会员"语义一致）。
+func (s *MembershipStub) HasActiveLevelIn(ctx context.Context, userID uint64, levelIDs []uint64) (bool, error) {
+	// TODO: Week 3/4 由后端丙接入 membership 模块实现真实会员资格校验
+	return false, nil
+}

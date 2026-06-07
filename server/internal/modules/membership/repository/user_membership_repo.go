@@ -40,6 +40,23 @@ func (r *UserMembershipRepository) FindActive(ctx context.Context, userID uint64
 	return &m, nil
 }
 
+// HasActiveLevelIn 校验用户当前是否拥有有效会员资格，且等级属于给定的等级 ID 集合。
+// 查询条件：status = active AND (expires_at IS NULL OR expires_at > NOW()) AND level_id IN (...)
+// 用于"会员专属商品"购买门槛校验：判断用户是否具备购买所需的会员等级。
+func (r *UserMembershipRepository) HasActiveLevelIn(ctx context.Context, userID uint64, levelIDs []uint64) (bool, error) {
+	if len(levelIDs) == 0 {
+		return false, nil
+	}
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.UserMembership{}).
+		Where("user_id = ? AND status = 'active' AND (expires_at IS NULL OR expires_at > NOW()) AND level_id IN ?", userID, levelIDs).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // ListByUserID 查询用户所有会员记录（支持 userID=0 时查全部）。
 func (r *UserMembershipRepository) ListByUserID(ctx context.Context, userID uint64, offset, limit int) ([]*model.UserMembership, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.UserMembership{})
