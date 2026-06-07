@@ -38,6 +38,14 @@ func (s *MembershipService) GetActiveMembership(ctx context.Context, userID uint
 	return s.memberRepo.FindActive(ctx, userID)
 }
 
+// HasActiveLevelIn 校验用户是否拥有满足条件的有效会员资格（用于"会员专属商品"购买门槛校验）。
+// levelIDs 为商品/套餐配置的会员专属价所对应的会员等级 ID 集合：
+// 只要用户的当前有效会员等级命中其中任意一个，即视为满足购买门槛。
+// 由 product 模块通过 MembershipService 接口适配调用，不直接访问 membership 模块的 repository。
+func (s *MembershipService) HasActiveLevelIn(ctx context.Context, userID uint64, levelIDs []uint64) (bool, error) {
+	return s.memberRepo.HasActiveLevelIn(ctx, userID, levelIDs)
+}
+
 // CreateUserMembership 开通用户会员（由 provision 模块通过接口调用）。
 func (s *MembershipService) CreateUserMembership(ctx context.Context, userID, levelID, assetID uint64, expiresAt *time.Time) error {
 	// 校验等级是否存在且激活

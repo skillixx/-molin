@@ -38,6 +38,21 @@ func (r *PriceRepository) FindMembershipPrice(ctx context.Context, planID, membe
 	return &price, nil
 }
 
+// ListMembershipLevelIDs 查询套餐配置的所有会员专属价对应的会员等级 ID 列表
+//（membership_level_id IS NOT NULL AND role_id IS NULL）。
+// 返回非空列表代表该套餐为"会员专属"套餐：只有持有列表中任一等级有效会员资格的用户才允许购买。
+// 用于购买访问控制阶段的会员专属门槛校验。
+func (r *PriceRepository) ListMembershipLevelIDs(ctx context.Context, planID uint64) ([]uint64, error) {
+	var levelIDs []uint64
+	err := r.db.WithContext(ctx).Model(&model.ProductPrice{}).
+		Where("product_plan_id = ? AND membership_level_id IS NOT NULL AND role_id IS NULL", planID).
+		Pluck("membership_level_id", &levelIDs).Error
+	if err != nil {
+		return nil, err
+	}
+	return levelIDs, nil
+}
+
 // FindRolePrice 查询套餐的角色价（role_id IS NOT NULL AND membership_level_id IS NULL）。
 func (r *PriceRepository) FindRolePrice(ctx context.Context, planID, roleID uint64) (*model.ProductPrice, error) {
 	var price model.ProductPrice

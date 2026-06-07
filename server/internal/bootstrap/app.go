@@ -66,6 +66,12 @@ func (a *membershipAdapter) GetActive(ctx context.Context, userID uint64) (*prod
 	return &productservice.MembershipInfo{LevelID: m.LevelID}, nil
 }
 
+// HasActiveLevelIn 透传至 membership 模块，校验用户是否拥有命中给定等级集合的有效会员资格。
+// 用于 product 模块"会员专属商品"购买门槛校验（修复 P1 缺陷：非会员可绕过会员专属门槛下单）。
+func (a *membershipAdapter) HasActiveLevelIn(ctx context.Context, userID uint64, levelIDs []uint64) (bool, error) {
+	return a.svc.HasActiveLevelIn(ctx, userID, levelIDs)
+}
+
 // assetProvisionAdapter 将 *assetsvc.AssetService 适配为 provisionsvc.AssetCreator 接口。
 // provision 模块内定义了自己的 CreateAssetReq/Result 类型，此 adapter 做字段映射。
 type assetProvisionAdapter struct {

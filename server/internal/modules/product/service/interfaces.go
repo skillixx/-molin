@@ -25,6 +25,12 @@ type MembershipInfo struct {
 // MembershipService 定义会员查询接口（Week 2 由 stub 实现）。
 type MembershipService interface {
 	GetActive(ctx context.Context, userID uint64) (*MembershipInfo, error)
+
+	// HasActiveLevelIn 校验用户是否拥有满足条件的有效会员资格（用于"会员专属商品"购买门槛校验）。
+	// levelIDs 为允许购买的会员等级 ID 集合，命中其中任意一个即返回 true。
+	// 由 PurchaseService 在购买访问控制阶段调用，配合 product_prices.membership_level_id
+	// 判断"会员专属"商品是否允许当前用户购买（修复 P1 缺陷：非会员可绕过会员专属门槛下单）。
+	HasActiveLevelIn(ctx context.Context, userID uint64, levelIDs []uint64) (bool, error)
 }
 
 // BillingService 定义扣费接口，由 billing.WalletService 实现。

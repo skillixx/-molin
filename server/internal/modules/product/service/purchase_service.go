@@ -86,6 +86,17 @@ func (s *PurchaseService) Purchase(ctx context.Context, userID, productID, planI
 		return nil, ErrNoAccess
 	}
 
+	// 2.1 会员专属购买门槛校验（修复 P1 缺陷：非会员可绕过会员专属门槛以默认价下单）。
+	// 若该套餐配置了会员专属价（product_prices.membership_level_id），
+	// 则要求用户持有命中等级之一的有效会员资格，否则拒绝购买（与 CanBuy 同属访问控制环节）。
+	memberOK, err := s.pricingSvc.CheckMembershipGate(ctx, planID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !memberOK {
+		return nil, ErrNoAccess
+	}
+
 	// 3. 计算价格
 	price, err := s.pricingSvc.GetPrice(ctx, planID, userID)
 	if err != nil {
