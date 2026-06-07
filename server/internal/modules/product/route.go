@@ -18,6 +18,8 @@ import (
 // iamSvc 同时实现 service.IAMService（GetUserRoleIDs + CheckPermission）。
 // billingSvc 用于购买时扣费，由 billing 模块注入（实现 service.BillingService）。
 // userRepo 用于实名校验，由 product/repository/user_repo_adapter.go 提供。
+// provisionSvc 由 provision 模块实现，nil 时降级为空操作 stub（Week 2 兼容）。
+// membershipSvc 由 membership 模块通过 adapter 实现，nil 时降级为空操作 stub（Week 2 兼容）。
 func RegisterRoutes(
 	mux *http.ServeMux,
 	db *gorm.DB,
@@ -26,6 +28,8 @@ func RegisterRoutes(
 	iamSvc service.IAMService,
 	billingSvc service.BillingService,
 	userRepo service.UserRepository,
+	provisionSvc service.ProvisionService,
+	membershipSvc service.MembershipService,
 ) {
 	// 初始化仓库
 	productRepo := repository.NewProductRepository(db)
@@ -33,12 +37,16 @@ func RegisterRoutes(
 	priceRepo := repository.NewPriceRepository(db)
 	accessRepo := repository.NewAccessRepository(db)
 
-	// Week 2 使用 stub 实现，Week 3/4 后端丙接入时替换
-	provisionStub := stub.NewProvisionStub()
-	membershipStub := stub.NewMembershipStub()
+	// 降级处理：若外部未注入真实实现，使用 stub（保持 Week 2 兼容性）
+	if provisionSvc == nil {
+		provisionSvc = stub.NewProvisionStub()
+	}
+	if membershipSvc == nil {
+		membershipSvc = stub.NewMembershipStub()
+	}
 
 	// 初始化服务
-	pricingSvc := service.NewPricingService(priceRepo, iamSvc, membershipStub)
+	pricingSvc := service.NewPricingService(priceRepo, iamSvc, membershipSvc)
 	productSvc := service.NewProductService(productRepo, accessRepo, planRepo, priceRepo, iamSvc)
 
 	// 初始化 order 相关（购买接口依赖）
@@ -47,7 +55,7 @@ func RegisterRoutes(
 
 	purchaseSvc := service.NewPurchaseService(
 		db, accessRepo, orderRepo, orderService,
-		pricingSvc, billingSvc, provisionStub, iamSvc, userRepo,
+		pricingSvc, billingSvc, provisionSvc, iamSvc, userRepo,
 	)
 
 	// 初始化处理器

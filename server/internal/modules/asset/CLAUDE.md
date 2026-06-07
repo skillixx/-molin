@@ -20,7 +20,7 @@
 □ route.go
 
 Migration：
-□ server/migrations/000006_create_asset_tables.up.sql
+□ server/migrations/000007_create_asset_tables.up.sql
 ```
 
 ---
@@ -97,7 +97,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, req CreateAssetReq) (*mo
 
 ## Migration
 
-### server/migrations/000006_create_asset_tables.up.sql
+### server/migrations/000007_create_asset_tables.up.sql
 
 ```sql
 CREATE TABLE IF NOT EXISTS user_assets (
