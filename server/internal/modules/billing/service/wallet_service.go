@@ -67,6 +67,12 @@ func (s *WalletService) deductOnce(ctx context.Context, userID uint64, amount de
 		// 1. 加行锁查询钱包（SELECT FOR UPDATE）
 		wallet, err := s.walletRepo.GetForUpdate(tx, userID)
 		if err != nil {
+			// 钱包记录不存在：说明用户从未充值/查询过钱包（懒创建机制下尚未初始化）。
+			// 语义上等价于余额为 0，直接返回"余额不足"业务错误，避免把
+			// gorm.ErrRecordNotFound 透传到 handler 导致返回 500。
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrInsufficientBalance
+			}
 			return err
 		}
 		// 2. 校验余额是否充足（不含冻结金额）
@@ -109,6 +115,11 @@ func (s *WalletService) DeductTx(tx *gorm.DB, userID uint64, amount decimal.Deci
 	// 加行锁查询钱包
 	wallet, err := s.walletRepo.GetForUpdate(tx, userID)
 	if err != nil {
+		// 钱包记录不存在时，语义上等价于余额为 0，统一返回"余额不足"业务错误，
+		// 避免 gorm.ErrRecordNotFound 透传到上层导致 500。
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrInsufficientBalance
+		}
 		return err
 	}
 	if wallet.BalanceAmount.LessThan(amount) {
@@ -184,6 +195,10 @@ func (s *WalletService) Freeze(ctx context.Context, userID uint64, amount decima
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		wallet, err := s.walletRepo.GetForUpdate(tx, userID)
 		if err != nil {
+			// 钱包记录不存在，等价于余额为 0，无法冻结
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrInsufficientBalance
+			}
 			return err
 		}
 		if wallet.BalanceAmount.LessThan(amount) {
