@@ -17,6 +17,9 @@ Week 2（2026-06-06 验收通过）：
 Week 3（2026-06-07 验收通过）：
 - asset / provision / membership / content：用户资产与权益管理（含并发安全消耗）、商品开通路由分发、会员等级与权益、公告与帮助文档（含可见范围过滤）、资产到期定时任务
 
+Week 4（2026-06-07 验收通过）：
+- app：应用业务详情 CRUD（图标/描述/回调地址/适配器配置）、应用适配器注册管理、与商品体系的边界隔离（不涉及 products/product_plans）
+
 ---
 
 ## 快速启动
@@ -149,7 +152,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 ## 开发进度
 
 > 最后更新：2026-06-07
-> 当前阶段：**Week 1 已验收（2026-06-05），Week 2 已验收（2026-06-06），Week 3 已验收（2026-06-07），Week 4 待开发**
+> 当前阶段：**Week 1 已验收（2026-06-05），Week 2 已验收（2026-06-06），Week 3 已验收（2026-06-07），Week 4 已验收（2026-06-07），第一阶段验收准备中**
 
 ### 后端 A（auth / iam / identity）
 
@@ -190,6 +193,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 ### 后端 C（asset / provision / membership / app / content）
 
 > Week 3 已完成，全部通过验收（2026-06-07）。asset / provision / membership / content 四模块 + 资产到期定时任务，PM Review 发现的 3 个问题（权益初始化缺失 P1、content 可见范围过滤 P1/P2、错误码不一致 P2）已修复并复审通过。
+> Week 4 已完成，全部通过验收（2026-06-07）。应用 CRUD（applications/application_adapters）模块开发完成，验收中发现的 P1 问题（`app:manage` 权限码缺失导致管理端接口全部 403）已通过 Migration 000011 修复并复审、复测通过。
 
 | 任务 | 文件 | 状态 |
 |---|---|---|
@@ -197,10 +201,10 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | 权益额度并发消耗 | `modules/asset/service/asset_service.go` | ✅ 已完成 |
 | ProvisionHandler 接口 + AppProvisioner | `modules/provision/` | ✅ 已完成 |
 | 会员等级 + 权益 | `modules/membership/` | ✅ 已完成 |
-| 应用 CRUD | `modules/app/` | ⬜ 待开发（Week 4） |
+| 应用 CRUD | `modules/app/` | ✅ 已完成 |
 | 公告 + 帮助文档 | `modules/content/` | ✅ 已完成 |
 | 资产到期定时任务 | `server/internal/jobs/expire_assets.go` | ✅ 已完成 |
-| Migration 000007–000009 | `server/migrations/` | ✅ 已完成 |
+| Migration 000007–000011 | `server/migrations/` | ✅ 已完成 |
 
 ### 前端 A（管理后台 web/admin-console）
 
@@ -267,7 +271,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | Week 3 PR 审核：asset / provision / membership / content（后端 C） | Week 3 | ✅ 已完成（2026-06-07）|
 | Week 3 PR 审核：管理后台资产/钱包/订单（前端 A） | Week 3 | ⬜ 待审核 |
 | Week 3 PR 审核：用户控制台资产/钱包/会员（前端 B） | Week 3 | ⬜ 待审核 |
-| Week 4 PR 审核：内容/应用/定时任务（后端 C） | Week 4 | ⬜ 待审核 |
+| Week 4 PR 审核：应用 CRUD（后端 C） | Week 4 | ✅ 已完成（2026-06-07）|
 | 每周五主持验收，确认合并范围 | 持续 | ⬜ 进行中 |
 | 维护角色清单、权限清单、状态枚举文档 | 持续 | ⬜ 进行中 |
 
@@ -289,7 +293,8 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | Week 3 验收：会员权益和折扣生效 | Week 3 | ✅ 已完成（2026-06-07）|
 | Week 3 验收：权限绕过测试（无权限返回 40003） | Week 3 | ✅ 已完成（2026-06-07）|
 | Week 3 验收：公告可见范围过滤（all/roles/members/admins） | Week 3 | ✅ 已完成（2026-06-07）|
-| Week 4 验收：公告/帮助文档/应用上下架 | Week 4 | ⬜ 待测试 |
+| Week 4 验收：应用 CRUD（业务详情管理 + 适配器注册） | Week 4 | ✅ 已完成（2026-06-07）|
+| Week 4 验收：权限码缺失修复复测（app:manage，P1→已修复通过） | Week 4 | ✅ 已完成（2026-06-07）|
 | Week 4 全链路回归（注册→购买→资产→到期） | Week 4 | ⬜ 待测试 |
 | 每周输出测试报告（通过率/缺陷数） | 持续 | ⬜ 进行中 |
 
