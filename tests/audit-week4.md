@@ -263,3 +263,187 @@ MySQL 原始错误文本（如 `Error 1062: Duplicate entry 'xxx' for key 'uk_ap
 - `tests/seed/init-week4-apps.sql`（已执行，可重复执行）
 - `tests/seed/init-week4-app-perms.sql`（待开发者确认后执行，修复 Issue #1）
 - `tests/seed/init-week4-users.sql`（待 Issue #1 修复后，将 user_id=7 绑定 admin 角色时一并执行）
+
+---
+
+# 【复测】Week 4 管理端应用 CRUD 接口验收 — Issue #1 修复后复测
+
+**复测日期**：2026-06-07
+**被测 commit**：`403f0d6`（migration `000011_seed_app_manage_permission`：补充 `app:manage` 权限码并绑定 `admin` 角色）
+**测试环境**：测试服务器 `8.130.9.163:8080`，MySQL `13306`
+**测试人员**：测试工程师（QA）
+
+## 一、复测结论
+
+**通过** —— Issue #1（P1 阻塞项：`app:manage` 权限码缺失导致管理端全部接口 403）已修复，
+管理端 7 个接口功能验收全部完成且符合预期。**Week 4 应用 CRUD 模块整体可正式验收通过。**
+
+## 二、复测前置准备
+
+1. 确认数据库中 `app:manage` 权限码已存在并绑定到 `admin` 角色（migration 000011 已生效）：
+   ```sql
+   SELECT code, name FROM permissions WHERE code='app:manage';        -- 1 行：app:manage / 应用管理
+   SELECT r.code, p.code FROM role_permissions rp
+     JOIN roles r ON r.id=rp.role_id JOIN permissions p ON p.id=rp.permission_id
+     WHERE p.code='app:manage';                                       -- 1 行：admin / app:manage
+   ```
+2. 发现上轮验收创建的候选管理员账号 `qa_admin_w4@molin.io`（user_id=7）**仍未绑定 `admin` 角色**
+   （`user_roles` 表中无记录），执行 `tests/seed/init-week4-users.sql` 完成绑定：
+   ```sql
+   INSERT IGNORE INTO user_roles (user_id, role_id) SELECT 7, id FROM roles WHERE code = 'admin';
+   ```
+   执行后验证：`user_id=7 / qa_admin_w4@molin.io / role=admin`，绑定成功。
+3. 上轮注册账号的密码未留存，通过非生产环境验证码明文返回机制（`config.AppEnv != "production"` 时
+   `/api/auth/verification-codes/email` 响应体含 `data.code`），分别为 `qa_admin_w4@molin.io`（user_id=7，admin 角色）
+   和 `qa_user_w4@molin.io`（user_id=8，普通用户）走 `scene=reset_password` 重置密码并重新登录获取 Token，
+   未新增账号、未变更角色绑定关系之外的任何共享数据。
+
+## 三、管理端 7 个接口复测结果
+
+### 3.1 `GET /api/admin/apps`（应用列表，分页 + status/type 筛选）
+
+| 用例 | 期望 | 实际 | 结果 |
+|---|---|---|---|
+| admin 账号访问，无筛选 | 200，返回分页列表 | `HTTP 200`，`total=4`，返回 id 101~104 全部记录，含完整字段 | 通过 |
+| `?status=active` 筛选 | 仅返回 active 状态记录 | `HTTP 200`，仅返回 id=101（`qa-app-active`） | 通过 |
+| `?type=netdisk` 筛选 | 返回该 type 下全部记录 | `HTTP 200`，返回全部 4 条（均为 netdisk） | 通过 |
+| 普通用户（无 `app:manage`）访问 | 403，code=40003 | `HTTP 403 {"code":40003,"message":"无操作权限"}` | 通过 |
+
+### 3.2 `GET /api/admin/apps/{id}`（应用详情）
+
+| 用例 | 期望 | 实际 | 结果 |
+|---|---|---|---|
+| admin 访问 id=101 | 200，返回完整详情 | `HTTP 200`，字段完整（code/name/type/icon_url/callback_url/adapter_config_json/status 等） | 通过 |
+| 不存在的 id=9999 | 404 | `HTTP 404 {"code":40400,"message":"应用不存在"}` | 通过 |
+| 非法 id 格式（`/abc`） | 400 | `HTTP 400 {"code":40000,"message":"应用 ID 无效"}` | 通过 |
+| 普通用户访问 | 403，code=40003 | `HTTP 403 {"code":40003,"message":"无操作权限"}` | 通过 |
+
+### 3.3 `POST /api/admin/apps`（创建应用）
+
+| 用例 | 期望 | 实际 | 结果 |
+|---|---|---|---|
+| admin 创建新应用（code=`qa-app-new-105`） | 201，初始 `status=draft` | `HTTP 201`，返回 `id=105`，**`status":"draft"`**，字段完整 | 通过 |
+| 重复 `code`（与 id=101 相同 `qa-app-active`） | 400，明确错误提示 | `HTTP 400 {"code":40000,"message":"应用 code 已存在"}` —— **未透传 DB 原始错误**，提示友好 | 通过 |
+| 普通用户创建 | 403，code=40003 | `HTTP 403 {"code":40003,"message":"无操作权限"}` | 通过 |
+| 缺少必填字段（`code`） | 400 | `HTTP 400 {"code":40000,"message":"code、name、type 为必填项"}` | 通过 |
+
+**重点验收项 2（唯一性校验）实测结论**：单次重复提交场景下，返回的是友好提示
+`"应用 code 已存在"`（非 DB 原始错误文本），与 Issue #2 中代码走查推断的"可能透传 DB 错误"
+**不一致** —— 实测表现优于走查预期，说明 `FindByCode` 查重分支在常规（非并发竞态）场景下
+正常拦截并返回友好错误。**真正的并发竞态窗口**（两个请求同时通过查重、同时插入触发 DB 唯一键冲突）
+仍需专门的并发测试验证，但该场景概率极低且有 `UNIQUE KEY` 兜底防止脏数据，
+继续维持 Issue #2 为 **P3（不阻断）**的判定，建议保留观察、酌情归并到统一错误处理改进任务。
+
+### 3.4 `PATCH /api/admin/apps/{id}`（更新应用 / 上下架）
+
+| 用例 | 期望 | 实际 | 结果 |
+|---|---|---|---|
+| 更新 name + status: draft→active + icon_url | 200，更新成功 | `HTTP 200 {"message":"更新成功"}`；复查详情：`name`/`icon_url`/`status` 全部正确更新 | 通过 |
+| status 传非法值（`published`） | 400，提示合法取值范围 | `HTTP 400 {"code":40000,"message":"status 取值非法，仅支持 draft/active/inactive/archived"}` | 通过 |
+| 普通用户更新 | 403，code=40003 | `HTTP 403 {"code":40003,"message":"无操作权限"}` | 通过 |
+| 更新不存在的 id=9999 | 404（建议） | `HTTP 400 {"code":40000,"message":"应用不存在"}` —— **实际返回 400 而非 404**，与 `GET /api/admin/apps/{id}` 对"不存在"统一返回 404+40400 不一致 | 见 Issue #3（新发现，P3） |
+
+**重点验收项 3（status 枚举校验）通过**：`validAppStatuses = {draft, active, inactive, archived}`
+校验生效，非法值被正确拒绝并给出合法取值提示。
+
+**重点验收项 6（数据完整性）通过**：创建后初始 `status=draft`，更新后再次查询字段（`name`、
+`icon_url`、`status`、`updated_at`）均正确反映最新值，无脏数据、无字段丢失。
+
+### 3.5 `GET /api/admin/app-adapters`（适配器列表）
+
+| 用例 | 期望 | 实际 | 结果 |
+|---|---|---|---|
+| admin 访问（初始为空） | 200，空列表 | `HTTP 200 {"items":[],"total":0}` | 通过 |
+| admin 访问（注册 2 个适配器后） | 200，返回 2 条完整记录 | `HTTP 200`，`total=2`，字段完整（含 `service_name`/`callback_url`/`supported_actions_json` 等） | 通过 |
+| 普通用户访问 | 403，code=40003 | `HTTP 403 {"code":40003,"message":"无操作权限"}` | 通过 |
+
+### 3.6 `POST /api/admin/app-adapters`（注册适配器）
+
+| 用例 | 期望 | 实际 | 结果 |
+|---|---|---|---|
+| admin 注册（`app_code=qa-app-active`，`adapter_type=internal`，含 service_name/callback_url/supported_actions_json） | 201，创建成功 | `HTTP 201`，返回 `id=1`，字段完整正确，初始 `status=active` | 通过 |
+| 重复 `app_code`（`qa-app-active`） | 400，明确错误提示 | `HTTP 400 {"code":40000,"message":"该 app_code 已注册适配器"}` —— 未透传 DB 错误 | 通过 |
+| `adapter_type` 传非法值（`cloud_api`） | 400，提示合法取值 | `HTTP 400 {"code":40000,"message":"adapter_type 取值非法，仅支持 internal/external"}` | 通过 |
+| 普通用户注册 | 403，code=40003 | `HTTP 403 {"code":40003,"message":"无操作权限"}` | 通过 |
+| 不传 `adapter_type`（可选字段） | 200/201，使用 DB 默认值 `internal` | `HTTP 201`，返回记录 `"adapter_type":"internal"` —— 与 `application_adapters` 表 `adapter_type VARCHAR(32) NOT NULL DEFAULT 'internal'` 的 DDL 默认值设计**一致**，非缺陷 | 通过（确认为设计行为）|
+
+### 3.7 `PATCH /api/admin/app-adapters/{id}`（更新 / 启停适配器）
+
+| 用例 | 期望 | 实际 | 结果 |
+|---|---|---|---|
+| 更新 service_name + status: active→inactive（启停） | 200，更新成功 | `HTTP 200 {"message":"更新成功"}`；复查列表：`service_name`/`status`/`updated_at` 全部正确更新为 `qa-internal-svc-v2`/`inactive` | 通过 |
+| status 传非法值（`suspended`） | 400 | `HTTP 400 {"code":40000,"message":"status 取值非法，仅支持 active/inactive"}` | 通过 |
+| `adapter_type` 传非法值（`hybrid`） | 400 | `HTTP 400 {"code":40000,"message":"adapter_type 取值非法，仅支持 internal/external"}` | 通过 |
+| 更新不存在的 id=9999 | 404（建议） | `HTTP 400 {"code":40000,"message":"适配器不存在"}` —— 同样返回 400 而非 404，与 Issue #3 同类 | 见 Issue #3 |
+| 普通用户更新 | 403，code=40003 | `HTTP 403 {"code":40003,"message":"无操作权限"}` | 通过 |
+
+**重点验收项 6（数据完整性）通过**：注册后初始字段完整（`service_name`/`callback_url`/
+`supported_actions_json` 原样保存），更新后复查 `service_name`/`status`/`updated_at` 均正确反映最新值。
+
+## 四、按重点验收项汇总（复测结果）
+
+| # | 验收项 | 复测结论 |
+|---|---|---|
+| 1 | 权限校验是否已修复（admin 不再 403，普通用户正确 403） | **通过** —— admin 账号绑定 `admin` 角色后可正常完成全部 CRUD 操作；普通用户访问全部 7 个接口均正确返回 `403 {"code":40003}`，权限边界生效，未出现"放行所有人" |
+| 2 | 唯一性校验（code/app_code 重复） | **通过** —— 单次重复提交场景下均返回友好错误提示（`应用 code 已存在`/`该 app_code 已注册适配器`），未透传 DB 原始错误；真正并发竞态场景维持 P3 判定（详见 3.3 说明） |
+| 3 | status 枚举校验 | **通过** —— `validAppStatuses`/`validAdapterStatuses`/`validAdapterTypes` 均正确拦截非法值并提示合法取值范围 |
+| 4 | 数据完整性（创建/更新后查询） | **通过** —— 应用和适配器创建/更新后复查，所有字段（含初始默认值 `status=draft`/`internal`）均正确完整，无丢失或脏数据 |
+| 5 | 无权限角色访问（应正确 403/40003） | **通过** —— `qa_user_w4`（无 `app:manage` 权限）访问全部 7 个接口均被正确拦截，验证权限边界确实生效 |
+
+## 五、新发现的问题
+
+### Issue #3 [app][P3] PATCH 接口对"资源不存在"返回 400 而非 404，与 GET 详情接口不一致
+
+**优先级**：P3（体验/一致性问题，不阻断功能）
+
+**复现步骤**：
+1. `GET /api/admin/apps/9999` → 返回 `HTTP 404 {"code":40400,"message":"应用不存在"}`
+2. `PATCH /api/admin/apps/9999` → 返回 `HTTP 400 {"code":40000,"message":"应用不存在"}`
+3. 同理 `PATCH /api/admin/app-adapters/9999` → 返回 `HTTP 400 {"code":40000,"message":"适配器不存在"}`
+
+**期望结果**：同一资源"不存在"的语义，HTTP 状态码和错误码应保持一致（建议统一为 `404 + 40400`），
+便于前端统一处理 404 场景。
+
+**实际结果**：`GET` 详情接口返回 `404 + 40400`，`PATCH` 更新接口返回 `400 + 40000`，
+同一种错误语义在不同接口上表现不一致。
+
+**日志/截图**：
+```
+$ curl -X PATCH .../api/admin/apps/9999 -d '{"status":"inactive"}'
+HTTP 400 {"code":40000,"message":"应用不存在","data":null}
+
+$ curl .../api/admin/apps/9999
+HTTP 404 {"code":40400,"message":"应用不存在","data":null}
+```
+
+**环境**：测试服务器（8.130.9.163:8080）
+
+**说明**：不阻断本次发布，建议归并到下一轮统一错误码/状态码规范化任务中处理。
+
+## 六、是否允许合并/上线
+
+**结论：是，建议正式验收通过，允许合并/上线。**
+
+- Issue #1（P1 阻塞项）已通过 migration `000011_seed_app_manage_permission` 修复并验证生效，
+  管理端全部 7 个接口功能完整可用，权限边界（401/403/40003）行为正确。
+- 重点验收项 1~6 全部复测通过（含管理端此前因 Issue #1 被阻塞的 CRUD 功能、唯一性校验、
+  status 枚举校验、数据完整性）。
+- Issue #2（DB 错误透传，P3）经实测，单次重复场景下**未复现**（返回友好提示），风险低于
+  此前代码走查的预期，维持 P3、不阻断。
+- 新发现 Issue #3（PATCH 不存在资源返回 400 而非 404，P3）为体验一致性问题，不阻断功能，
+  建议归并到统一错误码规范化任务中处理。
+
+**Week 4「应用 CRUD」模块（含用户端可见性、应用-商品边界、管理端 7 个接口）整体验收通过，可以合并/上线。**
+
+## 七、本轮新增/变更的测试数据
+
+| 表 | 记录 | 说明 |
+|---|---|---|
+| `user_roles` | `user_id=7` → `admin` 角色 | 执行 `init-week4-users.sql` 完成绑定（此前缺失，已补充） |
+| `applications` | `id=105`（`qa-app-new-105`） | 复测创建接口产生，建议保留供后续回归复用 |
+| `application_adapters` | `id=1`（`qa-app-active`，internal，已设为 inactive）、`id=2`（`qa-app-draft`，internal，active） | 复测注册/更新接口产生，建议保留供后续回归复用 |
+
+种子文件位置（无变更）：
+- `tests/seed/init-week4-apps.sql`
+- `tests/seed/init-week4-app-perms.sql`（已确认在测试库生效，等价于 migration 000011 的效果）
+- `tests/seed/init-week4-users.sql`（本轮已执行，完成 user_id=7 → admin 角色绑定）
