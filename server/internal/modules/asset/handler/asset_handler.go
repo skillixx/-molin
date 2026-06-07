@@ -57,7 +57,7 @@ func (h *AssetHandler) GetMyAsset(w http.ResponseWriter, r *http.Request) {
 
 	// 确保资产属于当前用户
 	if asset.UserID != userID {
-		response.Error(w, http.StatusForbidden, 40300, "无权访问该资产")
+		response.Error(w, http.StatusForbidden, 40003, "无权访问该资产")
 		return
 	}
 

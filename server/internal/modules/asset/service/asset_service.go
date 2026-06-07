@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -12,6 +14,26 @@ import (
 	"molin/server/internal/modules/asset/model"
 	"molin/server/internal/modules/asset/repository"
 )
+
+// quotaConfigItem 描述 product_plans.quota_json 中单条权益配额的结构。
+//
+// quota_json 整体为一个 JSON 数组，每一项对应一种权益额度，例如：
+//
+//	[
+//	  {"entitlement_type": "api_calls", "quota_total": 1000, "quota_unit": "次"},
+//	  {"entitlement_type": "storage_gb", "quota_total": 50,   "quota_unit": "GB"}
+//	]
+//
+// 为兼容历史数据/简单场景，也支持直接传入单个对象（非数组）：
+//
+//	{"entitlement_type": "api_calls", "quota_total": 1000, "quota_unit": "次"}
+//
+// quota_total 为空或缺省时表示该权益不限量（quota_total 存为 NULL，消耗时不做额度校验）。
+type quotaConfigItem struct {
+	EntitlementType string           `json:"entitlement_type"`
+	QuotaTotal      *decimal.Decimal `json:"quota_total"`
+	QuotaUnit       *string          `json:"quota_unit"`
+}
 
 // AssetService 资产服务，处理资产创建、状态变更、权益消耗等核心业务。
 type AssetService struct {
@@ -73,6 +95,34 @@ func (s *AssetService) CreateAsset(ctx context.Context, req dto.CreateAssetReq) 
 		}
 		if err := tx.Create(event).Error; err != nil {
 			return fmt.Errorf("写入资产事件日志失败: %w", err)
+		}
+
+		// 按套餐配置（product_plans.quota_json）初始化权益额度
+		if req.QuotaConfig != nil {
+			items, err := parseQuotaConfig(req.QuotaConfig)
+			if err != nil {
+				return fmt.Errorf("解析套餐配额配置失败: %w", err)
+			}
+			for _, item := range items {
+				if item.EntitlementType == "" {
+					continue
+				}
+				entitlement := &model.UserEntitlement{
+					UserID:          req.UserID,
+					AssetID:         asset.ID,
+					EntitlementType: item.EntitlementType,
+					ProductID:       req.ProductID,
+					QuotaTotal:      item.QuotaTotal,
+					QuotaUsed:       decimal.Zero,
+					QuotaUnit:       item.QuotaUnit,
+					Status:          "active",
+					StartedAt:       &now,
+					ExpiresAt:       req.ExpiresAt,
+				}
+				if err := tx.Create(entitlement).Error; err != nil {
+					return fmt.Errorf("初始化用户权益失败: %w", err)
+				}
+			}
 		}
 
 		return nil
@@ -227,4 +277,48 @@ func (s *AssetService) ConsumeEntitlement(ctx context.Context, entitlementID uin
 		// 扣减配额
 		return s.entitlementRepo.ConsumeQuota(ctx, tx, entitlementID, amount)
 	})
+}
+
+// parseQuotaConfig 解析 product_plans.quota_json 原始内容为权益配置列表。
+//
+// 支持以下入参形式（兼容 provision 模块直接透传 *string 或 string）：
+//   - JSON 数组：[{"entitlement_type": "...", "quota_total": 100, "quota_unit": "..."}]
+//   - JSON 对象（单条权益）：{"entitlement_type": "...", "quota_total": 100, "quota_unit": "..."}
+//
+// 入参为 nil、空字符串或内容为 "null" 时返回空列表（不报错，视为无需初始化权益）。
+func parseQuotaConfig(raw interface{}) ([]quotaConfigItem, error) {
+	var jsonStr string
+	switch v := raw.(type) {
+	case nil:
+		return nil, nil
+	case string:
+		jsonStr = v
+	case *string:
+		if v == nil {
+			return nil, nil
+		}
+		jsonStr = *v
+	case []byte:
+		jsonStr = string(v)
+	default:
+		return nil, fmt.Errorf("不支持的 quota_json 类型: %T", raw)
+	}
+
+	jsonStr = strings.TrimSpace(jsonStr)
+	if jsonStr == "" || jsonStr == "null" {
+		return nil, nil
+	}
+
+	// 优先按数组解析
+	var items []quotaConfigItem
+	if err := json.Unmarshal([]byte(jsonStr), &items); err == nil {
+		return items, nil
+	}
+
+	// 退化为单个对象解析
+	var single quotaConfigItem
+	if err := json.Unmarshal([]byte(jsonStr), &single); err != nil {
+		return nil, fmt.Errorf("quota_json 既不是合法的权益数组也不是合法的权益对象: %w", err)
+	}
+	return []quotaConfigItem{single}, nil
 }

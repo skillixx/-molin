@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -35,15 +36,9 @@ func (s *ContentService) ListAnnouncements(ctx context.Context, userID uint64, u
 		return nil, err
 	}
 
-	// 构建角色 code 集合，便于 O(1) 查找
-	roleSet := make(map[string]struct{}, len(userRoles))
-	for _, r := range userRoles {
-		roleSet[r] = struct{}{}
-	}
-
 	var result []*model.Announcement
 	for _, a := range all {
-		if s.isVisible(a, isMember, roleSet) {
+		if s.isVisible(a, isMember, userRoles) {
 			result = append(result, a)
 		}
 	}
@@ -67,18 +62,37 @@ func (s *ContentService) ListPublicAnnouncements(ctx context.Context) ([]*model.
 }
 
 // isVisible 判断公告是否对当前用户可见。
-func (s *ContentService) isVisible(a *model.Announcement, isMember bool, roleSet map[string]struct{}) bool {
+// visible_scope 取值规范：all / roles / members / admins，详见 content/CLAUDE.md。
+func (s *ContentService) isVisible(a *model.Announcement, isMember bool, userRoles []string) bool {
 	switch a.VisibleScope {
 	case "all":
+		// 所有用户可见
 		return true
-	case "member":
-		// 需要有效会员
+	case "members":
+		// 仅对拥有有效会员的用户可见
 		return isMember
-	default:
-		// 按角色 code 过滤（visible_scope 存角色 code，或 target_roles_json 包含角色）
-		if _, ok := roleSet[a.VisibleScope]; ok {
-			return true
+	case "roles":
+		// 解析 target_roles_json（JSON 字符串数组），命中用户任意一个角色即可见
+		if a.TargetRolesJSON == nil {
+			return false
 		}
+		var targetRoles []string
+		if err := json.Unmarshal([]byte(*a.TargetRolesJSON), &targetRoles); err != nil {
+			return false
+		}
+		for _, ur := range userRoles {
+			for _, tr := range targetRoles {
+				if ur == tr {
+					return true
+				}
+			}
+		}
+		return false
+	case "admins":
+		// 管理端专属公告，用户端永不展示
+		return false
+	default:
+		// 未知取值，出于安全考虑默认不可见
 		return false
 	}
 }
@@ -90,23 +104,30 @@ func (s *ContentService) AdminListAnnouncements(ctx context.Context, page, pageS
 }
 
 // CreateAnnouncement 创建公告（管理端）。
-func (s *ContentService) CreateAnnouncement(ctx context.Context, createdBy uint64, title, content, visibleScope string, startAt, endAt *time.Time, sortOrder int) (*model.Announcement, error) {
+func (s *ContentService) CreateAnnouncement(ctx context.Context, createdBy uint64, title, content, visibleScope string, targetRolesJSON *string, startAt, endAt *time.Time, sortOrder int) (*model.Announcement, error) {
 	if title == "" || content == "" {
 		return nil, fmt.Errorf("title 和 content 为必填项")
 	}
 	if visibleScope == "" {
 		visibleScope = "all"
 	}
+	// visible_scope 取值校验，规范见 content/CLAUDE.md：all/roles/members/admins
+	switch visibleScope {
+	case "all", "roles", "members", "admins":
+	default:
+		return nil, fmt.Errorf("visible_scope 取值非法，仅支持 all/roles/members/admins")
+	}
 
 	a := &model.Announcement{
-		Title:        title,
-		Content:      content,
-		VisibleScope: visibleScope,
-		Status:       "draft",
-		StartAt:      startAt,
-		EndAt:        endAt,
-		SortOrder:    sortOrder,
-		CreatedBy:    createdBy,
+		Title:           title,
+		Content:         content,
+		VisibleScope:    visibleScope,
+		TargetRolesJSON: targetRolesJSON,
+		Status:          "draft",
+		StartAt:         startAt,
+		EndAt:           endAt,
+		SortOrder:       sortOrder,
+		CreatedBy:       createdBy,
 	}
 	if err := s.announcementRepo.Create(ctx, a); err != nil {
 		return nil, fmt.Errorf("创建公告失败: %w", err)

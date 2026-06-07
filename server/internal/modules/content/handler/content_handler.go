@@ -152,7 +152,7 @@ func (h *ContentHandler) AdminCreateAnnouncement(w http.ResponseWriter, r *http.
 	}
 
 	a, err := h.svc.CreateAnnouncement(r.Context(), operatorID, req.Title, req.Content,
-		req.VisibleScope, req.StartAt, req.EndAt, req.SortOrder)
+		req.VisibleScope, req.TargetRolesJSON, req.StartAt, req.EndAt, req.SortOrder)
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 		return
@@ -184,6 +184,9 @@ func (h *ContentHandler) AdminUpdateAnnouncement(w http.ResponseWriter, r *http.
 	}
 	if req.VisibleScope != nil {
 		updates["visible_scope"] = *req.VisibleScope
+	}
+	if req.TargetRolesJSON != nil {
+		updates["target_roles_json"] = *req.TargetRolesJSON
 	}
 	if req.Status != nil {
 		updates["status"] = *req.Status

@@ -3,13 +3,17 @@ package model
 import "time"
 
 // Announcement 公告，对应 announcements 表。
-// visible_scope：all（所有人可见）/ member（需要有效会员）/ role_code（指定角色）
+// visible_scope 取值规范（与 content/CLAUDE.md 保持一致）：
+//   all     —— 所有用户可见
+//   roles   —— 按 target_roles_json（JSON 字符串数组，存角色 code）匹配用户角色，命中任意一个即可见
+//   members —— 仅对拥有有效会员的用户可见
+//   admins  —— 管理端专属，用户端永不展示
 type Announcement struct {
 	ID              uint64     `gorm:"primaryKey;autoIncrement" json:"id"`
 	Title           string     `gorm:"size:512;not null" json:"title"`
 	Content         string     `gorm:"type:text;not null" json:"content"`
-	VisibleScope    string     `gorm:"size:32;not null;default:all" json:"visible_scope"` // all/member/role_code
-	TargetRolesJSON *string    `gorm:"type:json" json:"target_roles_json,omitempty"`      // JSON 数组，存角色 code
+	VisibleScope    string     `gorm:"size:32;not null;default:all" json:"visible_scope"` // all/roles/members/admins
+	TargetRolesJSON *string    `gorm:"type:json" json:"target_roles_json,omitempty"`      // JSON 数组，存角色 code，仅 visible_scope=roles 时生效
 	Status          string     `gorm:"size:32;not null;default:draft;index:idx_announcements_status" json:"status"` // draft/published/offline
 	StartAt         *time.Time `gorm:"index:idx_announcements_start_at" json:"start_at,omitempty"`
 	EndAt           *time.Time `json:"end_at,omitempty"`
