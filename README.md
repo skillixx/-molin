@@ -4,11 +4,18 @@ Molin 云管理平台基于 Vue3 + Go + MySQL，支持商品售卖、计费、�
 
 **技术栈：** Go 1.22（后端 API）+ Vue 3 / TypeScript（前端）+ MySQL 8 + Redis 7 + RabbitMQ + MinIO
 
-**已上线模块（Week 1，2026-06-05 验收通过）：**
+**已上线模块：**
 
+Week 1（2026-06-05 验收通过）：
 - auth（17 个接口）：邮箱/手机号/统一注册、登录、验证码发送、JWT 刷新、退出、OTP密码重置、用户信息、修改密码/用户名/手机/邮箱、管理员双重认证（手机+邮箱）
 - iam（11 个接口）：角色 CRUD、权限列表、用户角色分配/撤销、用户权限覆盖 CRUD、RBAC 4步优先级权限计算
 - identity（5 个接口）：用户提交实名认证、查询实名状态、管理员查审核列表/详情、管理员审核通过/拒绝
+
+Week 2（2026-06-06 验收通过）：
+- product / order / billing / finance_consumer：商品市场、价格优先级（会员>角色>默认）、购买下单、钱包扣费（乐观锁+并发安全）、支付回调（幂等+签名校验+加密存储）
+
+Week 3（2026-06-07 验收通过）：
+- asset / provision / membership / content：用户资产与权益管理（含并发安全消耗）、商品开通路由分发、会员等级与权益、公告与帮助文档（含可见范围过滤）、资产到期定时任务
 
 ---
 
@@ -141,8 +148,8 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 ## 开发进度
 
-> 最后更新：2026-06-06
-> 当前阶段：**Week 1 已验收（2026-06-05），Week 2 已验收（2026-06-06），Week 3 待开发**
+> 最后更新：2026-06-07
+> 当前阶段：**Week 1 已验收（2026-06-05），Week 2 已验收（2026-06-06），Week 3 已验收（2026-06-07），Week 4 待开发**
 
 ### 后端 A（auth / iam / identity）
 
@@ -182,16 +189,18 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 ### 后端 C（asset / provision / membership / app / content）
 
+> Week 3 已完成，全部通过验收（2026-06-07）。asset / provision / membership / content 四模块 + 资产到期定时任务，PM Review 发现的 3 个问题（权益初始化缺失 P1、content 可见范围过滤 P1/P2、错误码不一致 P2）已修复并复审通过。
+
 | 任务 | 文件 | 状态 |
 |---|---|---|
-| 用户资产创建/状态管理 | `modules/asset/` | ⬜ 待开发 |
-| 权益额度并发消耗 | `modules/asset/service/asset_service.go` | ⬜ 待开发 |
-| ProvisionHandler 接口 + AppProvisioner | `modules/provision/` | ⬜ 待开发 |
-| 会员等级 + 权益 | `modules/membership/` | ⬜ 待开发 |
-| 应用 CRUD | `modules/app/` | ⬜ 待开发 |
-| 公告 + 帮助文档 | `modules/content/` | ⬜ 待开发 |
-| 资产到期定时任务 | `server/internal/jobs/expire_assets.go` | ⬜ 待开发 |
-| Migration 000006–000009 | `server/migrations/` | ⬜ 待开发 |
+| 用户资产创建/状态管理 | `modules/asset/` | ✅ 已完成 |
+| 权益额度并发消耗 | `modules/asset/service/asset_service.go` | ✅ 已完成 |
+| ProvisionHandler 接口 + AppProvisioner | `modules/provision/` | ✅ 已完成 |
+| 会员等级 + 权益 | `modules/membership/` | ✅ 已完成 |
+| 应用 CRUD | `modules/app/` | ⬜ 待开发（Week 4） |
+| 公告 + 帮助文档 | `modules/content/` | ✅ 已完成 |
+| 资产到期定时任务 | `server/internal/jobs/expire_assets.go` | ✅ 已完成 |
+| Migration 000007–000009 | `server/migrations/` | ✅ 已完成 |
 
 ### 前端 A（管理后台 web/admin-console）
 
@@ -255,7 +264,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | Week 2 PR 审核：product / order / billing（后端 B） | Week 2 | ✅ 已完成（2026-06-06）|
 | Week 2 PR 审核：管理后台商品/用户/审核页（前端 A） | Week 2 | ⬜ 待审核 |
 | Week 2 PR 审核：用户控制台商品市场/购买（前端 B） | Week 2 | ⬜ 待审核 |
-| Week 3 PR 审核：asset / provision / membership（后端 C） | Week 3 | ⬜ 待审核 |
+| Week 3 PR 审核：asset / provision / membership / content（后端 C） | Week 3 | ✅ 已完成（2026-06-07）|
 | Week 3 PR 审核：管理后台资产/钱包/订单（前端 A） | Week 3 | ⬜ 待审核 |
 | Week 3 PR 审核：用户控制台资产/钱包/会员（前端 B） | Week 3 | ⬜ 待审核 |
 | Week 4 PR 审核：内容/应用/定时任务（后端 C） | Week 4 | ⬜ 待审核 |
@@ -276,9 +285,10 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | Week 2 验收：并发扣费安全（10 并发仅正确数量成功） | Week 2 | ✅ 已完成（2026-06-06）|
 | Week 2 验收：购买幂等（相同 Idempotency-Key 不重复扣费） | Week 2 | ✅ 已完成（2026-06-06）|
 | Week 2 验收：支付回调幂等（重放通知不重复记账） | Week 2 | ✅ 已完成（2026-06-06）|
-| Week 3 验收：资产生成/权益消耗/到期流程 | Week 3 | ⬜ 待测试 |
-| Week 3 验收：会员权益和折扣生效 | Week 3 | ⬜ 待测试 |
-| Week 3 验收：权限绕过测试（无权限返回 40003） | Week 3 | ⬜ 待测试 |
+| Week 3 验收：资产生成/权益消耗/到期流程 | Week 3 | ✅ 已完成（2026-06-07）|
+| Week 3 验收：会员权益和折扣生效 | Week 3 | ✅ 已完成（2026-06-07）|
+| Week 3 验收：权限绕过测试（无权限返回 40003） | Week 3 | ✅ 已完成（2026-06-07）|
+| Week 3 验收：公告可见范围过滤（all/roles/members/admins） | Week 3 | ✅ 已完成（2026-06-07）|
 | Week 4 验收：公告/帮助文档/应用上下架 | Week 4 | ⬜ 待测试 |
 | Week 4 全链路回归（注册→购买→资产→到期） | Week 4 | ⬜ 待测试 |
 | 每周输出测试报告（通过率/缺陷数） | 持续 | ⬜ 进行中 |
