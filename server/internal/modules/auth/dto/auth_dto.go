@@ -92,6 +92,12 @@ type UpdateEmailReq struct {
 	Code  string `json:"code"` // 新邮箱收到的验证码
 }
 
+// UpdateUserStatusReq 管理员修改用户状态请求（封禁/解封）。
+type UpdateUserStatusReq struct {
+	Status string `json:"status"` // active 或 disabled
+	Reason string `json:"reason"` // 操作原因（可选，用于审计）
+}
+
 // TokenPair Access Token + Refresh Token 对。
 type TokenPair struct {
 	AccessToken  string `json:"access_token"`

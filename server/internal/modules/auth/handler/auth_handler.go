@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"molin/server/internal/config"
 	"molin/server/internal/middleware"
@@ -278,6 +279,41 @@ func (h *AuthHandler) UpdateEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.JSON(w, http.StatusOK, nil)
+}
+
+// UpdateUserStatus PATCH /api/admin/users/{id}/status — 管理员封禁/解封用户
+// status=disabled 时调用 BanUser（写入 Redis 黑名单 + 吊销全部会话 + DB 状态置为 disabled）
+// status=active   时调用 UnbanUser（解除 Redis 黑名单 + DB 状态恢复 active）
+func (h *AuthHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
+	targetUserID, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "用户 ID 不合法")
+		return
+	}
+
+	var req dto.UpdateUserStatusReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+
+	switch req.Status {
+	case "disabled":
+		if err := h.authSvc.BanUser(r.Context(), targetUserID); err != nil {
+			response.Error(w, http.StatusInternalServerError, 50000, "封禁用户失败")
+			return
+		}
+	case "active":
+		if err := h.authSvc.UnbanUser(r.Context(), targetUserID); err != nil {
+			response.Error(w, http.StatusInternalServerError, 50000, "解封用户失败")
+			return
+		}
+	default:
+		response.Error(w, http.StatusBadRequest, 40000, "status 取值必须为 active 或 disabled")
+		return
+	}
+
+	response.JSON(w, http.StatusOK, "updated")
 }
 
 func handleAuthError(w http.ResponseWriter, err error) {

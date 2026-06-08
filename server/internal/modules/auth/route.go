@@ -43,4 +43,7 @@ func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc 
 	}
 	mux.Handle("POST /api/admin/auth/verify-phone", adminAuth(h.AdminVerifyPhone))
 	mux.Handle("POST /api/admin/auth/verify-email", adminAuth(h.AdminVerifyEmail))
+
+	// 管理员封禁/解封用户（需登录 + user:manage 权限）
+	mux.Handle("PATCH /api/admin/users/{id}/status", adminAuth(h.UpdateUserStatus))
 }
