@@ -12,10 +12,12 @@ type WalletResp struct {
 }
 
 // CreateRechargeOrderReq 创建充值订单请求体。
+// 字段名与接口文档（docs/full-api-design.md 4.18）保持一致：
+// payment_method 取值仅支持 wechat / alipay。
 type CreateRechargeOrderReq struct {
-	Amount   decimal.Decimal `json:"amount"`
-	Provider string          `json:"provider"` // wechat / alipay
-	Remark   string          `json:"remark"`
+	Amount        decimal.Decimal `json:"amount"`
+	PaymentMethod string          `json:"payment_method"` // wechat / alipay
+	Remark        string          `json:"remark"`
 }
 
 // CreateRechargeOrderResp 创建充值订单响应（返回模拟支付 URL）。
