@@ -87,6 +87,11 @@ func (h *BillingHandler) CreateRechargeOrder(w http.ResponseWriter, r *http.Requ
 		response.Error(w, http.StatusBadRequest, 40000, "充值金额必须大于 0")
 		return
 	}
+	// 校验支付方式枚举值，防止产生无法匹配真实支付渠道的"僵尸"待支付订单
+	if req.PaymentMethod != "wechat" && req.PaymentMethod != "alipay" {
+		response.Error(w, http.StatusBadRequest, 40000, "不支持的支付方式: "+req.PaymentMethod+"，仅支持 wechat / alipay")
+		return
+	}
 
 	// 使用随机 ID 生成幂等键（实际场景由调用方提供）
 	idempotencyKey := idgen.NewRequestID()
