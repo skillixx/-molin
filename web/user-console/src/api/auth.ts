@@ -8,8 +8,7 @@ import type {
   User,
   LoginEmailBody,
   LoginPhoneBody,
-  RegisterEmailBody,
-  RegisterPhoneBody,
+  RegisterBody,
 } from '@/types/auth'
 
 // 发送邮箱验证码
@@ -22,14 +21,9 @@ export function sendPhoneCode(phone: string, scene: 'register' | 'login' | 'rese
   return http.post<unknown, void>('/auth/verification-codes/phone', { phone, scene })
 }
 
-// 邮箱注册
-export function registerByEmail(body: RegisterEmailBody) {
-  return http.post<unknown, TokenPair>('/auth/register/email', body)
-}
-
-// 手机号注册
-export function registerByPhone(body: RegisterPhoneBody) {
-  return http.post<unknown, TokenPair>('/auth/register/phone', body)
+// 统一注册（手机号 + 邮箱必须同时提交，需双重 OTP 验证码）
+export function register(body: RegisterBody) {
+  return http.post<unknown, TokenPair>('/auth/register', body)
 }
 
 // 邮箱密码登录

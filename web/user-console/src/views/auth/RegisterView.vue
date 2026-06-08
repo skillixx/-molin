@@ -1,53 +1,61 @@
 <script setup lang="ts">
 /**
  * 注册页
- * 支持邮箱注册和手机号注册两种方式（el-tabs 切换）
+ * 统一注册：手机号 + 邮箱必须同时提交，并需双重 OTP 验证码（手机验证码 + 邮箱验证码）
  * 注册成功后自动登录，跳转到商品市场
  */
 import { ref, reactive, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
-import { sendEmailCode, sendPhoneCode, registerByEmail, registerByPhone } from '@/api/auth'
+import { sendEmailCode, sendPhoneCode, register } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const authStore = useAuthStore()
 
-// 当前 Tab：email / phone
-const activeTab = ref<'email' | 'phone'>('email')
-
-// 邮箱注册表单
-const emailForm = reactive({
-  email: '',
-  code: '',
-  password: '',
-  confirmPassword: '',
-})
-
-// 手机号注册表单
-const phoneForm = reactive({
+// 统一注册表单
+const form = reactive({
+  username: '',
   phone: '',
-  code: '',
+  phoneCode: '',
+  email: '',
+  emailCode: '',
   password: '',
   confirmPassword: '',
 })
 
 // 验证码倒计时
-const emailCountdown = ref(0)
 const phoneCountdown = ref(0)
-let emailTimer: ReturnType<typeof setInterval> | undefined
+const emailCountdown = ref(0)
 let phoneTimer: ReturnType<typeof setInterval> | undefined
+let emailTimer: ReturnType<typeof setInterval> | undefined
 
 // 提交状态
 const submitting = ref(false)
-const sendingCode = ref(false)
+const sendingPhoneCode = ref(false)
+const sendingEmailCode = ref(false)
 
 // 表单 ref
-const emailFormRef = ref<FormInstance>()
-const phoneFormRef = ref<FormInstance>()
+const formRef = ref<FormInstance>()
 
 // =================== 表单校验规则 ===================
+
+// 用户名（可选，但填写则需符合规则）
+const usernameValidator = (_: unknown, value: string, callback: (err?: Error) => void) => {
+  if (!value) return callback()
+  if (!/^[a-zA-Z0-9_]{2,32}$/.test(value)) {
+    return callback(new Error('用户名为 2-32 位字母/数字/下划线'))
+  }
+  callback()
+}
+
+// 手机号格式
+const phoneValidator = (_: unknown, value: string, callback: (err?: Error) => void) => {
+  if (!value) return callback(new Error('请输入手机号'))
+  if (!/^1[3-9]\d{9}$/.test(value)) return callback(new Error('请输入正确的11位手机号'))
+  callback()
+}
 
 // 邮箱格式
 const emailValidator = (_: unknown, value: string, callback: (err?: Error) => void) => {
@@ -56,10 +64,10 @@ const emailValidator = (_: unknown, value: string, callback: (err?: Error) => vo
   callback()
 }
 
-// 手机号格式
-const phoneValidator = (_: unknown, value: string, callback: (err?: Error) => void) => {
-  if (!value) return callback(new Error('请输入手机号'))
-  if (!/^1[3-9]\d{9}$/.test(value)) return callback(new Error('请输入正确的11位手机号'))
+// 验证码格式（6位数字）
+const codeValidator = (label: string) => (_: unknown, value: string, callback: (err?: Error) => void) => {
+  if (!value) return callback(new Error(`请输入${label}`))
+  if (!/^\d{6}$/.test(value)) return callback(new Error(`${label}为6位数字`))
   callback()
 }
 
@@ -71,102 +79,91 @@ const passwordValidator = (_: unknown, value: string, callback: (err?: Error) =>
   callback()
 }
 
-// 确认密码（邮箱表单）
-const emailConfirmValidator = (_: unknown, value: string, callback: (err?: Error) => void) => {
+// 确认密码
+const confirmPasswordValidator = (_: unknown, value: string, callback: (err?: Error) => void) => {
   if (!value) return callback(new Error('请再次输入密码'))
-  if (value !== emailForm.password) return callback(new Error('两次输入的密码不一致'))
+  if (value !== form.password) return callback(new Error('两次输入的密码不一致'))
   callback()
 }
 
-// 确认密码（手机号表单）
-const phoneConfirmValidator = (_: unknown, value: string, callback: (err?: Error) => void) => {
-  if (!value) return callback(new Error('请再次输入密码'))
-  if (value !== phoneForm.password) return callback(new Error('两次输入的密码不一致'))
-  callback()
-}
-
-const emailRules: FormRules = {
-  email: [{ validator: emailValidator, trigger: 'blur' }],
-  code: [{ required: true, message: '请输入验证码', trigger: 'blur' }],
-  password: [{ validator: passwordValidator, trigger: 'blur' }],
-  confirmPassword: [{ validator: emailConfirmValidator, trigger: 'blur' }],
-}
-
-const phoneRules: FormRules = {
+const rules: FormRules = {
+  username: [{ validator: usernameValidator, trigger: 'blur' }],
   phone: [{ validator: phoneValidator, trigger: 'blur' }],
-  code: [{ required: true, message: '请输入验证码', trigger: 'blur' }],
+  phoneCode: [{ validator: codeValidator('手机验证码'), trigger: 'blur' }],
+  email: [{ validator: emailValidator, trigger: 'blur' }],
+  emailCode: [{ validator: codeValidator('邮箱验证码'), trigger: 'blur' }],
   password: [{ validator: passwordValidator, trigger: 'blur' }],
-  confirmPassword: [{ validator: phoneConfirmValidator, trigger: 'blur' }],
+  confirmPassword: [{ validator: confirmPasswordValidator, trigger: 'blur' }],
 }
 
 // =================== 发送验证码 ===================
 
-function startCountdown(countdownRef: typeof emailCountdown, timerRef: { value: ReturnType<typeof setInterval> | undefined }) {
+function startCountdown(countdownRef: typeof phoneCountdown, setTimer: (t: ReturnType<typeof setInterval>) => void) {
   countdownRef.value = 60
-  timerRef.value = setInterval(() => {
+  const timer = setInterval(() => {
     countdownRef.value--
     if (countdownRef.value <= 0) {
-      clearInterval(timerRef.value)
+      clearInterval(timer)
     }
   }, 1000)
-}
-
-const emailTimerRef = { value: undefined as ReturnType<typeof setInterval> | undefined }
-const phoneTimerRef = { value: undefined as ReturnType<typeof setInterval> | undefined }
-
-async function sendEmailVerifyCode() {
-  if (emailCountdown.value > 0 || sendingCode.value) return
-  if (!emailForm.email) {
-    ElMessage.warning('请先输入邮箱地址')
-    return
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailForm.email)) {
-    ElMessage.warning('邮箱格式不正确')
-    return
-  }
-  sendingCode.value = true
-  try {
-    await sendEmailCode(emailForm.email, 'register')
-    ElMessage.success('验证码已发送，请查收邮件')
-    startCountdown(emailCountdown, emailTimerRef)
-  } finally {
-    sendingCode.value = false
-  }
+  setTimer(timer)
 }
 
 async function sendPhoneVerifyCode() {
-  if (phoneCountdown.value > 0 || sendingCode.value) return
-  if (!phoneForm.phone) {
+  if (phoneCountdown.value > 0 || sendingPhoneCode.value) return
+  if (!form.phone) {
     ElMessage.warning('请先输入手机号')
     return
   }
-  if (!/^1[3-9]\d{9}$/.test(phoneForm.phone)) {
+  if (!/^1[3-9]\d{9}$/.test(form.phone)) {
     ElMessage.warning('请输入正确的11位手机号')
     return
   }
-  sendingCode.value = true
+  sendingPhoneCode.value = true
   try {
-    await sendPhoneCode(phoneForm.phone, 'register')
+    await sendPhoneCode(form.phone, 'register')
     ElMessage.success('验证码已发送，请查收短信')
-    startCountdown(phoneCountdown, phoneTimerRef)
+    startCountdown(phoneCountdown, (t) => { phoneTimer = t })
   } finally {
-    sendingCode.value = false
+    sendingPhoneCode.value = false
+  }
+}
+
+async function sendEmailVerifyCode() {
+  if (emailCountdown.value > 0 || sendingEmailCode.value) return
+  if (!form.email) {
+    ElMessage.warning('请先输入邮箱地址')
+    return
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+    ElMessage.warning('邮箱格式不正确')
+    return
+  }
+  sendingEmailCode.value = true
+  try {
+    await sendEmailCode(form.email, 'register')
+    ElMessage.success('验证码已发送，请查收邮件')
+    startCountdown(emailCountdown, (t) => { emailTimer = t })
+  } finally {
+    sendingEmailCode.value = false
   }
 }
 
 // =================== 提交注册 ===================
 
-async function handleEmailRegister() {
-  const valid = await emailFormRef.value?.validate().catch(() => false)
+async function handleRegister() {
+  const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
 
   submitting.value = true
   try {
-    // 注册并获取 Token
-    const tokens = await registerByEmail({
-      email: emailForm.email,
-      code: emailForm.code,
-      password: emailForm.password,
+    const tokens = await register({
+      username: form.username || undefined,
+      phone: form.phone,
+      email: form.email,
+      password: form.password,
+      phone_code: form.phoneCode,
+      email_code: form.emailCode,
     })
     // 保存 Token 并拉取用户信息
     localStorage.setItem('access_token', tokens.access_token)
@@ -180,32 +177,10 @@ async function handleEmailRegister() {
   }
 }
 
-async function handlePhoneRegister() {
-  const valid = await phoneFormRef.value?.validate().catch(() => false)
-  if (!valid) return
-
-  submitting.value = true
-  try {
-    const tokens = await registerByPhone({
-      phone: phoneForm.phone,
-      code: phoneForm.code,
-      password: phoneForm.password,
-    })
-    localStorage.setItem('access_token', tokens.access_token)
-    localStorage.setItem('refresh_token', tokens.refresh_token)
-    authStore.accessToken = tokens.access_token
-    await authStore.fetchMe()
-    ElMessage.success('注册成功，欢迎使用墨灵！')
-    router.push('/marketplace')
-  } finally {
-    submitting.value = false
-  }
-}
-
 // 清理定时器
 onUnmounted(() => {
-  clearInterval(emailTimer)
   clearInterval(phoneTimer)
+  clearInterval(emailTimer)
 })
 </script>
 
@@ -218,142 +193,113 @@ onUnmounted(() => {
         <p class="auth-subtitle">爱斯琴网络科技有限公司</p>
       </div>
 
-      <!-- Tab 切换 -->
-      <el-tabs v-model="activeTab" class="auth-tabs">
-        <!-- 邮箱注册 -->
-        <el-tab-pane label="邮箱注册" name="email">
-          <el-form
-            ref="emailFormRef"
-            :model="emailForm"
-            :rules="emailRules"
-            label-position="top"
-            class="auth-form"
-          >
-            <el-form-item label="邮箱地址" prop="email">
+      <p class="auth-hint">注册需同时验证手机号与邮箱，请确保两者均可正常接收验证码</p>
+
+      <el-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        label-position="top"
+        class="auth-form"
+      >
+        <el-form-item label="用户名（选填）" prop="username">
+          <el-input
+            v-model="form.username"
+            placeholder="2-32位字母/数字/下划线"
+            autocomplete="username"
+          />
+        </el-form-item>
+
+        <!-- 手机号区块 -->
+        <div class="form-section">
+          <div class="form-section-title">手机号验证</div>
+          <el-form-item label="手机号" prop="phone">
+            <el-input
+              v-model="form.phone"
+              placeholder="请输入11位手机号"
+              maxlength="11"
+              autocomplete="tel"
+            />
+          </el-form-item>
+
+          <el-form-item label="手机验证码" prop="phoneCode">
+            <div class="code-row">
               <el-input
-                v-model="emailForm.email"
-                placeholder="user@example.com"
-                type="email"
-                autocomplete="email"
+                v-model="form.phoneCode"
+                placeholder="请输入短信验证码"
+                maxlength="6"
               />
-            </el-form-item>
-
-            <el-form-item label="验证码" prop="code">
-              <div class="code-row">
-                <el-input
-                  v-model="emailForm.code"
-                  placeholder="请输入验证码"
-                  maxlength="6"
-                />
-                <button
-                  class="code-btn"
-                  :disabled="emailCountdown > 0 || sendingCode"
-                  @click.prevent="sendEmailVerifyCode"
-                >
-                  {{ emailCountdown > 0 ? `${emailCountdown}s 后重发` : '发送验证码' }}
-                </button>
-              </div>
-            </el-form-item>
-
-            <el-form-item label="设置密码" prop="password">
-              <el-input
-                v-model="emailForm.password"
-                type="password"
-                placeholder="8-32位，包含字母和数字"
-                show-password
-                autocomplete="new-password"
-              />
-            </el-form-item>
-
-            <el-form-item label="确认密码" prop="confirmPassword">
-              <el-input
-                v-model="emailForm.confirmPassword"
-                type="password"
-                placeholder="再次输入密码"
-                show-password
-                autocomplete="new-password"
-              />
-            </el-form-item>
-
-            <el-form-item>
               <button
-                class="btn-primary"
-                :disabled="submitting"
-                @click.prevent="handleEmailRegister"
+                class="code-btn"
+                :disabled="phoneCountdown > 0 || sendingPhoneCode"
+                @click.prevent="sendPhoneVerifyCode"
               >
-                {{ submitting ? '注册中...' : '立即注册' }}
+                {{ phoneCountdown > 0 ? `${phoneCountdown}s 后重发` : '发送验证码' }}
               </button>
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
+            </div>
+          </el-form-item>
+        </div>
 
-        <!-- 手机号注册 -->
-        <el-tab-pane label="手机号注册" name="phone">
-          <el-form
-            ref="phoneFormRef"
-            :model="phoneForm"
-            :rules="phoneRules"
-            label-position="top"
-            class="auth-form"
-          >
-            <el-form-item label="手机号" prop="phone">
+        <!-- 邮箱区块 -->
+        <div class="form-section">
+          <div class="form-section-title">邮箱验证</div>
+          <el-form-item label="邮箱地址" prop="email">
+            <el-input
+              v-model="form.email"
+              placeholder="user@example.com"
+              type="email"
+              autocomplete="email"
+            />
+          </el-form-item>
+
+          <el-form-item label="邮箱验证码" prop="emailCode">
+            <div class="code-row">
               <el-input
-                v-model="phoneForm.phone"
-                placeholder="请输入11位手机号"
-                maxlength="11"
-                autocomplete="tel"
+                v-model="form.emailCode"
+                placeholder="请输入邮箱验证码"
+                maxlength="6"
               />
-            </el-form-item>
-
-            <el-form-item label="验证码" prop="code">
-              <div class="code-row">
-                <el-input
-                  v-model="phoneForm.code"
-                  placeholder="请输入短信验证码"
-                  maxlength="6"
-                />
-                <button
-                  class="code-btn"
-                  :disabled="phoneCountdown > 0 || sendingCode"
-                  @click.prevent="sendPhoneVerifyCode"
-                >
-                  {{ phoneCountdown > 0 ? `${phoneCountdown}s 后重发` : '发送验证码' }}
-                </button>
-              </div>
-            </el-form-item>
-
-            <el-form-item label="设置密码" prop="password">
-              <el-input
-                v-model="phoneForm.password"
-                type="password"
-                placeholder="8-32位，包含字母和数字"
-                show-password
-                autocomplete="new-password"
-              />
-            </el-form-item>
-
-            <el-form-item label="确认密码" prop="confirmPassword">
-              <el-input
-                v-model="phoneForm.confirmPassword"
-                type="password"
-                placeholder="再次输入密码"
-                show-password
-                autocomplete="new-password"
-              />
-            </el-form-item>
-
-            <el-form-item>
               <button
-                class="btn-primary"
-                :disabled="submitting"
-                @click.prevent="handlePhoneRegister"
+                class="code-btn"
+                :disabled="emailCountdown > 0 || sendingEmailCode"
+                @click.prevent="sendEmailVerifyCode"
               >
-                {{ submitting ? '注册中...' : '立即注册' }}
+                {{ emailCountdown > 0 ? `${emailCountdown}s 后重发` : '发送验证码' }}
               </button>
-            </el-form-item>
-          </el-form>
-        </el-tab-pane>
-      </el-tabs>
+            </div>
+          </el-form-item>
+        </div>
+
+        <el-form-item label="设置密码" prop="password">
+          <el-input
+            v-model="form.password"
+            type="password"
+            placeholder="8-32位，包含字母和数字"
+            show-password
+            autocomplete="new-password"
+          />
+        </el-form-item>
+
+        <el-form-item label="确认密码" prop="confirmPassword">
+          <el-input
+            v-model="form.confirmPassword"
+            type="password"
+            placeholder="再次输入密码"
+            show-password
+            autocomplete="new-password"
+          />
+        </el-form-item>
+
+        <el-form-item>
+          <button
+            class="btn-primary"
+            :disabled="submitting"
+            @click.prevent="handleRegister"
+          >
+            {{ submitting ? '注册中...' : '立即注册' }}
+          </button>
+        </el-form-item>
+      </el-form>
 
       <!-- 底部跳转 -->
       <p class="auth-footer">
@@ -374,13 +320,13 @@ onUnmounted(() => {
 }
 
 .auth-card {
-  width: 400px;
+  width: 440px;
   padding: 40px;
 }
 
 .auth-logo {
   text-align: center;
-  margin-bottom: 28px;
+  margin-bottom: 16px;
 }
 
 .auth-subtitle {
@@ -389,12 +335,32 @@ onUnmounted(() => {
   margin-top: 6px;
 }
 
-.auth-tabs {
-  margin-bottom: 8px;
+.auth-hint {
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  margin: 0 0 20px;
+  line-height: 1.6;
 }
 
 .auth-form {
-  margin-top: 16px;
+  margin-top: 4px;
+}
+
+/* 区块容器：手机号区块 / 邮箱区块 */
+.form-section {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px 16px 4px;
+  margin-bottom: 18px;
+  background: rgba(99, 102, 241, 0.04);
+}
+
+.form-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary);
+  margin-bottom: 12px;
 }
 
 /* 验证码行 */
