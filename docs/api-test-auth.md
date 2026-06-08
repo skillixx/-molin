@@ -88,19 +88,27 @@ Authorization: Bearer <access_token>
 
 ---
 
-### 3. 邮箱注册
+### 3. 统一注册（唯一注册入口）
+
+> 说明：旧的 `POST /api/auth/register/email`、`POST /api/auth/register/phone`
+> 两个单独注册接口已下线（产品确认前端用户控制台尚未对接，不存在兼容负担）。
+> 现在 **`POST /api/auth/register` 是系统唯一的注册入口**：
+> 必须同时提交手机号和邮箱，并通过双重 OTP 验证码（`phone_code` + `email_code`）校验。
 
 - **方法：** `POST`
-- **URL：** `/api/auth/register/email`
+- **URL：** `/api/auth/register`
 - **是否需要 Token：** 否
-- **前置条件：** 先调用接口 1 获取验证码
+- **前置条件：** 先调用接口 1 获取邮箱验证码（`scene: register`），再调用接口 2 获取手机验证码（`scene: register`）
 - **请求 Body：**
 
 ```json
 {
+  "username": "tester001",
+  "phone": "13800138000",
   "email": "test001@example.com",
   "password": "Test@123456",
-  "code": "097441"
+  "phone_code": "xxxxxx",
+  "email_code": "097441"
 }
 ```
 
@@ -118,32 +126,18 @@ Authorization: Bearer <access_token>
 ```
 
 - **失败场景：**
-  - 验证码错误 → `400`
-  - 邮箱已注册 → `409`
+  - 手机或邮箱验证码错误/已过期 → `400`（错误码 `40000`）
+  - 手机号已注册 → `409`（错误码 `40900`）
+  - 邮箱已注册 → `409`（错误码 `40900`）
+  - 用户名已存在或格式不合法 → `409` / `400`
+
+- **验证旧接口已下线：**
+  - `POST /api/auth/register/email` → 应返回 `404`
+  - `POST /api/auth/register/phone` → 应返回 `404`
 
 ---
 
-### 4. 手机号注册
-
-- **方法：** `POST`
-- **URL：** `/api/auth/register/phone`
-- **是否需要 Token：** 否
-- **前置条件：** 先调用接口 2 获取验证码（`scene: register`）
-- **请求 Body：**
-
-```json
-{
-  "phone": "13800138000",
-  "password": "Test@123456",
-  "code": "xxxxxx"
-}
-```
-
-- **成功响应（201）：** 同邮箱注册
-
----
-
-### 5. 邮箱登录
+### 4. 邮箱登录
 
 - **方法：** `POST`
 - **URL：** `/api/auth/login/email`
@@ -175,7 +169,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-### 6. 手机号登录
+### 5. 手机号登录
 
 - **方法：** `POST`
 - **URL：** `/api/auth/login/phone`
@@ -194,7 +188,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-### 7. 刷新 Token
+### 6. 刷新 Token
 
 - **方法：** `POST`
 - **URL：** `/api/auth/refresh`
@@ -227,7 +221,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-### 8. 退出登录
+### 7. 退出登录
 
 - **方法：** `POST`
 - **URL：** `/api/auth/logout`
@@ -249,11 +243,11 @@ Authorization: Bearer <access_token>
 }
 ```
 
-- **验证退出是否生效：** 退出后再调用接口 7（刷新 Token），应返回 `401`，说明 `user_sessions` 黑名单已生效。
+- **验证退出是否生效：** 退出后再调用接口 6（刷新 Token），应返回 `401`，说明 `user_sessions` 黑名单已生效。
 
 ---
 
-### 9. 获取当前用户信息
+### 8. 获取当前用户信息
 
 - **方法：** `GET`
 - **URL：** `/api/me`
@@ -280,7 +274,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-### 10. 修改密码
+### 9. 修改密码
 
 - **方法：** `PATCH`
 - **URL：** `/api/me/password`
@@ -303,7 +297,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-- **验证修改是否生效：** 修改后用旧密码调用接口 5（邮箱登录），应返回 `401`，说明旧密码已失效。
+- **验证修改是否生效：** 修改后用旧密码调用接口 4（邮箱登录），应返回 `401`，说明旧密码已失效。
 
 ---
 
@@ -311,16 +305,17 @@ Authorization: Bearer <access_token>
 
 ```
 1. 发送邮箱验证码（scene: register）
-2. 邮箱注册             → 保存 access_token / refresh_token
-3. 发送手机验证码（scene: register）
-4. 手机号注册
-5. 邮箱登录             → 保存新的 access_token / refresh_token
-6. 发送手机验证码（scene: login）
-7. 手机号登录
-8. 获取当前用户信息（GET /api/me）
-9. 刷新 Token
-10. 修改密码            → 用旧密码登录验证 401
-11. 退出登录            → 用旧 refresh_token 刷新验证 401
+2. 发送手机验证码（scene: register）
+3. 统一注册（POST /api/auth/register，需同时提交 phone+email+phone_code+email_code）
+   → 保存 access_token / refresh_token
+   → 同时验证旧路径 /api/auth/register/email、/api/auth/register/phone 均返回 404
+4. 邮箱登录             → 保存新的 access_token / refresh_token
+5. 发送手机验证码（scene: login）
+6. 手机号登录
+7. 获取当前用户信息（GET /api/me）
+8. 刷新 Token
+9. 修改密码            → 用旧密码登录验证 401
+10. 退出登录           → 用旧 refresh_token 刷新验证 401
 ```
 
 ---

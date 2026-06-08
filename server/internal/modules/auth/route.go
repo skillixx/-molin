@@ -17,8 +17,6 @@ func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc 
 	// 无需鉴权的接口
 	mux.HandleFunc("POST /api/auth/verification-codes/email", h.SendEmailCode)
 	mux.HandleFunc("POST /api/auth/verification-codes/phone", h.SendPhoneCode)
-	mux.HandleFunc("POST /api/auth/register/email", h.RegisterEmail)
-	mux.HandleFunc("POST /api/auth/register/phone", h.RegisterPhone)
 	mux.HandleFunc("POST /api/auth/register", h.Register)
 	mux.HandleFunc("POST /api/auth/login/email", h.LoginEmail)
 	mux.HandleFunc("POST /api/auth/login/phone", h.LoginPhone)
