@@ -65,36 +65,6 @@ func (h *AuthHandler) SendPhoneCode(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, data)
 }
 
-// RegisterEmail POST /api/auth/register/email
-func (h *AuthHandler) RegisterEmail(w http.ResponseWriter, r *http.Request) {
-	var req dto.RegisterEmailReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
-		return
-	}
-	pair, err := h.authSvc.RegisterEmail(r.Context(), req)
-	if err != nil {
-		handleAuthError(w, err)
-		return
-	}
-	response.JSON(w, http.StatusCreated, pair)
-}
-
-// RegisterPhone POST /api/auth/register/phone
-func (h *AuthHandler) RegisterPhone(w http.ResponseWriter, r *http.Request) {
-	var req dto.RegisterPhoneReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
-		return
-	}
-	pair, err := h.authSvc.RegisterPhone(r.Context(), req)
-	if err != nil {
-		handleAuthError(w, err)
-		return
-	}
-	response.JSON(w, http.StatusCreated, pair)
-}
-
 // LoginEmail POST /api/auth/login/email
 func (h *AuthHandler) LoginEmail(w http.ResponseWriter, r *http.Request) {
 	var req dto.LoginEmailReq

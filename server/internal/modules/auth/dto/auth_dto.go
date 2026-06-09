@@ -8,22 +8,6 @@ type SendCodeReq struct {
 	Scene  string `json:"scene"`  // register / login / reset_password / admin_verify
 }
 
-// RegisterEmailReq 邮箱注册请求（兼容原有接口）。
-type RegisterEmailReq struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Code     string `json:"code"`
-	Username string `json:"username"` // 可选，为空则不设置
-}
-
-// RegisterPhoneReq 手机号注册请求（兼容原有接口）。
-type RegisterPhoneReq struct {
-	Phone    string `json:"phone"`
-	Password string `json:"password"`
-	Code     string `json:"code"`
-	Username string `json:"username"` // 可选，为空则不设置
-}
-
 // RegisterReq 统一注册请求（手机+邮箱+用户名，需双验证码）。
 type RegisterReq struct {
 	Username  string `json:"username"`

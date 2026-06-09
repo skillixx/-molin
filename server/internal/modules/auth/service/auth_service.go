@@ -80,58 +80,6 @@ func (s *AuthService) validateUsername(ctx context.Context, username string) err
 	return nil
 }
 
-// RegisterEmail 邮箱注册（兼容原有接口，支持可选 Username）。
-func (s *AuthService) RegisterEmail(ctx context.Context, req dto.RegisterEmailReq) (*dto.TokenPair, error) {
-	if err := s.verifySvc.Check(ctx, "email", req.Email, "register", req.Code); err != nil {
-		return nil, ErrInvalidCode
-	}
-	if exists, _ := s.userRepo.ExistsByEmail(ctx, req.Email); exists {
-		return nil, ErrEmailAlreadyExists
-	}
-	// 校验可选 username
-	if err := s.validateUsername(ctx, req.Username); err != nil {
-		return nil, err
-	}
-	hash, err := crypto.HashPassword(req.Password)
-	if err != nil {
-		return nil, err
-	}
-	user := &model.User{Email: &req.Email, PasswordHash: hash}
-	if req.Username != "" {
-		user.Username = &req.Username
-	}
-	if err := s.userRepo.Create(ctx, user); err != nil {
-		return nil, err
-	}
-	return s.generateTokenPair(ctx, user)
-}
-
-// RegisterPhone 手机号注册（兼容原有接口，支持可选 Username）。
-func (s *AuthService) RegisterPhone(ctx context.Context, req dto.RegisterPhoneReq) (*dto.TokenPair, error) {
-	if err := s.verifySvc.Check(ctx, "phone", req.Phone, "register", req.Code); err != nil {
-		return nil, ErrInvalidCode
-	}
-	if exists, _ := s.userRepo.ExistsByPhone(ctx, req.Phone); exists {
-		return nil, ErrPhoneAlreadyExists
-	}
-	// 校验可选 username
-	if err := s.validateUsername(ctx, req.Username); err != nil {
-		return nil, err
-	}
-	hash, err := crypto.HashPassword(req.Password)
-	if err != nil {
-		return nil, err
-	}
-	user := &model.User{Phone: &req.Phone, PasswordHash: hash}
-	if req.Username != "" {
-		user.Username = &req.Username
-	}
-	if err := s.userRepo.Create(ctx, user); err != nil {
-		return nil, err
-	}
-	return s.generateTokenPair(ctx, user)
-}
-
 // Register 统一注册（手机+邮箱+用户名，需双验证码）。
 func (s *AuthService) Register(ctx context.Context, req dto.RegisterReq) (*dto.TokenPair, error) {
 	// 1. 校验手机验证码

@@ -284,31 +284,56 @@ type UserSession struct {
 }
 ```
 
-### service/auth_service.go — 注册方法
+### service/auth_service.go — 注册方法（唯一注册入口：统一注册）
+
+> 说明：原先按"新增统一注册接口、旧接口保留做兼容"思路实现的
+> `RegisterEmail`（仅邮箱）/ `RegisterPhone`（仅手机号）两个旧接口
+> 已下线（产品确认前端用户控制台尚未开发，无客户端依赖，不存在兼容负担）。
+> 现在 `Register` 是系统唯一的注册入口，要求手机号+邮箱必须同时提交，
+> 并通过双重 OTP 验证码（phone_code + email_code）校验。
 
 ```go
-func (s *AuthService) RegisterEmail(ctx context.Context, req dto.RegisterEmailReq) (*dto.TokenPair, error) {
-    // 1. 校验验证码
-    if err := s.verifySvc.Check(ctx, "email", req.Email, "register", req.Code); err != nil {
+func (s *AuthService) Register(ctx context.Context, req dto.RegisterReq) (*dto.TokenPair, error) {
+    // 1. 校验手机验证码
+    if err := s.verifySvc.Check(ctx, "phone", req.Phone, "register", req.PhoneCode); err != nil {
         return nil, ErrInvalidCode
     }
-    // 2. 检查邮箱唯一性
+    // 2. 校验邮箱验证码
+    if err := s.verifySvc.Check(ctx, "email", req.Email, "register", req.EmailCode); err != nil {
+        return nil, ErrInvalidCode
+    }
+    // 3. 检查手机号唯一性
+    if exists, _ := s.userRepo.ExistsByPhone(ctx, req.Phone); exists {
+        return nil, ErrPhoneAlreadyExists
+    }
+    // 4. 检查邮箱唯一性
     if exists, _ := s.userRepo.ExistsByEmail(ctx, req.Email); exists {
         return nil, ErrEmailAlreadyExists
     }
-    // 3. 密码 hash
+    // 5. 校验并检查用户名唯一性
+    if err := s.validateUsername(ctx, req.Username); err != nil {
+        return nil, err
+    }
+    // 6. 密码 hash
     hash, err := crypto.HashPassword(req.Password)
     if err != nil {
         return nil, err
     }
-    // 4. 写用户
-    user := &model.User{Email: &req.Email, PasswordHash: hash}
+    // 7. 创建用户（注册成功即视为手机号、邮箱已验证）
+    user := &model.User{
+        Phone:         &req.Phone,
+        PhoneVerified: true,
+        Email:         &req.Email,
+        EmailVerified: true,
+        PasswordHash:  hash,
+    }
+    if req.Username != "" {
+        user.Username = &req.Username
+    }
     if err := s.userRepo.Create(ctx, user); err != nil {
         return nil, err
     }
-    // 5. 异步初始化钱包（发 MQ 事件，不直接调用 billing 模块）
-    s.mq.Publish("user.registered", map[string]interface{}{"user_id": user.ID})
-    // 6. 生成 token 对
+    // 8. 生成 token 对
     return s.generateTokenPair(ctx, user)
 }
 ```
@@ -484,9 +509,7 @@ go get github.com/google/uuid
 -- 无需鉴权 --
 POST /api/auth/verification-codes/email    -- 发送邮箱验证码（scene: register/reset_password/bind_email/admin_verify）
 POST /api/auth/verification-codes/phone    -- 发送短信验证码（scene: register/reset_password/bind_phone/admin_verify）
-POST /api/auth/register/email             -- 邮箱注册（兼容旧接口，可选 username）
-POST /api/auth/register/phone             -- 手机号注册（兼容旧接口，可选 username）
-POST /api/auth/register                   -- 统一注册（手机+邮箱双OTP，可选 username）★新增
+POST /api/auth/register                   -- 唯一注册入口：手机号+邮箱必须同时提交，需双重 OTP 验证码（phone_code + email_code）
 POST /api/auth/login/email                -- 邮箱登录
 POST /api/auth/login/phone                -- 手机号登录
 POST /api/auth/refresh                    -- 刷新 Access Token

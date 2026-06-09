@@ -141,55 +141,32 @@ Body 参数：
 | sent | boolean | 是否发送成功 |
 | expires_in | integer | 有效秒数 |
 
-### 2.3 邮箱注册
+### 2.3 统一注册（手机+邮箱+用户名，唯一注册入口）
 
 ```text
-POST /api/auth/register/email
+POST /api/auth/register
 ```
+
+> 说明：本接口是系统**唯一**的注册入口。原先的 `POST /api/auth/register/email`、
+> `POST /api/auth/register/phone` 两个旧接口已下线（产品确认前端尚未对接，
+> 无兼容性负担），客户端一律使用本接口完成注册。
 
 Body 参数：
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
+| username | string | 否 | 用户名（2-32位字母/数字/下划线，全局唯一） |
+| phone | string | 是 | 手机号 |
 | email | string | 是 | 邮箱地址 |
 | password | string | 是 | 密码 |
-| code | string | 是 | 邮箱验证码 |
-| username | string | 否 | 用户名（2-32位字母/数字/下划线，全局唯一） |
+| phone_code | string | 是 | 手机验证码（scene=register） |
+| email_code | string | 是 | 邮箱验证码（scene=register） |
 
-返回 data：
+返回 data：同登录接口（access_token / refresh_token / expires_in）。
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| user_id | integer | 用户 ID |
-| email | string | 邮箱 |
-| real_name_status | string | 实名状态，默认 unverified |
-| status | string | 用户状态 |
+注册成功后 phone_verified 和 email_verified 自动置为 true。
 
-### 2.4 手机号注册
-
-```text
-POST /api/auth/register/phone
-```
-
-Body 参数：
-
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---:|---|
-| phone | string | 是 | 手机号 |
-| password | string | 是 | 密码 |
-| code | string | 是 | 短信验证码 |
-| username | string | 否 | 用户名（2-32位字母/数字/下划线，全局唯一） |
-
-返回 data：
-
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| user_id | integer | 用户 ID |
-| phone | string | 手机号 |
-| real_name_status | string | 实名状态，默认 unverified |
-| status | string | 用户状态 |
-
-### 2.5 邮箱登录
+### 2.4 邮箱登录
 
 ```text
 POST /api/auth/login/email
@@ -221,7 +198,7 @@ user 字段：
 | real_name_status | string | 实名状态 |
 | status | string | 用户状态 |
 
-### 2.6 手机号登录
+### 2.5 手机号登录
 
 ```text
 POST /api/auth/login/phone
@@ -236,7 +213,7 @@ Body 参数：
 
 返回 data 同邮箱登录。
 
-### 2.7 退出登录
+### 2.6 退出登录
 
 ```text
 POST /api/auth/logout
@@ -254,7 +231,7 @@ Body 参数：
 |---|---|---|
 | logged_out | boolean | 是否退出成功 |
 
-### 2.8 刷新令牌
+### 2.7 刷新令牌
 
 ```text
 POST /api/auth/refresh
@@ -268,7 +245,7 @@ Body 参数：
 
 返回 data 同登录接口。
 
-### 2.9 当前用户
+### 2.8 当前用户
 
 ```text
 GET /api/me
@@ -293,7 +270,7 @@ GET /api/me
 | created_at | string | 注册时间（ISO 8601） |
 | last_login_at | string | 最后登录时间（ISO 8601，可为 null） |
 
-### 2.10 修改当前用户资料
+### 2.9 修改当前用户资料
 
 ```text
 PATCH /api/me/profile
@@ -312,7 +289,7 @@ Body 参数：
 |---|---|---|
 | updated | boolean | 是否更新成功 |
 
-### 2.11 修改密码
+### 2.10 修改密码
 
 ```text
 PATCH /api/me/password
@@ -331,7 +308,7 @@ Body 参数：
 |---|---|---|
 | updated | boolean | 是否更新成功 |
 
-### 2.12 提交实名认证
+### 2.11 提交实名认证
 
 ```text
 POST /api/identity/verifications
@@ -360,7 +337,7 @@ attachments 字段：
 | verification_id | integer | 实名认证记录 ID |
 | status | string | 审核状态 |
 
-### 2.13 查询最新实名认证
+### 2.12 查询最新实名认证
 
 ```text
 GET /api/identity/verifications/latest
@@ -378,28 +355,7 @@ GET /api/identity/verifications/latest
 | submitted_at | string | 提交时间 |
 | verified_at | string | 审核通过时间 |
 
-### 2.14 统一注册（手机+邮箱+用户名）
-
-```text
-POST /api/auth/register
-```
-
-Body 参数：
-
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---:|---|
-| username | string | 否 | 用户名（2-32位字母/数字/下划线，全局唯一） |
-| phone | string | 是 | 手机号 |
-| email | string | 是 | 邮箱地址 |
-| password | string | 是 | 密码 |
-| phone_code | string | 是 | 手机验证码（scene=register） |
-| email_code | string | 是 | 邮箱验证码（scene=register） |
-
-返回 data：同登录接口（access_token / refresh_token / expires_in）。
-
-注册成功后 phone_verified 和 email_verified 自动置为 true。
-
-### 2.15 OTP 密码重置
+### 2.13 OTP 密码重置
 
 ```text
 POST /api/auth/password/reset
@@ -418,7 +374,7 @@ Body 参数：
 
 重置成功后该用户所有 Refresh Token 自动吊销，强制重新登录。
 
-### 2.16 管理员手机号双重认证
+### 2.14 管理员手机号双重认证
 
 ```text
 POST /api/admin/auth/verify-phone
@@ -435,7 +391,7 @@ Body 参数：
 返回 data：`null`（HTTP 200 表示认证成功，记录 admin_phone_verified_at）。
 普通用户调用返回 403（错误码 40003）。
 
-### 2.17 管理员邮箱双重认证
+### 2.15 管理员邮箱双重认证
 
 ```text
 POST /api/admin/auth/verify-email
@@ -453,7 +409,7 @@ Body 参数：
 
 认证有效期由环境变量 `ADMIN_VERIFY_EXPIRE_HOURS` 控制（默认 24 小时），超期后需重新认证。
 
-### 2.18 修改用户名
+### 2.16 修改用户名
 
 ```text
 PATCH /api/me/username
@@ -469,7 +425,7 @@ Body 参数：
 
 返回 data：`null`（HTTP 200 表示修改成功）。
 
-### 2.19 修改手机号
+### 2.17 修改手机号
 
 ```text
 PATCH /api/me/phone
@@ -486,7 +442,7 @@ Body 参数：
 
 返回 data：`null`（HTTP 200 表示修改成功，phone_verified 自动置为 true）。
 
-### 2.20 修改邮箱
+### 2.18 修改邮箱
 
 ```text
 PATCH /api/me/email
