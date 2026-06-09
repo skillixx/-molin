@@ -63,7 +63,43 @@
 
 ## 第一步：注册账号 + 获取 Token
 
-### 1.1 发送邮箱注册验证码（无需登录）
+> **注意：`/api/auth/register/email` 和 `/api/auth/register/phone` 已下线。**
+> 现在系统只有一个注册入口：`POST /api/auth/register`，手机号与邮箱必须同时提交，
+> 并通过双重 OTP 验证码（手机验证码 + 邮箱验证码）完成校验，注册成功后直接返回 Token，
+> 无需再单独调用登录接口。
+
+### 1.1 发送手机注册验证码（无需登录）
+
+```
+POST http://8.130.9.163:8080/api/auth/verification-codes/phone
+Header: Content-Type: application/json
+Body (raw JSON):
+{
+  "target": "13800001234",
+  "scene": "register"
+}
+```
+
+说明：
+- `target` 填手机号（11 位国内手机号），建议使用专属测试号段，保证全局唯一，不与他人冲突
+- `scene` 取值：`register`（注册）/ `login`（登录）/ `bind_phone`（绑定手机号）/
+  `reset_password`（找回密码）/ `admin_verify`（管理员二次认证）
+
+预期返回：
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {}
+}
+```
+
+> 说明：测试环境通常不会真实发送短信，验证码会写入 Redis（key 形如 `verify_code:phone:register:<手机号>`），
+> 请联系运维同学帮忙从 Redis 查询，或确认服务端响应中是否在非生产环境下回显了验证码
+> （生产环境严禁在响应中回显验证码，详见 `audit-week1.md` MEDIUM-04 修复记录）。
+
+### 1.2 发送邮箱注册验证码（无需登录）
 
 ```
 POST http://8.130.9.163:8080/api/auth/verification-codes/email
@@ -78,8 +114,7 @@ Body (raw JSON):
 说明：
 - `target` 填邮箱地址，建议格式：`manualtest_<你的代号>_<13位时间戳毫秒/或随便几位数字>@molin.io`，
   保证全局唯一，不与他人冲突
-- `scene` 取值：`register`（注册）/ `login`（登录）/ `bind_email`（绑定邮箱）/
-  `bind_phone`（绑定手机号）/ `reset_password`（找回密码）/ `admin_verify`（管理员二次认证）
+- `scene` 取值同上
 
 预期返回：
 
@@ -87,53 +122,72 @@ Body (raw JSON):
 {
   "code": 0,
   "message": "ok",
-  "data": {
-    "sent": true,
-    "expires_in": 300
-  }
+  "data": {}
 }
 ```
 
 > 说明：测试环境通常不会真实发送邮件，验证码会写入 Redis（key 形如 `verify_code:email:register:<邮箱>`），
-> 请联系运维同学帮忙从 Redis 查询，或确认服务端日志/响应中是否在非生产环境下回显了验证码
-> （生产环境严禁在响应中回显验证码，详见 `audit-week1.md` MEDIUM-04 修复记录）。
+> 请联系运维同学帮忙从 Redis 查询，或确认服务端响应中是否在非生产环境下回显了验证码。
 
-### 1.2 邮箱注册
+### 1.3 统一注册（唯一注册入口）
+
+完成 1.1 和 1.2 两步取得验证码后，调用统一注册接口：
 
 ```
-POST http://8.130.9.163:8080/api/auth/register/email
+POST http://8.130.9.163:8080/api/auth/register
 Header: Content-Type: application/json
 Body (raw JSON):
 {
+  "username": "manualtest_zhang",
+  "phone": "13800001234",
   "email": "manualtest_zhang_1749000001@molin.io",
   "password": "Test1234!",
-  "code": "123456",
-  "username": "manualtest_zhang"
+  "phone_code": "123456",
+  "email_code": "654321"
 }
 ```
 
 字段说明：
-- `email`、`password`、`code` 必填；`username` 选填（2-32 位字母/数字/下划线，全局唯一，
-  留空则不设置用户名）
-- `code` 填上一步收到的验证码
+- `phone`、`email`、`password`、`phone_code`、`email_code` 均为必填
+- `username` 选填（2-32 位字母/数字/下划线，全局唯一，留空则不设置用户名）
+- `phone_code` 填 1.1 步收到的手机验证码，`email_code` 填 1.2 步收到的邮箱验证码
 - 密码建议设置为含大小写字母+数字+符号的强密码，例如 `Test1234!`
 
-预期返回：
+预期返回（注册成功直接下发 Token，无需再单独登录）：
 
 ```json
 {
   "code": 0,
   "message": "ok",
   "data": {
-    "user_id": 10086,
-    "email": "manualtest_zhang_1749000001@molin.io",
-    "real_name_status": "unverified",
-    "status": "active"
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refresh_token": "rt_8f3c2a1e9b7d4f5a6c8e0b1d2f3a4c5e6d7f8a9b",
+    "expires_in": 7200
   }
 }
 ```
 
-### 1.3 邮箱密码登录（获取 Token）
+▎ 拿到 `data.access_token` 后，把它粘贴到 ApiPost 环境变量 `token` 中。
+后续所有"需要登录"的接口，请求 Header 统一加上：
+
+```
+Authorization: Bearer {{token}}
+```
+
+`refresh_token` 请妥善保存，第 1.7 节"刷新令牌"和第 1.6 节"退出登录"会用到。
+
+**ApiPost 使用技巧**：可以在注册接口的"后置脚本"中写如下代码，让 ApiPost 自动将
+`access_token` 存入环境变量，避免每次手动粘贴：
+
+```javascript
+var data = JSON.parse(pm.response.text());
+if (data.code === 0) {
+  pm.environment.set("token", data.data.access_token);
+  pm.environment.set("refresh_token", data.data.refresh_token);
+}
+```
+
+### 1.4 邮箱密码登录（获取 Token）
 
 ```
 POST http://8.130.9.163:8080/api/auth/login/email
@@ -173,12 +227,12 @@ Body (raw JSON):
 Authorization: Bearer {{token}}
 ```
 
-`refresh_token` 请妥善保存，第 1.6 节"刷新令牌"和第 1.5 节"退出登录"会用到。
+`refresh_token` 请妥善保存，第 1.7 节"刷新令牌"和第 1.6 节"退出登录"会用到。
 
-### 1.4 手机号验证码登录（备选登录方式）
+### 1.5 手机号验证码登录（备选登录方式）
 
-如果你走手机号注册线（`POST /api/auth/register/phone`，body 同邮箱注册改为 `phone`/`code`），
-也可以用手机号验证码登录：
+注册完成后也可以使用手机号验证码登录（旧的 `/api/auth/register/phone` 已下线，
+手机号注册须通过 1.3 节的统一注册接口完成）：
 
 ```
 POST http://8.130.9.163:8080/api/auth/login/phone
@@ -192,10 +246,10 @@ Body (raw JSON):
 
 预期返回结构与邮箱登录一致（`access_token` / `refresh_token` / `expires_in` / `user`）。
 
-> 注意：发送短信验证码需先调用 `POST /api/auth/verification-codes/phone`，
-> body 为 `{"phone": "13800001234", "scene": "register"}`（或 `login`）。
+> 注意：发送短信登录验证码需先调用 `POST /api/auth/verification-codes/phone`，
+> body 为 `{"target": "13800001234", "scene": "login"}`。
 
-### 1.5 退出登录
+### 1.6 退出登录
 
 ```
 POST http://8.130.9.163:8080/api/auth/logout
@@ -225,7 +279,7 @@ Body (raw JSON):
 如果测试发现退出后旧 access_token 仍可访问 `/api/me`，属于正常的"短期有效窗口"，
 除非清单另有标注才算缺陷）。
 
-### 1.6 刷新令牌
+### 1.7 刷新令牌
 
 ```
 POST http://8.130.9.163:8080/api/auth/refresh
@@ -252,7 +306,7 @@ Body (raw JSON):
 }
 ```
 
-### 1.7 找回密码（OTP 重置）
+### 1.8 找回密码（OTP 重置）
 
 无需登录，适用于忘记密码场景：
 
@@ -276,7 +330,7 @@ Body (raw JSON):
 预期返回：`data` 为 `null`，HTTP 200 即表示成功。**重置成功后该用户所有 Refresh Token 会被自动吊销**，
 之前所有终端的登录态都会失效，需要重新登录。
 
-### 1.8 管理员 Token 怎么拿
+### 1.9 管理员 Token 怎么拿
 
 涉及 `/api/admin/...` 路径的接口都需要管理员权限（具体到某个权限码，如 `user:manage`、
 `product:view`、`order:list` 等，详见各接口说明）。获取方式：
