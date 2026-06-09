@@ -36,18 +36,14 @@ export interface LoginPhoneBody {
   code: string
 }
 
-// 邮箱注册请求体
-export interface RegisterEmailBody {
-  email: string
-  code: string
-  password: string
-}
-
-// 手机号注册请求体
-export interface RegisterPhoneBody {
+// 统一注册请求体（手机号+邮箱必须同时提交，需双重 OTP 验证码）
+export interface RegisterBody {
+  username?: string
   phone: string
-  code: string
+  email: string
   password: string
+  phone_code: string
+  email_code: string
 }
 
 // 实名认证提交请求体
