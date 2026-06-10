@@ -19,6 +19,21 @@
 
     <!-- 右侧用户信息区 -->
     <div class="top-bar-right">
+      <!-- 双重认证状态图标 -->
+      <el-tooltip
+        :content="isAdminVerified ? '管理员认证有效' : '需完成双重认证'"
+        placement="bottom"
+      >
+        <span
+          class="verify-badge"
+          :class="isAdminVerified ? 'badge-ok' : 'badge-warn'"
+          @click="isAdminVerified ? undefined : router.push('/admin-verify')"
+        >
+          <el-icon v-if="isAdminVerified" size="16"><CircleCheck /></el-icon>
+          <el-icon v-else size="16"><Warning /></el-icon>
+        </span>
+      </el-tooltip>
+
       <el-dropdown trigger="click" @command="handleCommand">
         <div class="user-info">
           <el-avatar :size="32" class="user-avatar">
@@ -42,7 +57,7 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { User, SwitchButton } from '@element-plus/icons-vue'
+import { User, SwitchButton, CircleCheck, Warning } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 
@@ -55,6 +70,13 @@ const userInitial = computed(() => {
   const name = authStore.currentUser?.username ?? 'A'
   return name.charAt(0).toUpperCase()
 })
+
+// 管理员双重认证状态
+const isAdminVerified = computed(
+  () =>
+    !!authStore.currentUser?.admin_phone_verified &&
+    !!authStore.currentUser?.admin_email_verified
+)
 
 async function handleCommand(cmd: string) {
   if (cmd === 'logout') {
@@ -108,6 +130,32 @@ async function handleCommand(cmd: string) {
 .top-bar-right {
   display: flex;
   align-items: center;
+  gap: 8px;
+}
+
+/* 双重认证状态徽标 */
+.verify-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: default;
+  transition: background 0.2s;
+}
+
+.badge-ok {
+  color: #10B981;
+}
+
+.badge-warn {
+  color: #F59E0B;
+  cursor: pointer;
+}
+
+.badge-warn:hover {
+  background: rgba(245, 158, 11, 0.1);
 }
 
 .user-info {

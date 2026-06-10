@@ -50,6 +50,11 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /** 刷新当前用户信息（双重认证完成后调用，更新 admin_phone_verified / admin_email_verified） */
+  async function fetchMe() {
+    currentUser.value = await getMe()
+  }
+
   return {
     accessToken,
     currentUser,
@@ -57,5 +62,6 @@ export const useAuthStore = defineStore('auth', () => {
     login,
     logout,
     restoreUser,
+    fetchMe,
   }
 })

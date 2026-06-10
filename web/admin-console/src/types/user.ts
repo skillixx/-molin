@@ -1,19 +1,24 @@
 // 用户、角色、权限相关类型定义
 
-/** 用户状态 */
-export type UserStatus = 'active' | 'banned' | 'inactive'
+/** 用户状态：与后端保持一致 */
+export type UserStatus = 'active' | 'disabled'
 
-/** 实名认证状态 */
-export type RealNameStatus = 'none' | 'pending' | 'approved' | 'rejected'
+/** 实名认证状态：与后端保持一致 */
+export type RealNameStatus = 'unverified' | 'pending' | 'verified' | 'rejected'
 
 /** 用户信息 */
 export interface User {
   id: number
-  username: string
-  email: string
-  phone: string
+  username: string | null
+  email: string | null
+  phone: string | null
   status: UserStatus
   real_name_status: RealNameStatus
+  email_verified: boolean
+  phone_verified: boolean
+  admin_phone_verified: boolean
+  admin_email_verified: boolean
+  last_login_at: string | null
   created_at: string
   updated_at: string
 }
