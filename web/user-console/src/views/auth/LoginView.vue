@@ -213,6 +213,10 @@ onUnmounted(() => clearInterval(phoneTimer))
         没有账号？
         <router-link to="/register" class="auth-link">立即注册 →</router-link>
       </p>
+      <p class="auth-footer">
+        忘记密码？
+        <router-link to="/reset-password" class="auth-link">立即重置 →</router-link>
+      </p>
     </div>
   </div>
 </template>

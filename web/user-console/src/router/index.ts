@@ -19,6 +19,12 @@ const router = createRouter({
       component: () => import('@/views/auth/RegisterView.vue'),
       meta: { title: '注册 — 墨灵' },
     },
+    {
+      // OTP 密码重置，无需登录
+      path: '/reset-password',
+      component: () => import('@/views/auth/ResetPasswordView.vue'),
+      meta: { title: '重置密码 — 墨灵' },
+    },
 
     // 需要登录的页面（UserLayout 作为父路由）
     {
@@ -55,6 +61,13 @@ const router = createRouter({
             requiresRealName: true,  // 购买页必须实名认证
             title: '确认购买 — 墨灵',
           },
+        },
+
+        // 个人信息（Week 1 新增）
+        {
+          path: 'profile',
+          component: () => import('@/views/profile/ProfileView.vue'),
+          meta: { requiresAuth: true, title: '个人信息 — 墨灵' },
         },
 
         // 实名认证
@@ -124,6 +137,7 @@ router.beforeEach(async (to, _from, next) => {
   }
 
   // 已登录用户访问登录/注册页，直接跳转到商品市场
+  // 重置密码页允许已登录用户访问（场景：已登录但想重置密码）
   if ((to.path === '/login' || to.path === '/register') && auth.isLoggedIn) {
     next('/marketplace')
     return

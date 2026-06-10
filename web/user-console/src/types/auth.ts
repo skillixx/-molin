@@ -4,14 +4,20 @@ export interface TokenPair {
   refresh_token: string
 }
 
-// 当前用户信息
+// 当前用户信息（与后端 UserInfo DTO 对齐）
 export interface User {
   id: number
-  email: string
-  phone: string
-  nickname: string
+  username: string | null              // 用户名（未设置时为 null）
+  email: string | null                 // 脱敏邮箱，如 "ab***@example.com"
+  email_verified: boolean
+  phone: string | null                 // 脱敏手机，如 "138****5678"
+  phone_verified: boolean
   real_name_status: 'unverified' | 'pending' | 'verified' | 'rejected'
-  created_at: string
+  status: 'active' | 'disabled'
+  admin_phone_verified: boolean        // 管理员手机认证是否在有效期内
+  admin_email_verified: boolean        // 管理员邮箱认证是否在有效期内
+  created_at: string                   // ISO 8601
+  last_login_at: string | null         // ISO 8601，nullable
 }
 
 // 实名认证记录（后端返回脱敏数据）
