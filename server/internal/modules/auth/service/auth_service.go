@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -68,20 +69,56 @@ func NewAuthService(
 // validateUsername 校验用户名格式，并检查唯一性。
 // 若 username 为空字符串则跳过校验（用户名为可选字段）。
 func (s *AuthService) validateUsername(ctx context.Context, username string) error {
+	username = strings.TrimSpace(username)
 	if username == "" {
 		return nil
 	}
 	if !usernameRegexp.MatchString(username) {
 		return ErrUsernameInvalid
 	}
-	if exists, _ := s.userRepo.ExistsByUsername(ctx, username); exists {
+	exists, err := s.userRepo.ExistsByUsername(ctx, username)
+	if err != nil {
+		return err
+	}
+	if exists {
 		return ErrUsernameAlreadyExists
 	}
 	return nil
 }
 
+// SendCode 发送验证码；注册场景（scene=register）会提前检查账号是否已存在，避免向已注册账号投递注册码。
+func (s *AuthService) SendCode(ctx context.Context, targetType, targetValue, scene string) (string, error) {
+	if scene == "register" {
+		switch targetType {
+		case "phone":
+			targetValue = normalizePhone(targetValue)
+			exists, err := s.userRepo.ExistsByPhone(ctx, targetValue)
+			if err != nil {
+				return "", err
+			}
+			if exists {
+				return "", ErrPhoneAlreadyExists
+			}
+		case "email":
+			targetValue = normalizeEmail(targetValue)
+			exists, err := s.userRepo.ExistsByEmail(ctx, targetValue)
+			if err != nil {
+				return "", err
+			}
+			if exists {
+				return "", ErrEmailAlreadyExists
+			}
+		}
+	}
+	return s.verifySvc.Send(ctx, targetType, targetValue, scene)
+}
+
 // Register 统一注册（手机+邮箱+用户名，需双验证码）。
 func (s *AuthService) Register(ctx context.Context, req dto.RegisterReq) (*dto.TokenPair, error) {
+	req.Phone = normalizePhone(req.Phone)
+	req.Email = normalizeEmail(req.Email)
+	req.Username = strings.TrimSpace(req.Username)
+
 	// 1. 校验手机验证码
 	if err := s.verifySvc.Check(ctx, "phone", req.Phone, "register", req.PhoneCode); err != nil {
 		return nil, ErrInvalidCode
@@ -91,11 +128,19 @@ func (s *AuthService) Register(ctx context.Context, req dto.RegisterReq) (*dto.T
 		return nil, ErrInvalidCode
 	}
 	// 3. 检查手机号唯一性
-	if exists, _ := s.userRepo.ExistsByPhone(ctx, req.Phone); exists {
+	exists, err := s.userRepo.ExistsByPhone(ctx, req.Phone)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
 		return nil, ErrPhoneAlreadyExists
 	}
 	// 4. 检查邮箱唯一性
-	if exists, _ := s.userRepo.ExistsByEmail(ctx, req.Email); exists {
+	exists, err = s.userRepo.ExistsByEmail(ctx, req.Email)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
 		return nil, ErrEmailAlreadyExists
 	}
 	// 5. 校验并检查用户名唯一性（用户名必填）
@@ -109,16 +154,19 @@ func (s *AuthService) Register(ctx context.Context, req dto.RegisterReq) (*dto.T
 	}
 	// 7. 创建用户
 	user := &model.User{
-		Phone:        &req.Phone,
+		Phone:         &req.Phone,
 		PhoneVerified: true,
-		Email:        &req.Email,
+		Email:         &req.Email,
 		EmailVerified: true,
-		PasswordHash: hash,
+		PasswordHash:  hash,
 	}
 	if req.Username != "" {
 		user.Username = &req.Username
 	}
 	if err := s.userRepo.Create(ctx, user); err != nil {
+		if mapped := mapUserRepoError(err); mapped != nil {
+			return nil, mapped
+		}
 		return nil, err
 	}
 	return s.generateTokenPair(ctx, user)
@@ -126,6 +174,7 @@ func (s *AuthService) Register(ctx context.Context, req dto.RegisterReq) (*dto.T
 
 // LoginEmail 邮箱密码登录。
 func (s *AuthService) LoginEmail(ctx context.Context, req dto.LoginEmailReq, ip, ua string) (*dto.TokenPair, error) {
+	req.Email = normalizeEmail(req.Email)
 	user, err := s.userRepo.FindByEmail(ctx, req.Email)
 	if err != nil {
 		s.recordLogin(ctx, nil, "email", req.Email, ip, ua, "failed")
@@ -144,6 +193,7 @@ func (s *AuthService) LoginEmail(ctx context.Context, req dto.LoginEmailReq, ip,
 
 // LoginPhone 手机验证码登录。
 func (s *AuthService) LoginPhone(ctx context.Context, req dto.LoginPhoneReq, ip, ua string) (*dto.TokenPair, error) {
+	req.Phone = normalizePhone(req.Phone)
 	if err := s.verifySvc.Check(ctx, "phone", req.Phone, "login", req.Code); err != nil {
 		return nil, ErrInvalidCode
 	}
@@ -331,6 +381,13 @@ func (s *AuthService) IsUserBlocked(ctx context.Context, userID uint64) bool {
 
 // ResetPassword OTP 验证后重置密码，同时吊销该用户所有会话，强制重新登录。
 func (s *AuthService) ResetPassword(ctx context.Context, req dto.ResetPasswordReq) error {
+	req.TargetType = strings.TrimSpace(req.TargetType)
+	if req.TargetType == "email" {
+		req.Target = normalizeEmail(req.Target)
+	}
+	if req.TargetType == "phone" {
+		req.Target = normalizePhone(req.Target)
+	}
 	// 1. 根据 target_type 校验 OTP
 	if err := s.verifySvc.Check(ctx, req.TargetType, req.Target, "reset_password", req.Code); err != nil {
 		return ErrInvalidCode
@@ -403,6 +460,7 @@ func (s *AuthService) AdminVerifyEmail(ctx context.Context, userID uint64, code 
 
 // UpdateUsername 修改用户名（校验格式和唯一性后更新）。
 func (s *AuthService) UpdateUsername(ctx context.Context, userID uint64, req dto.UpdateUsernameReq) error {
+	req.Username = strings.TrimSpace(req.Username)
 	if err := s.validateUsername(ctx, req.Username); err != nil {
 		return err
 	}
@@ -410,39 +468,52 @@ func (s *AuthService) UpdateUsername(ctx context.Context, userID uint64, req dto
 	if req.Username == "" {
 		return ErrUsernameInvalid
 	}
-	return s.userRepo.UpdateUsername(ctx, userID, req.Username)
+	if err := s.userRepo.UpdateUsername(ctx, userID, req.Username); err != nil {
+		return mapUserRepoError(err)
+	}
+	return nil
 }
 
 // UpdatePhone 修改手机号（验证码校验后更新，标记已验证）。
 func (s *AuthService) UpdatePhone(ctx context.Context, userID uint64, req dto.UpdatePhoneReq) error {
+	req.Phone = normalizePhone(req.Phone)
 	// 1. 校验新手机号收到的验证码（scene: bind_phone，专用于绑定/更换手机号场景）
 	if err := s.verifySvc.Check(ctx, "phone", req.Phone, "bind_phone", req.Code); err != nil {
 		return ErrInvalidCode
 	}
 	// 2. 检查新手机号是否已被其他账号使用
-	if exists, _ := s.userRepo.ExistsByPhone(ctx, req.Phone); exists {
+	exists, err := s.userRepo.ExistsByPhone(ctx, req.Phone)
+	if err != nil {
+		return err
+	}
+	if exists {
 		return ErrPhoneAlreadyExists
 	}
 	// 3. 更新手机号并标记已验证
 	if err := s.userRepo.UpdatePhone(ctx, userID, req.Phone); err != nil {
-		return err
+		return mapUserRepoError(err)
 	}
 	return s.userRepo.UpdatePhoneVerified(ctx, userID)
 }
 
 // UpdateEmail 修改邮箱（验证码校验后更新，标记已验证）。
 func (s *AuthService) UpdateEmail(ctx context.Context, userID uint64, req dto.UpdateEmailReq) error {
+	req.Email = normalizeEmail(req.Email)
 	// 1. 校验新邮箱收到的验证码（scene: bind_email，专用于绑定/更换邮箱场景）
 	if err := s.verifySvc.Check(ctx, "email", req.Email, "bind_email", req.Code); err != nil {
 		return ErrInvalidCode
 	}
 	// 2. 检查新邮箱是否已被其他账号使用
-	if exists, _ := s.userRepo.ExistsByEmail(ctx, req.Email); exists {
+	exists, err := s.userRepo.ExistsByEmail(ctx, req.Email)
+	if err != nil {
+		return err
+	}
+	if exists {
 		return ErrEmailAlreadyExists
 	}
 	// 3. 更新邮箱并标记已验证
 	if err := s.userRepo.UpdateEmail(ctx, userID, req.Email); err != nil {
-		return err
+		return mapUserRepoError(err)
 	}
 	return s.userRepo.UpdateEmailVerified(ctx, userID)
 }
@@ -462,4 +533,31 @@ func generateRandomToken() string {
 	b := make([]byte, 32)
 	_, _ = rand.Read(b)
 	return base64.URLEncoding.EncodeToString(b)
+}
+
+// normalizeEmail 统一邮箱格式，避免大小写或首尾空格绕过唯一性校验。
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+// normalizePhone 统一手机号格式，避免首尾空格绕过唯一性校验。
+func normalizePhone(phone string) string {
+	return strings.TrimSpace(phone)
+}
+
+// mapUserRepoError 将仓储层唯一键错误映射为 auth service 对外暴露的业务错误。
+func mapUserRepoError(err error) error {
+	if err == nil {
+		return nil
+	}
+	switch {
+	case errors.Is(err, repository.ErrUserEmailExists):
+		return ErrEmailAlreadyExists
+	case errors.Is(err, repository.ErrUserPhoneExists):
+		return ErrPhoneAlreadyExists
+	case errors.Is(err, repository.ErrUsernameExists):
+		return ErrUsernameAlreadyExists
+	default:
+		return err
+	}
 }

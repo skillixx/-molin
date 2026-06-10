@@ -30,9 +30,9 @@ func (h *AuthHandler) SendEmailCode(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
-	code, err := h.verifySvc.Send(r.Context(), "email", req.Target, req.Scene)
+	code, err := h.authSvc.SendCode(r.Context(), "email", req.Target, req.Scene)
 	if err != nil {
-		response.Error(w, http.StatusInternalServerError, 50000, "发送失败")
+		handleAuthError(w, err)
 		return
 	}
 	// 非生产环境在响应中返回明文验证码，方便本地调试；
@@ -51,9 +51,9 @@ func (h *AuthHandler) SendPhoneCode(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
-	code, err := h.verifySvc.Send(r.Context(), "phone", req.Target, req.Scene)
+	code, err := h.authSvc.SendCode(r.Context(), "phone", req.Target, req.Scene)
 	if err != nil {
-		response.Error(w, http.StatusInternalServerError, 50000, "发送失败")
+		handleAuthError(w, err)
 		return
 	}
 	// 非生产环境在响应中返回明文验证码，方便本地调试；
