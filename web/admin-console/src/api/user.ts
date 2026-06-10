@@ -22,6 +22,6 @@ export function getUser(id: number) {
 }
 
 /** 更新用户状态（封禁/解封） */
-export function updateUserStatus(id: number, status: 'active' | 'banned') {
+export function updateUserStatus(id: number, status: 'active' | 'disabled') {
   return http.patch<unknown, User>(`/admin/users/${id}/status`, { status })
 }

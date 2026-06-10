@@ -12,6 +12,13 @@ const router = createRouter({
       component: () => import('@/views/auth/LoginView.vue'),
       meta: { requiresAuth: false },
     },
+    // 管理员双重认证页（需要已登录，但不需要通过双重认证）
+    {
+      path: '/admin-verify',
+      name: 'AdminVerify',
+      component: () => import('@/views/auth/AdminVerifyView.vue'),
+      meta: { requiresAuth: true, requiresAdminVerify: false },
+    },
     // 403 无权限页
     {
       path: '/403',
@@ -42,19 +49,19 @@ const router = createRouter({
           path: 'roles',
           name: 'RoleList',
           component: () => import('@/views/iam/RoleListView.vue'),
-          meta: { requiresAuth: true, title: '角色管理' },
+          meta: { requiresAuth: true, requiresAdminVerify: true, title: '角色管理' },
         },
         {
           path: 'permissions',
           name: 'PermissionList',
           component: () => import('@/views/iam/PermissionListView.vue'),
-          meta: { requiresAuth: true, title: '权限管理' },
+          meta: { requiresAuth: true, requiresAdminVerify: true, title: '权限管理' },
         },
         {
           path: 'identity',
           name: 'IdentityList',
           component: () => import('@/views/identity/VerificationListView.vue'),
-          meta: { requiresAuth: true, title: '实名审核', permission: 'identity:review' },
+          meta: { requiresAuth: true, requiresAdminVerify: true, title: '实名审核', permission: 'identity:review' },
         },
         {
           path: 'products',
@@ -96,8 +103,8 @@ const router = createRouter({
   ],
 })
 
-// 路由守卫：认证检查 + 权限检查
-router.beforeEach(async (to, _from, next) => {
+// 路由守卫：认证检查 + 权限检查 + 管理员双重认证检查
+router.beforeEach(async (to, _, next) => {
   const auth = useAuthStore()
 
   // 需要登录但未登录 → 跳转登录页
@@ -112,9 +119,24 @@ router.beforeEach(async (to, _from, next) => {
     return
   }
 
-  // 需要特定权限但用户信息未加载，先尝试恢复
+  // 已登录但 currentUser 未加载 → 先拉用户信息
   if (auth.isLoggedIn && !auth.currentUser) {
-    await auth.restoreUser()
+    try {
+      await auth.fetchMe()
+    } catch {
+      auth.logout()
+      next('/login')
+      return
+    }
+  }
+
+  // 需要双重认证的路由：检查 admin_phone_verified && admin_email_verified
+  if (to.meta.requiresAdminVerify && auth.isLoggedIn) {
+    const user = auth.currentUser
+    if (!user?.admin_phone_verified || !user?.admin_email_verified) {
+      next({ path: '/admin-verify', query: { redirect: to.fullPath } })
+      return
+    }
   }
 
   // 权限检查（meta.permission 存在时，无权限跳 403，不跳登录页）

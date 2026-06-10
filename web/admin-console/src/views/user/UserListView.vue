@@ -23,7 +23,7 @@
       <el-form-item label="状态">
         <el-select v-model="searchForm.status" placeholder="全部" clearable style="width: 120px">
           <el-option label="正常" value="active" />
-          <el-option label="封禁" value="banned" />
+          <el-option label="已封禁" value="disabled" />
         </el-select>
       </el-form-item>
     </SearchForm>
@@ -45,7 +45,7 @@
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="row.status === 'active' ? 'success' : 'danger'" size="small">
-              {{ row.status === 'active' ? '正常' : '封禁' }}
+              {{ statusLabel(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -173,7 +173,7 @@ async function handleBanUser(user: User) {
       '确认封禁',
       { confirmButtonText: '确认封禁', cancelButtonText: '取消', type: 'warning' }
     )
-    await updateUserStatus(user.id, 'banned')
+    await updateUserStatus(user.id, 'disabled')
     ElMessage.success('封禁成功')
     fetchUsers()
   } catch {
@@ -201,23 +201,30 @@ function handleViewRoles(user: User) {
   rolesDialogVisible.value = true
 }
 
+/** 用户状态标签文字 */
+function statusLabel(status: string) {
+  if (status === 'active') return '正常'
+  if (status === 'disabled') return '已封禁'
+  return status
+}
+
 // 实名状态标签样式
 function realNameTagType(status: string) {
   const map: Record<string, 'success' | 'warning' | 'danger' | 'info'> = {
-    approved: 'success',
+    verified: 'success',
     pending: 'warning',
     rejected: 'danger',
-    none: 'info',
+    unverified: 'info',
   }
   return map[status] ?? 'info'
 }
 
 function realNameLabel(status: string) {
   const map: Record<string, string> = {
-    approved: '已认证',
+    verified: '已认证',
     pending: '待审核',
     rejected: '已拒绝',
-    none: '未提交',
+    unverified: '未提交',
   }
   return map[status] ?? status
 }
