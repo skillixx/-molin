@@ -163,7 +163,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 ## 开发进度
 
-> 最后更新：2026-06-08
+> 最后更新：2026-06-10
 > 当前阶段：**Week 1 已验收（2026-06-05），Week 2 已验收（2026-06-06），Week 3 已验收（2026-06-07），Week 4 已验收（2026-06-07），第一阶段（Week 1-4）已于 2026-06-07 正式验收通过，并于 2026-06-08 完成最终收尾确认，正式画上句号 ✅（端到端验收 37/37 全部通过，详见 `tests/audit-stage1-final.md`；收尾确认 6/6 全部通过，详见 `tests/audit-stage1-closing-confirm.md`）**
 
 ### 后端 A（auth / iam / identity）
@@ -222,10 +222,10 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 | 任务 | 文件 | 状态 |
 |---|---|---|
-| Axios 实例 + 拦截器 | `src/api/http.ts` | ⬜ 待开发 |
-| Auth Store + 路由守卫 | `src/stores/auth.ts` / `src/router/index.ts` | ⬜ 待开发 |
-| 登录页 | `src/views/auth/LoginView.vue` | ⬜ 待开发 |
-| 管理后台布局（侧边栏/顶栏） | `src/components/layout/` | ⬜ 待开发 |
+| Axios 实例 + 拦截器 | `src/api/http.ts` | ✅ 已完成 |
+| Auth Store + 路由守卫 | `src/stores/auth.ts` / `src/router/index.ts` | ✅ 已完成 |
+| 登录页 | `src/views/auth/LoginView.vue` | ✅ 已完成 |
+| 管理后台布局（侧边栏/顶栏） | `src/components/layout/` | ✅ 已完成 |
 | 用户管理 + 角色管理 | `src/views/user/` / `src/views/iam/` | ⬜ 待开发 |
 | 实名审核 | `src/views/identity/` | ⬜ 待开发 |
 | 商品/套餐/价格管理 | `src/views/product/` | ⬜ 待开发 |
@@ -275,7 +275,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | 任务 | 阶段 | 状态 |
 |---|---|---|
 | Week 1 PR 审核：auth / iam / identity（后端 A） | Week 1 | ✅ 已完成（2026-06-05）|
-| Week 1 PR 审核：管理后台登录布局（前端 A） | Week 1 | ⬜ 待审核 |
+| Week 1 PR 审核：管理后台登录布局（前端 A） | Week 1 | ✅ 已完成（2026-06-10）|
 | Week 1 PR 审核：用户控制台登录注册（前端 B） | Week 1 | ⬜ 待审核 |
 | Week 2 PR 审核：product / order / billing（后端 B） | Week 2 | ✅ 已完成（2026-06-06）|
 | Week 2 PR 审核：管理后台商品/用户/审核页（前端 A） | Week 2 | ⬜ 待审核 |
