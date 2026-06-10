@@ -42,3 +42,58 @@ GPU / Agent / Skills / Token 网关不进第一轮 MVP，分别在第二、三�
 
 **Why:** 原设计把所有模块放进第一版，1 名后端不可执行。
 **How to apply:** 用户提到 GPU / Agent 功能时，提醒当前在哪个阶段，是否已完成前序阶段。
+
+## 注册接口统一（2026-06-09 产品决策）
+
+注册入口**只有一个**：`POST /api/auth/register`，要求手机号+邮箱必须同时提交+双重 OTP 验证码。
+
+旧接口 `POST /api/auth/register/email`（仅邮箱）和 `POST /api/auth/register/phone`（仅手机号）已于 2026-06-09 正式下线（commit `8cb717e`），路由/handler/DTO/service 代码全部删除，前端注册页同步改造为单一统一表单（commit `4217eab`）。
+
+**Why:** 前端用户控制台还未正式上线，"兼容旧接口"的理由不成立，统一注册能保证用户注册时手机号和邮箱同时完成验证，避免后续身份核实问题。
+**How to apply:** 任何涉及"注册"接口的开发/测试，只能使用 `POST /api/auth/register`，Body 必须包含 `phone`/`email`/`password`/`phone_code`/`email_code`（username 选填）。禁止重新引入单一方式注册接口。
+
+## 权限码种子数据缺失（反复出现的 P1 根因，2026-06-09 记录）
+
+已三次发现"路由声明了 `RequirePerm("xxx")` 但 `permissions` 表从未 seed 该权限码"的问题：
+- `app:manage`（Week 4，migration 000011 修复）
+- `user:manage`（Stage1 收尾，migration 000012 修复）
+- `product:view` / `order:list`（全量 API 测试，migration 000013 修复）
+
+每次根因完全相同，表现为"代码可编译运行，但功能对所有人（包括 admin）返回 403"。
+
+**Why:** 开发时路由层声明权限码，但没有对应的 seed migration，导致 permissions 表中该权限码不存在，role_permissions 也无法绑定，系统中没有任何账号能通过校验。
+**How to apply:** 新模块开发或添加新的 `RequirePerm("xxx")` 调用时，必须同步创建 seed migration（参考 `000011`/`000012`/`000013` 的 INSERT IGNORE 幂等写法）。建议 CI 中增加"grep RequirePerm 提取全部权限码 vs migrations seed 数据交叉核对"检查脚本，从根本上消除这类问题。
+
+## 账号唯一性与注册规范化（2026-06-10 修复）
+
+注册、登录、验证码、密码重置、邮箱/手机号换绑必须使用同一套账号规范化规则：
+- 邮箱：`strings.TrimSpace` 后统一转小写。
+- 手机号：`strings.TrimSpace`。
+- 验证码 `target_value` 发送和校验时也必须规范化，避免验证码记录和注册/登录查询使用不同值。
+
+`users.email`、`users.phone`、`users.username` 的唯一性不能只依赖写入前 `ExistsBy*` 查询。注册和换绑在高并发下必须以数据库唯一键作为最终防线，捕获 MySQL 1062 唯一键冲突并转换为稳定业务错误：
+- `uk_users_email` -> `ErrEmailAlreadyExists`
+- `uk_users_phone` -> `ErrPhoneAlreadyExists`
+- `uk_users_username` -> `ErrUsernameAlreadyExists`
+
+**Why:** 曾发现相同邮箱/手机号已注册后仍可再次注册。根因风险包括大小写/首尾空格绕过预检查，以及并发请求穿透"先查再写"窗口。
+**How to apply:** 后续凡是新增账号写入、换绑、查询或 OTP 场景，必须先复用 auth service 的规范化逻辑，并保留 DB 唯一键冲突兜底。测试时需要覆盖相同邮箱大小写、首尾空格、重复手机号和并发重复提交。
+
+## 本地 Go 工具链测试约定（2026-06-10 记录）
+
+当前环境无法通过 `sudo apt-get install golang-go` 系统安装 Go（需要 sudo 密码）。可使用官方二进制临时安装到 `/tmp/go`：
+
+```bash
+curl -L -o /tmp/go1.25.0.linux-amd64.tar.gz https://go.dev/dl/go1.25.0.linux-amd64.tar.gz
+tar -C /tmp -xzf /tmp/go1.25.0.linux-amd64.tar.gz
+/tmp/go/bin/go version
+```
+
+运行格式化和测试时显式指定可写缓存目录，避免默认 `/home/pc-w1/.cache/go-build` 只读导致失败：
+
+```bash
+/tmp/go/bin/gofmt -w <go-files>
+env GOCACHE=/tmp/go-build GOPATH=/tmp/gopath /tmp/go/bin/go test ./...
+```
+
+**How to apply:** 后端代码改动完成后优先执行上述 `gofmt` 和 `go test ./...`。首次测试可能需要联网下载 Go module 依赖。
