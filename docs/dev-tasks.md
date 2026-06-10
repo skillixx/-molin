@@ -58,9 +58,9 @@
 
 | 序号 | 阶段 | 任务描述 | 分支 | 状态 | 备注 |
 |---|---|---|---|---|---|
-| FA-01 | Week 1 | 管理员登录页（表单逻辑）+ 后台布局骨架 | `feature/frontend-a-admin-login-layout` | ⏳ 待开始 | LoginView.vue 仅占位符 |
-| FA-02 | Week 1 | 用户列表、搜索、封禁/解封操作 | `feature/frontend-a-admin-user-management` | ⏳ 待开始 | |
-| FA-03 | Week 1-2 | 角色列表/新建、权限分配、RBAC 配置页 | `feature/frontend-a-admin-role-permission` | ⏳ 待开始 | |
+| FA-01 | Week 1 | 管理员登录页（表单逻辑）+ 后台布局骨架 | `feature/frontend-a-admin-login-layout` | ✅ 已完成 | LoginView.vue + AdminLayout.vue + SideMenu.vue + TopBar.vue 均实现；PM 审核通过（2026-06-10）|
+| FA-02 | Week 1 | 用户列表、搜索、封禁/解封操作 | `feature/frontend-a-admin-user-management` | ✅ 已完成 | UserListView.vue 264 行；封禁/解封/角色分配完整；PM 审核通过（2026-06-10）|
+| FA-03 | Week 1-2 | 角色列表/新建、权限分配、RBAC 配置页 | `feature/frontend-a-admin-role-permission` | ✅ 已完成 | RoleListView.vue 220 行 + PermissionListView.vue 74 行；管理员双重认证 AdminVerifyView.vue 544 行；PM 审核通过（2026-06-10）|
 | FA-04 | Week 2-3 | 商品管理、套餐配置、价格分层表单 | `feature/frontend-a-admin-product-manage` | ⏳ 待开始 | |
 | FA-05 | Week 3 | 订单列表/详情、钱包流水查询 | `feature/frontend-a-admin-order-wallet` | ⏳ 待开始 | |
 | FA-06 | Week 3-4 | 用户资产列表、实名认证审核页 | `feature/frontend-a-admin-asset-identity` | ⏳ 待开始 | |
@@ -122,11 +122,11 @@
 | 后端工程师甲 | 6 | 3（已审查）| 0 | 3 |
 | 后端工程师乙 | 6 | 0 | 0 | 6 |
 | 后端工程师丙 | 5 | 0 | 0 | 5 |
-| 前端工程师甲 | 7 | 0 | 0 | 7 |
+| 前端工程师甲 | 7 | 3（已审查）| 0 | 4 |
 | 前端工程师乙 | 8 | 0 | 0 | 8 |
 | 运维工程师 | 6 | 6 | 0 | 0 |
 | 测试工程师 | 6 | 0 | 0 | 6 |
-| **合计** | **44** | **9** | **0** | **35** |
+| **合计** | **44** | **12** | **0** | **32** |
 
 ---
 
