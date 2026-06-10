@@ -1,6 +1,6 @@
 # 前端接口参考文档
 
-> **版本**：Week 1 + Week 2 已验收（2026-06-06）
+> **版本**：Week 1 + Week 2 已验收（2026-06-06）；2026-06-10 补丁更新（发码拦截 + 管理员双重认证强制）
 > **测试服务器**：`http://8.130.9.163:8080`
 > **鉴权方式**：所有需要登录的接口在 Header 中携带 `Authorization: Bearer <access_token>`
 
@@ -34,10 +34,15 @@
 
 | code  | HTTP | 含义 |
 |-------|------|------|
-| 40000 | 400  | 请求参数错误 |
+| 40000 | 400  | 请求参数错误 / 验证码错误或已过期 |
 | 40001 | 401  | 未登录 / Token 无效或过期 |
 | 40003 | 403  | 无权限 |
 | 40004 | 404  | 资源不存在 |
+| 40031 | 403  | 管理员未完成双重认证（手机+邮箱），需先调用 verify-phone 和 verify-email |
+| 40101 | 401  | 账号已被封禁 |
+| 40404 | 404  | 账号未注册，请先注册（登录发码时账号不存在） |
+| 40900 | 409  | 账号已注册（注册发码时账号已存在） |
+| 42900 | 429  | 请求频率超限 |
 | 50000 | 500  | 服务器内部错误 |
 | 60001 | 400  | 余额不足 |
 | 70001 | 400  | 需要先完成实名认证 |
@@ -76,35 +81,24 @@
 }
 ```
 
-`scene` 可选值：`register` / `login` / `reset_password` / `admin_verify`
+`scene` 可选值及前置校验规则：
 
-响应：`data: null`（成功即可）
+| scene | 说明 | 前置校验 |
+|---|---|---|
+| `register` | 注册验证码 | 账号已注册 → 返回 409/40900，拒绝发码 |
+| `login` | 登录验证码 | 账号未注册 → 返回 404/40404，提示先注册 |
+| `reset_password` | 重置密码 | 无前置校验 |
+| `bind_phone` | 换绑手机号 | 无前置校验 |
+| `bind_email` | 换绑邮箱 | 无前置校验 |
+| `admin_verify` | 管理员双重认证 | 需要 Bearer Token + user:manage 权限 |
+
+响应：`data: null`（成功即可）；测试环境响应体包含明文 `code` 字段
 
 ---
 
 ### 1.2 注册
 
-**POST** `/api/auth/register/email` — 邮箱注册
-
-```json
-{
-  "email": "user@example.com",
-  "password": "Test1234!",
-  "code": "123456",
-  "username": "可选用户名"
-}
-```
-
-**POST** `/api/auth/register/phone` — 手机号注册
-
-```json
-{
-  "phone": "13812345678",
-  "password": "Test1234!",
-  "code": "123456",
-  "username": "可选用户名"
-}
-```
+> ⚠️ 旧的单独邮箱注册（`/api/auth/register/email`）和单独手机号注册（`/api/auth/register/phone`）已下线，唯一入口为统一注册。
 
 **POST** `/api/auth/register` — 统一注册（手机 + 邮箱 + 用户名，需双验证码）
 
@@ -141,7 +135,7 @@
 }
 ```
 
-**POST** `/api/auth/login/phone` — 手机号 + 验证码登录
+**POST** `/api/auth/login/phone` — 手机号 + 验证码登录（需先用 `scene=login` 发码）
 
 ```json
 {
@@ -149,6 +143,8 @@
   "code": "123456"
 }
 ```
+
+> 注意：`scene=login` 发码时若手机号未注册，返回 404/40404"手机号未注册，请先注册"
 
 响应：同注册，返回 `access_token` / `refresh_token` / `expires_in`
 
@@ -288,7 +284,34 @@
 
 ---
 
-## 三、角色权限模块（后端甲，需 `role:manage` 权限）
+### 1.9 管理员双重认证（仅管理员账号）
+
+> 管理员登录后，调用 IAM / 实名审核 / 封禁用户等管理端接口前必须先完成双重认证。
+> 未完成时返回 403/40031"请先完成管理员双重认证（手机+邮箱）"。
+> 认证有效期由服务端 `ADMIN_VERIFY_EXPIRE_HOURS` 配置（默认 24 小时），超时需重新认证。
+
+**流程：**
+```
+1. 发手机验证码：POST /api/auth/verification-codes/phone  scene=admin_verify
+2. 完成手机认证：POST /api/admin/auth/verify-phone  {"code": "..."}
+3. 发邮箱验证码：POST /api/auth/verification-codes/email  scene=admin_verify
+4. 完成邮箱认证：POST /api/admin/auth/verify-email  {"code": "..."}
+5. 此后可调用管理端接口
+```
+
+**POST** `/api/admin/auth/verify-phone` *(需登录 + user:manage 权限)*
+```json
+{ "code": "123456" }
+```
+
+**POST** `/api/admin/auth/verify-email` *(需登录 + user:manage 权限，需手机已认证)*
+```json
+{ "code": "123456" }
+```
+
+---
+
+## 三、角色权限模块（后端甲，需 `role:manage` 权限 + 管理员双重认证）
 
 ### 3.1 角色管理
 

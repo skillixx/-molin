@@ -304,6 +304,8 @@ func handleAuthError(w http.ResponseWriter, err error) {
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 	case service.ErrAdminPhoneNotVerified:
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
+	case service.ErrPhoneNotRegistered, service.ErrEmailNotRegistered:
+		response.Error(w, http.StatusNotFound, 40404, err.Error())
 	default:
 		response.Error(w, http.StatusInternalServerError, 50000, "服务器内部错误")
 	}
