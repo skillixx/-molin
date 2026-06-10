@@ -28,17 +28,18 @@ async function handleLogout() {
 
 // 下拉菜单命令处理
 function handleCommand(cmd: string) {
-  if (cmd === 'identity') router.push('/identity')
+  if (cmd === 'profile') router.push('/profile')
+  else if (cmd === 'identity') router.push('/identity')
   else if (cmd === 'assets') router.push('/assets')
   else if (cmd === 'wallet') router.push('/wallet')
   else if (cmd === 'logout') handleLogout()
 }
 
-// 用户显示名称
+// 用户显示名称（username 优先，无则取脱敏手机/邮箱，最后降级为"用户"）
 const displayName = computed(() => {
   const user = authStore.currentUser
   if (!user) return '用户'
-  return user.nickname || user.email || user.phone || '用户'
+  return user.username || user.phone || user.email || '用户'
 })
 </script>
 
@@ -96,7 +97,12 @@ const displayName = computed(() => {
                   {{ authStore.currentUser?.email || authStore.currentUser?.phone || '' }}
                 </div>
               </div>
-              <el-dropdown-item divided command="identity">
+              <!-- 个人信息 -->
+              <el-dropdown-item divided command="profile">
+                <el-icon><user /></el-icon>
+                个人信息
+              </el-dropdown-item>
+              <el-dropdown-item command="identity">
                 <el-icon><id-card /></el-icon>
                 实名认证
               </el-dropdown-item>
