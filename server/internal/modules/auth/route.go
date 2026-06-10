@@ -34,7 +34,7 @@ func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc 
 	mux.Handle("PATCH /api/me/phone", auth(h.UpdatePhone))
 	mux.Handle("PATCH /api/me/email", auth(h.UpdateEmail))
 
-	// 管理员双重认证接口（需登录 + user:manage 权限，仅限管理员账号）
+	// 管理员双重认证接口（需登录 + user:manage 权限；本身不校验双重认证，这是完成认证的入口）
 	adminAuth := func(next http.HandlerFunc) http.Handler {
 		return middleware.RequireAuth(cfg.JWTSecret, authSvc,
 			middleware.RequirePerm(iamChecker, "user:manage", http.HandlerFunc(next)))
@@ -42,6 +42,11 @@ func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc 
 	mux.Handle("POST /api/admin/auth/verify-phone", adminAuth(h.AdminVerifyPhone))
 	mux.Handle("POST /api/admin/auth/verify-email", adminAuth(h.AdminVerifyEmail))
 
-	// 管理员封禁/解封用户（需登录 + user:manage 权限）
-	mux.Handle("PATCH /api/admin/users/{id}/status", adminAuth(h.UpdateUserStatus))
+	// 管理员封禁/解封用户（需登录 + user:manage 权限 + 双重认证）
+	adminAuthVerified := func(next http.HandlerFunc) http.Handler {
+		return middleware.RequireAuth(cfg.JWTSecret, authSvc,
+			middleware.RequirePerm(iamChecker, "user:manage",
+				middleware.RequireAdminVerified(authSvc, http.HandlerFunc(next))))
+	}
+	mux.Handle("PATCH /api/admin/users/{id}/status", adminAuthVerified(h.UpdateUserStatus))
 }

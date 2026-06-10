@@ -211,8 +211,8 @@ func NewApp() (*App, error) {
 
 	// 注册各模块路由（authService 实现 BanChecker 接口，用于封禁黑名单检查）
 	authmod.RegisterRoutes(mux, authService, verifySvc, cfg, iamService)
-	iammod.RegisterRoutes(mux, iamService, cfg.JWTSecret, authService)
-	identitymod.RegisterRoutes(mux, identityService, iamService, cfg.JWTSecret, authService)
+	iammod.RegisterRoutes(mux, iamService, cfg.JWTSecret, authService, authService)
+	identitymod.RegisterRoutes(mux, identityService, iamService, cfg.JWTSecret, authService, authService)
 
 	// 注册 billing 模块（钱包、充值、支付回调），传入 notify_body 加密密钥
 	billingmod.RegisterRoutes(mux, gormDB, cfg.JWTSecret, authService, iamService, cfg.NotifyBodyKey)

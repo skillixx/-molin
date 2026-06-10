@@ -32,6 +32,8 @@ var (
 	ErrUserDisabled          = errors.New("账号已被禁用")
 	ErrWrongPassword         = errors.New("密码错误")
 	ErrAdminPhoneNotVerified = errors.New("请先完成手机号认证")
+	ErrPhoneNotRegistered    = errors.New("手机号未注册，请先注册")
+	ErrEmailNotRegistered    = errors.New("邮箱未注册，请先注册")
 )
 
 // blockedUserKeyFmt 封禁用户在 Redis 中的 key 格式。
@@ -86,9 +88,12 @@ func (s *AuthService) validateUsername(ctx context.Context, username string) err
 	return nil
 }
 
-// SendCode 发送验证码；注册场景（scene=register）会提前检查账号是否已存在，避免向已注册账号投递注册码。
+// SendCode 发送验证码，在发送前根据 scene 做账号状态前置校验：
+//   - scene=register：账号已存在则拦截，避免向已注册账号投递注册码
+//   - scene=login：账号不存在则拦截，提示用户先注册
 func (s *AuthService) SendCode(ctx context.Context, targetType, targetValue, scene string) (string, error) {
-	if scene == "register" {
+	switch scene {
+	case "register":
 		switch targetType {
 		case "phone":
 			targetValue = normalizePhone(targetValue)
@@ -107,6 +112,27 @@ func (s *AuthService) SendCode(ctx context.Context, targetType, targetValue, sce
 			}
 			if exists {
 				return "", ErrEmailAlreadyExists
+			}
+		}
+	case "login":
+		switch targetType {
+		case "phone":
+			targetValue = normalizePhone(targetValue)
+			exists, err := s.userRepo.ExistsByPhone(ctx, targetValue)
+			if err != nil {
+				return "", err
+			}
+			if !exists {
+				return "", ErrPhoneNotRegistered
+			}
+		case "email":
+			targetValue = normalizeEmail(targetValue)
+			exists, err := s.userRepo.ExistsByEmail(ctx, targetValue)
+			if err != nil {
+				return "", err
+			}
+			if !exists {
+				return "", ErrEmailNotRegistered
 			}
 		}
 	}
@@ -516,6 +542,17 @@ func (s *AuthService) UpdateEmail(ctx context.Context, userID uint64, req dto.Up
 		return mapUserRepoError(err)
 	}
 	return s.userRepo.UpdateEmailVerified(ctx, userID)
+}
+
+// IsAdminVerified 实现 middleware.AdminVerifiedChecker 接口。
+// 返回 true 当且仅当该用户的手机+邮箱双重认证均在有效期内。
+func (s *AuthService) IsAdminVerified(ctx context.Context, userID uint64) bool {
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil || user == nil {
+		return false
+	}
+	return isAdminVerifyValid(user.AdminPhoneVerifiedAt, s.cfg.AdminVerifyExpireHours) &&
+		isAdminVerifyValid(user.AdminEmailVerifiedAt, s.cfg.AdminVerifyExpireHours)
 }
 
 // isAdminVerifyValid 判断管理员认证时间戳是否在有效期内（expireHours=0 表示永不过期）。

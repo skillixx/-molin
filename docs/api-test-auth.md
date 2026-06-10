@@ -9,7 +9,7 @@
 | 代码路径 | `server/internal/modules/auth/` |
 | 测试环境 | `http://8.130.9.163:8080` |
 | 测试工具 | Apipost |
-| 测试日期 | 2026-06-05 |
+| 测试日期 | 2026-06-05（初版）；2026-06-10（补丁更新） |
 | 测试结论 | 全部通过 |
 
 ---
@@ -332,12 +332,46 @@ Authorization: Bearer <access_token>
 
 ---
 
+---
+
+## 补丁测试用例（2026-06-10）
+
+> 以下用例验证本次 BUG-03 ~ BUG-05 修复后的正确行为。
+
+### 发码拦截测试
+
+| 用例 | 请求 | 期望 HTTP | 期望 code | 说明 |
+|---|---|---|---|---|
+| 已注册邮箱发注册码 | `POST /verification-codes/email` target=已注册邮箱 scene=register | 409 | 40900 | 应拒绝，不投递 OTP |
+| 已注册手机号发注册码 | `POST /verification-codes/phone` target=已注册手机 scene=register | 409 | 40900 | 应拒绝，不投递 OTP |
+| 未注册手机号发登录码 | `POST /verification-codes/phone` target=未注册手机 scene=login | 404 | 40404 | 提示"手机号未注册，请先注册" |
+| 未注册邮箱发登录码 | `POST /verification-codes/email` target=未注册邮箱 scene=login | 404 | 40404 | 提示"邮箱未注册，请先注册" |
+| 已注册手机号发登录码 | `POST /verification-codes/phone` target=已注册手机 scene=login | 200 | 0 | 正常发码 |
+
+### 管理员双重认证测试
+
+> 前置条件：使用一个 `admin_phone_verified_at` 和 `admin_email_verified_at` 均为 NULL 的管理员账号（如 `test_a01_1781082294@example.com`）
+
+| 步骤 | 请求 | 期望 | 说明 |
+|---|---|---|---|
+| 1. 未认证直接访问 IAM | `GET /api/admin/roles` + Bearer Token | 403 / 40031 | 验证拦截生效 |
+| 2. 发手机 admin_verify 码 | `POST /verification-codes/phone` scene=admin_verify | 200 | 需携带 Bearer Token |
+| 3. 完成手机认证 | `POST /api/admin/auth/verify-phone` + code | 200 | 写入 admin_phone_verified_at |
+| 4. 仅手机已认证访问 IAM | `GET /api/admin/roles` | 403 / 40031 | 必须手机+邮箱双认证才放行 |
+| 5. 发邮箱 admin_verify 码 | `POST /verification-codes/email` scene=admin_verify | 200 | 需手机先认证才能发邮箱码 |
+| 6. 完成邮箱认证 | `POST /api/admin/auth/verify-email` + code | 200 | 写入 admin_email_verified_at |
+| 7. 双认证完成后访问 IAM | `GET /api/admin/roles` | 200 | 正常返回角色列表 |
+
+---
+
 ## 错误码说明
 
 | 错误码 | 含义 |
 |---|---|
 | 40000 | 请求参数错误 / 验证码错误或已过期 |
 | 40001 | 未登录或 Token 无效 |
-| 40003 | 账号已被封禁 |
-| 40900 | 邮箱或手机号已被注册 |
+| 40003 | 无权限 / 账号已被封禁 |
+| 40031 | 管理员未完成双重认证（手机+邮箱均需在有效期内） |
+| 40404 | 账号未注册，请先注册（登录 scene 发码时触发） |
+| 40900 | 邮箱或手机号已被注册（注册 scene 发码时触发） |
 | 50000 | 服务器内部错误 |

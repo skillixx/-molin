@@ -1,7 +1,7 @@
 # 后端 A 接口已知问题 & 待办清单
 
 **记录人：** 测试工程师 / 产品经理
-**最后更新：** 2026-06-05
+**最后更新：** 2026-06-10
 **负责模块：** auth / iam / identity（后端工程师甲）
 
 ---
@@ -13,6 +13,10 @@
 | BUG-01 | IAM | `GET /api/admin/users/{id}/roles` | 响应字段为 Go 结构体大写（`ID`、`UserID`、`RoleID`），缺少角色 `code`、`name`，不符合 API 响应规范 | P2 | 已修复（2026-06-05） |
 | BUG-02 | IAM | `POST /api/admin/users/{id}/roles` | 重复分配同一角色时触发 DB 唯一键冲突，应返回 `409` 但实际返回 `500` | P1 | 已修复（2026-06-05） |
 | TODO-01 | IAM / Identity | 所有列表接口 | 当前全量返回数据，无分页支持，数据量大时存在性能风险 | P2 | 已修复（2026-06-05） |
+| BUG-03 | Auth | `POST /api/auth/verification-codes/*` scene=register | 已注册账号仍可收到注册验证码，未做账号唯一性拦截 | P1 | 已修复（2026-06-10） |
+| BUG-04 | Auth | `POST /api/auth/verification-codes/phone` scene=login | 未注册手机号也可收到登录验证码，应提示用户先注册 | P1 | 已修复（2026-06-10） |
+| BUG-05 | Auth/IAM/Identity | 所有管理端接口 | 管理员双重认证（verify-phone/email）未被中间件强制校验，登录即可直接访问所有管理权限 | P1 | 已修复（2026-06-10） |
+| BUG-06 | IAM | `POST /api/admin/users/{id}/permission-overrides` | 测试服务器 `user_permission_overrides` 表缺少 `permission_code` 字段，导致设置接口返回 500 | P1 | 已修复（2026-06-10，手动执行 ALTER TABLE）|
 | TODO-02 | IAM | `GET /api/admin/users/{id}/permission-overrides` | 全量返回权限覆盖列表，无分页结构，与其他列表接口规范不一致 | P2 | 已修复（2026-06-05） |
 
 ---
