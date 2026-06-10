@@ -70,7 +70,7 @@ export interface IdentityVerification {
   user?: User
   real_name: string
   id_card_masked: string
-  status: 'pending' | 'approved' | 'rejected'
+  status: 'pending' | 'verified' | 'rejected'
   reason?: string
   submitted_at: string
   reviewed_at?: string

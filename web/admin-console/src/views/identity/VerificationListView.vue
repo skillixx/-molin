@@ -137,7 +137,7 @@ async function confirmReject() {
 
 function statusTagType(status: string) {
   const map: Record<string, 'success' | 'warning' | 'danger' | 'info'> = {
-    approved: 'success',
+    verified: 'success',
     pending: 'warning',
     rejected: 'danger',
   }
@@ -146,7 +146,7 @@ function statusTagType(status: string) {
 
 function statusLabel(status: string) {
   const map: Record<string, string> = {
-    approved: '已通过',
+    verified: '已通过',
     pending: '待审核',
     rejected: '已拒绝',
   }
