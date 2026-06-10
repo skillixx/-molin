@@ -235,14 +235,17 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 | 任务 | 文件 | 状态 |
 |---|---|---|
-| Axios 实例 + Token 自动刷新拦截器 | `src/api/http.ts` | ⬜ 待开发 |
-| Auth Store（含实名状态）+ 路由守卫 | `src/stores/auth.ts` / `src/router/index.ts` | ⬜ 待开发 |
-| 注册页 + 登录页 | `src/views/auth/` | ⬜ 待开发 |
-| 实名认证页 | `src/views/identity/VerificationView.vue` | ⬜ 待开发 |
-| 商品市场 + 商品详情 | `src/views/marketplace/` | ⬜ 待开发 |
-| 购买确认（含 Idempotency-Key） | `src/views/marketplace/PurchaseView.vue` | ⬜ 待开发 |
-| 我的资产 + 钱包 + 充值 | `src/views/assets/` / `src/views/wallet/` | ⬜ 待开发 |
-| 会员中心 + 公告 + 帮助中心 | `src/views/membership/` / `src/views/content/` | ⬜ 待开发 |
+| Axios 实例 + Token 自动刷新拦截器 | `src/api/http.ts` | ✅ 已完成 |
+| Auth Store（含实名状态）+ 路由守卫 | `src/stores/auth.ts` / `src/router/index.ts` | ✅ 已完成 |
+| 注册页（统一双 OTP）+ 登录页（邮箱/手机双 Tab） | `src/views/auth/RegisterView.vue` / `LoginView.vue` | ✅ 已完成 |
+| 实名认证页（提交/审核中/通过/拒绝四态） | `src/views/identity/VerificationView.vue` | ✅ 已完成 |
+| 商品市场（卡片列表，响应式） | `src/views/marketplace/MarketplaceView.vue` | ✅ 已完成 |
+| OTP 密码重置页 | `src/views/auth/ResetPasswordView.vue` | ✅ 已完成 |
+| 个人信息页（用户名/手机/邮箱/密码修改） | `src/views/profile/ProfileView.vue` | ✅ 已完成 |
+| User 类型对齐后端 DTO + API 层 5 个新函数 | `src/types/auth.ts` / `src/api/auth.ts` | ✅ 已完成 |
+| 商品详情 + 购买确认（含 Idempotency-Key） | `src/views/marketplace/ProductDetailView.vue` / `PurchaseView.vue` | ⬜ Week 2 |
+| 总览 + 我的资产 + 钱包 + 充值 + 账单流水 | `src/views/overview/` / `assets/` / `wallet/` | ⬜ Week 2 |
+| 会员中心 + 公告 + 帮助中心 | `src/views/membership/` / `src/views/content/` | ⬜ Week 2 |
 
 ### 运维（infra / CI/CD 部署环境）
 
@@ -276,7 +279,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 |---|---|---|
 | Week 1 PR 审核：auth / iam / identity（后端 A） | Week 1 | ✅ 已完成（2026-06-05）|
 | Week 1 PR 审核：管理后台登录布局（前端 A） | Week 1 | ✅ 已完成（2026-06-10）|
-| Week 1 PR 审核：用户控制台登录注册（前端 B） | Week 1 | ⬜ 待审核 |
+| Week 1 PR 审核：用户控制台登录注册+个人信息+重置密码（前端 B） | Week 1 | ✅ 已完成（2026-06-11）|
 | Week 2 PR 审核：product / order / billing（后端 B） | Week 2 | ✅ 已完成（2026-06-06）|
 | Week 2 PR 审核：管理后台商品/用户/审核页（前端 A） | Week 2 | ⬜ 待审核 |
 | Week 2 PR 审核：用户控制台商品市场/购买（前端 B） | Week 2 | ⬜ 待审核 |
@@ -295,7 +298,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 |---|---|---|
 | Week 1 验收：注册/登录/实名/角色权限接口 | Week 1 | ✅ 已完成（33/33 通过，2026-06-05）|
 | Week 1 验收：管理后台登录和布局 | Week 1 | ⬜ 待测试 |
-| Week 1 验收：用户控制台注册登录实名认证 | Week 1 | ⬜ 待测试 |
+| Week 1 验收：用户控制台注册登录实名认证+个人信息+重置密码 | Week 1 | ✅ 已完成（10/10 通过，2026-06-11）|
 | Week 2 验收：商品浏览/购买/钱包扣费接口 | Week 2 | ✅ 已完成（2026-06-06）|
 | Week 2 验收：价格优先级（会员>角色>默认） | Week 2 | ✅ 已完成（2026-06-06）|
 | Week 2 验收：并发扣费安全（10 并发仅正确数量成功） | Week 2 | ✅ 已完成（2026-06-06）|
