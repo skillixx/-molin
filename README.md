@@ -163,7 +163,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 ## 开发进度
 
-> 最后更新：2026-06-10
+> 最后更新：2026-06-11
 > 当前阶段：**Week 1 已验收（2026-06-05），Week 2 已验收（2026-06-06），Week 3 已验收（2026-06-07），Week 4 已验收（2026-06-07），第一阶段（Week 1-4）已于 2026-06-07 正式验收通过，并于 2026-06-08 完成最终收尾确认，正式画上句号 ✅（端到端验收 37/37 全部通过，详见 `tests/audit-stage1-final.md`；收尾确认 6/6 全部通过，详见 `tests/audit-stage1-closing-confirm.md`）**
 
 ### 后端 A（auth / iam / identity）
@@ -220,16 +220,21 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 ### 前端 A（管理后台 web/admin-console）
 
+> Week 1 已完成，通过 PM 审核（2026-06-10）。登录页、布局、用户管理、角色权限管理、实名审核、管理员双重认证页面全部开发完成。Week 2 商品/订单/资产页面待开发。
+
 | 任务 | 文件 | 状态 |
 |---|---|---|
 | Axios 实例 + 拦截器 | `src/api/http.ts` | ✅ 已完成 |
 | Auth Store + 路由守卫 | `src/stores/auth.ts` / `src/router/index.ts` | ✅ 已完成 |
 | 登录页 | `src/views/auth/LoginView.vue` | ✅ 已完成 |
 | 管理后台布局（侧边栏/顶栏） | `src/components/layout/` | ✅ 已完成 |
-| 用户管理 + 角色管理 | `src/views/user/` / `src/views/iam/` | ⬜ 待开发 |
-| 实名审核 | `src/views/identity/` | ⬜ 待开发 |
-| 商品/套餐/价格管理 | `src/views/product/` | ⬜ 待开发 |
-| 订单 + 钱包流水 + 资产 | `src/views/order/` / `src/views/wallet/` / `src/views/asset/` | ⬜ 待开发 |
+| 用户管理（列表/封禁/角色分配） | `src/views/user/UserListView.vue` | ✅ 已完成 |
+| 角色管理 + 权限列表 | `src/views/iam/RoleListView.vue` / `PermissionListView.vue` | ✅ 已完成 |
+| 实名审核（通过/拒绝） | `src/views/identity/VerificationListView.vue` | ✅ 已完成 |
+| 管理员双重认证（手机+邮箱 OTP） | `src/views/auth/AdminVerifyView.vue` | ✅ 已完成 |
+| 商品/套餐/价格管理 | `src/views/product/` | ⬜ Week 2 |
+| 订单管理 + 钱包流水 + 资产管理 | `src/views/order/` / `src/views/wallet/` / `src/views/asset/` | ⬜ Week 2 |
+| 公告管理 | `src/views/content/AnnouncementListView.vue` | ⬜ Week 2 |
 
 ### 前端 B（用户控制台 web/user-console）
 
@@ -281,7 +286,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | Week 1 PR 审核：管理后台登录布局（前端 A） | Week 1 | ✅ 已完成（2026-06-10）|
 | Week 1 PR 审核：用户控制台登录注册+个人信息+重置密码（前端 B） | Week 1 | ✅ 已完成（2026-06-11）|
 | Week 2 PR 审核：product / order / billing（后端 B） | Week 2 | ✅ 已完成（2026-06-06）|
-| Week 2 PR 审核：管理后台商品/用户/审核页（前端 A） | Week 2 | ⬜ 待审核 |
+| Week 2 PR 审核：管理后台商品/订单/资产/公告（前端 A） | Week 2 | ⬜ 待审核 |
 | Week 2 PR 审核：用户控制台商品市场/购买（前端 B） | Week 2 | ⬜ 待审核 |
 | Week 3 PR 审核：asset / provision / membership / content（后端 C） | Week 3 | ✅ 已完成（2026-06-07）|
 | Week 3 PR 审核：管理后台资产/钱包/订单（前端 A） | Week 3 | ⬜ 待审核 |
@@ -297,7 +302,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | 任务 | 阶段 | 状态 |
 |---|---|---|
 | Week 1 验收：注册/登录/实名/角色权限接口 | Week 1 | ✅ 已完成（33/33 通过，2026-06-05）|
-| Week 1 验收：管理后台登录和布局 | Week 1 | ⬜ 待测试 |
+| Week 1 验收：管理后台登录/用户管理/角色权限/实名审核/管理员双重认证 | Week 1 | ✅ 已完成（代码审查 14/14 通过，2026-06-10）|
 | Week 1 验收：用户控制台注册登录实名认证+个人信息+重置密码 | Week 1 | ✅ 已完成（10/10 通过，2026-06-11）|
 | Week 2 验收：商品浏览/购买/钱包扣费接口 | Week 2 | ✅ 已完成（2026-06-06）|
 | Week 2 验收：价格优先级（会员>角色>默认） | Week 2 | ✅ 已完成（2026-06-06）|
