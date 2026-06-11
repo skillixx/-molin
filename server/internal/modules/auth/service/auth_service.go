@@ -328,8 +328,9 @@ func (s *AuthService) FindUserByID(ctx context.Context, userID uint64) (*model.U
 }
 
 // ListUsers 管理员分页查询用户列表，支持关键字搜索和状态过滤，返回脱敏后的 DTO 列表。
-func (s *AuthService) ListUsers(ctx context.Context, keyword, status string, offset, limit int) ([]dto.AdminUserResp, int64, error) {
-	users, total, err := s.userRepo.ListUsersPaged(ctx, keyword, status, offset, limit)
+// scopeAll=true 时不限制范围（超管）；否则只返回 scopeIDs 中的用户。
+func (s *AuthService) ListUsers(ctx context.Context, keyword, status string, scopeAll bool, scopeIDs []uint64, offset, limit int) ([]dto.AdminUserResp, int64, error) {
+	users, total, err := s.userRepo.ListUsersPaged(ctx, keyword, status, scopeAll, scopeIDs, offset, limit)
 	if err != nil {
 		return nil, 0, err
 	}

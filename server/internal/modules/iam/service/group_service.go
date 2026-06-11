@@ -64,7 +64,7 @@ func (s *GroupService) DeleteGroup(ctx context.Context, id uint64) error {
 
 // ——— 成员管理 ———
 
-// AddMember 将用户加入分组，成功后清除该用户的权限缓存（Phase 2 组权限继承生效后有意义）。
+// AddMember 将用户加入分组：清除该用户的权限缓存 + 清除组管理员的 scope 缓存。
 func (s *GroupService) AddMember(ctx context.Context, groupID, userID uint64, role string) error {
 	if role == "" {
 		role = "member"
@@ -77,19 +77,21 @@ func (s *GroupService) AddMember(ctx context.Context, groupID, userID uint64, ro
 		return err
 	}
 	s.cacheSvc.InvalidateUserPerms(ctx, userID)
+	s.invalidateGroupAdminsScopeCache(ctx, groupID)
 	return nil
 }
 
-// RemoveMember 将用户从分组移除，清除权限缓存。
+// RemoveMember 将用户从分组移除：清除权限缓存 + 清除组管理员的 scope 缓存。
 func (s *GroupService) RemoveMember(ctx context.Context, groupID, userID uint64) error {
 	if err := s.repo.RemoveMember(ctx, groupID, userID); err != nil {
 		return err
 	}
 	s.cacheSvc.InvalidateUserPerms(ctx, userID)
+	s.invalidateGroupAdminsScopeCache(ctx, groupID)
 	return nil
 }
 
-// UpdateMemberRole 修改成员组内角色，清除权限缓存。
+// UpdateMemberRole 修改成员组内角色：清除该用户的权限/scope 缓存 + 清除组管理员的 scope 缓存。
 func (s *GroupService) UpdateMemberRole(ctx context.Context, groupID, userID uint64, role string) error {
 	if role != "admin" && role != "member" {
 		return errors.New("group_role 只能为 admin 或 member")
@@ -98,6 +100,8 @@ func (s *GroupService) UpdateMemberRole(ctx context.Context, groupID, userID uin
 		return err
 	}
 	s.cacheSvc.InvalidateUserPerms(ctx, userID)
+	s.cacheSvc.InvalidateScopeCache(ctx, userID) // 角色变为/卸任 admin 时其自身 scope 失效
+	s.invalidateGroupAdminsScopeCache(ctx, groupID)
 	return nil
 }
 
@@ -175,5 +179,16 @@ func (s *GroupService) invalidateGroupMembersCache(ctx context.Context, groupID 
 	}
 	for _, m := range members {
 		s.cacheSvc.InvalidateUserPerms(ctx, m.UserID)
+	}
+}
+
+// invalidateGroupAdminsScopeCache 清除某分组所有组管理员的 scope 缓存（成员变动时调用）。
+func (s *GroupService) invalidateGroupAdminsScopeCache(ctx context.Context, groupID uint64) {
+	admins, _, err := s.repo.ListMembersPaged(ctx, groupID, "admin", 0, 10000)
+	if err != nil {
+		return
+	}
+	for _, m := range admins {
+		s.cacheSvc.InvalidateScopeCache(ctx, m.UserID)
 	}
 }

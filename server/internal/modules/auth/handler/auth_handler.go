@@ -294,12 +294,13 @@ type adminPagedResp struct {
 }
 
 // ListUsers GET /api/admin/users — 管理员分页查询用户列表
-// 支持 ?keyword=&status=&page=&page_size= 参数，keyword 非空时在邮箱/手机/用户名中模糊匹配。
+// 支持 ?keyword=&status=&page=&page_size= 参数，叠加数据范围过滤（组管理员只能看自己组的用户）。
 func (h *AuthHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	keyword := r.URL.Query().Get("keyword")
 	status := r.URL.Query().Get("status")
 	p := pagination.Parse(r)
-	users, total, err := h.authSvc.ListUsers(r.Context(), keyword, status, p.Offset(), p.PageSize)
+	scope := middleware.ScopeFromContext(r.Context())
+	users, total, err := h.authSvc.ListUsers(r.Context(), keyword, status, scope.All, scope.UserIDs, p.Offset(), p.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return
@@ -310,11 +311,17 @@ func (h *AuthHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetUser GET /api/admin/users/{id} — 管理员查看单个用户详情
+// GetUser GET /api/admin/users/{id} — 管理员查看单个用户详情（组管理员只能查自己组内用户）
 func (h *AuthHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	targetID, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, "用户 ID 不合法")
+		return
+	}
+	// 数据范围校验：组管理员只能查看自己可见范围内的用户
+	scope := middleware.ScopeFromContext(r.Context())
+	if !scope.Contains(targetID) {
+		response.Error(w, http.StatusForbidden, 40003, "无操作权限")
 		return
 	}
 	user, err := h.authSvc.GetUser(r.Context(), targetID)

@@ -169,13 +169,21 @@ func (r *UserRepository) UpdateAdminEmailVerified(ctx context.Context, userID ui
 		Update("admin_email_verified_at", now).Error
 }
 
-// ListUsersPaged 分页查询用户列表，支持关键字搜索（匹配 email/phone/username）和状态过滤。
+// ListUsersPaged 分页查询用户列表，支持关键字搜索（匹配 email/phone/username）、状态过滤和数据范围限制。
 // keyword 非空时在 email、phone、username 字段中做 LIKE 模糊匹配；
-// status 非空时追加 AND status = ? 过滤。
-func (r *UserRepository) ListUsersPaged(ctx context.Context, keyword, status string, offset, limit int) ([]model.User, int64, error) {
+// status 非空时追加 AND status = ? 过滤；
+// scopeAll=false 时只返回 scopeIDs 中的用户，空集合直接返回空结果。
+func (r *UserRepository) ListUsersPaged(ctx context.Context, keyword, status string, scopeAll bool, scopeIDs []uint64, offset, limit int) ([]model.User, int64, error) {
+	// 无管辖范围时快速返回空结果，避免全表扫描
+	if !scopeAll && len(scopeIDs) == 0 {
+		return nil, 0, nil
+	}
 	var users []model.User
 	var total int64
 	db := r.db.WithContext(ctx).Model(&model.User{})
+	if !scopeAll {
+		db = db.Where("id IN ?", scopeIDs)
+	}
 	if keyword != "" {
 		like := "%" + keyword + "%"
 		db = db.Where("email LIKE ? OR phone LIKE ? OR username LIKE ?", like, like, like)
@@ -187,7 +195,7 @@ func (r *UserRepository) ListUsersPaged(ctx context.Context, keyword, status str
 	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	// 再查分页数据，按创建时间降序（最新注册的用户排前面）
+	// 再查分页数据，按创建时间降序
 	if err := db.Order("created_at DESC").Offset(offset).Limit(limit).Find(&users).Error; err != nil {
 		return nil, 0, err
 	}
