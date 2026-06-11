@@ -42,16 +42,17 @@ func NewIdentityService(
 }
 
 // Submit 用户提交实名认证。身份证号仅在内存处理，不持久化明文。
-func (s *IdentityService) Submit(ctx context.Context, userID uint64, req dto.SubmitReq) error {
+// 返回新建记录的 ID，供 handler 响应给客户端。
+func (s *IdentityService) Submit(ctx context.Context, userID uint64, req dto.SubmitReq) (uint64, error) {
 	// 已有 pending/verified 记录时不允许重复提交
 	existing, _ := s.repo.FindActiveByUser(ctx, userID)
 	if existing != nil {
-		return ErrAlreadySubmitted
+		return 0, ErrAlreadySubmitted
 	}
 	// 身份证号 HMAC 查重
 	hmacHash := hashIDCard(req.IDCardNo, s.cfg.IDCardHMACSecret)
 	if conflict, _ := s.repo.ExistsByHMAC(ctx, hmacHash, userID); conflict {
-		return ErrIDCardAlreadyBound
+		return 0, ErrIDCardAlreadyBound
 	}
 	attachmentsJSON := (*string)(nil)
 	if len(req.Attachments) > 0 {
@@ -59,14 +60,18 @@ func (s *IdentityService) Submit(ctx context.Context, userID uint64, req dto.Sub
 		s := string(b)
 		attachmentsJSON = &s
 	}
-	return s.repo.Create(ctx, &model.IdentityVerification{
+	v := &model.IdentityVerification{
 		UserID:          userID,
 		RealName:        req.RealName,
 		IDCardNoHash:    hmacHash,
 		IDCardNoMasked:  maskIDCard(req.IDCardNo),
 		AttachmentsJSON: attachmentsJSON,
 		Status:          "pending",
-	})
+	}
+	if err := s.repo.Create(ctx, v); err != nil {
+		return 0, err
+	}
+	return v.ID, nil
 }
 
 // Review 管理员审核：approve=true 通过，false 拒绝。

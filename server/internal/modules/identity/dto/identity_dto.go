@@ -7,6 +7,11 @@ type SubmitReq struct {
 	Attachments []string `json:"attachments,omitempty"`
 }
 
+// SubmitResp 提交实名认证的响应，返回新建记录的 ID。
+type SubmitResp struct {
+	ID uint64 `json:"id"`
+}
+
 // ReviewReq 管理员审核请求。
 type ReviewReq struct {
 	Approve bool   `json:"approve"`

@@ -35,7 +35,8 @@ func (h *IdentityHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
-	if err := h.identitySvc.Submit(r.Context(), userID, req); err != nil {
+	id, err := h.identitySvc.Submit(r.Context(), userID, req)
+	if err != nil {
 		switch err {
 		case service.ErrAlreadySubmitted:
 			response.Error(w, http.StatusConflict, 40901, err.Error())
@@ -46,7 +47,7 @@ func (h *IdentityHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	response.JSON(w, http.StatusCreated, nil)
+	response.JSON(w, http.StatusCreated, dto.SubmitResp{ID: id})
 }
 
 // GetMyVerification GET /api/identity/verifications/me
