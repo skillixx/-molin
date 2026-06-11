@@ -1,6 +1,6 @@
 # 前端接口参考文档
 
-> **版本**：Week 1 + Week 2 已验收（2026-06-06）；2026-06-10 补丁更新（发码拦截 + 管理员双重认证强制）；2026-06-11 接口变更同步（用户列表 keyword、角色/权限模糊搜索、实名审核 status 过滤、权限覆盖过滤参数及 snake_case 字段、实名审核详情新增 user_id/submitted_at/reviewed_at、POST 实名认证响应新增 data.id）
+> **版本**：Week 1 + Week 2 已验收（2026-06-06）；2026-06-10 补丁更新（发码拦截 + 管理员双重认证强制）；2026-06-11 接口变更同步（用户列表 keyword、角色/权限模糊搜索、实名审核 status 过滤、权限覆盖过滤参数及 snake_case 字段、实名审核详情新增 user_id/submitted_at/reviewed_at、POST 实名认证响应新增 data.id）；2026-06-12 更新（认证/角色权限/用户分组/实名认证）：分页响应字段 `list` → `items`（仅认证/角色权限/实名认证相关章节）；发送验证码接口拆分为 `/api/auth/verification-codes/email` 和 `/api/auth/verification-codes/phone` 两个独立接口，`email`/`phone`/`scene` 均为必填；手机号登录改为密码登录（`{phone, password}`）；实名认证提交响应字段修正为 `{id, status}`（`verification_id` 为已知缺口，待后续实现）；新增角色详情接口 `GET /api/admin/roles/{id}`；新增审计日志接口 `GET /api/admin/audit-logs`；新增"用户分组管理"章节（16 个接口）
 > **测试服务器**：`http://8.130.9.163:8080`
 > **鉴权方式**：所有需要登录的接口在 Header 中携带 `Authorization: Bearer <access_token>`
 
@@ -54,7 +54,7 @@
 响应 `data` 结构：
 ```json
 {
-  "list": [...],
+  "items": [...],
   "pagination": {
     "page": 1,
     "page_size": 10,
@@ -63,23 +63,37 @@
 }
 ```
 
+> 说明：分页响应字段已统一为 `items`（原 `list` 已废弃）。本文档中"认证 / 角色权限 / 用户分组 / 实名认证"相关章节均已按此更新；第六/七/八章（商品/订单/钱包，后端乙模块）暂未同步，仍沿用 `list`，将在对应模块文档更新时一并修正。
+
 ---
 
 ## 一、认证模块（后端甲）
 
 ### 1.1 发送验证码
 
+> ⚠️ 旧的统一 `{target, scene}` 请求体已废弃，当前为两个独立接口，字段名分别为 `email` / `phone`。
+
 **POST** `/api/auth/verification-codes/email` — 发送邮箱验证码
+
+请求体：
+```json
+{
+  "email": "user@example.com",
+  "scene": "register"
+}
+```
 
 **POST** `/api/auth/verification-codes/phone` — 发送手机验证码
 
 请求体：
 ```json
 {
-  "target": "user@example.com",
+  "phone": "13812345678",
   "scene": "register"
 }
 ```
+
+> `email`（或 `phone`）和 `scene` 均为必填字段，缺失时返回 HTTP 400 / code=40000："email 和 scene 为必填字段"（手机接口对应为 "phone 和 scene 为必填字段"）。
 
 `scene` 可选值及前置校验规则：
 
@@ -135,16 +149,14 @@
 }
 ```
 
-**POST** `/api/auth/login/phone` — 手机号 + 验证码登录（需先用 `scene=login` 发码）
+**POST** `/api/auth/login/phone` — 手机号 + 密码登录（与邮箱登录一致，使用 `crypto.CheckPassword` 校验密码）
 
 ```json
 {
   "phone": "13812345678",
-  "code": "123456"
+  "password": "Test1234!"
 }
 ```
-
-> 注意：`scene=login` 发码时若手机号未注册，返回 404/40404"手机号未注册，请先注册"
 
 响应：同注册，返回 `access_token` / `refresh_token` / `expires_in`
 
@@ -268,12 +280,13 @@
 ```json
 {
   "id": 1,
-  "verification_id": 1,
   "status": "pending"
 }
 ```
 
-> `id` 与 `verification_id` 值相同，均为新建认证记录的 ID，前端可用于后续查询或跳转。
+> `id` 为新建认证记录的 ID，前端可用于后续查询或跳转；`status` 新建记录固定为 `pending`。
+>
+> ⚠️ 已知缺口：`verification_id` 字段为接口设计文档（`docs/full-api-design.md` §2.11）中规划但尚未实现的字段，当前响应中不存在该字段，已记录为已知缺口，后续版本补充。
 
 ---
 
@@ -341,7 +354,7 @@ Query 参数：
 响应 `data`：
 ```json
 {
-  "list": [
+  "items": [
     {
       "id": 1,
       "email": "zh***@example.com",
@@ -388,6 +401,20 @@ Query 参数：
 
 **GET** `/api/admin/roles` — 角色列表（支持 `?keyword=` 模糊搜索角色 code / name，`?page=&page_size=` 分页）
 
+**GET** `/api/admin/roles/{id}` — 角色详情（新增接口）
+
+响应 `data`（与角色列表单条结构一致）：
+```json
+{
+  "id": 2,
+  "code": "vip",
+  "name": "VIP会员",
+  "description": "可见高级商品"
+}
+```
+
+角色不存在时返回 HTTP 404 / code=40400"角色不存在"。
+
 **POST** `/api/admin/roles`
 ```json
 { "code": "vip", "name": "VIP用户", "description": "可见高级商品" }
@@ -426,7 +453,7 @@ Query 参数：
 | page | integer | 页码，默认 1 |
 | page_size | integer | 每页数量，默认 20 |
 
-响应 `data.list` 字段（全部 snake_case）：
+响应 `data.items` 字段（全部 snake_case）：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -447,6 +474,54 @@ Query 参数：
 `effect`：`allow` / `deny`（只接受小写）
 
 **DELETE** `/api/admin/users/{id}/permission-overrides/{override_id}`
+
+### 3.5 审计日志（新增接口）
+
+**GET** `/api/admin/audit-logs`
+
+> ⚠️ 当前权限要求复用 `role:manage`（非独立 `audit:read`，已知待办，后续可能拆分为独立权限码）。
+
+Query 参数：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| module | string | 按模块精确过滤（如 `iam` / `auth` / `identity`），不传则返回全部 |
+| action | string | 按操作类型精确过滤（如 `create` / `update` / `delete`），不传则返回全部 |
+| page | integer | 页码，默认 1 |
+| page_size | integer | 每页数量，默认 20 |
+
+响应 `data.items` 单条结构：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | integer | 日志记录 ID |
+| operator_id | integer\|null | 操作人用户 ID |
+| module | string | 所属模块 |
+| action | string | 操作类型 |
+| target_type | string\|null | 操作对象类型 |
+| target_id | string\|null | 操作对象 ID |
+| ip | string\|null | 操作人 IP |
+| created_at | string | 操作时间（ISO 8601） |
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "operator_id": 1,
+      "module": "iam",
+      "action": "role:update",
+      "target_type": "role",
+      "target_id": "2",
+      "ip": "127.0.0.1",
+      "created_at": "2026-06-12T10:00:00Z"
+    }
+  ],
+  "pagination": { "page": 1, "page_size": 20, "total": 1 }
+}
+```
+
+> 按 `created_at` 倒序排列。`request_summary` 字段（请求摘要 JSON）当前未在响应中返回。
 
 ---
 
@@ -474,6 +549,247 @@ Query 参数：
 { "approve": true, "reason": "" }
 ```
 拒绝时：`{ "approve": false, "reason": "证件模糊" }`
+
+---
+
+## 五之一、用户分组管理（后端甲，需 `group:manage` 权限 + 管理员双重认证）
+
+> 全部 16 个接口均需 `Bearer Token` + `group:manage` 权限 + 管理员双重认证（参见"1.9 管理员双重认证"）。
+> 分页响应统一使用 `items` 字段。
+
+### 5.1.1 分组 CRUD
+
+**GET** `/api/admin/user-groups` — 分组列表
+
+Query 参数：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| type | string | 按分组类型过滤：`region` / `org` / `custom`，不传则返回全部 |
+| keyword | string | 模糊搜索分组 code / name |
+| page | integer | 页码，默认 1 |
+| page_size | integer | 每页数量，默认 20 |
+
+响应 `data`：
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "code": "default",
+      "name": "默认分组",
+      "type": "custom",
+      "is_default": true,
+      "description": "系统默认分组",
+      "created_at": "2026-06-01T00:00:00Z"
+    }
+  ],
+  "pagination": { "page": 1, "page_size": 20, "total": 1 }
+}
+```
+
+**POST** `/api/admin/user-groups` — 创建分组
+
+```json
+{
+  "code": "region-east",
+  "name": "华东区",
+  "type": "region",
+  "is_default": false,
+  "description": "华东区域分组"
+}
+```
+
+`code`、`name` 为必填，缺失返回 400/40000"code 和 name 不能为空"。`type` 不传默认为 `custom`，可选值：`region` / `org` / `custom`。
+
+响应（HTTP 201）`data`：与列表单条结构一致（含 `id` / `created_at`）。
+
+**GET** `/api/admin/user-groups/{id}` — 分组详情
+
+响应 `data`：与列表单条结构一致。分组不存在返回 404/40400"分组不存在"。
+
+**PUT** `/api/admin/user-groups/{id}` — 更新分组（仅 `name` / `type` / `description` / `is_default` 可改，`code` 不可改）
+
+```json
+{
+  "name": "华东区（更新）",
+  "type": "region",
+  "is_default": false,
+  "description": "更新后的描述"
+}
+```
+
+响应：`data: null`
+
+**DELETE** `/api/admin/user-groups/{id}` — 删除分组
+
+错误情况：
+- 分组内仍有成员 → HTTP 409 / code=40901"分组内仍有成员，请先移除所有成员"
+- 分组内仍有有效邀请码 → HTTP 409 / code=40902"分组内仍有有效邀请码，请先禁用后再删除分组"
+
+### 5.1.2 成员管理
+
+**GET** `/api/admin/user-groups/{id}/members` — 分组成员列表
+
+Query 参数：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| group_role | string | 按组内角色过滤：`admin` / `member`，不传则返回全部 |
+| page | integer | 页码，默认 1 |
+| page_size | integer | 每页数量，默认 20 |
+
+响应 `data`：
+```json
+{
+  "items": [
+    {
+      "id": 10,
+      "user_id": 5,
+      "group_id": 1,
+      "group_role": "member",
+      "created_at": "2026-06-01T00:00:00Z"
+    }
+  ],
+  "pagination": { "page": 1, "page_size": 20, "total": 1 }
+}
+```
+
+**POST** `/api/admin/user-groups/{id}/members` — 添加成员
+
+```json
+{
+  "user_id": 5,
+  "group_role": "member"
+}
+```
+
+`user_id` 必填（缺失或为 0 返回 400/40000"user_id 不能为空"）。`group_role` 可选值：`admin` / `member`，不传默认为 `member`。
+
+响应：HTTP 201，`data: null`。用户已在该分组中返回 HTTP 409 / code=40900"用户已在该分组中"。
+
+**PATCH** `/api/admin/user-groups/{id}/members/{uid}` — 修改成员组内角色
+
+```json
+{ "group_role": "admin" }
+```
+
+`group_role` 只能为 `admin` 或 `member`，否则返回 400/40000"group_role 只能为 admin 或 member"。
+
+响应：`data: null`。用户不在该分组中返回 404/40400"用户不在该分组中"。
+
+**DELETE** `/api/admin/user-groups/{id}/members/{uid}` — 移除成员
+
+响应：`data: null`。用户不在该分组中返回 404/40400"用户不在该分组中"。
+
+### 5.1.3 用户所在分组
+
+**GET** `/api/admin/users/{id}/groups` — 查询指定用户所属的所有分组
+
+响应 `data`（数组，非分页）：
+```json
+[
+  {
+    "group_id": 1,
+    "group_role": "member",
+    "joined_at": "2026-06-01T00:00:00Z"
+  }
+]
+```
+
+### 5.1.4 组权限
+
+**GET** `/api/admin/user-groups/{id}/permissions` — 查询分组权限列表
+
+响应 `data`（数组，非分页）：
+```json
+[
+  {
+    "id": 1,
+    "group_id": 1,
+    "permission_code": "app:use:cloud-disk",
+    "created_at": "2026-06-01T00:00:00Z"
+  }
+]
+```
+
+**POST** `/api/admin/user-groups/{id}/permissions` — 给分组添加权限码
+
+```json
+{ "permission_code": "app:use:cloud-disk" }
+```
+
+`permission_code` 必填，缺失返回 400/40000"permission_code 不能为空"。
+
+响应：HTTP 201，`data: null`。该权限码已添加到此分组返回 HTTP 409 / code=40900"该权限码已添加到此分组"。
+
+**DELETE** `/api/admin/user-groups/{id}/permissions/{code}` — 移除分组权限码
+
+`{code}` 为权限码（如 `app:use:cloud-disk`）。响应：`data: null`。
+
+### 5.1.5 邀请码
+
+**GET** `/api/admin/user-groups/{id}/invite-codes` — 邀请码列表
+
+Query 参数：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| status | string | 按状态过滤：`active` / `disabled`，不传则返回全部 |
+| page | integer | 页码，默认 1 |
+| page_size | integer | 每页数量，默认 20 |
+
+响应 `data`：
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "code": "ABCD1234",
+      "group_id": 1,
+      "default_group_role": "member",
+      "max_uses": 0,
+      "used_count": 0,
+      "expires_at": null,
+      "status": "active",
+      "created_by": 1,
+      "created_at": "2026-06-01T00:00:00Z"
+    }
+  ],
+  "pagination": { "page": 1, "page_size": 20, "total": 1 }
+}
+```
+
+**POST** `/api/admin/user-groups/{id}/invite-codes` — 创建邀请码
+
+```json
+{
+  "code": "ABCD1234",
+  "default_group_role": "member",
+  "max_uses": 0,
+  "expires_at": null
+}
+```
+
+字段说明：
+- `code`：邀请码，留空时由后端自动生成 8 位随机码
+- `default_group_role`：通过该邀请码注册时分配的组内角色，可选值 `admin` / `member`，不传默认为 `member`
+- `max_uses`：最大使用次数，`0` 表示不限次数
+- `expires_at`：过期时间，ISO 8601 格式字符串，`null` 表示永不过期；格式错误返回 400/40000"expires_at 格式错误，需 ISO 8601"
+
+响应（HTTP 201）`data`：与列表单条结构一致。邀请码重复返回 HTTP 409 / code=40900"邀请码已存在，请更换"。
+
+**PATCH** `/api/admin/user-groups/{id}/invite-codes/{invite_id}/disable` — 禁用邀请码
+
+响应：`data: null`。禁用后该邀请码 `status` 变为 `disabled`，无法再用于注册。
+
+### 枚举值小结
+
+| 字段 | 可选值 |
+|---|---|
+| `user_group.type` | `region`（区域）/ `org`（机构）/ `custom`（自定义，默认） |
+| `group_role`（成员/邀请码默认角色） | `admin`（组管理员）/ `member`（普通组员，默认） |
+| `invite_code.status` | `active` / `disabled` |
 
 ---
 
@@ -805,7 +1121,8 @@ Wechatpay-Nonce: <随机串>
 
 | 权限码 | 说明 |
 |--------|------|
-| `role:manage` | 角色与权限管理 |
+| `role:manage` | 角色与权限管理（含角色详情、审计日志，审计日志为复用，已知待办） |
+| `group:manage` | 用户分组管理（分组/成员/组权限/邀请码） |
 | `identity:review` | 实名认证审核 |
 | `user:manage` | 用户管理（管理员双重认证） |
 | `product:view` | 查看商品（只读） |
