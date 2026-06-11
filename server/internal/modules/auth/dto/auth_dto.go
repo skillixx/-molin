@@ -2,10 +2,16 @@ package dto
 
 import "time"
 
-// SendCodeReq 发送验证码请求。
-type SendCodeReq struct {
-	Target string `json:"target"` // 邮箱或手机号
-	Scene  string `json:"scene"`  // register / login / reset_password / admin_verify
+// SendEmailCodeReq 发送邮箱验证码请求。
+type SendEmailCodeReq struct {
+	Email string `json:"email"`
+	Scene string `json:"scene"` // register / login / reset_password / admin_verify / bind_email
+}
+
+// SendPhoneCodeReq 发送手机验证码请求。
+type SendPhoneCodeReq struct {
+	Phone string `json:"phone"`
+	Scene string `json:"scene"` // register / login / reset_password / admin_verify / bind_phone
 }
 
 // RegisterReq 统一注册请求（手机+邮箱+用户名，需双验证码）。

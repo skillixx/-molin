@@ -26,12 +26,12 @@ func NewAuthHandler(authSvc *service.AuthService, verifySvc *service.Verificatio
 
 // SendEmailCode POST /api/auth/verification-codes/email
 func (h *AuthHandler) SendEmailCode(w http.ResponseWriter, r *http.Request) {
-	var req dto.SendCodeReq
+	var req dto.SendEmailCodeReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
-	code, err := h.authSvc.SendCode(r.Context(), "email", req.Target, req.Scene)
+	code, err := h.authSvc.SendCode(r.Context(), "email", req.Email, req.Scene)
 	if err != nil {
 		handleAuthError(w, err)
 		return
@@ -47,12 +47,12 @@ func (h *AuthHandler) SendEmailCode(w http.ResponseWriter, r *http.Request) {
 
 // SendPhoneCode POST /api/auth/verification-codes/phone
 func (h *AuthHandler) SendPhoneCode(w http.ResponseWriter, r *http.Request) {
-	var req dto.SendCodeReq
+	var req dto.SendPhoneCodeReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
-	code, err := h.authSvc.SendCode(r.Context(), "phone", req.Target, req.Scene)
+	code, err := h.authSvc.SendCode(r.Context(), "phone", req.Phone, req.Scene)
 	if err != nil {
 		handleAuthError(w, err)
 		return
