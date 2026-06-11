@@ -218,8 +218,28 @@ func (h *IAMHandler) GetPermissionOverrides(w http.ResponseWriter, r *http.Reque
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return
 	}
+	// 将 model.UserPermissionOverride 映射为 DTO，确保响应字段名符合 snake_case 规范
+	const isoLayout = "2006-01-02T15:04:05Z07:00"
+	list := make([]dto.OverrideResp, len(overrides))
+	for i, o := range overrides {
+		item := dto.OverrideResp{
+			ID:             o.ID,
+			UserID:         o.UserID,
+			PermissionID:   o.PermissionID,
+			PermissionCode: o.PermissionCode,
+			Effect:         o.Effect,
+			Reason:         o.Reason,
+			CreatedBy:      o.CreatedBy,
+			CreatedAt:      o.CreatedAt.Format(isoLayout),
+		}
+		if o.ExpiresAt != nil {
+			s := o.ExpiresAt.Format(isoLayout)
+			item.ExpiresAt = &s
+		}
+		list[i] = item
+	}
 	response.JSON(w, http.StatusOK, PagedResp{
-		List:       overrides,
+		List:       list,
 		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
 	})
 }

@@ -46,3 +46,17 @@ type UserRoleResp struct {
 	Description *string `json:"description,omitempty"`
 	CreatedAt   string  `json:"created_at"`
 }
+
+// OverrideResp 用户权限覆盖响应 DTO（GET /api/admin/users/{id}/permission-overrides）。
+// 所有字段均使用 snake_case JSON tag，避免直接序列化 model 导致 PascalCase 输出。
+type OverrideResp struct {
+	ID             uint64  `json:"id"`
+	UserID         uint64  `json:"user_id"`
+	PermissionID   uint64  `json:"permission_id"`
+	PermissionCode string  `json:"permission_code"`
+	Effect         string  `json:"effect"`
+	Reason         *string `json:"reason,omitempty"`
+	ExpiresAt      *string `json:"expires_at,omitempty"` // ISO 8601，nil 时忽略
+	CreatedBy      *uint64 `json:"created_by,omitempty"`
+	CreatedAt      string  `json:"created_at"` // ISO 8601
+}
