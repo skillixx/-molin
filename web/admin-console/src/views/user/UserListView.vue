@@ -142,7 +142,7 @@ async function fetchUsers() {
       keyword: searchForm.keyword || undefined,
       status: searchForm.status || undefined,
     })
-    users.value = res.list
+    users.value = res.items
     Object.assign(pagination, res.pagination)
   } finally {
     loading.value = false

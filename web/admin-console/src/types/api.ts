@@ -16,6 +16,6 @@ export interface Pagination {
 
 /** 列表接口响应 data 字段 */
 export interface PageResponse<T> {
-  list: T[]
+  items: T[]
   pagination: Pagination
 }

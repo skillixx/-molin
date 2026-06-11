@@ -118,7 +118,7 @@ async function fetchRoles() {
   loading.value = true
   try {
     const res = await listRoles({ page: pagination.page, page_size: pagination.page_size })
-    roles.value = res.list
+    roles.value = res.items
     Object.assign(pagination, res.pagination)
   } finally {
     loading.value = false
