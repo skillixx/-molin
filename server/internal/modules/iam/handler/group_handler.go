@@ -256,6 +256,23 @@ func (h *GroupHandler) GetUserGroups(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "无效用户 ID")
 		return
 	}
+	h.respondUserGroups(w, r, userID)
+}
+
+// GetGroupsByUser GET /api/admin/user-groups/user/{uid}
+// BUG-06 修复：与 GetUserGroups 等价，但路径参数名为 uid，
+// 供 /api/admin/user-groups/user/{uid} 路由使用，避免与 /api/admin/user-groups/{id} 冲突。
+func (h *GroupHandler) GetGroupsByUser(w http.ResponseWriter, r *http.Request) {
+	userID, err := pathUint64(r, "uid")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "无效用户 ID")
+		return
+	}
+	h.respondUserGroups(w, r, userID)
+}
+
+// respondUserGroups 查询并返回指定用户所属的分组列表。
+func (h *GroupHandler) respondUserGroups(w http.ResponseWriter, r *http.Request, userID uint64) {
 	members, err := h.groupSvc.GetUserGroups(r.Context(), userID)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")

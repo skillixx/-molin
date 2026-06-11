@@ -306,6 +306,61 @@ func (h *IAMHandler) DeletePermissionOverride(w http.ResponseWriter, r *http.Req
 	response.JSON(w, http.StatusOK, nil)
 }
 
+// GetRole GET /api/admin/roles/{id}
+// BUG-04 修复：该路由此前未注册，请求落到其他路由返回 405。
+// handler 逻辑：通过 id 查角色，不存在返回 404。
+func (h *IAMHandler) GetRole(w http.ResponseWriter, r *http.Request) {
+	id, err := pathUint64(r, "id")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "无效 ID")
+		return
+	}
+	role, err := h.iamSvc.GetRoleByID(r.Context(), id)
+	if err != nil {
+		response.Error(w, http.StatusNotFound, 40400, "角色不存在")
+		return
+	}
+	response.JSON(w, http.StatusOK, dto.RoleResp{
+		ID:          role.ID,
+		Code:        role.Code,
+		Name:        role.Name,
+		Description: role.Description,
+	})
+}
+
+// ListAuditLogs GET /api/admin/audit-logs
+// BUG-05 修复：该路由此前未注册，请求返回 404。
+// 支持 ?module=&action=&page=&page_size= 参数，响应字段名使用 items。
+func (h *IAMHandler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
+	module := r.URL.Query().Get("module")
+	action := r.URL.Query().Get("action")
+	p := pagination.Parse(r)
+	logs, total, err := h.iamSvc.ListAuditLogs(r.Context(), module, action, p.Offset(), p.PageSize)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
+		return
+	}
+	const isoLayout = "2006-01-02T15:04:05Z07:00"
+	list := make([]map[string]interface{}, len(logs))
+	for i, l := range logs {
+		item := map[string]interface{}{
+			"id":          l.ID,
+			"operator_id": l.OperatorID,
+			"module":      l.Module,
+			"action":      l.Action,
+			"target_type": l.TargetType,
+			"target_id":   l.TargetID,
+			"ip":          l.IP,
+			"created_at":  l.CreatedAt.Format(isoLayout),
+		}
+		list[i] = item
+	}
+	response.JSON(w, http.StatusOK, PagedResp{
+		List:       list,
+		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
+	})
+}
+
 // pathUint64 从 Go 1.22 路由 PathValue 中解析 uint64 参数。
 func pathUint64(r *http.Request, key string) (uint64, error) {
 	return strconv.ParseUint(r.PathValue(key), 10, 64)

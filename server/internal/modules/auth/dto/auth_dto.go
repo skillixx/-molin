@@ -30,10 +30,11 @@ type LoginEmailReq struct {
 	Password string `json:"password"`
 }
 
-// LoginPhoneReq 手机号登录请求。
+// LoginPhoneReq 手机号密码登录请求。
+// BUG-03 修复：手机号登录与邮箱登录一致，使用密码而非验证码。
 type LoginPhoneReq struct {
-	Phone string `json:"phone"`
-	Code  string `json:"code"`
+	Phone    string `json:"phone"`
+	Password string `json:"password"`
 }
 
 // LogoutReq 退出请求。

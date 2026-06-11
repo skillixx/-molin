@@ -14,6 +14,7 @@ type IAMService struct {
 	userRoleRepo   *repository.UserRoleRepository
 	overrideRepo   *repository.OverrideRepository
 	groupRepo      *repository.GroupRepository // Phase 2：组权限继承
+	auditLogRepo   *repository.AuditLogRepository
 	cacheSvc       *CacheService
 }
 
@@ -23,6 +24,7 @@ func NewIAMService(
 	userRoleRepo *repository.UserRoleRepository,
 	overrideRepo *repository.OverrideRepository,
 	groupRepo *repository.GroupRepository,
+	auditLogRepo *repository.AuditLogRepository,
 	cacheSvc *CacheService,
 ) *IAMService {
 	return &IAMService{
@@ -31,6 +33,7 @@ func NewIAMService(
 		userRoleRepo:   userRoleRepo,
 		overrideRepo:   overrideRepo,
 		groupRepo:      groupRepo,
+		auditLogRepo:   auditLogRepo,
 		cacheSvc:       cacheSvc,
 	}
 }
@@ -206,6 +209,18 @@ func (s *IAMService) getAllUserPermCodes(ctx context.Context, userID uint64) ([]
 	}
 
 	return codes, nil
+}
+
+// GetRoleByID 根据 ID 查单个角色，不存在时返回 error。
+// BUG-04 修复：新增此方法支持 GET /api/admin/roles/{id} 接口。
+func (s *IAMService) GetRoleByID(ctx context.Context, id uint64) (*model.Role, error) {
+	return s.roleRepo.FindByID(ctx, id)
+}
+
+// ListAuditLogs 分页查询审计日志，支持按 module/action 过滤。
+// BUG-05 修复：新增此方法支持 GET /api/admin/audit-logs 接口。
+func (s *IAMService) ListAuditLogs(ctx context.Context, module, action string, offset, limit int) ([]model.AuditLog, int64, error) {
+	return s.auditLogRepo.ListPaged(ctx, module, action, offset, limit)
 }
 
 // evalPerms 从缓存的权限码列表判断是否拥有 permCode。

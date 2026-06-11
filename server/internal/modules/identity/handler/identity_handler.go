@@ -47,7 +47,8 @@ func (h *IdentityHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	response.JSON(w, http.StatusCreated, dto.SubmitResp{ID: id})
+	// BUG-07 修复：响应需包含 status 字段，新提交记录状态固定为 pending
+	response.JSON(w, http.StatusCreated, dto.SubmitResp{ID: id, Status: "pending"})
 }
 
 // GetMyVerification GET /api/identity/verifications/me

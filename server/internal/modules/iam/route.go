@@ -31,9 +31,13 @@ func RegisterRoutes(mux *http.ServeMux, iamSvc *service.IAMService, groupSvc *se
 	// 角色/权限/用户角色分配（原有路由，不变）
 	mux.Handle("GET /api/admin/roles", admin(h.ListRoles))
 	mux.Handle("POST /api/admin/roles", admin(h.CreateRole))
+	// BUG-04 修复：补充注册 GET /api/admin/roles/{id}，此前未注册导致请求落到其他路由返回 405
+	mux.Handle("GET /api/admin/roles/{id}", admin(h.GetRole))
 	mux.Handle("PUT /api/admin/roles/{id}", admin(h.UpdateRole))
 	mux.Handle("DELETE /api/admin/roles/{id}", admin(h.DeleteRole))
 	mux.Handle("GET /api/admin/permissions", admin(h.ListPermissions))
+	// BUG-05 修复：补充注册 GET /api/admin/audit-logs，此前未注册导致 404
+	mux.Handle("GET /api/admin/audit-logs", admin(h.ListAuditLogs))
 	mux.Handle("GET /api/admin/users/{id}/roles", admin(h.GetUserRoles))
 	mux.Handle("POST /api/admin/users/{id}/roles", admin(h.AssignRole))
 	mux.Handle("DELETE /api/admin/users/{id}/roles/{role_id}", admin(h.RevokeRole))
@@ -44,6 +48,9 @@ func RegisterRoutes(mux *http.ServeMux, iamSvc *service.IAMService, groupSvc *se
 	// 用户分组管理（Phase 1，需 group:manage 权限）
 	mux.Handle("GET /api/admin/user-groups", adminGroup(gh.ListGroups))
 	mux.Handle("POST /api/admin/user-groups", adminGroup(gh.CreateGroup))
+	// BUG-06 修复：新增查询用户所属分组列表的路由，路径含字面量 "user" 段，
+	// 与 /api/admin/user-groups/{id}（单段通配）不冲突，net/http 按字面量段优先匹配。
+	mux.Handle("GET /api/admin/user-groups/user/{uid}", adminGroup(gh.GetGroupsByUser))
 	mux.Handle("GET /api/admin/user-groups/{id}", adminGroup(gh.GetGroup))
 	mux.Handle("PUT /api/admin/user-groups/{id}", adminGroup(gh.UpdateGroup))
 	mux.Handle("DELETE /api/admin/user-groups/{id}", adminGroup(gh.DeleteGroup))
