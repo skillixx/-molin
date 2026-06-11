@@ -164,6 +164,8 @@ func NewApp() (*App, error) {
 	overrideRepo := iamrep.NewOverrideRepository(gormDB)
 	cacheSvc := iamsvc.NewCacheService(redisClient)
 	iamService := iamsvc.NewIAMService(roleRepo, permRepo, userRoleRepo, overrideRepo, cacheSvc)
+	groupRepo := iamrep.NewGroupRepository(gormDB)
+	groupService := iamsvc.NewGroupService(groupRepo, gormDB, cacheSvc)
 
 	// ——— Identity 模块 ———
 	identityRepo := identityrep.NewIdentityRepository(gormDB)
@@ -211,7 +213,7 @@ func NewApp() (*App, error) {
 
 	// 注册各模块路由（authService 实现 BanChecker 接口，用于封禁黑名单检查）
 	authmod.RegisterRoutes(mux, authService, verifySvc, cfg, iamService)
-	iammod.RegisterRoutes(mux, iamService, cfg.JWTSecret, authService, authService)
+	iammod.RegisterRoutes(mux, iamService, groupService, cfg.JWTSecret, authService, authService)
 	identitymod.RegisterRoutes(mux, identityService, iamService, cfg.JWTSecret, authService, authService)
 
 	// 注册 billing 模块（钱包、充值、支付回调），传入 notify_body 加密密钥
