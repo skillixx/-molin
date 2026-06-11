@@ -49,4 +49,13 @@ func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc 
 				middleware.RequireAdminVerified(authSvc, http.HandlerFunc(next))))
 	}
 	mux.Handle("PATCH /api/admin/users/{id}/status", adminAuthVerified(h.UpdateUserStatus))
+
+	// 管理员用户列表和详情（需登录 + user:list 权限 + 双重认证）
+	adminUserList := func(next http.HandlerFunc) http.Handler {
+		return middleware.RequireAuth(cfg.JWTSecret, authSvc,
+			middleware.RequirePerm(iamChecker, "user:list",
+				middleware.RequireAdminVerified(authSvc, http.HandlerFunc(next))))
+	}
+	mux.Handle("GET /api/admin/users", adminUserList(h.ListUsers))
+	mux.Handle("GET /api/admin/users/{id}", adminUserList(h.GetUser))
 }

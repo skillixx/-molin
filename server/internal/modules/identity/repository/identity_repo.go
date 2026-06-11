@@ -70,11 +70,16 @@ func (r *IdentityRepository) ListPending(ctx context.Context) ([]model.IdentityV
 	return list, err
 }
 
-// ListPendingPaged 管理员分页查看待审核列表，返回当前页数据及总条数。
-func (r *IdentityRepository) ListPendingPaged(ctx context.Context, offset, limit int) ([]model.IdentityVerification, int64, error) {
+// ListPaged 管理员分页查看认证记录，status 非空时按状态过滤，空字符串时查全部状态。
+// 替代原先硬编码 pending 的 ListPendingPaged，保持向下兼容：调用方传 "pending" 即为原行为。
+func (r *IdentityRepository) ListPaged(ctx context.Context, status string, offset, limit int) ([]model.IdentityVerification, int64, error) {
 	var list []model.IdentityVerification
 	var total int64
-	db := r.db.WithContext(ctx).Model(&model.IdentityVerification{}).Where("status = 'pending'")
+	db := r.db.WithContext(ctx).Model(&model.IdentityVerification{})
+	// status 非空时追加过滤条件；空字符串表示查询全部状态
+	if status != "" {
+		db = db.Where("status = ?", status)
+	}
 	// 先查总数
 	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, err

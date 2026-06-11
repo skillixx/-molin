@@ -106,6 +106,20 @@ type UserInfo struct {
 	LastLoginAt        *time.Time `json:"last_login_at,omitempty"`
 }
 
+// AdminUserResp 管理员查看用户列表/详情时的响应 DTO（敏感字段已脱敏）。
+type AdminUserResp struct {
+	ID             uint64  `json:"id"`
+	Username       *string `json:"username"`
+	Email          *string `json:"email"`           // 已脱敏
+	EmailVerified  bool    `json:"email_verified"`
+	Phone          *string `json:"phone"`           // 已脱敏
+	PhoneVerified  bool    `json:"phone_verified"`
+	RealNameStatus string  `json:"real_name_status"`
+	Status         string  `json:"status"`
+	CreatedAt      string  `json:"created_at"`
+	LastLoginAt    *string `json:"last_login_at"`
+}
+
 // MaskPhone 对手机号做脱敏处理：前3后4，中间替换为 ****。
 // 例如：13812345678 → 138****5678
 func MaskPhone(phone string) string {

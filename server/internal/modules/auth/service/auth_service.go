@@ -327,6 +327,59 @@ func (s *AuthService) FindUserByID(ctx context.Context, userID uint64) (*model.U
 	return s.userRepo.FindByID(ctx, userID)
 }
 
+// ListUsers 管理员分页查询用户列表，支持关键字搜索和状态过滤，返回脱敏后的 DTO 列表。
+func (s *AuthService) ListUsers(ctx context.Context, keyword, status string, offset, limit int) ([]dto.AdminUserResp, int64, error) {
+	users, total, err := s.userRepo.ListUsersPaged(ctx, keyword, status, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	resp := make([]dto.AdminUserResp, len(users))
+	for i, u := range users {
+		resp[i] = s.toAdminUserResp(ctx, &u)
+	}
+	return resp, total, nil
+}
+
+// GetUser 管理员查看单个用户详情，返回脱敏后的 DTO。
+func (s *AuthService) GetUser(ctx context.Context, id uint64) (*dto.AdminUserResp, error) {
+	user, err := s.userRepo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	resp := s.toAdminUserResp(ctx, user)
+	return &resp, nil
+}
+
+// toAdminUserResp 将 User model 转换为管理员视角的 DTO（脱敏邮箱/手机）。
+func (s *AuthService) toAdminUserResp(ctx context.Context, u *model.User) dto.AdminUserResp {
+	resp := dto.AdminUserResp{
+		ID:             u.ID,
+		Username:       u.Username,
+		EmailVerified:  u.EmailVerified,
+		PhoneVerified:  u.PhoneVerified,
+		RealNameStatus: u.RealNameStatus,
+		Status:         u.Status,
+		CreatedAt:      u.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	}
+	// 邮箱脱敏处理
+	if u.Email != nil {
+		masked := dto.MaskEmail(*u.Email)
+		resp.Email = &masked
+	}
+	// 手机号脱敏处理
+	if u.Phone != nil {
+		masked := dto.MaskPhone(*u.Phone)
+		resp.Phone = &masked
+	}
+	// 查询最后登录时间（查不到不影响主流程）
+	lastLog, err := s.loginLogRepo.FindLastSuccessByUser(ctx, u.ID)
+	if err == nil && lastLog != nil {
+		t := lastLog.CreatedAt.Format("2006-01-02T15:04:05Z07:00")
+		resp.LastLoginAt = &t
+	}
+	return resp
+}
+
 func (s *AuthService) generateTokenPair(ctx context.Context, user *model.User) (*dto.TokenPair, error) {
 	email := ""
 	if user.Email != nil {

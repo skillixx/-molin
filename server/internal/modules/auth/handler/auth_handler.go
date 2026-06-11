@@ -9,6 +9,7 @@ import (
 	"molin/server/internal/middleware"
 	"molin/server/internal/modules/auth/dto"
 	"molin/server/internal/modules/auth/service"
+	"molin/server/pkg/pagination"
 	"molin/server/pkg/response"
 )
 
@@ -284,6 +285,44 @@ func (h *AuthHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, "updated")
+}
+
+// adminPagedResp 管理员接口的通用分页响应结构。
+type adminPagedResp struct {
+	List       interface{}       `json:"list"`
+	Pagination pagination.Result `json:"pagination"`
+}
+
+// ListUsers GET /api/admin/users — 管理员分页查询用户列表
+// 支持 ?keyword=&status=&page=&page_size= 参数，keyword 非空时在邮箱/手机/用户名中模糊匹配。
+func (h *AuthHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
+	keyword := r.URL.Query().Get("keyword")
+	status := r.URL.Query().Get("status")
+	p := pagination.Parse(r)
+	users, total, err := h.authSvc.ListUsers(r.Context(), keyword, status, p.Offset(), p.PageSize)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
+		return
+	}
+	response.JSON(w, http.StatusOK, adminPagedResp{
+		List:       users,
+		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
+	})
+}
+
+// GetUser GET /api/admin/users/{id} — 管理员查看单个用户详情
+func (h *AuthHandler) GetUser(w http.ResponseWriter, r *http.Request) {
+	targetID, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "用户 ID 不合法")
+		return
+	}
+	user, err := h.authSvc.GetUser(r.Context(), targetID)
+	if err != nil {
+		response.Error(w, http.StatusNotFound, 40400, "用户不存在")
+		return
+	}
+	response.JSON(w, http.StatusOK, user)
 }
 
 func handleAuthError(w http.ResponseWriter, err error) {

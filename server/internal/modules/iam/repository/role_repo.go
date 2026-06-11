@@ -43,11 +43,16 @@ func (r *RoleRepository) Delete(ctx context.Context, id uint64) error {
 	return r.db.WithContext(ctx).Delete(&model.Role{}, id).Error
 }
 
-// ListPaged 分页查询角色列表，返回当前页数据及总条数。
-func (r *RoleRepository) ListPaged(ctx context.Context, offset, limit int) ([]model.Role, int64, error) {
+// ListPaged 分页查询角色列表，支持关键字搜索（匹配 code 或 name），空字符串时不过滤。
+func (r *RoleRepository) ListPaged(ctx context.Context, keyword string, offset, limit int) ([]model.Role, int64, error) {
 	var roles []model.Role
 	var total int64
 	db := r.db.WithContext(ctx).Model(&model.Role{})
+	// keyword 非空时在 code 和 name 字段中做 LIKE 模糊匹配
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		db = db.Where("code LIKE ? OR name LIKE ?", like, like)
+	}
 	// 先查总数
 	if err := db.Count(&total).Error; err != nil {
 		return nil, 0, err

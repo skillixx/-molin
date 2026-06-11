@@ -95,9 +95,9 @@ func (s *IAMService) ListRoles(ctx context.Context) ([]model.Role, error) {
 	return s.roleRepo.List(ctx)
 }
 
-// ListRolesPaged 分页查询角色列表，返回当前页数据及总条数。
-func (s *IAMService) ListRolesPaged(ctx context.Context, offset, limit int) ([]model.Role, int64, error) {
-	return s.roleRepo.ListPaged(ctx, offset, limit)
+// ListRolesPaged 分页查询角色列表，支持关键字搜索（code 或 name），空字符串时不过滤。
+func (s *IAMService) ListRolesPaged(ctx context.Context, keyword string, offset, limit int) ([]model.Role, int64, error) {
+	return s.roleRepo.ListPaged(ctx, keyword, offset, limit)
 }
 
 // CreateRole 创建角色。
@@ -120,9 +120,9 @@ func (s *IAMService) ListPermissions(ctx context.Context) ([]model.Permission, e
 	return s.permissionRepo.List(ctx)
 }
 
-// ListPermissionsPaged 分页查询权限列表，返回当前页数据及总条数。
-func (s *IAMService) ListPermissionsPaged(ctx context.Context, offset, limit int) ([]model.Permission, int64, error) {
-	return s.permissionRepo.ListPaged(ctx, offset, limit)
+// ListPermissionsPaged 分页查询权限列表，支持关键字搜索（code 或 name），空字符串时不过滤。
+func (s *IAMService) ListPermissionsPaged(ctx context.Context, keyword string, offset, limit int) ([]model.Permission, int64, error) {
+	return s.permissionRepo.ListPaged(ctx, keyword, offset, limit)
 }
 
 // GetUserRoles 获取用户已分配的角色详情（含 code、name），不分页，兼容旧调用。
@@ -161,8 +161,9 @@ func (s *IAMService) GetPermissionOverrides(ctx context.Context, userID uint64) 
 
 // GetPermissionOverridesPaged 分页获取用户权限覆盖列表，返回当前页数据及总条数。
 // offset 和 limit 由调用方通过 pagination.Parse(r) 计算后传入。
-func (s *IAMService) GetPermissionOverridesPaged(ctx context.Context, userID uint64, offset, limit int) ([]model.UserPermissionOverride, int64, error) {
-	return s.overrideRepo.ListByUserPaged(ctx, userID, offset, limit)
+// effect 非空时只返回指定 effect（allow/deny）；permCode 非空时按权限码精确匹配。
+func (s *IAMService) GetPermissionOverridesPaged(ctx context.Context, userID uint64, effect, permCode string, offset, limit int) ([]model.UserPermissionOverride, int64, error) {
+	return s.overrideRepo.ListByUserPaged(ctx, userID, effect, permCode, offset, limit)
 }
 
 func (s *IAMService) getUserRolePermissions(ctx context.Context, userID uint64) ([]model.Permission, error) {
