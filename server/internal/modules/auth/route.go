@@ -10,8 +10,8 @@ import (
 )
 
 // RegisterRoutes 将 auth 模块路由注册到 mux。
-// iamChecker 用于管理员双重认证接口的角色权限校验。
-func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc *service.VerificationService, cfg config.Config, iamChecker middleware.IAMChecker) {
+// iamChecker 用于权限校验；scopeResolver 用于数据范围注入（管理员用户列表/详情接口）。
+func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc *service.VerificationService, cfg config.Config, iamChecker middleware.IAMChecker, scopeResolver middleware.ScopeResolver) {
 	h := handler.NewAuthHandler(authSvc, verifySvc, cfg)
 
 	// 无需鉴权的接口
@@ -50,11 +50,12 @@ func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc 
 	}
 	mux.Handle("PATCH /api/admin/users/{id}/status", adminAuthVerified(h.UpdateUserStatus))
 
-	// 管理员用户列表和详情（需登录 + user:list 权限 + 双重认证）
+	// 管理员用户列表和详情（需登录 + user:list 权限 + 双重认证 + 数据范围注入）
 	adminUserList := func(next http.HandlerFunc) http.Handler {
 		return middleware.RequireAuth(cfg.JWTSecret, authSvc,
 			middleware.RequirePerm(iamChecker, "user:list",
-				middleware.RequireAdminVerified(authSvc, http.HandlerFunc(next))))
+				middleware.RequireAdminVerified(authSvc,
+					middleware.InjectScope(scopeResolver, http.HandlerFunc(next)))))
 	}
 	mux.Handle("GET /api/admin/users", adminUserList(h.ListUsers))
 	mux.Handle("GET /api/admin/users/{id}", adminUserList(h.GetUser))

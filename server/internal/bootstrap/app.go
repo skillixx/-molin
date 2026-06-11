@@ -163,7 +163,12 @@ func NewApp() (*App, error) {
 	userRoleRepo := iamrep.NewUserRoleRepository(gormDB)
 	overrideRepo := iamrep.NewOverrideRepository(gormDB)
 	cacheSvc := iamsvc.NewCacheService(redisClient)
-	iamService := iamsvc.NewIAMService(roleRepo, permRepo, userRoleRepo, overrideRepo, cacheSvc)
+	groupRepo := iamrep.NewGroupRepository(gormDB)
+	// Phase 2：IAMService 注入 groupRepo，使 CheckPermission 合并角色权限与组权限
+	iamService := iamsvc.NewIAMService(roleRepo, permRepo, userRoleRepo, overrideRepo, groupRepo, cacheSvc)
+	groupService := iamsvc.NewGroupService(groupRepo, gormDB, cacheSvc)
+	// Phase 3：ScopeService 解析管理员数据范围（scope:all 超管 / 组管理员可见集合）
+	scopeService := iamsvc.NewScopeService(groupRepo, iamService, cacheSvc)
 
 	// ——— Identity 模块 ———
 	identityRepo := identityrep.NewIdentityRepository(gormDB)
@@ -210,8 +215,8 @@ func NewApp() (*App, error) {
 	})
 
 	// 注册各模块路由（authService 实现 BanChecker 接口，用于封禁黑名单检查）
-	authmod.RegisterRoutes(mux, authService, verifySvc, cfg, iamService)
-	iammod.RegisterRoutes(mux, iamService, cfg.JWTSecret, authService, authService)
+	authmod.RegisterRoutes(mux, authService, verifySvc, cfg, iamService, scopeService)
+	iammod.RegisterRoutes(mux, iamService, groupService, cfg.JWTSecret, authService, authService)
 	identitymod.RegisterRoutes(mux, identityService, iamService, cfg.JWTSecret, authService, authService)
 
 	// 注册 billing 模块（钱包、充值、支付回调），传入 notify_body 加密密钥

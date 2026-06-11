@@ -13,6 +13,7 @@ type IAMService struct {
 	permissionRepo *repository.PermissionRepository
 	userRoleRepo   *repository.UserRoleRepository
 	overrideRepo   *repository.OverrideRepository
+	groupRepo      *repository.GroupRepository // Phase 2：组权限继承
 	cacheSvc       *CacheService
 }
 
@@ -21,6 +22,7 @@ func NewIAMService(
 	permRepo *repository.PermissionRepository,
 	userRoleRepo *repository.UserRoleRepository,
 	overrideRepo *repository.OverrideRepository,
+	groupRepo *repository.GroupRepository,
 	cacheSvc *CacheService,
 ) *IAMService {
 	return &IAMService{
@@ -28,6 +30,7 @@ func NewIAMService(
 		permissionRepo: permRepo,
 		userRoleRepo:   userRoleRepo,
 		overrideRepo:   overrideRepo,
+		groupRepo:      groupRepo,
 		cacheSvc:       cacheSvc,
 	}
 }
@@ -52,17 +55,13 @@ func (s *IAMService) CheckPermission(ctx context.Context, userID uint64, permCod
 		}
 	}
 
-	// 步骤 3：角色权限从缓存读取
+	// 步骤 3：角色权限 ∪ 组权限，从缓存读取
 	if cached, ok := s.cacheSvc.GetUserPerms(ctx, userID); ok {
 		return evalPerms(cached, permCode)
 	}
 
-	// 缓存未命中：查 DB 并回填缓存
-	rolePerms, _ := s.getUserRolePermissions(ctx, userID)
-	codes := make([]string, len(rolePerms))
-	for i, p := range rolePerms {
-		codes[i] = p.Code
-	}
+	// 缓存未命中：合并角色权限与组权限后回填缓存
+	codes, _ := s.getAllUserPermCodes(ctx, userID)
 	s.cacheSvc.SetUserPerms(ctx, userID, codes)
 	return evalPerms(codes, permCode)
 }
@@ -172,6 +171,41 @@ func (s *IAMService) getUserRolePermissions(ctx context.Context, userID uint64) 
 		return nil, err
 	}
 	return s.permissionRepo.FindByRoleIDs(ctx, roleIDs)
+}
+
+// getAllUserPermCodes 合并「角色权限码」与「组权限码」，去重后返回。
+// Phase 2：组员继承所在分组的权限，权限来源由「仅角色」扩展为「角色 ∪ 组」。
+// 无角色/无分组时均退化为空集，对现有超管/无组用户行为零影响。
+func (s *IAMService) getAllUserPermCodes(ctx context.Context, userID uint64) ([]string, error) {
+	seen := make(map[string]struct{})
+	codes := make([]string, 0)
+
+	// 角色权限
+	rolePerms, _ := s.getUserRolePermissions(ctx, userID)
+	for _, p := range rolePerms {
+		if _, ok := seen[p.Code]; !ok {
+			seen[p.Code] = struct{}{}
+			codes = append(codes, p.Code)
+		}
+	}
+
+	// 组权限（用户所在所有分组的权限码合集）
+	members, _ := s.groupRepo.GetUserGroups(ctx, userID)
+	if len(members) > 0 {
+		groupIDs := make([]uint64, len(members))
+		for i, m := range members {
+			groupIDs[i] = m.GroupID
+		}
+		groupCodes, _ := s.groupRepo.GetPermissionCodesByGroups(ctx, groupIDs)
+		for _, c := range groupCodes {
+			if _, ok := seen[c]; !ok {
+				seen[c] = struct{}{}
+				codes = append(codes, c)
+			}
+		}
+	}
+
+	return codes, nil
 }
 
 // evalPerms 从缓存的权限码列表判断是否拥有 permCode。
