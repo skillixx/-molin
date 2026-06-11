@@ -31,10 +31,11 @@ func NewIAMHandler(iamSvc *service.IAMService) *IAMHandler {
 }
 
 // ListRoles GET /api/admin/roles
-// 支持分页参数 ?page=1&page_size=20，不传则使用默认值。
+// 支持 ?keyword= 关键字搜索（匹配 code 或 name）和分页参数 ?page=1&page_size=20。
 func (h *IAMHandler) ListRoles(w http.ResponseWriter, r *http.Request) {
+	keyword := r.URL.Query().Get("keyword")
 	p := pagination.Parse(r)
-	roles, total, err := h.iamSvc.ListRolesPaged(r.Context(), p.Offset(), p.PageSize)
+	roles, total, err := h.iamSvc.ListRolesPaged(r.Context(), keyword, p.Offset(), p.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return
@@ -99,10 +100,11 @@ func (h *IAMHandler) DeleteRole(w http.ResponseWriter, r *http.Request) {
 }
 
 // ListPermissions GET /api/admin/permissions
-// 支持分页参数 ?page=1&page_size=20，不传则使用默认值。
+// 支持 ?keyword= 关键字搜索（匹配 code 或 name）和分页参数 ?page=1&page_size=20。
 func (h *IAMHandler) ListPermissions(w http.ResponseWriter, r *http.Request) {
+	keyword := r.URL.Query().Get("keyword")
 	p := pagination.Parse(r)
-	perms, total, err := h.iamSvc.ListPermissionsPaged(r.Context(), p.Offset(), p.PageSize)
+	perms, total, err := h.iamSvc.ListPermissionsPaged(r.Context(), keyword, p.Offset(), p.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return

@@ -121,9 +121,10 @@ func (s *IdentityService) ListPending(ctx context.Context) ([]dto.VerificationRe
 	return resp, nil
 }
 
-// ListPendingPaged 管理员分页查看待审核列表，返回当前页数据及总条数。
-func (s *IdentityService) ListPendingPaged(ctx context.Context, offset, limit int) ([]dto.VerificationResp, int64, error) {
-	list, total, err := s.repo.ListPendingPaged(ctx, offset, limit)
+// ListPaged 管理员分页查看认证记录，status 非空时按状态过滤，空字符串时查全部状态。
+// 原方法名 ListPendingPaged 已直接重命名，调用链均在本模块内，无外部依赖。
+func (s *IdentityService) ListPaged(ctx context.Context, status string, offset, limit int) ([]dto.VerificationResp, int64, error) {
+	list, total, err := s.repo.ListPaged(ctx, status, offset, limit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -155,11 +156,19 @@ func maskIDCard(idCardNo string) string {
 }
 
 func toResp(v *model.IdentityVerification) *dto.VerificationResp {
-	return &dto.VerificationResp{
+	resp := &dto.VerificationResp{
 		ID:             v.ID,
+		UserID:         v.UserID,
 		RealName:       v.RealName,
 		IDCardNoMasked: v.IDCardNoMasked,
 		Status:         v.Status,
 		RejectReason:   v.RejectReason,
+		SubmittedAt:    v.SubmittedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
+	// VerifiedAt 字段在审核通过或拒绝后记录，对应 reviewed_at
+	if v.VerifiedAt != nil {
+		t := v.VerifiedAt.Format("2006-01-02T15:04:05Z07:00")
+		resp.ReviewedAt = &t
+	}
+	return resp
 }
