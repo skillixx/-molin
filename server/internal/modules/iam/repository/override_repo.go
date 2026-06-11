@@ -28,13 +28,24 @@ func (r *OverrideRepository) FindByUser(ctx context.Context, userID uint64) ([]m
 
 // ListByUserPaged 分页查询用户有效权限覆盖（未过期），返回当前页数据及总条数。
 // offset 为从第几条开始，limit 为每页条数，均由 pagination.Params 计算后传入。
-func (r *OverrideRepository) ListByUserPaged(ctx context.Context, userID uint64, offset, limit int) ([]model.UserPermissionOverride, int64, error) {
+// effect 非空时只返回对应 effect（allow/deny）的记录；permCode 非空时按权限码精确匹配。
+func (r *OverrideRepository) ListByUserPaged(ctx context.Context, userID uint64, effect, permCode string, offset, limit int) ([]model.UserPermissionOverride, int64, error) {
 	var overrides []model.UserPermissionOverride
 	var total int64
 
 	// 基础查询条件：指定用户且未过期
 	baseQuery := r.db.WithContext(ctx).Model(&model.UserPermissionOverride{}).
 		Where("user_id = ? AND (expires_at IS NULL OR expires_at > ?)", userID, time.Now())
+
+	// effect 非空时附加过滤
+	if effect != "" {
+		baseQuery = baseQuery.Where("effect = ?", effect)
+	}
+
+	// permission_code 非空时附加精确匹配过滤
+	if permCode != "" {
+		baseQuery = baseQuery.Where("permission_code = ?", permCode)
+	}
 
 	// 先查总数
 	if err := baseQuery.Count(&total).Error; err != nil {

@@ -196,15 +196,24 @@ func (h *IAMHandler) RevokeRole(w http.ResponseWriter, r *http.Request) {
 
 // GetPermissionOverrides GET /api/admin/users/{id}/permission-overrides
 // 支持分页参数 ?page=1&page_size=20，不传则使用默认值。
+// 支持过滤参数：?effect=allow|deny（空字符串查全部）、?permission_code=xxx（空字符串查全部）。
 func (h *IAMHandler) GetPermissionOverrides(w http.ResponseWriter, r *http.Request) {
 	userID, err := pathUint64(r, "id")
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, "无效用户 ID")
 		return
 	}
+	// 读取过滤参数
+	effect := r.URL.Query().Get("effect")
+	permCode := r.URL.Query().Get("permission_code")
+	// effect 不为空时做枚举校验，防止非标准值
+	if effect != "" && effect != "allow" && effect != "deny" {
+		response.Error(w, http.StatusBadRequest, 40000, "effect 只能为 allow 或 deny")
+		return
+	}
 	// 解析分页参数，默认 page=1 page_size=20，最大 page_size=100
 	p := pagination.Parse(r)
-	overrides, total, err := h.iamSvc.GetPermissionOverridesPaged(r.Context(), userID, p.Offset(), p.PageSize)
+	overrides, total, err := h.iamSvc.GetPermissionOverridesPaged(r.Context(), userID, effect, permCode, p.Offset(), p.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return

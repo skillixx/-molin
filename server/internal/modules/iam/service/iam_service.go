@@ -161,8 +161,9 @@ func (s *IAMService) GetPermissionOverrides(ctx context.Context, userID uint64) 
 
 // GetPermissionOverridesPaged 分页获取用户权限覆盖列表，返回当前页数据及总条数。
 // offset 和 limit 由调用方通过 pagination.Parse(r) 计算后传入。
-func (s *IAMService) GetPermissionOverridesPaged(ctx context.Context, userID uint64, offset, limit int) ([]model.UserPermissionOverride, int64, error) {
-	return s.overrideRepo.ListByUserPaged(ctx, userID, offset, limit)
+// effect 非空时只返回指定 effect（allow/deny）；permCode 非空时按权限码精确匹配。
+func (s *IAMService) GetPermissionOverridesPaged(ctx context.Context, userID uint64, effect, permCode string, offset, limit int) ([]model.UserPermissionOverride, int64, error) {
+	return s.overrideRepo.ListByUserPaged(ctx, userID, effect, permCode, offset, limit)
 }
 
 func (s *IAMService) getUserRolePermissions(ctx context.Context, userID uint64) ([]model.Permission, error) {
