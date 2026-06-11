@@ -48,9 +48,6 @@ func RegisterRoutes(mux *http.ServeMux, iamSvc *service.IAMService, groupSvc *se
 	// 用户分组管理（Phase 1，需 group:manage 权限）
 	mux.Handle("GET /api/admin/user-groups", adminGroup(gh.ListGroups))
 	mux.Handle("POST /api/admin/user-groups", adminGroup(gh.CreateGroup))
-	// BUG-06 修复：新增查询用户所属分组列表的路由，路径含字面量 "user" 段，
-	// 与 /api/admin/user-groups/{id}（单段通配）不冲突，net/http 按字面量段优先匹配。
-	mux.Handle("GET /api/admin/user-groups/user/{uid}", adminGroup(gh.GetGroupsByUser))
 	mux.Handle("GET /api/admin/user-groups/{id}", adminGroup(gh.GetGroup))
 	mux.Handle("PUT /api/admin/user-groups/{id}", adminGroup(gh.UpdateGroup))
 	mux.Handle("DELETE /api/admin/user-groups/{id}", adminGroup(gh.DeleteGroup))
