@@ -217,18 +217,22 @@ func (s *AuthService) LoginEmail(ctx context.Context, req dto.LoginEmailReq, ip,
 	return s.generateTokenPair(ctx, user)
 }
 
-// LoginPhone 手机验证码登录。
+// LoginPhone 手机号密码登录。
+// BUG-03 修复：原实现将 password 字段当成 OTP 验证码校验，与邮箱登录逻辑不一致。
+// 修正为与 LoginEmail 一致的密码比对流程（crypto.CheckPassword）。
 func (s *AuthService) LoginPhone(ctx context.Context, req dto.LoginPhoneReq, ip, ua string) (*dto.TokenPair, error) {
 	req.Phone = normalizePhone(req.Phone)
-	if err := s.verifySvc.Check(ctx, "phone", req.Phone, "login", req.Code); err != nil {
-		return nil, ErrInvalidCode
-	}
 	user, err := s.userRepo.FindByPhone(ctx, req.Phone)
 	if err != nil {
+		s.recordLogin(ctx, nil, "phone", req.Phone, ip, ua, "failed")
 		return nil, ErrUnauthorized
 	}
 	if user.Status == "disabled" {
 		return nil, ErrUserDisabled
+	}
+	if !crypto.CheckPassword(req.Password, user.PasswordHash) {
+		s.recordLogin(ctx, &user.ID, "phone", req.Phone, ip, ua, "failed")
+		return nil, ErrWrongPassword
 	}
 	s.recordLogin(ctx, &user.ID, "phone", req.Phone, ip, ua, "success")
 	return s.generateTokenPair(ctx, user)

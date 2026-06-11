@@ -31,6 +31,11 @@ func (h *AuthHandler) SendEmailCode(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
+	// BUG-01 修复：email 和 scene 为必填字段，缺失时直接返回 400
+	if req.Email == "" || req.Scene == "" {
+		response.Error(w, http.StatusBadRequest, 40000, "email 和 scene 为必填字段")
+		return
+	}
 	code, err := h.authSvc.SendCode(r.Context(), "email", req.Email, req.Scene)
 	if err != nil {
 		handleAuthError(w, err)
@@ -50,6 +55,11 @@ func (h *AuthHandler) SendPhoneCode(w http.ResponseWriter, r *http.Request) {
 	var req dto.SendPhoneCodeReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	// BUG-02 修复：phone 和 scene 为必填字段，缺失时直接返回 400
+	if req.Phone == "" || req.Scene == "" {
+		response.Error(w, http.StatusBadRequest, 40000, "phone 和 scene 为必填字段")
 		return
 	}
 	code, err := h.authSvc.SendCode(r.Context(), "phone", req.Phone, req.Scene)

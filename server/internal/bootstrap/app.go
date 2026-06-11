@@ -164,8 +164,10 @@ func NewApp() (*App, error) {
 	overrideRepo := iamrep.NewOverrideRepository(gormDB)
 	cacheSvc := iamsvc.NewCacheService(redisClient)
 	groupRepo := iamrep.NewGroupRepository(gormDB)
+	// BUG-05 修复：新增审计日志仓储，支持 GET /api/admin/audit-logs 接口
+	auditLogRepo := iamrep.NewAuditLogRepository(gormDB)
 	// Phase 2：IAMService 注入 groupRepo，使 CheckPermission 合并角色权限与组权限
-	iamService := iamsvc.NewIAMService(roleRepo, permRepo, userRoleRepo, overrideRepo, groupRepo, cacheSvc)
+	iamService := iamsvc.NewIAMService(roleRepo, permRepo, userRoleRepo, overrideRepo, groupRepo, auditLogRepo, cacheSvc)
 	groupService := iamsvc.NewGroupService(groupRepo, gormDB, cacheSvc)
 	// Phase 3：ScopeService 解析管理员数据范围（scope:all 超管 / 组管理员可见集合）
 	scopeService := iamsvc.NewScopeService(groupRepo, iamService, cacheSvc)

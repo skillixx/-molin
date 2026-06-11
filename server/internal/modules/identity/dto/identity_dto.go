@@ -7,9 +7,11 @@ type SubmitReq struct {
 	Attachments []string `json:"attachments,omitempty"`
 }
 
-// SubmitResp 提交实名认证的响应，返回新建记录的 ID。
+// SubmitResp 提交实名认证的响应，返回新建记录的 ID 和初始状态。
+// BUG-07 修复：补充 status 字段，新提交记录状态固定为 pending。
 type SubmitResp struct {
-	ID uint64 `json:"id"`
+	ID     uint64 `json:"id"`
+	Status string `json:"status"`
 }
 
 // ReviewReq 管理员审核请求。
