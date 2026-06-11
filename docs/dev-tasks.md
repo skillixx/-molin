@@ -14,12 +14,13 @@
 
 | 序号 | 阶段 | 任务描述 | 分支 | 状态 | 备注 |
 |---|---|---|---|---|---|
-| A-01 | Week 1 | 邮箱/手机号注册、登录、登出、Token 刷新 | `feature/backend-a-auth-register-login` | ✅ 已完成 | 直接提交 main；代码审查通过；1 个警告（验证码通过 Header 区分环境）|
-| A-02 | Week 1 | 角色 CRUD、权限 CRUD、RBAC 用户绑定 | `feature/backend-a-iam-role-permission` | ✅ 已完成 | 直接提交 main；已修复缓存 deny 绕过安全 Bug（commit 538a525）|
-| A-03 | Week 1 | 实名认证提交接口、审核接口、HMAC 存储 | `feature/backend-a-identity-realname` | ✅ 已完成 | 直接提交 main；代码审查通过；HMAC+masked 安全规范符合要求 |
+| A-01 | Week 1 | 邮箱/手机号注册、登录、登出、Token 刷新 | `feature/backend-a-auth-register-login` | ✅ 已完成 | 直接提交 main；代码审查通过；1 个警告（验证码通过 Header 区分环境）；2026-06-11 修复补丁（A-07）：补全 GET /api/admin/users 和 GET /api/admin/users/{id} 接口 |
+| A-02 | Week 1 | 角色 CRUD、权限 CRUD、RBAC 用户绑定 | `feature/backend-a-iam-role-permission` | ✅ 已完成 | 直接提交 main；已修复缓存 deny 绕过安全 Bug（commit 538a525）；2026-06-11 修复补丁（A-07）：ListRoles/ListPermissions 新增 ?keyword= 搜索、permission-overrides 新增 ?effect=/?permission_code= 过滤 |
+| A-03 | Week 1 | 实名认证提交接口、审核接口、HMAC 存储 | `feature/backend-a-identity-realname` | ✅ 已完成 | 直接提交 main；代码审查通过；HMAC+masked 安全规范符合要求；2026-06-11 修复补丁（A-07）：VerificationResp 补充 user_id/submitted_at/reviewed_at，列表接口解除 pending 硬编码 |
 | A-04 | Week 1 | 审计日志 service（供各模块调用写入） | `feature/backend-a-audit-log` | ⏳ 待开始 | 仅有 README，无实现代码 |
 | A-05 | Week 2 | 封禁/解封用户、强制登出所有会话 | `feature/backend-a-auth-ban-unlock` | ⏳ 待开始 | |
 | A-06 | Week 2 | 管理员批量权限变更、角色管理接口 | `feature/backend-a-iam-admin-api` | ⏳ 待开始 | |
+| A-07 | Week 1（补丁）| 补全管理员列表接口及字段缺漏修复 | `feature/backend-auth-admin-list-fix` | ✅ 已完成 | PM 审核通过（2026-06-11）；merge commit 2f493fa；含 migration 000014（user:list seed）；覆盖 A-01/A-02/A-03 遗漏点 |
 
 ---
 
@@ -119,14 +120,14 @@
 
 | 开发者 | 总任务数 | 已完成 | 进行中 | 待开始 |
 |---|---|---|---|---|
-| 后端工程师甲 | 6 | 3（已审查）| 0 | 3 |
+| 后端工程师甲 | 7 | 4（已审查）| 0 | 3 |
 | 后端工程师乙 | 6 | 0 | 0 | 6 |
 | 后端工程师丙 | 5 | 0 | 0 | 5 |
 | 前端工程师甲 | 7 | 3（已审查）| 0 | 4 |
 | 前端工程师乙 | 8 | 0 | 0 | 8 |
 | 运维工程师 | 6 | 6 | 0 | 0 |
 | 测试工程师 | 6 | 0 | 0 | 6 |
-| **合计** | **44** | **12** | **0** | **32** |
+| **合计** | **45** | **13** | **0** | **32** |
 
 ---
 
