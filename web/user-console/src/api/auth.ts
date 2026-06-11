@@ -37,7 +37,7 @@ export function loginByEmail(body: LoginEmailBody) {
   return http.post<unknown, TokenPair>('/auth/login/email', body)
 }
 
-// 手机号验证码登录
+// 手机号密码登录
 export function loginByPhone(body: LoginPhoneBody) {
   return http.post<unknown, TokenPair>('/auth/login/phone', body)
 }

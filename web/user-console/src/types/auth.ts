@@ -39,7 +39,7 @@ export interface LoginEmailBody {
 // 手机号登录请求体
 export interface LoginPhoneBody {
   phone: string
-  code: string
+  password: string
 }
 
 // 统一注册请求体（手机号+邮箱必须同时提交，需双重 OTP 验证码）
