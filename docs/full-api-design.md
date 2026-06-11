@@ -334,8 +334,9 @@ attachments 字段：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
+| id | integer | 新建实名认证记录 ID（同 verification_id） |
 | verification_id | integer | 实名认证记录 ID |
-| status | string | 审核状态 |
+| status | string | 审核状态：pending |
 
 ### 2.12 查询最新实名认证
 
@@ -471,25 +472,24 @@ Query 参数：
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
-| email | string | 否 | 邮箱筛选 |
-| phone | string | 否 | 手机号筛选 |
-| status | string | 否 | 用户状态 |
-| real_name_status | string | 否 | 实名状态 |
+| keyword | string | 否 | 模糊搜索，匹配邮箱（脱敏前缀）或手机号（脱敏前缀） |
+| status | string | 否 | 用户状态：active / disabled |
+| real_name_status | string | 否 | 实名状态：unverified / pending / verified / rejected |
 | role_code | string | 否 | 角色 code |
-| page | integer | 否 | 页码 |
-| page_size | integer | 否 | 每页数量 |
+| page | integer | 否 | 页码，默认 1 |
+| page_size | integer | 否 | 每页数量，默认 20 |
 
 返回 data.items 字段：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | integer | 用户 ID |
-| email | string | 邮箱 |
-| phone | string | 手机号 |
+| email | string | 邮箱（脱敏） |
+| phone | string | 手机号（脱敏） |
 | real_name_status | string | 实名状态 |
 | status | string | 用户状态 |
-| roles | array | 角色列表 |
-| created_at | string | 创建时间 |
+| roles | array | 角色列表（每项含 id、code、name） |
+| created_at | string | 创建时间（ISO 8601） |
 
 ### 3.2 用户详情
 
@@ -503,7 +503,20 @@ Path 参数：
 |---|---|---|
 | id | integer | 用户 ID |
 
-返回 data：用户完整信息、角色、权限、钱包摘要、资产摘要。
+返回 data 字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | integer | 用户 ID |
+| email | string | 邮箱（脱敏） |
+| phone | string | 手机号（脱敏） |
+| status | string | 用户状态 |
+| real_name_status | string | 实名状态 |
+| roles | array | 角色列表（每项含 id、code、name） |
+| permission_overrides | array | 动态权限覆盖列表 |
+| wallet_summary | object | 钱包摘要（balance、frozen） |
+| asset_summary | object | 资产摘要（total_count） |
+| created_at | string | 注册时间（ISO 8601） |
 
 ### 3.3 创建后台用户
 
@@ -583,6 +596,28 @@ GET   /api/admin/users/:id/permission-overrides
 PATCH /api/admin/users/:id/permission-overrides
 ```
 
+GET Query 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| effect | string | 否 | 过滤 allow 或 deny，不传则返回全部 |
+| permission_code | string | 否 | 按权限 code 精确过滤 |
+| page | integer | 否 | 页码，默认 1 |
+| page_size | integer | 否 | 每页数量，默认 20 |
+
+GET 返回 data.list 字段（snake_case）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | integer | 覆盖记录 ID |
+| user_id | integer | 用户 ID |
+| permission_id | integer | 权限 ID |
+| permission_code | string | 权限 code |
+| effect | string | allow 或 deny |
+| reason | string | 原因 |
+| expires_at | string | 过期时间（ISO 8601，无过期为 null） |
+| created_at | string | 创建时间（ISO 8601） |
+
 PATCH Body 参数：
 
 | 字段 | 类型 | 必填 | 说明 |
@@ -594,11 +629,9 @@ items 字段：
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
 | permission_id | integer | 是 | 权限 ID |
-| effect | string | 是 | allow 或 deny |
+| effect | string | 是 | allow 或 deny（只接受小写） |
 | reason | string | 否 | 原因 |
-| expires_at | string | 否 | 过期时间 |
-
-GET 返回 data：权限覆盖列表。
+| expires_at | string | 否 | 过期时间（ISO 8601） |
 
 PATCH 返回 data：`updated`。
 
@@ -630,6 +663,14 @@ PATCH  /api/admin/roles/:id
 DELETE /api/admin/roles/:id
 ```
 
+GET /api/admin/roles Query 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| keyword | string | 否 | 模糊搜索，匹配角色 code 或 name |
+| page | integer | 否 | 页码，默认 1 |
+| page_size | integer | 否 | 每页数量，默认 20 |
+
 POST / PATCH Body 参数：
 
 | 字段 | 类型 | 必填 | 说明 |
@@ -646,6 +687,14 @@ POST / PATCH Body 参数：
 GET  /api/admin/permissions
 POST /api/admin/permissions
 ```
+
+GET /api/admin/permissions Query 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| keyword | string | 否 | 模糊搜索，匹配权限 code 或 name |
+| page | integer | 否 | 页码，默认 1 |
+| page_size | integer | 否 | 每页数量，默认 20 |
 
 POST Body 参数：
 
@@ -683,7 +732,7 @@ Query 参数：
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
 | user_id | integer | 否 | 用户 ID |
-| status | string | 否 | 审核状态 |
+| status | string | 否 | 审核状态：pending / verified / rejected；不传则返回全部 |
 | real_name | string | 否 | 真实姓名 |
 | page | integer | 否 | 页码 |
 | page_size | integer | 否 | 每页数量 |
@@ -696,7 +745,19 @@ Query 参数：
 GET /api/admin/identity-verifications/:id
 ```
 
-返回 data：实名记录详情、附件、审核日志。
+返回 data 字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | integer | 记录 ID |
+| user_id | integer | 所属用户 ID |
+| real_name | string | 真实姓名 |
+| id_card_no_masked | string | 脱敏证件号（前6后4，中间 * 替代） |
+| status | string | 审核状态：pending / verified / rejected |
+| reject_reason | string | 拒绝原因（rejected 时有值） |
+| submitted_at | string | 提交时间（ISO 8601） |
+| reviewed_at | string | 审核操作时间（ISO 8601，待审为 null） |
+| attachments | array | 附件列表（file_key、file_type） |
 
 ### 3.15 审核实名
 

@@ -1,6 +1,6 @@
 # 前端接口参考文档
 
-> **版本**：Week 1 + Week 2 已验收（2026-06-06）；2026-06-10 补丁更新（发码拦截 + 管理员双重认证强制）
+> **版本**：Week 1 + Week 2 已验收（2026-06-06）；2026-06-10 补丁更新（发码拦截 + 管理员双重认证强制）；2026-06-11 接口变更同步（用户列表 keyword、角色/权限模糊搜索、实名审核 status 过滤、权限覆盖过滤参数及 snake_case 字段、实名审核详情新增 user_id/submitted_at/reviewed_at、POST 实名认证响应新增 data.id）
 > **测试服务器**：`http://8.130.9.163:8080`
 > **鉴权方式**：所有需要登录的接口在 Header 中携带 `Authorization: Bearer <access_token>`
 
@@ -263,6 +263,18 @@
 
 > 注意：身份证号不存明文，后端仅用于 HMAC 校验后丢弃，响应中返回脱敏值
 
+响应 `data`：
+
+```json
+{
+  "id": 1,
+  "verification_id": 1,
+  "status": "pending"
+}
+```
+
+> `id` 与 `verification_id` 值相同，均为新建认证记录的 ID，前端可用于后续查询或跳转。
+
 ---
 
 ### 2.2 查询我的认证状态
@@ -311,11 +323,70 @@
 
 ---
 
-## 三、角色权限模块（后端甲，需 `role:manage` 权限 + 管理员双重认证）
+## 三、用户管理（后端丙，需 `user:manage` 权限）
+
+### 3.0 用户列表
+
+**GET** `/api/admin/users` *(需登录 + `user:manage` 权限)*
+
+Query 参数：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| keyword | string | 模糊搜索，匹配邮箱（脱敏前缀）或手机号（脱敏前缀） |
+| status | string | active / disabled，不传则返回全部 |
+| page | integer | 页码，默认 1 |
+| page_size | integer | 每页数量，默认 20 |
+
+响应 `data`：
+```json
+{
+  "list": [
+    {
+      "id": 1,
+      "email": "zh***@example.com",
+      "phone": "138****5678",
+      "status": "active",
+      "real_name_status": "verified",
+      "roles": [{ "id": 2, "code": "vip", "name": "VIP会员" }],
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  ],
+  "pagination": { "page": 1, "page_size": 20, "total": 100 }
+}
+```
+
+> 邮箱和手机号均为脱敏值，明文不出现在任何响应中。
+
+---
+
+### 3.0b 用户详情
+
+**GET** `/api/admin/users/{id}` *(需登录 + `user:manage` 权限)*
+
+响应 `data`：
+```json
+{
+  "id": 1,
+  "email": "zh***@example.com",
+  "phone": "138****5678",
+  "status": "active",
+  "real_name_status": "verified",
+  "roles": [{ "id": 2, "code": "vip", "name": "VIP会员" }],
+  "permission_overrides": [],
+  "wallet_summary": { "balance": "100.00", "frozen": "0.00" },
+  "asset_summary": { "total_count": 3 },
+  "created_at": "2026-01-01T00:00:00Z"
+}
+```
+
+---
+
+## 四、角色权限模块（后端甲，需 `role:manage` 权限 + 管理员双重认证）
 
 ### 3.1 角色管理
 
-**GET** `/api/admin/roles` — 角色列表
+**GET** `/api/admin/roles` — 角色列表（支持 `?keyword=` 模糊搜索角色 code / name，`?page=&page_size=` 分页）
 
 **POST** `/api/admin/roles`
 ```json
@@ -331,7 +402,7 @@
 
 ### 3.2 权限列表
 
-**GET** `/api/admin/permissions` — 查看所有权限定义
+**GET** `/api/admin/permissions` — 查看所有权限定义（支持 `?keyword=` 模糊搜索权限 code / name，`?page=&page_size=` 分页）
 
 ### 3.3 用户角色分配
 
@@ -346,24 +417,57 @@
 
 ### 3.4 用户权限覆盖
 
-**GET** `/api/admin/users/{id}/permission-overrides`
+**GET** `/api/admin/users/{id}/permission-overrides` — 支持以下 Query 过滤参数：
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| effect | string | allow 或 deny，不传则返回全部 |
+| permission_code | string | 按权限 code 精确过滤 |
+| page | integer | 页码，默认 1 |
+| page_size | integer | 每页数量，默认 20 |
+
+响应 `data.list` 字段（全部 snake_case）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | integer | 覆盖记录 ID |
+| user_id | integer | 用户 ID |
+| permission_id | integer | 权限 ID |
+| permission_code | string | 权限 code |
+| effect | string | allow 或 deny |
+| reason | string | 原因 |
+| expires_at | string | 过期时间（无过期为 null） |
+| created_at | string | 创建时间（ISO 8601） |
 
 **POST** `/api/admin/users/{id}/permission-overrides`
 ```json
 { "permission_id": 5, "effect": "allow", "reason": "临时授权" }
 ```
 
-`effect`：`allow` / `deny`
+`effect`：`allow` / `deny`（只接受小写）
 
 **DELETE** `/api/admin/users/{id}/permission-overrides/{override_id}`
 
 ---
 
-## 四、实名审核（后端甲，需 `identity:review` 权限）
+## 五、实名审核（后端甲，需 `identity:review` 权限）
 
-**GET** `/api/admin/identity-verifications?page=1&page_size=10` — 待审核列表
+**GET** `/api/admin/identity-verifications` — 审核列表（支持 `?status=pending|verified|rejected`，不传则返回全部；支持 `?page=&page_size=` 分页）
 
 **GET** `/api/admin/identity-verifications/{id}` — 审核详情
+
+响应 `data` 关键字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | integer | 记录 ID |
+| user_id | integer | 所属用户 ID |
+| real_name | string | 真实姓名 |
+| id_card_no_masked | string | 脱敏证件号 |
+| status | string | pending / verified / rejected |
+| reject_reason | string | 拒绝原因（rejected 时有值） |
+| submitted_at | string | 提交时间（ISO 8601） |
+| reviewed_at | string | 审核操作时间（ISO 8601，待审为 null） |
 
 **PATCH** `/api/admin/identity-verifications/{id}/review`
 ```json
@@ -373,7 +477,7 @@
 
 ---
 
-## 五、商品模块（后端乙）
+## 六、商品模块（后端乙）
 
 ### 5.1 用户端
 
@@ -533,7 +637,7 @@
 
 ---
 
-## 六、订单模块（后端乙）
+## 七、订单模块（后端乙）
 
 ### 6.1 用户端
 
@@ -580,7 +684,7 @@
 
 ---
 
-## 七、钱包 & 支付模块（后端乙）
+## 八、钱包 & 支付模块（后端乙）
 
 ### 7.1 用户端
 
@@ -681,7 +785,7 @@ Wechatpay-Nonce: <随机串>
 
 ---
 
-## 八、管理员双重认证（后端甲，需 `user:manage` 权限）
+## 九、管理员双重认证（后端甲，需 `user:manage` 权限）
 
 **POST** `/api/admin/auth/verify-phone`
 ```json

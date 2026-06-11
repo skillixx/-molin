@@ -335,7 +335,7 @@ Base URL：http://8.130.9.163:8080
 - **方法：** `GET`
 - **URL：** `/api/admin/users/{id}/permission-overrides`
 - **是否需要 Token：** 是（admin）
-- **查询参数：** `page`（默认 1）、`page_size`（默认 20）
+- **查询参数：** `page`（默认 1）、`page_size`（默认 20）、`effect`（可选：`allow` / `deny`，不传则返回全部）、`permission_code`（可选：按权限 code 精确过滤）
 - **无需 Body**
 
 - **成功响应（200，有数据时）：**

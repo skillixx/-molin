@@ -71,7 +71,11 @@ Base URL：http://8.130.9.163:8080
 {
   "code": 0,
   "message": "ok",
-  "data": null
+  "data": {
+    "id": 1,
+    "verification_id": 1,
+    "status": "pending"
+  }
 }
 ```
 
@@ -116,7 +120,7 @@ Base URL：http://8.130.9.163:8080
 - **方法：** `GET`
 - **URL：** `/api/admin/identity-verifications`
 - **是否需要 Token：** 是（admin，需 `identity:review` 权限）
-- **查询参数：** `page`（默认 1）、`page_size`（默认 20）
+- **查询参数：** `page`（默认 1）、`page_size`（默认 20）、`status`（可选：`pending` / `verified` / `rejected`，不传则返回全部）
 
 - **成功响应（200）：**
 
@@ -171,10 +175,13 @@ Base URL：http://8.130.9.163:8080
     "id_card_no_masked": "330102********1234",
     "status": "pending",
     "submitted_at": "2026-06-05T...",
+    "reviewed_at": null,
     "reject_reason": null
   }
 }
 ```
+
+> `reviewed_at`：审核操作时间（ISO 8601），待审状态为 `null`；`user_id`：提交认证的用户 ID，可用于跳转用户详情页。
 
 - **失败场景：** ID 不存在 → `404`
 

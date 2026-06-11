@@ -20,7 +20,7 @@
 | A-04 | Week 1 | 审计日志 service（供各模块调用写入） | `feature/backend-a-audit-log` | ⏳ 待开始 | 仅有 README，无实现代码 |
 | A-05 | Week 2 | 封禁/解封用户、强制登出所有会话 | `feature/backend-a-auth-ban-unlock` | ⏳ 待开始 | |
 | A-06 | Week 2 | 管理员批量权限变更、角色管理接口 | `feature/backend-a-iam-admin-api` | ⏳ 待开始 | |
-| A-07 | Week 1（补丁）| 补全管理员列表接口及字段缺漏修复 | `feature/backend-auth-admin-list-fix` | ✅ 已完成 | PM 审核通过（2026-06-11）；merge commit 2f493fa；含 migration 000014（user:list seed）；覆盖 A-01/A-02/A-03 遗漏点 |
+| A-07 | Week 1（补丁）| 补全管理员列表接口及字段缺漏修复 | `feature/backend-auth-admin-list-fix` | ✅ 已完成 | 测试工程师验收通过（2026-06-11）；merge commit db9e746；含 migration 000014（user:list seed）；覆盖 A-01/A-02/A-03 遗漏点；修复内容：(1) 补充 GET /api/admin/users 和 GET /api/admin/users/{id}；(2) VerificationResp 补充 user_id/submitted_at/reviewed_at；(3) identity-verifications 列表解除 status 硬编码；(4) roles/permissions 列表支持 ?keyword= 搜索；(5) permission-overrides 支持 ?effect=/?permission_code= 过滤；(6) permission-overrides 响应字段名修复为 snake_case；(7) POST /api/identity/verifications 响应补充 data.id |
 
 ---
 
