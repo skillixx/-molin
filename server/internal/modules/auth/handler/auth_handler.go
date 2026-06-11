@@ -289,7 +289,7 @@ func (h *AuthHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 
 // adminPagedResp 管理员接口的通用分页响应结构。
 type adminPagedResp struct {
-	List       interface{}       `json:"list"`
+	List       interface{}       `json:"items"`
 	Pagination pagination.Result `json:"pagination"`
 }
 

@@ -17,7 +17,7 @@ import (
 
 // PagedResp 通用分页响应结构，包含列表数据和分页元数据。
 type PagedResp struct {
-	List       interface{}       `json:"list"`
+	List       interface{}       `json:"items"`
 	Pagination pagination.Result `json:"pagination"`
 }
 
