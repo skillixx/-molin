@@ -47,7 +47,7 @@ async function fetchPermissions() {
   loading.value = true
   try {
     const res = await listPermissions({ page: pagination.page, page_size: pagination.page_size })
-    permissions.value = res.list
+    permissions.value = res.items
     Object.assign(pagination, res.pagination)
   } finally {
     loading.value = false

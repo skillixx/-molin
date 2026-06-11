@@ -92,7 +92,7 @@ async function fetchUserRoles() {
   loadingRoles.value = true
   try {
     const res = await listUserRoles(props.userId, { page: 1, page_size: 100 })
-    userRoles.value = res.list
+    userRoles.value = res.items
   } finally {
     loadingRoles.value = false
   }
@@ -100,7 +100,7 @@ async function fetchUserRoles() {
 
 async function fetchAllRoles() {
   const res = await listRoles({ page: 1, page_size: 100 })
-  allRoles.value = res.list
+  allRoles.value = res.items
 }
 
 async function handleAssignRole() {

@@ -86,7 +86,7 @@ async function fetchList() {
   loading.value = true
   try {
     const res = await listVerifications({ page: pagination.page, page_size: pagination.page_size })
-    verifications.value = res.list
+    verifications.value = res.items
     Object.assign(pagination, res.pagination)
   } finally {
     loading.value = false
