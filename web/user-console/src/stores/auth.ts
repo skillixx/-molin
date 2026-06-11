@@ -40,10 +40,10 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
-   * 手机号验证码登录
+   * 手机号密码登录
    */
-  async function loginWithPhone(phone: string, code: string) {
-    const data = await loginByPhone({ phone, code })
+  async function loginWithPhone(phone: string, password: string) {
+    const data = await loginByPhone({ phone, password })
     _applyTokens(data.access_token, data.refresh_token)
     await fetchMe()
   }
