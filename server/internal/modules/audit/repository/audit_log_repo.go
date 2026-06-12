@@ -5,16 +5,21 @@ import (
 
 	"gorm.io/gorm"
 
-	"molin/server/internal/modules/iam/model"
+	"molin/server/internal/modules/audit/model"
 )
 
-// AuditLogRepository 审计日志查询仓储层（只读，写入由各业务模块完成）。
+// AuditLogRepository 审计日志仓储层，提供读取和写入能力。
 type AuditLogRepository struct {
 	db *gorm.DB
 }
 
 func NewAuditLogRepository(db *gorm.DB) *AuditLogRepository {
 	return &AuditLogRepository{db: db}
+}
+
+// Create 写入一条审计日志。
+func (r *AuditLogRepository) Create(ctx context.Context, log *model.AuditLog) error {
+	return r.db.WithContext(ctx).Create(log).Error
 }
 
 // ListPaged 分页查询审计日志，支持按 module、action 关键字过滤，按 created_at 倒序。

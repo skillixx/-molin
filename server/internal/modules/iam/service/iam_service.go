@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 
+	auditmodel "molin/server/internal/modules/audit/model"
+	auditservice "molin/server/internal/modules/audit/service"
 	"molin/server/internal/modules/iam/model"
 	"molin/server/internal/modules/iam/repository"
 )
@@ -14,7 +16,7 @@ type IAMService struct {
 	userRoleRepo   *repository.UserRoleRepository
 	overrideRepo   *repository.OverrideRepository
 	groupRepo      *repository.GroupRepository // Phase 2：组权限继承
-	auditLogRepo   *repository.AuditLogRepository
+	auditSvc       *auditservice.AuditService
 	cacheSvc       *CacheService
 }
 
@@ -24,7 +26,7 @@ func NewIAMService(
 	userRoleRepo *repository.UserRoleRepository,
 	overrideRepo *repository.OverrideRepository,
 	groupRepo *repository.GroupRepository,
-	auditLogRepo *repository.AuditLogRepository,
+	auditSvc *auditservice.AuditService,
 	cacheSvc *CacheService,
 ) *IAMService {
 	return &IAMService{
@@ -33,7 +35,7 @@ func NewIAMService(
 		userRoleRepo:   userRoleRepo,
 		overrideRepo:   overrideRepo,
 		groupRepo:      groupRepo,
-		auditLogRepo:   auditLogRepo,
+		auditSvc:       auditSvc,
 		cacheSvc:       cacheSvc,
 	}
 }
@@ -219,8 +221,9 @@ func (s *IAMService) GetRoleByID(ctx context.Context, id uint64) (*model.Role, e
 
 // ListAuditLogs 分页查询审计日志，支持按 module/action 过滤。
 // BUG-05 修复：新增此方法支持 GET /api/admin/audit-logs 接口。
-func (s *IAMService) ListAuditLogs(ctx context.Context, module, action string, offset, limit int) ([]model.AuditLog, int64, error) {
-	return s.auditLogRepo.ListPaged(ctx, module, action, offset, limit)
+// A-04：审计日志读写能力迁移至独立 audit 模块，此处仅做转发。
+func (s *IAMService) ListAuditLogs(ctx context.Context, module, action string, offset, limit int) ([]auditmodel.AuditLog, int64, error) {
+	return s.auditSvc.ListPaged(ctx, module, action, offset, limit)
 }
 
 // evalPerms 从缓存的权限码列表判断是否拥有 permCode。
