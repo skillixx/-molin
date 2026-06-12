@@ -1,6 +1,6 @@
 # 前端接口参考文档
 
-> **版本**：Week 1 + Week 2 已验收（2026-06-06）；2026-06-10 补丁更新（发码拦截 + 管理员双重认证强制）；2026-06-11 接口变更同步（用户列表 keyword、角色/权限模糊搜索、实名审核 status 过滤、权限覆盖过滤参数及 snake_case 字段、实名审核详情新增 user_id/submitted_at/reviewed_at、POST 实名认证响应新增 data.id）；2026-06-12 更新（认证/角色权限/用户分组/实名认证）：分页响应字段 `list` → `items`（仅认证/角色权限/实名认证相关章节）；发送验证码接口拆分为 `/api/auth/verification-codes/email` 和 `/api/auth/verification-codes/phone` 两个独立接口，`email`/`phone`/`scene` 均为必填；手机号登录改为密码登录（`{phone, password}`）；实名认证提交响应字段修正为 `{id, status}`（`verification_id` 为设计文档冗余字段，已于 2026-06-12 从 `full-api-design.md` 中移除，不再视为缺口）；新增角色详情接口 `GET /api/admin/roles/{id}`；新增审计日志接口 `GET /api/admin/audit-logs`；新增"用户分组管理"章节（16 个接口）
+> **版本**：Week 1 + Week 2 已验收（2026-06-06）；2026-06-10 补丁更新（发码拦截 + 管理员双重认证强制）；2026-06-11 接口变更同步（用户列表 keyword、角色/权限模糊搜索、实名审核 status 过滤、权限覆盖过滤参数及 snake_case 字段、实名审核详情新增 user_id/submitted_at/reviewed_at、POST 实名认证响应新增 data.id）；2026-06-12 更新（认证/角色权限/用户分组/实名认证）：分页响应字段 `list` → `items`（仅认证/角色权限/实名认证相关章节）；发送验证码接口拆分为 `/api/auth/verification-codes/email` 和 `/api/auth/verification-codes/phone` 两个独立接口，`email`/`phone`/`scene` 均为必填；手机号登录改为密码登录（`{phone, password}`）；实名认证提交响应字段修正为 `{id, status}`（`verification_id` 为设计文档冗余字段，已于 2026-06-12 从 `full-api-design.md` 中移除，不再视为缺口）；新增角色详情接口 `GET /api/admin/roles/{id}`；新增审计日志接口 `GET /api/admin/audit-logs`；新增"用户分组管理"章节（16 个接口）；2026-06-13 更新：手机号登录改为验证码登录（`{phone, code}`，PR#20）；退出登录后当前 Access Token 立即吊销，401/40001（PR#22）；`/api/auth/login/phone`、`/api/auth/login/email` 对未注册账号统一返回 404/40404（PR#25）
 > **测试服务器**：`http://8.130.9.163:8080`
 > **鉴权方式**：所有需要登录的接口在 Header 中携带 `Authorization: Bearer <access_token>`
 
@@ -40,7 +40,7 @@
 | 40004 | 404  | 资源不存在 |
 | 40031 | 403  | 管理员未完成双重认证（手机+邮箱），需先调用 verify-phone 和 verify-email |
 | 40101 | 401  | 账号已被封禁 |
-| 40404 | 404  | 账号未注册，请先注册（登录发码时账号不存在） |
+| 40404 | 404  | 账号未注册，请先注册（登录发码时账号不存在；`/api/auth/login/phone`、`/api/auth/login/email` 本身对未注册账号也返回此码，见 §1.3） |
 | 40900 | 409  | 账号已注册（注册发码时账号已存在） |
 | 42900 | 429  | 请求频率超限 |
 | 50000 | 500  | 服务器内部错误 |
@@ -149,16 +149,38 @@
 }
 ```
 
-**POST** `/api/auth/login/phone` — 手机号 + 密码登录（与邮箱登录一致，使用 `crypto.CheckPassword` 校验密码）
+错误：
+- 邮箱未注册 → `404 40404`「邮箱未注册，请先注册」
+- 账号已被禁用 → `403 40003`
+- 密码错误 → `401 40001`「邮箱或密码错误」
+
+**POST** `/api/auth/login/phone` — 手机号 + 验证码登录（PR#20，非密码登录）
+
+登录前需先调用 `POST /api/auth/verification-codes/phone`（`scene=login`）获取验证码：
+
+```json
+// POST /api/auth/verification-codes/phone
+{
+  "phone": "13812345678",
+  "scene": "login"
+}
+```
+
+再调用登录接口：
 
 ```json
 {
   "phone": "13812345678",
-  "password": "Test1234!"
+  "code": "123456"
 }
 ```
 
-响应：同注册，返回 `access_token` / `refresh_token` / `expires_in`
+错误：
+- 验证码错误或已过期 → `400 40000`
+- 手机号未注册 → `404 40404`「手机号未注册，请先注册」
+- 账号已被禁用 → `403 40003`
+
+响应（两者一致）：同注册，返回 `access_token` / `refresh_token` / `expires_in`
 
 ---
 
@@ -187,6 +209,8 @@
 ```
 
 响应：`data: null`
+
+> **Token 即时吊销（PR#22）**：退出成功后，本次请求 `Authorization` 头携带的 Access Token 会立即被加入吊销黑名单，在自然过期前失效。此后再用该 Token 访问任意需鉴权接口均返回 `401 40001`「token 已失效，请重新登录」，前端应在退出后清除本地 Token 并跳转登录页。该吊销仅影响当前这一个 Access Token，不会影响同账号在其他设备/标签页的登录状态。
 
 ---
 
