@@ -184,13 +184,16 @@ scripts/                    建表、Migration、测试数据初始化脚本
 > Week 1 已完成，全部通过验收（2026-06-05）。33 个接口（auth 17 + iam 11 + identity 5），4 个 P1 安全问题已修复并复审通过。
 > 第一阶段收尾后新增 audit 独立模块 + iam 管理员接口共 5 个接口（A-04~A-06），并完成 A-07 补丁修复，已于 2026-06-12 验收通过（94/94，详见 `tests/audit-a04-a05-a06.md`）。
 > 另新增 iam 用户分组系统（Phase 0-3，16 个接口），支撑「超管 / 组管理员 / 普通组员」三层用户管理模型，已合并到 main（PR#1）。
+> 手机号登录由密码登录改为验证码登录（PR#20，commit `2962264`）；退出登录新增 Access Token 单 Token 即时吊销（PR#22，commit `e602b5e`），修复退出后旧 Token 仍可用的问题。
 
 | 任务 | 文件 | 状态 |
 |---|---|---|
 | pkg 基础设施（DB/Redis/crypto/jwt） | `server/pkg/` | ✅ 已完成 |
 | 用户注册（邮箱/手机号） | `modules/auth/` | ✅ 已完成 |
 | 用户登录 + JWT + Refresh Token | `modules/auth/` | ✅ 已完成 |
+| 手机号登录改为验证码登录（`POST /api/auth/login/phone` 请求体 `{phone, password}` → `{phone, code}`，需先调用 `POST /api/auth/verification-codes/phone` scene=login） | `modules/auth/` | ✅ 已完成（PR#20，commit `2962264`） |
 | 退出登录 + Token 吊销 | `modules/auth/` | ✅ 已完成 |
+| 退出登录即时吊销当前 Access Token（新增 `revoked:token:<sha256>` Redis 黑名单，`RequireAuth` 中间件命中返回 40001，吊销粒度精确到单个 Access Token，不影响同账号其他会话） | `modules/auth/`、`server/internal/middleware/auth.go` | ✅ 已完成（PR#22，commit `e602b5e`） |
 | 角色 + 权限 CRUD | `modules/iam/` | ✅ 已完成 |
 | 权限计算（4 步优先级）+ Redis 缓存 | `modules/iam/` | ✅ 已完成 |
 | RequireAuth + RequirePerm 中间件 | `server/internal/middleware/` | ✅ 已完成 |
@@ -273,6 +276,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | Axios 实例 + Token 自动刷新拦截器 | `src/api/http.ts` | ✅ 已完成 |
 | Auth Store（含实名状态）+ 路由守卫 | `src/stores/auth.ts` / `src/router/index.ts` | ✅ 已完成 |
 | 注册页（统一双 OTP）+ 登录页（邮箱/手机双 Tab） | `src/views/auth/RegisterView.vue` / `LoginView.vue` | ✅ 已完成 |
+| 登录页手机号 Tab 由密码登录改为验证码登录（新增发送验证码按钮 + 60s 倒计时，配合后端 PR#20） | `src/views/auth/LoginView.vue`、`src/stores/auth.ts`、`src/types/auth.ts`、`src/api/auth.ts` | ✅ 已完成（PR#21，commit `2d6e3c1`） |
 | 实名认证页（提交/审核中/通过/拒绝四态） | `src/views/identity/VerificationView.vue` | ✅ 已完成 |
 | 商品市场（卡片列表，响应式） | `src/views/marketplace/MarketplaceView.vue` | ✅ 已完成 |
 | OTP 密码重置页 | `src/views/auth/ResetPasswordView.vue` | ✅ 已完成 |
@@ -384,6 +388,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 **封禁机制：** 封禁用户时写入 Redis 黑名单（`blocked:user:{id}`），TTL 与 Access Token 有效期对齐；`RequireAuth` 中间件在解析 Token 后查黑名单，命中返回 401。
 
 **会话管理：** 退出登录将 `user_sessions` 记录的 `revoked_at` 置为当前时间；修改密码后吊销所有会话。
+同时退出登录会将当前 Access Token 写入 Redis 黑名单 `revoked:token:<sha256(token)>`（TTL = token 剩余有效期），`RequireAuth` 中间件校验签名通过后查询该黑名单，命中返回 40001，确保旧 Token 在自然过期前立即失效；吊销粒度精确到单个 Access Token，不影响同账号其他设备/会话（PR#22，commit `e602b5e`）。
 
 ---
 

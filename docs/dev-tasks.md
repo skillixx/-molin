@@ -14,13 +14,15 @@
 
 | 序号 | 阶段 | 任务描述 | 分支 | 状态 | 备注 |
 |---|---|---|---|---|---|
-| A-01 | Week 1 | 邮箱/手机号注册、登录、登出、Token 刷新 | `feature/backend-a-auth-register-login` | ✅ 已完成 | 直接提交 main；代码审查通过；1 个警告（验证码通过 Header 区分环境）；2026-06-11 修复补丁（A-07）：补全 GET /api/admin/users 和 GET /api/admin/users/{id} 接口 |
+| A-01 | Week 1 | 邮箱/手机号注册、登录、登出、Token 刷新 | `feature/backend-a-auth-register-login` | ✅ 已完成 | 直接提交 main；代码审查通过；1 个警告（验证码通过 Header 区分环境）；2026-06-11 修复补丁（A-07）：补全 GET /api/admin/users 和 GET /api/admin/users/{id} 接口；2026-06-12 修复补丁（A-08）：手机号登录由密码登录改为验证码登录（PR#20）；2026-06-12 修复补丁（A-09）：退出登录新增 Access Token 单 Token 即时吊销黑名单（PR#22） |
 | A-02 | Week 1 | 角色 CRUD、权限 CRUD、RBAC 用户绑定 | `feature/backend-a-iam-role-permission` | ✅ 已完成 | 直接提交 main；已修复缓存 deny 绕过安全 Bug（commit 538a525）；2026-06-11 修复补丁（A-07）：ListRoles/ListPermissions 新增 ?keyword= 搜索、permission-overrides 新增 ?effect=/?permission_code= 过滤 |
 | A-03 | Week 1 | 实名认证提交接口、审核接口、HMAC 存储 | `feature/backend-a-identity-realname` | ✅ 已完成 | 直接提交 main；代码审查通过；HMAC+masked 安全规范符合要求；2026-06-11 修复补丁（A-07）：VerificationResp 补充 user_id/submitted_at/reviewed_at，列表接口解除 pending 硬编码 |
 | A-04 | Week 1 | 审计日志 service（供各模块调用写入） | `feature/backend-a-audit-log` | ✅ 已完成 | 新增独立 audit 模块（model/repository/service），`AuditService.Record` 支持各模块写入审计记录（写入失败不阻断主流程，仅记录警告日志）；`AuditLog` 模型及只读查询从 iam 模块迁出；`GET /api/admin/audit-logs` 接口保持不变；测试工程师验收通过（2026-06-12） |
 | A-05 | Week 2 | 封禁/解封用户、强制登出所有会话 | `feature/backend-a-auth-ban-unlock` | ✅ 已完成 | 核心逻辑此前已实现（Redis 黑名单 + 吊销全部会话 + DB 状态置 disabled/active）；本次补充 operator_id/reason/ip 审计记录：`BanUser`/`UnbanUser` 写入 `audit_logs`（module=auth, action=ban_user/unban_user）；测试工程师验收通过（2026-06-12） |
 | A-06 | Week 2 | 管理员批量权限变更、角色管理接口 | `feature/backend-a-iam-admin-api` | ✅ 已完成 | 新增 4 个接口：(1) `POST /api/admin/permissions` 创建权限码；(2) `PATCH /api/admin/roles/{id}/permissions` 全量配置角色权限（事务删+插，并失效该角色下所有用户的权限缓存）；(3) `PATCH /api/admin/users/{id}/roles` 批量替换用户角色（事务删+插，失效该用户权限缓存）；(4) `PATCH /api/admin/users/{id}/permission-overrides` 批量替换用户权限覆盖（校验 effect/permission_id/expires_at，失效该用户权限缓存）；均复用 `role:manage` 权限码，未新增权限码与 migration；4 个操作均写入 audit_logs（module=iam）；测试工程师验收通过（2026-06-12，发现 1 个 P3 非阻塞问题：重复权限 code 返回 500 应为 409，另行修复） |
 | A-07 | Week 1（补丁）| 补全管理员列表接口及字段缺漏修复 | `feature/backend-auth-admin-list-fix` | ✅ 已完成 | 测试工程师验收通过（2026-06-11）；merge commit db9e746；含 migration 000014（user:list seed）；覆盖 A-01/A-02/A-03 遗漏点；修复内容：(1) 补充 GET /api/admin/users 和 GET /api/admin/users/{id}；(2) VerificationResp 补充 user_id/submitted_at/reviewed_at；(3) identity-verifications 列表解除 status 硬编码；(4) roles/permissions 列表支持 ?keyword= 搜索；(5) permission-overrides 支持 ?effect=/?permission_code= 过滤；(6) permission-overrides 响应字段名修复为 snake_case；(7) POST /api/identity/verifications 响应补充 data.id |
+| A-08 | Week 1（补丁）| 手机号登录改为验证码登录 | `feature/backend-auth-login-phone-otp` | ✅ 已完成 | PR#20（merge commit `2962264`）；`POST /api/auth/login/phone` 请求体由 `{phone, password}` 改为 `{phone, code}`，登录前需先调用 `POST /api/auth/verification-codes/phone`（scene=login）获取验证码；校验失败返回 ErrInvalidCode（40000）；未涉及 migration |
+| A-09 | Week 1（补丁）| 退出登录吊销当前 Access Token | `feature/backend-a-auth-logout-revoke-token` | ✅ 已完成 | PR#22（merge commit `e602b5e`）；新增 Redis 黑名单 `revoked:token:<sha256(token)>`（TTL=token 剩余有效期），`RequireAuth` 中间件在签名校验通过后查询该黑名单，命中返回 40001；`Logout` 函数签名新增 rawAccessToken 参数（仅内部调用，`POST /api/auth/logout` 请求/响应体不变）；吊销粒度精确到单个 Access Token，不影响同账号其他会话；未涉及 migration |
 
 ---
 
@@ -75,7 +77,7 @@
 
 | 序号 | 阶段 | 任务描述 | 分支 | 状态 | 备注 |
 |---|---|---|---|---|---|
-| FB-01 | Week 1 | 注册页（邮箱/手机号）、登录页、Token 刷新逻辑 | `feature/frontend-b-user-register-login` | ⏳ 待开始 | LoginView.vue 仅占位符 |
+| FB-01 | Week 1 | 注册页（邮箱/手机号）、登录页、Token 刷新逻辑 | `feature/frontend-b-user-register-login` | ✅ 已完成 | 已在 `feature/frontend-b-week1` 等分支完成并合并；2026-06-12 修复补丁：登录页手机号 Tab 由密码登录改为验证码登录，配合后端 PR#20（PR#21，merge commit `2d6e3c1`），新增发送验证码按钮+60s 倒计时 |
 | FB-02 | Week 1 | 实名认证提交页、认证状态展示 | `feature/frontend-b-identity-certification` | ⏳ 待开始 | |
 | FB-03 | Week 1 | 用户控制台布局骨架（顶部导航/侧栏/路由守卫）| `feature/frontend-b-user-layout` | ⏳ 待开始 | |
 | FB-04 | Week 2 | 商品市场列表、商品详情、套餐展示 | `feature/frontend-b-marketplace-browse` | ⏳ 待开始 | MarketplaceView.vue 仅占位符 |
