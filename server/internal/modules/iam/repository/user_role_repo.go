@@ -93,3 +93,34 @@ func (r *UserRoleRepository) FindRolesByUser(ctx context.Context, userID uint64)
 		Find(&roles).Error
 	return roles, err
 }
+
+// GetUserIDsByRole 查询拥有指定角色的所有用户 ID，用于修改角色权限后批量失效相关用户的权限缓存。
+func (r *UserRoleRepository) GetUserIDsByRole(ctx context.Context, roleID uint64) ([]uint64, error) {
+	var userIDs []uint64
+	err := r.db.WithContext(ctx).
+		Model(&model.UserRole{}).
+		Where("role_id = ?", roleID).
+		Pluck("user_id", &userIDs).Error
+	return userIDs, err
+}
+
+// ReplaceUserRoles 全量替换用户的角色集合：先删除该用户现有的所有角色关联，
+// 再批量插入新的角色关联（roleIDs 为空数组时仅删除，相当于清空用户所有角色）。
+// 整个操作在事务内完成，保证原子性。
+func (r *UserRoleRepository) ReplaceUserRoles(ctx context.Context, userID uint64, roleIDs []uint64) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 先删除该用户现有的所有角色关联
+		if err := tx.Where("user_id = ?", userID).Delete(&model.UserRole{}).Error; err != nil {
+			return err
+		}
+		// 再批量插入新的角色关联
+		if len(roleIDs) == 0 {
+			return nil
+		}
+		urs := make([]model.UserRole, len(roleIDs))
+		for i, rid := range roleIDs {
+			urs[i] = model.UserRole{UserID: userID, RoleID: rid}
+		}
+		return tx.Create(&urs).Error
+	})
+}

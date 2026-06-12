@@ -67,3 +67,20 @@ func (r *OverrideRepository) Create(ctx context.Context, o *model.UserPermission
 func (r *OverrideRepository) Delete(ctx context.Context, overrideID uint64) error {
 	return r.db.WithContext(ctx).Delete(&model.UserPermissionOverride{}, overrideID).Error
 }
+
+// ReplaceByUser 全量替换用户的权限覆盖集合：先删除该用户现有的所有权限覆盖记录，
+// 再批量插入新的覆盖记录（overrides 为空数组时仅删除，相当于清空该用户所有权限覆盖）。
+// 整个操作在事务内完成，保证原子性。
+func (r *OverrideRepository) ReplaceByUser(ctx context.Context, userID uint64, overrides []model.UserPermissionOverride) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 先删除该用户现有的所有权限覆盖记录
+		if err := tx.Where("user_id = ?", userID).Delete(&model.UserPermissionOverride{}).Error; err != nil {
+			return err
+		}
+		// 再批量插入新的覆盖记录
+		if len(overrides) == 0 {
+			return nil
+		}
+		return tx.Create(&overrides).Error
+	})
+}

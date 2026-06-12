@@ -65,3 +65,29 @@ func (r *PermissionRepository) FindByRoleIDs(ctx context.Context, roleIDs []uint
 		Find(&perms).Error
 	return perms, err
 }
+
+// Create 创建一个新的权限码。
+func (r *PermissionRepository) Create(ctx context.Context, perm *model.Permission) error {
+	return r.db.WithContext(ctx).Create(perm).Error
+}
+
+// SetRolePermissions 全量替换角色的权限集合：先删除该角色现有的所有权限关联，
+// 再批量插入新的权限关联（permissionIDs 为空数组时仅删除，相当于清空角色权限）。
+// 整个操作在事务内完成，保证原子性。
+func (r *PermissionRepository) SetRolePermissions(ctx context.Context, roleID uint64, permissionIDs []uint64) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 先删除该角色现有的所有权限关联
+		if err := tx.Where("role_id = ?", roleID).Delete(&model.RolePermission{}).Error; err != nil {
+			return err
+		}
+		// 再批量插入新的权限关联
+		if len(permissionIDs) == 0 {
+			return nil
+		}
+		rps := make([]model.RolePermission, len(permissionIDs))
+		for i, pid := range permissionIDs {
+			rps[i] = model.RolePermission{RoleID: roleID, PermissionID: pid}
+		}
+		return tx.Create(&rps).Error
+	})
+}

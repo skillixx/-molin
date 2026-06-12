@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"gorm.io/gorm"
 	"molin/server/internal/middleware"
 	"molin/server/internal/modules/iam/dto"
 	"molin/server/internal/modules/iam/model"
@@ -359,6 +360,107 @@ func (h *IAMHandler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		List:       list,
 		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
 	})
+}
+
+// CreatePermission POST /api/admin/permissions
+// 创建权限码，code/name/resource/action 均为必填。
+func (h *IAMHandler) CreatePermission(w http.ResponseWriter, r *http.Request) {
+	var req dto.PermissionReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	// 校验必填字段
+	if req.Code == "" || req.Name == "" || req.Resource == "" || req.Action == "" {
+		response.Error(w, http.StatusBadRequest, 40000, "code/name/resource/action 均为必填")
+		return
+	}
+	perm := &model.Permission{
+		Code:     req.Code,
+		Name:     req.Name,
+		Resource: req.Resource,
+		Action:   req.Action,
+	}
+	operatorID := middleware.UserIDFromContext(r.Context())
+	if err := h.iamSvc.CreatePermission(r.Context(), perm, operatorID, r.RemoteAddr); err != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "创建失败")
+		return
+	}
+	response.JSON(w, http.StatusCreated, dto.PermissionResp{
+		ID:       perm.ID,
+		Code:     perm.Code,
+		Name:     perm.Name,
+		Resource: perm.Resource,
+		Action:   perm.Action,
+	})
+}
+
+// SetRolePermissions PATCH /api/admin/roles/{id}/permissions
+// 全量配置角色的权限集合，permission_ids 为空数组表示清空该角色权限。
+func (h *IAMHandler) SetRolePermissions(w http.ResponseWriter, r *http.Request) {
+	roleID, err := pathUint64(r, "id")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "无效角色 ID")
+		return
+	}
+	var req dto.SetRolePermissionsReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	operatorID := middleware.UserIDFromContext(r.Context())
+	if err := h.iamSvc.SetRolePermissions(r.Context(), roleID, req.PermissionIDs, operatorID, r.RemoteAddr); err != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "设置失败")
+		return
+	}
+	response.JSON(w, http.StatusOK, "updated")
+}
+
+// ReplaceUserRoles PATCH /api/admin/users/{id}/roles
+// 全量替换用户的角色集合，role_ids 为空数组表示清空该用户所有角色。
+func (h *IAMHandler) ReplaceUserRoles(w http.ResponseWriter, r *http.Request) {
+	userID, err := pathUint64(r, "id")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "无效用户 ID")
+		return
+	}
+	var req dto.ReplaceUserRolesReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	operatorID := middleware.UserIDFromContext(r.Context())
+	if err := h.iamSvc.ReplaceUserRoles(r.Context(), userID, req.RoleIDs, operatorID, req.Reason, r.RemoteAddr); err != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "更新失败")
+		return
+	}
+	response.JSON(w, http.StatusOK, "updated")
+}
+
+// ReplaceUserOverrides PATCH /api/admin/users/{id}/permission-overrides
+// 全量替换用户的权限覆盖集合，items 为空数组表示清空该用户所有权限覆盖。
+func (h *IAMHandler) ReplaceUserOverrides(w http.ResponseWriter, r *http.Request) {
+	userID, err := pathUint64(r, "id")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "无效用户 ID")
+		return
+	}
+	var req dto.ReplaceOverridesReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	operatorID := middleware.UserIDFromContext(r.Context())
+	if err := h.iamSvc.ReplaceUserOverrides(r.Context(), userID, req.Items, operatorID, r.RemoteAddr); err != nil {
+		// effect 不合法、expires_at 格式不合法、permission_id 不存在均返回 400
+		if errors.Is(err, service.ErrInvalidEffect) || errors.Is(err, service.ErrInvalidExpiresAt) || errors.Is(err, gorm.ErrRecordNotFound) {
+			response.Error(w, http.StatusBadRequest, 40000, "请求参数错误："+err.Error())
+			return
+		}
+		response.Error(w, http.StatusInternalServerError, 50000, "更新失败")
+		return
+	}
+	response.JSON(w, http.StatusOK, "updated")
 }
 
 // pathUint64 从 Go 1.22 路由 PathValue 中解析 uint64 参数。

@@ -60,3 +60,35 @@ type OverrideResp struct {
 	CreatedBy      *uint64 `json:"created_by,omitempty"`
 	CreatedAt      string  `json:"created_at"` // ISO 8601
 }
+
+// PermissionReq 创建权限请求。
+type PermissionReq struct {
+	Code     string `json:"code"`
+	Name     string `json:"name"`
+	Resource string `json:"resource"`
+	Action   string `json:"action"`
+}
+
+// SetRolePermissionsReq 配置角色权限请求（全量替换）。
+type SetRolePermissionsReq struct {
+	PermissionIDs []uint64 `json:"permission_ids"`
+}
+
+// ReplaceUserRolesReq 批量替换用户角色请求（全量替换）。
+type ReplaceUserRolesReq struct {
+	RoleIDs []uint64 `json:"role_ids"`
+	Reason  *string  `json:"reason,omitempty"`
+}
+
+// OverrideItemReq 批量替换用户权限覆盖时的单项内容。
+type OverrideItemReq struct {
+	PermissionID uint64  `json:"permission_id"`
+	Effect       string  `json:"effect"` // allow / deny
+	Reason       *string `json:"reason,omitempty"`
+	ExpiresAt    *string `json:"expires_at,omitempty"` // ISO 8601
+}
+
+// ReplaceOverridesReq 批量替换用户权限覆盖请求（全量替换）。
+type ReplaceOverridesReq struct {
+	Items []OverrideItemReq `json:"items"`
+}
