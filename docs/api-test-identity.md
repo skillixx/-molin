@@ -73,7 +73,6 @@ Base URL：http://8.130.9.163:8080
   "message": "ok",
   "data": {
     "id": 1,
-    "verification_id": 1,
     "status": "pending"
   }
 }

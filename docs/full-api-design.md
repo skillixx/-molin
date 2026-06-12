@@ -334,8 +334,7 @@ attachments 字段：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| id | integer | 新建实名认证记录 ID（同 verification_id） |
-| verification_id | integer | 实名认证记录 ID |
+| id | integer | 新建实名认证记录 ID |
 | status | string | 审核状态：pending |
 
 ### 2.12 查询最新实名认证
