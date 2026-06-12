@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"molin/server/internal/config"
 	"molin/server/internal/middleware"
@@ -107,13 +108,16 @@ func (h *AuthHandler) LoginPhone(w http.ResponseWriter, r *http.Request) {
 }
 
 // Logout POST /api/auth/logout
+// 同时吊销请求体中的 Refresh Token（对应会话标记 revoked）和请求头中携带的当前 Access Token
+// （写入 Redis 吊销黑名单，使其在自然过期前立即失效）。
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	var req dto.LogoutReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
-	_ = h.authSvc.Logout(r.Context(), req.RefreshToken)
+	rawAccessToken := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	_ = h.authSvc.Logout(r.Context(), req.RefreshToken, rawAccessToken)
 	response.JSON(w, http.StatusOK, nil)
 }
 

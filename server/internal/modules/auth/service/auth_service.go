@@ -42,6 +42,10 @@ var (
 // TTL 与 Access Token 有效期一致，Token 自然过期后黑名单也同步失效。
 const blockedUserKeyFmt = "blocked:user:%d"
 
+// revokedTokenKeyFmt 退出登录后被吊销的 Access Token 在 Redis 中的 key 格式（value 为 token 的 SHA-256），
+// TTL = token 剩余有效期，自然过期后黑名单同步失效。
+const revokedTokenKeyFmt = "revoked:token:%s"
+
 // AuthService 负责注册、登录、退出、刷新令牌、修改密码、封禁/解封用户。
 type AuthService struct {
 	userRepo     *repository.UserRepository
@@ -242,14 +246,38 @@ func (s *AuthService) LoginPhone(ctx context.Context, req dto.LoginPhoneReq, ip,
 	return s.generateTokenPair(ctx, user)
 }
 
-// Logout 吊销 Refresh Token。
-func (s *AuthService) Logout(ctx context.Context, rawRefreshToken string) error {
+// Logout 退出登录：吊销 Refresh Token 对应的会话，并将当前 Access Token 加入吊销黑名单，
+// 使其在自然过期前立即失效（RequireAuth 中间件会查询该黑名单）。
+// rawAccessToken 解析失败或写入 Redis 失败均不影响退出登录主流程（仍按"已退出"处理）。
+func (s *AuthService) Logout(ctx context.Context, rawRefreshToken, rawAccessToken string) error {
+	// 1. 吊销 Refresh Token 对应的会话
 	hash := crypto.HMAC256(rawRefreshToken, s.cfg.RefreshTokenSecret)
-	session, err := s.sessionRepo.FindByHash(ctx, hash)
-	if err != nil || session == nil {
-		return nil // 已过期或不存在，视为成功
+	if session, err := s.sessionRepo.FindByHash(ctx, hash); err == nil && session != nil {
+		_ = s.sessionRepo.Revoke(ctx, session.ID)
 	}
-	return s.sessionRepo.Revoke(ctx, session.ID)
+
+	// 2. 将当前 Access Token 加入吊销黑名单，TTL = token 剩余有效期
+	s.revokeAccessToken(ctx, rawAccessToken)
+
+	return nil
+}
+
+// revokeAccessToken 解析 Access Token 的剩余有效期，并写入 Redis 吊销黑名单。
+// 解析失败、token 已过期或 Redis 写入失败时静默跳过，不返回错误。
+func (s *AuthService) revokeAccessToken(ctx context.Context, rawAccessToken string) {
+	if rawAccessToken == "" {
+		return
+	}
+	claims, err := pkgjwt.Parse(rawAccessToken, s.cfg.JWTSecret)
+	if err != nil || claims.ExpiresAt == nil {
+		return
+	}
+	ttl := time.Until(claims.ExpiresAt.Time)
+	if ttl <= 0 {
+		return
+	}
+	key := fmt.Sprintf(revokedTokenKeyFmt, crypto.SHA256Hex(rawAccessToken))
+	_ = s.redis.Set(ctx, key, "1", ttl).Err()
 }
 
 // Refresh 轮换 Refresh Token，返回新 token 对。
@@ -486,6 +514,17 @@ func (s *AuthService) IsUserBlocked(ctx context.Context, userID uint64) bool {
 	val, err := s.redis.Get(ctx, key).Result()
 	if err != nil {
 		// key 不存在或 Redis 故障，默认放行（保可用性优先；故障时封禁通过 DB status 兜底）
+		return false
+	}
+	return val == "1"
+}
+
+// IsAccessTokenRevoked 查询 Redis 黑名单，判断该 Access Token 是否已因退出登录被吊销。
+// 供 RequireAuth 中间件调用；Redis 故障时 fail-open（与 IsUserBlocked 一致，保可用性优先）。
+func (s *AuthService) IsAccessTokenRevoked(ctx context.Context, rawToken string) bool {
+	key := fmt.Sprintf(revokedTokenKeyFmt, crypto.SHA256Hex(rawToken))
+	val, err := s.redis.Get(ctx, key).Result()
+	if err != nil {
 		return false
 	}
 	return val == "1"
