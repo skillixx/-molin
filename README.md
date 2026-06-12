@@ -38,6 +38,13 @@ Week 4（2026-06-07 验收通过）：
 - iam：新增 4 个管理员接口——创建权限码、角色权限全量配置、用户角色批量替换、用户权限覆盖批量替换，均复用 `role:manage` 权限码并写入审计日志（module=iam）
 - 补丁：补全管理员用户列表/详情接口、实名认证响应字段、角色与权限列表关键字搜索、权限覆盖过滤参数及字段命名修复（含 Migration 000014）
 
+iam 用户分组系统（Phase 0-3，已合并到 main）：
+- 新增「用户分组」能力，支撑「超级管理员 / 组管理员 / 普通组员」三层用户管理模型：分组 CRUD、成员管理（增删改/角色）、组权限配置、邀请码管理共 16 个管理员接口，均挂在 `/api/admin/user-groups*` 下（需 `group:manage` 权限 + 管理员双重认证）
+- 权限计算合并「角色权限 ∪ 组权限」：组员自动继承所在分组配置的权限码，`perm:user:{id}` 缓存内容随之扩展，失效触发点覆盖成员增删/角色变更/组权限增删
+- 新增数据范围（Data Scope）中间件：拥有 `scope:all` 权限的超管不受限，组管理员只能查看/操作自己管辖分组内的用户；已接入管理员用户列表 `GET /api/admin/users` 与详情 `GET /api/admin/users/{id}`，`scope:user:{id}` 单独缓存
+- Migration 000015（新增 `user_groups`/`user_group_members`/`group_permissions`/`group_invite_codes` 四张表）、000016（seed `group:manage`、`scope:all` 权限码并绑定 admin 角色）
+- 邀请码当前仅支持管理员侧的生成/查询/停用，尚未接入注册流程（按邀请码自动落组为后续阶段）
+
 ---
 
 ## 快速启动
@@ -176,6 +183,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 > Week 1 已完成，全部通过验收（2026-06-05）。33 个接口（auth 17 + iam 11 + identity 5），4 个 P1 安全问题已修复并复审通过。
 > 第一阶段收尾后新增 audit 独立模块 + iam 管理员接口共 5 个接口（A-04~A-06），并完成 A-07 补丁修复，已于 2026-06-12 验收通过（94/94，详见 `tests/audit-a04-a05-a06.md`）。
+> 另新增 iam 用户分组系统（Phase 0-3，16 个接口），支撑「超管 / 组管理员 / 普通组员」三层用户管理模型，已合并到 main（PR#1）。
 
 | 任务 | 文件 | 状态 |
 |---|---|---|
@@ -204,6 +212,12 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | 管理员接口：用户权限覆盖批量替换 `PATCH /api/admin/users/{id}/permission-overrides` | `modules/iam/` | ✅ 已完成（A-06） |
 | 管理员用户列表/详情、实名认证响应字段补全、角色/权限关键字搜索、权限覆盖过滤参数及字段命名修复 | `modules/auth/`、`modules/iam/`、`modules/identity/` | ✅ 已完成（A-07） |
 | Migration 000014（user:list 权限码种子数据） | `server/migrations/` | ✅ 已完成（A-07） |
+| 用户分组 CRUD（`/api/admin/user-groups`，需 `group:manage` 权限） | `modules/iam/handler/group_handler.go`、`service/group_service.go`、`repository/group_repo.go` | ✅ 已完成 |
+| 分组成员管理（增删改组内角色 `/api/admin/user-groups/{id}/members*`、查用户所在分组 `/api/admin/users/{id}/groups`） | `modules/iam/handler/group_handler.go` | ✅ 已完成 |
+| 分组权限配置（`/api/admin/user-groups/{id}/permissions*`） + 组员继承组权限（角色权限 ∪ 组权限，权限缓存随成员/组权限变更失效） | `modules/iam/service/iam_service.go`、`group_service.go` | ✅ 已完成 |
+| 分组邀请码管理（生成/查询/停用 `/api/admin/user-groups/{id}/invite-codes*`，尚未接入注册流程） | `modules/iam/handler/group_handler.go`、`repository/group_repo.go` | ✅ 已完成 |
+| 数据范围中间件（组管理员仅可见本组用户，超管 `scope:all` 不受限，已接入管理员用户列表/详情） | `server/internal/middleware/scope.go`、`modules/iam/service/scope_service.go`、`modules/auth/handler/auth_handler.go` | ✅ 已完成 |
+| Migration 000015（用户分组基础表 ×4）、000016（`group:manage`/`scope:all` 权限码 seed） | `server/migrations/` | ✅ 已完成 |
 
 ### 后端 B（product / order / billing / finance_consumer）
 
@@ -394,6 +408,16 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | `GET /api/admin/identity-verifications` | ✅ 已支持分页 |
 | `GET /api/admin/users/{id}/permission-overrides` | ✅ 已支持分页 |
 | `GET /api/admin/audit-logs` | ✅ 已支持分页 |
+
+**用户分组系统新增分页接口：**
+
+| 接口 | 状态 |
+|---|---|
+| `GET /api/admin/user-groups` | ✅ 已支持分页（支持 `type`/`keyword` 过滤） |
+| `GET /api/admin/user-groups/{id}/members` | ✅ 已支持分页（支持 `group_role` 过滤） |
+| `GET /api/admin/user-groups/{id}/invite-codes` | ✅ 已支持分页（支持 `status` 过滤） |
+
+> 注：分页响应字段名已统一为 `data.items`（详见 PR#3 `82605dd`），上方"核心约定"中的 `data.list` 为历史描述，待统一勘误。
 
 ---
 
