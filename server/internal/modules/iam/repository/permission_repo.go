@@ -2,10 +2,15 @@ package repository
 
 import (
 	"context"
+	"errors"
 
+	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
 	"molin/server/internal/modules/iam/model"
 )
+
+// ErrPermissionCodeExists 权限码已存在（违反 uk_permissions_code 唯一约束）。
+var ErrPermissionCodeExists = errors.New("权限码已存在")
 
 // PermissionRepository 权限数据访问层。
 type PermissionRepository struct {
@@ -66,9 +71,18 @@ func (r *PermissionRepository) FindByRoleIDs(ctx context.Context, roleIDs []uint
 	return perms, err
 }
 
-// Create 创建一个新的权限码。
+// Create 创建一个新的权限码。若 code 已存在（违反唯一键），返回 ErrPermissionCodeExists。
 func (r *PermissionRepository) Create(ctx context.Context, perm *model.Permission) error {
-	return r.db.WithContext(ctx).Create(perm).Error
+	err := r.db.WithContext(ctx).Create(perm).Error
+	if err != nil {
+		// 捕获 MySQL 唯一键冲突错误（error number 1062），转换为业务错误
+		var mysqlErr *mysql.MySQLError
+		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+			return ErrPermissionCodeExists
+		}
+		return err
+	}
+	return nil
 }
 
 // SetRolePermissions 全量替换角色的权限集合：先删除该角色现有的所有权限关联，
