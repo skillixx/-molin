@@ -36,10 +36,10 @@ export interface LoginEmailBody {
   password: string
 }
 
-// 手机号登录请求体
+// 手机号验证码登录请求体
 export interface LoginPhoneBody {
   phone: string
-  password: string
+  code: string
 }
 
 // 统一注册请求体（手机号+邮箱必须同时提交，需双重 OTP 验证码）
