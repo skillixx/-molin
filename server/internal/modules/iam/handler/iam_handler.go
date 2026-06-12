@@ -383,6 +383,11 @@ func (h *IAMHandler) CreatePermission(w http.ResponseWriter, r *http.Request) {
 	}
 	operatorID := middleware.UserIDFromContext(r.Context())
 	if err := h.iamSvc.CreatePermission(r.Context(), perm, operatorID, r.RemoteAddr); err != nil {
+		// 权限码已存在：返回 409 Conflict
+		if errors.Is(err, repository.ErrPermissionCodeExists) {
+			response.Error(w, http.StatusConflict, 40900, "权限码已存在")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, 50000, "创建失败")
 		return
 	}
