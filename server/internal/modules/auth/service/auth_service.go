@@ -7,12 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 
 	"molin/server/internal/config"
+	auditservice "molin/server/internal/modules/audit/service"
 	"molin/server/internal/modules/auth/dto"
 	"molin/server/internal/modules/auth/model"
 	"molin/server/internal/modules/auth/repository"
@@ -48,6 +50,7 @@ type AuthService struct {
 	loginLogRepo *repository.LoginLogRepository
 	cfg          config.Config
 	redis        *redis.Client
+	auditSvc     *auditservice.AuditService
 }
 
 func NewAuthService(
@@ -57,6 +60,7 @@ func NewAuthService(
 	loginLogRepo *repository.LoginLogRepository,
 	cfg config.Config,
 	redisClient *redis.Client,
+	auditSvc *auditservice.AuditService,
 ) *AuthService {
 	return &AuthService{
 		userRepo:     userRepo,
@@ -65,6 +69,7 @@ func NewAuthService(
 		loginLogRepo: loginLogRepo,
 		cfg:          cfg,
 		redis:        redisClient,
+		auditSvc:     auditSvc,
 	}
 }
 
@@ -425,7 +430,8 @@ func (s *AuthService) recordLogin(ctx context.Context, userID *uint64, loginType
 // BanUser 封禁用户：将 userID 写入 Redis 黑名单，TTL 与 Access Token 有效期一致。
 // 封禁后其存量 Access Token 在 TTL 内将被 RequireAuth 中间件拦截，返回 401。
 // 同时吊销该用户全部 Refresh Token，阻止其刷新获得新 Token。
-func (s *AuthService) BanUser(ctx context.Context, userID uint64) error {
+// operatorID/reason/ip 用于写入审计日志（A-05）：审计写入失败不影响封禁本身的成功结果。
+func (s *AuthService) BanUser(ctx context.Context, userID uint64, operatorID uint64, reason, ip string) error {
 	// 1. 数据库标记用户为 disabled
 	if err := s.userRepo.UpdateStatus(ctx, userID, "disabled"); err != nil {
 		return err
@@ -437,18 +443,41 @@ func (s *AuthService) BanUser(ctx context.Context, userID uint64) error {
 		return fmt.Errorf("写入封禁黑名单失败: %w", err)
 	}
 	// 3. 吊销该用户所有 Refresh Token，防止其刷新令牌获得新 Access Token
-	return s.sessionRepo.RevokeAllByUser(ctx, userID)
+	if err := s.sessionRepo.RevokeAllByUser(ctx, userID); err != nil {
+		return err
+	}
+	// 4. 写入审计日志（记录操作人和封禁原因），失败仅记录警告，不影响封禁结果
+	s.recordBanAudit(ctx, "ban_user", userID, operatorID, reason, ip)
+	return nil
 }
 
 // UnbanUser 解封用户：从 Redis 黑名单移除，并将用户状态恢复为 active。
-func (s *AuthService) UnbanUser(ctx context.Context, userID uint64) error {
+// operatorID/reason/ip 用于写入审计日志（A-05）：审计写入失败不影响解封本身的成功结果。
+func (s *AuthService) UnbanUser(ctx context.Context, userID uint64, operatorID uint64, reason, ip string) error {
 	// 1. 删除 Redis 黑名单 key（立即解除拦截）
 	key := fmt.Sprintf(blockedUserKeyFmt, userID)
 	if err := s.redis.Del(ctx, key).Err(); err != nil {
 		return fmt.Errorf("删除封禁黑名单失败: %w", err)
 	}
 	// 2. 恢复数据库状态
-	return s.userRepo.UpdateStatus(ctx, userID, "active")
+	if err := s.userRepo.UpdateStatus(ctx, userID, "active"); err != nil {
+		return err
+	}
+	// 3. 写入审计日志（记录操作人和解封原因），失败仅记录警告，不影响解封结果
+	s.recordBanAudit(ctx, "unban_user", userID, operatorID, reason, ip)
+	return nil
+}
+
+// recordBanAudit 写入封禁/解封操作的审计日志。
+// 审计写入失败不会影响调用方已经成功的主业务操作，错误仅由 AuditService 内部记录警告日志。
+func (s *AuthService) recordBanAudit(ctx context.Context, action string, userID, operatorID uint64, reason, ip string) {
+	if s.auditSvc == nil {
+		return
+	}
+	targetType := "user"
+	targetID := strconv.FormatUint(userID, 10)
+	op := operatorID
+	_ = s.auditSvc.Record(ctx, &op, "auth", action, &targetType, &targetID, ip, map[string]string{"reason": reason})
 }
 
 // IsUserBlocked 查询 Redis 黑名单，判断用户是否处于封禁状态。

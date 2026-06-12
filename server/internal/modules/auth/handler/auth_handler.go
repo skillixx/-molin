@@ -265,6 +265,7 @@ func (h *AuthHandler) UpdateEmail(w http.ResponseWriter, r *http.Request) {
 // UpdateUserStatus PATCH /api/admin/users/{id}/status — 管理员封禁/解封用户
 // status=disabled 时调用 BanUser（写入 Redis 黑名单 + 吊销全部会话 + DB 状态置为 disabled）
 // status=active   时调用 UnbanUser（解除 Redis 黑名单 + DB 状态恢复 active）
+// A-05：记录操作人 ID、客户端 IP 和操作原因（reason），写入审计日志。
 func (h *AuthHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 	targetUserID, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -278,14 +279,18 @@ func (h *AuthHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 操作人 ID（来自已登录的管理员）和客户端 IP，用于审计日志
+	operatorID := middleware.UserIDFromContext(r.Context())
+	ip := r.RemoteAddr
+
 	switch req.Status {
 	case "disabled":
-		if err := h.authSvc.BanUser(r.Context(), targetUserID); err != nil {
+		if err := h.authSvc.BanUser(r.Context(), targetUserID, operatorID, req.Reason, ip); err != nil {
 			response.Error(w, http.StatusInternalServerError, 50000, "封禁用户失败")
 			return
 		}
 	case "active":
-		if err := h.authSvc.UnbanUser(r.Context(), targetUserID); err != nil {
+		if err := h.authSvc.UnbanUser(r.Context(), targetUserID, operatorID, req.Reason, ip); err != nil {
 			response.Error(w, http.StatusInternalServerError, 50000, "解封用户失败")
 			return
 		}
