@@ -32,6 +32,12 @@ Week 4（2026-06-07 验收通过）：
 > 至此，第一阶段所有已知问题（含本次权限码根因修复）均已完整闭环，无遗留 P0/P1/P2 问题，
 > 详见验收报告 `tests/audit-stage1-final.md`，第一阶段正式画上句号，建议进入正式上线/下一阶段开发。
 
+第一阶段收尾后，后端 A 又新增以下功能（已合并到 main 并通过测试环境验证，详见 `tests/audit-a04-a05-a06.md`）：
+- audit：新增独立审计日志模块（`server/internal/modules/audit/`），`AuditService.Record` 供各模块统一写入审计记录；`AuditLog` 模型与 `GET /api/admin/audit-logs` 只读查询从 iam 模块迁出，接口行为不变
+- auth：封禁/解封用户（`BanUser`/`UnbanUser`）补充 operator_id / reason / ip 审计记录，写入 `audit_logs`（module=auth）
+- iam：新增 4 个管理员接口——创建权限码、角色权限全量配置、用户角色批量替换、用户权限覆盖批量替换，均复用 `role:manage` 权限码并写入审计日志（module=iam）
+- 补丁：补全管理员用户列表/详情接口、实名认证响应字段、角色与权限列表关键字搜索、权限覆盖过滤参数及字段命名修复（含 Migration 000014）
+
 ---
 
 ## 快速启动
@@ -163,12 +169,13 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 ## 开发进度
 
-> 最后更新：2026-06-11
+> 最后更新：2026-06-12
 > 当前阶段：**Week 1 已验收（2026-06-05），Week 2 已验收（2026-06-06），Week 3 已验收（2026-06-07），Week 4 已验收（2026-06-07），第一阶段（Week 1-4）已于 2026-06-07 正式验收通过，并于 2026-06-08 完成最终收尾确认，正式画上句号 ✅（端到端验收 37/37 全部通过，详见 `tests/audit-stage1-final.md`；收尾确认 6/6 全部通过，详见 `tests/audit-stage1-closing-confirm.md`）**
 
-### 后端 A（auth / iam / identity）
+### 后端 A（auth / iam / identity / audit）
 
 > Week 1 已完成，全部通过验收（2026-06-05）。33 个接口（auth 17 + iam 11 + identity 5），4 个 P1 安全问题已修复并复审通过。
+> 第一阶段收尾后新增 audit 独立模块 + iam 管理员接口共 5 个接口（A-04~A-06），并完成 A-07 补丁修复，已于 2026-06-12 验收通过（94/94，详见 `tests/audit-a04-a05-a06.md`）。
 
 | 任务 | 文件 | 状态 |
 |---|---|---|
@@ -188,6 +195,15 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | 管理员双重认证（手机+邮箱） | `modules/auth/` | ✅ 已完成 |
 | 个人信息中心（修改用户名/手机/邮箱） | `modules/auth/` | ✅ 已完成 |
 | Migration 000005（users 表 username + admin_verify 字段） | `server/migrations/` | ✅ 已完成 |
+| 独立 audit 模块（AuditService.Record，供各模块写入审计记录） | `modules/audit/` | ✅ 已完成（A-04） |
+| 审计日志只读查询接口 `GET /api/admin/audit-logs` | `modules/iam/` | ✅ 已完成（A-04） |
+| 封禁/解封用户审计记录（operator_id/reason/ip） | `modules/auth/service/auth_service.go` | ✅ 已完成（A-05） |
+| 管理员接口：创建权限码 `POST /api/admin/permissions` | `modules/iam/` | ✅ 已完成（A-06） |
+| 管理员接口：角色权限全量配置 `PATCH /api/admin/roles/{id}/permissions` | `modules/iam/` | ✅ 已完成（A-06） |
+| 管理员接口：用户角色批量替换 `PATCH /api/admin/users/{id}/roles` | `modules/iam/` | ✅ 已完成（A-06） |
+| 管理员接口：用户权限覆盖批量替换 `PATCH /api/admin/users/{id}/permission-overrides` | `modules/iam/` | ✅ 已完成（A-06） |
+| 管理员用户列表/详情、实名认证响应字段补全、角色/权限关键字搜索、权限覆盖过滤参数及字段命名修复 | `modules/auth/`、`modules/iam/`、`modules/identity/` | ✅ 已完成（A-07） |
+| Migration 000014（user:list 权限码种子数据） | `server/migrations/` | ✅ 已完成（A-07） |
 
 ### 后端 B（product / order / billing / finance_consumer）
 
@@ -377,6 +393,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | `GET /api/admin/users/{id}/roles` | ✅ 已支持分页 |
 | `GET /api/admin/identity-verifications` | ✅ 已支持分页 |
 | `GET /api/admin/users/{id}/permission-overrides` | ✅ 已支持分页 |
+| `GET /api/admin/audit-logs` | ✅ 已支持分页 |
 
 ---
 
