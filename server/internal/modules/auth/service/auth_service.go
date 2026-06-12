@@ -213,7 +213,7 @@ func (s *AuthService) LoginEmail(ctx context.Context, req dto.LoginEmailReq, ip,
 	user, err := s.userRepo.FindByEmail(ctx, req.Email)
 	if err != nil {
 		s.recordLogin(ctx, nil, "email", req.Email, ip, ua, "failed")
-		return nil, ErrUnauthorized
+		return nil, ErrEmailNotRegistered
 	}
 	if user.Status == "disabled" {
 		return nil, ErrUserDisabled
@@ -233,7 +233,7 @@ func (s *AuthService) LoginPhone(ctx context.Context, req dto.LoginPhoneReq, ip,
 	user, err := s.userRepo.FindByPhone(ctx, req.Phone)
 	if err != nil {
 		s.recordLogin(ctx, nil, "phone", req.Phone, ip, ua, "failed")
-		return nil, ErrUnauthorized
+		return nil, ErrPhoneNotRegistered
 	}
 	if user.Status == "disabled" {
 		return nil, ErrUserDisabled
