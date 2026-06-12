@@ -1,14 +1,15 @@
 <script setup lang="ts">
 /**
  * 登录页
- * 支持邮箱密码登录和手机号密码登录
+ * 支持邮箱密码登录和手机号验证码登录
  * 登录成功后跳转到商品市场
  */
-import { ref, reactive } from 'vue'
+import { ref, reactive, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import { sendPhoneCode } from '@/api/auth'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -19,11 +20,18 @@ const activeTab = ref<'email' | 'phone'>('email')
 // 邮箱登录表单
 const emailForm = reactive({ email: '', password: '' })
 
-// 手机号登录表单
-const phoneForm = reactive({ phone: '', password: '' })
+// 手机号验证码登录表单
+const phoneForm = reactive({ phone: '', code: '' })
 
 // 提交状态
 const submitting = ref(false)
+
+// 发送验证码状态
+const sendingCode = ref(false)
+
+// 60s 倒计时
+const countdown = ref(0)
+let countdownTimer: ReturnType<typeof setInterval>
 
 // 表单 ref
 const emailFormRef = ref<FormInstance>()
@@ -44,7 +52,10 @@ const phoneRules: FormRules = {
     { required: true, message: '请输入手机号', trigger: 'blur' },
     { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的11位手机号', trigger: 'blur' },
   ],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+  code: [
+    { required: true, message: '请输入验证码', trigger: 'blur' },
+    { len: 6, message: '验证码为6位数字', trigger: 'blur' },
+  ],
 }
 
 // =================== 登录 ===================
@@ -63,19 +74,62 @@ async function handleEmailLogin() {
   }
 }
 
+// 发送手机验证码（登录场景），60s 倒计时
+async function sendLoginCode() {
+  if (countdown.value > 0 || sendingCode.value) return
+
+  // 发送前单独校验手机号格式
+  const valid = await phoneFormRef.value
+    ?.validateField('phone')
+    .then(() => true)
+    .catch(() => false)
+  if (!valid) return
+
+  sendingCode.value = true
+  try {
+    await sendPhoneCode(phoneForm.phone, 'login')
+    ElMessage.success('验证码已发送，请查收')
+    countdown.value = 60
+    countdownTimer = setInterval(() => {
+      countdown.value--
+      if (countdown.value <= 0) clearInterval(countdownTimer)
+    }, 1000)
+  } catch (err: unknown) {
+    const code = (err as { response?: { data?: { code?: number } } })?.response?.data?.code
+    if (code === 42900) {
+      ElMessage.error('发送频率超限，请稍后再试')
+    } else if (code === 40404) {
+      ElMessage.error('该手机号未注册')
+    } else {
+      ElMessage.error('发送失败，请稍后重试')
+    }
+  } finally {
+    sendingCode.value = false
+  }
+}
+
 async function handlePhoneLogin() {
   const valid = await phoneFormRef.value?.validate().catch(() => false)
   if (!valid) return
 
   submitting.value = true
   try {
-    await authStore.loginWithPhone(phoneForm.phone, phoneForm.password)
+    await authStore.loginWithPhone(phoneForm.phone, phoneForm.code)
     ElMessage.success('登录成功')
     router.push('/marketplace')
+  } catch (err: unknown) {
+    const code = (err as { response?: { data?: { code?: number } } })?.response?.data?.code
+    if (code === 40000) {
+      ElMessage.error('验证码错误或已过期')
+    } else if (code === 40404) {
+      ElMessage.error('该手机号未注册')
+    }
   } finally {
     submitting.value = false
   }
 }
+
+onUnmounted(() => clearInterval(countdownTimer))
 </script>
 
 <template>
@@ -130,7 +184,7 @@ async function handlePhoneLogin() {
           </el-form>
         </el-tab-pane>
 
-        <!-- 手机号密码登录 -->
+        <!-- 手机号验证码登录 -->
         <el-tab-pane label="手机号登录" name="phone">
           <el-form
             ref="phoneFormRef"
@@ -149,14 +203,22 @@ async function handlePhoneLogin() {
               />
             </el-form-item>
 
-            <el-form-item label="密码" prop="password">
-              <el-input
-                v-model="phoneForm.password"
-                type="password"
-                placeholder="请输入密码"
-                show-password
-                autocomplete="current-password"
-              />
+            <el-form-item label="验证码" prop="code">
+              <div class="code-row">
+                <el-input
+                  v-model="phoneForm.code"
+                  placeholder="请输入6位验证码"
+                  maxlength="6"
+                  autocomplete="one-time-code"
+                />
+                <button
+                  class="code-btn"
+                  :disabled="countdown > 0 || sendingCode"
+                  @click.prevent="sendLoginCode"
+                >
+                  {{ countdown > 0 ? `${countdown}s 后重发` : (sendingCode ? '发送中...' : '发送验证码') }}
+                </button>
+              </div>
             </el-form-item>
 
             <el-form-item>
@@ -216,6 +278,42 @@ async function handlePhoneLogin() {
 
 .auth-form {
   margin-top: 16px;
+}
+
+/* 验证码行 */
+.code-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.code-row .el-input {
+  flex: 1;
+}
+
+.code-btn {
+  flex-shrink: 0;
+  padding: 0 14px;
+  height: 32px;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid var(--color-border);
+  color: var(--color-primary);
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.code-btn:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: var(--color-primary);
+}
+
+.code-btn:disabled {
+  color: var(--color-text-disabled);
+  border-color: rgba(99, 102, 241, 0.1);
+  cursor: not-allowed;
 }
 
 .auth-footer {
