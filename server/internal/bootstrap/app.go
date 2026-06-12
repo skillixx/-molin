@@ -13,6 +13,8 @@ import (
 	assetmod "molin/server/internal/modules/asset"
 	assetdto "molin/server/internal/modules/asset/dto"
 	assetsvc "molin/server/internal/modules/asset/service"
+	auditrepository "molin/server/internal/modules/audit/repository"
+	auditservice "molin/server/internal/modules/audit/service"
 	authmod "molin/server/internal/modules/auth"
 	authrep "molin/server/internal/modules/auth/repository"
 	authsvc "molin/server/internal/modules/auth/service"
@@ -148,14 +150,19 @@ func NewApp() (*App, error) {
 		return nil, fmt.Errorf("Redis 初始化失败: %w", err)
 	}
 
+	// ——— Audit 模块（独立审计日志服务，供 auth/iam/identity 等模块调用写入）———
+	// A-04：审计日志读写能力从 iam 模块迁出，独立为 audit 模块
+	auditRepo := auditrepository.NewAuditLogRepository(gormDB)
+	auditSvc := auditservice.NewAuditService(auditRepo)
+
 	// ——— Auth 模块 ———
 	userRepo := authrep.NewUserRepository(gormDB)
 	sessionRepo := authrep.NewSessionRepository(gormDB)
 	verificationRepo := authrep.NewVerificationRepository(gormDB)
 	loginLogRepo := authrep.NewLoginLogRepository(gormDB)
 	verifySvc := authsvc.NewVerificationService(verificationRepo)
-	// 传入 redisClient，用于封禁用户黑名单（P1-01 修复）
-	authService := authsvc.NewAuthService(userRepo, sessionRepo, verifySvc, loginLogRepo, cfg, redisClient)
+	// 传入 redisClient，用于封禁用户黑名单（P1-01 修复）；传入 auditSvc 用于封禁/解封审计记录（A-05）
+	authService := authsvc.NewAuthService(userRepo, sessionRepo, verifySvc, loginLogRepo, cfg, redisClient, auditSvc)
 
 	// ——— IAM 模块 ———
 	roleRepo := iamrep.NewRoleRepository(gormDB)
@@ -164,10 +171,9 @@ func NewApp() (*App, error) {
 	overrideRepo := iamrep.NewOverrideRepository(gormDB)
 	cacheSvc := iamsvc.NewCacheService(redisClient)
 	groupRepo := iamrep.NewGroupRepository(gormDB)
-	// BUG-05 修复：新增审计日志仓储，支持 GET /api/admin/audit-logs 接口
-	auditLogRepo := iamrep.NewAuditLogRepository(gormDB)
 	// Phase 2：IAMService 注入 groupRepo，使 CheckPermission 合并角色权限与组权限
-	iamService := iamsvc.NewIAMService(roleRepo, permRepo, userRoleRepo, overrideRepo, groupRepo, auditLogRepo, cacheSvc)
+	// A-04：审计日志查询能力改为注入独立的 auditSvc
+	iamService := iamsvc.NewIAMService(roleRepo, permRepo, userRoleRepo, overrideRepo, groupRepo, auditSvc, cacheSvc)
 	groupService := iamsvc.NewGroupService(groupRepo, gormDB, cacheSvc)
 	// Phase 3：ScopeService 解析管理员数据范围（scope:all 超管 / 组管理员可见集合）
 	scopeService := iamsvc.NewScopeService(groupRepo, iamService, cacheSvc)
@@ -266,4 +272,3 @@ func (a *App) Run() error {
 	fmt.Printf("API server 启动，监听 %s\n", a.Server.Addr)
 	return a.Server.ListenAndServe()
 }
-
