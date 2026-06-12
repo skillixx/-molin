@@ -24,3 +24,9 @@ server/bin/
 server/tmp/
 
 infra/.data/
+
+# CodeGraph 本地代码索引（按机器生成，无需入库）
+.codegraph/
+
+# Agent 临时工作目录（按机器生成，无需入库）
+.claude/worktrees/

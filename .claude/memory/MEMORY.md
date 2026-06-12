@@ -10,3 +10,6 @@
 - [Permission Code Seeding Feedback](feedback-permission-code-seeding.md) — RequirePerm 声明权限码时必须同时建 seed migration，已三次重复出现同根因 P1
 - [Design Decisions](design-decisions.md) 已更新：注册接口统一为双OTP单入口（2026-06-09）；权限码 seed 缺失为反复出现的 P1 根因；账号唯一性必须做规范化 + DB 唯一键兜底（2026-06-10）
 - [Test Server Reference](reference-test-server.md) — 测试服务器 SSH（8.130.9.163:10003），服务端口、API 部署、Python 测试执行方式
+- [Design Decisions](design-decisions.md) 已更新：后端接口字段变更未同步前端为反复出现根因（PR3 list/items、PR4 phone登录改密码），2026-06-12
+- [Pending Admin Console Tasks](project-pending-admin-console-tasks.md) — admin-console 缺审计日志页(0.5-1人日)和用户分组管理页(3-5人日)
+- [Confirm Before Merge Feedback](feedback-confirm-before-merge.md) — 派 产品经理 merge PR 到 main 前必须先和用户确认，每个 PR 单独确认（2026-06-12）

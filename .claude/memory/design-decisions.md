@@ -97,3 +97,12 @@ env GOCACHE=/tmp/go-build GOPATH=/tmp/gopath /tmp/go/bin/go test ./...
 ```
 
 **How to apply:** 后端代码改动完成后优先执行上述 `gofmt` 和 `go test ./...`。首次测试可能需要联网下载 Go module 依赖。
+
+## 后端接口变更未同步前端（反复出现的根因，2026-06-12 记录）
+
+已两次发现"后端修改了接口请求/响应字段，前端未同步，导致功能在生产环境完全不可用"：
+- PR#3：`PagedResp.list` → `items`，admin-console 多处 `res.list` 未同步（PR#7 修复）
+- PR#4 BUG-03：`POST /api/auth/login/phone` 从 `{phone, code}` 改为 `{phone, password}`，user-console 仍发 `{phone, code}`，手机号登录完全失效（PR#9 修复）
+
+**Why:** 后端 PR 合并后没有机制提醒对应前端工程师更新调用代码或 `docs/frontend-api-reference.md`，问题往往要等到全量验收测试或用户报告才暴露。
+**How to apply:** 后端 A/B/C 任何修改现有接口请求体/响应体字段名或语义的 PR，合并后应主动核对 `docs/frontend-api-reference.md` 是否需要同步，并检查对应前端模块（admin-console/user-console）是否有依赖该字段的代码；必要时直接派发前端 agent 修复并走 PR review。
