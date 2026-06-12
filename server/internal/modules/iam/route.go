@@ -35,14 +35,22 @@ func RegisterRoutes(mux *http.ServeMux, iamSvc *service.IAMService, groupSvc *se
 	mux.Handle("GET /api/admin/roles/{id}", admin(h.GetRole))
 	mux.Handle("PUT /api/admin/roles/{id}", admin(h.UpdateRole))
 	mux.Handle("DELETE /api/admin/roles/{id}", admin(h.DeleteRole))
+	// A-06：配置角色权限（全量替换）
+	mux.Handle("PATCH /api/admin/roles/{id}/permissions", admin(h.SetRolePermissions))
 	mux.Handle("GET /api/admin/permissions", admin(h.ListPermissions))
+	// A-06：创建权限码
+	mux.Handle("POST /api/admin/permissions", admin(h.CreatePermission))
 	// BUG-05 修复：补充注册 GET /api/admin/audit-logs，此前未注册导致 404
 	mux.Handle("GET /api/admin/audit-logs", admin(h.ListAuditLogs))
 	mux.Handle("GET /api/admin/users/{id}/roles", admin(h.GetUserRoles))
 	mux.Handle("POST /api/admin/users/{id}/roles", admin(h.AssignRole))
+	// A-06：批量替换用户角色
+	mux.Handle("PATCH /api/admin/users/{id}/roles", admin(h.ReplaceUserRoles))
 	mux.Handle("DELETE /api/admin/users/{id}/roles/{role_id}", admin(h.RevokeRole))
 	mux.Handle("GET /api/admin/users/{id}/permission-overrides", admin(h.GetPermissionOverrides))
 	mux.Handle("POST /api/admin/users/{id}/permission-overrides", admin(h.SetPermissionOverride))
+	// A-06：批量替换用户权限覆盖
+	mux.Handle("PATCH /api/admin/users/{id}/permission-overrides", admin(h.ReplaceUserOverrides))
 	mux.Handle("DELETE /api/admin/users/{id}/permission-overrides/{override_id}", admin(h.DeletePermissionOverride))
 
 	// 用户分组管理（Phase 1，需 group:manage 权限）

@@ -2,9 +2,13 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"strconv"
+	"time"
 
 	auditmodel "molin/server/internal/modules/audit/model"
 	auditservice "molin/server/internal/modules/audit/service"
+	"molin/server/internal/modules/iam/dto"
 	"molin/server/internal/modules/iam/model"
 	"molin/server/internal/modules/iam/repository"
 )
@@ -234,4 +238,99 @@ func evalPerms(codes []string, permCode string) bool {
 		}
 	}
 	return false
+}
+
+// strPtr 返回字符串的指针，用于构造审计日志中的 targetType/targetID 字段。
+func strPtr(s string) *string {
+	return &s
+}
+
+// CreatePermission 创建一个新的权限码，并写入审计日志。
+func (s *IAMService) CreatePermission(ctx context.Context, perm *model.Permission, operatorID uint64, ip string) error {
+	if err := s.permissionRepo.Create(ctx, perm); err != nil {
+		return err
+	}
+	_ = s.auditSvc.Record(ctx, &operatorID, "iam", "create_permission",
+		strPtr("permission"), strPtr(strconv.FormatUint(perm.ID, 10)), ip, perm)
+	return nil
+}
+
+// SetRolePermissions 全量替换角色的权限集合，并失效该角色下所有用户的权限缓存、写入审计日志。
+// 修改角色权限会影响该角色下所有用户的权限计算结果，因此需要逐一失效缓存。
+func (s *IAMService) SetRolePermissions(ctx context.Context, roleID uint64, permissionIDs []uint64, operatorID uint64, ip string) error {
+	if err := s.permissionRepo.SetRolePermissions(ctx, roleID, permissionIDs); err != nil {
+		return err
+	}
+	// 失效该角色下所有用户的权限缓存（查询失败不影响主流程，缓存最长 5 分钟自然过期）
+	if userIDs, err := s.userRoleRepo.GetUserIDsByRole(ctx, roleID); err == nil {
+		for _, uid := range userIDs {
+			s.cacheSvc.InvalidateUserPerms(ctx, uid)
+		}
+	}
+	_ = s.auditSvc.Record(ctx, &operatorID, "iam", "set_role_permissions",
+		strPtr("role"), strPtr(strconv.FormatUint(roleID, 10)), ip,
+		map[string]any{"permission_ids": permissionIDs})
+	return nil
+}
+
+// ReplaceUserRoles 全量替换用户的角色集合，并失效该用户的权限缓存、写入审计日志。
+func (s *IAMService) ReplaceUserRoles(ctx context.Context, userID uint64, roleIDs []uint64, operatorID uint64, reason *string, ip string) error {
+	if err := s.userRoleRepo.ReplaceUserRoles(ctx, userID, roleIDs); err != nil {
+		return err
+	}
+	s.cacheSvc.InvalidateUserPerms(ctx, userID)
+	_ = s.auditSvc.Record(ctx, &operatorID, "iam", "replace_user_roles",
+		strPtr("user"), strPtr(strconv.FormatUint(userID, 10)), ip,
+		map[string]any{"role_ids": roleIDs, "reason": reason})
+	return nil
+}
+
+// ErrInvalidEffect 权限覆盖的 effect 字段值不合法（只能为 allow/deny）。
+var ErrInvalidEffect = fmt.Errorf("effect 只能为 allow 或 deny")
+
+// ErrInvalidExpiresAt 权限覆盖的 expires_at 字段格式不合法（应为 ISO 8601）。
+var ErrInvalidExpiresAt = fmt.Errorf("expires_at 格式不合法")
+
+// ReplaceUserOverrides 全量替换用户的权限覆盖集合，并失效该用户的权限缓存、写入审计日志。
+// items 为空数组时表示清空该用户所有权限覆盖。
+// 校验：effect 只接受 allow/deny；permission_id 必须存在；expires_at 若提供必须为合法 ISO 8601 时间。
+func (s *IAMService) ReplaceUserOverrides(ctx context.Context, userID uint64, items []dto.OverrideItemReq, operatorID uint64, ip string) error {
+	overrides := make([]model.UserPermissionOverride, 0, len(items))
+	for _, item := range items {
+		// 校验 effect 取值
+		if item.Effect != "allow" && item.Effect != "deny" {
+			return ErrInvalidEffect
+		}
+		// 校验 permission_id 是否存在
+		perm, err := s.permissionRepo.FindByID(ctx, item.PermissionID)
+		if err != nil {
+			return err
+		}
+		// 解析 expires_at（可选）
+		var expiresAt *time.Time
+		if item.ExpiresAt != nil && *item.ExpiresAt != "" {
+			t, err := time.Parse(time.RFC3339, *item.ExpiresAt)
+			if err != nil {
+				return ErrInvalidExpiresAt
+			}
+			expiresAt = &t
+		}
+		overrides = append(overrides, model.UserPermissionOverride{
+			UserID:         userID,
+			PermissionID:   item.PermissionID,
+			PermissionCode: perm.Code,
+			Effect:         item.Effect,
+			Reason:         item.Reason,
+			ExpiresAt:      expiresAt,
+			CreatedBy:      &operatorID,
+		})
+	}
+
+	if err := s.overrideRepo.ReplaceByUser(ctx, userID, overrides); err != nil {
+		return err
+	}
+	s.cacheSvc.InvalidateUserPerms(ctx, userID)
+	_ = s.auditSvc.Record(ctx, &operatorID, "iam", "replace_user_overrides",
+		strPtr("user"), strPtr(strconv.FormatUint(userID, 10)), ip, items)
+	return nil
 }
