@@ -71,6 +71,7 @@
 | FA-05 | Week 3 | 订单列表/详情、钱包流水查询 | `feature/frontend-a-admin-order-wallet` | ⏳ 待开始 | |
 | FA-06 | Week 3-4 | 用户资产列表、实名认证审核页 | `feature/frontend-a-admin-asset-identity` | ⏳ 待开始 | |
 | FA-07 | Week 4 | 公告管理、帮助文档管理 | `feature/frontend-a-admin-content-cms` | ⏳ 待开始 | |
+| FA-08 | 待排期 | 接入 PR#31 权限查询接口：(1) SideMenu/路由守卫基于 `GET /api/me/permissions`（A-10）做菜单与路由级权限过滤；(2) RoleListView 补充"配置角色权限"弹窗，用 `GET /api/admin/roles/{id}/permissions`（A-11）预填充当前权限，配合既有 `PATCH /api/admin/roles/{id}/permissions` 全量替换保存 | `feature/frontend-a-admin-permission-sync` | ⏳ 待开始 | 2026-06-13 调查：当前 SideMenu 菜单硬编码无权限过滤，路由守卫 `meta.permission` 校验仅为 TODO 占位，auth store/User 类型均无 `permissions` 字段；RoleListView 当前**无**"配置角色权限"入口（无弹窗），`src/api/role.ts` 缺角色权限查询/全量替换封装。接口详见 `full-api-design.md` 2.19/3.12（A-10/A-11）|
 
 ---
 
@@ -82,7 +83,7 @@
 |---|---|---|---|---|---|
 | FB-01 | Week 1 | 注册页（邮箱/手机号）、登录页、Token 刷新逻辑 | `feature/frontend-b-user-register-login` | ✅ 已完成 | 已在 `feature/frontend-b-week1` 等分支完成并合并；2026-06-12 修复补丁：登录页手机号 Tab 由密码登录改为验证码登录，配合后端 PR#20（PR#21，merge commit `2d6e3c1`），新增发送验证码按钮+60s 倒计时 |
 | FB-02 | Week 1 | 实名认证提交页、认证状态展示 | `feature/frontend-b-identity-certification` | ⏳ 待开始 | |
-| FB-03 | Week 1 | 用户控制台布局骨架（顶部导航/侧栏/路由守卫）| `feature/frontend-b-user-layout` | ⏳ 待开始 | |
+| FB-03 | Week 1 | 用户控制台布局骨架（顶部导航/侧栏/路由守卫）| `feature/frontend-b-user-layout` | ⏳ 待开始 | 2026-06-13 调查：启动时应在登录/`fetchMe()` 后调用 `GET /api/me/permissions`（A-10，`full-api-design.md` 2.19）拉取权限码存入 auth store（新增 `permissions` ref + `hasPermission(code)` helper），供侧栏菜单/按钮做权限过滤 |
 | FB-04 | Week 2 | 商品市场列表、商品详情、套餐展示 | `feature/frontend-b-marketplace-browse` | ⏳ 待开始 | MarketplaceView.vue 仅占位符 |
 | FB-05 | Week 3 | 购买确认页、Idempotency-Key、订单结果页 | `feature/frontend-b-purchase-flow` | ⏳ 待开始 | |
 | FB-06 | Week 3 | 钱包余额、充值页、账单流水 | `feature/frontend-b-wallet-recharge` | ⏳ 待开始 | |
@@ -128,11 +129,11 @@
 | 后端工程师甲 | 12 | 12（9 已审查 + 3 已验收，PR#31/#32）| 0 | 0 |
 | 后端工程师乙 | 6 | 0 | 0 | 6 |
 | 后端工程师丙 | 5 | 0 | 0 | 5 |
-| 前端工程师甲 | 7 | 3（已审查）| 0 | 4 |
+| 前端工程师甲 | 8 | 3（已审查）| 0 | 5 |
 | 前端工程师乙 | 8 | 0 | 0 | 8 |
 | 运维工程师 | 6 | 6 | 0 | 0 |
 | 测试工程师 | 6 | 0 | 0 | 6 |
-| **合计** | **50** | **21** | **0** | **29** |
+| **合计** | **51** | **21** | **0** | **30** |
 
 ---
 
