@@ -37,6 +37,8 @@ func RegisterRoutes(mux *http.ServeMux, iamSvc *service.IAMService, groupSvc *se
 	mux.Handle("DELETE /api/admin/roles/{id}", admin(h.DeleteRole))
 	// A-06：配置角色权限（全量替换）
 	mux.Handle("PATCH /api/admin/roles/{id}/permissions", admin(h.SetRolePermissions))
+	// A-11：查询指定角色当前拥有的权限码列表
+	mux.Handle("GET /api/admin/roles/{id}/permissions", admin(h.GetRolePermissions))
 	mux.Handle("GET /api/admin/permissions", admin(h.ListPermissions))
 	// A-06：创建权限码
 	mux.Handle("POST /api/admin/permissions", admin(h.CreatePermission))
@@ -52,6 +54,8 @@ func RegisterRoutes(mux *http.ServeMux, iamSvc *service.IAMService, groupSvc *se
 	// A-06：批量替换用户权限覆盖
 	mux.Handle("PATCH /api/admin/users/{id}/permission-overrides", admin(h.ReplaceUserOverrides))
 	mux.Handle("DELETE /api/admin/users/{id}/permission-overrides/{override_id}", admin(h.DeletePermissionOverride))
+	// A-12：查询指定用户最终生效权限码（角色∪组权限，叠加 overrides），含 overrides 调整明细
+	mux.Handle("GET /api/admin/users/{id}/effective-permissions", admin(h.GetUserEffectivePermissions))
 
 	// 用户分组管理（Phase 1，需 group:manage 权限）
 	mux.Handle("GET /api/admin/user-groups", adminGroup(gh.ListGroups))

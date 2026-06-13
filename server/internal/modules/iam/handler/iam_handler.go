@@ -329,6 +329,55 @@ func (h *IAMHandler) GetRole(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetRolePermissions GET /api/admin/roles/{id}/permissions
+// A-11：返回指定角色当前拥有的权限码列表。角色不存在返回 404。
+func (h *IAMHandler) GetRolePermissions(w http.ResponseWriter, r *http.Request) {
+	id, err := pathUint64(r, "id")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "无效 ID")
+		return
+	}
+	if _, err := h.iamSvc.GetRoleByID(r.Context(), id); err != nil {
+		response.Error(w, http.StatusNotFound, 40400, "角色不存在")
+		return
+	}
+	codes, err := h.iamSvc.GetRolePermissionCodes(r.Context(), id)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
+		return
+	}
+	response.JSON(w, http.StatusOK, dto.PermissionsResp{Permissions: codes})
+}
+
+// GetUserEffectivePermissions GET /api/admin/users/{id}/effective-permissions
+// A-12：返回指定用户最终生效的权限码（角色权限 ∪ 组权限，叠加 user_permission_overrides
+// 的 allow/deny 调整），并附带实际生效（未过期）的 overrides 调整明细。
+func (h *IAMHandler) GetUserEffectivePermissions(w http.ResponseWriter, r *http.Request) {
+	userID, err := pathUint64(r, "id")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "无效用户 ID")
+		return
+	}
+	codes, err := h.iamSvc.GetEffectivePermissionCodes(r.Context(), userID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
+		return
+	}
+	overrides, err := h.iamSvc.GetEffectiveOverrides(r.Context(), userID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
+		return
+	}
+	overrideList := make([]dto.EffectiveOverrideResp, len(overrides))
+	for i, o := range overrides {
+		overrideList[i] = dto.EffectiveOverrideResp{Code: o.PermissionCode, Effect: o.Effect}
+	}
+	response.JSON(w, http.StatusOK, dto.EffectivePermissionsResp{
+		Permissions: codes,
+		Overrides:   overrideList,
+	})
+}
+
 // ListAuditLogs GET /api/admin/audit-logs
 // BUG-05 修复：该路由此前未注册，请求返回 404。
 // 支持 ?module=&action=&page=&page_size= 参数，响应字段名使用 items。

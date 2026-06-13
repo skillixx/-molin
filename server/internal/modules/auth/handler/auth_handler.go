@@ -147,6 +147,19 @@ func (h *AuthHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, info)
 }
 
+// GetMyPermissions GET /api/me/permissions
+// A-10：返回当前登录用户最终生效的权限码集合（角色权限 ∪ 组权限，叠加用户权限覆盖的 allow/deny 调整）。
+// 仅需登录鉴权，不需要额外权限码，供前端做按钮级权限控制。
+func (h *AuthHandler) GetMyPermissions(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	codes, err := h.authSvc.GetEffectivePermissions(r.Context(), userID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
+		return
+	}
+	response.JSON(w, http.StatusOK, dto.MyPermissionsResp{Permissions: codes})
+}
+
 // ChangePassword PATCH /api/me/password
 func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())

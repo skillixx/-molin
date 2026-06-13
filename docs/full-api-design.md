@@ -474,6 +474,26 @@ Body 参数：
 
 返回 data：`null`（HTTP 200 表示修改成功，email_verified 自动置为 true）。
 
+### 2.19 当前用户最终生效权限码
+
+```text
+GET /api/me/permissions
+```
+
+需要：Bearer Token（`RequireAuth`），无需额外权限码。
+
+请求参数：无。
+
+返回 data：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| permissions | array\<string\> | 当前登录用户最终生效的权限码集合 |
+
+计算逻辑：角色权限 ∪ 组权限，再叠加 `user_permission_overrides` 的 allow/deny 调整
+（deny 从集合中移除对应权限码，allow 追加进集合）。供前端做按钮级权限控制（菜单/按钮显隐），
+避免只能依赖接口返回 403 才能感知无权限。
+
 ## 3. 管理后台账号、实名、权限接口
 
 ### 3.1 用户列表
@@ -724,16 +744,34 @@ POST Body 参数：
 ### 3.12 配置角色权限
 
 ```text
+GET   /api/admin/roles/:id/permissions
 PATCH /api/admin/roles/:id/permissions
 ```
 
-Body 参数：
+需要：登录 + `role:manage` 权限 + 管理员双重认证。
+
+GET 返回 data（A-11）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| permissions | array\<string\> | 该角色当前拥有的权限码列表 |
+
+GET 错误码：
+
+| 错误码 | HTTP 状态码 | 说明 |
+|---|---|---|
+| 40400 | 404 | 角色不存在 |
+
+> 用途：解决管理后台无法展示"该角色当前有哪些权限"、编辑权限时无法预填充当前值的问题。
+> `PATCH /api/admin/roles/:id/permissions` 是全量替换写接口，必须先 GET 当前集合才能正确增删。
+
+PATCH Body 参数：
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
-| permission_ids | array | 是 | 权限 ID 列表 |
+| permission_ids | array | 是 | 权限 ID 列表（全量替换） |
 
-返回 data：`updated`。
+PATCH 返回 data：`updated`。
 
 ### 3.13 实名审核列表
 
@@ -797,6 +835,37 @@ GET /api/admin/audit-logs
 Query 参数：operator_id、module、action、created_from、created_to、page、page_size。
 
 返回 data.items：审计日志列表。
+
+### 3.17 用户最终生效权限（排查/一览）
+
+```text
+GET /api/admin/users/:id/effective-permissions
+```
+
+需要：登录 + `role:manage` 权限 + 管理员双重认证。
+
+请求参数：路径参数 `id` 为目标用户 ID。
+
+返回 data（A-12）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| permissions | array\<string\> | 该用户最终生效的权限码集合（角色权限 ∪ 组权限，叠加 overrides 调整后的结果） |
+| overrides | array | 该用户当前实际生效（未过期）的权限覆盖调整明细 |
+
+`overrides` 数组元素字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| code | string | 权限码 |
+| effect | string | allow 或 deny |
+
+计算逻辑与 2.19 `GET /api/me/permissions` 一致（角色权限 ∪ 组权限，再叠加
+`user_permission_overrides` 的 allow/deny 调整：deny 移除、allow 追加），区别仅在于
+目标用户是路径参数 `:id` 指定的用户，而非当前登录用户。
+
+> 用途：解决管理后台无"用户权限排查/一览"功能、只能由运维/开发直连数据库写 SQL
+> 手动计算的问题。
 
 ## 4. 商品、订单、钱包和计费接口
 

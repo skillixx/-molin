@@ -223,6 +223,67 @@ func (s *IAMService) GetRoleByID(ctx context.Context, id uint64) (*model.Role, e
 	return s.roleRepo.FindByID(ctx, id)
 }
 
+// GetRolePermissionCodes 返回指定角色当前拥有的权限码列表。
+// A-11：支持 GET /api/admin/roles/{id}/permissions 接口；调用前需先确认角色存在（GetRoleByID）。
+func (s *IAMService) GetRolePermissionCodes(ctx context.Context, roleID uint64) ([]string, error) {
+	perms, err := s.permissionRepo.FindByRoleIDs(ctx, []uint64{roleID})
+	if err != nil {
+		return nil, err
+	}
+	codes := make([]string, 0, len(perms))
+	for _, p := range perms {
+		codes = append(codes, p.Code)
+	}
+	return codes, nil
+}
+
+// GetEffectivePermissionCodes 计算用户最终生效的权限码集合：
+// 角色权限 ∪ 组权限（getAllUserPermCodes），再叠加 user_permission_overrides 的 allow/deny 调整：
+//   - effect=deny：从集合中移除该权限码
+//   - effect=allow：将该权限码追加进集合（去重）
+//
+// A-10/A-12：分别供 GET /api/me/permissions 和 GET /api/admin/users/{id}/effective-permissions 使用。
+func (s *IAMService) GetEffectivePermissionCodes(ctx context.Context, userID uint64) ([]string, error) {
+	codes, err := s.getAllUserPermCodes(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	overrides, err := s.overrideRepo.FindByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	set := make(map[string]struct{}, len(codes))
+	for _, c := range codes {
+		set[c] = struct{}{}
+	}
+	// 先处理 deny（移除），再处理 allow（追加），保证同一权限码若同时存在
+	// allow/deny（理论上 uk_user_perm_override 唯一键不会出现，这里仍兜底按 deny 优先）
+	for _, o := range overrides {
+		if o.Effect == "deny" {
+			delete(set, o.PermissionCode)
+		}
+	}
+	for _, o := range overrides {
+		if o.Effect == "allow" {
+			set[o.PermissionCode] = struct{}{}
+		}
+	}
+
+	result := make([]string, 0, len(set))
+	for c := range set {
+		result = append(result, c)
+	}
+	return result, nil
+}
+
+// GetEffectiveOverrides 返回指定用户当前生效（未过期）的权限覆盖明细（code + effect）。
+// A-12：用于 GET /api/admin/users/{id}/effective-permissions 响应中的 overrides 字段。
+func (s *IAMService) GetEffectiveOverrides(ctx context.Context, userID uint64) ([]model.UserPermissionOverride, error) {
+	return s.overrideRepo.FindByUser(ctx, userID)
+}
+
 // ListAuditLogs 分页查询审计日志，支持按 module/action 过滤。
 // BUG-05 修复：新增此方法支持 GET /api/admin/audit-logs 接口。
 // A-04：审计日志读写能力迁移至独立 audit 模块，此处仅做转发。

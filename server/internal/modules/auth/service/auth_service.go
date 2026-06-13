@@ -46,6 +46,13 @@ const blockedUserKeyFmt = "blocked:user:%d"
 // TTL = token 剩余有效期，自然过期后黑名单同步失效。
 const revokedTokenKeyFmt = "revoked:token:%s"
 
+// PermissionResolver 权限计算接口，由 iam.IAMService 实现。
+// 在 auth/service 包中定义以避免循环导入（auth 不直接依赖 iam 的具体实现）。
+// A-10：用于 GET /api/me/permissions 计算当前登录用户最终生效的权限码集合。
+type PermissionResolver interface {
+	GetEffectivePermissionCodes(ctx context.Context, userID uint64) ([]string, error)
+}
+
 // AuthService 负责注册、登录、退出、刷新令牌、修改密码、封禁/解封用户。
 type AuthService struct {
 	userRepo     *repository.UserRepository
@@ -55,6 +62,7 @@ type AuthService struct {
 	cfg          config.Config
 	redis        *redis.Client
 	auditSvc     *auditservice.AuditService
+	permResolver PermissionResolver
 }
 
 func NewAuthService(
@@ -65,6 +73,7 @@ func NewAuthService(
 	cfg config.Config,
 	redisClient *redis.Client,
 	auditSvc *auditservice.AuditService,
+	permResolver PermissionResolver,
 ) *AuthService {
 	return &AuthService{
 		userRepo:     userRepo,
@@ -74,7 +83,15 @@ func NewAuthService(
 		cfg:          cfg,
 		redis:        redisClient,
 		auditSvc:     auditSvc,
+		permResolver: permResolver,
 	}
+}
+
+// GetEffectivePermissions 返回当前登录用户最终生效的权限码集合（角色权限 ∪ 组权限，
+// 再叠加 user_permission_overrides 的 allow/deny 调整）。
+// A-10：供 GET /api/me/permissions 接口使用，计算逻辑委托给 iam.IAMService。
+func (s *AuthService) GetEffectivePermissions(ctx context.Context, userID uint64) ([]string, error) {
+	return s.permResolver.GetEffectivePermissionCodes(ctx, userID)
 }
 
 // validateUsername 校验用户名格式，并检查唯一性。
