@@ -6,12 +6,22 @@ import (
 	"strconv"
 	"time"
 
+	"gorm.io/gorm"
 	auditmodel "molin/server/internal/modules/audit/model"
 	auditservice "molin/server/internal/modules/audit/service"
 	"molin/server/internal/modules/iam/dto"
 	"molin/server/internal/modules/iam/model"
 	"molin/server/internal/modules/iam/repository"
 )
+
+// ErrRoleNotFound 角色不存在。
+var ErrRoleNotFound = gorm.ErrRecordNotFound
+
+// ErrPermissionNotFound 权限不存在。
+var ErrPermissionNotFound = gorm.ErrRecordNotFound
+
+// ErrOverrideNotFound 权限覆盖记录不存在或越权访问（id/userID 不匹配）。
+var ErrOverrideNotFound = fmt.Errorf("权限覆盖记录不存在")
 
 // IAMService 负责角色 CRUD、权限 CRUD、用户角色分配、权限计算。
 type IAMService struct {
@@ -81,7 +91,12 @@ func (s *IAMService) GetUserRoleIDs(ctx context.Context, userID uint64) ([]uint6
 }
 
 // AssignRole 为用户分配角色并写审计日志。
+// D-26：写入前校验 roleID 是否存在，不存在返回 gorm.ErrRecordNotFound。
 func (s *IAMService) AssignRole(ctx context.Context, userID, roleID, operatorID uint64, reason *string, ip string) error {
+	// 校验角色是否存在，防止产生孤儿记录
+	if _, err := s.roleRepo.FindByID(ctx, roleID); err != nil {
+		return err
+	}
 	if err := s.userRoleRepo.Assign(ctx, userID, roleID); err != nil {
 		return err
 	}
@@ -119,12 +134,12 @@ func (s *IAMService) CreateRole(ctx context.Context, role *model.Role) error {
 	return s.roleRepo.Create(ctx, role)
 }
 
-// UpdateRole 更新角色。
+// UpdateRole 更新角色。若角色不存在，repo 层返回 ErrRoleNotFound，上层映射为 404。
 func (s *IAMService) UpdateRole(ctx context.Context, id uint64, updates map[string]interface{}) error {
 	return s.roleRepo.Update(ctx, id, updates)
 }
 
-// DeleteRole 删除角色。
+// DeleteRole 删除角色。若角色不存在，repo 层返回 ErrRoleNotFound，上层映射为 404。
 func (s *IAMService) DeleteRole(ctx context.Context, id uint64) error {
 	return s.roleRepo.Delete(ctx, id)
 }
@@ -150,9 +165,10 @@ func (s *IAMService) GetUserRolesPaged(ctx context.Context, userID uint64, offse
 	return s.userRoleRepo.FindRolesByUserPaged(ctx, userID, offset, limit)
 }
 
-// SetPermissionOverride 设置用户权限覆盖，清除缓存并写入审计日志。
+// SetPermissionOverride 设置（创建或更新）用户权限覆盖，清除缓存并写入审计日志。
+// D-25：改用 overrideRepo.Upsert，当 (user_id, permission_id) 唯一键已存在时更新，避免 1062 错误。
 func (s *IAMService) SetPermissionOverride(ctx context.Context, override *model.UserPermissionOverride, operatorID uint64, ip string) error {
-	if err := s.overrideRepo.Create(ctx, override); err != nil {
+	if err := s.overrideRepo.Upsert(ctx, override); err != nil {
 		return err
 	}
 	s.cacheSvc.InvalidateUserPerms(ctx, override.UserID)
@@ -169,11 +185,19 @@ func (s *IAMService) SetPermissionOverride(ctx context.Context, override *model.
 }
 
 // DeletePermissionOverride 删除用户权限覆盖，清除缓存并写入审计日志。
+// D-27：repo 层 Delete 增加 userID 过滤，rowsAffected==0 时返回 ErrOverrideNotFound；
+//       审计日志 target_id 记录被操作用户的 userID（而非 override 自增 ID）。
 func (s *IAMService) DeletePermissionOverride(ctx context.Context, overrideID, userID, operatorID uint64, ip string) error {
-	if err := s.overrideRepo.Delete(ctx, overrideID); err != nil {
+	affected, err := s.overrideRepo.Delete(ctx, overrideID, userID)
+	if err != nil {
 		return err
 	}
+	// rowsAffected 为 0：记录不存在或 override 不属于该用户（越权）
+	if affected == 0 {
+		return ErrOverrideNotFound
+	}
 	s.cacheSvc.InvalidateUserPerms(ctx, userID)
+	// D-27：审计日志 target_id 使用被操作用户的 userID，而非 override 记录 id
 	_ = s.auditSvc.Record(ctx, &operatorID, "iam", "delete_permission_override",
 		strPtr("user"), strPtr(strconv.FormatUint(userID, 10)), ip,
 		map[string]any{"user_id": userID, "override_id": overrideID})
@@ -239,6 +263,12 @@ func (s *IAMService) getAllUserPermCodes(ctx context.Context, userID uint64) ([]
 // BUG-04 修复：新增此方法支持 GET /api/admin/roles/{id} 接口。
 func (s *IAMService) GetRoleByID(ctx context.Context, id uint64) (*model.Role, error) {
 	return s.roleRepo.FindByID(ctx, id)
+}
+
+// FindPermissionByID 按 ID 精确查询单条权限记录，不存在返回 error。
+// D-28：供 SetPermissionOverride handler 用单条查询替代全表 O(n) 遍历。
+func (s *IAMService) FindPermissionByID(ctx context.Context, id uint64) (*model.Permission, error) {
+	return s.permissionRepo.FindByID(ctx, id)
 }
 
 // GetRolePermissionCodes 返回指定角色当前拥有的权限码列表。
@@ -335,8 +365,19 @@ func (s *IAMService) CreatePermission(ctx context.Context, perm *model.Permissio
 }
 
 // SetRolePermissions 全量替换角色的权限集合，并失效该角色下所有用户的权限缓存、写入审计日志。
+// D-26：写入前校验 roleID 和每个 permissionID 是否存在，防止产生孤儿关联记录。
 // 修改角色权限会影响该角色下所有用户的权限计算结果，因此需要逐一失效缓存。
 func (s *IAMService) SetRolePermissions(ctx context.Context, roleID uint64, permissionIDs []uint64, operatorID uint64, ip string) error {
+	// 校验角色是否存在
+	if _, err := s.roleRepo.FindByID(ctx, roleID); err != nil {
+		return err
+	}
+	// 校验每个 permissionID 是否存在，防止孤儿关联记录
+	for _, pid := range permissionIDs {
+		if _, err := s.permissionRepo.FindByID(ctx, pid); err != nil {
+			return err
+		}
+	}
 	if err := s.permissionRepo.SetRolePermissions(ctx, roleID, permissionIDs); err != nil {
 		return err
 	}
@@ -372,18 +413,16 @@ var ErrInvalidExpiresAt = fmt.Errorf("expires_at 格式不合法")
 
 // ReplaceUserOverrides 全量替换用户的权限覆盖集合，并失效该用户的权限缓存、写入审计日志。
 // items 为空数组时表示清空该用户所有权限覆盖。
-// 校验：effect 只接受 allow/deny；permission_id 必须存在；expires_at 若提供必须为合法 ISO 8601 时间。
+// 校验：effect 只接受 allow/deny；expires_at 若提供必须为合法 ISO 8601 时间。
+// D-29：permission_id 存在性校验已移入 overrideRepo.ReplaceByUserWithValidation 事务内部，
+//       消除「校验时存在、写入时被删除」的竟态窗口。permission_code 冗余字段
+//       在事务外预先通过 permissionRepo.FindByID 查取（仍需一次 DB 读，但不在校验路径上，且在事务内还有二次确认）。
 func (s *IAMService) ReplaceUserOverrides(ctx context.Context, userID uint64, items []dto.OverrideItemReq, operatorID uint64, ip string) error {
 	overrides := make([]model.UserPermissionOverride, 0, len(items))
 	for _, item := range items {
 		// 校验 effect 取值
 		if item.Effect != "allow" && item.Effect != "deny" {
 			return ErrInvalidEffect
-		}
-		// 校验 permission_id 是否存在
-		perm, err := s.permissionRepo.FindByID(ctx, item.PermissionID)
-		if err != nil {
-			return err
 		}
 		// 解析 expires_at（可选）
 		var expiresAt *time.Time
@@ -393,6 +432,12 @@ func (s *IAMService) ReplaceUserOverrides(ctx context.Context, userID uint64, it
 				return ErrInvalidExpiresAt
 			}
 			expiresAt = &t
+		}
+		// 预查 permission 以获取 code 冗余字段；实际存在性校验在事务内由
+		// ReplaceByUserWithValidation 再次确认，保证原子性
+		perm, err := s.permissionRepo.FindByID(ctx, item.PermissionID)
+		if err != nil {
+			return err
 		}
 		overrides = append(overrides, model.UserPermissionOverride{
 			UserID:         userID,
@@ -405,7 +450,8 @@ func (s *IAMService) ReplaceUserOverrides(ctx context.Context, userID uint64, it
 		})
 	}
 
-	if err := s.overrideRepo.ReplaceByUser(ctx, userID, overrides); err != nil {
+	// D-29：事务内同时完成存在性校验与写入，消除竟态
+	if err := s.overrideRepo.ReplaceByUserWithValidation(ctx, userID, overrides); err != nil {
 		return err
 	}
 	s.cacheSvc.InvalidateUserPerms(ctx, userID)
