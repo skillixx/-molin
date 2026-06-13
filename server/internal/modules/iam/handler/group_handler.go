@@ -104,13 +104,29 @@ func (h *GroupHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
-	updates := map[string]interface{}{
-		"name":        req.Name,
-		"type":        req.Type,
-		"description": req.Description,
-		"is_default":  req.IsDefault,
+	// 只将 JSON 中明确传了值的字段（非 nil）放入 map，避免零值覆盖现有数据（PATCH 语义）。
+	updates := map[string]interface{}{}
+	if req.Name != nil {
+		updates["name"] = *req.Name
+	}
+	if req.Type != nil {
+		updates["type"] = *req.Type
+	}
+	if req.Description != nil {
+		updates["description"] = *req.Description
+	}
+	if req.IsDefault != nil {
+		updates["is_default"] = *req.IsDefault
+	}
+	if len(updates) == 0 {
+		response.Error(w, http.StatusBadRequest, 40000, "至少需要提供一个更新字段")
+		return
 	}
 	if err := h.groupSvc.UpdateGroup(r.Context(), id, updates); err != nil {
+		if errors.Is(err, repository.ErrGroupNotFound) {
+			response.Error(w, http.StatusNotFound, 40400, "分组不存在")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, 50000, "更新失败")
 		return
 	}
@@ -125,6 +141,10 @@ func (h *GroupHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.groupSvc.DeleteGroup(r.Context(), id); err != nil {
+		if errors.Is(err, repository.ErrGroupNotFound) {
+			response.Error(w, http.StatusNotFound, 40400, "分组不存在")
+			return
+		}
 		if errors.Is(err, repository.ErrGroupNotEmpty) {
 			response.Error(w, http.StatusConflict, 40901, err.Error())
 			return
@@ -188,6 +208,11 @@ func (h *GroupHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.groupSvc.AddMember(r.Context(), groupID, req.UserID, req.GroupRole); err != nil {
+		if errors.Is(err, repository.ErrUserNotFound) {
+			// D-35：用户不存在，返回 404
+			response.Error(w, http.StatusNotFound, 40400, "用户不存在")
+			return
+		}
 		if errors.Is(err, repository.ErrMemberAlreadyExists) {
 			response.Error(w, http.StatusConflict, 40900, err.Error())
 			return
@@ -339,6 +364,11 @@ func (h *GroupHandler) RemoveGroupPermission(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if err := h.groupSvc.RemoveGroupPermission(r.Context(), groupID, permCode); err != nil {
+		if errors.Is(err, repository.ErrPermissionNotFound) {
+			// D-38：权限记录不存在，返回 404
+			response.Error(w, http.StatusNotFound, 40400, "权限记录不存在")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, 50000, "移除失败")
 		return
 	}
@@ -416,8 +446,18 @@ func (h *GroupHandler) JoinGroup(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	groupID, groupRole, err := h.groupSvc.JoinByInviteCode(r.Context(), userID, req.InviteCode)
 	if err != nil {
+		if errors.Is(err, repository.ErrUserNotFound) {
+			// D-35：用户不存在（理论上已登录不应出现，作为防御性处理）
+			response.Error(w, http.StatusNotFound, 40400, "用户不存在")
+			return
+		}
 		if errors.Is(err, repository.ErrInviteCodeNotFound) {
 			response.Error(w, http.StatusBadRequest, 40000, "邀请码无效或已过期")
+			return
+		}
+		if errors.Is(err, repository.ErrInviteCodeFull) {
+			// D-34：并发竞态被原子 UPDATE 拦住，邀请码已达使用上限
+			response.Error(w, http.StatusConflict, 40901, "邀请码已达到使用上限")
 			return
 		}
 		if errors.Is(err, repository.ErrMemberAlreadyExists) {
@@ -443,6 +483,11 @@ func (h *GroupHandler) DisableInviteCode(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := h.groupSvc.DisableInviteCode(r.Context(), groupID, inviteID); err != nil {
+		if errors.Is(err, repository.ErrInviteCodeNotFound) {
+			// D-38：邀请码不存在或不属于该分组，返回 404
+			response.Error(w, http.StatusNotFound, 40400, "邀请码不存在")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, 50000, "操作失败")
 		return
 	}

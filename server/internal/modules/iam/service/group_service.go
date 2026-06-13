@@ -45,16 +45,19 @@ func (s *GroupService) ListGroupsPaged(ctx context.Context, groupType, keyword s
 }
 
 func (s *GroupService) UpdateGroup(ctx context.Context, id uint64, updates map[string]interface{}) error {
-	isDefault, hasDefault := updates["is_default"]
-	if !hasDefault || isDefault != true {
+	// 判断本次更新是否将 is_default 设为 true
+	isDefaultVal, hasDefault := updates["is_default"]
+	setDefault := hasDefault && isDefaultVal == true
+	if !setDefault {
+		// 普通字段更新：直接调用 repo，享有 rowsAffected 守卫（D-38）
 		return s.repo.Update(ctx, id, updates)
 	}
-	// 设为默认组：在事务中先清除旧默认，再更新
+	// 设为默认组：在事务中先清除旧默认，再更新目标分组（D-33 配套修复，使用 UpdateTx）
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.repo.ClearDefault(tx); err != nil {
 			return err
 		}
-		return tx.Model(&model.UserGroup{}).Where("id = ?", id).Updates(updates).Error
+		return s.repo.UpdateTx(tx, id, updates)
 	})
 }
 
@@ -71,6 +74,14 @@ func (s *GroupService) AddMember(ctx context.Context, groupID, userID uint64, ro
 	}
 	if role != "admin" && role != "member" {
 		return errors.New("group_role 只能为 admin 或 member")
+	}
+	// D-35：校验目标用户是否存在，防止产生指向不存在用户的"幽灵成员"记录
+	exists, err := s.repo.ExistsUserByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return repository.ErrUserNotFound
 	}
 	m := &model.UserGroupMember{GroupID: groupID, UserID: userID, GroupRole: role}
 	if err := s.repo.AddMember(ctx, m); err != nil {
@@ -170,31 +181,48 @@ func (s *GroupService) DisableInviteCode(ctx context.Context, groupID, inviteID 
 }
 
 // JoinByInviteCode 普通用户凭邀请码加入群组，返回所加入的群组 ID 和组内角色。
-// 在同一事务内：校验邀请码有效 → 加成员 → 递增 used_count。
+// D-34：used_count 递增改为原子条件 UPDATE（WHERE used_count < max_uses OR max_uses=0），
+//
+//	以 rowsAffected 作为权威判断，彻底消除并发超额竞态。
+//
+// D-35：加入前先校验 userID 是否存在于 users 表，防止幽灵成员记录。
 func (s *GroupService) JoinByInviteCode(ctx context.Context, userID uint64, code string) (groupID uint64, groupRole string, err error) {
-	// 1. 查有效邀请码（active、未过期、未超限）
+	// D-35：校验目标用户是否存在
+	exists, err := s.repo.ExistsUserByID(ctx, userID)
+	if err != nil {
+		return 0, "", err
+	}
+	if !exists {
+		return 0, "", repository.ErrUserNotFound
+	}
+
+	// 1. 预查邀请码（快速失败：码不存在/已禁用/已过期时提前退出，减少事务争抢）
 	ic, err := s.repo.FindActiveInviteCode(ctx, code)
 	if err != nil {
 		return 0, "", err
 	}
-	// 2. 在事务内：加成员 + 递增 used_count
+
+	// 2. 在事务内：原子递增 used_count（D-34）+ 加成员
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// D-34：原子条件 UPDATE，rowsAffected=0 表示刚好超限（并发竞态被挡住）
+		if atomicErr := s.repo.IncrUsedCountAtomic(tx, ic.ID); atomicErr != nil {
+			return atomicErr
+		}
 		role := ic.DefaultGroupRole
 		if role == "" {
 			role = "member"
 		}
 		m := &model.UserGroupMember{GroupID: ic.GroupID, UserID: userID, GroupRole: role}
-		if addErr := s.repo.AddMemberTx(tx, m); addErr != nil {
-			return addErr
-		}
-		return s.repo.IncrUsedCount(tx, ic.ID)
+		return s.repo.AddMemberTx(tx, m)
 	})
 	if err != nil {
 		return 0, "", err
 	}
+
 	// 3. 清除该用户的权限缓存，以及该组管理员的 scope 缓存
 	s.cacheSvc.InvalidateUserPerms(ctx, userID)
 	s.invalidateGroupAdminsScopeCache(ctx, ic.GroupID)
+
 	// DefaultGroupRole 为空时实际写入了 "member"，保持返回一致
 	role := ic.DefaultGroupRole
 	if role == "" {
