@@ -66,23 +66,27 @@ func (r *IdentityRepository) ExistsByHMAC(ctx context.Context, hmacHash string, 
 	return count > 0, err
 }
 
-func (r *IdentityRepository) UpdateStatus(db *gorm.DB, id uint64, status, rejectReason string) error {
+// UpdateStatus 更新认证记录状态。
+// D-10：只有审核拒绝（status == "rejected"）且 rejectReason 非空时才写入 reject_reason 列，
+// 审核通过（status == "verified"）时不写该列，避免误把驳回理由写入通过记录。
+// D-11：UPDATE 语句增加 "AND status = 'pending'" 条件，防止并发审核请求重复提交；
+// 返回 rowsAffected，调用方据此判断记录是否已被并发请求修改（rowsAffected == 0 表示已审核）。
+func (r *IdentityRepository) UpdateStatus(db *gorm.DB, id uint64, status, rejectReason string) (int64, error) {
 	updates := map[string]interface{}{"status": status}
-	if rejectReason != "" {
+	if status == "rejected" && rejectReason != "" {
 		updates["reject_reason"] = rejectReason
 	}
-	return db.Model(&model.IdentityVerification{}).Where("id = ?", id).Updates(updates).Error
+	result := db.Model(&model.IdentityVerification{}).
+		Where("id = ? AND status = 'pending'", id).
+		Updates(updates)
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
 }
 
 func (r *IdentityRepository) CreateLog(db *gorm.DB, log *model.IdentityVerificationLog) error {
 	return db.Create(log).Error
-}
-
-// ListPending 管理员查看待审核列表（不分页，兼容旧调用）。
-func (r *IdentityRepository) ListPending(ctx context.Context) ([]model.IdentityVerification, error) {
-	var list []model.IdentityVerification
-	err := r.db.WithContext(ctx).Where("status = 'pending'").Order("created_at ASC").Find(&list).Error
-	return list, err
 }
 
 // ListPaged 管理员分页查看认证记录，status 非空时按状态过滤，空字符串时查全部状态。

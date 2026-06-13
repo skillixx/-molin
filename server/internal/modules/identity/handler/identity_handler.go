@@ -108,12 +108,16 @@ func (h *IdentityHandler) Review(w http.ResponseWriter, r *http.Request) {
 	}
 	operatorID := middleware.UserIDFromContext(r.Context())
 	if err := h.identitySvc.Review(r.Context(), id, operatorID, req.Approve, req.Reason); err != nil {
+		switch err {
 		// D-01：已完结记录不可重复审核，返回 409 Conflict
-		if err == service.ErrVerificationAlreadyReviewed {
+		case service.ErrVerificationAlreadyReviewed:
 			response.Error(w, http.StatusConflict, 40900, "该记录已审核，不可重复操作")
-			return
+		// D-06：拒绝审核时未填写驳回理由，返回 400
+		case service.ErrReasonRequired:
+			response.Error(w, http.StatusBadRequest, 40000, err.Error())
+		default:
+			response.Error(w, http.StatusInternalServerError, 50000, "审核失败")
 		}
-		response.Error(w, http.StatusInternalServerError, 50000, "审核失败")
 		return
 	}
 	response.JSON(w, http.StatusOK, nil)
