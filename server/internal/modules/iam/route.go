@@ -82,4 +82,10 @@ func RegisterRoutes(mux *http.ServeMux, iamSvc *service.IAMService, groupSvc *se
 	mux.Handle("GET /api/admin/user-groups/{id}/invite-codes", adminGroup(gh.ListInviteCodes))
 	mux.Handle("POST /api/admin/user-groups/{id}/invite-codes", adminGroup(gh.CreateInviteCode))
 	mux.Handle("PATCH /api/admin/user-groups/{id}/invite-codes/{invite_id}/disable", adminGroup(gh.DisableInviteCode))
+
+	// 用户端：凭邀请码加入群组（只需登录，无需 group:manage）
+	userAuth := func(next http.HandlerFunc) http.Handler {
+		return middleware.RequireAuth(jwtSecret, banChecker, http.HandlerFunc(next))
+	}
+	mux.Handle("POST /api/user-groups/join", userAuth(gh.JoinGroup))
 }

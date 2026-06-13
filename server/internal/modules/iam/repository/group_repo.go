@@ -24,6 +24,8 @@ var (
 	ErrGroupPermissionExists = errors.New("该权限码已添加到此分组")
 	// ErrInviteCodeExists 邀请码已被使用。
 	ErrInviteCodeExists = errors.New("邀请码已存在，请更换")
+	// ErrInviteCodeNotFound 邀请码无效、已过期或已超过使用上限。
+	ErrInviteCodeNotFound = errors.New("邀请码无效或已过期")
 )
 
 // GroupRepository 分组数据访问层，覆盖分组、成员、组权限、邀请码四个子资源。
@@ -100,6 +102,15 @@ func (r *GroupRepository) Delete(ctx context.Context, id uint64) error {
 // AddMember 将用户加入分组，已存在时返回 ErrMemberAlreadyExists。
 func (r *GroupRepository) AddMember(ctx context.Context, m *model.UserGroupMember) error {
 	err := r.db.WithContext(ctx).Create(m).Error
+	if err != nil && isDuplicateKey(err) {
+		return ErrMemberAlreadyExists
+	}
+	return err
+}
+
+// AddMemberTx 在事务 tx 中将用户加入分组，已存在时返回 ErrMemberAlreadyExists。
+func (r *GroupRepository) AddMemberTx(tx *gorm.DB, m *model.UserGroupMember) error {
+	err := tx.Create(m).Error
 	if err != nil && isDuplicateKey(err) {
 		return ErrMemberAlreadyExists
 	}
@@ -279,7 +290,8 @@ func (r *GroupRepository) DisableInviteCode(ctx context.Context, groupID, invite
 		Update("status", "disabled").Error
 }
 
-// FindActiveInviteCode 注册时按 code 查有效邀请码（未禁用、未过期、未超限）。
+// FindActiveInviteCode 按 code 查有效邀请码（未禁用、未过期、未超限）。
+// 若记录不存在或不满足条件，返回 ErrInviteCodeNotFound。
 func (r *GroupRepository) FindActiveInviteCode(ctx context.Context, code string) (*model.GroupInviteCode, error) {
 	var ic model.GroupInviteCode
 	db := r.db.WithContext(ctx).
@@ -287,6 +299,9 @@ func (r *GroupRepository) FindActiveInviteCode(ctx context.Context, code string)
 		Where("max_uses = 0 OR used_count < max_uses").
 		Where("expires_at IS NULL OR expires_at > ?", time.Now())
 	if err := db.First(&ic).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrInviteCodeNotFound
+		}
 		return nil, err
 	}
 	return &ic, nil

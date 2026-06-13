@@ -94,3 +94,14 @@ type UserGroupsResp struct {
 	GroupRole string `json:"group_role"`
 	JoinedAt  string `json:"joined_at"`
 }
+
+// JoinGroupReq 用户凭邀请码加入群组请求。
+type JoinGroupReq struct {
+	InviteCode string `json:"invite_code"`
+}
+
+// JoinGroupResp 加入群组响应。
+type JoinGroupResp struct {
+	GroupID   uint64 `json:"group_id"`
+	GroupRole string `json:"group_role"`
+}
