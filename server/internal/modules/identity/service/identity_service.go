@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"time"
 
 	"gorm.io/gorm"
+	auditservice "molin/server/internal/modules/audit/service"
 	"molin/server/internal/config"
 	"molin/server/internal/modules/identity/dto"
 	"molin/server/internal/modules/identity/model"
@@ -15,8 +17,10 @@ import (
 )
 
 var (
-	ErrAlreadySubmitted  = errors.New("已有待审核或已通过的认证，不允许重复提交")
-	ErrIDCardAlreadyBound = errors.New("该身份证号已绑定其他账号")
+	ErrAlreadySubmitted         = errors.New("已有待审核或已通过的认证，不允许重复提交")
+	ErrIDCardAlreadyBound       = errors.New("该身份证号已绑定其他账号")
+	// D-01：新增错误，用于标识重复审核已完结记录
+	ErrVerificationAlreadyReviewed = errors.New("该记录已审核，不可重复操作")
 )
 
 // UserUpdater 跨模块接口，由 auth.UserRepository 实现，identity 只注入 interface 避免循环导入。
@@ -30,6 +34,8 @@ type IdentityService struct {
 	userRepo UserUpdater
 	db       *gorm.DB
 	cfg      config.Config
+	// D-04：注入审计日志服务，用于审核操作写全局审计日志
+	auditSvc *auditservice.AuditService
 }
 
 func NewIdentityService(
@@ -37,8 +43,9 @@ func NewIdentityService(
 	userRepo UserUpdater,
 	db *gorm.DB,
 	cfg config.Config,
+	auditSvc *auditservice.AuditService,
 ) *IdentityService {
-	return &IdentityService{repo: repo, userRepo: userRepo, db: db, cfg: cfg}
+	return &IdentityService{repo: repo, userRepo: userRepo, db: db, cfg: cfg, auditSvc: auditSvc}
 }
 
 // Submit 用户提交实名认证。身份证号仅在内存处理，不持久化明文。
@@ -80,12 +87,24 @@ func (s *IdentityService) Review(ctx context.Context, verificationID, operatorID
 	if err != nil {
 		return err
 	}
+	// D-01：只允许对 pending 状态的记录进行审核，已完结记录返回错误
+	if verification.Status != "pending" {
+		return ErrVerificationAlreadyReviewed
+	}
 	newStatus := "rejected"
 	if approve {
 		newStatus = "verified"
 	}
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	// D-02：无论通过或拒绝，都记录审核时间
+	now := time.Now()
+	txErr := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := s.repo.UpdateStatus(tx, verificationID, newStatus, reason); err != nil {
+			return err
+		}
+		// D-02：统一更新 verified_at（审核时间），不再仅在通过时写入
+		if err := tx.Model(&model.IdentityVerification{}).
+			Where("id = ?", verificationID).
+			Update("verified_at", &now).Error; err != nil {
 			return err
 		}
 		s.repo.CreateLog(tx, &model.IdentityVerificationLog{
@@ -96,17 +115,32 @@ func (s *IdentityService) Review(ctx context.Context, verificationID, operatorID
 			Remark:         &reason,
 		})
 		if approve {
-			now := time.Now()
-			tx.Model(&model.IdentityVerification{}).Where("id = ?", verificationID).Update("verified_at", &now)
 			return s.userRepo.UpdateRealNameStatus(tx, verification.UserID, "verified", verification.RealName)
 		}
 		return nil
 	})
+	if txErr != nil {
+		return txErr
+	}
+	// D-04：审核操作完成后写入全局审计日志（失败不阻断主流程）
+	_ = s.auditSvc.Record(ctx, &operatorID, "identity", "review",
+		strPtr("identity_verification"), strPtr(strconv.FormatUint(verificationID, 10)), "",
+		map[string]any{
+			"approve": approve,
+			"reason":  reason,
+		})
+	return nil
+}
+
+// strPtr 返回字符串的指针，用于构造审计日志中的 targetType/targetID 字段。
+func strPtr(s string) *string {
+	return &s
 }
 
 // GetMyVerification 用户查自己的认证状态。
+// D-05：改用 FindLatestByUser，确保被拒绝的用户也能查到拒绝原因，不再返回 404。
 func (s *IdentityService) GetMyVerification(ctx context.Context, userID uint64) (*dto.VerificationResp, error) {
-	v, err := s.repo.FindActiveByUser(ctx, userID)
+	v, err := s.repo.FindLatestByUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}

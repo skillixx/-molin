@@ -183,8 +183,9 @@ func NewApp() (*App, error) {
 	authService := authsvc.NewAuthService(userRepo, sessionRepo, verifySvc, loginLogRepo, cfg, redisClient, auditSvc, iamService)
 
 	// ——— Identity 模块 ———
+	// D-04：注入 auditSvc，用于审核操作写全局审计日志
 	identityRepo := identityrep.NewIdentityRepository(gormDB)
-	identityService := identitysvc.NewIdentityService(identityRepo, userRepo, gormDB, cfg)
+	identityService := identitysvc.NewIdentityService(identityRepo, userRepo, gormDB, cfg, auditSvc)
 
 	// ——— Billing 模块（WalletService 供 product 购买接口注入）———
 	walletRepo := billingrepo.NewWalletRepository(gormDB)

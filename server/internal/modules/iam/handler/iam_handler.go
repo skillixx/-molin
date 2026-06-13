@@ -264,7 +264,7 @@ func (h *IAMHandler) SetPermissionOverride(w http.ResponseWriter, r *http.Reques
 		response.Error(w, http.StatusBadRequest, 40000, "effect 只能为 allow 或 deny")
 		return
 	}
-	// 查权限码
+	// 查权限码：遍历全部权限寻找匹配的 permission_id
 	perms, _ := h.iamSvc.ListPermissions(r.Context())
 	permCode := ""
 	for _, p := range perms {
@@ -272,6 +272,11 @@ func (h *IAMHandler) SetPermissionOverride(w http.ResponseWriter, r *http.Reques
 			permCode = p.Code
 			break
 		}
+	}
+	// D-03：permission_id 不存在时 permCode 为空值，禁止写入，返回 400
+	if permCode == "" {
+		response.Error(w, http.StatusBadRequest, 40000, "permission_id 不存在")
+		return
 	}
 	operatorID := middleware.UserIDFromContext(r.Context())
 	override := &model.UserPermissionOverride{
