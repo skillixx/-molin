@@ -23,9 +23,9 @@
 | A-07 | Week 1（补丁）| 补全管理员列表接口及字段缺漏修复 | `feature/backend-auth-admin-list-fix` | ✅ 已完成 | 测试工程师验收通过（2026-06-11）；merge commit db9e746；含 migration 000014（user:list seed）；覆盖 A-01/A-02/A-03 遗漏点；修复内容：(1) 补充 GET /api/admin/users 和 GET /api/admin/users/{id}；(2) VerificationResp 补充 user_id/submitted_at/reviewed_at；(3) identity-verifications 列表解除 status 硬编码；(4) roles/permissions 列表支持 ?keyword= 搜索；(5) permission-overrides 支持 ?effect=/?permission_code= 过滤；(6) permission-overrides 响应字段名修复为 snake_case；(7) POST /api/identity/verifications 响应补充 data.id |
 | A-08 | Week 1（补丁）| 手机号登录改为验证码登录 | `feature/backend-auth-login-phone-otp` | ✅ 已完成 | PR#20（merge commit `2962264`）；`POST /api/auth/login/phone` 请求体由 `{phone, password}` 改为 `{phone, code}`，登录前需先调用 `POST /api/auth/verification-codes/phone`（scene=login）获取验证码；校验失败返回 ErrInvalidCode（40000）；未涉及 migration |
 | A-09 | Week 1（补丁）| 退出登录吊销当前 Access Token | `feature/backend-a-auth-logout-revoke-token` | ✅ 已完成 | PR#22（merge commit `e602b5e`）；新增 Redis 黑名单 `revoked:token:<sha256(token)>`（TTL=token 剩余有效期），`RequireAuth` 中间件在签名校验通过后查询该黑名单，命中返回 40001；`Logout` 函数签名新增 rawAccessToken 参数（仅内部调用，`POST /api/auth/logout` 请求/响应体不变）；吊销粒度精确到单个 Access Token，不影响同账号其他会话；未涉及 migration |
-| A-10 | IAM（待开发）| 新增 `GET /api/me/permissions`：返回当前登录用户的有效权限码集合（角色权限 ∪ 分组权限，叠加用户 overrides 的 allow/deny 调整后的最终结果）。解决前端无法做按钮级权限控制（菜单/按钮显隐）的问题，避免只能依赖接口返回 403 才能感知无权限 | `feature/backend-a-auth-me-permissions` | ⏳ 待开发 | 优先级 P2；复用 `service/iam_service.go` 中 `getAllUserPermCodes` 的计算逻辑（需结合 overrides 调整后导出）；需要 Bearer Token 鉴权，无需额外权限码 |
-| A-11 | IAM（待开发）| 新增 `GET /api/admin/roles/{id}/permissions`：返回指定角色当前拥有的权限码列表（数组）。解决管理后台无法展示"该角色当前有哪些权限"、编辑权限时无法预填充当前值的问题（`PATCH /api/admin/roles/{id}/permissions` 是全量替换写接口，必须先知道当前集合才能正确增删）| `feature/backend-a-iam-role-permissions-get` | ⏳ 待开发 | 优先级 P2；复用 `permissionRepo.FindByRoleIDs`；需要 `role:manage` 权限码 |
-| A-12 | IAM（待开发）| 新增 `GET /api/admin/users/{id}/effective-permissions`：返回指定用户最终生效的权限码列表（角色权限 ∪ 分组权限，再叠加 `user_permission_overrides` 的 allow/deny 调整后的结果，含调整明细）。解决管理后台无"用户权限排查/一览"功能、只能由运维/开发直连数据库写 SQL 手动计算的问题 | `feature/backend-a-iam-user-effective-permissions` | ⏳ 待开发 | 优先级 P3；封装并导出 `service/iam_service.go` 中 `getAllUserPermCodes`（第 188 行）逻辑；需要 `role:manage` 权限码 |
+| A-10 | IAM（待开发）| 新增 `GET /api/me/permissions`：返回当前登录用户的有效权限码集合（角色权限 ∪ 分组权限，叠加用户 overrides 的 allow/deny 调整后的最终结果）。解决前端无法做按钮级权限控制（菜单/按钮显隐）的问题，避免只能依赖接口返回 403 才能感知无权限 | `feature/backend-a-iam-permission-query-apis` | 🔄 开发完成，待测试验收 | PR#31；新增 `IAMService.GetEffectivePermissionCodes`（在 `getAllUserPermCodes` 基础上叠加 overrides）；auth 模块新增 `PermissionResolver` 接口避免循环导入，`AuthService` 注入 iamService 作为依赖；bootstrap 中调整 IAM/Auth 构建顺序；响应 `{"permissions": [...]}`；文档见 full-api-design.md 2.19 |
+| A-11 | IAM（待开发）| 新增 `GET /api/admin/roles/{id}/permissions`：返回指定角色当前拥有的权限码列表（数组）。解决管理后台无法展示"该角色当前有哪些权限"、编辑权限时无法预填充当前值的问题（`PATCH /api/admin/roles/{id}/permissions` 是全量替换写接口，必须先知道当前集合才能正确增删）| `feature/backend-a-iam-permission-query-apis` | 🔄 开发完成，待测试验收 | PR#31（与 A-10/A-12 同分支同 PR）；复用 `permissionRepo.FindByRoleIDs`，新增 `IAMService.GetRolePermissionCodes`；需要 `role:manage` 权限码；角色不存在返回 404 40400；文档见 full-api-design.md 3.12 |
+| A-12 | IAM（待开发）| 新增 `GET /api/admin/users/{id}/effective-permissions`：返回指定用户最终生效的权限码列表（角色权限 ∪ 分组权限，再叠加 `user_permission_overrides` 的 allow/deny 调整后的结果，含调整明细）。解决管理后台无"用户权限排查/一览"功能、只能由运维/开发直连数据库写 SQL 手动计算的问题 | `feature/backend-a-iam-permission-query-apis` | 🔄 开发完成，待测试验收 | PR#31（与 A-10/A-11 同分支同 PR）；复用 `IAMService.GetEffectivePermissionCodes` + 新增 `GetEffectiveOverrides`；需要 `role:manage` 权限码；响应含 `overrides: [{code, effect}]`；文档见 full-api-design.md 3.17 |
 
 ---
 
@@ -125,14 +125,14 @@
 
 | 开发者 | 总任务数 | 已完成 | 进行中 | 待开始 |
 |---|---|---|---|---|
-| 后端工程师甲 | 10 | 7（已审查）| 0 | 3 |
+| 后端工程师甲 | 12 | 9（已审查）| 3（PR#31 待验收）| 0 |
 | 后端工程师乙 | 6 | 0 | 0 | 6 |
 | 后端工程师丙 | 5 | 0 | 0 | 5 |
 | 前端工程师甲 | 7 | 3（已审查）| 0 | 4 |
 | 前端工程师乙 | 8 | 0 | 0 | 8 |
 | 运维工程师 | 6 | 6 | 0 | 0 |
 | 测试工程师 | 6 | 0 | 0 | 6 |
-| **合计** | **48** | **16** | **0** | **32** |
+| **合计** | **50** | **18** | **3** | **29** |
 
 ---
 
