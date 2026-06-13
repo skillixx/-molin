@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"strconv"
 	"strings"
@@ -475,19 +476,24 @@ func (s *AuthService) recordLogin(ctx context.Context, userID *uint64, loginType
 // 封禁后其存量 Access Token 在 TTL 内将被 RequireAuth 中间件拦截，返回 401。
 // 同时吊销该用户全部 Refresh Token，阻止其刷新获得新 Token。
 // operatorID/reason/ip 用于写入审计日志（A-05）：审计写入失败不影响封禁本身的成功结果。
+//
+// D-12：DB 的 status 字段是封禁是否"生效"的权威判定，Redis 黑名单和会话吊销只是辅助的
+// 快速失效手段。因此调整为先执行 Redis/会话吊销（即使失败也继续往下走，仅记录日志），
+// 最后才更新 DB 状态；只有 DB 更新失败才整体返回错误，避免出现"DB 已封禁但 Redis/会话
+// 未处理"的半成品状态。
 func (s *AuthService) BanUser(ctx context.Context, userID uint64, operatorID uint64, reason, ip string) error {
-	// 1. 数据库标记用户为 disabled
-	if err := s.userRepo.UpdateStatus(ctx, userID, "disabled"); err != nil {
-		return err
-	}
-	// 2. 将 userID 写入 Redis 黑名单，TTL = Access Token 有效期
+	// 1. 将 userID 写入 Redis 黑名单，TTL = Access Token 有效期（失败仅记录日志，不阻断）
 	key := fmt.Sprintf(blockedUserKeyFmt, userID)
 	ttl := time.Duration(s.cfg.JWTExpireSeconds) * time.Second
 	if err := s.redis.Set(ctx, key, "1", ttl).Err(); err != nil {
-		return fmt.Errorf("写入封禁黑名单失败: %w", err)
+		log.Printf("BanUser: 写入封禁黑名单失败 userID=%d err=%v", userID, err)
 	}
-	// 3. 吊销该用户所有 Refresh Token，防止其刷新令牌获得新 Access Token
+	// 2. 吊销该用户所有 Refresh Token，防止其刷新令牌获得新 Access Token（失败仅记录日志，不阻断）
 	if err := s.sessionRepo.RevokeAllByUser(ctx, userID); err != nil {
+		log.Printf("BanUser: 吊销会话失败 userID=%d err=%v", userID, err)
+	}
+	// 3. 数据库标记用户为 disabled（权威状态，失败则整体返回错误）
+	if err := s.userRepo.UpdateStatus(ctx, userID, "disabled"); err != nil {
 		return err
 	}
 	// 4. 写入审计日志（记录操作人和封禁原因），失败仅记录警告，不影响封禁结果
@@ -495,17 +501,20 @@ func (s *AuthService) BanUser(ctx context.Context, userID uint64, operatorID uin
 	return nil
 }
 
-// UnbanUser 解封用户：从 Redis 黑名单移除，并将用户状态恢复为 active。
+// UnbanUser 解封用户：将用户状态恢复为 active，并从 Redis 黑名单移除。
 // operatorID/reason/ip 用于写入审计日志（A-05）：审计写入失败不影响解封本身的成功结果。
+//
+// D-12：DB 是最终权威状态，Redis 黑名单是辅助快速失效缓存。先更新 DB（失败则整体返回错误），
+// 再删除 Redis 黑名单 key（失败仅记录日志，不影响整体结果；黑名单 TTL 到期后会自动失效）。
 func (s *AuthService) UnbanUser(ctx context.Context, userID uint64, operatorID uint64, reason, ip string) error {
-	// 1. 删除 Redis 黑名单 key（立即解除拦截）
-	key := fmt.Sprintf(blockedUserKeyFmt, userID)
-	if err := s.redis.Del(ctx, key).Err(); err != nil {
-		return fmt.Errorf("删除封禁黑名单失败: %w", err)
-	}
-	// 2. 恢复数据库状态
+	// 1. 恢复数据库状态（权威状态，失败则整体返回错误）
 	if err := s.userRepo.UpdateStatus(ctx, userID, "active"); err != nil {
 		return err
+	}
+	// 2. 删除 Redis 黑名单 key（失败仅记录日志，不阻断；TTL 到期后会自动失效）
+	key := fmt.Sprintf(blockedUserKeyFmt, userID)
+	if err := s.redis.Del(ctx, key).Err(); err != nil {
+		log.Printf("UnbanUser: 删除封禁黑名单失败 userID=%d err=%v", userID, err)
 	}
 	// 3. 写入审计日志（记录操作人和解封原因），失败仅记录警告，不影响解封结果
 	s.recordBanAudit(ctx, "unban_user", userID, operatorID, reason, ip)
