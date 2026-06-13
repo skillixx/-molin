@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"molin/server/internal/middleware"
 	"molin/server/internal/modules/auth/dto"
 	"molin/server/internal/modules/auth/service"
+	"molin/server/pkg/httputil"
 	"molin/server/pkg/pagination"
 	"molin/server/pkg/response"
 )
@@ -84,7 +86,7 @@ func (h *AuthHandler) LoginEmail(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
-	pair, err := h.authSvc.LoginEmail(r.Context(), req, r.RemoteAddr, r.UserAgent())
+	pair, err := h.authSvc.LoginEmail(r.Context(), req, httputil.ClientIP(r), r.UserAgent())
 	if err != nil {
 		handleAuthError(w, err)
 		return
@@ -99,7 +101,7 @@ func (h *AuthHandler) LoginPhone(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
-	pair, err := h.authSvc.LoginPhone(r.Context(), req, r.RemoteAddr, r.UserAgent())
+	pair, err := h.authSvc.LoginPhone(r.Context(), req, httputil.ClientIP(r), r.UserAgent())
 	if err != nil {
 		handleAuthError(w, err)
 		return
@@ -110,14 +112,24 @@ func (h *AuthHandler) LoginPhone(w http.ResponseWriter, r *http.Request) {
 // Logout POST /api/auth/logout
 // 同时吊销请求体中的 Refresh Token（对应会话标记 revoked）和请求头中携带的当前 Access Token
 // （写入 Redis 吊销黑名单，使其在自然过期前立即失效）。
+//
+// D-23：refresh_token 为必填字段，空值直接返回 400/40000。
+// D-18：会话吊销失败（安全相关）会向上返回，映射为 500。
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	var req dto.LogoutReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
+	if strings.TrimSpace(req.RefreshToken) == "" {
+		response.Error(w, http.StatusBadRequest, 40000, "refresh_token 为必填字段")
+		return
+	}
 	rawAccessToken := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	_ = h.authSvc.Logout(r.Context(), req.RefreshToken, rawAccessToken)
+	if err := h.authSvc.Logout(r.Context(), req.RefreshToken, rawAccessToken); err != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "退出登录失败")
+		return
+	}
 	response.JSON(w, http.StatusOK, nil)
 }
 
@@ -128,8 +140,12 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
-	pair, err := h.authSvc.Refresh(r.Context(), req.RefreshToken)
+	pair, err := h.authSvc.Refresh(r.Context(), req.RefreshToken, r.UserAgent(), httputil.ClientIP(r))
 	if err != nil {
+		if err == service.ErrRefreshTokenAlreadyUsed {
+			handleAuthError(w, err)
+			return
+		}
 		response.Error(w, http.StatusUnauthorized, 40001, "凭证无效或已过期")
 		return
 	}
@@ -182,7 +198,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
-	pair, err := h.authSvc.Register(r.Context(), req)
+	pair, err := h.authSvc.Register(r.Context(), req, r.UserAgent(), httputil.ClientIP(r))
 	if err != nil {
 		handleAuthError(w, err)
 		return
@@ -295,6 +311,11 @@ func (h *AuthHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
+	// D-24：reason 字段长度限制，超长直接拒绝
+	if len(req.Reason) > dto.MaxReasonLength {
+		response.Error(w, http.StatusBadRequest, 40000, fmt.Sprintf("reason 长度不能超过 %d 字符", dto.MaxReasonLength))
+		return
+	}
 
 	// 操作人 ID（来自已登录的管理员）和客户端 IP，用于审计日志
 	operatorID := middleware.UserIDFromContext(r.Context())
@@ -384,6 +405,12 @@ func handleAuthError(w http.ResponseWriter, err error) {
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 	case service.ErrPhoneNotRegistered, service.ErrEmailNotRegistered:
 		response.Error(w, http.StatusNotFound, 40404, err.Error())
+	case service.ErrLoginLocked:
+		// D-16：登录失败次数超限，账号临时锁定，提示用户稍后重试
+		response.Error(w, http.StatusLocked, 42901, err.Error())
+	case service.ErrRefreshTokenAlreadyUsed:
+		// D-15：Refresh Token 已被并发请求使用并吊销，需重新登录
+		response.Error(w, http.StatusUnauthorized, 40001, err.Error())
 	default:
 		response.Error(w, http.StatusInternalServerError, 50000, "服务器内部错误")
 	}

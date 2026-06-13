@@ -2,6 +2,9 @@ package auth
 
 import (
 	"net/http"
+	"time"
+
+	"github.com/redis/go-redis/v9"
 
 	"molin/server/internal/config"
 	"molin/server/internal/middleware"
@@ -10,8 +13,9 @@ import (
 )
 
 // RegisterRoutes 将 auth 模块路由注册到 mux。
-// iamChecker 用于权限校验；scopeResolver 用于数据范围注入（管理员用户列表/详情接口）。
-func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc *service.VerificationService, cfg config.Config, iamChecker middleware.IAMChecker, scopeResolver middleware.ScopeResolver) {
+// iamChecker 用于权限校验；scopeResolver 用于数据范围注入（管理员用户列表/详情接口）；
+// redisClient 用于 D-22 修改绑定信息接口的限流。
+func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc *service.VerificationService, cfg config.Config, iamChecker middleware.IAMChecker, scopeResolver middleware.ScopeResolver, redisClient *redis.Client) {
 	h := handler.NewAuthHandler(authSvc, verifySvc, cfg)
 
 	// 无需鉴权的接口
@@ -33,8 +37,15 @@ func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc 
 	mux.Handle("GET /api/me/permissions", auth(h.GetMyPermissions))
 	mux.Handle("PATCH /api/me/password", auth(h.ChangePassword))
 	mux.Handle("PATCH /api/me/username", auth(h.UpdateUsername))
-	mux.Handle("PATCH /api/me/phone", auth(h.UpdatePhone))
-	mux.Handle("PATCH /api/me/email", auth(h.UpdateEmail))
+
+	// D-22：修改手机号/邮箱接口存在账号枚举风险，在 RequireAuth 之后叠加
+	// 每用户每分钟最多 bindUpdateLimit 次的限流。
+	const bindUpdateLimit = 5
+	const bindUpdateWindow = time.Minute
+	mux.Handle("PATCH /api/me/phone", middleware.RequireAuth(cfg.JWTSecret, authSvc,
+		middleware.RateLimitByUser(redisClient, "update_phone", bindUpdateLimit, bindUpdateWindow, http.HandlerFunc(h.UpdatePhone))))
+	mux.Handle("PATCH /api/me/email", middleware.RequireAuth(cfg.JWTSecret, authSvc,
+		middleware.RateLimitByUser(redisClient, "update_email", bindUpdateLimit, bindUpdateWindow, http.HandlerFunc(h.UpdateEmail))))
 
 	// 管理员双重认证接口（需登录 + user:manage 权限；本身不校验双重认证，这是完成认证的入口）
 	adminAuth := func(next http.HandlerFunc) http.Handler {
