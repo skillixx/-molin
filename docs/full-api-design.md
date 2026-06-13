@@ -693,7 +693,7 @@ GET /api/admin/users/:id/identity
 GET    /api/admin/roles
 POST   /api/admin/roles
 GET    /api/admin/roles/:id
-PATCH  /api/admin/roles/:id
+PUT    /api/admin/roles/:id
 DELETE /api/admin/roles/:id
 ```
 
@@ -705,7 +705,7 @@ GET /api/admin/roles Query 参数：
 | page | integer | 否 | 页码，默认 1 |
 | page_size | integer | 否 | 每页数量，默认 20 |
 
-POST / PATCH Body 参数：
+POST Body 参数：
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
@@ -713,7 +713,38 @@ POST / PATCH Body 参数：
 | name | string | 是 | 角色名称 |
 | description | string | 否 | 描述 |
 
-返回 data：角色信息或 `updated`。
+PUT Body 参数（仅 name/description 生效，code 不可修改）：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| code | string | 否 | 角色 code（传入会被忽略，不会更新） |
+| name | string | 是 | 角色名称 |
+| description | string | 否 | 描述 |
+
+POST 返回 data：角色信息（`RoleResp{id, code, name, description}`）。
+
+PUT 返回 data：`null`（更新成功）。
+
+#### GET /api/admin/roles/:id
+
+返回 data（`RoleResp`）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | integer | 角色 ID |
+| code | string | 角色 code |
+| name | string | 角色名称 |
+| description | string | 描述，可为 null |
+
+错误码：
+
+| 错误码 | HTTP 状态码 | 说明 |
+|---|---|---|
+| 40400 | 404 | 角色不存在 |
+
+#### DELETE /api/admin/roles/:id
+
+返回 data：`null`（删除成功）。
 
 ### 3.11 权限管理
 
@@ -836,7 +867,242 @@ Query 参数：operator_id、module、action、created_from、created_to、page�
 
 返回 data.items：审计日志列表。
 
-### 3.17 用户最终生效权限（排查/一览）
+### 3.17 用户分组管理
+
+> 以下接口均需登录 + `group:manage` 权限 + 管理员双重认证。
+
+#### 3.17.1 分组 CRUD
+
+```text
+GET    /api/admin/user-groups
+POST   /api/admin/user-groups
+GET    /api/admin/user-groups/:id
+PUT    /api/admin/user-groups/:id
+DELETE /api/admin/user-groups/:id
+```
+
+GET（列表）Query 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| type | string | 否 | 按分组类型过滤：region / org / custom |
+| keyword | string | 否 | 模糊搜索，匹配分组 code 或 name |
+| page | integer | 否 | 页码，默认 1 |
+| page_size | integer | 否 | 每页数量，默认 20 |
+
+GET（列表）返回 data.items（`GroupResp`）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | integer | 分组 ID |
+| code | string | 分组 code |
+| name | string | 分组名称 |
+| type | string | 分组类型：region / org / custom |
+| is_default | boolean | 是否为默认分组（无邀请码注册时的兜底组，全局最多一个） |
+| description | string | 描述，可为 null |
+| created_at | string | 创建时间（ISO 8601） |
+
+POST（创建）Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| code | string | 是 | 分组 code |
+| name | string | 是 | 分组名称 |
+| type | string | 否 | 分组类型：region / org / custom，默认 custom |
+| is_default | boolean | 否 | 是否设为默认分组 |
+| description | string | 否 | 描述 |
+
+POST 返回 data：分组信息（`GroupResp`），HTTP 201。
+
+错误码：
+
+| 错误码 | HTTP 状态码 | 说明 |
+|---|---|---|
+| 40000 | 400 | code 或 name 为空 |
+
+GET /api/admin/user-groups/:id 返回 data：分组信息（`GroupResp`）；分组不存在返回 `404 40400「分组不存在」`。
+
+PUT /api/admin/user-groups/:id Body 参数（仅以下字段可改，code 不可改）：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| name | string | 是 | 分组名称 |
+| type | string | 否 | 分组类型 |
+| is_default | boolean | 否 | 是否为默认分组 |
+| description | string | 否 | 描述 |
+
+PUT 返回 data：`null`（更新成功）。
+
+DELETE /api/admin/user-groups/:id 返回 data：`null`（删除成功）。
+
+错误码：
+
+| 错误码 | HTTP 状态码 | 说明 |
+|---|---|---|
+| 40901 | 409 | 分组内仍有成员，请先移除所有成员 |
+| 40902 | 409 | 分组内仍有有效邀请码，请先禁用后再删除分组 |
+
+#### 3.17.2 分组成员管理
+
+```text
+GET    /api/admin/user-groups/:id/members
+POST   /api/admin/user-groups/:id/members
+PATCH  /api/admin/user-groups/:id/members/:uid
+DELETE /api/admin/user-groups/:id/members/:uid
+```
+
+GET（列表）Query 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| group_role | string | 否 | 按组内角色过滤：admin / member |
+| page | integer | 否 | 页码，默认 1 |
+| page_size | integer | 否 | 每页数量，默认 20 |
+
+GET（列表）返回 data.items（`GroupMemberResp`）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | integer | 成员关系记录 ID |
+| user_id | integer | 用户 ID |
+| group_id | integer | 分组 ID |
+| group_role | string | 组内角色：admin（组管理员）/ member（普通组员） |
+| created_at | string | 加入时间（ISO 8601） |
+
+POST（加成员）Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| user_id | integer | 是 | 用户 ID |
+| group_role | string | 否 | 组内角色：admin / member，默认 member |
+
+POST 返回 data：`null`，HTTP 201。
+
+错误码：
+
+| 错误码 | HTTP 状态码 | 说明 |
+|---|---|---|
+| 40000 | 400 | user_id 为空 |
+| 40900 | 409 | 用户已在该分组中 |
+
+PATCH（修改成员组内角色）Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| group_role | string | 是 | 组内角色：admin / member |
+
+PATCH 返回 data：`null`。
+
+DELETE（移除成员）返回 data：`null`。
+
+PATCH / DELETE 错误码：
+
+| 错误码 | HTTP 状态码 | 说明 |
+|---|---|---|
+| 40400 | 404 | 用户不在该分组中 |
+
+#### 3.17.3 查询用户所在分组
+
+```text
+GET /api/admin/users/:id/groups
+```
+
+返回 data（数组，`UserGroupsResp[]`，非分页）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| group_id | integer | 分组 ID |
+| group_role | string | 该用户在此分组内的角色：admin / member |
+| joined_at | string | 加入时间（ISO 8601） |
+
+#### 3.17.4 分组权限码
+
+> `GroupPermission` 存储的是权限码字符串（`permission_code`），不关联 `permissions.id`。
+
+```text
+GET    /api/admin/user-groups/:id/permissions
+POST   /api/admin/user-groups/:id/permissions
+DELETE /api/admin/user-groups/:id/permissions/:code
+```
+
+GET 返回 data（数组，`GroupPermissionResp[]`，非分页）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | integer | 记录 ID |
+| group_id | integer | 分组 ID |
+| permission_code | string | 权限码 |
+| created_at | string | 添加时间（ISO 8601） |
+
+POST Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| permission_code | string | 是 | 权限码 |
+
+POST 返回 data：`null`，HTTP 201。
+
+错误码：
+
+| 错误码 | HTTP 状态码 | 说明 |
+|---|---|---|
+| 40000 | 400 | permission_code 为空 |
+| 40900 | 409 | 该权限码已添加到此分组 |
+
+DELETE `:code` 为权限码字符串本身（如 `app:use:xxx`），返回 data：`null`。
+
+#### 3.17.5 邀请码
+
+```text
+GET   /api/admin/user-groups/:id/invite-codes
+POST  /api/admin/user-groups/:id/invite-codes
+PATCH /api/admin/user-groups/:id/invite-codes/:invite_id/disable
+```
+
+GET（列表）Query 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| status | string | 否 | 按状态过滤：active / disabled |
+| page | integer | 否 | 页码，默认 1 |
+| page_size | integer | 否 | 每页数量，默认 20 |
+
+GET（列表）返回 data.items（`InviteCodeResp`）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | integer | 邀请码 ID |
+| code | string | 邀请码 |
+| group_id | integer | 所属分组 ID |
+| default_group_role | string | 使用此邀请码注册的用户默认组内角色：admin / member |
+| max_uses | integer | 最大使用次数，0 表示不限 |
+| used_count | integer | 已使用次数 |
+| expires_at | string | 过期时间（ISO 8601），永不过期为 null |
+| status | string | 状态：active / disabled |
+| created_by | integer | 创建人用户 ID，可为 null |
+| created_at | string | 创建时间（ISO 8601） |
+
+POST（创建）Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| code | string | 否 | 邀请码，为空时系统自动生成 8 位随机码 |
+| default_group_role | string | 否 | 默认组内角色：admin / member，默认 member |
+| max_uses | integer | 否 | 最大使用次数，0 表示不限，默认 0 |
+| expires_at | string | 否 | 过期时间（ISO 8601），不传或 null 表示永不过期 |
+
+POST 返回 data：邀请码信息（`InviteCodeResp`），HTTP 201。
+
+错误码：
+
+| 错误码 | HTTP 状态码 | 说明 |
+|---|---|---|
+| 40000 | 400 | expires_at 格式错误（需 ISO 8601） |
+| 40900 | 409 | 邀请码已存在，请更换 |
+
+PATCH（禁用邀请码）无 Body，返回 data：`null`。
+
+### 3.18 用户最终生效权限（排查/一览）
 
 ```text
 GET /api/admin/users/:id/effective-permissions
