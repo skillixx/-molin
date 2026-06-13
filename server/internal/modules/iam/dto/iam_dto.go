@@ -92,3 +92,23 @@ type OverrideItemReq struct {
 type ReplaceOverridesReq struct {
 	Items []OverrideItemReq `json:"items"`
 }
+
+// PermissionsResp 权限码列表响应 DTO。
+// A-10：GET /api/me/permissions；A-11：GET /api/admin/roles/{id}/permissions。
+type PermissionsResp struct {
+	Permissions []string `json:"permissions"`
+}
+
+// EffectiveOverrideResp 用户最终生效的权限覆盖明细（仅列出未过期的有效记录）。
+// A-12：GET /api/admin/users/{id}/effective-permissions 响应中的 overrides 字段。
+type EffectiveOverrideResp struct {
+	Code   string `json:"code"`
+	Effect string `json:"effect"` // allow / deny
+}
+
+// EffectivePermissionsResp 用户最终生效权限码及 overrides 调整明细响应 DTO。
+// A-12：GET /api/admin/users/{id}/effective-permissions。
+type EffectivePermissionsResp struct {
+	Permissions []string                `json:"permissions"`
+	Overrides   []EffectiveOverrideResp `json:"overrides"`
+}

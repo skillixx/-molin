@@ -95,6 +95,11 @@ type TokenPair struct {
 	ExpiresIn    int64  `json:"expires_in"`
 }
 
+// MyPermissionsResp 当前登录用户最终生效权限码集合响应（A-10）。
+type MyPermissionsResp struct {
+	Permissions []string `json:"permissions"`
+}
+
 // UserInfo 当前用户信息响应（个人信息中心）。
 // Phone 和 Email 已做脱敏处理：phone 前3后4中间*，email @前保留2位+***
 type UserInfo struct {

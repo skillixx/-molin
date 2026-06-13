@@ -29,6 +29,8 @@ func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc 
 	}
 	mux.Handle("POST /api/auth/logout", auth(h.Logout))
 	mux.Handle("GET /api/me", auth(h.GetMe))
+	// A-10：当前登录用户最终生效权限码集合（仅需登录，无需额外权限码）
+	mux.Handle("GET /api/me/permissions", auth(h.GetMyPermissions))
 	mux.Handle("PATCH /api/me/password", auth(h.ChangePassword))
 	mux.Handle("PATCH /api/me/username", auth(h.UpdateUsername))
 	mux.Handle("PATCH /api/me/phone", auth(h.UpdatePhone))

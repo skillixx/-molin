@@ -155,16 +155,10 @@ func NewApp() (*App, error) {
 	auditRepo := auditrepository.NewAuditLogRepository(gormDB)
 	auditSvc := auditservice.NewAuditService(auditRepo)
 
-	// ——— Auth 模块 ———
-	userRepo := authrep.NewUserRepository(gormDB)
-	sessionRepo := authrep.NewSessionRepository(gormDB)
-	verificationRepo := authrep.NewVerificationRepository(gormDB)
-	loginLogRepo := authrep.NewLoginLogRepository(gormDB)
-	verifySvc := authsvc.NewVerificationService(verificationRepo)
-	// 传入 redisClient，用于封禁用户黑名单（P1-01 修复）；传入 auditSvc 用于封禁/解封审计记录（A-05）
-	authService := authsvc.NewAuthService(userRepo, sessionRepo, verifySvc, loginLogRepo, cfg, redisClient, auditSvc)
-
 	// ——— IAM 模块 ———
+	// 提前于 Auth 模块构建：A-10 需要将 iamService 作为 PermissionResolver 注入 AuthService，
+	// 用于 GET /api/me/permissions 计算最终生效权限码。IAM 模块构建仅依赖 gormDB/redisClient/auditSvc，
+	// 与 Auth 模块构建顺序互换不影响其他依赖关系。
 	roleRepo := iamrep.NewRoleRepository(gormDB)
 	permRepo := iamrep.NewPermissionRepository(gormDB)
 	userRoleRepo := iamrep.NewUserRoleRepository(gormDB)
@@ -177,6 +171,16 @@ func NewApp() (*App, error) {
 	groupService := iamsvc.NewGroupService(groupRepo, gormDB, cacheSvc)
 	// Phase 3：ScopeService 解析管理员数据范围（scope:all 超管 / 组管理员可见集合）
 	scopeService := iamsvc.NewScopeService(groupRepo, iamService, cacheSvc)
+
+	// ——— Auth 模块 ———
+	userRepo := authrep.NewUserRepository(gormDB)
+	sessionRepo := authrep.NewSessionRepository(gormDB)
+	verificationRepo := authrep.NewVerificationRepository(gormDB)
+	loginLogRepo := authrep.NewLoginLogRepository(gormDB)
+	verifySvc := authsvc.NewVerificationService(verificationRepo)
+	// 传入 redisClient，用于封禁用户黑名单（P1-01 修复）；传入 auditSvc 用于封禁/解封审计记录（A-05）；
+	// 传入 iamService 作为 PermissionResolver，用于 GET /api/me/permissions（A-10）
+	authService := authsvc.NewAuthService(userRepo, sessionRepo, verifySvc, loginLogRepo, cfg, redisClient, auditSvc, iamService)
 
 	// ——— Identity 模块 ———
 	identityRepo := identityrep.NewIdentityRepository(gormDB)
