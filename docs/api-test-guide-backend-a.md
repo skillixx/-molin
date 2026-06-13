@@ -3,6 +3,7 @@
 > 面向人工测试（APIPost 等工具），覆盖后端工程师甲负责的全部接口。
 > 基于代码当前状态整理（2026-06-12），main 分支 commit `88114e1`。
 > 2026-06-13 更新：同步 PR#20（手机号登录改为验证码登录）、PR#22（退出登录吊销当前 Access Token）、PR#25（登录接口对未注册账号返回 404/40404）。
+> 2026-06-13 更新：新增 PR#31 权限查询接口 —— 2.7 `GET /api/me/permissions`（A-10）、6.7 `GET /api/admin/roles/{id}/permissions`（A-11）、7.9 `GET /api/admin/users/{id}/effective-permissions`（A-12），原 6.7/6.8 顺延为 6.8/6.9。
 
 ## 0. 通用说明
 
@@ -398,6 +399,24 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
 
 ---
 
+### 2.7 GET /api/me/permissions （A-10）
+返回当前登录用户最终生效的权限码集合。无请求体、无 Query 参数，**无需额外权限码**（仅需登录）。
+
+**成功响应** `200`
+```json
+{
+  "code": 0, "message": "ok",
+  "data": { "permissions": ["user:list", "role:manage", "group:manage"] }
+}
+```
+
+**计算逻辑**：角色权限 ∪ 用户所在分组的权限码，再叠加 `user_permission_overrides` 中
+**未过期**的 allow/deny 调整（deny 从集合中移除对应权限码，allow 追加进集合）。
+
+> 用途：前端可据此做按钮级权限控制（菜单/按钮显隐），避免只能依赖接口返回 403 才能感知无权限。
+
+---
+
 ## 三、Auth 模块 — 管理员双重认证入口（需 Bearer + user:manage 权限）
 
 ### 3.1 POST /api/admin/auth/verify-phone
@@ -687,7 +706,30 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
 
 ---
 
-### 6.7 GET /api/admin/permissions
+### 6.7 GET /api/admin/roles/{id}/permissions （A-11）
+返回指定角色当前拥有的权限码列表（数组）。
+
+**Path 参数**：`id` — 角色 ID
+
+**成功响应** `200`
+```json
+{
+  "code": 0, "message": "ok",
+  "data": { "permissions": ["user:list", "role:manage", "group:manage"] }
+}
+```
+
+**错误**
+| code | HTTP | 场景 |
+|---|---|---|
+| 40000 | 400 | id 不合法 |
+| 40400 | 404 | 角色不存在 |
+
+> 用途：编辑角色权限前先查当前已有权限集合，配合 6.6 `PATCH /api/admin/roles/{id}/permissions`（全量替换）做增删。
+
+---
+
+### 6.8 GET /api/admin/permissions
 **Query 参数**：`keyword`（匹配 code 或 name）、`page`、`page_size`
 
 **成功响应** `200`
@@ -702,7 +744,7 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
 
 ---
 
-### 6.8 POST /api/admin/permissions （A-06，P3-1 已修复为 409）
+### 6.9 POST /api/admin/permissions （A-06，P3-1 已修复为 409）
 创建权限码。
 
 **请求体**
@@ -863,6 +905,41 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
 **Path 参数**：`id` — 用户 ID，`override_id` — 覆盖记录 ID
 
 **成功响应** `200`：`data: null`
+
+---
+
+### 7.9 GET /api/admin/users/{id}/effective-permissions （A-12）
+返回指定用户最终生效的权限码列表（角色权限 ∪ 组权限，再叠加 `user_permission_overrides`
+的 allow/deny 调整），并附带当前实际生效（未过期）的 overrides 调整明细。计算逻辑与 2.7
+`GET /api/me/permissions` 一致，区别仅在于目标用户是路径参数 `:id` 指定的用户。
+
+**Path 参数**：`id` — 用户 ID
+
+**成功响应** `200`
+```json
+{
+  "code": 0, "message": "ok",
+  "data": {
+    "permissions": ["user:list", "role:manage", "group:manage"],
+    "overrides": [
+      { "code": "user:list", "effect": "deny" },
+      { "code": "report:export", "effect": "allow" }
+    ]
+  }
+}
+```
+- `overrides` 为空数组 `[]` 表示该用户当前没有任何生效中的权限覆盖
+
+**错误**
+| code | HTTP | 场景 |
+|---|---|---|
+| 40000 | 400 | id 不合法 |
+
+> **注意**：本接口**不校验** `:id` 对应的用户是否存在（与 7.1/7.2 等同模块接口一致，
+> IAM 模块不持有用户表）。若 `:id` 不存在，`permissions`/`overrides` 均返回空数组，
+> HTTP 状态码仍为 `200`，**不会**返回 404。
+>
+> 用途：管理后台"用户权限排查/一览"功能，免去运维/开发直连数据库手动计算的步骤。
 
 ---
 
@@ -1144,7 +1221,8 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
 1. **0.7/0.8** 用管理员账号登录 + 完成双重认证，拿到可用于所有 `/api/admin/*` 的 token
 2. **第一节** 注册一个新普通用户，跑通注册/登录/刷新/改资料/密码重置全流程
 3. **第五节** 用普通用户提交实名认证，再用管理员账号审核
-4. **第六、七节** 用管理员创建角色/权限码，分配给上一步注册的普通用户，验证权限生效（可结合 `CheckPermission` 间接通过普通用户访问需要该权限的接口来验证）
+4. **第六、七节** 用管理员创建角色/权限码，分配给上一步注册的普通用户，验证权限生效（可结合 `CheckPermission` 间接通过普通用户访问需要该权限的接口来验证）；分配前后可用 6.7 查角色权限、7.9 查该用户最终生效权限，再用普通用户的 token 调 2.7 自查，三者结果应一致
+4.1 **2.7 / 6.7 / 7.9（A-10/A-11/A-12）** 可结合 7.6/7.7 设置该用户的权限覆盖（allow/deny），验证 7.9 返回的 `overrides` 明细及 `permissions` 是否按预期增删，2.7 用该用户 token 自查应与 7.9 结果一致
 5. **第四节** 用管理员封禁/解封刚注册的普通用户，验证封禁后该用户 token 立即失效（401）
 6. **第九节** 创建分组、加入成员、配置组权限，验证组权限继承（普通用户加入有 `user:list` 权限的分组后，能访问 `GET /api/admin/users` —— 注意该接口还需双重认证，普通用户不具备，可改为验证 `CheckPermission` 内部逻辑或选用无需双重认证的权限码做验证）
 7. **第八节** 最后查 `/api/admin/audit-logs`，核对前面操作（封禁/解封、创建权限码、设置角色权限等）是否都有审计记录
