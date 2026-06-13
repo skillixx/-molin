@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 
 	"molin/server/internal/config"
 	auditservice "molin/server/internal/modules/audit/service"
@@ -37,6 +38,10 @@ var (
 	ErrAdminPhoneNotVerified = errors.New("请先完成手机号认证")
 	ErrPhoneNotRegistered    = errors.New("手机号未注册，请先注册")
 	ErrEmailNotRegistered    = errors.New("邮箱未注册，请先注册")
+	// ErrRefreshTokenAlreadyUsed D-15：Refresh Token 已被并发请求使用并吊销，本次刷新失败。
+	ErrRefreshTokenAlreadyUsed = errors.New("refresh token 已被使用，请重新登录")
+	// ErrLoginLocked D-16：登录失败次数超限，账号临时锁定。
+	ErrLoginLocked = errors.New("登录失败次数过多，请稍后再试")
 )
 
 // blockedUserKeyFmt 封禁用户在 Redis 中的 key 格式。
@@ -46,6 +51,15 @@ const blockedUserKeyFmt = "blocked:user:%d"
 // revokedTokenKeyFmt 退出登录后被吊销的 Access Token 在 Redis 中的 key 格式（value 为 token 的 SHA-256），
 // TTL = token 剩余有效期，自然过期后黑名单同步失效。
 const revokedTokenKeyFmt = "revoked:token:%s"
+
+// loginFailKeyFmt D-16：登录失败计数在 Redis 中的 key 格式，按登录标识（email/phone）维度计数。
+const loginFailKeyFmt = "login_fail:%s:%s"
+
+// loginFailLimit 登录失败次数阈值，达到后在 loginFailWindow 内拒绝登录。
+const loginFailLimit = 5
+
+// loginFailWindow 登录失败计数的时间窗口。
+const loginFailWindow = 15 * time.Minute
 
 // PermissionResolver 权限计算接口，由 iam.IAMService 实现。
 // 在 auth/service 包中定义以避免循环导入（auth 不直接依赖 iam 的具体实现）。
@@ -64,6 +78,7 @@ type AuthService struct {
 	redis        *redis.Client
 	auditSvc     *auditservice.AuditService
 	permResolver PermissionResolver
+	db           *gorm.DB
 }
 
 func NewAuthService(
@@ -75,6 +90,7 @@ func NewAuthService(
 	redisClient *redis.Client,
 	auditSvc *auditservice.AuditService,
 	permResolver PermissionResolver,
+	db *gorm.DB,
 ) *AuthService {
 	return &AuthService{
 		userRepo:     userRepo,
@@ -85,6 +101,7 @@ func NewAuthService(
 		redis:        redisClient,
 		auditSvc:     auditSvc,
 		permResolver: permResolver,
+		db:           db,
 	}
 }
 
@@ -167,7 +184,8 @@ func (s *AuthService) SendCode(ctx context.Context, targetType, targetValue, sce
 }
 
 // Register 统一注册（手机+邮箱+用户名，需双验证码）。
-func (s *AuthService) Register(ctx context.Context, req dto.RegisterReq) (*dto.TokenPair, error) {
+// ua/ip 用于填充新建会话的 user_agent/ip（D-20）。
+func (s *AuthService) Register(ctx context.Context, req dto.RegisterReq, ua, ip string) (*dto.TokenPair, error) {
 	req.Phone = normalizePhone(req.Phone)
 	req.Email = normalizeEmail(req.Email)
 	req.Username = strings.TrimSpace(req.Username)
@@ -222,12 +240,20 @@ func (s *AuthService) Register(ctx context.Context, req dto.RegisterReq) (*dto.T
 		}
 		return nil, err
 	}
-	return s.generateTokenPair(ctx, user)
+	return s.generateTokenPair(ctx, s.db.WithContext(ctx), user, ua, ip)
 }
 
 // LoginEmail 邮箱密码登录。
+//
+// D-16：登录前先检查该邮箱的失败次数是否已达阈值（loginFailLimit），超限在 loginFailWindow 内直接拒绝；
+// 密码错误时计数 +1，登录成功后清除计数。Redis 操作失败按约定1降级（不阻断登录，仅记录日志）。
 func (s *AuthService) LoginEmail(ctx context.Context, req dto.LoginEmailReq, ip, ua string) (*dto.TokenPair, error) {
 	req.Email = normalizeEmail(req.Email)
+
+	if locked := s.checkLoginLocked(ctx, "email", req.Email); locked {
+		return nil, ErrLoginLocked
+	}
+
 	user, err := s.userRepo.FindByEmail(ctx, req.Email)
 	if err != nil {
 		s.recordLogin(ctx, nil, "email", req.Email, ip, ua, "failed")
@@ -237,17 +263,26 @@ func (s *AuthService) LoginEmail(ctx context.Context, req dto.LoginEmailReq, ip,
 		return nil, ErrUserDisabled
 	}
 	if !crypto.CheckPassword(req.Password, user.PasswordHash) {
+		s.incrLoginFail(ctx, "email", req.Email)
 		s.recordLogin(ctx, &user.ID, "email", req.Email, ip, ua, "failed")
 		return nil, ErrWrongPassword
 	}
-	s.recordLogin(ctx, &user.ID, "email", req.Email, ip, ua, "success")
-	return s.generateTokenPair(ctx, user)
+	s.clearLoginFail(ctx, "email", req.Email)
+	return s.loginSuccess(ctx, user, "email", req.Email, ip, ua)
 }
 
 // LoginPhone 手机号验证码登录。
 // 登录前需先调用 POST /api/auth/verification-codes/phone（scene=login）获取验证码。
+//
+// D-16：登录前先检查该手机号的失败次数是否已达阈值，超限在 loginFailWindow 内直接拒绝；
+// 验证码错误时计数 +1，登录成功后清除计数。
 func (s *AuthService) LoginPhone(ctx context.Context, req dto.LoginPhoneReq, ip, ua string) (*dto.TokenPair, error) {
 	req.Phone = normalizePhone(req.Phone)
+
+	if locked := s.checkLoginLocked(ctx, "phone", req.Phone); locked {
+		return nil, ErrLoginLocked
+	}
+
 	user, err := s.userRepo.FindByPhone(ctx, req.Phone)
 	if err != nil {
 		s.recordLogin(ctx, nil, "phone", req.Phone, ip, ua, "failed")
@@ -257,24 +292,84 @@ func (s *AuthService) LoginPhone(ctx context.Context, req dto.LoginPhoneReq, ip,
 		return nil, ErrUserDisabled
 	}
 	if err := s.verifySvc.Check(ctx, "phone", req.Phone, "login", req.Code); err != nil {
+		s.incrLoginFail(ctx, "phone", req.Phone)
 		s.recordLogin(ctx, &user.ID, "phone", req.Phone, ip, ua, "failed")
 		return nil, err
 	}
-	s.recordLogin(ctx, &user.ID, "phone", req.Phone, ip, ua, "success")
-	return s.generateTokenPair(ctx, user)
+	s.clearLoginFail(ctx, "phone", req.Phone)
+	return s.loginSuccess(ctx, user, "phone", req.Phone, ip, ua)
+}
+
+// loginSuccess 登录成功后的统一处理。
+//
+// D-17：先在事务内创建会话，会话创建成功（事务提交）后才写入"success"登录日志；
+// 若会话创建失败，事务回滚，不会留下"成功"但无对应会话的登录日志。
+// D-19：登录日志写入失败按最佳努力处理，仅记录 log.Printf，不影响登录主流程
+// （此时会话已创建成功，用户应能正常拿到 token）。
+func (s *AuthService) loginSuccess(ctx context.Context, user *model.User, loginType, account, ip, ua string) (*dto.TokenPair, error) {
+	var pair *dto.TokenPair
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+		pair, err = s.generateTokenPair(ctx, tx, user, ua, ip)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.recordLogin(ctx, &user.ID, loginType, account, ip, ua, "success")
+	return pair, nil
+}
+
+// checkLoginLocked 检查登录失败计数是否已达阈值。Redis 故障时降级为不锁定（fail-open）。
+func (s *AuthService) checkLoginLocked(ctx context.Context, loginType, account string) bool {
+	key := fmt.Sprintf(loginFailKeyFmt, loginType, account)
+	count, err := s.redis.Get(ctx, key).Int()
+	if err != nil {
+		// key 不存在或 Redis 故障：不锁定
+		return false
+	}
+	return count >= loginFailLimit
+}
+
+// incrLoginFail 登录失败计数 +1，首次写入时设置 TTL = loginFailWindow。
+func (s *AuthService) incrLoginFail(ctx context.Context, loginType, account string) {
+	key := fmt.Sprintf(loginFailKeyFmt, loginType, account)
+	count, err := s.redis.Incr(ctx, key).Result()
+	if err != nil {
+		log.Printf("incrLoginFail: Redis INCR 失败 key=%s err=%v", key, err)
+		return
+	}
+	if count == 1 {
+		if err := s.redis.Expire(ctx, key, loginFailWindow).Err(); err != nil {
+			log.Printf("incrLoginFail: Redis EXPIRE 失败 key=%s err=%v", key, err)
+		}
+	}
+}
+
+// clearLoginFail 登录成功后清除失败计数。
+func (s *AuthService) clearLoginFail(ctx context.Context, loginType, account string) {
+	key := fmt.Sprintf(loginFailKeyFmt, loginType, account)
+	if err := s.redis.Del(ctx, key).Err(); err != nil {
+		log.Printf("clearLoginFail: Redis DEL 失败 key=%s err=%v", key, err)
+	}
 }
 
 // Logout 退出登录：吊销 Refresh Token 对应的会话，并将当前 Access Token 加入吊销黑名单，
 // 使其在自然过期前立即失效（RequireAuth 中间件会查询该黑名单）。
-// rawAccessToken 解析失败或写入 Redis 失败均不影响退出登录主流程（仍按"已退出"处理）。
+//
+// D-18：DB 内吊销会话失败意味着该会话**未被吊销**，是安全相关问题（而非如 D-12 的状态缓存类问题），
+// 因此该错误会向上返回，由 handler 映射为 500；Redis 侧 Access Token 吊销仍按最佳努力处理。
+// rawRefreshToken 对应的会话不存在（如已被吊销/已过期/非法 token）时视为幂等成功，不返回错误。
 func (s *AuthService) Logout(ctx context.Context, rawRefreshToken, rawAccessToken string) error {
-	// 1. 吊销 Refresh Token 对应的会话
+	// 1. 吊销 Refresh Token 对应的会话（DB 操作失败需向上返回，D-18）
 	hash := crypto.HMAC256(rawRefreshToken, s.cfg.RefreshTokenSecret)
 	if session, err := s.sessionRepo.FindByHash(ctx, hash); err == nil && session != nil {
-		_ = s.sessionRepo.Revoke(ctx, session.ID)
+		if err := s.sessionRepo.Revoke(ctx, session.ID); err != nil {
+			return err
+		}
 	}
 
-	// 2. 将当前 Access Token 加入吊销黑名单，TTL = token 剩余有效期
+	// 2. 将当前 Access Token 加入吊销黑名单，TTL = token 剩余有效期（最佳努力，失败不阻断）
 	s.revokeAccessToken(ctx, rawAccessToken)
 
 	return nil
@@ -299,22 +394,44 @@ func (s *AuthService) revokeAccessToken(ctx context.Context, rawAccessToken stri
 }
 
 // Refresh 轮换 Refresh Token，返回新 token 对。
-func (s *AuthService) Refresh(ctx context.Context, rawRefreshToken string) (*dto.TokenPair, error) {
+//
+// D-15/D-21：将"校验旧 token 有效 → 吊销旧 session → 生成并写入新 token/session"整体放入
+// 单个事务。吊销旧 session 时使用 D-11 风格的 "WHERE revoked_at IS NULL" 条件更新并检查
+// rowsAffected：若为 0，说明该 token 已被并发请求吊销（TOCTOU），整个刷新失败并返回
+// ErrRefreshTokenAlreadyUsed，不再发出新 token；若新 token/session 生成失败，事务整体回滚，
+// 旧 session 不会被吊销，用户不会被强制登出（解决 D-21）。
+// ua/ip 用于填充新建会话的 user_agent/ip（D-20）。
+func (s *AuthService) Refresh(ctx context.Context, rawRefreshToken, ua, ip string) (*dto.TokenPair, error) {
 	hash := crypto.HMAC256(rawRefreshToken, s.cfg.RefreshTokenSecret)
-	session, err := s.sessionRepo.FindByHash(ctx, hash)
-	if err != nil || session == nil {
-		return nil, ErrUnauthorized
-	}
-	if session.RevokedAt != nil || session.ExpiresAt.Before(time.Now()) {
-		return nil, ErrUnauthorized
-	}
-	// 吊销旧会话（Token 轮换，防止 replay）
-	_ = s.sessionRepo.Revoke(ctx, session.ID)
-	user, err := s.userRepo.FindByID(ctx, session.UserID)
+
+	var pair *dto.TokenPair
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		session, err := s.sessionRepo.FindByHashTx(tx, hash)
+		if err != nil || session == nil {
+			return ErrUnauthorized
+		}
+		if session.RevokedAt != nil || session.ExpiresAt.Before(time.Now()) {
+			return ErrUnauthorized
+		}
+		// 吊销旧会话（Token 轮换，防止 replay），rowsAffected==0 表示已被并发请求吊销
+		rowsAffected, err := s.sessionRepo.RevokeTx(tx, session.ID)
+		if err != nil {
+			return err
+		}
+		if rowsAffected == 0 {
+			return ErrRefreshTokenAlreadyUsed
+		}
+		user, err := s.userRepo.FindByID(ctx, session.UserID)
+		if err != nil {
+			return ErrUnauthorized
+		}
+		pair, err = s.generateTokenPair(ctx, tx, user, ua, ip)
+		return err
+	})
 	if err != nil {
-		return nil, ErrUnauthorized
+		return nil, err
 	}
-	return s.generateTokenPair(ctx, user)
+	return pair, nil
 }
 
 // GetMe 获取当前用户信息（含脱敏手机/邮箱、最后登录时间）。
@@ -358,6 +475,9 @@ func (s *AuthService) GetMe(ctx context.Context, userID uint64) (*dto.UserInfo, 
 }
 
 // ChangePassword 修改密码后吊销所有会话，强制重新登录。
+//
+// D-13：更新密码哈希与吊销该用户所有会话放入同一事务，避免 DB 故障导致
+// "密码已改但旧 session 仍有效"的中间状态。Redis 侧（如有）按约定1做最佳努力处理。
 func (s *AuthService) ChangePassword(ctx context.Context, userID uint64, req dto.ChangePasswordReq) error {
 	user, err := s.userRepo.FindByID(ctx, userID)
 	if err != nil {
@@ -370,10 +490,12 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID uint64, req dto
 	if err != nil {
 		return err
 	}
-	if err := s.userRepo.UpdatePassword(ctx, userID, newHash); err != nil {
-		return err
-	}
-	return s.sessionRepo.RevokeAllByUser(ctx, userID)
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.userRepo.UpdatePasswordTx(tx, userID, newHash); err != nil {
+			return err
+		}
+		return s.sessionRepo.RevokeAllByUserTx(tx, userID)
+	})
 }
 
 // FindUserByID 供其他模块（如 identity）通过 interface 调用。
@@ -435,7 +557,10 @@ func (s *AuthService) toAdminUserResp(ctx context.Context, u *model.User) dto.Ad
 	return resp
 }
 
-func (s *AuthService) generateTokenPair(ctx context.Context, user *model.User) (*dto.TokenPair, error) {
+// generateTokenPair 生成 Access/Refresh Token 对，并在 tx 内创建会话记录。
+// ua/ip 写入 user_sessions.user_agent / ip（D-20）；调用方传入 s.db.WithContext(ctx) 或
+// 已开启的事务 tx，使会话创建可与调用方的其他写操作保持原子性。
+func (s *AuthService) generateTokenPair(ctx context.Context, tx *gorm.DB, user *model.User, ua, ip string) (*dto.TokenPair, error) {
 	email := ""
 	if user.Email != nil {
 		email = *user.Email
@@ -449,9 +574,11 @@ func (s *AuthService) generateTokenPair(ctx context.Context, user *model.User) (
 	session := &model.UserSession{
 		UserID:           user.ID,
 		RefreshTokenHash: refreshHash,
+		UserAgent:        ua,
+		IP:               ip,
 		ExpiresAt:        time.Now().AddDate(0, 0, s.cfg.RefreshTokenExpireDays),
 	}
-	if err := s.sessionRepo.Create(ctx, session); err != nil {
+	if err := s.sessionRepo.CreateTx(tx, session); err != nil {
 		return nil, err
 	}
 	return &dto.TokenPair{
@@ -461,15 +588,18 @@ func (s *AuthService) generateTokenPair(ctx context.Context, user *model.User) (
 	}, nil
 }
 
+// recordLogin 写入登录日志。D-19：写入失败不阻断主流程，但需记录日志以便排查。
 func (s *AuthService) recordLogin(ctx context.Context, userID *uint64, loginType, account, ip, ua, status string) {
-	_ = s.loginLogRepo.Create(ctx, &model.LoginLog{
+	if err := s.loginLogRepo.Create(ctx, &model.LoginLog{
 		UserID:       userID,
 		LoginType:    loginType,
 		LoginAccount: account,
 		IP:           ip,
 		UserAgent:    ua,
 		Status:       status,
-	})
+	}); err != nil {
+		log.Printf("recordLogin: 写入登录日志失败 loginType=%s status=%s err=%v", loginType, status, err)
+	}
 }
 
 // BanUser 封禁用户：将 userID 写入 Redis 黑名单，TTL 与 Access Token 有效期一致。
@@ -588,11 +718,14 @@ func (s *AuthService) ResetPassword(ctx context.Context, req dto.ResetPasswordRe
 	if err != nil {
 		return err
 	}
-	if err := s.userRepo.UpdatePassword(ctx, user.ID, newHash); err != nil {
-		return err
-	}
-	// 4. 吊销该用户所有 Refresh Token，强制重新登录
-	return s.sessionRepo.RevokeAllByUser(ctx, user.ID)
+	// D-13：更新密码哈希与吊销该用户所有会话放入同一事务，避免 DB 故障导致
+	// "密码已改但旧 session 仍有效"的中间状态。
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.userRepo.UpdatePasswordTx(tx, user.ID, newHash); err != nil {
+			return err
+		}
+		return s.sessionRepo.RevokeAllByUserTx(tx, user.ID)
+	})
 }
 
 // AdminVerifyPhone 管理员手机号认证（验证码校验后记录认证时间）。
@@ -652,6 +785,8 @@ func (s *AuthService) UpdateUsername(ctx context.Context, userID uint64, req dto
 }
 
 // UpdatePhone 修改手机号（验证码校验后更新，标记已验证）。
+// D-14：验证码校验通过后，手机号字段与 phone_verified 标记通过单条 UPDATE 同时写入，
+// 避免"更新手机号"与"标记已验证"两步独立操作之间出现非原子窗口。
 func (s *AuthService) UpdatePhone(ctx context.Context, userID uint64, req dto.UpdatePhoneReq) error {
 	req.Phone = normalizePhone(req.Phone)
 	// 1. 校验新手机号收到的验证码（scene: bind_phone，专用于绑定/更换手机号场景）
@@ -666,14 +801,17 @@ func (s *AuthService) UpdatePhone(ctx context.Context, userID uint64, req dto.Up
 	if exists {
 		return ErrPhoneAlreadyExists
 	}
-	// 3. 更新手机号并标记已验证
-	if err := s.userRepo.UpdatePhone(ctx, userID, req.Phone); err != nil {
+	// 3. 单条 UPDATE 同时更新手机号并标记已验证（验证码已在第 1 步校验通过）
+	if err := s.userRepo.UpdatePhoneAndVerified(ctx, userID, req.Phone); err != nil {
 		return mapUserRepoError(err)
 	}
-	return s.userRepo.UpdatePhoneVerified(ctx, userID)
+	return nil
 }
 
 // UpdateEmail 修改邮箱（验证码校验后更新，标记已验证）。
+//
+// D-14：验证码校验通过后，邮箱字段与 email_verified 标记通过单条 UPDATE 同时写入，
+// 避免"更新邮箱"与"标记已验证"两步独立操作之间出现非原子窗口。
 func (s *AuthService) UpdateEmail(ctx context.Context, userID uint64, req dto.UpdateEmailReq) error {
 	req.Email = normalizeEmail(req.Email)
 	// 1. 校验新邮箱收到的验证码（scene: bind_email，专用于绑定/更换邮箱场景）
@@ -688,11 +826,11 @@ func (s *AuthService) UpdateEmail(ctx context.Context, userID uint64, req dto.Up
 	if exists {
 		return ErrEmailAlreadyExists
 	}
-	// 3. 更新邮箱并标记已验证
-	if err := s.userRepo.UpdateEmail(ctx, userID, req.Email); err != nil {
+	// 3. 单条 UPDATE 同时更新邮箱并标记已验证（验证码已在第 1 步校验通过）
+	if err := s.userRepo.UpdateEmailAndVerified(ctx, userID, req.Email); err != nil {
 		return mapUserRepoError(err)
 	}
-	return s.userRepo.UpdateEmailVerified(ctx, userID)
+	return nil
 }
 
 // IsAdminVerified 实现 middleware.AdminVerifiedChecker 接口。
