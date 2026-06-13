@@ -405,6 +405,31 @@ func (h *GroupHandler) CreateInviteCode(w http.ResponseWriter, r *http.Request) 
 	response.JSON(w, http.StatusCreated, inviteCodeToResp(*ic))
 }
 
+// JoinGroup POST /api/user-groups/join
+// 普通登录用户凭邀请码加入群组，无需 group:manage 权限。
+func (h *GroupHandler) JoinGroup(w http.ResponseWriter, r *http.Request) {
+	var req dto.JoinGroupReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.InviteCode == "" {
+		response.Error(w, http.StatusBadRequest, 40000, "invite_code 不能为空")
+		return
+	}
+	userID := middleware.UserIDFromContext(r.Context())
+	groupID, groupRole, err := h.groupSvc.JoinByInviteCode(r.Context(), userID, req.InviteCode)
+	if err != nil {
+		if errors.Is(err, repository.ErrInviteCodeNotFound) {
+			response.Error(w, http.StatusBadRequest, 40000, "邀请码无效或已过期")
+			return
+		}
+		if errors.Is(err, repository.ErrMemberAlreadyExists) {
+			response.Error(w, http.StatusConflict, 40900, "已是该群组成员")
+			return
+		}
+		response.Error(w, http.StatusInternalServerError, 50000, "加入失败")
+		return
+	}
+	response.JSON(w, http.StatusOK, dto.JoinGroupResp{GroupID: groupID, GroupRole: groupRole})
+}
+
 // DisableInviteCode PATCH /api/admin/user-groups/{id}/invite-codes/{invite_id}/disable
 func (h *GroupHandler) DisableInviteCode(w http.ResponseWriter, r *http.Request) {
 	groupID, err := pathUint64(r, "id")

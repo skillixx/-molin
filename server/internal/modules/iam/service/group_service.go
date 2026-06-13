@@ -169,6 +169,40 @@ func (s *GroupService) DisableInviteCode(ctx context.Context, groupID, inviteID 
 	return s.repo.DisableInviteCode(ctx, groupID, inviteID)
 }
 
+// JoinByInviteCode 普通用户凭邀请码加入群组，返回所加入的群组 ID 和组内角色。
+// 在同一事务内：校验邀请码有效 → 加成员 → 递增 used_count。
+func (s *GroupService) JoinByInviteCode(ctx context.Context, userID uint64, code string) (groupID uint64, groupRole string, err error) {
+	// 1. 查有效邀请码（active、未过期、未超限）
+	ic, err := s.repo.FindActiveInviteCode(ctx, code)
+	if err != nil {
+		return 0, "", err
+	}
+	// 2. 在事务内：加成员 + 递增 used_count
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		role := ic.DefaultGroupRole
+		if role == "" {
+			role = "member"
+		}
+		m := &model.UserGroupMember{GroupID: ic.GroupID, UserID: userID, GroupRole: role}
+		if addErr := s.repo.AddMemberTx(tx, m); addErr != nil {
+			return addErr
+		}
+		return s.repo.IncrUsedCount(tx, ic.ID)
+	})
+	if err != nil {
+		return 0, "", err
+	}
+	// 3. 清除该用户的权限缓存，以及该组管理员的 scope 缓存
+	s.cacheSvc.InvalidateUserPerms(ctx, userID)
+	s.invalidateGroupAdminsScopeCache(ctx, ic.GroupID)
+	// DefaultGroupRole 为空时实际写入了 "member"，保持返回一致
+	role := ic.DefaultGroupRole
+	if role == "" {
+		role = "member"
+	}
+	return ic.GroupID, role, nil
+}
+
 // ——— 内部工具 ———
 
 // invalidateGroupMembersCache 清除某分组所有成员的权限缓存（组权限变动时批量失效）。
