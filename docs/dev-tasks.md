@@ -27,7 +27,7 @@
 | A-11 | IAM | 新增 `GET /api/admin/roles/{id}/permissions`：返回指定角色当前拥有的权限码列表（数组）。解决管理后台无法展示"该角色当前有哪些权限"、编辑权限时无法预填充当前值的问题（`PATCH /api/admin/roles/{id}/permissions` 是全量替换写接口，必须先知道当前集合才能正确增删）| `feature/backend-a-iam-permission-query-apis` | ✅ 已完成 | PR#31（merge commit `44cafad`，与 A-10/A-12 同分支同 PR）；复用 `permissionRepo.FindByRoleIDs`，新增 `IAMService.GetRolePermissionCodes`；需要 `role:manage` 权限码；角色不存在返回 404 40400；文档见 full-api-design.md 3.12；测试工程师验收通过（13/13，PR#32 `tests/test_pr31_permission_apis.py`） |
 | A-12 | IAM | 新增 `GET /api/admin/users/{id}/effective-permissions`：返回指定用户最终生效的权限码列表（角色权限 ∪ 分组权限，再叠加 `user_permission_overrides` 的 allow/deny 调整后的结果，含调整明细）。解决管理后台无"用户权限排查/一览"功能、只能由运维/开发直连数据库写 SQL 手动计算的问题 | `feature/backend-a-iam-permission-query-apis` | ✅ 已完成 | PR#31（merge commit `44cafad`，与 A-10/A-11 同分支同 PR）；复用 `IAMService.GetEffectivePermissionCodes` + 新增 `GetEffectiveOverrides`；需要 `role:manage` 权限码；响应含 `overrides: [{code, effect}]`；文档见 full-api-design.md 3.18；测试工程师验收通过（13/13，PR#32 `tests/test_pr31_permission_apis.py`） |
 | A-13 | IAM | IAM 权限管理单条操作补充审计日志：`AssignRole`/`RevokeRole`/`SetPermissionOverride`/`DeletePermissionOverride` 四个接口（`POST/DELETE /api/admin/users/{id}/roles[/...]`、`/permission-overrides[/...]`）当前未写入 `audit_logs`，与已有审计的批量替换接口（`ReplaceUserRoles`/`ReplaceUserOverrides`）不一致，存在敏感操作审计盲区 | `feature/backend-a-iam-audit-single-ops` | ✅ 已完成 | PR#38（merge commit `8a2ea81`）：4 个接口补充 `auditSvc.Record` 调用（action: `assign_role`/`revoke_role`/`set_permission_override`/`delete_permission_override`，module=iam）；`RevokeRole`/`SetPermissionOverride`/`DeletePermissionOverride` service 签名新增 `operatorID`/`ip`，handler 从 `middleware.UserIDFromContext`/`r.RemoteAddr` 取值；HTTP 请求/响应契约不变；测试工程师验收通过（18/18，PR#39 `tests/test_pr38_audit_logs.py`）；发现非阻塞遗留问题：`GET /api/admin/audit-logs` 响应未映射 `request_summary` 字段，管理后台后续展示审计详情时需补充（已建为 A-14） |
-| A-14 | IAM | `GET /api/admin/audit-logs` 响应补充 `request_summary` 字段：`audit_logs.request_summary`（JSON 字符串，记录操作参数）已正确写入数据库，但 `IAMHandler.ListAuditLogs`（`server/internal/modules/iam/handler/iam_handler.go` ~398-407）返回的 map 中未包含该字段，导致管理后台审计日志页面无法展示操作详情 | `feature/backend-a-audit-log-request-summary` | ✅ 已完成 | PR#42（merge commit `823f373`）：`ListAuditLogs` 每条记录新增 `request_summary` 字段——为 `nil` 时输出 `null`，非 `nil` 时通过 `json.Unmarshal` 反序列化为对象/数组返回，反序列化失败时兜底返回原始字符串；仅新增响应字段，HTTP 请求/响应契约其余部分及数据库结构均不变；`go build`/`go vet` 通过；尚未经测试工程师接口验收 |
+| A-14 | IAM | `GET /api/admin/audit-logs` 响应补充 `request_summary` 字段：`audit_logs.request_summary`（JSON 字符串，记录操作参数）已正确写入数据库，但 `IAMHandler.ListAuditLogs`（`server/internal/modules/iam/handler/iam_handler.go` ~398-407）返回的 map 中未包含该字段，导致管理后台审计日志页面无法展示操作详情 | `feature/backend-a-audit-log-request-summary` | ✅ 已完成 | PR#42（merge commit `823f373`）：`ListAuditLogs` 每条记录新增 `request_summary` 字段——为 `nil` 时输出 `null`，非 `nil` 时通过 `json.Unmarshal` 反序列化为对象/数组返回，反序列化失败时兜底返回原始字符串；仅新增响应字段，HTTP 请求/响应契约其余部分及数据库结构均不变；`go build`/`go vet` 通过；测试工程师验收通过（25/25，PR#44 `tests/test_pr42_audit_log_summary.py`） |
 
 ---
 
@@ -128,7 +128,7 @@
 
 | 开发者 | 总任务数 | 已完成 | 进行中 | 待开始 |
 |---|---|---|---|---|
-| 后端工程师甲 | 14 | 14（9 已审查 + 4 已验收 + 1 待验收，PR#31/#32/#38/#39/#42）| 0 | 0 |
+| 后端工程师甲 | 14 | 14（9 已审查 + 5 已验收，PR#31/#32/#38/#39/#42/#44）| 0 | 0 |
 | 后端工程师乙 | 6 | 0 | 0 | 6 |
 | 后端工程师丙 | 5 | 0 | 0 | 5 |
 | 前端工程师甲 | 8 | 3（已审查）| 0 | 5 |
