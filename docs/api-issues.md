@@ -1,7 +1,7 @@
 # 后端 A 接口已知问题 & 待办清单
 
 **记录人：** 测试工程师 / 产品经理
-**最后更新：** 2026-06-10
+**最后更新：** 2026-06-13
 **负责模块：** auth / iam / identity（后端工程师甲）
 
 ---
@@ -18,6 +18,9 @@
 | BUG-05 | Auth/IAM/Identity | 所有管理端接口 | 管理员双重认证（verify-phone/email）未被中间件强制校验，登录即可直接访问所有管理权限 | P1 | 已修复（2026-06-10） |
 | BUG-06 | IAM | `POST /api/admin/users/{id}/permission-overrides` | 测试服务器 `user_permission_overrides` 表缺少 `permission_code` 字段，导致设置接口返回 500 | P1 | 已修复（2026-06-10，手动执行 ALTER TABLE）|
 | TODO-02 | IAM | `GET /api/admin/users/{id}/permission-overrides` | 全量返回权限覆盖列表，无分页结构，与其他列表接口规范不一致 | P2 | 已修复（2026-06-05） |
+| TODO-03 | IAM/Auth | `GET /api/me/permissions`（缺失） | 缺少返回当前登录用户有效权限码集合的只读接口，前端无法做按钮级权限控制，只能等接口 403 才知道无权限 | P2 | 待开发（2026-06-13） |
+| TODO-04 | IAM | `GET /api/admin/roles/{id}/permissions`（缺失） | 缺少返回指定角色权限码列表的只读接口；`PATCH /api/admin/roles/{id}/permissions` 为全量替换写接口，管理后台无法预填充当前权限集合 | P2 | 待开发（2026-06-13） |
+| TODO-05 | IAM | `GET /api/admin/users/{id}/effective-permissions`（缺失） | 缺少返回用户最终生效权限码（角色∪分组叠加 overrides）的只读接口，`getAllUserPermCodes` 仅为 service 内部私有方法，未对外导出，管理后台无法做用户权限排查/一览 | P3 | 待开发（2026-06-13） |
 
 ---
 
@@ -154,7 +157,58 @@ GET /api/admin/identity-verifications?page=1&page_size=20
 
 ---
 
+### TODO-03 — 缺少「当前用户权限码」查询接口
+
+**涉及接口（缺失）：** `GET /api/me/permissions`
+
+**现状：** `GET /api/me`（`server/internal/modules/auth/handler/auth_handler.go:139-148`，返回 `dto.UserInfo`）只返回 `email_verified`/`real_name_status`/`admin_phone_verified` 等字段，不包含角色/权限码列表。
+
+**问题：** 前端无法做"按钮级权限控制"（根据权限决定菜单/按钮是否显示），只能等接口返回 403 后才知道无权限，体验差且容易出现"先展示后报错"的闪烁问题。
+
+**建议方案：**
+- 新增 `GET /api/me/permissions`（需 Bearer Token，无需额外权限码）
+- 返回当前登录用户的有效权限码集合（角色权限 ∪ 分组权限，再叠加 `user_permission_overrides` 的 allow/deny 调整后的最终结果）
+- 复用 `service/iam_service.go` 中 `getAllUserPermCodes`（第 188 行）的计算逻辑
+
+**状态：** 待开发，已记录至 `docs/dev-tasks.md` A-10（2026-06-13）
+
+---
+
+### TODO-04 — 缺少「角色权限码」查询接口
+
+**涉及接口（缺失）：** `GET /api/admin/roles/{id}/permissions`
+
+**现状：** `GET /api/admin/roles/{id}`（`iam_handler.go:310-330`，`GetRole`）只返回 `id/code/name/description`；权限相关只有 `PATCH /api/admin/roles/{id}/permissions`（`SetRolePermissions`，全量替换写接口），没有对应的读接口。
+
+**问题：** 管理后台无法展示"该角色当前有哪些权限"，编辑权限时前端也拿不到当前值做预填充（全量替换接口必须先知道当前集合才能正确增删）。
+
+**建议方案：**
+- 新增 `GET /api/admin/roles/{id}/permissions`（需 `role:manage` 权限码）
+- 返回该角色的权限码列表（数组）
+- 复用 `permissionRepo.FindByRoleIDs`
+
+**状态：** 待开发，已记录至 `docs/dev-tasks.md` A-11（2026-06-13）
+
+---
+
+### TODO-05 — 缺少「用户最终生效权限码」查询接口
+
+**涉及接口（缺失）：** `GET /api/admin/users/{id}/effective-permissions`
+
+**现状：** 权限计算逻辑 `getAllUserPermCodes`（`server/internal/modules/iam/service/iam_service.go:188`）是 service 内部私有方法（角色权限 ∪ 分组权限，再叠加用户 `user_permission_overrides` 的 allow/deny），从未导出。完全没有对应接口。
+
+**问题：** 管理后台无法做"用户权限排查/一览"功能，只能运维/开发直连数据库写 SQL 手动计算。
+
+**建议方案：**
+- 新增 `GET /api/admin/users/{id}/effective-permissions`（需 `role:manage` 权限码）
+- 封装并导出 `getAllUserPermCodes` 计算逻辑（含 overrides 调整明细），返回该用户最终生效的权限码列表
+
+**状态：** 待开发，已记录至 `docs/dev-tasks.md` A-12（2026-06-13）
+
+---
+
 ## 处理原则
 
 - **P1（BUG-02）**：影响生产稳定性，建议在下一个 PR 中修复后重新验收
-- **P2（BUG-01、TODO-01、TODO-02）**：不影响核心功能，可排入下一迭代
+- **P2（BUG-01、TODO-01、TODO-02、TODO-03、TODO-04）**：不影响核心功能，可排入下一迭代
+- **P3（TODO-05）**：功能缺口，不紧急，可排入后续迭代
