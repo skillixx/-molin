@@ -101,7 +101,7 @@ func (s *IAMService) AssignRole(ctx context.Context, userID, roleID, operatorID 
 		return err
 	}
 	s.cacheSvc.InvalidateUserPerms(ctx, userID)
-	_ = s.auditSvc.Record(ctx, &operatorID, "iam", "assign_role",
+	_ = s.recordAudit(ctx, &operatorID, "iam", "assign_role",
 		strPtr("user"), strPtr(strconv.FormatUint(userID, 10)), ip,
 		map[string]any{"user_id": userID, "role_id": roleID, "reason": reason})
 	return nil
@@ -113,7 +113,7 @@ func (s *IAMService) RevokeRole(ctx context.Context, userID, roleID, operatorID 
 		return err
 	}
 	s.cacheSvc.InvalidateUserPerms(ctx, userID)
-	_ = s.auditSvc.Record(ctx, &operatorID, "iam", "revoke_role",
+	_ = s.recordAudit(ctx, &operatorID, "iam", "revoke_role",
 		strPtr("user"), strPtr(strconv.FormatUint(userID, 10)), ip,
 		map[string]any{"user_id": userID, "role_id": roleID})
 	return nil
@@ -172,7 +172,7 @@ func (s *IAMService) SetPermissionOverride(ctx context.Context, override *model.
 		return err
 	}
 	s.cacheSvc.InvalidateUserPerms(ctx, override.UserID)
-	_ = s.auditSvc.Record(ctx, &operatorID, "iam", "set_permission_override",
+	_ = s.recordAudit(ctx, &operatorID, "iam", "set_permission_override",
 		strPtr("user"), strPtr(strconv.FormatUint(override.UserID, 10)), ip,
 		map[string]any{
 			"user_id":         override.UserID,
@@ -198,7 +198,7 @@ func (s *IAMService) DeletePermissionOverride(ctx context.Context, overrideID, u
 	}
 	s.cacheSvc.InvalidateUserPerms(ctx, userID)
 	// D-27：审计日志 target_id 使用被操作用户的 userID，而非 override 记录 id
-	_ = s.auditSvc.Record(ctx, &operatorID, "iam", "delete_permission_override",
+	_ = s.recordAudit(ctx, &operatorID, "iam", "delete_permission_override",
 		strPtr("user"), strPtr(strconv.FormatUint(userID, 10)), ip,
 		map[string]any{"user_id": userID, "override_id": overrideID})
 	return nil
@@ -335,7 +335,11 @@ func (s *IAMService) GetEffectiveOverrides(ctx context.Context, userID uint64) (
 // ListAuditLogs 分页查询审计日志，支持按 module/action 过滤。
 // BUG-05 修复：新增此方法支持 GET /api/admin/audit-logs 接口。
 // A-04：审计日志读写能力迁移至独立 audit 模块，此处仅做转发。
+// D-45：加 nil 守卫，auditSvc 未注入时返回空列表而非 panic。
 func (s *IAMService) ListAuditLogs(ctx context.Context, module, action string, offset, limit int) ([]auditmodel.AuditLog, int64, error) {
+	if s.auditSvc == nil {
+		return nil, 0, nil
+	}
 	return s.auditSvc.ListPaged(ctx, module, action, offset, limit)
 }
 
@@ -359,7 +363,7 @@ func (s *IAMService) CreatePermission(ctx context.Context, perm *model.Permissio
 	if err := s.permissionRepo.Create(ctx, perm); err != nil {
 		return err
 	}
-	_ = s.auditSvc.Record(ctx, &operatorID, "iam", "create_permission",
+	_ = s.recordAudit(ctx, &operatorID, "iam", "create_permission",
 		strPtr("permission"), strPtr(strconv.FormatUint(perm.ID, 10)), ip, perm)
 	return nil
 }
@@ -387,7 +391,7 @@ func (s *IAMService) SetRolePermissions(ctx context.Context, roleID uint64, perm
 			s.cacheSvc.InvalidateUserPerms(ctx, uid)
 		}
 	}
-	_ = s.auditSvc.Record(ctx, &operatorID, "iam", "set_role_permissions",
+	_ = s.recordAudit(ctx, &operatorID, "iam", "set_role_permissions",
 		strPtr("role"), strPtr(strconv.FormatUint(roleID, 10)), ip,
 		map[string]any{"permission_ids": permissionIDs})
 	return nil
@@ -399,10 +403,20 @@ func (s *IAMService) ReplaceUserRoles(ctx context.Context, userID uint64, roleID
 		return err
 	}
 	s.cacheSvc.InvalidateUserPerms(ctx, userID)
-	_ = s.auditSvc.Record(ctx, &operatorID, "iam", "replace_user_roles",
+	_ = s.recordAudit(ctx, &operatorID, "iam", "replace_user_roles",
 		strPtr("user"), strPtr(strconv.FormatUint(userID, 10)), ip,
 		map[string]any{"role_ids": roleIDs, "reason": reason})
 	return nil
+}
+
+// recordAudit 带 nil 守卫的审计日志写入辅助方法。
+// D-45：统一在此处判断 auditSvc 是否为 nil，调用方无需重复检查，与 auth 模块风格保持一致。
+func (s *IAMService) recordAudit(ctx context.Context, operatorID *uint64, module, action string,
+	targetType, targetID *string, ip string, summary any) error {
+	if s.auditSvc == nil {
+		return nil
+	}
+	return s.auditSvc.Record(ctx, operatorID, module, action, targetType, targetID, ip, summary)
 }
 
 // ErrInvalidEffect 权限覆盖的 effect 字段值不合法（只能为 allow/deny）。
@@ -455,7 +469,7 @@ func (s *IAMService) ReplaceUserOverrides(ctx context.Context, userID uint64, it
 		return err
 	}
 	s.cacheSvc.InvalidateUserPerms(ctx, userID)
-	_ = s.auditSvc.Record(ctx, &operatorID, "iam", "replace_user_overrides",
+	_ = s.recordAudit(ctx, &operatorID, "iam", "replace_user_overrides",
 		strPtr("user"), strPtr(strconv.FormatUint(userID, 10)), ip, items)
 	return nil
 }
