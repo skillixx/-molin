@@ -57,6 +57,17 @@ func (r *PermissionRepository) ListPaged(ctx context.Context, keyword string, of
 	return perms, total, nil
 }
 
+// FindByCode 按权限码精确查询单条权限记录（WHERE code=?），不存在返回 gorm.ErrRecordNotFound。
+// D-28：替代 SetPermissionOverride handler 中对全量权限列表的 O(n) 遍历。
+func (r *PermissionRepository) FindByCode(ctx context.Context, code string) (*model.Permission, error) {
+	var p model.Permission
+	err := r.db.WithContext(ctx).Where("code = ?", code).First(&p).Error
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
 // FindByRoleIDs 查询一批角色拥有的所有权限（JOIN role_permissions）。
 func (r *PermissionRepository) FindByRoleIDs(ctx context.Context, roleIDs []uint64) ([]model.Permission, error) {
 	if len(roleIDs) == 0 {

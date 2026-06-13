@@ -16,6 +16,11 @@ import (
 	"molin/server/pkg/response"
 )
 
+// errIsNotFound 判断错误是否为记录不存在（兼容 gorm.ErrRecordNotFound 和 repository.ErrRoleNotFound）。
+func errIsNotFound(err error) bool {
+	return errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, repository.ErrRoleNotFound)
+}
+
 // PagedResp 通用分页响应结构，包含列表数据和分页元数据。
 type PagedResp struct {
 	List       interface{}       `json:"items"`
@@ -80,6 +85,11 @@ func (h *IAMHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 	}
 	updates := map[string]interface{}{"name": req.Name, "description": req.Description}
 	if err := h.iamSvc.UpdateRole(r.Context(), id, updates); err != nil {
+		// D-31：角色不存在时返回 404，而非 200 或 500
+		if errIsNotFound(err) {
+			response.Error(w, http.StatusNotFound, 40400, "角色不存在")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, 50000, "更新失败")
 		return
 	}
@@ -94,6 +104,11 @@ func (h *IAMHandler) DeleteRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.iamSvc.DeleteRole(r.Context(), id); err != nil {
+		// D-31：角色不存在时返回 404，而非 200 或 500
+		if errIsNotFound(err) {
+			response.Error(w, http.StatusNotFound, 40400, "角色不存在")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, 50000, "删除失败")
 		return
 	}
@@ -168,6 +183,11 @@ func (h *IAMHandler) AssignRole(w http.ResponseWriter, r *http.Request) {
 		// 重复分配：该用户已拥有此角色，返回 409 Conflict
 		if errors.Is(err, repository.ErrUserRoleExists) {
 			response.Error(w, http.StatusConflict, 40900, "该用户已拥有此角色")
+			return
+		}
+		// D-26：role_id 不存在时返回 400（gorm.ErrRecordNotFound）
+		if errIsNotFound(err) {
+			response.Error(w, http.StatusBadRequest, 40000, "角色不存在")
 			return
 		}
 		response.Error(w, http.StatusInternalServerError, 50000, "分配失败")
@@ -264,17 +284,10 @@ func (h *IAMHandler) SetPermissionOverride(w http.ResponseWriter, r *http.Reques
 		response.Error(w, http.StatusBadRequest, 40000, "effect 只能为 allow 或 deny")
 		return
 	}
-	// 查权限码：遍历全部权限寻找匹配的 permission_id
-	perms, _ := h.iamSvc.ListPermissions(r.Context())
-	permCode := ""
-	for _, p := range perms {
-		if p.ID == req.PermissionID {
-			permCode = p.Code
-			break
-		}
-	}
-	// D-03：permission_id 不存在时 permCode 为空值，禁止写入，返回 400
-	if permCode == "" {
+	// D-28：用 FindPermissionByID 单条精确查询，替代原来对全量权限列表的 O(n) 遍历
+	perm, err := h.iamSvc.FindPermissionByID(r.Context(), req.PermissionID)
+	if err != nil {
+		// permission_id 不存在，返回 400
 		response.Error(w, http.StatusBadRequest, 40000, "permission_id 不存在")
 		return
 	}
@@ -282,11 +295,12 @@ func (h *IAMHandler) SetPermissionOverride(w http.ResponseWriter, r *http.Reques
 	override := &model.UserPermissionOverride{
 		UserID:         userID,
 		PermissionID:   req.PermissionID,
-		PermissionCode: permCode,
+		PermissionCode: perm.Code,
 		Effect:         req.Effect,
 		Reason:         req.Reason,
 		CreatedBy:      &operatorID,
 	}
+	// D-25：service 层改用 Upsert，当唯一键冲突时更新记录，不再返回 500
 	if err := h.iamSvc.SetPermissionOverride(r.Context(), override, operatorID, r.RemoteAddr); err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "设置失败")
 		return
@@ -308,6 +322,11 @@ func (h *IAMHandler) DeletePermissionOverride(w http.ResponseWriter, r *http.Req
 	}
 	operatorID := middleware.UserIDFromContext(r.Context())
 	if err := h.iamSvc.DeletePermissionOverride(r.Context(), overrideID, userID, operatorID, r.RemoteAddr); err != nil {
+		// D-27：记录不存在或越权（override 不属于该用户）时返回 404
+		if errors.Is(err, service.ErrOverrideNotFound) {
+			response.Error(w, http.StatusNotFound, 40400, "权限覆盖记录不存在")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, 50000, "删除失败")
 		return
 	}
@@ -388,6 +407,12 @@ func (h *IAMHandler) GetUserEffectivePermissions(w http.ResponseWriter, r *http.
 // ListAuditLogs GET /api/admin/audit-logs
 // BUG-05 修复：该路由此前未注册，请求返回 404。
 // 支持 ?module=&action=&page=&page_size= 参数，响应字段名使用 items。
+//
+// 安全说明（D-30）：本接口返回全量审计日志，不做调用者维度的数据范围限制。
+// 当前接口受 RequirePerm("role:manage") 中间件保护，仅超管角色拥有该权限码。
+// 重要约定：role:manage 权限码不得下放给非超管角色，否则将导致任意管理员可查看
+// 全量审计日志（包含其他用户/模块的操作记录），违反最小权限原则。
+// 若未来需要细粒度管控，应拆分为 audit:read 权限码并在此处加 operator_id 过滤。
 func (h *IAMHandler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	module := r.URL.Query().Get("module")
 	action := r.URL.Query().Get("action")
@@ -483,6 +508,11 @@ func (h *IAMHandler) SetRolePermissions(w http.ResponseWriter, r *http.Request) 
 	}
 	operatorID := middleware.UserIDFromContext(r.Context())
 	if err := h.iamSvc.SetRolePermissions(r.Context(), roleID, req.PermissionIDs, operatorID, r.RemoteAddr); err != nil {
+		// D-26：role_id 或 permission_id 不存在时返回 400
+		if errIsNotFound(err) {
+			response.Error(w, http.StatusBadRequest, 40000, "角色或权限不存在")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, 50000, "设置失败")
 		return
 	}

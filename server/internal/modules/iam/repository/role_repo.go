@@ -7,6 +7,9 @@ import (
 	"molin/server/internal/modules/iam/model"
 )
 
+// ErrRoleNotFound 角色不存在（UPDATE/DELETE 影响行数为 0）。
+var ErrRoleNotFound = gorm.ErrRecordNotFound
+
 // RoleRepository 角色数据访问层。
 type RoleRepository struct {
 	db *gorm.DB
@@ -35,12 +38,30 @@ func (r *RoleRepository) List(ctx context.Context) ([]model.Role, error) {
 	return roles, err
 }
 
+// Update 更新角色字段，若角色不存在（rowsAffected==0）则返回 ErrRoleNotFound。
 func (r *RoleRepository) Update(ctx context.Context, id uint64, updates map[string]interface{}) error {
-	return r.db.WithContext(ctx).Model(&model.Role{}).Where("id = ?", id).Updates(updates).Error
+	result := r.db.WithContext(ctx).Model(&model.Role{}).Where("id = ?", id).Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	// rowsAffected 为 0 说明该 id 对应的角色不存在
+	if result.RowsAffected == 0 {
+		return ErrRoleNotFound
+	}
+	return nil
 }
 
+// Delete 删除角色，若角色不存在（rowsAffected==0）则返回 ErrRoleNotFound。
 func (r *RoleRepository) Delete(ctx context.Context, id uint64) error {
-	return r.db.WithContext(ctx).Delete(&model.Role{}, id).Error
+	result := r.db.WithContext(ctx).Delete(&model.Role{}, id)
+	if result.Error != nil {
+		return result.Error
+	}
+	// rowsAffected 为 0 说明该 id 对应的角色不存在
+	if result.RowsAffected == 0 {
+		return ErrRoleNotFound
+	}
+	return nil
 }
 
 // ListPaged 分页查询角色列表，支持关键字搜索（匹配 code 或 name），空字符串时不过滤。
