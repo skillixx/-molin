@@ -29,6 +29,7 @@
 | A-13 | IAM | IAM 权限管理单条操作补充审计日志：`AssignRole`/`RevokeRole`/`SetPermissionOverride`/`DeletePermissionOverride` 四个接口（`POST/DELETE /api/admin/users/{id}/roles[/...]`、`/permission-overrides[/...]`）当前未写入 `audit_logs`，与已有审计的批量替换接口（`ReplaceUserRoles`/`ReplaceUserOverrides`）不一致，存在敏感操作审计盲区 | `feature/backend-a-iam-audit-single-ops` | ✅ 已完成 | PR#38（merge commit `8a2ea81`）：4 个接口补充 `auditSvc.Record` 调用（action: `assign_role`/`revoke_role`/`set_permission_override`/`delete_permission_override`，module=iam）；`RevokeRole`/`SetPermissionOverride`/`DeletePermissionOverride` service 签名新增 `operatorID`/`ip`，handler 从 `middleware.UserIDFromContext`/`r.RemoteAddr` 取值；HTTP 请求/响应契约不变；测试工程师验收通过（18/18，PR#39 `tests/test_pr38_audit_logs.py`）；发现非阻塞遗留问题：`GET /api/admin/audit-logs` 响应未映射 `request_summary` 字段，管理后台后续展示审计详情时需补充（已建为 A-14） |
 | A-14 | IAM | `GET /api/admin/audit-logs` 响应补充 `request_summary` 字段：`audit_logs.request_summary`（JSON 字符串，记录操作参数）已正确写入数据库，但 `IAMHandler.ListAuditLogs`（`server/internal/modules/iam/handler/iam_handler.go` ~398-407）返回的 map 中未包含该字段，导致管理后台审计日志页面无法展示操作详情 | `feature/backend-a-audit-log-request-summary` | ✅ 已完成 | PR#42（merge commit `823f373`）：`ListAuditLogs` 每条记录新增 `request_summary` 字段——为 `nil` 时输出 `null`，非 `nil` 时通过 `json.Unmarshal` 反序列化为对象/数组返回，反序列化失败时兜底返回原始字符串；仅新增响应字段，HTTP 请求/响应契约其余部分及数据库结构均不变；`go build`/`go vet` 通过；测试工程师验收通过（25/25，PR#44 `tests/test_pr42_audit_log_summary.py`） |
 | A-15 | IAM | 修复 `identity:review` 权限码缺失 seed migration：`server/internal/modules/identity/route.go:26` 的 `RequirePerm(iamSvc, "identity:review", ...)` 所需权限码未注册到 `permissions` 表，也未绑定到 `admin` 角色（`docs/api-test-identity.md` 已记录手动 SQL workaround），导致 `GET/GET/PATCH /api/admin/identity-verifications*`（实名认证审核，A-03）3 个接口在全新数据库环境下任何账号均返回 403/40003；与 migration 000011/000012/000013/000014/000017 同根因，第 5 次出现 | `feature/backend-a-seed-identity-review-permission` | ✅ 已完成 | PR#47（merge commit `7a5d04f`）：新增 `server/migrations/000018_seed_identity_review_permission.{up,down}.sql`，`INSERT IGNORE INTO permissions`（code=identity:review, name=实名认证审核, resource=identity, action=review）并绑定 admin 角色；`go build`/`go vet` 通过；测试工程师验收通过（25/25，PR#48 `tests/test_pr47_identity_review_permission.py`） |
+| A-16 | IAM | 新增 `POST /api/user-groups/join`：普通登录用户凭邀请码加入群组。当前邀请码管理端（`/api/admin/user-groups/{id}/invite-codes`）已实现生成/禁用，但无用户端消费接口，导致 `used_count` 永不递增、`max_uses` 限制永不生效，整个邀请码功能形同虚设。Repository 层已就绪（`FindActiveInviteCode`/`IncrUsedCount`/`AddMember`），只需新增 service 方法、handler、路由。仅需 `RequireAuth`，无需 `group:manage` | `feature/backend-a-iam-user-join-group` | ⏳ 待开始 | |
 
 ---
 
@@ -129,14 +130,14 @@
 
 | 开发者 | 总任务数 | 已完成 | 进行中 | 待开始 |
 |---|---|---|---|---|
-| 后端工程师甲 | 15 | 15（9 已审查 + 6 已验收，PR#31/#32/#38/#39/#42/#44/#47/#48）| 0 | 0 |
+| 后端工程师甲 | 16 | 15（9 已审查 + 6 已验收，PR#31/#32/#38/#39/#42/#44/#47/#48）| 0 | 1 |
 | 后端工程师乙 | 6 | 0 | 0 | 6 |
 | 后端工程师丙 | 5 | 0 | 0 | 5 |
 | 前端工程师甲 | 8 | 3（已审查）| 0 | 5 |
 | 前端工程师乙 | 8 | 0 | 0 | 8 |
 | 运维工程师 | 6 | 6 | 0 | 0 |
 | 测试工程师 | 6 | 0 | 0 | 6 |
-| **合计** | **54** | **24** | **0** | **30** |
+| **合计** | **55** | **24** | **0** | **31** |
 
 ---
 
