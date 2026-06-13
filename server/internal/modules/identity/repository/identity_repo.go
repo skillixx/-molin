@@ -57,11 +57,24 @@ func (r *IdentityRepository) FindLatestByUser(ctx context.Context, userID uint64
 	return &v, nil
 }
 
-// ExistsByHMAC 查重：身份证号 hash 是否已被其他用户绑定。
+// ExistsByHMAC 查重：身份证号 hash 是否已被其他用户以 pending 或 verified 状态占用。
+// D-40：原仅检查 verified 状态，导致同一身份证号可并发存在多条 pending 记录；
+// 改为同时检查 pending/verified，只要其他用户有任一状态的记录即视为冲突，拒绝新提交。
 func (r *IdentityRepository) ExistsByHMAC(ctx context.Context, hmacHash string, excludeUserID uint64) (bool, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&model.IdentityVerification{}).
-		Where("id_card_no_hash = ? AND user_id != ? AND status = 'verified'", hmacHash, excludeUserID).
+		Where("id_card_no_hash = ? AND user_id != ? AND status IN ?",
+			hmacHash, excludeUserID, []string{"pending", "verified"}).
+		Count(&count).Error
+	return count > 0, err
+}
+
+// ExistsByHMACVerified 批准审核时检查同一身份证号是否已有其他用户的 verified 记录。
+// D-40：Review() 批准路径在事务内调用，防止并发 pending 记录被逐一批准造成一证多号。
+func (r *IdentityRepository) ExistsByHMACVerified(db *gorm.DB, hmacHash string, excludeUserID uint64) (bool, error) {
+	var count int64
+	err := db.Model(&model.IdentityVerification{}).
+		Where("id_card_no_hash = ? AND status = 'verified' AND user_id != ?", hmacHash, excludeUserID).
 		Count(&count).Error
 	return count > 0, err
 }
