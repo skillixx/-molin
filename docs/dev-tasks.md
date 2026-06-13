@@ -30,7 +30,7 @@
 | A-14 | IAM | `GET /api/admin/audit-logs` 响应补充 `request_summary` 字段：`audit_logs.request_summary`（JSON 字符串，记录操作参数）已正确写入数据库，但 `IAMHandler.ListAuditLogs`（`server/internal/modules/iam/handler/iam_handler.go` ~398-407）返回的 map 中未包含该字段，导致管理后台审计日志页面无法展示操作详情 | `feature/backend-a-audit-log-request-summary` | ✅ 已完成 | PR#42（merge commit `823f373`）：`ListAuditLogs` 每条记录新增 `request_summary` 字段——为 `nil` 时输出 `null`，非 `nil` 时通过 `json.Unmarshal` 反序列化为对象/数组返回，反序列化失败时兜底返回原始字符串；仅新增响应字段，HTTP 请求/响应契约其余部分及数据库结构均不变；`go build`/`go vet` 通过；测试工程师验收通过（25/25，PR#44 `tests/test_pr42_audit_log_summary.py`） |
 | A-15 | IAM | 修复 `identity:review` 权限码缺失 seed migration：`server/internal/modules/identity/route.go:26` 的 `RequirePerm(iamSvc, "identity:review", ...)` 所需权限码未注册到 `permissions` 表，也未绑定到 `admin` 角色（`docs/api-test-identity.md` 已记录手动 SQL workaround），导致 `GET/GET/PATCH /api/admin/identity-verifications*`（实名认证审核，A-03）3 个接口在全新数据库环境下任何账号均返回 403/40003；与 migration 000011/000012/000013/000014/000017 同根因，第 5 次出现 | `feature/backend-a-seed-identity-review-permission` | ✅ 已完成 | PR#47（merge commit `7a5d04f`）：新增 `server/migrations/000018_seed_identity_review_permission.{up,down}.sql`，`INSERT IGNORE INTO permissions`（code=identity:review, name=实名认证审核, resource=identity, action=review）并绑定 admin 角色；`go build`/`go vet` 通过；测试工程师验收通过（25/25，PR#48 `tests/test_pr47_identity_review_permission.py`） |
 | A-16 | IAM | 新增 `POST /api/user-groups/join`：普通登录用户凭邀请码加入群组。当前邀请码管理端（`/api/admin/user-groups/{id}/invite-codes`）已实现生成/禁用，但无用户端消费接口，导致 `used_count` 永不递增、`max_uses` 限制永不生效，整个邀请码功能形同虚设。Repository 层已就绪（`FindActiveInviteCode`/`IncrUsedCount`/`AddMember`），只需新增 service 方法、handler、路由。仅需 `RequireAuth`，无需 `group:manage` | `feature/backend-a-iam-user-join-group` | ✅ 已完成 | PR#50（merge commit `d618bc5`）：新增 `ErrInviteCodeNotFound`/`AddMemberTx`（repository）、`JoinByInviteCode`（service，单事务：查码→加成员→递增 used_count）、`JoinGroup` handler、路由 `POST /api/user-groups/join`；`go build`/`go vet` 通过；测试工程师验收通过（12/12，PR#51 `tests/test_pr50_user_join_group.py`） |
-| A-17 | Identity/IAM | senior-architect 审查发现的 5 处缺陷集中修复（D-01～D-05）：(D-01) `identity/service.Review()` 无状态检查，可重复审核已完结记录；(D-02) 拒绝审核时 `VerifiedAt` 不写入导致 `reviewed_at` 永远 null；(D-03) `iam/handler.SetPermissionOverride` 传入无效 `permission_id` 时静默保存 `permission_code=""`；(D-04) 实名认证审核操作未写入全局 `audit_logs`（其他敏感操作如 ban/assign_role 均已写）；(D-05) `GET /api/identity/verifications/me` 调用 `FindActiveByUser` 可能导致被拒用户查不到拒绝记录 | `feature/backend-a-identity-iam-defect-fixes` | ⏳ 待开始 | |
+| A-17 | Identity/IAM | senior-architect 审查发现的 5 处缺陷集中修复（D-01～D-05）：(D-01) `identity/service.Review()` 无状态检查，可重复审核已完结记录；(D-02) 拒绝审核时 `VerifiedAt` 不写入导致 `reviewed_at` 永远 null；(D-03) `iam/handler.SetPermissionOverride` 传入无效 `permission_id` 时静默保存 `permission_code=""`；(D-04) 实名认证审核操作未写入全局 `audit_logs`（其他敏感操作如 ban/assign_role 均已写）；(D-05) `GET /api/identity/verifications/me` 调用 `FindActiveByUser` 可能导致被拒用户查不到拒绝记录 | `feature/backend-a-identity-iam-defect-fixes` | ✅ 已完成 | PR#53（merge commit `9954023`）：D-01 加 pending 状态守卫返回 409；D-02 拒绝时统一写 `verified_at`；D-03 permission_id 不存在返回 400；D-04 注入 auditSvc 写全局 audit_logs；D-05 新增 `FindLatestByUser` 不过滤 status；`go build` 通过；测试工程师验收通过（12/12，PR#54 `tests/test_pr53_identity_iam_defects.py`） |
 
 ---
 
@@ -131,14 +131,14 @@
 
 | 开发者 | 总任务数 | 已完成 | 进行中 | 待开始 |
 |---|---|---|---|---|
-| 后端工程师甲 | 17 | 16（9 已审查 + 7 已验收，PR#31/#32/#38/#39/#42/#44/#47/#48/#50/#51）| 0 | 1 |
+| 后端工程师甲 | 17 | 17（9 已审查 + 8 已验收，PR#31/#32/#38/#39/#42/#44/#47/#48/#50/#51/#53/#54）| 0 | 0 |
 | 后端工程师乙 | 6 | 0 | 0 | 6 |
 | 后端工程师丙 | 5 | 0 | 0 | 5 |
 | 前端工程师甲 | 8 | 3（已审查）| 0 | 5 |
 | 前端工程师乙 | 8 | 0 | 0 | 8 |
 | 运维工程师 | 6 | 6 | 0 | 0 |
 | 测试工程师 | 6 | 0 | 0 | 6 |
-| **合计** | **55** | **25** | **0** | **30** |
+| **合计** | **55** | **26** | **0** | **29** |
 
 ---
 
