@@ -15,6 +15,8 @@ type SubmitResp struct {
 }
 
 // ReviewReq 管理员审核请求。
+// D-06：当 Approve == false（拒绝）时，Reason 去除首尾空格后不能为空，
+// 否则 service 层返回 ErrReasonRequired（400/40000）。
 type ReviewReq struct {
 	Approve bool   `json:"approve"`
 	Reason  string `json:"reason,omitempty"`

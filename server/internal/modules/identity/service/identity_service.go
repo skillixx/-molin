@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -21,6 +22,8 @@ var (
 	ErrIDCardAlreadyBound       = errors.New("该身份证号已绑定其他账号")
 	// D-01：新增错误，用于标识重复审核已完结记录
 	ErrVerificationAlreadyReviewed = errors.New("该记录已审核，不可重复操作")
+	// D-06：拒绝审核时必须填写驳回理由
+	ErrReasonRequired = errors.New("驳回时必须填写理由")
 )
 
 // UserUpdater 跨模块接口，由 auth.UserRepository 实现，identity 只注入 interface 避免循环导入。
@@ -83,6 +86,10 @@ func (s *IdentityService) Submit(ctx context.Context, userID uint64, req dto.Sub
 
 // Review 管理员审核：approve=true 通过，false 拒绝。
 func (s *IdentityService) Review(ctx context.Context, verificationID, operatorID uint64, approve bool, reason string) error {
+	// D-06：拒绝审核时必须填写驳回理由（去除首尾空格后非空）
+	if !approve && strings.TrimSpace(reason) == "" {
+		return ErrReasonRequired
+	}
 	verification, err := s.repo.FindByID(ctx, verificationID)
 	if err != nil {
 		return err
@@ -98,8 +105,14 @@ func (s *IdentityService) Review(ctx context.Context, verificationID, operatorID
 	// D-02：无论通过或拒绝，都记录审核时间
 	now := time.Now()
 	txErr := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := s.repo.UpdateStatus(tx, verificationID, newStatus, reason); err != nil {
+		// D-11：UpdateStatus 内部带 "AND status = 'pending'" 条件，rowsAffected == 0
+		// 说明记录已被并发请求审核完成，回滚事务并返回已审核错误
+		rowsAffected, err := s.repo.UpdateStatus(tx, verificationID, newStatus, reason)
+		if err != nil {
 			return err
+		}
+		if rowsAffected == 0 {
+			return ErrVerificationAlreadyReviewed
 		}
 		// D-02：统一更新 verified_at（审核时间），不再仅在通过时写入
 		if err := tx.Model(&model.IdentityVerification{}).
@@ -107,13 +120,16 @@ func (s *IdentityService) Review(ctx context.Context, verificationID, operatorID
 			Update("verified_at", &now).Error; err != nil {
 			return err
 		}
-		s.repo.CreateLog(tx, &model.IdentityVerificationLog{
+		// D-09：CreateLog 错误需检查，失败时回滚事务
+		if err := s.repo.CreateLog(tx, &model.IdentityVerificationLog{
 			VerificationID: verificationID,
 			UserID:         verification.UserID,
 			Action:         newStatus,
 			OperatorID:     &operatorID,
 			Remark:         &reason,
-		})
+		}); err != nil {
+			return err
+		}
 		if approve {
 			return s.userRepo.UpdateRealNameStatus(tx, verification.UserID, "verified", verification.RealName)
 		}
@@ -145,19 +161,6 @@ func (s *IdentityService) GetMyVerification(ctx context.Context, userID uint64) 
 		return nil, err
 	}
 	return toResp(v), nil
-}
-
-// ListPending 管理员查看待审核列表（不分页，兼容旧调用）。
-func (s *IdentityService) ListPending(ctx context.Context) ([]dto.VerificationResp, error) {
-	list, err := s.repo.ListPending(ctx)
-	if err != nil {
-		return nil, err
-	}
-	resp := make([]dto.VerificationResp, len(list))
-	for i, v := range list {
-		resp[i] = *toResp(&v)
-	}
-	return resp, nil
 }
 
 // ListPaged 管理员分页查看认证记录，status 非空时按状态过滤，空字符串时查全部状态。
