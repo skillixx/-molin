@@ -405,6 +405,18 @@ func (h *IAMHandler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 			"ip":          l.IP,
 			"created_at":  l.CreatedAt.Format(isoLayout),
 		}
+		// request_summary 存储为 JSON 字符串，反序列化为对象/数组返回，避免被转义成字符串
+		if l.RequestSummary == nil {
+			item["request_summary"] = nil
+		} else {
+			var summary interface{}
+			if err := json.Unmarshal([]byte(*l.RequestSummary), &summary); err != nil {
+				// 反序列化失败时兜底返回原始字符串，不中断整个列表的响应
+				item["request_summary"] = *l.RequestSummary
+			} else {
+				item["request_summary"] = summary
+			}
+		}
 		list[i] = item
 	}
 	response.JSON(w, http.StatusOK, PagedResp{
