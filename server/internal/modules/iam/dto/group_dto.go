@@ -12,11 +12,12 @@ type CreateGroupReq struct {
 }
 
 // UpdateGroupReq 更新分组请求（仅 name/type/description/is_default 可改，code 不可改）。
+// 使用指针类型实现 PATCH 语义：JSON 中未出现的字段（nil）不会触发更新，避免零值覆盖现有数据。
 type UpdateGroupReq struct {
-	Name        string  `json:"name"`
-	Type        string  `json:"type"`
-	IsDefault   bool    `json:"is_default"`
-	Description *string `json:"description,omitempty"`
+	Name        *string `json:"name"`
+	Type        *string `json:"type"`
+	IsDefault   *bool   `json:"is_default"`
+	Description *string `json:"description"`
 }
 
 // AddMemberReq 加成员请求。

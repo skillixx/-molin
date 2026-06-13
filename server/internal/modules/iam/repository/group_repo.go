@@ -16,16 +16,24 @@ var (
 	ErrGroupNotEmpty = errors.New("分组内仍有成员，请先移除所有成员")
 	// ErrGroupHasActiveCodes 分组内仍有有效邀请码，禁止删除。
 	ErrGroupHasActiveCodes = errors.New("分组内仍有有效邀请码，请先禁用后再删除分组")
+	// ErrGroupNotFound 分组不存在。
+	ErrGroupNotFound = errors.New("分组不存在")
 	// ErrMemberAlreadyExists 用户已在该分组中。
 	ErrMemberAlreadyExists = errors.New("用户已在该分组中")
 	// ErrMemberNotFound 用户不在该分组中。
 	ErrMemberNotFound = errors.New("用户不在该分组中")
 	// ErrGroupPermissionExists 组权限已存在。
 	ErrGroupPermissionExists = errors.New("该权限码已添加到此分组")
+	// ErrPermissionNotFound 权限记录不存在。
+	ErrPermissionNotFound = errors.New("权限记录不存在")
 	// ErrInviteCodeExists 邀请码已被使用。
 	ErrInviteCodeExists = errors.New("邀请码已存在，请更换")
 	// ErrInviteCodeNotFound 邀请码无效、已过期或已超过使用上限。
 	ErrInviteCodeNotFound = errors.New("邀请码无效或已过期")
+	// ErrInviteCodeFull 邀请码已达到使用上限。
+	ErrInviteCodeFull = errors.New("邀请码已达到使用上限")
+	// ErrUserNotFound 用户不存在。
+	ErrUserNotFound = errors.New("用户不存在")
 )
 
 // GroupRepository 分组数据访问层，覆盖分组、成员、组权限、邀请码四个子资源。
@@ -73,8 +81,28 @@ func (r *GroupRepository) ListPaged(ctx context.Context, groupType, keyword stri
 }
 
 // Update 更新分组字段（name、type、description、is_default）。
+// rowsAffected 为 0 时返回 ErrGroupNotFound，避免对不存在的 ID 静默成功（D-38）。
 func (r *GroupRepository) Update(ctx context.Context, id uint64, updates map[string]interface{}) error {
-	return r.db.WithContext(ctx).Model(&model.UserGroup{}).Where("id = ?", id).Updates(updates).Error
+	res := r.db.WithContext(ctx).Model(&model.UserGroup{}).Where("id = ?", id).Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrGroupNotFound
+	}
+	return nil
+}
+
+// UpdateTx 在事务内更新分组字段（设置默认组时使用）。
+func (r *GroupRepository) UpdateTx(tx *gorm.DB, id uint64, updates map[string]interface{}) error {
+	res := tx.Model(&model.UserGroup{}).Where("id = ?", id).Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrGroupNotFound
+	}
+	return nil
 }
 
 // ClearDefault 将所有分组的 is_default 清为 false，设置新默认组前调用（在同一事务中）。
@@ -83,26 +111,67 @@ func (r *GroupRepository) ClearDefault(db *gorm.DB) error {
 }
 
 // Delete 删除分组：组内有成员或有效邀请码时拒绝。
+// D-36：使用事务+子查询条件确保"检查成员"与"删除分组"的原子性，消除 TOCTOU 竞态。
+// D-37：在同一事务内先清理 group_permissions 关联记录，再删除分组主记录。
 func (r *GroupRepository) Delete(ctx context.Context, id uint64) error {
+	// 预检：快速失败，减少事务等待时间（非权威判断）
 	var memberCount int64
-	r.db.WithContext(ctx).Model(&model.UserGroupMember{}).Where("group_id = ?", id).Count(&memberCount)
+	if err := r.db.WithContext(ctx).Model(&model.UserGroupMember{}).
+		Where("group_id = ?", id).Count(&memberCount).Error; err != nil {
+		return err
+	}
 	if memberCount > 0 {
 		return ErrGroupNotEmpty
 	}
 	var codeCount int64
-	r.db.WithContext(ctx).Model(&model.GroupInviteCode{}).Where("group_id = ? AND status = 'active'", id).Count(&codeCount)
+	if err := r.db.WithContext(ctx).Model(&model.GroupInviteCode{}).
+		Where("group_id = ? AND status = 'active'", id).Count(&codeCount).Error; err != nil {
+		return err
+	}
 	if codeCount > 0 {
 		return ErrGroupHasActiveCodes
 	}
-	return r.db.WithContext(ctx).Delete(&model.UserGroup{}, id).Error
+
+	// 事务内：先删关联的 group_permissions，再用子查询条件原子删除分组主记录
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// D-37：清理关联权限记录（分组不存在时此操作影响 0 行，无副作用）
+		if err := tx.Where("group_id = ?", id).Delete(&model.GroupPermission{}).Error; err != nil {
+			return err
+		}
+		// D-36：子查询条件确保原子性——若此时已有成员加入则 rowsAffected=0，直接拒绝
+		res := tx.Where(
+			"id = ? AND NOT EXISTS (SELECT 1 FROM user_group_members WHERE group_id = ?)",
+			id, id,
+		).Delete(&model.UserGroup{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			// 分组不存在 或 刚有成员并发加入——通过先查 group 是否存在来区分两种情况
+			var exists int64
+			tx.Model(&model.UserGroup{}).Where("id = ?", id).Count(&exists)
+			if exists == 0 {
+				return ErrGroupNotFound
+			}
+			return ErrGroupNotEmpty
+		}
+		return nil
+	})
 }
 
 // ——— 成员管理 ———
 
+// ExistsUserByID 检查 users 表中是否存在指定 ID 的用户（D-35：防止幽灵成员）。
+func (r *GroupRepository) ExistsUserByID(ctx context.Context, userID uint64) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Table("users").Where("id = ?", userID).Count(&count).Error
+	return count > 0, err
+}
+
 // AddMember 将用户加入分组，已存在时返回 ErrMemberAlreadyExists。
 func (r *GroupRepository) AddMember(ctx context.Context, m *model.UserGroupMember) error {
 	err := r.db.WithContext(ctx).Create(m).Error
-	if err != nil && isDuplicateKey(err) {
+	if err != nil && isConstraintError(err) {
 		return ErrMemberAlreadyExists
 	}
 	return err
@@ -111,7 +180,7 @@ func (r *GroupRepository) AddMember(ctx context.Context, m *model.UserGroupMembe
 // AddMemberTx 在事务 tx 中将用户加入分组，已存在时返回 ErrMemberAlreadyExists。
 func (r *GroupRepository) AddMemberTx(tx *gorm.DB, m *model.UserGroupMember) error {
 	err := tx.Create(m).Error
-	if err != nil && isDuplicateKey(err) {
+	if err != nil && isConstraintError(err) {
 		return ErrMemberAlreadyExists
 	}
 	return err
@@ -215,17 +284,25 @@ func (r *GroupRepository) GetVisibleUserIDs(ctx context.Context, adminUserID uin
 // AddPermission 给分组添加权限码，已存在时返回 ErrGroupPermissionExists。
 func (r *GroupRepository) AddPermission(ctx context.Context, gp *model.GroupPermission) error {
 	err := r.db.WithContext(ctx).Create(gp).Error
-	if err != nil && isDuplicateKey(err) {
+	if err != nil && isConstraintError(err) {
 		return ErrGroupPermissionExists
 	}
 	return err
 }
 
 // RemovePermission 从分组移除权限码。
+// rowsAffected 为 0 时返回 ErrPermissionNotFound（D-38）。
 func (r *GroupRepository) RemovePermission(ctx context.Context, groupID uint64, permCode string) error {
-	return r.db.WithContext(ctx).
+	res := r.db.WithContext(ctx).
 		Where("group_id = ? AND permission_code = ?", groupID, permCode).
-		Delete(&model.GroupPermission{}).Error
+		Delete(&model.GroupPermission{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrPermissionNotFound
+	}
+	return nil
 }
 
 // ListPermissions 查询分组的全部权限码（不分页，一个组的权限码通常不超过百条）。
@@ -260,7 +337,7 @@ func (r *GroupRepository) GetPermissionCodesByGroups(ctx context.Context, groupI
 // CreateInviteCode 创建邀请码，code 重复时返回 ErrInviteCodeExists。
 func (r *GroupRepository) CreateInviteCode(ctx context.Context, ic *model.GroupInviteCode) error {
 	err := r.db.WithContext(ctx).Create(ic).Error
-	if err != nil && isDuplicateKey(err) {
+	if err != nil && isConstraintError(err) {
 		return ErrInviteCodeExists
 	}
 	return err
@@ -284,10 +361,18 @@ func (r *GroupRepository) ListInviteCodesPaged(ctx context.Context, groupID uint
 }
 
 // DisableInviteCode 禁用指定 ID 的邀请码（属于 groupID 下才允许操作）。
+// rowsAffected 为 0 时返回 ErrInviteCodeNotFound（D-38）。
 func (r *GroupRepository) DisableInviteCode(ctx context.Context, groupID, inviteID uint64) error {
-	return r.db.WithContext(ctx).Model(&model.GroupInviteCode{}).
+	res := r.db.WithContext(ctx).Model(&model.GroupInviteCode{}).
 		Where("id = ? AND group_id = ?", inviteID, groupID).
-		Update("status", "disabled").Error
+		Update("status", "disabled")
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrInviteCodeNotFound
+	}
+	return nil
 }
 
 // FindActiveInviteCode 按 code 查有效邀请码（未禁用、未过期、未超限）。
@@ -307,11 +392,27 @@ func (r *GroupRepository) FindActiveInviteCode(ctx context.Context, code string)
 	return &ic, nil
 }
 
-// IncrUsedCount 邀请码被使用时原子加一（Phase 4 注册流程使用）。
+// IncrUsedCount 邀请码被使用时原子加一（Phase 4 注册流程使用，无并发上限限制场景）。
 func (r *GroupRepository) IncrUsedCount(db *gorm.DB, inviteID uint64) error {
 	return db.Model(&model.GroupInviteCode{}).
 		Where("id = ?", inviteID).
 		UpdateColumn("used_count", gorm.Expr("used_count + 1")).Error
+}
+
+// IncrUsedCountAtomic 带上限校验的原子递增（D-34：消除并发超额竞态）。
+// SQL：UPDATE ... SET used_count = used_count + 1 WHERE id = ? AND (max_uses = 0 OR used_count < max_uses)
+// rowsAffected = 0 表示已达上限，返回 ErrInviteCodeFull。
+func (r *GroupRepository) IncrUsedCountAtomic(tx *gorm.DB, inviteID uint64) error {
+	res := tx.Model(&model.GroupInviteCode{}).
+		Where("id = ? AND (max_uses = 0 OR used_count < max_uses)", inviteID).
+		UpdateColumn("used_count", gorm.Expr("used_count + 1"))
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrInviteCodeFull
+	}
+	return nil
 }
 
 // GenerateCode 生成随机 8 字符邀请码（大写字母+数字，排除易混淆字符 0/O/1/I）。
@@ -324,8 +425,12 @@ func GenerateCode() string {
 	return string(b)
 }
 
-// isDuplicateKey 判断 error 是否为 MySQL 唯一键冲突（1062）。
-func isDuplicateKey(err error) bool {
+// isConstraintError 判断 error 是否为 MySQL 约束冲突（D-39）。
+// 1062：唯一键冲突；1452：外键约束违反（如 user_id 指向不存在的用户）。
+func isConstraintError(err error) bool {
 	var mysqlErr *mysql.MySQLError
-	return errors.As(err, &mysqlErr) && mysqlErr.Number == 1062
+	if !errors.As(err, &mysqlErr) {
+		return false
+	}
+	return mysqlErr.Number == 1062 || mysqlErr.Number == 1452
 }
