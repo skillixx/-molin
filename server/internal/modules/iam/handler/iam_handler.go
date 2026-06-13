@@ -164,7 +164,7 @@ func (h *IAMHandler) AssignRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	operatorID := middleware.UserIDFromContext(r.Context())
-	if err := h.iamSvc.AssignRole(r.Context(), userID, req.RoleID, operatorID, req.Reason); err != nil {
+	if err := h.iamSvc.AssignRole(r.Context(), userID, req.RoleID, operatorID, req.Reason, r.RemoteAddr); err != nil {
 		// 重复分配：该用户已拥有此角色，返回 409 Conflict
 		if errors.Is(err, repository.ErrUserRoleExists) {
 			response.Error(w, http.StatusConflict, 40900, "该用户已拥有此角色")
@@ -188,7 +188,8 @@ func (h *IAMHandler) RevokeRole(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "无效角色 ID")
 		return
 	}
-	if err := h.iamSvc.RevokeRole(r.Context(), userID, roleID); err != nil {
+	operatorID := middleware.UserIDFromContext(r.Context())
+	if err := h.iamSvc.RevokeRole(r.Context(), userID, roleID, operatorID, r.RemoteAddr); err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "撤销失败")
 		return
 	}
@@ -281,7 +282,7 @@ func (h *IAMHandler) SetPermissionOverride(w http.ResponseWriter, r *http.Reques
 		Reason:         req.Reason,
 		CreatedBy:      &operatorID,
 	}
-	if err := h.iamSvc.SetPermissionOverride(r.Context(), override); err != nil {
+	if err := h.iamSvc.SetPermissionOverride(r.Context(), override, operatorID, r.RemoteAddr); err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "设置失败")
 		return
 	}
@@ -300,7 +301,8 @@ func (h *IAMHandler) DeletePermissionOverride(w http.ResponseWriter, r *http.Req
 		response.Error(w, http.StatusBadRequest, 40000, "无效覆盖 ID")
 		return
 	}
-	if err := h.iamSvc.DeletePermissionOverride(r.Context(), overrideID, userID); err != nil {
+	operatorID := middleware.UserIDFromContext(r.Context())
+	if err := h.iamSvc.DeletePermissionOverride(r.Context(), overrideID, userID, operatorID, r.RemoteAddr); err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "删除失败")
 		return
 	}

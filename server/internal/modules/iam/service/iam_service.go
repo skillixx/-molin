@@ -81,20 +81,26 @@ func (s *IAMService) GetUserRoleIDs(ctx context.Context, userID uint64) ([]uint6
 }
 
 // AssignRole 为用户分配角色并写审计日志。
-func (s *IAMService) AssignRole(ctx context.Context, userID, roleID, operatorID uint64, reason *string) error {
+func (s *IAMService) AssignRole(ctx context.Context, userID, roleID, operatorID uint64, reason *string, ip string) error {
 	if err := s.userRoleRepo.Assign(ctx, userID, roleID); err != nil {
 		return err
 	}
 	s.cacheSvc.InvalidateUserPerms(ctx, userID)
+	_ = s.auditSvc.Record(ctx, &operatorID, "iam", "assign_role",
+		strPtr("user"), strPtr(strconv.FormatUint(userID, 10)), ip,
+		map[string]any{"user_id": userID, "role_id": roleID, "reason": reason})
 	return nil
 }
 
-// RevokeRole 撤销用户角色。
-func (s *IAMService) RevokeRole(ctx context.Context, userID, roleID uint64) error {
+// RevokeRole 撤销用户角色，并写入审计日志。
+func (s *IAMService) RevokeRole(ctx context.Context, userID, roleID, operatorID uint64, ip string) error {
 	if err := s.userRoleRepo.Revoke(ctx, userID, roleID); err != nil {
 		return err
 	}
 	s.cacheSvc.InvalidateUserPerms(ctx, userID)
+	_ = s.auditSvc.Record(ctx, &operatorID, "iam", "revoke_role",
+		strPtr("user"), strPtr(strconv.FormatUint(userID, 10)), ip,
+		map[string]any{"user_id": userID, "role_id": roleID})
 	return nil
 }
 
@@ -144,21 +150,33 @@ func (s *IAMService) GetUserRolesPaged(ctx context.Context, userID uint64, offse
 	return s.userRoleRepo.FindRolesByUserPaged(ctx, userID, offset, limit)
 }
 
-// SetPermissionOverride 设置用户权限覆盖并清除缓存。
-func (s *IAMService) SetPermissionOverride(ctx context.Context, override *model.UserPermissionOverride) error {
+// SetPermissionOverride 设置用户权限覆盖，清除缓存并写入审计日志。
+func (s *IAMService) SetPermissionOverride(ctx context.Context, override *model.UserPermissionOverride, operatorID uint64, ip string) error {
 	if err := s.overrideRepo.Create(ctx, override); err != nil {
 		return err
 	}
 	s.cacheSvc.InvalidateUserPerms(ctx, override.UserID)
+	_ = s.auditSvc.Record(ctx, &operatorID, "iam", "set_permission_override",
+		strPtr("user"), strPtr(strconv.FormatUint(override.UserID, 10)), ip,
+		map[string]any{
+			"user_id":         override.UserID,
+			"permission_id":   override.PermissionID,
+			"permission_code": override.PermissionCode,
+			"effect":          override.Effect,
+			"reason":          override.Reason,
+		})
 	return nil
 }
 
-// DeletePermissionOverride 删除用户权限覆盖并清除缓存。
-func (s *IAMService) DeletePermissionOverride(ctx context.Context, overrideID, userID uint64) error {
+// DeletePermissionOverride 删除用户权限覆盖，清除缓存并写入审计日志。
+func (s *IAMService) DeletePermissionOverride(ctx context.Context, overrideID, userID, operatorID uint64, ip string) error {
 	if err := s.overrideRepo.Delete(ctx, overrideID); err != nil {
 		return err
 	}
 	s.cacheSvc.InvalidateUserPerms(ctx, userID)
+	_ = s.auditSvc.Record(ctx, &operatorID, "iam", "delete_permission_override",
+		strPtr("user"), strPtr(strconv.FormatUint(userID, 10)), ip,
+		map[string]any{"user_id": userID, "override_id": overrideID})
 	return nil
 }
 
