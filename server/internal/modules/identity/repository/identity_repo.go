@@ -30,10 +30,25 @@ func (r *IdentityRepository) FindByID(ctx context.Context, id uint64) (*model.Id
 }
 
 // FindActiveByUser 查询用户当前有效的认证记录（pending 或 verified）。
+// Submit 提交时用于重复检查：pending/verified 时不允许再次提交；rejected 允许重新提交。
 func (r *IdentityRepository) FindActiveByUser(ctx context.Context, userID uint64) (*model.IdentityVerification, error) {
 	var v model.IdentityVerification
 	err := r.db.WithContext(ctx).
 		Where("user_id = ? AND status IN ?", userID, []string{"pending", "verified"}).
+		Order("created_at DESC").
+		First(&v).Error
+	if err != nil {
+		return nil, err
+	}
+	return &v, nil
+}
+
+// FindLatestByUser 查询用户最新一条认证记录（不过滤 status），按 created_at DESC 取第一条。
+// D-05：GetMyVerification 改用此方法，确保被拒绝的用户也能查到拒绝原因及记录。
+func (r *IdentityRepository) FindLatestByUser(ctx context.Context, userID uint64) (*model.IdentityVerification, error) {
+	var v model.IdentityVerification
+	err := r.db.WithContext(ctx).
+		Where("user_id = ?", userID).
 		Order("created_at DESC").
 		First(&v).Error
 	if err != nil {
