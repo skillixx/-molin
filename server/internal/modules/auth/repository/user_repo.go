@@ -81,6 +81,13 @@ func (r *UserRepository) UpdatePassword(ctx context.Context, userID uint64, pass
 		Update("password_hash", passwordHash).Error
 }
 
+// UpdatePasswordTx 在事务内更新密码哈希（D-13：修改密码与吊销旧会话需保持原子性）。
+func (r *UserRepository) UpdatePasswordTx(tx *gorm.DB, userID uint64, passwordHash string) error {
+	return tx.Model(&model.User{}).
+		Where("id = ?", userID).
+		Update("password_hash", passwordHash).Error
+}
+
 // UpdateStatus 更新用户账号状态（active / disabled），用于封禁/解封流程。
 func (r *UserRepository) UpdateStatus(ctx context.Context, userID uint64, status string) error {
 	return r.db.WithContext(ctx).Model(&model.User{}).
@@ -123,34 +130,28 @@ func (r *UserRepository) UpdateUsername(ctx context.Context, userID uint64, user
 	return mapUserDuplicateError(err)
 }
 
-// UpdatePhone 更新用户的手机号。
-func (r *UserRepository) UpdatePhone(ctx context.Context, userID uint64, phone string) error {
+// UpdatePhoneAndVerified 单条 UPDATE 同时更新手机号并标记已验证（D-14：避免两步独立操作产生的非原子窗口）。
+// 验证码已在调用前校验通过，故此处直接将 phone_verified 置为 true。
+func (r *UserRepository) UpdatePhoneAndVerified(ctx context.Context, userID uint64, phone string) error {
 	err := r.db.WithContext(ctx).Model(&model.User{}).
 		Where("id = ?", userID).
-		Update("phone", phone).Error
+		Updates(map[string]interface{}{
+			"phone":          phone,
+			"phone_verified": true,
+		}).Error
 	return mapUserDuplicateError(err)
 }
 
-// UpdateEmail 更新用户的邮箱。
-func (r *UserRepository) UpdateEmail(ctx context.Context, userID uint64, email string) error {
+// UpdateEmailAndVerified 单条 UPDATE 同时更新邮箱并标记已验证（D-14：避免两步独立操作产生的非原子窗口）。
+// 验证码已在调用前校验通过，故此处直接将 email_verified 置为 true。
+func (r *UserRepository) UpdateEmailAndVerified(ctx context.Context, userID uint64, email string) error {
 	err := r.db.WithContext(ctx).Model(&model.User{}).
 		Where("id = ?", userID).
-		Update("email", email).Error
+		Updates(map[string]interface{}{
+			"email":          email,
+			"email_verified": true,
+		}).Error
 	return mapUserDuplicateError(err)
-}
-
-// UpdatePhoneVerified 将用户手机号标记为已验证。
-func (r *UserRepository) UpdatePhoneVerified(ctx context.Context, userID uint64) error {
-	return r.db.WithContext(ctx).Model(&model.User{}).
-		Where("id = ?", userID).
-		Update("phone_verified", true).Error
-}
-
-// UpdateEmailVerified 将用户邮箱标记为已验证。
-func (r *UserRepository) UpdateEmailVerified(ctx context.Context, userID uint64) error {
-	return r.db.WithContext(ctx).Model(&model.User{}).
-		Where("id = ?", userID).
-		Update("email_verified", true).Error
 }
 
 // UpdateAdminPhoneVerified 记录管理员手机号认证通过时间。

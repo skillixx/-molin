@@ -82,10 +82,13 @@ type UpdateEmailReq struct {
 	Code  string `json:"code"` // 新邮箱收到的验证码
 }
 
+// MaxReasonLength D-24：管理员操作原因（reason）字段的最大长度，超长返回 40000。
+const MaxReasonLength = 255
+
 // UpdateUserStatusReq 管理员修改用户状态请求（封禁/解封）。
 type UpdateUserStatusReq struct {
 	Status string `json:"status"` // active 或 disabled
-	Reason string `json:"reason"` // 操作原因（可选，用于审计）
+	Reason string `json:"reason"` // 操作原因（可选，用于审计），最长 MaxReasonLength 字符
 }
 
 // TokenPair Access Token + Refresh Token 对。
