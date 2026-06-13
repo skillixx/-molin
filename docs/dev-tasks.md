@@ -26,7 +26,7 @@
 | A-10 | IAM | 新增 `GET /api/me/permissions`：返回当前登录用户的有效权限码集合（角色权限 ∪ 分组权限，叠加用户 overrides 的 allow/deny 调整后的最终结果）。解决前端无法做按钮级权限控制（菜单/按钮显隐）的问题，避免只能依赖接口返回 403 才能感知无权限 | `feature/backend-a-iam-permission-query-apis` | ✅ 已完成 | PR#31（merge commit `44cafad`）；新增 `IAMService.GetEffectivePermissionCodes`（在 `getAllUserPermCodes` 基础上叠加 overrides）；auth 模块新增 `PermissionResolver` 接口避免循环导入，`AuthService` 注入 iamService 作为依赖；bootstrap 中调整 IAM/Auth 构建顺序；响应 `{"permissions": [...]}`；文档见 full-api-design.md 2.19；测试工程师验收通过（13/13，PR#32 `tests/test_pr31_permission_apis.py`） |
 | A-11 | IAM | 新增 `GET /api/admin/roles/{id}/permissions`：返回指定角色当前拥有的权限码列表（数组）。解决管理后台无法展示"该角色当前有哪些权限"、编辑权限时无法预填充当前值的问题（`PATCH /api/admin/roles/{id}/permissions` 是全量替换写接口，必须先知道当前集合才能正确增删）| `feature/backend-a-iam-permission-query-apis` | ✅ 已完成 | PR#31（merge commit `44cafad`，与 A-10/A-12 同分支同 PR）；复用 `permissionRepo.FindByRoleIDs`，新增 `IAMService.GetRolePermissionCodes`；需要 `role:manage` 权限码；角色不存在返回 404 40400；文档见 full-api-design.md 3.12；测试工程师验收通过（13/13，PR#32 `tests/test_pr31_permission_apis.py`） |
 | A-12 | IAM | 新增 `GET /api/admin/users/{id}/effective-permissions`：返回指定用户最终生效的权限码列表（角色权限 ∪ 分组权限，再叠加 `user_permission_overrides` 的 allow/deny 调整后的结果，含调整明细）。解决管理后台无"用户权限排查/一览"功能、只能由运维/开发直连数据库写 SQL 手动计算的问题 | `feature/backend-a-iam-permission-query-apis` | ✅ 已完成 | PR#31（merge commit `44cafad`，与 A-10/A-11 同分支同 PR）；复用 `IAMService.GetEffectivePermissionCodes` + 新增 `GetEffectiveOverrides`；需要 `role:manage` 权限码；响应含 `overrides: [{code, effect}]`；文档见 full-api-design.md 3.18；测试工程师验收通过（13/13，PR#32 `tests/test_pr31_permission_apis.py`） |
-| A-13 | 待排期 | IAM 权限管理单条操作补充审计日志：`AssignRole`/`RevokeRole`/`SetPermissionOverride`/`DeletePermissionOverride` 四个接口（`POST/DELETE /api/admin/users/{id}/roles[/...]`、`/permission-overrides[/...]`）当前未写入 `audit_logs`，与已有审计的批量替换接口（`ReplaceUserRoles`/`ReplaceUserOverrides`）不一致，存在敏感操作审计盲区 | `feature/backend-a-iam-audit-single-ops` | ⏳ 待开始 | 2026-06-13 架构评审发现（senior-architect skill）：`AssignRole` 已有 `operatorID`/`reason` 参数但函数体未使用，是实现遗漏；建议参照 `ReplaceUserRoles`/`ReplaceUserOverrides` 写法补 `auditSvc.Record` 调用（action: `assign_role`/`revoke_role`/`set_permission_override`/`delete_permission_override`）；`RevokeRole`/`DeletePermissionOverride` 当前 service 签名无 `operatorID`/`ip`，需顺着 handler 补传（handler 内 `middleware.UserIDFromContext` 已可取） |
+| A-13 | IAM | IAM 权限管理单条操作补充审计日志：`AssignRole`/`RevokeRole`/`SetPermissionOverride`/`DeletePermissionOverride` 四个接口（`POST/DELETE /api/admin/users/{id}/roles[/...]`、`/permission-overrides[/...]`）当前未写入 `audit_logs`，与已有审计的批量替换接口（`ReplaceUserRoles`/`ReplaceUserOverrides`）不一致，存在敏感操作审计盲区 | `feature/backend-a-iam-audit-single-ops` | ✅ 已完成 | PR#38（merge commit `8a2ea81`）：4 个接口补充 `auditSvc.Record` 调用（action: `assign_role`/`revoke_role`/`set_permission_override`/`delete_permission_override`，module=iam）；`RevokeRole`/`SetPermissionOverride`/`DeletePermissionOverride` service 签名新增 `operatorID`/`ip`，handler 从 `middleware.UserIDFromContext`/`r.RemoteAddr` 取值；HTTP 请求/响应契约不变；测试工程师验收通过（18/18，PR#39 `tests/test_pr38_audit_logs.py`）；发现非阻塞遗留问题：`GET /api/admin/audit-logs` 响应未映射 `request_summary` 字段，管理后台后续展示审计详情时需补充（暂未建新任务） |
 
 ---
 
@@ -127,14 +127,14 @@
 
 | 开发者 | 总任务数 | 已完成 | 进行中 | 待开始 |
 |---|---|---|---|---|
-| 后端工程师甲 | 13 | 12（9 已审查 + 3 已验收，PR#31/#32）| 0 | 1 |
+| 后端工程师甲 | 13 | 13（9 已审查 + 4 已验收，PR#31/#32/#38/#39）| 0 | 0 |
 | 后端工程师乙 | 6 | 0 | 0 | 6 |
 | 后端工程师丙 | 5 | 0 | 0 | 5 |
 | 前端工程师甲 | 8 | 3（已审查）| 0 | 5 |
 | 前端工程师乙 | 8 | 0 | 0 | 8 |
 | 运维工程师 | 6 | 6 | 0 | 0 |
 | 测试工程师 | 6 | 0 | 0 | 6 |
-| **合计** | **52** | **21** | **0** | **31** |
+| **合计** | **52** | **22** | **0** | **30** |
 
 ---
 
