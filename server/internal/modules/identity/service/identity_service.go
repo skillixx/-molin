@@ -24,6 +24,8 @@ var (
 	ErrVerificationAlreadyReviewed = errors.New("该记录已审核，不可重复操作")
 	// D-06：拒绝审核时必须填写驳回理由
 	ErrReasonRequired = errors.New("驳回时必须填写理由")
+	// D-40：批准审核时发现同一身份证号已被其他用户 verified，返回 409 冲突错误
+	ErrIDCardAlreadyVerified = errors.New("该身份证号已被其他账号实名认证，无法重复绑定")
 )
 
 // UserUpdater 跨模块接口，由 auth.UserRepository 实现，identity 只注入 interface 避免循环导入。
@@ -64,11 +66,12 @@ func (s *IdentityService) Submit(ctx context.Context, userID uint64, req dto.Sub
 	if conflict, _ := s.repo.ExistsByHMAC(ctx, hmacHash, userID); conflict {
 		return 0, ErrIDCardAlreadyBound
 	}
+	// D-43：原局部变量命名为 s，与接收者 s *IdentityService 同名导致遮蔽，改为 attachmentsStr
 	attachmentsJSON := (*string)(nil)
 	if len(req.Attachments) > 0 {
 		b, _ := json.Marshal(req.Attachments)
-		s := string(b)
-		attachmentsJSON = &s
+		attachmentsStr := string(b)
+		attachmentsJSON = &attachmentsStr
 	}
 	v := &model.IdentityVerification{
 		UserID:          userID,
@@ -81,6 +84,10 @@ func (s *IdentityService) Submit(ctx context.Context, userID uint64, req dto.Sub
 	if err := s.repo.Create(ctx, v); err != nil {
 		return 0, err
 	}
+	// D-42：提交认证后同步更新 users.real_name_status='pending'，
+	// 使 GET /api/me 返回的实名状态与 identity_verifications.status 保持一致。
+	// 此处失败不回滚已创建的认证记录（主操作已完成），仅记录日志。
+	_ = s.userRepo.UpdateRealNameStatus(s.db, userID, "pending", "")
 	return v.ID, nil
 }
 
@@ -105,6 +112,17 @@ func (s *IdentityService) Review(ctx context.Context, verificationID, operatorID
 	// D-02：无论通过或拒绝，都记录审核时间
 	now := time.Now()
 	txErr := s.db.Transaction(func(tx *gorm.DB) error {
+		// D-40：批准路径在事务内再次检查同一身份证号是否已有其他用户的 verified 记录，
+		// 防止多条 pending 记录被逐一批准导致一证多号竟态
+		if approve {
+			conflict, err := s.repo.ExistsByHMACVerified(tx, verification.IDCardNoHash, verification.UserID)
+			if err != nil {
+				return err
+			}
+			if conflict {
+				return ErrIDCardAlreadyVerified
+			}
+		}
 		// D-11：UpdateStatus 内部带 "AND status = 'pending'" 条件，rowsAffected == 0
 		// 说明记录已被并发请求审核完成，回滚事务并返回已审核错误
 		rowsAffected, err := s.repo.UpdateStatus(tx, verificationID, newStatus, reason)
@@ -131,15 +149,26 @@ func (s *IdentityService) Review(ctx context.Context, verificationID, operatorID
 			return err
 		}
 		if approve {
+			// 批准：同步 users.real_name_status='verified'
 			return s.userRepo.UpdateRealNameStatus(tx, verification.UserID, "verified", verification.RealName)
 		}
-		return nil
+		// D-42：拒绝时同步更新 users.real_name_status='rejected'，
+		// 确保 GET /api/me 实名状态与 identity_verifications.status 一致
+		return s.userRepo.UpdateRealNameStatus(tx, verification.UserID, "rejected", "")
 	})
 	if txErr != nil {
 		return txErr
 	}
-	// D-04：审核操作完成后写入全局审计日志（失败不阻断主流程）
-	_ = s.auditSvc.Record(ctx, &operatorID, "identity", "review",
+	// D-44：审计 action 改为"动词+结果"命名风格，与 iam/auth 模块保持一致
+	// D-45：auditSvc nil 守卫，防止未注入时 panic（与 auth 模块 recordBanAudit 风格一致）
+	if s.auditSvc == nil {
+		return nil
+	}
+	auditAction := "reject_verification"
+	if approve {
+		auditAction = "approve_verification"
+	}
+	_ = s.auditSvc.Record(ctx, &operatorID, "identity", auditAction,
 		strPtr("identity_verification"), strPtr(strconv.FormatUint(verificationID, 10)), "",
 		map[string]any{
 			"approve": approve,
@@ -211,6 +240,13 @@ func toResp(v *model.IdentityVerification) *dto.VerificationResp {
 	if v.VerifiedAt != nil {
 		t := v.VerifiedAt.Format("2006-01-02T15:04:05Z07:00")
 		resp.ReviewedAt = &t
+	}
+	// D-41：将 AttachmentsJSON 反序列化后填入响应，管理员审核时可查看证件照片 URL 列表
+	if v.AttachmentsJSON != nil && *v.AttachmentsJSON != "" {
+		var attachments []string
+		if err := json.Unmarshal([]byte(*v.AttachmentsJSON), &attachments); err == nil {
+			resp.Attachments = attachments
+		}
 	}
 	return resp
 }

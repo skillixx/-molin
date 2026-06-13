@@ -24,12 +24,14 @@ type ReviewReq struct {
 
 // VerificationResp 认证状态响应（不返回身份证明文）。
 type VerificationResp struct {
-	ID             uint64  `json:"id"`
-	UserID         uint64  `json:"user_id"`
-	RealName       string  `json:"real_name"`
-	IDCardNoMasked string  `json:"id_card_no_masked"`
-	Status         string  `json:"status"`
-	RejectReason   *string `json:"reject_reason,omitempty"`
-	SubmittedAt    string  `json:"submitted_at"`   // ISO 8601 提交时间
-	ReviewedAt     *string `json:"reviewed_at"`    // ISO 8601 审核时间（审核通过/拒绝后非 null）
+	ID             uint64   `json:"id"`
+	UserID         uint64   `json:"user_id"`
+	RealName       string   `json:"real_name"`
+	IDCardNoMasked string   `json:"id_card_no_masked"`
+	Status         string   `json:"status"`
+	RejectReason   *string  `json:"reject_reason,omitempty"`
+	// D-41：新增 Attachments 字段，管理员审核时需查看证件照片 URL 列表
+	Attachments    []string `json:"attachments,omitempty"`
+	SubmittedAt    string   `json:"submitted_at"`   // ISO 8601 提交时间
+	ReviewedAt     *string  `json:"reviewed_at"`    // ISO 8601 审核时间（审核通过/拒绝后非 null）
 }
