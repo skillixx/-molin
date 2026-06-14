@@ -268,6 +268,16 @@ func (s *IdentityService) ListPaged(ctx context.Context, status string, offset, 
 	return resp, total, nil
 }
 
+// GetByUserID A-31：管理员查看指定用户的最新实名认证记录（用户详情页身份卡片）。
+// 无记录时返回 nil, nil（由 handler 转换为 404）。
+func (s *IdentityService) GetByUserID(ctx context.Context, userID uint64) (*dto.VerificationResp, error) {
+	v, err := s.repo.FindLatestByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return toResp(v), nil
+}
+
 // GetVerification 管理员查认证详情。
 func (s *IdentityService) GetVerification(ctx context.Context, id uint64) (*dto.VerificationResp, error) {
 	v, err := s.repo.FindByID(ctx, id)
