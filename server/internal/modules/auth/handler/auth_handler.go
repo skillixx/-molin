@@ -86,6 +86,11 @@ func (h *AuthHandler) LoginEmail(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
+	// D-53：核心字段空值校验，防止无效参数透传 service 层
+	if strings.TrimSpace(req.Email) == "" || strings.TrimSpace(req.Password) == "" {
+		response.Error(w, http.StatusBadRequest, 40000, "email 和 password 为必填字段")
+		return
+	}
 	pair, err := h.authSvc.LoginEmail(r.Context(), req, httputil.ClientIP(r), r.UserAgent())
 	if err != nil {
 		handleAuthError(w, err)
@@ -99,6 +104,11 @@ func (h *AuthHandler) LoginPhone(w http.ResponseWriter, r *http.Request) {
 	var req dto.LoginPhoneReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	// D-53：核心字段空值校验，防止无效参数透传 service 层
+	if strings.TrimSpace(req.Phone) == "" || strings.TrimSpace(req.Code) == "" {
+		response.Error(w, http.StatusBadRequest, 40000, "phone 和 code 为必填字段")
 		return
 	}
 	pair, err := h.authSvc.LoginPhone(r.Context(), req, httputil.ClientIP(r), r.UserAgent())
@@ -196,6 +206,12 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req dto.RegisterReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	// D-53：核心字段空值校验，phone / email / phone_code / email_code 均为必填
+	if strings.TrimSpace(req.Phone) == "" || strings.TrimSpace(req.Email) == "" ||
+		strings.TrimSpace(req.PhoneCode) == "" || strings.TrimSpace(req.EmailCode) == "" {
+		response.Error(w, http.StatusBadRequest, 40000, "phone、email、phone_code、email_code 均为必填字段")
 		return
 	}
 	pair, err := h.authSvc.Register(r.Context(), req, r.UserAgent(), httputil.ClientIP(r))
@@ -318,8 +334,9 @@ func (h *AuthHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 操作人 ID（来自已登录的管理员）和客户端 IP，用于审计日志
+	// D-47：使用 httputil.ClientIP 提取真实客户端 IP，避免反向代理场景下失真
 	operatorID := middleware.UserIDFromContext(r.Context())
-	ip := r.RemoteAddr
+	ip := httputil.ClientIP(r)
 
 	switch req.Status {
 	case "disabled":
@@ -401,10 +418,13 @@ func handleAuthError(w http.ResponseWriter, err error) {
 		response.Error(w, http.StatusUnauthorized, 40001, "邮箱或密码错误")
 	case service.ErrInvalidCode:
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
+	case service.ErrInvalidScene:
+		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 	case service.ErrAdminPhoneNotVerified:
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
+	// D-56：手机/邮箱未注册属于"资源不存在"，统一使用 40400，与 GetUser 保持一致
 	case service.ErrPhoneNotRegistered, service.ErrEmailNotRegistered:
-		response.Error(w, http.StatusNotFound, 40404, err.Error())
+		response.Error(w, http.StatusNotFound, 40400, err.Error())
 	case service.ErrLoginLocked:
 		// D-16：登录失败次数超限，账号临时锁定，提示用户稍后重试
 		response.Error(w, http.StatusLocked, 42901, err.Error())

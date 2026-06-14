@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"gorm.io/gorm"
 	"molin/server/internal/modules/auth/model"
@@ -31,4 +32,33 @@ func (r *LoginLogRepository) FindLastSuccessByUser(ctx context.Context, userID u
 		return nil, err
 	}
 	return &log, nil
+}
+
+// lastLoginRow 用于接收 GROUP BY 批量查询的结果集。
+type lastLoginRow struct {
+	UserID    uint64    `gorm:"column:user_id"`
+	LastLogin time.Time `gorm:"column:last_login"`
+}
+
+// FindLastSuccessBatch D-50：批量查询多个用户最后一次登录成功时间，以 GROUP BY 单次查询代替逐条循环。
+// 返回 map[userID]lastLoginTime；未登录过的用户不在 map 中。
+func (r *LoginLogRepository) FindLastSuccessBatch(ctx context.Context, userIDs []int64) (map[int64]time.Time, error) {
+	result := make(map[int64]time.Time, len(userIDs))
+	if len(userIDs) == 0 {
+		return result, nil
+	}
+	var rows []lastLoginRow
+	err := r.db.WithContext(ctx).
+		Raw(`SELECT user_id, MAX(created_at) AS last_login
+			 FROM user_login_logs
+			 WHERE user_id IN ? AND status = 'success'
+			 GROUP BY user_id`, userIDs).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		result[int64(row.UserID)] = row.LastLogin
+	}
+	return result, nil
 }

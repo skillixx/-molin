@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 
 	"molin/server/internal/config"
@@ -137,6 +138,17 @@ func (a *membershipCheckerAdapter) HasActiveMembership(ctx context.Context, user
 // NewApp 初始化所有基础设施和模块，完成依赖注入，返回可启动的 App。
 func NewApp() (*App, error) {
 	cfg := config.Load()
+
+	// D-46：安全密钥必填校验，任一为空则拒绝启动，避免 HMAC 退化为无密钥 hash
+	if cfg.IDCardHMACSecret == "" {
+		log.Fatal("[security] ID_CARD_HMAC_SECRET 未配置，拒绝启动")
+	}
+	if cfg.JWTSecret == "" {
+		log.Fatal("[security] JWT_SECRET 未配置，拒绝启动")
+	}
+	if cfg.RefreshTokenSecret == "" {
+		log.Fatal("[security] REFRESH_TOKEN_SECRET 未配置，拒绝启动")
+	}
 
 	// 初始化数据库连接
 	gormDB, err := db.New(cfg.MySQLHost, cfg.MySQLPort, cfg.MySQLUser, cfg.MySQLPassword, cfg.MySQLDatabase)
