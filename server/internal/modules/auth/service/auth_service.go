@@ -45,6 +45,10 @@ var (
 	ErrLoginLocked = errors.New("登录失败次数过多，请稍后再试")
 	// ErrInvalidScene D-52：scene 不在公开接口允许的白名单中。
 	ErrInvalidScene = errors.New("不支持的操作场景")
+	// ErrPhoneNotBound D-96：管理员双重认证发送手机验证码时，账号未绑定手机号。
+	ErrPhoneNotBound = errors.New("当前账号未绑定手机号")
+	// ErrEmailNotBound D-96：管理员双重认证发送邮箱验证码时，账号未绑定邮箱。
+	ErrEmailNotBound = errors.New("当前账号未绑定邮箱")
 )
 
 // blockedUserKeyFmt 封禁用户在 Redis 中的 key 格式。
@@ -292,6 +296,58 @@ func (s *AuthService) SendCode(ctx context.Context, targetType, targetValue, sce
 		}
 	}
 	return s.verifySvc.Send(ctx, targetType, targetValue, scene)
+}
+
+// SendBindPhoneCode D-96：已登录用户更换手机号前，向新手机号发送验证码（scene=bind_phone）。
+// 复用与 SendCode 中 register 场景一致的唯一性预检查：新手机号已被占用时直接返回 ErrPhoneAlreadyExists，
+// 避免用户收到验证码后在 UpdatePhone 提交时才发现手机号冲突。
+func (s *AuthService) SendBindPhoneCode(ctx context.Context, newPhone string) (string, error) {
+	newPhone = normalizePhone(newPhone)
+	exists, err := s.userRepo.ExistsByPhone(ctx, newPhone)
+	if err != nil {
+		return "", err
+	}
+	if exists {
+		return "", ErrPhoneAlreadyExists
+	}
+	return s.verifySvc.Send(ctx, "phone", newPhone, "bind_phone")
+}
+
+// SendBindEmailCode D-96：已登录用户更换邮箱前，向新邮箱发送验证码（scene=bind_email）。
+func (s *AuthService) SendBindEmailCode(ctx context.Context, newEmail string) (string, error) {
+	newEmail = normalizeEmail(newEmail)
+	exists, err := s.userRepo.ExistsByEmail(ctx, newEmail)
+	if err != nil {
+		return "", err
+	}
+	if exists {
+		return "", ErrEmailAlreadyExists
+	}
+	return s.verifySvc.Send(ctx, "email", newEmail, "bind_email")
+}
+
+// SendAdminVerifyPhoneCode D-96：管理员双重认证 —— 向当前用户自己的手机号发送验证码（scene=admin_verify）。
+func (s *AuthService) SendAdminVerifyPhoneCode(ctx context.Context, userID uint64) (string, error) {
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return "", ErrUnauthorized
+	}
+	if user.Phone == nil {
+		return "", ErrPhoneNotBound
+	}
+	return s.verifySvc.Send(ctx, "phone", *user.Phone, "admin_verify")
+}
+
+// SendAdminVerifyEmailCode D-96：管理员双重认证 —— 向当前用户自己的邮箱发送验证码（scene=admin_verify）。
+func (s *AuthService) SendAdminVerifyEmailCode(ctx context.Context, userID uint64) (string, error) {
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return "", ErrUnauthorized
+	}
+	if user.Email == nil {
+		return "", ErrEmailNotBound
+	}
+	return s.verifySvc.Send(ctx, "email", *user.Email, "admin_verify")
 }
 
 // Register 统一注册（手机+邮箱+用户名，需双验证码）。

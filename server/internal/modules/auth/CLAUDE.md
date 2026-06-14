@@ -522,10 +522,14 @@ PATCH /api/me/password                    -- 修改密码
 PATCH /api/me/username                    -- 修改用户名（2-32位字母/数字/下划线）★新增
 PATCH /api/me/phone                       -- 修改手机号（需先发 scene=bind_phone 验证码）★新增
 PATCH /api/me/email                       -- 修改邮箱（需先发 scene=bind_email 验证码）★新增
+POST /api/me/verification-codes/phone     -- D-96：向新手机号发送验证码（scene=bind_phone，配合 PATCH /api/me/phone）★新增
+POST /api/me/verification-codes/email     -- D-96：向新邮箱发送验证码（scene=bind_email，配合 PATCH /api/me/email）★新增
 
 -- 需要 Bearer Token + user:manage 权限（仅限管理员） --
 POST /api/admin/auth/verify-phone         -- 管理员手机双重认证（scene=admin_verify）★新增
 POST /api/admin/auth/verify-email         -- 管理员邮箱双重认证（需手机先通过，scene=admin_verify）★新增
+POST /api/admin/auth/verification-codes/phone  -- D-96：向当前管理员自己的手机号发送验证码（scene=admin_verify）★新增
+POST /api/admin/auth/verification-codes/email  -- D-96：向当前管理员自己的邮箱发送验证码（scene=admin_verify）★新增
 ```
 
 ## GET /api/me 返回字段（完整）
