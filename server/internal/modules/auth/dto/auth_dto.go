@@ -150,18 +150,26 @@ type UserInfo struct {
 	LastLoginAt        *time.Time `json:"last_login_at,omitempty"`
 }
 
+// AdminRoleItem D-85：用户角色摘要，内嵌于 AdminUserResp.Roles。
+type AdminRoleItem struct {
+	ID   uint64 `json:"id"`
+	Code string `json:"code"`
+	Name string `json:"name"`
+}
+
 // AdminUserResp 管理员查看用户列表/详情时的响应 DTO（敏感字段已脱敏）。
 type AdminUserResp struct {
-	ID             uint64  `json:"id"`
-	Username       *string `json:"username"`
-	Email          *string `json:"email"`           // 已脱敏
-	EmailVerified  bool    `json:"email_verified"`
-	Phone          *string `json:"phone"`           // 已脱敏
-	PhoneVerified  bool    `json:"phone_verified"`
-	RealNameStatus string  `json:"real_name_status"`
-	Status         string  `json:"status"`
-	CreatedAt      string  `json:"created_at"`
-	LastLoginAt    *string `json:"last_login_at"`
+	ID             uint64          `json:"id"`
+	Username       *string         `json:"username"`
+	Email          *string         `json:"email"`           // 已脱敏
+	EmailVerified  bool            `json:"email_verified"`
+	Phone          *string         `json:"phone"`           // 已脱敏
+	PhoneVerified  bool            `json:"phone_verified"`
+	RealNameStatus string          `json:"real_name_status"`
+	Status         string          `json:"status"`
+	Roles          []AdminRoleItem `json:"roles"`
+	CreatedAt      string          `json:"created_at"`
+	LastLoginAt    *string         `json:"last_login_at"`
 }
 
 // LoginLogItem A-30：管理员查看用户登录日志的单条响应字段。

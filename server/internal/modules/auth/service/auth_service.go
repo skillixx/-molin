@@ -20,6 +20,7 @@ import (
 	"molin/server/internal/modules/auth/dto"
 	"molin/server/internal/modules/auth/model"
 	"molin/server/internal/modules/auth/repository"
+	iammodel "molin/server/internal/modules/iam/model"
 	"molin/server/pkg/crypto"
 	pkgjwt "molin/server/pkg/jwt"
 )
@@ -76,6 +77,13 @@ type RoleAssigner interface {
 	AssignRole(ctx context.Context, userID, roleID, operatorID uint64, reason *string, ip string) error
 }
 
+// RolesFetcher D-85：角色查询接口，由 iam.IAMService 实现。
+// 供 ListUsers / GetUser 附带 roles 字段，避免 auth/service 直接依赖 iam/service。
+type RolesFetcher interface {
+	FindRolesByUser(ctx context.Context, userID uint64) ([]iammodel.Role, error)
+	FindRolesByUsersBatch(ctx context.Context, userIDs []uint64) (map[uint64][]iammodel.Role, error)
+}
+
 // AuthService 负责注册、登录、退出、刷新令牌、修改密码、封禁/解封用户。
 type AuthService struct {
 	userRepo     *repository.UserRepository
@@ -86,7 +94,8 @@ type AuthService struct {
 	redis        *redis.Client
 	auditSvc     *auditservice.AuditService
 	permResolver PermissionResolver
-	roleAssigner RoleAssigner // A-28：可选，创建后台用户时分配角色
+	roleAssigner RoleAssigner  // A-28：可选，创建后台用户时分配角色
+	rolesFetcher RolesFetcher  // D-85：可选，查询用户角色列表（ListUsers/GetUser 附带 roles 字段）
 	db           *gorm.DB
 }
 
@@ -117,6 +126,33 @@ func NewAuthService(
 // SetRoleAssigner A-28：注入角色分配器（由 bootstrap 调用，避免修改 NewAuthService 签名）。
 func (s *AuthService) SetRoleAssigner(r RoleAssigner) {
 	s.roleAssigner = r
+}
+
+// SetRolesFetcher D-85：注入角色查询器（由 bootstrap 调用，避免修改 NewAuthService 签名）。
+func (s *AuthService) SetRolesFetcher(r RolesFetcher) {
+	s.rolesFetcher = r
+}
+
+// fetchRolesForUser D-85：查询单个用户的角色摘要，rolesFetcher 未注入时返回空切片（不阻断主流程）。
+func (s *AuthService) fetchRolesForUser(ctx context.Context, userID uint64) []dto.AdminRoleItem {
+	if s.rolesFetcher == nil {
+		return []dto.AdminRoleItem{}
+	}
+	roles, err := s.rolesFetcher.FindRolesByUser(ctx, userID)
+	if err != nil {
+		log.Printf("[auth] fetchRolesForUser: userID=%d err=%v", userID, err)
+		return []dto.AdminRoleItem{}
+	}
+	return toAdminRoleItems(roles)
+}
+
+// toAdminRoleItems 将 iam/model.Role 切片转换为 DTO 切片。
+func toAdminRoleItems(roles []iammodel.Role) []dto.AdminRoleItem {
+	items := make([]dto.AdminRoleItem, len(roles))
+	for i, r := range roles {
+		items[i] = dto.AdminRoleItem{ID: r.ID, Code: r.Code, Name: r.Name}
+	}
+	return items
 }
 
 // GetEffectivePermissions 返回当前登录用户最终生效的权限码集合（角色权限 ∪ 组权限，
@@ -545,26 +581,37 @@ func (s *AuthService) FindUserByID(ctx context.Context, userID uint64) (*model.U
 // ListUsers 管理员分页查询用户列表，支持关键字搜索和状态过滤，返回脱敏后的 DTO 列表。
 // scopeAll=true 时不限制范围（超管）；否则只返回 scopeIDs 中的用户。
 //
-// D-50：使用批量查询替换循环内单条查询，将 N+1 次 DB 操作降为 2 次（1次主查询 + 1次批量登录时间查询）。
+// D-50：使用批量查询替换循环内单条查询，将 N+1 次 DB 操作降为 3 次（主查询 + 批量登录时间 + 批量角色）。
+// D-85：新增批量角色查询，roles 字段通过 RolesFetcher 一次 JOIN 查全，不阻断主流程。
 func (s *AuthService) ListUsers(ctx context.Context, keyword, status string, scopeAll bool, scopeIDs []uint64, offset, limit int) ([]dto.AdminUserResp, int64, error) {
 	users, total, err := s.userRepo.ListUsersPaged(ctx, keyword, status, scopeAll, scopeIDs, offset, limit)
 	if err != nil {
 		return nil, 0, err
 	}
-	// 取出当页所有 userID，一次批量查询最后登录时间
+	// 取出当页所有 userID，一次批量查询最后登录时间和角色
 	userIDs := make([]int64, len(users))
+	uint64IDs := make([]uint64, len(users))
 	for i, u := range users {
 		userIDs[i] = int64(u.ID)
+		uint64IDs[i] = u.ID
 	}
 	lastLogins, err := s.loginLogRepo.FindLastSuccessBatch(ctx, userIDs)
 	if err != nil {
-		// 查询失败不阻断列表接口，最后登录时间留空
 		log.Printf("ListUsers: 批量查询最后登录时间失败 err=%v", err)
 		lastLogins = map[int64]time.Time{}
 	}
+	// D-85：批量查询用户角色（rolesFetcher 未注入时用空 map 兜底，不阻断列表接口）
+	rolesMap := map[uint64][]iammodel.Role{}
+	if s.rolesFetcher != nil {
+		if rm, err := s.rolesFetcher.FindRolesByUsersBatch(ctx, uint64IDs); err != nil {
+			log.Printf("ListUsers: 批量查询角色失败 err=%v", err)
+		} else {
+			rolesMap = rm
+		}
+	}
 	resp := make([]dto.AdminUserResp, len(users))
 	for i, u := range users {
-		resp[i] = s.buildAdminUserResp(&u, lastLogins)
+		resp[i] = s.buildAdminUserResp(&u, lastLogins, rolesMap)
 	}
 	return resp, total, nil
 }
@@ -579,8 +626,8 @@ func (s *AuthService) GetUser(ctx context.Context, id uint64) (*dto.AdminUserRes
 	return &resp, nil
 }
 
-// buildAdminUserResp 将 User model 转换为管理员视角的 DTO，最后登录时间由外部传入（避免 N+1）。
-func (s *AuthService) buildAdminUserResp(u *model.User, lastLogins map[int64]time.Time) dto.AdminUserResp {
+// buildAdminUserResp 将 User model 转换为管理员视角的 DTO，最后登录时间和角色由外部批量传入（避免 N+1）。
+func (s *AuthService) buildAdminUserResp(u *model.User, lastLogins map[int64]time.Time, rolesMap map[uint64][]iammodel.Role) dto.AdminUserResp {
 	resp := dto.AdminUserResp{
 		ID:             u.ID,
 		Username:       u.Username,
@@ -588,6 +635,7 @@ func (s *AuthService) buildAdminUserResp(u *model.User, lastLogins map[int64]tim
 		PhoneVerified:  u.PhoneVerified,
 		RealNameStatus: u.RealNameStatus,
 		Status:         u.Status,
+		Roles:          []dto.AdminRoleItem{},
 		CreatedAt:      u.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 	// 邮箱脱敏处理
@@ -605,6 +653,10 @@ func (s *AuthService) buildAdminUserResp(u *model.User, lastLogins map[int64]tim
 		ts := t.Format("2006-01-02T15:04:05Z07:00")
 		resp.LastLoginAt = &ts
 	}
+	// D-85：从批量角色查询结果中填充 roles 字段
+	if roles, ok := rolesMap[u.ID]; ok {
+		resp.Roles = toAdminRoleItems(roles)
+	}
 	return resp
 }
 
@@ -617,6 +669,7 @@ func (s *AuthService) toAdminUserResp(ctx context.Context, u *model.User) dto.Ad
 		PhoneVerified:  u.PhoneVerified,
 		RealNameStatus: u.RealNameStatus,
 		Status:         u.Status,
+		Roles:          s.fetchRolesForUser(ctx, u.ID),
 		CreatedAt:      u.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 	// 邮箱脱敏处理
