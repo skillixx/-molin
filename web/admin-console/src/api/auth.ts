@@ -33,20 +33,33 @@ export function changePassword(params: { old_password: string; new_password: str
   return http.post<unknown, null>('/auth/change-password', params)
 }
 
-/** 发送验证码（通用，管理员双重认证使用 scene="admin_verify"） */
+/**
+ * 发送公开验证码（register / login / reset_password 场景）
+ * 注意：admin_verify / bind_phone / bind_email 场景已从此端点移除（D-96），
+ *       管理员双重认证请使用 sendAdminVerificationCode
+ */
 export function sendVerificationCode(
   targetType: 'phone' | 'email',
-  params: { target: string; scene: string }
+  params: { phone?: string; email?: string; scene: string }
 ) {
   return http.post<unknown, null>(`/auth/verification-codes/${targetType}`, params)
 }
 
-/** 管理员手机双重认证（需先发 scene=admin_verify 验证码到管理员手机） */
+/**
+ * 管理员双重认证发码（D-96）
+ * 端点：POST /api/admin/auth/verification-codes/{phone|email}
+ * 需要 Bearer Token + user:manage 权限，固定用于 admin_verify 场景，无需传 scene 字段
+ */
+export function sendAdminVerificationCode(targetType: 'phone' | 'email') {
+  return http.post<unknown, null>(`/admin/auth/verification-codes/${targetType}`)
+}
+
+/** 管理员手机双重认证（需先调用 sendAdminVerificationCode('phone') 发码）*/
 export function adminVerifyPhone(params: { code: string }) {
   return http.post<unknown, null>('/admin/auth/verify-phone', params)
 }
 
-/** 管理员邮箱双重认证（需手机已在有效期内，先发 scene=admin_verify 验证码到管理员邮箱） */
+/** 管理员邮箱双重认证（需手机已在有效期内，先调用 sendAdminVerificationCode('email') 发码）*/
 export function adminVerifyEmail(params: { code: string }) {
   return http.post<unknown, null>('/admin/auth/verify-email', params)
 }

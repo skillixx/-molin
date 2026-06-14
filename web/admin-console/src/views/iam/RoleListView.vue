@@ -119,7 +119,10 @@ async function fetchRoles() {
   try {
     const res = await listRoles({ page: pagination.page, page_size: pagination.page_size })
     roles.value = res.items
-    Object.assign(pagination, res.pagination)
+    // D-95：分页字段已扁平化，直接从 res 顶层读取
+    pagination.page = res.page
+    pagination.page_size = res.page_size
+    pagination.total = res.total
   } finally {
     loading.value = false
   }
