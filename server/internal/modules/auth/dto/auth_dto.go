@@ -65,6 +65,12 @@ type AdminVerifyReq struct {
 	Code string `json:"code"`
 }
 
+// UpdateProfileReq 修改个人资料请求（PATCH 语义：指针字段，nil 表示不更新）。
+type UpdateProfileReq struct {
+	Nickname  *string `json:"nickname"`   // 昵称，最长 64 字符；传 "" 清空
+	AvatarURL *string `json:"avatar_url"` // 头像地址，须以 https:// 开头，最长 512 字符；传 "" 清空
+}
+
 // UpdateUsernameReq 修改用户名请求。
 type UpdateUsernameReq struct {
 	Username string `json:"username"`
@@ -108,6 +114,8 @@ type MyPermissionsResp struct {
 type UserInfo struct {
 	ID                 uint64     `json:"id"`
 	Username           *string    `json:"username,omitempty"`
+	Nickname           *string    `json:"nickname,omitempty"`
+	AvatarURL          *string    `json:"avatar_url,omitempty"`
 	Email              *string    `json:"email,omitempty"`
 	EmailVerified      bool       `json:"email_verified"`
 	Phone              *string    `json:"phone,omitempty"`

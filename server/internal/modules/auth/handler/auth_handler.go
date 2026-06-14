@@ -268,6 +268,43 @@ func (h *AuthHandler) AdminVerifyEmail(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, nil)
 }
 
+// UpdateProfile PATCH /api/me/profile — 修改个人资料（昵称/头像），A-27
+// PATCH 语义：只传需要更新的字段；传 "" 清空该字段；不传该字段则保持原值。
+func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	var req dto.UpdateProfileReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	// 字段级校验
+	if req.Nickname != nil && *req.Nickname != "" {
+		trimmed := strings.TrimSpace(*req.Nickname)
+		if len([]rune(trimmed)) > 64 {
+			response.Error(w, http.StatusBadRequest, 40000, "昵称不能超过 64 个字符")
+			return
+		}
+		req.Nickname = &trimmed
+	}
+	if req.AvatarURL != nil && *req.AvatarURL != "" {
+		trimmed := strings.TrimSpace(*req.AvatarURL)
+		if !strings.HasPrefix(trimmed, "https://") {
+			response.Error(w, http.StatusBadRequest, 40000, "头像地址必须以 https:// 开头")
+			return
+		}
+		if len(trimmed) > 512 {
+			response.Error(w, http.StatusBadRequest, 40000, "头像地址不能超过 512 个字符")
+			return
+		}
+		req.AvatarURL = &trimmed
+	}
+	if err := h.authSvc.UpdateProfile(r.Context(), userID, req); err != nil {
+		handleAuthError(w, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]bool{"updated": true})
+}
+
 // UpdateUsername PATCH /api/me/username — 修改用户名
 func (h *AuthHandler) UpdateUsername(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())

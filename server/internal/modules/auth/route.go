@@ -44,6 +44,8 @@ func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc 
 	mux.Handle("GET /api/me/permissions", auth(h.GetMyPermissions))
 	mux.Handle("PATCH /api/me/password", auth(h.ChangePassword))
 	mux.Handle("PATCH /api/me/username", auth(h.UpdateUsername))
+	// A-27：修改个人资料（昵称/头像），PATCH 语义
+	mux.Handle("PATCH /api/me/profile", auth(h.UpdateProfile))
 
 	// D-22：修改手机号/邮箱接口存在账号枚举风险，在 RequireAuth 之后叠加
 	// 每用户每分钟最多 bindUpdateLimit 次的限流。

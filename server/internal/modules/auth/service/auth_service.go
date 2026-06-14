@@ -463,6 +463,8 @@ func (s *AuthService) GetMe(ctx context.Context, userID uint64) (*dto.UserInfo, 
 	info := &dto.UserInfo{
 		ID:                 user.ID,
 		Username:           user.Username,
+		Nickname:           user.Nickname,
+		AvatarURL:          user.AvatarURL,
 		EmailVerified:      user.EmailVerified,
 		PhoneVerified:      user.PhoneVerified,
 		RealNameStatus:     user.RealNameStatus,
@@ -852,6 +854,33 @@ func (s *AuthService) AdminVerifyEmail(ctx context.Context, userID uint64, code 
 	}
 	// 记录认证时间
 	return s.userRepo.UpdateAdminEmailVerified(ctx, userID)
+}
+
+// UpdateProfile 修改个人资料（昵称/头像），PATCH 语义：只更新 req 中非 nil 的字段（A-27）。
+// 字段级校验（长度、URL 格式）由 handler 层完成；service 层负责构造 DB 更新图并落盘。
+func (s *AuthService) UpdateProfile(ctx context.Context, userID uint64, req dto.UpdateProfileReq) error {
+	fields := make(map[string]interface{})
+	if req.Nickname != nil {
+		if *req.Nickname == "" {
+			// 传空字符串 → 清空昵称（写 NULL）
+			fields["nickname"] = nil
+		} else {
+			fields["nickname"] = *req.Nickname
+		}
+	}
+	if req.AvatarURL != nil {
+		if *req.AvatarURL == "" {
+			// 传空字符串 → 清空头像（写 NULL）
+			fields["avatar_url"] = nil
+		} else {
+			fields["avatar_url"] = *req.AvatarURL
+		}
+	}
+	if len(fields) == 0 {
+		// 没有需要更新的字段，直接返回成功
+		return nil
+	}
+	return mapUserRepoError(s.userRepo.UpdateProfile(ctx, userID, fields))
 }
 
 // UpdateUsername 修改用户名（校验格式和唯一性后更新）。
