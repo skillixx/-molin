@@ -29,6 +29,27 @@ func NewAuthHandler(authSvc *service.AuthService, verifySvc *service.Verificatio
 	return &AuthHandler{authSvc: authSvc, verifySvc: verifySvc, cfg: cfg}
 }
 
+// 密码长度限制：最少 6 位，最多 72 位。
+// 上限来自 bcrypt 对输入长度的硬限制（72 字节），超长密码会导致
+// bcrypt.GenerateFromPassword 返回 error，若不前置校验会被透传为 500。
+const (
+	minPasswordLength = 6
+	maxPasswordLength = 72
+)
+
+// validatePasswordLength 校验密码长度是否在 [6, 72] 区间内（D-94）。
+// 适用于所有"设置/修改密码"场景：注册、修改密码、OTP 重置密码、管理员创建用户。
+// 登录场景不应调用此函数（避免因策略变化拒绝老用户登录）。
+func validatePasswordLength(password string) (errMsg string, ok bool) {
+	if len(password) < minPasswordLength {
+		return "密码长度不能少于 6 位", false
+	}
+	if len(password) > maxPasswordLength {
+		return "密码长度不能超过 72 位", false
+	}
+	return "", true
+}
+
 // SendEmailCode POST /api/auth/verification-codes/email
 func (h *AuthHandler) SendEmailCode(w http.ResponseWriter, r *http.Request) {
 	var req dto.SendEmailCodeReq
@@ -285,6 +306,11 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
+	// D-94：新密码长度校验（6-72 位），避免触发 bcrypt 硬限制
+	if msg, ok := validatePasswordLength(req.NewPassword); !ok {
+		response.Error(w, http.StatusBadRequest, 40000, msg)
+		return
+	}
 	if err := h.authSvc.ChangePassword(r.Context(), userID, req); err != nil {
 		handleAuthError(w, err)
 		return
@@ -305,6 +331,11 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "phone、email、phone_code、email_code 均为必填字段")
 		return
 	}
+	// D-94：密码长度校验（6-72 位），避免触发 bcrypt 硬限制
+	if msg, ok := validatePasswordLength(req.Password); !ok {
+		response.Error(w, http.StatusBadRequest, 40000, msg)
+		return
+	}
 	pair, err := h.authSvc.Register(r.Context(), req, r.UserAgent(), httputil.ClientIP(r))
 	if err != nil {
 		handleAuthError(w, err)
@@ -318,6 +349,11 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	var req dto.ResetPasswordReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	// D-94：新密码长度校验（6-72 位），避免触发 bcrypt 硬限制
+	if msg, ok := validatePasswordLength(req.NewPassword); !ok {
+		response.Error(w, http.StatusBadRequest, 40000, msg)
 		return
 	}
 	if err := h.authSvc.ResetPassword(r.Context(), req); err != nil {
@@ -507,12 +543,9 @@ func (h *AuthHandler) CreateAdminUser(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "email 和 phone 至少填写一个")
 		return
 	}
-	if req.Password == "" {
-		response.Error(w, http.StatusBadRequest, 40000, "password 不能为空")
-		return
-	}
-	if len(req.Password) < 6 {
-		response.Error(w, http.StatusBadRequest, 40000, "密码长度不能少于 6 位")
+	// D-94：密码长度校验（6-72 位），<6 位的判断同时覆盖了空字符串场景
+	if msg, ok := validatePasswordLength(req.Password); !ok {
+		response.Error(w, http.StatusBadRequest, 40000, msg)
 		return
 	}
 	if req.Status != "" && req.Status != "active" && req.Status != "disabled" {
