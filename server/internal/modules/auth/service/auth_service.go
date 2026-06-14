@@ -42,6 +42,8 @@ var (
 	ErrRefreshTokenAlreadyUsed = errors.New("refresh token 已被使用，请重新登录")
 	// ErrLoginLocked D-16：登录失败次数超限，账号临时锁定。
 	ErrLoginLocked = errors.New("登录失败次数过多，请稍后再试")
+	// ErrInvalidScene D-52：scene 不在公开接口允许的白名单中。
+	ErrInvalidScene = errors.New("不支持的操作场景")
 )
 
 // blockedUserKeyFmt 封禁用户在 Redis 中的 key 格式。
@@ -132,10 +134,23 @@ func (s *AuthService) validateUsername(ctx context.Context, username string) err
 	return nil
 }
 
-// SendCode 发送验证码，在发送前根据 scene 做账号状态前置校验：
-//   - scene=register：账号已存在则拦截，避免向已注册账号投递注册码
-//   - scene=login：账号不存在则拦截，提示用户先注册
+// allowedPublicScenes D-52：公开发码接口允许的 scene 白名单。
+// bind_phone / bind_email / admin_verify 等高权限场景需要登录后调用各自的接口，
+// 不允许未认证调用方通过公开的 SendCode 入口触发。
+var allowedPublicScenes = map[string]bool{
+	"register":       true,
+	"login":          true,
+	"reset_password": true,
+}
+
+// SendCode 发送验证码，在发送前：
+// 1. D-52：校验 scene 是否在公开白名单内，防止未登录调用方触发高权限场景验证码
+// 2. 根据 scene 做账号状态前置校验
 func (s *AuthService) SendCode(ctx context.Context, targetType, targetValue, scene string) (string, error) {
+	// D-52：scene 白名单校验，拒绝 bind_phone / bind_email / admin_verify 等高权限场景
+	if !allowedPublicScenes[scene] {
+		return "", ErrInvalidScene
+	}
 	switch scene {
 	case "register":
 		switch targetType {
@@ -331,18 +346,22 @@ func (s *AuthService) checkLoginLocked(ctx context.Context, loginType, account s
 	return count >= loginFailLimit
 }
 
-// incrLoginFail 登录失败计数 +1，首次写入时设置 TTL = loginFailWindow。
+// incrLoginFailLua D-48：原子执行 INCR + PEXPIRE 的 Lua 脚本。
+// 保证首次写入时立即设置 TTL，避免 EXPIRE 单独失败导致 key 无 TTL 永久存在。
+var incrLoginFailLua = redis.NewScript(`
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+end
+return count
+`)
+
+// incrLoginFail D-48：登录失败计数 +1，使用 Lua 脚本保证 INCR+PEXPIRE 原子性。
 func (s *AuthService) incrLoginFail(ctx context.Context, loginType, account string) {
 	key := fmt.Sprintf(loginFailKeyFmt, loginType, account)
-	count, err := s.redis.Incr(ctx, key).Result()
-	if err != nil {
-		log.Printf("incrLoginFail: Redis INCR 失败 key=%s err=%v", key, err)
-		return
-	}
-	if count == 1 {
-		if err := s.redis.Expire(ctx, key, loginFailWindow).Err(); err != nil {
-			log.Printf("incrLoginFail: Redis EXPIRE 失败 key=%s err=%v", key, err)
-		}
+	windowMs := loginFailWindow.Milliseconds()
+	if err := incrLoginFailLua.Run(ctx, s.redis, []string{key}, windowMs).Err(); err != nil {
+		log.Printf("incrLoginFail: Redis Lua 执行失败 key=%s err=%v", key, err)
 	}
 }
 
@@ -478,6 +497,7 @@ func (s *AuthService) GetMe(ctx context.Context, userID uint64) (*dto.UserInfo, 
 //
 // D-13：更新密码哈希与吊销该用户所有会话放入同一事务，避免 DB 故障导致
 // "密码已改但旧 session 仍有效"的中间状态。Redis 侧（如有）按约定1做最佳努力处理。
+// D-55：操作成功后写入审计日志（change_password），供安全溯源。
 func (s *AuthService) ChangePassword(ctx context.Context, userID uint64, req dto.ChangePasswordReq) error {
 	user, err := s.userRepo.FindByID(ctx, userID)
 	if err != nil {
@@ -490,12 +510,17 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID uint64, req dto
 	if err != nil {
 		return err
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.userRepo.UpdatePasswordTx(tx, userID, newHash); err != nil {
 			return err
 		}
 		return s.sessionRepo.RevokeAllByUserTx(tx, userID)
-	})
+	}); err != nil {
+		return err
+	}
+	// D-55：写入审计日志，失败仅记录 warn，不影响主流程
+	s.recordSensitiveAudit(ctx, "change_password", userID, "")
+	return nil
 }
 
 // FindUserByID 供其他模块（如 identity）通过 interface 调用。
@@ -505,14 +530,27 @@ func (s *AuthService) FindUserByID(ctx context.Context, userID uint64) (*model.U
 
 // ListUsers 管理员分页查询用户列表，支持关键字搜索和状态过滤，返回脱敏后的 DTO 列表。
 // scopeAll=true 时不限制范围（超管）；否则只返回 scopeIDs 中的用户。
+//
+// D-50：使用批量查询替换循环内单条查询，将 N+1 次 DB 操作降为 2 次（1次主查询 + 1次批量登录时间查询）。
 func (s *AuthService) ListUsers(ctx context.Context, keyword, status string, scopeAll bool, scopeIDs []uint64, offset, limit int) ([]dto.AdminUserResp, int64, error) {
 	users, total, err := s.userRepo.ListUsersPaged(ctx, keyword, status, scopeAll, scopeIDs, offset, limit)
 	if err != nil {
 		return nil, 0, err
 	}
+	// 取出当页所有 userID，一次批量查询最后登录时间
+	userIDs := make([]int64, len(users))
+	for i, u := range users {
+		userIDs[i] = int64(u.ID)
+	}
+	lastLogins, err := s.loginLogRepo.FindLastSuccessBatch(ctx, userIDs)
+	if err != nil {
+		// 查询失败不阻断列表接口，最后登录时间留空
+		log.Printf("ListUsers: 批量查询最后登录时间失败 err=%v", err)
+		lastLogins = map[int64]time.Time{}
+	}
 	resp := make([]dto.AdminUserResp, len(users))
 	for i, u := range users {
-		resp[i] = s.toAdminUserResp(ctx, &u)
+		resp[i] = s.buildAdminUserResp(&u, lastLogins)
 	}
 	return resp, total, nil
 }
@@ -527,7 +565,36 @@ func (s *AuthService) GetUser(ctx context.Context, id uint64) (*dto.AdminUserRes
 	return &resp, nil
 }
 
-// toAdminUserResp 将 User model 转换为管理员视角的 DTO（脱敏邮箱/手机）。
+// buildAdminUserResp 将 User model 转换为管理员视角的 DTO，最后登录时间由外部传入（避免 N+1）。
+func (s *AuthService) buildAdminUserResp(u *model.User, lastLogins map[int64]time.Time) dto.AdminUserResp {
+	resp := dto.AdminUserResp{
+		ID:             u.ID,
+		Username:       u.Username,
+		EmailVerified:  u.EmailVerified,
+		PhoneVerified:  u.PhoneVerified,
+		RealNameStatus: u.RealNameStatus,
+		Status:         u.Status,
+		CreatedAt:      u.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	}
+	// 邮箱脱敏处理
+	if u.Email != nil {
+		masked := dto.MaskEmail(*u.Email)
+		resp.Email = &masked
+	}
+	// 手机号脱敏处理
+	if u.Phone != nil {
+		masked := dto.MaskPhone(*u.Phone)
+		resp.Phone = &masked
+	}
+	// 从批量查询结果中取最后登录时间
+	if t, ok := lastLogins[int64(u.ID)]; ok {
+		ts := t.Format("2006-01-02T15:04:05Z07:00")
+		resp.LastLoginAt = &ts
+	}
+	return resp
+}
+
+// toAdminUserResp 将 User model 转换为管理员视角的 DTO（单个用户，用于 GetUser 接口）。
 func (s *AuthService) toAdminUserResp(ctx context.Context, u *model.User) dto.AdminUserResp {
 	resp := dto.AdminUserResp{
 		ID:             u.ID,
@@ -651,6 +718,20 @@ func (s *AuthService) UnbanUser(ctx context.Context, userID uint64, operatorID u
 	return nil
 }
 
+// recordSensitiveAudit D-55：写入敏感操作审计日志（修改密码/手机/邮箱等）。
+// 操作人即用户本身（operatorID = userID），ip 由调用方根据需要传入（空值可接受）。
+// 审计写入失败仅记录警告，不影响已成功的主业务操作。
+func (s *AuthService) recordSensitiveAudit(ctx context.Context, action string, userID uint64, ip string) {
+	if s.auditSvc == nil {
+		log.Printf("[audit] auditSvc 未注入，跳过审计 action=%s userID=%d", action, userID)
+		return
+	}
+	targetType := "user"
+	targetID := strconv.FormatUint(userID, 10)
+	op := userID
+	_ = s.auditSvc.Record(ctx, &op, "auth", action, &targetType, &targetID, ip, nil)
+}
+
 // recordBanAudit 写入封禁/解封操作的审计日志。
 // 审计写入失败不会影响调用方已经成功的主业务操作，错误仅由 AuditService 内部记录警告日志。
 func (s *AuthService) recordBanAudit(ctx context.Context, action string, userID, operatorID uint64, reason, ip string) {
@@ -720,12 +801,17 @@ func (s *AuthService) ResetPassword(ctx context.Context, req dto.ResetPasswordRe
 	}
 	// D-13：更新密码哈希与吊销该用户所有会话放入同一事务，避免 DB 故障导致
 	// "密码已改但旧 session 仍有效"的中间状态。
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.userRepo.UpdatePasswordTx(tx, user.ID, newHash); err != nil {
 			return err
 		}
 		return s.sessionRepo.RevokeAllByUserTx(tx, user.ID)
-	})
+	}); err != nil {
+		return err
+	}
+	// D-55：写入审计日志，失败仅记录 warn，不影响主流程
+	s.recordSensitiveAudit(ctx, "reset_password", user.ID, "")
+	return nil
 }
 
 // AdminVerifyPhone 管理员手机号认证（验证码校验后记录认证时间）。
@@ -805,6 +891,8 @@ func (s *AuthService) UpdatePhone(ctx context.Context, userID uint64, req dto.Up
 	if err := s.userRepo.UpdatePhoneAndVerified(ctx, userID, req.Phone); err != nil {
 		return mapUserRepoError(err)
 	}
+	// D-55：写入审计日志，失败仅记录 warn，不影响主流程
+	s.recordSensitiveAudit(ctx, "update_phone", userID, "")
 	return nil
 }
 
@@ -830,6 +918,8 @@ func (s *AuthService) UpdateEmail(ctx context.Context, userID uint64, req dto.Up
 	if err := s.userRepo.UpdateEmailAndVerified(ctx, userID, req.Email); err != nil {
 		return mapUserRepoError(err)
 	}
+	// D-55：写入审计日志，失败仅记录 warn，不影响主流程
+	s.recordSensitiveAudit(ctx, "update_email", userID, "")
 	return nil
 }
 

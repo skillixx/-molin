@@ -18,14 +18,21 @@ import (
 func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc *service.VerificationService, cfg config.Config, iamChecker middleware.IAMChecker, scopeResolver middleware.ScopeResolver, redisClient *redis.Client) {
 	h := handler.NewAuthHandler(authSvc, verifySvc, cfg)
 
+	// D-51：对验证码发送和密码重置接口按 IP 限流（每 IP 每分钟最多 10 次），防止短信轰炸和暴力枚举 OTP
+	const sendCodeIPLimit = 10
+	const sendCodeIPWindow = time.Minute
+	rateLimitByIP := func(next http.HandlerFunc) http.Handler {
+		return middleware.RateLimitByIP(redisClient, "send_code", sendCodeIPLimit, sendCodeIPWindow, http.HandlerFunc(next))
+	}
+
 	// 无需鉴权的接口
-	mux.HandleFunc("POST /api/auth/verification-codes/email", h.SendEmailCode)
-	mux.HandleFunc("POST /api/auth/verification-codes/phone", h.SendPhoneCode)
+	mux.Handle("POST /api/auth/verification-codes/email", rateLimitByIP(h.SendEmailCode))
+	mux.Handle("POST /api/auth/verification-codes/phone", rateLimitByIP(h.SendPhoneCode))
 	mux.HandleFunc("POST /api/auth/register", h.Register)
 	mux.HandleFunc("POST /api/auth/login/email", h.LoginEmail)
 	mux.HandleFunc("POST /api/auth/login/phone", h.LoginPhone)
 	mux.HandleFunc("POST /api/auth/refresh", h.Refresh)
-	mux.HandleFunc("POST /api/auth/password/reset", h.ResetPassword)
+	mux.Handle("POST /api/auth/password/reset", rateLimitByIP(h.ResetPassword))
 
 	// 需要登录的接口（同时检查封禁黑名单）
 	auth := func(next http.HandlerFunc) http.Handler {

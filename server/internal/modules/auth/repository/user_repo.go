@@ -18,6 +18,8 @@ var (
 	ErrUserPhoneExists = errors.New("手机号已被注册")
 	// ErrUsernameExists 表示用户名唯一键冲突。
 	ErrUsernameExists = errors.New("用户名已被使用")
+	// ErrUserNotFound D-54：更新操作 rowsAffected==0，目标用户不存在。
+	ErrUserNotFound = errors.New("用户不存在")
 )
 
 // UserRepository 用户数据访问层。
@@ -81,18 +83,33 @@ func (r *UserRepository) UpdatePassword(ctx context.Context, userID uint64, pass
 		Update("password_hash", passwordHash).Error
 }
 
-// UpdatePasswordTx 在事务内更新密码哈希（D-13：修改密码与吊销旧会话需保持原子性）。
+// UpdatePasswordTx D-54：在事务内更新密码哈希，rowsAffected==0 时返回 ErrUserNotFound。
+// D-13：修改密码与吊销旧会话需保持原子性。
 func (r *UserRepository) UpdatePasswordTx(tx *gorm.DB, userID uint64, passwordHash string) error {
-	return tx.Model(&model.User{}).
+	result := tx.Model(&model.User{}).
 		Where("id = ?", userID).
-		Update("password_hash", passwordHash).Error
+		Update("password_hash", passwordHash)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrUserNotFound
+	}
+	return nil
 }
 
-// UpdateStatus 更新用户账号状态（active / disabled），用于封禁/解封流程。
+// UpdateStatus D-54：更新用户账号状态（active / disabled），rowsAffected==0 时返回 ErrUserNotFound。
 func (r *UserRepository) UpdateStatus(ctx context.Context, userID uint64, status string) error {
-	return r.db.WithContext(ctx).Model(&model.User{}).
+	result := r.db.WithContext(ctx).Model(&model.User{}).
 		Where("id = ?", userID).
-		Update("status", status).Error
+		Update("status", status)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrUserNotFound
+	}
+	return nil
 }
 
 // UpdateRealNameStatus 审核通过后同步更新用户实名状态（由 identity 模块调用）。
@@ -122,12 +139,18 @@ func (r *UserRepository) FindByUsername(ctx context.Context, username string) (*
 	return &user, nil
 }
 
-// UpdateUsername 更新用户的用户名。
+// UpdateUsername D-54：更新用户名，rowsAffected==0 时返回 ErrUserNotFound。
 func (r *UserRepository) UpdateUsername(ctx context.Context, userID uint64, username string) error {
-	err := r.db.WithContext(ctx).Model(&model.User{}).
+	result := r.db.WithContext(ctx).Model(&model.User{}).
 		Where("id = ?", userID).
-		Update("username", username).Error
-	return mapUserDuplicateError(err)
+		Update("username", username)
+	if result.Error != nil {
+		return mapUserDuplicateError(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrUserNotFound
+	}
+	return nil
 }
 
 // UpdatePhoneAndVerified 单条 UPDATE 同时更新手机号并标记已验证（D-14：避免两步独立操作产生的非原子窗口）。
