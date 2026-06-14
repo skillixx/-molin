@@ -25,9 +25,11 @@ func parseUserID(raw string) uint64 {
 }
 
 // PagedResp 通用分页响应结构，包含列表数据和分页元数据。
+// D-95：分页元数据匿名嵌入 pagination.Result，使 page/page_size/total 与 items 同级（扁平结构），
+// 符合 docs/full-api-design.md 1.2 节规范。
 type PagedResp struct {
-	List       interface{}       `json:"items"`
-	Pagination pagination.Result `json:"pagination"`
+	List interface{} `json:"items"`
+	pagination.Result
 }
 
 // IdentityHandler 处理实名认证相关 HTTP 请求。
@@ -112,8 +114,8 @@ func (h *IdentityHandler) ListPending(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.JSON(w, http.StatusOK, PagedResp{
-		List:       list,
-		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
+		List:   list,
+		Result: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
 	})
 }
 
