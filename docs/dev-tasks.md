@@ -46,6 +46,7 @@
 | A-30 | Auth | senior-architect 第五轮审查发现的接口缺失（4/5）：`GET /api/admin/users/:id/login-logs`（用户登录日志分页，`full-api-design.md` 3.8）未实现；`LoginLogRepository` 目前只有 `FindLastSuccessByUser`/`FindLastSuccessBatch`，缺少分页查全部日志的方法。需：(1) `LoginLogRepository.FindPagedByUser(ctx, userID, offset, limit) ([]*LoginLog, int64, error)`；(2) `AuthService.ListUserLoginLogs` service 方法；(3) `AuthHandler.ListUserLoginLogs` handler；(4) 路由注册 `GET /api/admin/users/{id}/login-logs`（RequireAuth + user:list + adminAuthVerified）；返回字段：登录时间/方式/账号/IP/User-Agent/状态（分页） | `feature/backend-a-auth-admin-user-detail` | ✅ 已完成 | PR#78（merge commit `32c4c71`）：FindPagedByUser（COUNT + 分页 SELECT，created_at DESC）；ListUserLoginLogs service（账号按 login_type 脱敏）；LoginLogItem DTO；ListUserLoginLogs handler（adminPagedResp 格式）；路由 GET /api/admin/users/{id}/login-logs（adminUserList 中间件）；`go build` 通过，CI 3/3 通过；测试工程师验收通过（2026-06-14，tests/test_pr77_79_a28_a31.py，PASS 5/5） |
 | A-31 | Identity | senior-architect 第五轮审查发现的接口缺失（5/5）：`GET /api/admin/users/:id/identity`（用户实名信息卡片，`full-api-design.md` 3.9）未实现；现有 `GET /api/admin/identity-verifications?user_id=` 需分页搜索，不适合用户详情页快速查询。需：(1) `IdentityService.GetByUserID(ctx, userID)` 方法（复用 `FindLatestByUser`）；(2) identity 模块新增 `GetUserIdentity` handler；(3) 路由注册 `GET /api/admin/users/{id}/identity`（RequireAuth + identity:review + adminAuthVerified）；返回字段：status/real_name/id_card_no_masked/verified_at/submitted_at/attachments | `feature/backend-a-identity-user-detail` | ✅ 已完成 | PR#79（merge commit `52f2dcc`）：GetByUserID service（复用 FindLatestByUser + toResp，无记录返回 nil, nil）；GetUserIdentity handler（无记录 404，有记录 200 + VerificationResp）；路由 GET /api/admin/users/{id}/identity（adminAuth：identity:review + adminAuthVerified）；`go build` 通过，CI 3/3 通过；测试工程师验收通过（2026-06-14，tests/test_pr77_79_a28_a31.py，PASS 4/4） |
 | D-85 | Auth/IAM | senior-architect 第六轮审查发现：`GET /api/admin/users` 和 `GET /api/admin/users/:id` 响应均缺少 `roles` 字段（规范 3.1/3.2 要求），导致管理后台用户列表和详情页"角色"列永远为空。需：(1) `auth/dto.AdminRoleItem{ID,Code,Name}` 结构体；(2) `AdminUserResp` 新增 `Roles []AdminRoleItem`；(3) `iam/repository.UserRoleRepository.FindRolesByUsersBatch`（单次 JOIN 批量查多用户角色）；(4) `iam/service` 新增 `FindRolesByUser`/`FindRolesByUsersBatch` 实现 `RolesFetcher` 接口；(5) `auth/service` 定义 `RolesFetcher` 接口（import iam/model，无循环依赖）、`SetRolesFetcher` setter、`fetchRolesForUser`；(6) `ListUsers` 批量查角色；`GetUser` 单条查角色；(7) bootstrap 注入 `SetRolesFetcher(iamService)` | `feature/backend-a-admin-user-roles-field` | ✅ 已完成 | PR#80（merge commit `a513159`）：AdminRoleItem DTO；AdminUserResp.Roles 字段；FindRolesByUsersBatch repo 方法；IAMService 实现 RolesFetcher；auth/service RolesFetcher 接口 + SetRolesFetcher + fetchRolesForUser/toAdminRoleItems；ListUsers 批量查角色（rolesFetcher nil 时降级空 map 不阻断）；GetUser 单条查角色；bootstrap 注入；`go build` 通过，CI 3/3 通过；测试工程师验收通过（2026-06-14，tests/test_d85_roles_field.py，PASS 6/6） |
+| D-86 | Auth/IAM | senior-architect 第六轮审查发现：`GET /api/admin/users/:id` 响应缺少 `permission_overrides`、`wallet_summary`、`asset_summary` 三个字段（规范 3.2 要求）。涉及三个模块，拆分为三个子任务分别推进：(1) **permission_overrides**（后端甲/iam，本次完成）—— `iam.IAMService.GetPermissionOverrides` 已就位，复用 D-85 模式：`auth/dto.AdminPermissionOverrideItem` 结构体；`AdminUserResp` 新增 `PermissionOverrides`；`auth/service` 定义 `PermissionOverridesFetcher` 接口（鸭子类型，零 iam 改动）、`SetPermissionOverridesFetcher` setter、`fetchPermissionOverridesForUser`；`GetUser` 查询填充，`ListUsers` 固定空数组（规范 3.1 无此字段要求）；bootstrap 注入。(2) **wallet_summary**（后端乙/billing，待开始）—— billing/finance_consumer 模块尚无 balance/frozen 查询方法，需新增钱包摘要查询接口供 auth/service 注入。(3) **asset_summary**（后端丙/asset，待开始）—— asset 模块尚无用户资产数量统计方法，需新增资产摘要查询接口供 auth/service 注入 | `feature/backend-a-admin-permission-overrides-field` | 🟡 部分完成（1/3） | PR#81（merge commit `478ab4b3`）：AdminPermissionOverrideItem DTO；AdminUserResp.PermissionOverrides 字段；auth/service PermissionOverridesFetcher 接口 + SetPermissionOverridesFetcher + fetchPermissionOverridesForUser/toAdminPermissionOverrideItems；GetUser 查询填充（permOverridesFetcher nil 时降级空切片）；ListUsers 固定空数组；bootstrap 注入；iam 模块零改动（GetPermissionOverrides 签名直接满足接口）；`go build`/`go vet` 通过，CI 3/3 通过。wallet_summary（后端乙）、asset_summary（后端丙）待对应模块底层方法就绪后另行排期 |
 
 ---
 
@@ -146,14 +147,14 @@
 
 | 开发者 | 总任务数 | 已完成 | 进行中 | 待开始 |
 |---|---|---|---|---|
-| 后端工程师甲 | 32 | 32（9 已审查 + 23 已验收/完成，PR#31/#32/#38/#39/#42/#44/#47/#48/#50/#51/#53/#54/#56/#57/#60/#61/#62/#63/#68/#69/#70/#71/#76/#77/#78/#79/#80）| 0 | 0 |
+| 后端工程师甲 | 33 | 33（9 已审查 + 24 已验收/完成，PR#31/#32/#38/#39/#42/#44/#47/#48/#50/#51/#53/#54/#56/#57/#60/#61/#62/#63/#68/#69/#70/#71/#76/#77/#78/#79/#80/#81）| 0 | 0 |
 | 后端工程师乙 | 6 | 0 | 0 | 6 |
 | 后端工程师丙 | 5 | 0 | 0 | 5 |
 | 前端工程师甲 | 8 | 3（已审查）| 0 | 5 |
 | 前端工程师乙 | 8 | 0 | 0 | 8 |
 | 运维工程师 | 6 | 6 | 0 | 0 |
 | 测试工程师 | 6 | 0 | 0 | 6 |
-| **合计** | **70** | **41** | **0** | **29** |
+| **合计** | **71** | **42** | **0** | **29** |
 
 ---
 
