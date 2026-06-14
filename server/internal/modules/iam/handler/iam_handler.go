@@ -63,8 +63,31 @@ func (h *IAMHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
+	// D-57：code 和 name 为必填字段，不允许写入空值角色
+	if req.Code == "" || req.Name == "" {
+		response.Error(w, http.StatusBadRequest, 40000, "code 和 name 均为必填")
+		return
+	}
+	// D-60：长度校验，防止超长输入触发 MySQL Data too long
+	if len(req.Code) > 128 {
+		response.Error(w, http.StatusBadRequest, 40000, "code 长度不能超过 128 字符")
+		return
+	}
+	if len(req.Name) > 128 {
+		response.Error(w, http.StatusBadRequest, 40000, "name 长度不能超过 128 字符")
+		return
+	}
+	if req.Description != nil && len(*req.Description) > 512 {
+		response.Error(w, http.StatusBadRequest, 40000, "description 长度不能超过 512 字符")
+		return
+	}
 	role := &model.Role{Code: req.Code, Name: req.Name, Description: req.Description}
 	if err := h.iamSvc.CreateRole(r.Context(), role); err != nil {
+		// D-57：code 重复时返回 409，而非 500
+		if errors.Is(err, repository.ErrRoleCodeExists) {
+			response.Error(w, http.StatusConflict, 40900, "角色 code 已存在")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, 50000, "创建失败")
 		return
 	}
@@ -83,6 +106,26 @@ func (h *IAMHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
+	// D-65：code 字段不可修改，调用方若传入 code 直接拒绝，消除接口语义歧义
+	if req.Code != "" {
+		response.Error(w, http.StatusBadRequest, 40000, "角色 code 不可修改")
+		return
+	}
+	// D-58：name 为空时拒绝更新，防止 GORM map 更新将 DB 中的非空 name 覆盖为空字符串
+	if req.Name == "" {
+		response.Error(w, http.StatusBadRequest, 40000, "name 不能为空")
+		return
+	}
+	// D-60：长度校验，防止超长输入触发 MySQL Data too long
+	if len(req.Name) > 128 {
+		response.Error(w, http.StatusBadRequest, 40000, "name 长度不能超过 128 字符")
+		return
+	}
+	if req.Description != nil && len(*req.Description) > 512 {
+		response.Error(w, http.StatusBadRequest, 40000, "description 长度不能超过 512 字符")
+		return
+	}
+	// 只允许更新 name 和 description，不包含 code
 	updates := map[string]interface{}{"name": req.Name, "description": req.Description}
 	if err := h.iamSvc.UpdateRole(r.Context(), id, updates); err != nil {
 		// D-31：角色不存在时返回 404，而非 200 或 500
@@ -107,6 +150,11 @@ func (h *IAMHandler) DeleteRole(w http.ResponseWriter, r *http.Request) {
 		// D-31：角色不存在时返回 404，而非 200 或 500
 		if errIsNotFound(err) {
 			response.Error(w, http.StatusNotFound, 40400, "角色不存在")
+			return
+		}
+		// D-61：角色下仍有用户时返回 409，拒绝删除
+		if errors.Is(err, service.ErrRoleHasUsers) {
+			response.Error(w, http.StatusConflict, 40900, "角色下仍有用户，无法删除")
 			return
 		}
 		response.Error(w, http.StatusInternalServerError, 50000, "删除失败")
@@ -506,6 +554,11 @@ func (h *IAMHandler) SetRolePermissions(w http.ResponseWriter, r *http.Request) 
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
+	// D-63：permission_ids 数量上限 200，防止万条输入耗尽 DB 连接
+	if len(req.PermissionIDs) > 200 {
+		response.Error(w, http.StatusBadRequest, 40000, "最多支持 200 条")
+		return
+	}
 	operatorID := middleware.UserIDFromContext(r.Context())
 	if err := h.iamSvc.SetRolePermissions(r.Context(), roleID, req.PermissionIDs, operatorID, r.RemoteAddr); err != nil {
 		// D-26：role_id 或 permission_id 不存在时返回 400
@@ -532,8 +585,18 @@ func (h *IAMHandler) ReplaceUserRoles(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
+	// D-63：role_ids 数量上限 200，防止万条输入耗尽 DB 连接
+	if len(req.RoleIDs) > 200 {
+		response.Error(w, http.StatusBadRequest, 40000, "最多支持 200 条")
+		return
+	}
 	operatorID := middleware.UserIDFromContext(r.Context())
 	if err := h.iamSvc.ReplaceUserRoles(r.Context(), userID, req.RoleIDs, operatorID, req.Reason, r.RemoteAddr); err != nil {
+		// D-59：roleID 不存在时返回 400
+		if errIsNotFound(err) {
+			response.Error(w, http.StatusBadRequest, 40000, "包含不存在的角色 ID")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, 50000, "更新失败")
 		return
 	}
@@ -551,6 +614,11 @@ func (h *IAMHandler) ReplaceUserOverrides(w http.ResponseWriter, r *http.Request
 	var req dto.ReplaceOverridesReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	// D-63：items 数量上限 200，防止万条输入耗尽 DB 连接
+	if len(req.Items) > 200 {
+		response.Error(w, http.StatusBadRequest, 40000, "最多支持 200 条")
 		return
 	}
 	operatorID := middleware.UserIDFromContext(r.Context())
