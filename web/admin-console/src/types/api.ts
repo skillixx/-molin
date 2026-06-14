@@ -7,15 +7,20 @@ export interface ApiResponse<T = unknown> {
   data: T
 }
 
-/** 分页信息 */
+/** 分页状态（本地组件使用，与后端字段一一对应）*/
 export interface Pagination {
   page: number
   page_size: number
   total: number
 }
 
-/** 列表接口响应 data 字段 */
+/**
+ * auth/iam/identity 模块列表接口响应 data 字段（D-95 扁平化）
+ * page / page_size / total 直接位于顶层，不再嵌套在 pagination 子对象内
+ */
 export interface PageResponse<T> {
   items: T[]
-  pagination: Pagination
+  page: number
+  page_size: number
+  total: number
 }

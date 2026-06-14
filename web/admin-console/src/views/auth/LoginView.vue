@@ -98,7 +98,8 @@ const rules: FormRules = {
   ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, message: '密码长度不少于 6 位', trigger: 'blur' },
+    // D-94：密码长度约束 6-72 位
+    { min: 6, max: 72, message: '密码长度为 6-72 位', trigger: 'blur' },
   ],
 }
 

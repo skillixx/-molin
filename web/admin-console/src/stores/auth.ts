@@ -14,13 +14,15 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isLoggedIn = computed(() => !!accessToken.value)
 
-  /** 邮箱登录 */
+  /** 邮箱登录（D-93：响应已包含 user 字段，无需再额外调用 GET /api/me）*/
   async function login(email: string, password: string) {
     const data = await loginByEmail({ email, password })
     accessToken.value = data.access_token
     refreshToken.value = data.refresh_token
     localStorage.setItem('access_token', data.access_token)
-    // 登录成功后立即拉取用户信息
+    // D-93：直接从登录响应中获取用户摘要，再调用 getMe 补全完整字段
+    // 登录响应的 user 只含摘要字段，getMe 返回完整 User（含 username/admin_*_verified 等），
+    // 故仍需调用一次 getMe 以填充侧边栏、权限守卫所需的完整信息
     currentUser.value = await getMe()
   }
 

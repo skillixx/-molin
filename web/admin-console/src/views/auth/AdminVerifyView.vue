@@ -151,7 +151,7 @@ import {
   CircleCheckFilled,
   ArrowLeft,
 } from '@element-plus/icons-vue'
-import { sendVerificationCode, adminVerifyPhone, adminVerifyEmail } from '@/api/auth'
+import { sendAdminVerificationCode, adminVerifyPhone, adminVerifyEmail } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -204,15 +204,11 @@ function startEmailCountdown() {
   }, 1000)
 }
 
-/** Step 0：发送手机验证码 */
+/** Step 0：发送手机验证码（D-96：改用 admin 专属发码端点，不传 target/scene）*/
 async function handleSendPhoneCode() {
   sendingPhone.value = true
   try {
-    // target 从 currentUser.phone 取值（脱敏值，后端按登录账号匹配）
-    await sendVerificationCode('phone', {
-      target: authStore.currentUser?.phone ?? '',
-      scene: 'admin_verify',
-    })
+    await sendAdminVerificationCode('phone')
     ElMessage.success('验证码已发送')
     startPhoneCountdown()
     currentStep.value = 1
@@ -241,14 +237,11 @@ async function handleVerifyPhone() {
   }
 }
 
-/** Step 2：发送邮箱验证码 */
+/** Step 2：发送邮箱验证码（D-96：改用 admin 专属发码端点，不传 target/scene）*/
 async function handleSendEmailCode() {
   sendingEmail.value = true
   try {
-    await sendVerificationCode('email', {
-      target: authStore.currentUser?.email ?? '',
-      scene: 'admin_verify',
-    })
+    await sendAdminVerificationCode('email')
     ElMessage.success('验证码已发送')
     startEmailCountdown()
     currentStep.value = 3

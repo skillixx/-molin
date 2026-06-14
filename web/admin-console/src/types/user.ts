@@ -77,8 +77,19 @@ export interface IdentityVerification {
   reviewed_by?: number
 }
 
-/** 登录响应 */
+/** 登录/注册/刷新令牌响应中内嵌的用户摘要（D-93）*/
+export interface LoginUserInfo {
+  id: number
+  email: string | null
+  phone: string | null
+  real_name_status: RealNameStatus
+  status: UserStatus
+}
+
+/** 登录响应（D-93：新增顶层 user 字段）*/
 export interface LoginResponse {
   access_token: string
   refresh_token: string
+  expires_in: number
+  user: LoginUserInfo
 }
