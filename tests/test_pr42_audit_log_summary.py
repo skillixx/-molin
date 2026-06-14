@@ -204,8 +204,9 @@ else:
 # ═══════════════════════════════════════════════════════════════
 # 1. 基本字段 + 分页结构回归检查
 #    GET /api/admin/audit-logs?page=1&page_size=5
+#    D-95：分页结构改为扁平（page/page_size/total 与 items 同级），data 中不应再有 pagination 子对象
 # ═══════════════════════════════════════════════════════════════
-print(f"\n{BOLD}1. 基本响应结构回归检查（items + pagination + 各字段）{RESET}")
+print(f"\n{BOLD}1. 基本响应结构回归检查（items + 扁平分页字段 + 各字段）{RESET}")
 
 EXPECTED_FIELDS = {
     "id", "operator_id", "module", "action", "target_type",
@@ -217,17 +218,17 @@ if admin_token:
     print(f"  调用  HTTP {status}: code={resp.get('code')}")
     data = resp.get("data", {})
     items = data.get("items")
-    pagination = data.get("pagination")
 
-    if status == 200 and resp.get("code") == 0 and isinstance(items, list) and isinstance(pagination, dict):
-        ok("1.1 响应契约：HTTP 200, code=0, data.items 为数组, data.pagination 为对象")
+    if status == 200 and resp.get("code") == 0 and isinstance(items, list):
+        ok("1.1 响应契约：HTTP 200, code=0, data.items 为数组")
     else:
         fail("1.1 响应契约不符合预期", f"resp={json.dumps(resp, ensure_ascii=False)[:500]}")
 
-    if isinstance(pagination, dict) and {"page", "page_size", "total"} <= set(pagination.keys()):
-        ok("1.2 分页结构 pagination 包含 page/page_size/total", f"pagination={pagination}")
+    if "pagination" not in data and {"page", "page_size", "total"} <= set(data.keys()):
+        ok("1.2 分页结构已扁平化（D-95）：page/page_size/total 与 items 同级，且不含 pagination 子对象",
+           f"page={data.get('page')}, page_size={data.get('page_size')}, total={data.get('total')}")
     else:
-        fail("1.2 分页结构不符合预期", f"pagination={pagination}")
+        fail("1.2 分页结构不符合预期（D-95 扁平结构）", f"data keys={sorted(data.keys())}")
 
     if items:
         sample = items[0]
@@ -364,8 +365,8 @@ if admin_token:
                     if item.get("id") == null_log_id:
                         target_item = item
                         break
-                pagination = resp.get("data", {}).get("pagination", {})
-                total = pagination.get("total", 0)
+                # D-95：分页字段已扁平化，total 与 items 同级
+                total = resp.get("data", {}).get("total", 0)
                 if page * 50 >= total:
                     break
                 page += 1

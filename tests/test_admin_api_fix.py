@@ -357,19 +357,18 @@ def test_admin_users_list(admin_token, regular_user_id):
     status, body = get("/api/admin/users", token=admin_token)
     if assert_status("1-2  有效 Token 获取用户列表 → 200", status, 200, body):
         # 检查分页结构
-        has_list       = "list"       in body.get("data", body)
-        has_pagination = "pagination" in body.get("data", body)
-        # 兼容响应结构放在顶层或 data 内
-        top_list       = "list" in body
-        top_pagination = "pagination" in body
-        if has_list or top_list:
-            ok("1-2a 响应包含 list 字段")
+        d = body.get("data", body) if isinstance(body.get("data", body), dict) else {}
+        has_items = "items" in d
+        # D-95：分页结构已扁平化，page/page_size/total 与 items 同级，data 中不应再有 pagination 子对象
+        has_flat_pagination = "pagination" not in d and all(k in d for k in ("page", "page_size", "total"))
+        if has_items:
+            ok("1-2a 响应包含 items 字段")
         else:
-            fail("1-2a 响应缺少 list 字段", str(body)[:200])
-        if has_pagination or top_pagination:
-            ok("1-2b 响应包含 pagination 字段")
+            fail("1-2a 响应缺少 items 字段", str(body)[:200])
+        if has_flat_pagination:
+            ok("1-2b 分页结构已扁平化：page/page_size/total 与 items 同级，且不含 pagination 子对象")
         else:
-            fail("1-2b 响应缺少 pagination 字段", str(body)[:200])
+            fail("1-2b 分页结构不符合预期（D-95 扁平结构）", str(body)[:200])
 
     # 1-3 keyword 过滤
     status, body = get("/api/admin/users", token=admin_token,
