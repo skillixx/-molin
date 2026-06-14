@@ -1,10 +1,12 @@
 package dto
 
 // SubmitReq 用户提交实名认证请求（身份证号不存库，仅在 service 层处理）。
+// D-91：新增 verification_type 字段，当前只允许 "id_card"，默认值也为 "id_card"。
 type SubmitReq struct {
-	RealName    string   `json:"real_name"`
-	IDCardNo    string   `json:"id_card_no"` // 仅在内存中使用，不持久化明文
-	Attachments []string `json:"attachments,omitempty"`
+	RealName         string   `json:"real_name"`
+	IDCardNo         string   `json:"id_card_no"`          // 仅在内存中使用，不持久化明文
+	Attachments      []string `json:"attachments,omitempty"`
+	VerificationType string   `json:"verification_type"`   // 认证类型，当前只支持 "id_card"
 }
 
 // SubmitResp 提交实名认证的响应，返回新建记录的 ID 和初始状态。
@@ -15,11 +17,12 @@ type SubmitResp struct {
 }
 
 // ReviewReq 管理员审核请求。
-// D-06：当 Approve == false（拒绝）时，Reason 去除首尾空格后不能为空，
+// D-89：字段名与规范对齐，使用 action（approve/reject）和 reject_reason。
+// D-06：当 action == "reject" 时，reject_reason 去除首尾空格后不能为空，
 // 否则 service 层返回 ErrReasonRequired（400/40000）。
 type ReviewReq struct {
-	Approve bool   `json:"approve"`
-	Reason  string `json:"reason,omitempty"`
+	Action       string `json:"action"`                  // "approve" 或 "reject"，必填
+	RejectReason string `json:"reject_reason,omitempty"` // action=reject 时必填
 }
 
 // VerificationResp 认证状态响应（不返回身份证明文）。

@@ -18,7 +18,8 @@ func RegisterRoutes(mux *http.ServeMux, identitySvc *service.IdentityService, ia
 		return middleware.RequireAuth(jwtSecret, banChecker, http.HandlerFunc(next))
 	}
 	mux.Handle("POST /api/identity/verifications", requireAuth(h.Submit))
-	mux.Handle("GET /api/identity/verifications/me", requireAuth(h.GetMyVerification))
+	// D-90：规范 2.12 要求路径为 /latest，原 /me 路径有误，直接修正
+	mux.Handle("GET /api/identity/verifications/latest", requireAuth(h.GetMyVerification))
 
 	// 需要登录 + identity:review 权限 + 管理员双重认证的审核接口
 	adminAuth := func(next http.HandlerFunc) http.Handler {

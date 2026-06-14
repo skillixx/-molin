@@ -73,9 +73,20 @@ const maxRealNameLen = 50
 // maxAttachments 附件 URL 最大数量。
 const maxAttachments = 5
 
+// ErrInvalidVerificationType D-91：verification_type 不在允许的枚举范围内。
+var ErrInvalidVerificationType = errors.New("verification_type 无效，当前只支持 id_card")
+
 // Submit 用户提交实名认证。身份证号仅在内存处理，不持久化明文。
 // 返回新建记录的 ID，供 handler 响应给客户端。
+// D-91：新增 verification_type 处理，空值默认为 "id_card"，非 "id_card" 值返回 400。
 func (s *IdentityService) Submit(ctx context.Context, userID uint64, req dto.SubmitReq) (uint64, error) {
+	// D-91：verification_type 为空时默认 id_card，其他值返回 400
+	if req.VerificationType == "" {
+		req.VerificationType = "id_card"
+	}
+	if req.VerificationType != "id_card" {
+		return 0, ErrInvalidVerificationType
+	}
 	// D-77：真实姓名非空校验
 	if strings.TrimSpace(req.RealName) == "" {
 		return 0, ErrInvalidRealName
@@ -120,12 +131,13 @@ func (s *IdentityService) Submit(ctx context.Context, userID uint64, req dto.Sub
 	var newID uint64
 	txErr := s.db.Transaction(func(tx *gorm.DB) error {
 		v := &model.IdentityVerification{
-			UserID:          userID,
-			RealName:        req.RealName,
-			IDCardNoHash:    hmacHash,
-			IDCardNoMasked:  maskIDCard(req.IDCardNo),
-			AttachmentsJSON: attachmentsJSON,
-			Status:          "pending",
+			UserID:           userID,
+			RealName:         req.RealName,
+			IDCardNoHash:     hmacHash,
+			IDCardNoMasked:   maskIDCard(req.IDCardNo),
+			VerificationType: req.VerificationType, // D-91：赋值认证类型
+			AttachmentsJSON:  attachmentsJSON,
+			Status:           "pending",
 		}
 		if err := s.repo.Create(ctx, v); err != nil {
 			return err
@@ -254,10 +266,11 @@ func (s *IdentityService) GetMyVerification(ctx context.Context, userID uint64) 
 	return toResp(v), nil
 }
 
-// ListPaged 管理员分页查看认证记录，status 非空时按状态过滤，空字符串时查全部状态。
-// 原方法名 ListPendingPaged 已直接重命名，调用链均在本模块内，无外部依赖。
-func (s *IdentityService) ListPaged(ctx context.Context, status string, offset, limit int) ([]dto.VerificationResp, int64, error) {
-	list, total, err := s.repo.ListPaged(ctx, status, offset, limit)
+// ListPaged 管理员分页查看认证记录，支持多条件过滤。
+// status 非空时按状态过滤；userID > 0 时按用户 ID 过滤；realName 非空时做模糊匹配。
+// D-88：新增 userID 和 realName 参数，透传给 repository 层叠加 AND 条件。
+func (s *IdentityService) ListPaged(ctx context.Context, status string, userID uint64, realName string, offset, limit int) ([]dto.VerificationResp, int64, error) {
+	list, total, err := s.repo.ListPaged(ctx, status, userID, realName, offset, limit)
 	if err != nil {
 		return nil, 0, err
 	}
