@@ -345,6 +345,11 @@ func (h *GroupHandler) AddGroupPermission(w http.ResponseWriter, r *http.Request
 			response.Error(w, http.StatusConflict, 40900, err.Error())
 			return
 		}
+		// D-62：权限码不存在时返回 400，而非 500
+		if errors.Is(err, repository.ErrPermissionNotFound) {
+			response.Error(w, http.StatusBadRequest, 40000, "权限码不存在")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, 50000, "添加失败")
 		return
 	}

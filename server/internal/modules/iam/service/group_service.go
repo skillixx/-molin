@@ -12,13 +12,14 @@ import (
 
 // GroupService 分组管理业务逻辑（Phase 1：超管管理分组/成员/权限/邀请码）。
 type GroupService struct {
-	repo     *repository.GroupRepository
-	db       *gorm.DB
-	cacheSvc *CacheService
+	repo       *repository.GroupRepository
+	permRepo   *repository.PermissionRepository // D-62：校验 permission_code 存在性
+	db         *gorm.DB
+	cacheSvc   *CacheService
 }
 
-func NewGroupService(repo *repository.GroupRepository, db *gorm.DB, cacheSvc *CacheService) *GroupService {
-	return &GroupService{repo: repo, db: db, cacheSvc: cacheSvc}
+func NewGroupService(repo *repository.GroupRepository, permRepo *repository.PermissionRepository, db *gorm.DB, cacheSvc *CacheService) *GroupService {
+	return &GroupService{repo: repo, permRepo: permRepo, db: db, cacheSvc: cacheSvc}
 }
 
 // ——— 分组 CRUD ———
@@ -127,7 +128,12 @@ func (s *GroupService) GetUserGroups(ctx context.Context, userID uint64) ([]mode
 // ——— 组权限 ———
 
 // AddGroupPermission 添加组权限，清除所有组成员的权限缓存（批量失效）。
+// D-62：写入前调用 permRepo.FindByCode 校验权限码存在性，防止注入未定义的权限码。
 func (s *GroupService) AddGroupPermission(ctx context.Context, groupID uint64, permCode string) error {
+	// 校验权限码是否存在于 permissions 表，防止写入无效权限码
+	if _, err := s.permRepo.FindByCode(ctx, permCode); err != nil {
+		return repository.ErrPermissionNotFound
+	}
 	gp := &model.GroupPermission{GroupID: groupID, PermissionCode: permCode}
 	if err := s.repo.AddPermission(ctx, gp); err != nil {
 		return err
@@ -234,23 +240,41 @@ func (s *GroupService) JoinByInviteCode(ctx context.Context, userID uint64, code
 // ——— 内部工具 ———
 
 // invalidateGroupMembersCache 清除某分组所有成员的权限缓存（组权限变动时批量失效）。
+// D-66：改为分批循环（每批 500 条）替代硬编码 10000 上限，正确处理超大分组。
 func (s *GroupService) invalidateGroupMembersCache(ctx context.Context, groupID uint64) {
-	members, _, err := s.repo.ListMembersPaged(ctx, groupID, "", 0, 10000)
-	if err != nil {
-		return
-	}
-	for _, m := range members {
-		s.cacheSvc.InvalidateUserPerms(ctx, m.UserID)
+	const batchSize = 500
+	offset := 0
+	for {
+		members, _, err := s.repo.ListMembersPaged(ctx, groupID, "", offset, batchSize)
+		if err != nil || len(members) == 0 {
+			break
+		}
+		for _, m := range members {
+			s.cacheSvc.InvalidateUserPerms(ctx, m.UserID)
+		}
+		if len(members) < batchSize {
+			break
+		}
+		offset += batchSize
 	}
 }
 
 // invalidateGroupAdminsScopeCache 清除某分组所有组管理员的 scope 缓存（成员变动时调用）。
+// D-66：改为分批循环（每批 500 条）替代硬编码 10000 上限，正确处理超大分组。
 func (s *GroupService) invalidateGroupAdminsScopeCache(ctx context.Context, groupID uint64) {
-	admins, _, err := s.repo.ListMembersPaged(ctx, groupID, "admin", 0, 10000)
-	if err != nil {
-		return
-	}
-	for _, m := range admins {
-		s.cacheSvc.InvalidateScopeCache(ctx, m.UserID)
+	const batchSize = 500
+	offset := 0
+	for {
+		admins, _, err := s.repo.ListMembersPaged(ctx, groupID, "admin", offset, batchSize)
+		if err != nil || len(admins) == 0 {
+			break
+		}
+		for _, m := range admins {
+			s.cacheSvc.InvalidateScopeCache(ctx, m.UserID)
+		}
+		if len(admins) < batchSize {
+			break
+		}
+		offset += batchSize
 	}
 }

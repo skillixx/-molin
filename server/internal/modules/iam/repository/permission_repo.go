@@ -68,6 +68,17 @@ func (r *PermissionRepository) FindByCode(ctx context.Context, code string) (*mo
 	return &p, nil
 }
 
+// FindByIDs 批量查询权限记录（WHERE id IN (?)），用于替代逐条 FindByID 的 N+1 校验。
+// D-63：SetRolePermissions 存在性校验由 N 次单条查询改为单次批量 COUNT 查询。
+func (r *PermissionRepository) FindByIDs(ctx context.Context, ids []uint64) ([]model.Permission, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var perms []model.Permission
+	err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&perms).Error
+	return perms, err
+}
+
 // FindByRoleIDs 查询一批角色拥有的所有权限（JOIN role_permissions）。
 func (r *PermissionRepository) FindByRoleIDs(ctx context.Context, roleIDs []uint64) ([]model.Permission, error) {
 	if len(roleIDs) == 0 {

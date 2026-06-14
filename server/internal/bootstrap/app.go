@@ -180,7 +180,8 @@ func NewApp() (*App, error) {
 	// Phase 2：IAMService 注入 groupRepo，使 CheckPermission 合并角色权限与组权限
 	// A-04：审计日志查询能力改为注入独立的 auditSvc
 	iamService := iamsvc.NewIAMService(roleRepo, permRepo, userRoleRepo, overrideRepo, groupRepo, auditSvc, cacheSvc)
-	groupService := iamsvc.NewGroupService(groupRepo, gormDB, cacheSvc)
+	// D-62：注入 permRepo，供 AddGroupPermission 校验权限码存在性
+	groupService := iamsvc.NewGroupService(groupRepo, permRepo, gormDB, cacheSvc)
 	// Phase 3：ScopeService 解析管理员数据范围（scope:all 超管 / 组管理员可见集合）
 	scopeService := iamsvc.NewScopeService(groupRepo, iamService, cacheSvc)
 

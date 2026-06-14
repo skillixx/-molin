@@ -20,6 +20,9 @@ var ErrRoleNotFound = gorm.ErrRecordNotFound
 // ErrPermissionNotFound 权限不存在。
 var ErrPermissionNotFound = gorm.ErrRecordNotFound
 
+// ErrRoleHasUsers 角色下仍有用户，禁止删除。
+var ErrRoleHasUsers = fmt.Errorf("角色下仍有用户，无法删除")
+
 // ErrOverrideNotFound 权限覆盖记录不存在或越权访问（id/userID 不匹配）。
 var ErrOverrideNotFound = fmt.Errorf("权限覆盖记录不存在")
 
@@ -139,9 +142,24 @@ func (s *IAMService) UpdateRole(ctx context.Context, id uint64, updates map[stri
 	return s.roleRepo.Update(ctx, id, updates)
 }
 
-// DeleteRole 删除角色。若角色不存在，repo 层返回 ErrRoleNotFound，上层映射为 404。
+// DeleteRole 删除角色。
+// D-61：删除前检查 user_roles 是否有用户引用（count > 0 则返回 ErrRoleHasUsers）；
+// 同时在事务内先清除 role_permissions 关联，再删除 roles 记录，防止孤儿记录。
 func (s *IAMService) DeleteRole(ctx context.Context, id uint64) error {
-	return s.roleRepo.Delete(ctx, id)
+	// 先确认角色存在
+	if _, err := s.roleRepo.FindByID(ctx, id); err != nil {
+		return err
+	}
+	// 检查是否有用户仍持有该角色
+	count, err := s.roleRepo.CountUsersByRole(ctx, id)
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return ErrRoleHasUsers
+	}
+	// 事务内清除 role_permissions + 删除 roles
+	return s.roleRepo.DeleteWithCleanup(ctx, id)
 }
 
 // ListPermissions 列出所有权限码（不分页，兼容旧调用）。
@@ -376,10 +394,14 @@ func (s *IAMService) SetRolePermissions(ctx context.Context, roleID uint64, perm
 	if _, err := s.roleRepo.FindByID(ctx, roleID); err != nil {
 		return err
 	}
-	// 校验每个 permissionID 是否存在，防止孤儿关联记录
-	for _, pid := range permissionIDs {
-		if _, err := s.permissionRepo.FindByID(ctx, pid); err != nil {
+	// D-63：改为批量 WHERE id IN (?) 单次查询，消除 N+1；通过比对返回数量判断是否存在无效 ID
+	if len(permissionIDs) > 0 {
+		found, err := s.permissionRepo.FindByIDs(ctx, permissionIDs)
+		if err != nil {
 			return err
+		}
+		if len(found) != len(permissionIDs) {
+			return gorm.ErrRecordNotFound
 		}
 	}
 	if err := s.permissionRepo.SetRolePermissions(ctx, roleID, permissionIDs); err != nil {
@@ -398,7 +420,15 @@ func (s *IAMService) SetRolePermissions(ctx context.Context, roleID uint64, perm
 }
 
 // ReplaceUserRoles 全量替换用户的角色集合，并失效该用户的权限缓存、写入审计日志。
+// D-59：调用 repo 前遍历每个 roleID 校验是否存在，无效 roleID 返回 gorm.ErrRecordNotFound。
+// 与 AssignRole 对 roleID 的校验形式保持一致。
 func (s *IAMService) ReplaceUserRoles(ctx context.Context, userID uint64, roleIDs []uint64, operatorID uint64, reason *string, ip string) error {
+	// 校验每个 roleID 是否存在
+	for _, rid := range roleIDs {
+		if _, err := s.roleRepo.FindByID(ctx, rid); err != nil {
+			return err
+		}
+	}
 	if err := s.userRoleRepo.ReplaceUserRoles(ctx, userID, roleIDs); err != nil {
 		return err
 	}
