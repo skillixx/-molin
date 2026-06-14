@@ -246,12 +246,12 @@ if admin_token:
     if status == 200 and resp.get("code") == 0:
         data = resp.get("data", {})
         items = data.get("items")
-        pagination = data.get("pagination")
-        if isinstance(items, list) and isinstance(pagination, dict):
-            ok("3.1 管理员访问 GET /api/admin/identity-verifications 返回 200（修复验证通过）",
-               f"items_count={len(items)}, pagination={pagination}")
+        # D-95：分页结构已扁平化，page/page_size/total 与 items 同级，data 中不应再有 pagination 子对象
+        if isinstance(items, list) and "pagination" not in data and {"page", "page_size", "total"} <= set(data.keys()):
+            ok("3.1 管理员访问 GET /api/admin/identity-verifications 返回 200（修复验证通过，分页结构已扁平化）",
+               f"items_count={len(items)}, page={data.get('page')}, page_size={data.get('page_size')}, total={data.get('total')}")
         else:
-            fail("3.1 响应结构不符合预期（items 应为数组，pagination 应为对象）",
+            fail("3.1 响应结构不符合预期（items 应为数组，page/page_size/total 应与 items 同级，data 中不应有 pagination）",
                  f"resp={json.dumps(resp, ensure_ascii=False)[:500]}")
     elif status == 403:
         fail("3.1 管理员访问返回 403（权限种子仍未生效）",
@@ -391,9 +391,8 @@ if admin_token and user_a_id:
     if status == 200 and resp.get("code") == 0:
         data = resp.get("data", {})
         items = data.get("items", [])
-        pagination = data.get("pagination", {})
         ok("5.3.1 管理员列表接口正常（HTTP 200 code=0）",
-           f"items_count={len(items)}, total={pagination.get('total')}")
+           f"items_count={len(items)}, total={data.get('total')}")
     else:
         fail("5.3.1 管理员列表接口返回非预期值",
              f"HTTP={status}, code={resp.get('code')}")

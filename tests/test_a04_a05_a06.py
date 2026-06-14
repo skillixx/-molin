@@ -208,13 +208,14 @@ def seed_admin_permissions(user_id):
 
 
 # ── 管理员双重认证流程 ─────────────────────────────────────
-# 注意：/api/auth/verification-codes/{phone,email} 接口请求字段是 phone/email，不是 target
-# （PR#2：auth：修复发验证码接口字段名——email/phone 替换 target）
+# D-96：公开发码接口 /api/auth/verification-codes/{phone,email} 的 scene 白名单（D-52）
+# 已不再允许 admin_verify，管理员双重认证发码改用专用接口
+# POST /api/admin/auth/verification-codes/phone|email（需登录 + user:manage 权限）。
 def complete_admin_double_verify(user_id, phone, email, token):
     """完成管理员手机+邮箱双重认证，返回是否成功。"""
-    # 发送手机验证码（scene=admin_verify）
-    status, body = post("/api/auth/verification-codes/phone",
-                        {"phone": phone, "scene": "admin_verify"})
+    # 发送手机验证码（D-96 专用接口，需登录）
+    status, body = post("/api/admin/auth/verification-codes/phone",
+                        None, token=token)
     if status != 200:
         info(f"发送手机验证码失败: HTTP {status} {body}")
         return False
@@ -230,9 +231,9 @@ def complete_admin_double_verify(user_id, phone, email, token):
         info(f"管理员手机认证失败: HTTP {status} {body}")
         return False
 
-    # 发送邮箱验证码（scene=admin_verify）
-    status, body = post("/api/auth/verification-codes/email",
-                        {"email": email, "scene": "admin_verify"})
+    # 发送邮箱验证码（D-96 专用接口，需登录）
+    status, body = post("/api/admin/auth/verification-codes/email",
+                        None, token=token)
     if status != 200:
         info(f"发送邮箱验证码失败: HTTP {status} {body}")
         return False
@@ -864,14 +865,11 @@ def test_audit_logs_query(admin_token):
             fail("F-1b  响应仍含旧字段 'list'（应统一为 'items'）", str(list(d.keys())))
         else:
             ok("F-1b  响应不含旧字段 'list'")
-        if "pagination" in d:
-            p = d["pagination"]
-            if all(k in p for k in ("page", "page_size", "total")):
-                ok("F-1c  pagination 含 page/page_size/total")
-            else:
-                fail("F-1c  pagination 缺少字段", str(p))
+        # D-95：分页结构已扁平化（page/page_size/total 与 items 同级），data 中不应再有 pagination 子对象
+        if "pagination" not in d and all(k in d for k in ("page", "page_size", "total")):
+            ok("F-1c  分页结构已扁平化：page/page_size/total 与 items 同级，且不含 pagination 子对象")
         else:
-            fail("F-1d  响应缺少 pagination 字段", str(d)[:300])
+            fail("F-1d  分页结构不符合预期（D-95 扁平结构）", str(d)[:300])
 
         if d.get("items"):
             sample = d["items"][0]
@@ -908,11 +906,10 @@ def test_audit_logs_query(admin_token):
     if assert_status("F-4  ?page=1&page_size=2 → 200", status, 200, body):
         d = get_data(body)
         items = d.get("items", [])
-        p = d.get("pagination", {})
-        if len(items) <= 2 and p.get("page") == 1 and p.get("page_size") == 2:
+        if len(items) <= 2 and d.get("page") == 1 and d.get("page_size") == 2:
             ok(f"F-4a  分页参数生效（返回 {len(items)} 条，page=1, page_size=2）")
         else:
-            fail("F-4a  分页参数未生效", f"items 长度={len(items)}, pagination={p}")
+            fail("F-4a  分页参数未生效", f"items 长度={len(items)}, page={d.get('page')}, page_size={d.get('page_size')}")
 
     # F-5 module/action 不存在的过滤 → 200，空列表
     status, body = get("/api/admin/audit-logs", token=admin_token,
