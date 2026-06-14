@@ -14,6 +14,16 @@ type SendPhoneCodeReq struct {
 	Scene string `json:"scene"` // register / login / reset_password / admin_verify / bind_phone
 }
 
+// SendBindPhoneCodeReq D-96：已登录用户更换手机号前发送验证码请求（scene 固定为 bind_phone，发送目标为新手机号）。
+type SendBindPhoneCodeReq struct {
+	Phone string `json:"phone"` // 新手机号
+}
+
+// SendBindEmailCodeReq D-96：已登录用户更换邮箱前发送验证码请求（scene 固定为 bind_email，发送目标为新邮箱）。
+type SendBindEmailCodeReq struct {
+	Email string `json:"email"` // 新邮箱
+}
+
 // RegisterReq 统一注册请求（手机+邮箱+用户名，需双验证码）。
 type RegisterReq struct {
 	Username  string `json:"username"`

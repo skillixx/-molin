@@ -81,6 +81,90 @@ func (h *AuthHandler) SendPhoneCode(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, data)
 }
 
+// SendBindPhoneCode POST /api/me/verification-codes/phone — D-96：已登录用户更换手机号前发送验证码（scene=bind_phone）
+func (h *AuthHandler) SendBindPhoneCode(w http.ResponseWriter, r *http.Request) {
+	var req dto.SendBindPhoneCodeReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	if strings.TrimSpace(req.Phone) == "" {
+		response.Error(w, http.StatusBadRequest, 40000, "phone 为必填字段")
+		return
+	}
+	code, err := h.authSvc.SendBindPhoneCode(r.Context(), req.Phone)
+	if err != nil {
+		handleAuthError(w, err)
+		return
+	}
+	// 非生产环境在响应中返回明文验证码，方便本地调试；
+	// 判断依据为服务端 config.AppEnv，完全忽略客户端请求头（防止绕过生产保护）
+	data := map[string]string{}
+	if h.cfg.AppEnv != "production" {
+		data["code"] = code
+	}
+	response.JSON(w, http.StatusOK, data)
+}
+
+// SendBindEmailCode POST /api/me/verification-codes/email — D-96：已登录用户更换邮箱前发送验证码（scene=bind_email）
+func (h *AuthHandler) SendBindEmailCode(w http.ResponseWriter, r *http.Request) {
+	var req dto.SendBindEmailCodeReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	if strings.TrimSpace(req.Email) == "" {
+		response.Error(w, http.StatusBadRequest, 40000, "email 为必填字段")
+		return
+	}
+	code, err := h.authSvc.SendBindEmailCode(r.Context(), req.Email)
+	if err != nil {
+		handleAuthError(w, err)
+		return
+	}
+	// 非生产环境在响应中返回明文验证码，方便本地调试；
+	// 判断依据为服务端 config.AppEnv，完全忽略客户端请求头（防止绕过生产保护）
+	data := map[string]string{}
+	if h.cfg.AppEnv != "production" {
+		data["code"] = code
+	}
+	response.JSON(w, http.StatusOK, data)
+}
+
+// SendAdminVerifyPhoneCode POST /api/admin/auth/verification-codes/phone — D-96：管理员双重认证发送手机验证码（scene=admin_verify）
+func (h *AuthHandler) SendAdminVerifyPhoneCode(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	code, err := h.authSvc.SendAdminVerifyPhoneCode(r.Context(), userID)
+	if err != nil {
+		handleAuthError(w, err)
+		return
+	}
+	// 非生产环境在响应中返回明文验证码，方便本地调试；
+	// 判断依据为服务端 config.AppEnv，完全忽略客户端请求头（防止绕过生产保护）
+	data := map[string]string{}
+	if h.cfg.AppEnv != "production" {
+		data["code"] = code
+	}
+	response.JSON(w, http.StatusOK, data)
+}
+
+// SendAdminVerifyEmailCode POST /api/admin/auth/verification-codes/email — D-96：管理员双重认证发送邮箱验证码（scene=admin_verify）
+func (h *AuthHandler) SendAdminVerifyEmailCode(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	code, err := h.authSvc.SendAdminVerifyEmailCode(r.Context(), userID)
+	if err != nil {
+		handleAuthError(w, err)
+		return
+	}
+	// 非生产环境在响应中返回明文验证码，方便本地调试；
+	// 判断依据为服务端 config.AppEnv，完全忽略客户端请求头（防止绕过生产保护）
+	data := map[string]string{}
+	if h.cfg.AppEnv != "production" {
+		data["code"] = code
+	}
+	response.JSON(w, http.StatusOK, data)
+}
+
 // LoginEmail POST /api/auth/login/email
 func (h *AuthHandler) LoginEmail(w http.ResponseWriter, r *http.Request) {
 	var req dto.LoginEmailReq
@@ -584,6 +668,9 @@ func handleAuthError(w http.ResponseWriter, err error) {
 	case service.ErrInvalidScene:
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 	case service.ErrAdminPhoneNotVerified:
+		response.Error(w, http.StatusBadRequest, 40000, err.Error())
+	// D-96：管理员双重认证发码时账号未绑定手机号/邮箱
+	case service.ErrPhoneNotBound, service.ErrEmailNotBound:
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 	// D-56：手机/邮箱未注册属于"资源不存在"，统一使用 40400，与 GetUser 保持一致
 	case service.ErrPhoneNotRegistered, service.ErrEmailNotRegistered:

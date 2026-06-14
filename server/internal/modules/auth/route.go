@@ -56,6 +56,13 @@ func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc 
 	mux.Handle("PATCH /api/me/email", middleware.RequireAuth(cfg.JWTSecret, authSvc,
 		middleware.RateLimitByUser(redisClient, "update_email", bindUpdateLimit, bindUpdateWindow, http.HandlerFunc(h.UpdateEmail))))
 
+	// D-96：已登录用户更换手机号/邮箱前发送验证码（scene 固定为 bind_phone/bind_email，发送目标为新手机号/邮箱）。
+	// 复用与 PATCH /api/me/phone|email 相同的按用户限流策略，防止短信/邮件轰炸。
+	mux.Handle("POST /api/me/verification-codes/phone", middleware.RequireAuth(cfg.JWTSecret, authSvc,
+		middleware.RateLimitByUser(redisClient, "send_bind_phone_code", bindUpdateLimit, bindUpdateWindow, http.HandlerFunc(h.SendBindPhoneCode))))
+	mux.Handle("POST /api/me/verification-codes/email", middleware.RequireAuth(cfg.JWTSecret, authSvc,
+		middleware.RateLimitByUser(redisClient, "send_bind_email_code", bindUpdateLimit, bindUpdateWindow, http.HandlerFunc(h.SendBindEmailCode))))
+
 	// 管理员双重认证接口（需登录 + user:manage 权限；本身不校验双重认证，这是完成认证的入口）
 	adminAuth := func(next http.HandlerFunc) http.Handler {
 		return middleware.RequireAuth(cfg.JWTSecret, authSvc,
@@ -63,6 +70,9 @@ func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc 
 	}
 	mux.Handle("POST /api/admin/auth/verify-phone", adminAuth(h.AdminVerifyPhone))
 	mux.Handle("POST /api/admin/auth/verify-email", adminAuth(h.AdminVerifyEmail))
+	// D-96：管理员双重认证发送验证码（scene=admin_verify，目标为管理员自己的手机号/邮箱）
+	mux.Handle("POST /api/admin/auth/verification-codes/phone", adminAuth(h.SendAdminVerifyPhoneCode))
+	mux.Handle("POST /api/admin/auth/verification-codes/email", adminAuth(h.SendAdminVerifyEmailCode))
 
 	// 管理员封禁/解封用户（需登录 + user:manage 权限 + 双重认证）
 	adminAuthVerified := func(next http.HandlerFunc) http.Handler {

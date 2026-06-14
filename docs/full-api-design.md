@@ -399,6 +399,10 @@ Body 参数：
 返回 data：`null`（HTTP 200 表示认证成功，记录 admin_phone_verified_at）。
 普通用户调用返回 403（错误码 40003）。
 
+D-96：获取 `scene=admin_verify` 验证码请调用 `POST /api/admin/auth/verification-codes/phone`（需 Bearer Token + `user:manage` 权限，无请求体），
+验证码发送至当前登录管理员自己绑定的手机号；若该账号未绑定手机号则返回 400（错误码 40000）。
+返回 data 非生产环境含 `code` 字段（明文验证码，便于调试），生产环境为 `{}`。
+
 ### 2.15 管理员邮箱双重认证
 
 ```text
@@ -416,6 +420,10 @@ Body 参数：
 返回 data：`null`（HTTP 200 表示认证成功，记录 admin_email_verified_at）。
 
 认证有效期由环境变量 `ADMIN_VERIFY_EXPIRE_HOURS` 控制（默认 24 小时），超期后需重新认证。
+
+D-96：获取 `scene=admin_verify` 验证码请调用 `POST /api/admin/auth/verification-codes/email`（需 Bearer Token + `user:manage` 权限，无请求体），
+验证码发送至当前登录管理员自己绑定的邮箱；若该账号未绑定邮箱则返回 400（错误码 40000）。
+返回 data 非生产环境含 `code` 字段（明文验证码，便于调试），生产环境为 `{}`。
 
 ### 2.16 修改用户名
 
@@ -441,6 +449,9 @@ PATCH /api/me/phone
 
 需要：Bearer Token。先向新手机号发送验证码（scene=bind_phone），再提交本接口。
 
+D-96：发送验证码请调用 `POST /api/me/verification-codes/phone`（需 Bearer Token），body 为 `{"phone": "<新手机号>"}`；
+若新手机号已被其他账号注册则返回 409（错误码 40900）。返回 data 非生产环境含 `code` 字段（明文验证码，便于调试），生产环境为 `{}`。
+
 Body 参数：
 
 | 字段 | 类型 | 必填 | 说明 |
@@ -457,6 +468,9 @@ PATCH /api/me/email
 ```
 
 需要：Bearer Token。先向新邮箱发送验证码（scene=bind_email），再提交本接口。
+
+D-96：发送验证码请调用 `POST /api/me/verification-codes/email`（需 Bearer Token），body 为 `{"email": "<新邮箱>"}`；
+若新邮箱已被其他账号注册则返回 409（错误码 40900）。返回 data 非生产环境含 `code` 字段（明文验证码，便于调试），生产环境为 `{}`。
 
 Body 参数：
 
