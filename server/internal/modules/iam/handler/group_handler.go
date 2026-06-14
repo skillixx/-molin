@@ -43,8 +43,8 @@ func (h *GroupHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 		list[i] = groupToResp(g)
 	}
 	response.JSON(w, http.StatusOK, PagedResp{
-		List:       list,
-		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
+		List:   list,
+		Result: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
 	})
 }
 
@@ -226,8 +226,8 @@ func (h *GroupHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	response.JSON(w, http.StatusOK, PagedResp{
-		List:       list,
-		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
+		List:   list,
+		Result: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
 	})
 }
 
@@ -446,8 +446,8 @@ func (h *GroupHandler) ListInviteCodes(w http.ResponseWriter, r *http.Request) {
 		list[i] = inviteCodeToResp(ic)
 	}
 	response.JSON(w, http.StatusOK, PagedResp{
-		List:       list,
-		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
+		List:   list,
+		Result: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
 	})
 }
 
