@@ -6,8 +6,10 @@
 -- idx_audit_module_action — 支持按模块/动作联合过滤（已有 module/action 单列查询，联合索引更优）
 --
 -- 注：audit_logs.created_at 在 000002 中已建有 idx_audit_created_at 索引，此处不重复添加。
--- 使用 IF NOT EXISTS 兼容重复执行（MySQL 8.0+）。
+--
+-- P1 修复：MySQL 8.0 的 ALTER TABLE ... ADD INDEX 不支持 IF NOT EXISTS 子句
+-- （会报 ERROR 1064 语法错误），改为普通 ADD INDEX。
 
 ALTER TABLE audit_logs
-  ADD INDEX IF NOT EXISTS idx_audit_operator_id (operator_id),
-  ADD INDEX IF NOT EXISTS idx_audit_module_action (module, action);
+  ADD INDEX idx_audit_operator_id (operator_id),
+  ADD INDEX idx_audit_module_action (module, action);

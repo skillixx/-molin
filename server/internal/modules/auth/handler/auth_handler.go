@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 	"molin/server/internal/config"
 	"molin/server/internal/middleware"
 	"molin/server/internal/modules/auth/dto"
+	"molin/server/internal/modules/auth/repository"
 	"molin/server/internal/modules/auth/service"
 	"molin/server/pkg/httputil"
 	"molin/server/pkg/pagination"
@@ -341,11 +343,21 @@ func (h *AuthHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 	switch req.Status {
 	case "disabled":
 		if err := h.authSvc.BanUser(r.Context(), targetUserID, operatorID, req.Reason, ip); err != nil {
+			// D-54 残留修复：目标用户不存在时返回 404，而非统一 500
+			if errors.Is(err, repository.ErrUserNotFound) {
+				response.Error(w, http.StatusNotFound, 40400, "用户不存在")
+				return
+			}
 			response.Error(w, http.StatusInternalServerError, 50000, "封禁用户失败")
 			return
 		}
 	case "active":
 		if err := h.authSvc.UnbanUser(r.Context(), targetUserID, operatorID, req.Reason, ip); err != nil {
+			// D-54 残留修复：目标用户不存在时返回 404，而非统一 500
+			if errors.Is(err, repository.ErrUserNotFound) {
+				response.Error(w, http.StatusNotFound, 40400, "用户不存在")
+				return
+			}
 			response.Error(w, http.StatusInternalServerError, 50000, "解封用户失败")
 			return
 		}

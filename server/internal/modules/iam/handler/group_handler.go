@@ -494,6 +494,11 @@ func (h *GroupHandler) CreateInviteCode(w http.ResponseWriter, r *http.Request) 
 			response.Error(w, http.StatusConflict, 40900, err.Error())
 			return
 		}
+		// D-68 残留修复：default_group_role 枚举校验错误返回 400，而非 500
+		if errors.Is(err, repository.ErrInvalidDefaultGroupRole) {
+			response.Error(w, http.StatusBadRequest, 40000, err.Error())
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, 50000, "创建失败")
 		return
 	}
