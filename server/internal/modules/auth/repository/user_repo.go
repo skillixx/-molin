@@ -224,11 +224,13 @@ func (r *UserRepository) UpdateAdminEmailVerified(ctx context.Context, userID ui
 		Update("admin_email_verified_at", now).Error
 }
 
-// ListUsersPaged 分页查询用户列表，支持关键字搜索（匹配 email/phone/username）、状态过滤和数据范围限制。
+// ListUsersPaged 分页查询用户列表，支持多条件过滤和数据范围限制。
 // keyword 非空时在 email、phone、username 字段中做 LIKE 模糊匹配；
 // status 非空时追加 AND status = ? 过滤；
+// realNameStatus 非空时追加 AND real_name_status = ? 过滤；
+// roleCode 非空时通过子查询限制在拥有该角色 code 的用户 ID 内；
 // scopeAll=false 时只返回 scopeIDs 中的用户，空集合直接返回空结果。
-func (r *UserRepository) ListUsersPaged(ctx context.Context, keyword, status string, scopeAll bool, scopeIDs []uint64, offset, limit int) ([]model.User, int64, error) {
+func (r *UserRepository) ListUsersPaged(ctx context.Context, keyword, status, realNameStatus, roleCode string, scopeAll bool, scopeIDs []uint64, offset, limit int) ([]model.User, int64, error) {
 	// 无管辖范围时快速返回空结果，避免全表扫描
 	if !scopeAll && len(scopeIDs) == 0 {
 		return nil, 0, nil
@@ -245,6 +247,18 @@ func (r *UserRepository) ListUsersPaged(ctx context.Context, keyword, status str
 	}
 	if status != "" {
 		db = db.Where("status = ?", status)
+	}
+	if realNameStatus != "" {
+		db = db.Where("real_name_status = ?", realNameStatus)
+	}
+	// D-87：role_code 过滤，使用子查询避免 JOIN 对分页 total 计数的影响
+	if roleCode != "" {
+		db = db.Where("id IN (?)",
+			r.db.Table("user_roles ur").
+				Select("ur.user_id").
+				Joins("JOIN roles r ON r.id = ur.role_id").
+				Where("r.code = ?", roleCode),
+		)
 	}
 	// 先查总数
 	if err := db.Count(&total).Error; err != nil {

@@ -125,7 +125,10 @@ func (h *AuthHandler) LoginPhone(w http.ResponseWriter, r *http.Request) {
 // 同时吊销请求体中的 Refresh Token（对应会话标记 revoked）和请求头中携带的当前 Access Token
 // （写入 Redis 吊销黑名单，使其在自然过期前立即失效）。
 //
-// D-23：refresh_token 为必填字段，空值直接返回 400/40000。
+// D-92：refresh_token 改为可选字段（规范 2.6）。
+//   - 有值时：调用 authSvc.Logout，吊销 refresh token 对应会话 + 吊销 access token
+//   - 空值时：仅执行 access token 吊销（调用 authSvc.RevokeAccessToken）
+//
 // D-18：会话吊销失败（安全相关）会向上返回，映射为 500。
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	var req dto.LogoutReq
@@ -133,16 +136,18 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
-	if strings.TrimSpace(req.RefreshToken) == "" {
-		response.Error(w, http.StatusBadRequest, 40000, "refresh_token 为必填字段")
-		return
-	}
 	rawAccessToken := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if err := h.authSvc.Logout(r.Context(), req.RefreshToken, rawAccessToken); err != nil {
-		response.Error(w, http.StatusInternalServerError, 50000, "退出登录失败")
-		return
+	if strings.TrimSpace(req.RefreshToken) != "" {
+		// refresh_token 有值：吊销会话 + 吊销 access token
+		if err := h.authSvc.Logout(r.Context(), req.RefreshToken, rawAccessToken); err != nil {
+			response.Error(w, http.StatusInternalServerError, 50000, "退出登录失败")
+			return
+		}
+	} else {
+		// refresh_token 为空：仅吊销 access token（最佳努力，无返回错误）
+		h.authSvc.RevokeAccessToken(r.Context(), rawAccessToken)
 	}
-	response.JSON(w, http.StatusOK, nil)
+	response.JSON(w, http.StatusOK, map[string]bool{"logged_out": true})
 }
 
 // Refresh POST /api/auth/refresh
@@ -483,14 +488,33 @@ type adminPagedResp struct {
 	Pagination pagination.Result `json:"pagination"`
 }
 
+// validRealNameStatuses D-87：real_name_status 允许的枚举值白名单。
+var validRealNameStatuses = map[string]bool{
+	"":           true,
+	"unverified": true,
+	"pending":    true,
+	"verified":   true,
+	"rejected":   true,
+}
+
 // ListUsers GET /api/admin/users — 管理员分页查询用户列表
-// 支持 ?keyword=&status=&page=&page_size= 参数，叠加数据范围过滤（组管理员只能看自己组的用户）。
+// 支持 ?keyword=&status=&real_name_status=&role_code=&page=&page_size= 参数，
+// 叠加数据范围过滤（组管理员只能看自己组的用户）。
+// D-87：新增 real_name_status（枚举校验）和 role_code（角色代码过滤）两个查询参数。
 func (h *AuthHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	keyword := r.URL.Query().Get("keyword")
 	status := r.URL.Query().Get("status")
+	// D-87：读取并校验 real_name_status 枚举值
+	realNameStatus := r.URL.Query().Get("real_name_status")
+	if !validRealNameStatuses[realNameStatus] {
+		response.Error(w, http.StatusBadRequest, 40000, "real_name_status 参数无效，允许值：unverified/pending/verified/rejected")
+		return
+	}
+	// D-87：读取 role_code（不做枚举限制，由 repository 层做 JOIN 过滤）
+	roleCode := r.URL.Query().Get("role_code")
 	p := pagination.Parse(r)
 	scope := middleware.ScopeFromContext(r.Context())
-	users, total, err := h.authSvc.ListUsers(r.Context(), keyword, status, scope.All, scope.UserIDs, p.Offset(), p.PageSize)
+	users, total, err := h.authSvc.ListUsers(r.Context(), keyword, status, realNameStatus, roleCode, scope.All, scope.UserIDs, p.Offset(), p.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return

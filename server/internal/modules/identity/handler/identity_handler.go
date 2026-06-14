@@ -12,6 +12,18 @@ import (
 	"molin/server/pkg/response"
 )
 
+// parseUserID 从 query 参数中解析 user_id，非法值返回 0（忽略），合法正整数返回对应值。
+func parseUserID(raw string) uint64 {
+	if raw == "" {
+		return 0
+	}
+	id, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return id
+}
+
 // PagedResp 通用分页响应结构，包含列表数据和分页元数据。
 type PagedResp struct {
 	List       interface{}       `json:"items"`
@@ -43,7 +55,9 @@ func (h *IdentityHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		case service.ErrIDCardAlreadyBound:
 			response.Error(w, http.StatusConflict, 40902, err.Error())
 		// D-77：输入校验错误映射为 400
-		case service.ErrInvalidRealName, service.ErrRealNameTooLong, service.ErrInvalidIDCardNo:
+		// D-91：verification_type 无效也映射为 400
+		case service.ErrInvalidRealName, service.ErrRealNameTooLong, service.ErrInvalidIDCardNo,
+			service.ErrInvalidVerificationType:
 			response.Error(w, http.StatusBadRequest, 40000, err.Error())
 		// D-80：附件校验错误映射为 400
 		case service.ErrTooManyAttachments, service.ErrAttachmentNotHTTPS:
@@ -77,7 +91,8 @@ var validIdentityStatus = map[string]bool{
 }
 
 // ListPending GET /api/admin/identity-verifications
-// 支持 ?status=pending|verified|rejected（空值=全部）和分页参数 ?page=1&page_size=20。
+// 支持 ?user_id=&status=&real_name=&page=1&page_size=20 参数过滤。
+// D-88：新增 user_id（精确匹配）和 real_name（模糊匹配）两个过滤参数。
 func (h *IdentityHandler) ListPending(w http.ResponseWriter, r *http.Request) {
 	// status 非空时按状态过滤，空字符串时查全部状态（兼容旧调用方默认只看 pending）
 	status := r.URL.Query().Get("status")
@@ -86,8 +101,12 @@ func (h *IdentityHandler) ListPending(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "status 参数无效，允许值：pending/verified/rejected")
 		return
 	}
+	// D-88：user_id 参数，非法格式时忽略（parseUserID 返回 0）
+	userID := parseUserID(r.URL.Query().Get("user_id"))
+	// D-88：real_name 参数，用于模糊匹配认证记录中的真实姓名
+	realName := r.URL.Query().Get("real_name")
 	p := pagination.Parse(r)
-	list, total, err := h.identitySvc.ListPaged(r.Context(), status, p.Offset(), p.PageSize)
+	list, total, err := h.identitySvc.ListPaged(r.Context(), status, userID, realName, p.Offset(), p.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return
@@ -129,6 +148,7 @@ func (h *IdentityHandler) GetDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 // Review PATCH /api/admin/identity-verifications/{id}/review
+// D-89：请求体字段名改为 action（approve/reject）和 reject_reason，handler 层负责转换为 approve bool。
 func (h *IdentityHandler) Review(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -140,8 +160,15 @@ func (h *IdentityHandler) Review(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
+	// D-89：校验 action 枚举值，非法值返回 400
+	if req.Action != "approve" && req.Action != "reject" {
+		response.Error(w, http.StatusBadRequest, 40000, "action 取值必须为 approve 或 reject")
+		return
+	}
+	// handler 层将 action string 转换为 approve bool，service 层签名不变
+	approve := req.Action == "approve"
 	operatorID := middleware.UserIDFromContext(r.Context())
-	if err := h.identitySvc.Review(r.Context(), id, operatorID, req.Approve, req.Reason); err != nil {
+	if err := h.identitySvc.Review(r.Context(), id, operatorID, approve, req.RejectReason); err != nil {
 		switch err {
 		// D-01：已完结记录不可重复审核，返回 409 Conflict
 		case service.ErrVerificationAlreadyReviewed:

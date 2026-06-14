@@ -102,15 +102,26 @@ func (r *IdentityRepository) CreateLog(db *gorm.DB, log *model.IdentityVerificat
 	return db.Create(log).Error
 }
 
-// ListPaged 管理员分页查看认证记录，status 非空时按状态过滤，空字符串时查全部状态。
-// 替代原先硬编码 pending 的 ListPendingPaged，保持向下兼容：调用方传 "pending" 即为原行为。
-func (r *IdentityRepository) ListPaged(ctx context.Context, status string, offset, limit int) ([]model.IdentityVerification, int64, error) {
+// ListPaged 管理员分页查看认证记录，支持多条件 AND 叠加过滤。
+// status 非空时按状态过滤，空字符串时查全部状态；
+// userID > 0 时追加 AND user_id = ? 过滤；
+// realName 非空时追加 AND real_name LIKE ? 模糊匹配。
+// D-88：新增 userID 和 realName 过滤参数。
+func (r *IdentityRepository) ListPaged(ctx context.Context, status string, userID uint64, realName string, offset, limit int) ([]model.IdentityVerification, int64, error) {
 	var list []model.IdentityVerification
 	var total int64
 	db := r.db.WithContext(ctx).Model(&model.IdentityVerification{})
 	// status 非空时追加过滤条件；空字符串表示查询全部状态
 	if status != "" {
 		db = db.Where("status = ?", status)
+	}
+	// D-88：user_id 过滤
+	if userID > 0 {
+		db = db.Where("user_id = ?", userID)
+	}
+	// D-88：real_name 模糊匹配
+	if realName != "" {
+		db = db.Where("real_name LIKE ?", "%"+realName+"%")
 	}
 	// 先查总数
 	if err := db.Count(&total).Error; err != nil {

@@ -490,6 +490,13 @@ func (s *AuthService) Logout(ctx context.Context, rawRefreshToken, rawAccessToke
 	return nil
 }
 
+// RevokeAccessToken 将 Access Token 加入 Redis 吊销黑名单。
+// D-92：Logout 时 refresh_token 为空的场景，handler 直接调用此方法仅吊销 access token。
+// 解析失败、token 已过期或 Redis 写入失败时静默跳过，不返回错误。
+func (s *AuthService) RevokeAccessToken(ctx context.Context, rawAccessToken string) {
+	s.revokeAccessToken(ctx, rawAccessToken)
+}
+
 // revokeAccessToken 解析 Access Token 的剩余有效期，并写入 Redis 吊销黑名单。
 // 解析失败、token 已过期或 Redis 写入失败时静默跳过，不返回错误。
 func (s *AuthService) revokeAccessToken(ctx context.Context, rawAccessToken string) {
@@ -626,13 +633,14 @@ func (s *AuthService) FindUserByID(ctx context.Context, userID uint64) (*model.U
 	return s.userRepo.FindByID(ctx, userID)
 }
 
-// ListUsers 管理员分页查询用户列表，支持关键字搜索和状态过滤，返回脱敏后的 DTO 列表。
+// ListUsers 管理员分页查询用户列表，支持关键字搜索、状态、实名状态、角色代码过滤，返回脱敏后的 DTO 列表。
 // scopeAll=true 时不限制范围（超管）；否则只返回 scopeIDs 中的用户。
 //
 // D-50：使用批量查询替换循环内单条查询，将 N+1 次 DB 操作降为 3 次（主查询 + 批量登录时间 + 批量角色）。
 // D-85：新增批量角色查询，roles 字段通过 RolesFetcher 一次 JOIN 查全，不阻断主流程。
-func (s *AuthService) ListUsers(ctx context.Context, keyword, status string, scopeAll bool, scopeIDs []uint64, offset, limit int) ([]dto.AdminUserResp, int64, error) {
-	users, total, err := s.userRepo.ListUsersPaged(ctx, keyword, status, scopeAll, scopeIDs, offset, limit)
+// D-87：新增 realNameStatus / roleCode 过滤参数，传入 repository 层做 WHERE 条件叠加。
+func (s *AuthService) ListUsers(ctx context.Context, keyword, status, realNameStatus, roleCode string, scopeAll bool, scopeIDs []uint64, offset, limit int) ([]dto.AdminUserResp, int64, error) {
+	users, total, err := s.userRepo.ListUsersPaged(ctx, keyword, status, realNameStatus, roleCode, scopeAll, scopeIDs, offset, limit)
 	if err != nil {
 		return nil, 0, err
 	}
