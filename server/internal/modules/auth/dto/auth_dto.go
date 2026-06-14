@@ -97,6 +97,28 @@ type UpdateUserStatusReq struct {
 	Reason string `json:"reason"` // 操作原因（可选，用于审计），最长 MaxReasonLength 字符
 }
 
+// CreateAdminUserReq A-28：管理员直接创建后台用户请求（跳过 OTP）。
+// email/phone 至少传一个；密码必填；role_ids/status 可选（status 默认 active）。
+type CreateAdminUserReq struct {
+	Email    string   `json:"email"`    // 邮箱（可选）
+	Phone    string   `json:"phone"`    // 手机号（可选）
+	Password string   `json:"password"` // 初始密码（必填）
+	RoleIDs  []uint64 `json:"role_ids"` // 角色 ID 列表（可选）
+	Status   string   `json:"status"`   // 用户状态（可选，默认 active）
+}
+
+// CreateAdminUserResp A-28：管理员创建用户响应。
+type CreateAdminUserResp struct {
+	UserID uint64 `json:"user_id"`
+}
+
+// UpdateAdminUserReq A-29：管理员修改用户请求（PATCH 语义：指针字段，nil 表示不更新）。
+type UpdateAdminUserReq struct {
+	Email  *string `json:"email"`  // 新邮箱（改后自动标记 email_verified=true）
+	Phone  *string `json:"phone"`  // 新手机号（改后自动标记 phone_verified=true）
+	Status *string `json:"status"` // 用户状态：active 或 disabled
+}
+
 // TokenPair Access Token + Refresh Token 对。
 type TokenPair struct {
 	AccessToken  string `json:"access_token"`

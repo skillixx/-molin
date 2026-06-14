@@ -70,6 +70,12 @@ type PermissionResolver interface {
 	GetEffectivePermissionCodes(ctx context.Context, userID uint64) ([]string, error)
 }
 
+// RoleAssigner 角色分配接口，由 iam.IAMService 实现。
+// A-28：在 auth/service 包中定义以避免循环导入。
+type RoleAssigner interface {
+	AssignRole(ctx context.Context, userID, roleID, operatorID uint64, reason *string, ip string) error
+}
+
 // AuthService 负责注册、登录、退出、刷新令牌、修改密码、封禁/解封用户。
 type AuthService struct {
 	userRepo     *repository.UserRepository
@@ -80,6 +86,7 @@ type AuthService struct {
 	redis        *redis.Client
 	auditSvc     *auditservice.AuditService
 	permResolver PermissionResolver
+	roleAssigner RoleAssigner // A-28：可选，创建后台用户时分配角色
 	db           *gorm.DB
 }
 
@@ -105,6 +112,11 @@ func NewAuthService(
 		permResolver: permResolver,
 		db:           db,
 	}
+}
+
+// SetRoleAssigner A-28：注入角色分配器（由 bootstrap 调用，避免修改 NewAuthService 签名）。
+func (s *AuthService) SetRoleAssigner(r RoleAssigner) {
+	s.roleAssigner = r
 }
 
 // GetEffectivePermissions 返回当前登录用户最终生效的权限码集合（角色权限 ∪ 组权限，
@@ -988,6 +1000,80 @@ func normalizeEmail(email string) string {
 // normalizePhone 统一手机号格式，避免首尾空格绕过唯一性校验。
 func normalizePhone(phone string) string {
 	return strings.TrimSpace(phone)
+}
+
+// CreateAdminUser A-28：管理员直接创建后台用户，跳过 OTP 验证。
+// email/phone 至少传一个；有值的字段自动将对应 verified 置为 true。
+// 创建成功后按 role_ids 逐一分配角色（分配失败不回滚用户，仅记录日志）。
+func (s *AuthService) CreateAdminUser(ctx context.Context, operatorID uint64, req dto.CreateAdminUserReq, ip string) (uint64, error) {
+	hash, err := crypto.HashPassword(req.Password)
+	if err != nil {
+		return 0, err
+	}
+	user := &model.User{
+		PasswordHash: hash,
+		Status:       "active",
+	}
+	if req.Email != "" {
+		user.Email = &req.Email
+		user.EmailVerified = true
+	}
+	if req.Phone != "" {
+		user.Phone = &req.Phone
+		user.PhoneVerified = true
+	}
+	if req.Status != "" {
+		user.Status = req.Status
+	}
+	if err := s.userRepo.Create(ctx, user); err != nil {
+		return 0, mapUserRepoError(err)
+	}
+	// 分配角色（失败不回滚用户创建，记录日志）
+	if s.roleAssigner != nil {
+		for _, roleID := range req.RoleIDs {
+			if assignErr := s.roleAssigner.AssignRole(ctx, user.ID, roleID, operatorID, nil, ip); assignErr != nil {
+				log.Printf("[A-28] 分配角色失败 userID=%d roleID=%d err=%v", user.ID, roleID, assignErr)
+			}
+		}
+	}
+	s.recordAdminUserAudit(ctx, "create_user", user.ID, operatorID, ip)
+	return user.ID, nil
+}
+
+// UpdateAdminUser A-29：管理员修改用户邮箱/手机号/状态（PATCH 语义，跳过 OTP）。
+// 修改邮箱/手机号后自动将对应 verified 置为 true。
+func (s *AuthService) UpdateAdminUser(ctx context.Context, operatorID, targetUserID uint64, req dto.UpdateAdminUserReq, ip string) error {
+	fields := make(map[string]interface{})
+	if req.Email != nil {
+		fields["email"] = *req.Email
+		fields["email_verified"] = true
+	}
+	if req.Phone != nil {
+		fields["phone"] = *req.Phone
+		fields["phone_verified"] = true
+	}
+	if req.Status != nil {
+		fields["status"] = *req.Status
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	if err := s.userRepo.UpdateAdminUser(ctx, targetUserID, fields); err != nil {
+		return mapUserRepoError(err)
+	}
+	s.recordAdminUserAudit(ctx, "update_user", targetUserID, operatorID, ip)
+	return nil
+}
+
+// recordAdminUserAudit 写入管理员对用户操作的审计日志（create_user / update_user）。
+func (s *AuthService) recordAdminUserAudit(ctx context.Context, action string, targetUserID, operatorID uint64, ip string) {
+	if s.auditSvc == nil {
+		return
+	}
+	targetType := "user"
+	targetID := strconv.FormatUint(targetUserID, 10)
+	op := operatorID
+	_ = s.auditSvc.Record(ctx, &op, "auth", action, &targetType, &targetID, ip, nil)
 }
 
 // mapUserRepoError 将仓储层唯一键错误映射为 auth service 对外暴露的业务错误。
