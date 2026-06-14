@@ -23,9 +23,11 @@ func errIsNotFound(err error) bool {
 }
 
 // PagedResp 通用分页响应结构，包含列表数据和分页元数据。
+// D-95：分页元数据匿名嵌入 pagination.Result，使 page/page_size/total 与 items 同级（扁平结构），
+// 符合 docs/full-api-design.md 1.2 节规范。
 type PagedResp struct {
-	List       interface{}       `json:"items"`
-	Pagination pagination.Result `json:"pagination"`
+	List interface{} `json:"items"`
+	pagination.Result
 }
 
 // IAMHandler 处理角色、权限、用户角色分配相关 HTTP 请求。
@@ -52,8 +54,8 @@ func (h *IAMHandler) ListRoles(w http.ResponseWriter, r *http.Request) {
 		list[i] = dto.RoleResp{ID: role.ID, Code: role.Code, Name: role.Name, Description: role.Description}
 	}
 	response.JSON(w, http.StatusOK, PagedResp{
-		List:       list,
-		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
+		List:   list,
+		Result: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
 	})
 }
 
@@ -179,8 +181,8 @@ func (h *IAMHandler) ListPermissions(w http.ResponseWriter, r *http.Request) {
 		list[i] = dto.PermissionResp{ID: perm.ID, Code: perm.Code, Name: perm.Name, Resource: perm.Resource, Action: perm.Action}
 	}
 	response.JSON(w, http.StatusOK, PagedResp{
-		List:       list,
-		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
+		List:   list,
+		Result: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
 	})
 }
 
@@ -210,8 +212,8 @@ func (h *IAMHandler) GetUserRoles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	response.JSON(w, http.StatusOK, PagedResp{
-		List:       list,
-		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
+		List:   list,
+		Result: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
 	})
 }
 
@@ -310,8 +312,8 @@ func (h *IAMHandler) GetPermissionOverrides(w http.ResponseWriter, r *http.Reque
 		list[i] = item
 	}
 	response.JSON(w, http.StatusOK, PagedResp{
-		List:       list,
-		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
+		List:   list,
+		Result: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
 	})
 }
 
@@ -525,8 +527,8 @@ func (h *IAMHandler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		list[i] = item
 	}
 	response.JSON(w, http.StatusOK, PagedResp{
-		List:       list,
-		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
+		List:   list,
+		Result: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
 	})
 }
 
