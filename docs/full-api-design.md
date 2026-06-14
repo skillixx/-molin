@@ -336,14 +336,7 @@ Body 参数：
 | real_name | string | 是 | 真实姓名 |
 | id_card_no | string | 是 | 身份证号，后端只保存 hash 和 masked |
 | verification_type | string | 是 | 认证类型，默认 id_card |
-| attachments | array | 否 | 认证附件 |
-
-attachments 字段：
-
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---:|---|
-| file_key | string | 是 | MinIO 文件 key |
-| file_type | string | 是 | 文件类型，例如 id_card_front |
+| attachments | array\<string\> | 否 | 认证附件 URL 数组，每项须以 `https://` 开头，最多 5 个 |
 
 返回 data：
 
@@ -840,7 +833,7 @@ GET /api/admin/identity-verifications/:id
 | reject_reason | string | 拒绝原因（rejected 时有值） |
 | submitted_at | string | 提交时间（ISO 8601） |
 | reviewed_at | string | 审核操作时间（ISO 8601，待审为 null） |
-| attachments | array | 附件列表（file_key、file_type） |
+| attachments | array\<string\> | 附件 URL 数组（https:// 开头） |
 
 ### 3.15 审核实名
 
