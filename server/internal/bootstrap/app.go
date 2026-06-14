@@ -196,6 +196,8 @@ func NewApp() (*App, error) {
 	authService := authsvc.NewAuthService(userRepo, sessionRepo, verifySvc, loginLogRepo, cfg, redisClient, auditSvc, iamService, gormDB)
 	// A-28：注入 RoleAssigner，用于管理员创建用户时分配角色
 	authService.SetRoleAssigner(iamService)
+	// D-85：注入 RolesFetcher，用于 ListUsers / GetUser 附带 roles 字段
+	authService.SetRolesFetcher(iamService)
 
 	// ——— Identity 模块 ———
 	// D-04：注入 auditSvc，用于审核操作写全局审计日志

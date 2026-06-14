@@ -94,6 +94,41 @@ func (r *UserRoleRepository) FindRolesByUser(ctx context.Context, userID uint64)
 	return roles, err
 }
 
+// userRoleRow 批量查询时的临时扫描结构，用于将 user_id 与角色字段一起读取。
+type userRoleRow struct {
+	UserID uint64
+	ID     uint64
+	Code   string
+	Name   string
+}
+
+// FindRolesByUsersBatch D-85：批量查询多个用户的角色，返回 map[userID][]Role，
+// 用于 ListUsers 避免 N+1（一次 JOIN 查询替代循环单条查询）。
+func (r *UserRoleRepository) FindRolesByUsersBatch(ctx context.Context, userIDs []uint64) (map[uint64][]model.Role, error) {
+	result := make(map[uint64][]model.Role)
+	if len(userIDs) == 0 {
+		return result, nil
+	}
+	var rows []userRoleRow
+	err := r.db.WithContext(ctx).
+		Table("roles").
+		Joins("INNER JOIN user_roles ur ON ur.role_id = roles.id").
+		Where("ur.user_id IN ?", userIDs).
+		Select("ur.user_id AS user_id, roles.id AS id, roles.code AS code, roles.name AS name").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		result[row.UserID] = append(result[row.UserID], model.Role{
+			ID:   row.ID,
+			Code: row.Code,
+			Name: row.Name,
+		})
+	}
+	return result, nil
+}
+
 // GetUserIDsByRole 查询拥有指定角色的所有用户 ID，用于修改角色权限后批量失效相关用户的权限缓存。
 func (r *UserRoleRepository) GetUserIDsByRole(ctx context.Context, roleID uint64) ([]uint64, error) {
 	var userIDs []uint64

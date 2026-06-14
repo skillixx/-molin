@@ -183,6 +183,16 @@ func (s *IAMService) GetUserRolesPaged(ctx context.Context, userID uint64, offse
 	return s.userRoleRepo.FindRolesByUserPaged(ctx, userID, offset, limit)
 }
 
+// FindRolesByUser D-85：实现 auth/service.RolesFetcher 接口，供 AuthService 查询单用户角色。
+func (s *IAMService) FindRolesByUser(ctx context.Context, userID uint64) ([]model.Role, error) {
+	return s.userRoleRepo.FindRolesByUser(ctx, userID)
+}
+
+// FindRolesByUsersBatch D-85：实现 auth/service.RolesFetcher 接口，批量查询多个用户角色（避免 N+1）。
+func (s *IAMService) FindRolesByUsersBatch(ctx context.Context, userIDs []uint64) (map[uint64][]model.Role, error) {
+	return s.userRoleRepo.FindRolesByUsersBatch(ctx, userIDs)
+}
+
 // SetPermissionOverride 设置（创建或更新）用户权限覆盖，清除缓存并写入审计日志。
 // D-25：改用 overrideRepo.Upsert，当 (user_id, permission_id) 唯一键已存在时更新，避免 1062 错误。
 func (s *IAMService) SetPermissionOverride(ctx context.Context, override *model.UserPermissionOverride, operatorID uint64, ip string) error {
