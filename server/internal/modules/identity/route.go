@@ -29,4 +29,6 @@ func RegisterRoutes(mux *http.ServeMux, identitySvc *service.IdentityService, ia
 	mux.Handle("GET /api/admin/identity-verifications", adminAuth(h.ListPending))
 	mux.Handle("GET /api/admin/identity-verifications/{id}", adminAuth(h.GetDetail))
 	mux.Handle("PATCH /api/admin/identity-verifications/{id}/review", adminAuth(h.Review))
+	// A-31：管理员查看用户实名信息卡片（需登录 + identity:review 权限 + 双重认证）
+	mux.Handle("GET /api/admin/users/{id}/identity", adminAuth(h.GetUserIdentity))
 }

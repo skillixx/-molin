@@ -98,6 +98,21 @@ func (h *IdentityHandler) ListPending(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetUserIdentity GET /api/admin/users/{id}/identity — 管理员查看指定用户的实名信息卡片，A-31
+func (h *IdentityHandler) GetUserIdentity(w http.ResponseWriter, r *http.Request) {
+	userID, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "用户 ID 不合法")
+		return
+	}
+	resp, err := h.identitySvc.GetByUserID(r.Context(), userID)
+	if err != nil {
+		response.Error(w, http.StatusNotFound, 40400, "该用户暂无实名认证记录")
+		return
+	}
+	response.JSON(w, http.StatusOK, resp)
+}
+
 // GetDetail GET /api/admin/identity-verifications/{id}
 func (h *IdentityHandler) GetDetail(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
