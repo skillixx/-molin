@@ -84,19 +84,26 @@ type RolesFetcher interface {
 	FindRolesByUsersBatch(ctx context.Context, userIDs []uint64) (map[uint64][]iammodel.Role, error)
 }
 
+// PermissionOverridesFetcher D-86：权限覆盖查询接口，由 iam.IAMService 实现。
+// 供 GetUser 详情接口附带 permission_overrides 字段，避免 auth/service 直接依赖 iam/service。
+type PermissionOverridesFetcher interface {
+	GetPermissionOverrides(ctx context.Context, userID uint64) ([]iammodel.UserPermissionOverride, error)
+}
+
 // AuthService 负责注册、登录、退出、刷新令牌、修改密码、封禁/解封用户。
 type AuthService struct {
-	userRepo     *repository.UserRepository
-	sessionRepo  *repository.SessionRepository
-	verifySvc    *VerificationService
-	loginLogRepo *repository.LoginLogRepository
-	cfg          config.Config
-	redis        *redis.Client
-	auditSvc     *auditservice.AuditService
-	permResolver PermissionResolver
-	roleAssigner RoleAssigner  // A-28：可选，创建后台用户时分配角色
-	rolesFetcher RolesFetcher  // D-85：可选，查询用户角色列表（ListUsers/GetUser 附带 roles 字段）
-	db           *gorm.DB
+	userRepo             *repository.UserRepository
+	sessionRepo          *repository.SessionRepository
+	verifySvc            *VerificationService
+	loginLogRepo         *repository.LoginLogRepository
+	cfg                  config.Config
+	redis                *redis.Client
+	auditSvc             *auditservice.AuditService
+	permResolver         PermissionResolver
+	roleAssigner         RoleAssigner               // A-28：可选，创建后台用户时分配角色
+	rolesFetcher         RolesFetcher               // D-85：可选，查询用户角色列表（ListUsers/GetUser 附带 roles 字段）
+	permOverridesFetcher PermissionOverridesFetcher // D-86：可选，查询用户权限覆盖列表（GetUser 附带 permission_overrides 字段）
+	db                   *gorm.DB
 }
 
 func NewAuthService(
@@ -133,6 +140,11 @@ func (s *AuthService) SetRolesFetcher(r RolesFetcher) {
 	s.rolesFetcher = r
 }
 
+// SetPermissionOverridesFetcher D-86：注入权限覆盖查询器（由 bootstrap 调用）。
+func (s *AuthService) SetPermissionOverridesFetcher(f PermissionOverridesFetcher) {
+	s.permOverridesFetcher = f
+}
+
 // fetchRolesForUser D-85：查询单个用户的角色摘要，rolesFetcher 未注入时返回空切片（不阻断主流程）。
 func (s *AuthService) fetchRolesForUser(ctx context.Context, userID uint64) []dto.AdminRoleItem {
 	if s.rolesFetcher == nil {
@@ -151,6 +163,42 @@ func toAdminRoleItems(roles []iammodel.Role) []dto.AdminRoleItem {
 	items := make([]dto.AdminRoleItem, len(roles))
 	for i, r := range roles {
 		items[i] = dto.AdminRoleItem{ID: r.ID, Code: r.Code, Name: r.Name}
+	}
+	return items
+}
+
+// fetchPermissionOverridesForUser D-86：查询单个用户的权限覆盖列表，
+// permOverridesFetcher 未注入或查询出错时返回空切片（不阻断主流程）。
+func (s *AuthService) fetchPermissionOverridesForUser(ctx context.Context, userID uint64) []dto.AdminPermissionOverrideItem {
+	if s.permOverridesFetcher == nil {
+		return []dto.AdminPermissionOverrideItem{}
+	}
+	overrides, err := s.permOverridesFetcher.GetPermissionOverrides(ctx, userID)
+	if err != nil {
+		log.Printf("[auth] fetchPermissionOverridesForUser: userID=%d err=%v", userID, err)
+		return []dto.AdminPermissionOverrideItem{}
+	}
+	return toAdminPermissionOverrideItems(overrides)
+}
+
+// toAdminPermissionOverrideItems 将 iam/model.UserPermissionOverride 切片转换为 DTO 切片。
+func toAdminPermissionOverrideItems(overrides []iammodel.UserPermissionOverride) []dto.AdminPermissionOverrideItem {
+	const isoLayout = "2006-01-02T15:04:05Z07:00"
+	items := make([]dto.AdminPermissionOverrideItem, len(overrides))
+	for i, o := range overrides {
+		items[i] = dto.AdminPermissionOverrideItem{
+			ID:             o.ID,
+			PermissionID:   o.PermissionID,
+			PermissionCode: o.PermissionCode,
+			Effect:         o.Effect,
+			Reason:         o.Reason,
+			CreatedBy:      o.CreatedBy,
+			CreatedAt:      o.CreatedAt.Format(isoLayout),
+		}
+		if o.ExpiresAt != nil {
+			s := o.ExpiresAt.Format(isoLayout)
+			items[i].ExpiresAt = &s
+		}
 	}
 	return items
 }
@@ -629,14 +677,15 @@ func (s *AuthService) GetUser(ctx context.Context, id uint64) (*dto.AdminUserRes
 // buildAdminUserResp 将 User model 转换为管理员视角的 DTO，最后登录时间和角色由外部批量传入（避免 N+1）。
 func (s *AuthService) buildAdminUserResp(u *model.User, lastLogins map[int64]time.Time, rolesMap map[uint64][]iammodel.Role) dto.AdminUserResp {
 	resp := dto.AdminUserResp{
-		ID:             u.ID,
-		Username:       u.Username,
-		EmailVerified:  u.EmailVerified,
-		PhoneVerified:  u.PhoneVerified,
-		RealNameStatus: u.RealNameStatus,
-		Status:         u.Status,
-		Roles:          []dto.AdminRoleItem{},
-		CreatedAt:      u.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		ID:                  u.ID,
+		Username:            u.Username,
+		EmailVerified:       u.EmailVerified,
+		PhoneVerified:       u.PhoneVerified,
+		RealNameStatus:      u.RealNameStatus,
+		Status:              u.Status,
+		Roles:               []dto.AdminRoleItem{},
+		PermissionOverrides: []dto.AdminPermissionOverrideItem{},
+		CreatedAt:           u.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 	// 邮箱脱敏处理
 	if u.Email != nil {
@@ -663,14 +712,15 @@ func (s *AuthService) buildAdminUserResp(u *model.User, lastLogins map[int64]tim
 // toAdminUserResp 将 User model 转换为管理员视角的 DTO（单个用户，用于 GetUser 接口）。
 func (s *AuthService) toAdminUserResp(ctx context.Context, u *model.User) dto.AdminUserResp {
 	resp := dto.AdminUserResp{
-		ID:             u.ID,
-		Username:       u.Username,
-		EmailVerified:  u.EmailVerified,
-		PhoneVerified:  u.PhoneVerified,
-		RealNameStatus: u.RealNameStatus,
-		Status:         u.Status,
-		Roles:          s.fetchRolesForUser(ctx, u.ID),
-		CreatedAt:      u.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		ID:                  u.ID,
+		Username:            u.Username,
+		EmailVerified:       u.EmailVerified,
+		PhoneVerified:       u.PhoneVerified,
+		RealNameStatus:      u.RealNameStatus,
+		Status:              u.Status,
+		Roles:               s.fetchRolesForUser(ctx, u.ID),
+		PermissionOverrides: s.fetchPermissionOverridesForUser(ctx, u.ID),
+		CreatedAt:           u.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 	// 邮箱脱敏处理
 	if u.Email != nil {
