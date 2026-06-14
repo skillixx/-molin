@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +28,15 @@ var (
 	ErrReasonRequired = errors.New("驳回时必须填写理由")
 	// D-40：批准审核时发现同一身份证号已被其他用户 verified，返回 409 冲突错误
 	ErrIDCardAlreadyVerified = errors.New("该身份证号已被其他账号实名认证，无法重复绑定")
+	// D-77：输入参数校验错误（姓名/身份证格式）—— handler 层映射为 400
+	ErrInvalidRealName = errors.New("真实姓名不能为空")
+	ErrRealNameTooLong = errors.New("真实姓名不能超过 50 个字符")
+	ErrInvalidIDCardNo = errors.New("身份证号格式不正确")
+	// D-80：附件校验错误 —— handler 层映射为 400
+	ErrTooManyAttachments   = errors.New("附件数量不能超过 5 个")
+	ErrAttachmentNotHTTPS   = errors.New("附件 URL 必须以 https:// 开头")
+	// D-81：驳回理由过长 —— handler 层映射为 400
+	ErrReasonTooLong = errors.New("驳回理由不能超过 500 字")
 )
 
 // UserUpdater 跨模块接口，由 auth.UserRepository 实现，identity 只注入 interface 避免循环导入。
@@ -53,9 +64,40 @@ func NewIdentityService(
 	return &IdentityService{repo: repo, userRepo: userRepo, db: db, cfg: cfg, auditSvc: auditSvc}
 }
 
+// idCardRegexp 身份证号正则：18 位，最后一位允许大写或小写 X。
+var idCardRegexp = regexp.MustCompile(`^\d{17}[\dXx]$`)
+
+// maxRealNameLen 真实姓名最大字符数（Unicode 字符计，非字节数）。
+const maxRealNameLen = 50
+
+// maxAttachments 附件 URL 最大数量。
+const maxAttachments = 5
+
 // Submit 用户提交实名认证。身份证号仅在内存处理，不持久化明文。
 // 返回新建记录的 ID，供 handler 响应给客户端。
 func (s *IdentityService) Submit(ctx context.Context, userID uint64, req dto.SubmitReq) (uint64, error) {
+	// D-77：真实姓名非空校验
+	if strings.TrimSpace(req.RealName) == "" {
+		return 0, ErrInvalidRealName
+	}
+	// D-77：真实姓名长度上限（Unicode 字符数，防止超长字符串写入 VARCHAR(128)）
+	if len([]rune(req.RealName)) > maxRealNameLen {
+		return 0, ErrRealNameTooLong
+	}
+	// D-77：身份证号格式校验：18 位，最后一位允许大写或小写 X
+	if !idCardRegexp.MatchString(req.IDCardNo) {
+		return 0, ErrInvalidIDCardNo
+	}
+	// D-80：附件数量上限校验，防止海量 URL 占用存储
+	if len(req.Attachments) > maxAttachments {
+		return 0, ErrTooManyAttachments
+	}
+	// D-80：附件 URL 必须以 https:// 开头，防止 http:// 内网地址 SSRF
+	for _, u := range req.Attachments {
+		if !strings.HasPrefix(u, "https://") {
+			return 0, ErrAttachmentNotHTTPS
+		}
+	}
 	// 已有 pending/verified 记录时不允许重复提交
 	existing, _ := s.repo.FindActiveByUser(ctx, userID)
 	if existing != nil {
@@ -73,29 +115,47 @@ func (s *IdentityService) Submit(ctx context.Context, userID uint64, req dto.Sub
 		attachmentsStr := string(b)
 		attachmentsJSON = &attachmentsStr
 	}
-	v := &model.IdentityVerification{
-		UserID:          userID,
-		RealName:        req.RealName,
-		IDCardNoHash:    hmacHash,
-		IDCardNoMasked:  maskIDCard(req.IDCardNo),
-		AttachmentsJSON: attachmentsJSON,
-		Status:          "pending",
+	// D-78：将 repo.Create 和 userRepo.UpdateRealNameStatus 纳入同一事务，
+	// 确保 identity_verifications.status='pending' 与 users.real_name_status 保持一致。
+	var newID uint64
+	txErr := s.db.Transaction(func(tx *gorm.DB) error {
+		v := &model.IdentityVerification{
+			UserID:          userID,
+			RealName:        req.RealName,
+			IDCardNoHash:    hmacHash,
+			IDCardNoMasked:  maskIDCard(req.IDCardNo),
+			AttachmentsJSON: attachmentsJSON,
+			Status:          "pending",
+		}
+		if err := s.repo.Create(ctx, v); err != nil {
+			return err
+		}
+		newID = v.ID
+		// 同步更新 users.real_name_status='pending'，失败时回滚
+		if err := s.userRepo.UpdateRealNameStatus(tx, userID, "pending", ""); err != nil {
+			log.Printf("[identity] Submit: 同步 real_name_status 失败 userID=%d err=%v", userID, err)
+			return err
+		}
+		return nil
+	})
+	if txErr != nil {
+		return 0, txErr
 	}
-	if err := s.repo.Create(ctx, v); err != nil {
-		return 0, err
-	}
-	// D-42：提交认证后同步更新 users.real_name_status='pending'，
-	// 使 GET /api/me 返回的实名状态与 identity_verifications.status 保持一致。
-	// 此处失败不回滚已创建的认证记录（主操作已完成），仅记录日志。
-	_ = s.userRepo.UpdateRealNameStatus(s.db, userID, "pending", "")
-	return v.ID, nil
+	return newID, nil
 }
+
+// maxReasonLen 驳回理由最大字符数（Unicode 字符计），与 DB 列 reject_reason VARCHAR(512) 留余量。
+const maxReasonLen = 500
 
 // Review 管理员审核：approve=true 通过，false 拒绝。
 func (s *IdentityService) Review(ctx context.Context, verificationID, operatorID uint64, approve bool, reason string) error {
 	// D-06：拒绝审核时必须填写驳回理由（去除首尾空格后非空）
 	if !approve && strings.TrimSpace(reason) == "" {
 		return ErrReasonRequired
+	}
+	// D-81：驳回理由长度校验，超过 500 字符时返回 400，而非 MySQL Data too long 导致 500
+	if len([]rune(reason)) > maxReasonLen {
+		return ErrReasonTooLong
 	}
 	verification, err := s.repo.FindByID(ctx, verificationID)
 	if err != nil {
@@ -168,11 +228,13 @@ func (s *IdentityService) Review(ctx context.Context, verificationID, operatorID
 	if approve {
 		auditAction = "approve_verification"
 	}
+	// D-84：审计日志中不记录 reason 原文，防止驳回理由含 PII 持久化并通过 API 泄露。
+	// 仅保留操作元数据（approve 布尔值、verification_id），满足合规审计需求。
 	_ = s.auditSvc.Record(ctx, &operatorID, "identity", auditAction,
 		strPtr("identity_verification"), strPtr(strconv.FormatUint(verificationID, 10)), "",
 		map[string]any{
-			"approve": approve,
-			"reason":  reason,
+			"approve":         approve,
+			"verification_id": verificationID,
 		})
 	return nil
 }

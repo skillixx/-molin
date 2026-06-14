@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"gorm.io/gorm"
 	"molin/server/internal/middleware"
@@ -454,18 +455,44 @@ func (h *IAMHandler) GetUserEffectivePermissions(w http.ResponseWriter, r *http.
 
 // ListAuditLogs GET /api/admin/audit-logs
 // BUG-05 修复：该路由此前未注册，请求返回 404。
-// 支持 ?module=&action=&page=&page_size= 参数，响应字段名使用 items。
-//
-// 安全说明（D-30）：本接口返回全量审计日志，不做调用者维度的数据范围限制。
-// 当前接口受 RequirePerm("role:manage") 中间件保护，仅超管角色拥有该权限码。
-// 重要约定：role:manage 权限码不得下放给非超管角色，否则将导致任意管理员可查看
-// 全量审计日志（包含其他用户/模块的操作记录），违反最小权限原则。
-// 若未来需要细粒度管控，应拆分为 audit:read 权限码并在此处加 operator_id 过滤。
+// 支持 ?module=&action=&operator_id=&start_time=&end_time=&page=&page_size= 参数。
+// D-82：新增 operator_id（int64）、start_time/end_time（RFC3339）过滤参数，合规必备。
+// D-83：接口权限已改为 RequirePerm("audit:read")，不再与 role:manage 共用。
 func (h *IAMHandler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	module := r.URL.Query().Get("module")
 	action := r.URL.Query().Get("action")
+
+	// D-82：解析 operator_id 过滤参数，0 表示不过滤
+	var operatorID uint64
+	if raw := r.URL.Query().Get("operator_id"); raw != "" {
+		v, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, 40000, "operator_id 必须为正整数")
+			return
+		}
+		operatorID = v
+	}
+	// D-82：解析时间范围过滤参数（RFC3339 格式，如 2026-01-01T00:00:00Z）
+	var startTime, endTime time.Time
+	if raw := r.URL.Query().Get("start_time"); raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, 40000, "start_time 格式不正确，请使用 RFC3339（如 2026-01-01T00:00:00Z）")
+			return
+		}
+		startTime = t
+	}
+	if raw := r.URL.Query().Get("end_time"); raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, 40000, "end_time 格式不正确，请使用 RFC3339（如 2026-12-31T23:59:59Z）")
+			return
+		}
+		endTime = t
+	}
+
 	p := pagination.Parse(r)
-	logs, total, err := h.iamSvc.ListAuditLogs(r.Context(), module, action, p.Offset(), p.PageSize)
+	logs, total, err := h.iamSvc.ListAuditLogs(r.Context(), module, action, operatorID, startTime, endTime, p.Offset(), p.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return

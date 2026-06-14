@@ -28,6 +28,14 @@ func RegisterRoutes(mux *http.ServeMux, iamSvc *service.IAMService, groupSvc *se
 				middleware.RequireAdminVerified(adminChecker, http.HandlerFunc(next))))
 	}
 
+	// D-83：审计日志查看独立为 audit:read 权限码，与 role:manage 分离，遵循最小权限原则。
+	// 在 admin 路由分组（role:manage）之外，单独构造 auditRead 中间件链。
+	auditRead := func(next http.HandlerFunc) http.Handler {
+		return middleware.RequireAuth(jwtSecret, banChecker,
+			middleware.RequirePerm(iamSvc, "audit:read",
+				middleware.RequireAdminVerified(adminChecker, http.HandlerFunc(next))))
+	}
+
 	// 角色/权限/用户角色分配（原有路由，不变）
 	mux.Handle("GET /api/admin/roles", admin(h.ListRoles))
 	mux.Handle("POST /api/admin/roles", admin(h.CreateRole))
@@ -42,8 +50,8 @@ func RegisterRoutes(mux *http.ServeMux, iamSvc *service.IAMService, groupSvc *se
 	mux.Handle("GET /api/admin/permissions", admin(h.ListPermissions))
 	// A-06：创建权限码
 	mux.Handle("POST /api/admin/permissions", admin(h.CreatePermission))
-	// BUG-05 修复：补充注册 GET /api/admin/audit-logs，此前未注册导致 404
-	mux.Handle("GET /api/admin/audit-logs", admin(h.ListAuditLogs))
+	// D-83：审计日志改用 audit:read 权限码，不再与 role:manage 共用
+	mux.Handle("GET /api/admin/audit-logs", auditRead(h.ListAuditLogs))
 	mux.Handle("GET /api/admin/users/{id}/roles", admin(h.GetUserRoles))
 	mux.Handle("POST /api/admin/users/{id}/roles", admin(h.AssignRole))
 	// A-06：批量替换用户角色

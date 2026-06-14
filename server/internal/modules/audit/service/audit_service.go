@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"time"
 
 	"molin/server/internal/modules/audit/model"
 	"molin/server/internal/modules/audit/repository"
@@ -58,7 +59,14 @@ func (s *AuditService) Record(ctx context.Context, operatorID *uint64, module, a
 	return nil
 }
 
-// ListPaged 分页查询审计日志，支持按 module/action 过滤。
-func (s *AuditService) ListPaged(ctx context.Context, module, action string, offset, limit int) ([]model.AuditLog, int64, error) {
-	return s.repo.ListPaged(ctx, module, action, offset, limit)
+// ListPaged 分页查询审计日志，支持按 module/action/operatorID/时间范围过滤。
+// D-82：扩展参数以支持合规必备的操作人和时间过滤。
+func (s *AuditService) ListPaged(
+	ctx context.Context,
+	module, action string,
+	operatorID uint64,
+	startTime, endTime time.Time,
+	offset, limit int,
+) ([]model.AuditLog, int64, error) {
+	return s.repo.ListPaged(ctx, module, action, operatorID, startTime, endTime, offset, limit)
 }
