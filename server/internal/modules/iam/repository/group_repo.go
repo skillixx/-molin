@@ -2,8 +2,9 @@ package repository
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
-	"math/rand"
+	"math/big"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -54,6 +55,10 @@ func (r *GroupRepository) Create(ctx context.Context, g *model.UserGroup) error 
 func (r *GroupRepository) FindByID(ctx context.Context, id uint64) (*model.UserGroup, error) {
 	var g model.UserGroup
 	if err := r.db.WithContext(ctx).First(&g, id).Error; err != nil {
+		// D-74：区分"记录不存在"与其他 DB 错误，让 handler 精确选择 404 或 500
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrGroupNotFound
+		}
 		return nil, err
 	}
 	return &g, nil
@@ -132,10 +137,14 @@ func (r *GroupRepository) Delete(ctx context.Context, id uint64) error {
 		return ErrGroupHasActiveCodes
 	}
 
-	// 事务内：先删关联的 group_permissions，再用子查询条件原子删除分组主记录
+	// 事务内：先删关联的 group_permissions 和 group_invite_codes，再用子查询条件原子删除分组主记录
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// D-37：清理关联权限记录（分组不存在时此操作影响 0 行，无副作用）
 		if err := tx.Where("group_id = ?", id).Delete(&model.GroupPermission{}).Error; err != nil {
+			return err
+		}
+		// D-75：清理所有邀请码记录（含 disabled 状态的历史记录），防止产生孤立数据
+		if err := tx.Where("group_id = ?", id).Delete(&model.GroupInviteCode{}).Error; err != nil {
 			return err
 		}
 		// D-36：子查询条件确保原子性——若此时已有成员加入则 rowsAffected=0，直接拒绝
@@ -165,6 +174,13 @@ func (r *GroupRepository) Delete(ctx context.Context, id uint64) error {
 func (r *GroupRepository) ExistsUserByID(ctx context.Context, userID uint64) (bool, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Table("users").Where("id = ?", userID).Count(&count).Error
+	return count > 0, err
+}
+
+// ExistsGroupByID 检查 user_groups 表中是否存在指定 ID 的分组（D-71：防止向不存在的分组写入孤立成员）。
+func (r *GroupRepository) ExistsGroupByID(ctx context.Context, id uint64) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.UserGroup{}).Where("id = ?", id).Count(&count).Error
 	return count > 0, err
 }
 
@@ -400,11 +416,15 @@ func (r *GroupRepository) IncrUsedCount(db *gorm.DB, inviteID uint64) error {
 }
 
 // IncrUsedCountAtomic 带上限校验的原子递增（D-34：消除并发超额竞态）。
-// SQL：UPDATE ... SET used_count = used_count + 1 WHERE id = ? AND (max_uses = 0 OR used_count < max_uses)
-// rowsAffected = 0 表示已达上限，返回 ErrInviteCodeFull。
+// D-67：追加 status = 'active' 条件，防止已禁用的邀请码在并发窗口内被成功使用。
+// SQL：UPDATE ... SET used_count = used_count + 1
+//
+//	WHERE id = ? AND status = 'active' AND (max_uses = 0 OR used_count < max_uses)
+//
+// rowsAffected = 0 表示已达上限或已禁用，返回 ErrInviteCodeFull。
 func (r *GroupRepository) IncrUsedCountAtomic(tx *gorm.DB, inviteID uint64) error {
 	res := tx.Model(&model.GroupInviteCode{}).
-		Where("id = ? AND (max_uses = 0 OR used_count < max_uses)", inviteID).
+		Where("id = ? AND status = 'active' AND (max_uses = 0 OR used_count < max_uses)", inviteID).
 		UpdateColumn("used_count", gorm.Expr("used_count + 1"))
 	if res.Error != nil {
 		return res.Error
@@ -416,13 +436,20 @@ func (r *GroupRepository) IncrUsedCountAtomic(tx *gorm.DB, inviteID uint64) erro
 }
 
 // GenerateCode 生成随机 8 字符邀请码（大写字母+数字，排除易混淆字符 0/O/1/I）。
-func GenerateCode() string {
+// D-70：改用 crypto/rand 替代 math/rand，消除 PRNG 可预测性，防止攻击者枚举爆破有效邀请码。
+func GenerateCode() (string, error) {
 	const charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-	b := make([]byte, 8)
+	const length = 8
+	b := make([]byte, length)
+	charsetLen := big.NewInt(int64(len(charset)))
 	for i := range b {
-		b[i] = charset[rand.Intn(len(charset))]
+		n, err := rand.Int(rand.Reader, charsetLen)
+		if err != nil {
+			return "", err
+		}
+		b[i] = charset[n.Int64()]
 	}
-	return string(b)
+	return string(b), nil
 }
 
 // isConstraintError 判断 error 是否为 MySQL 约束冲突（D-39）。
