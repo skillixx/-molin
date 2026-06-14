@@ -600,9 +600,11 @@ func (h *AuthHandler) UpdateAdminUser(w http.ResponseWriter, r *http.Request) {
 }
 
 // adminPagedResp 管理员接口的通用分页响应结构。
+// D-95：分页元数据匿名嵌入 pagination.Result，使 page/page_size/total 与 items 同级（扁平结构），
+// 符合 docs/full-api-design.md 1.2 节规范。
 type adminPagedResp struct {
-	List       interface{}       `json:"items"`
-	Pagination pagination.Result `json:"pagination"`
+	List interface{} `json:"items"`
+	pagination.Result
 }
 
 // validRealNameStatuses D-87：real_name_status 允许的枚举值白名单。
@@ -637,8 +639,8 @@ func (h *AuthHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.JSON(w, http.StatusOK, adminPagedResp{
-		List:       users,
-		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
+		List:   users,
+		Result: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
 	})
 }
 
@@ -677,8 +679,8 @@ func (h *AuthHandler) ListUserLoginLogs(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	response.JSON(w, http.StatusOK, adminPagedResp{
-		List:       items,
-		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
+		List:   items,
+		Result: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
 	})
 }
 
