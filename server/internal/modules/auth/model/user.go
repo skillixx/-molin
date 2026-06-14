@@ -8,6 +8,8 @@ import "time"
 type User struct {
 	ID                   uint64     `gorm:"primaryKey;autoIncrement"`
 	Username             *string    `gorm:"uniqueIndex;size:64"`             // 用户名，可选，唯一
+	Nickname             *string    `gorm:"size:64"`                         // 昵称，可选
+	AvatarURL            *string    `gorm:"column:avatar_url;size:512"`      // 头像地址
 	Email                *string    `gorm:"uniqueIndex;size:191"`
 	EmailVerified        bool       `gorm:"default:false"`
 	Phone                *string    `gorm:"uniqueIndex;size:32"`

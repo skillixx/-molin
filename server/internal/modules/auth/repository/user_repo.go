@@ -185,6 +185,22 @@ func (r *UserRepository) UpdateAdminPhoneVerified(ctx context.Context, userID ui
 		Update("admin_phone_verified_at", now).Error
 }
 
+// UpdateProfile 按传入的 fields 图进行 PATCH 式更新，仅更新非 nil 字段（A-27）。
+// fields 的 key 为列名（snake_case），value 为新值（nil 表示写 NULL）。
+// rowsAffected==0 时返回 ErrUserNotFound。
+func (r *UserRepository) UpdateProfile(ctx context.Context, userID uint64, fields map[string]interface{}) error {
+	result := r.db.WithContext(ctx).Model(&model.User{}).
+		Where("id = ?", userID).
+		Updates(fields)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
 // UpdateAdminEmailVerified 记录管理员邮箱认证通过时间。
 func (r *UserRepository) UpdateAdminEmailVerified(ctx context.Context, userID uint64) error {
 	now := time.Now()
