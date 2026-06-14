@@ -126,6 +126,22 @@ type TokenPair struct {
 	ExpiresIn    int64  `json:"expires_in"`
 }
 
+// LoginUserSummary D-93：登录/注册/刷新令牌响应中的用户摘要（规范 2.4，email/phone 已脱敏）。
+type LoginUserSummary struct {
+	ID             uint64  `json:"id"`
+	Email          *string `json:"email"`
+	Phone          *string `json:"phone"`
+	RealNameStatus string  `json:"real_name_status"`
+	Status         string  `json:"status"`
+}
+
+// LoginResp D-93：登录/注册/刷新令牌成功响应（规范 2.3/2.4/2.5/2.7："返回 data 同登录接口"）。
+// 通过匿名嵌入 TokenPair，JSON 序列化时 access_token/refresh_token/expires_in 与 user 处于同一层级。
+type LoginResp struct {
+	TokenPair
+	User LoginUserSummary `json:"user"`
+}
+
 // MyPermissionsResp 当前登录用户最终生效权限码集合响应（A-10）。
 type MyPermissionsResp struct {
 	Permissions []string `json:"permissions"`

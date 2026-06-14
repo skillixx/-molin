@@ -296,7 +296,8 @@ func (s *AuthService) SendCode(ctx context.Context, targetType, targetValue, sce
 
 // Register 统一注册（手机+邮箱+用户名，需双验证码）。
 // ua/ip 用于填充新建会话的 user_agent/ip（D-20）。
-func (s *AuthService) Register(ctx context.Context, req dto.RegisterReq, ua, ip string) (*dto.TokenPair, error) {
+// D-93：返回值改为 LoginResp，附带 user 摘要字段。
+func (s *AuthService) Register(ctx context.Context, req dto.RegisterReq, ua, ip string) (*dto.LoginResp, error) {
 	req.Phone = normalizePhone(req.Phone)
 	req.Email = normalizeEmail(req.Email)
 	req.Username = strings.TrimSpace(req.Username)
@@ -358,7 +359,8 @@ func (s *AuthService) Register(ctx context.Context, req dto.RegisterReq, ua, ip 
 //
 // D-16：登录前先检查该邮箱的失败次数是否已达阈值（loginFailLimit），超限在 loginFailWindow 内直接拒绝；
 // 密码错误时计数 +1，登录成功后清除计数。Redis 操作失败按约定1降级（不阻断登录，仅记录日志）。
-func (s *AuthService) LoginEmail(ctx context.Context, req dto.LoginEmailReq, ip, ua string) (*dto.TokenPair, error) {
+// D-93：返回值改为 LoginResp，附带 user 摘要字段。
+func (s *AuthService) LoginEmail(ctx context.Context, req dto.LoginEmailReq, ip, ua string) (*dto.LoginResp, error) {
 	req.Email = normalizeEmail(req.Email)
 
 	if locked := s.checkLoginLocked(ctx, "email", req.Email); locked {
@@ -387,7 +389,8 @@ func (s *AuthService) LoginEmail(ctx context.Context, req dto.LoginEmailReq, ip,
 //
 // D-16：登录前先检查该手机号的失败次数是否已达阈值，超限在 loginFailWindow 内直接拒绝；
 // 验证码错误时计数 +1，登录成功后清除计数。
-func (s *AuthService) LoginPhone(ctx context.Context, req dto.LoginPhoneReq, ip, ua string) (*dto.TokenPair, error) {
+// D-93：返回值改为 LoginResp，附带 user 摘要字段。
+func (s *AuthService) LoginPhone(ctx context.Context, req dto.LoginPhoneReq, ip, ua string) (*dto.LoginResp, error) {
 	req.Phone = normalizePhone(req.Phone)
 
 	if locked := s.checkLoginLocked(ctx, "phone", req.Phone); locked {
@@ -417,8 +420,9 @@ func (s *AuthService) LoginPhone(ctx context.Context, req dto.LoginPhoneReq, ip,
 // 若会话创建失败，事务回滚，不会留下"成功"但无对应会话的登录日志。
 // D-19：登录日志写入失败按最佳努力处理，仅记录 log.Printf，不影响登录主流程
 // （此时会话已创建成功，用户应能正常拿到 token）。
-func (s *AuthService) loginSuccess(ctx context.Context, user *model.User, loginType, account, ip, ua string) (*dto.TokenPair, error) {
-	var pair *dto.TokenPair
+// D-93：返回值改为 LoginResp，附带 user 摘要字段。
+func (s *AuthService) loginSuccess(ctx context.Context, user *model.User, loginType, account, ip, ua string) (*dto.LoginResp, error) {
+	var pair *dto.LoginResp
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
 		pair, err = s.generateTokenPair(ctx, tx, user, ua, ip)
@@ -523,10 +527,11 @@ func (s *AuthService) revokeAccessToken(ctx context.Context, rawAccessToken stri
 // ErrRefreshTokenAlreadyUsed，不再发出新 token；若新 token/session 生成失败，事务整体回滚，
 // 旧 session 不会被吊销，用户不会被强制登出（解决 D-21）。
 // ua/ip 用于填充新建会话的 user_agent/ip（D-20）。
-func (s *AuthService) Refresh(ctx context.Context, rawRefreshToken, ua, ip string) (*dto.TokenPair, error) {
+// D-93：返回值改为 LoginResp，附带 user 摘要字段。
+func (s *AuthService) Refresh(ctx context.Context, rawRefreshToken, ua, ip string) (*dto.LoginResp, error) {
 	hash := crypto.HMAC256(rawRefreshToken, s.cfg.RefreshTokenSecret)
 
-	var pair *dto.TokenPair
+	var pair *dto.LoginResp
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		session, err := s.sessionRepo.FindByHashTx(tx, hash)
 		if err != nil || session == nil {
@@ -749,10 +754,29 @@ func (s *AuthService) toAdminUserResp(ctx context.Context, u *model.User) dto.Ad
 	return resp
 }
 
+// buildLoginUserSummary D-93：构造登录/注册/刷新响应中的 user 摘要字段，email/phone 做脱敏处理。
+func buildLoginUserSummary(user *model.User) dto.LoginUserSummary {
+	summary := dto.LoginUserSummary{
+		ID:             user.ID,
+		RealNameStatus: user.RealNameStatus,
+		Status:         user.Status,
+	}
+	if user.Email != nil {
+		masked := dto.MaskEmail(*user.Email)
+		summary.Email = &masked
+	}
+	if user.Phone != nil {
+		masked := dto.MaskPhone(*user.Phone)
+		summary.Phone = &masked
+	}
+	return summary
+}
+
 // generateTokenPair 生成 Access/Refresh Token 对，并在 tx 内创建会话记录。
 // ua/ip 写入 user_sessions.user_agent / ip（D-20）；调用方传入 s.db.WithContext(ctx) 或
 // 已开启的事务 tx，使会话创建可与调用方的其他写操作保持原子性。
-func (s *AuthService) generateTokenPair(ctx context.Context, tx *gorm.DB, user *model.User, ua, ip string) (*dto.TokenPair, error) {
+// D-93：返回值改为 LoginResp，附带脱敏后的 user 摘要字段，供登录/注册/刷新接口透传。
+func (s *AuthService) generateTokenPair(ctx context.Context, tx *gorm.DB, user *model.User, ua, ip string) (*dto.LoginResp, error) {
 	email := ""
 	if user.Email != nil {
 		email = *user.Email
@@ -773,10 +797,13 @@ func (s *AuthService) generateTokenPair(ctx context.Context, tx *gorm.DB, user *
 	if err := s.sessionRepo.CreateTx(tx, session); err != nil {
 		return nil, err
 	}
-	return &dto.TokenPair{
-		AccessToken:  accessToken,
-		RefreshToken: rawRefresh,
-		ExpiresIn:    s.cfg.JWTExpireSeconds,
+	return &dto.LoginResp{
+		TokenPair: dto.TokenPair{
+			AccessToken:  accessToken,
+			RefreshToken: rawRefresh,
+			ExpiresIn:    s.cfg.JWTExpireSeconds,
+		},
+		User: buildLoginUserSummary(user),
 	}, nil
 }
 
