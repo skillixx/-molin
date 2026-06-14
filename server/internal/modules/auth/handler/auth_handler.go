@@ -406,6 +406,77 @@ func (h *AuthHandler) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, "updated")
 }
 
+// CreateAdminUser POST /api/admin/users — 管理员直接创建后台用户，跳过 OTP，A-28
+func (h *AuthHandler) CreateAdminUser(w http.ResponseWriter, r *http.Request) {
+	var req dto.CreateAdminUserReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	// email/phone 至少需传一个
+	if req.Email == "" && req.Phone == "" {
+		response.Error(w, http.StatusBadRequest, 40000, "email 和 phone 至少填写一个")
+		return
+	}
+	if req.Password == "" {
+		response.Error(w, http.StatusBadRequest, 40000, "password 不能为空")
+		return
+	}
+	if len(req.Password) < 6 {
+		response.Error(w, http.StatusBadRequest, 40000, "密码长度不能少于 6 位")
+		return
+	}
+	if req.Status != "" && req.Status != "active" && req.Status != "disabled" {
+		response.Error(w, http.StatusBadRequest, 40000, "status 取值必须为 active 或 disabled")
+		return
+	}
+	operatorID := middleware.UserIDFromContext(r.Context())
+	ip := httputil.ClientIP(r)
+	userID, err := h.authSvc.CreateAdminUser(r.Context(), operatorID, req, ip)
+	if err != nil {
+		switch err {
+		case service.ErrEmailAlreadyExists, service.ErrPhoneAlreadyExists:
+			response.Error(w, http.StatusConflict, 40900, err.Error())
+		default:
+			response.Error(w, http.StatusInternalServerError, 50000, "创建用户失败")
+		}
+		return
+	}
+	response.JSON(w, http.StatusCreated, dto.CreateAdminUserResp{UserID: userID})
+}
+
+// UpdateAdminUser PATCH /api/admin/users/{id} — 管理员修改用户邮箱/手机号/状态，PATCH 语义，A-29
+func (h *AuthHandler) UpdateAdminUser(w http.ResponseWriter, r *http.Request) {
+	targetID, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "用户 ID 不合法")
+		return
+	}
+	var req dto.UpdateAdminUserReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	if req.Status != nil && *req.Status != "active" && *req.Status != "disabled" {
+		response.Error(w, http.StatusBadRequest, 40000, "status 取值必须为 active 或 disabled")
+		return
+	}
+	operatorID := middleware.UserIDFromContext(r.Context())
+	ip := httputil.ClientIP(r)
+	if err := h.authSvc.UpdateAdminUser(r.Context(), operatorID, targetID, req, ip); err != nil {
+		switch {
+		case errors.Is(err, repository.ErrUserNotFound):
+			response.Error(w, http.StatusNotFound, 40400, "用户不存在")
+		case err == service.ErrEmailAlreadyExists || err == service.ErrPhoneAlreadyExists:
+			response.Error(w, http.StatusConflict, 40900, err.Error())
+		default:
+			response.Error(w, http.StatusInternalServerError, 50000, "修改用户失败")
+		}
+		return
+	}
+	response.JSON(w, http.StatusOK, "updated")
+}
+
 // adminPagedResp 管理员接口的通用分页响应结构。
 type adminPagedResp struct {
 	List       interface{}       `json:"items"`

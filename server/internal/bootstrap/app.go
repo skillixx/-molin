@@ -194,6 +194,8 @@ func NewApp() (*App, error) {
 	// 传入 redisClient，用于封禁用户黑名单（P1-01 修复）；传入 auditSvc 用于封禁/解封审计记录（A-05）；
 	// 传入 iamService 作为 PermissionResolver，用于 GET /api/me/permissions（A-10）
 	authService := authsvc.NewAuthService(userRepo, sessionRepo, verifySvc, loginLogRepo, cfg, redisClient, auditSvc, iamService, gormDB)
+	// A-28：注入 RoleAssigner，用于管理员创建用户时分配角色
+	authService.SetRoleAssigner(iamService)
 
 	// ——— Identity 模块 ———
 	// D-04：注入 auditSvc，用于审核操作写全局审计日志

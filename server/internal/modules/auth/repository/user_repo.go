@@ -201,6 +201,21 @@ func (r *UserRepository) UpdateProfile(ctx context.Context, userID uint64, field
 	return nil
 }
 
+// UpdateAdminUser A-29：管理员修改用户字段（PATCH 语义），对唯一键冲突做语义映射。
+// fields 的 key 为列名（snake_case），value 为新值；rowsAffected==0 时返回 ErrUserNotFound。
+func (r *UserRepository) UpdateAdminUser(ctx context.Context, userID uint64, fields map[string]interface{}) error {
+	result := r.db.WithContext(ctx).Model(&model.User{}).
+		Where("id = ?", userID).
+		Updates(fields)
+	if result.Error != nil {
+		return mapUserDuplicateError(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
 // UpdateAdminEmailVerified 记录管理员邮箱认证通过时间。
 func (r *UserRepository) UpdateAdminEmailVerified(ctx context.Context, userID uint64) error {
 	now := time.Now()
