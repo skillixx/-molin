@@ -164,6 +164,17 @@ type AdminUserResp struct {
 	LastLoginAt    *string `json:"last_login_at"`
 }
 
+// LoginLogItem A-30：管理员查看用户登录日志的单条响应字段。
+type LoginLogItem struct {
+	ID           uint64 `json:"id"`
+	LoginType    string `json:"login_type"`    // email / phone
+	LoginAccount string `json:"login_account"` // 已脱敏
+	IP           string `json:"ip"`
+	UserAgent    string `json:"user_agent"`
+	Status       string `json:"status"`     // success / failed
+	CreatedAt    string `json:"created_at"` // ISO 8601
+}
+
 // MaskPhone 对手机号做脱敏处理：前3后4，中间替换为 ****。
 // 例如：13812345678 → 138****5678
 func MaskPhone(phone string) string {

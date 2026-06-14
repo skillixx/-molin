@@ -40,6 +40,20 @@ type lastLoginRow struct {
 	LastLogin time.Time `gorm:"column:last_login"`
 }
 
+// FindPagedByUser A-30：分页查询指定用户的全部登录日志，按时间降序。
+func (r *LoginLogRepository) FindPagedByUser(ctx context.Context, userID uint64, offset, limit int) ([]model.LoginLog, int64, error) {
+	var logs []model.LoginLog
+	var total int64
+	db := r.db.WithContext(ctx).Model(&model.LoginLog{}).Where("user_id = ?", userID)
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if err := db.Order("created_at DESC").Offset(offset).Limit(limit).Find(&logs).Error; err != nil {
+		return nil, 0, err
+	}
+	return logs, total, nil
+}
+
 // FindLastSuccessBatch D-50：批量查询多个用户最后一次登录成功时间，以 GROUP BY 单次查询代替逐条循环。
 // 返回 map[userID]lastLoginTime；未登录过的用户不在 map 中。
 func (r *LoginLogRepository) FindLastSuccessBatch(ctx context.Context, userIDs []int64) (map[int64]time.Time, error) {
