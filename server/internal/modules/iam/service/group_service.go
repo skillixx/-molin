@@ -178,8 +178,9 @@ func (s *GroupService) CreateInviteCode(ctx context.Context, groupID uint64, cod
 		defaultRole = "member"
 	}
 	// D-68：default_group_role 枚举校验，防止写入非法角色值绕过 AddMember 的角色检查
+	// D-68 残留修复：返回 sentinel error，供 handler 映射为 400 而非 500
 	if defaultRole != "admin" && defaultRole != "member" {
-		return nil, errors.New("default_group_role 只能为 admin 或 member")
+		return nil, repository.ErrInvalidDefaultGroupRole
 	}
 	ic := &model.GroupInviteCode{
 		Code:             code,

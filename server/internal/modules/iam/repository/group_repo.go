@@ -35,6 +35,8 @@ var (
 	ErrInviteCodeFull = errors.New("邀请码已达到使用上限")
 	// ErrUserNotFound 用户不存在。
 	ErrUserNotFound = errors.New("用户不存在")
+	// ErrInvalidDefaultGroupRole D-68：default_group_role 取值非法（只能为 admin 或 member）。
+	ErrInvalidDefaultGroupRole = errors.New("default_group_role 只能为 admin 或 member")
 )
 
 // GroupRepository 分组数据访问层，覆盖分组、成员、组权限、邀请码四个子资源。
