@@ -159,7 +159,7 @@ Body 参数：
 | username | string | 否 | 用户名（2-32位字母/数字/下划线，全局唯一） |
 | phone | string | 是 | 手机号 |
 | email | string | 是 | 邮箱地址 |
-| password | string | 是 | 密码 |
+| password | string | 是 | 密码（6-72 位） |
 | phone_code | string | 是 | 手机验证码（scene=register） |
 | email_code | string | 是 | 邮箱验证码（scene=register） |
 
@@ -315,7 +315,7 @@ Body 参数：
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
 | old_password | string | 是 | 旧密码 |
-| new_password | string | 是 | 新密码 |
+| new_password | string | 是 | 新密码（6-72 位） |
 
 返回 data：
 
@@ -376,7 +376,7 @@ Body 参数：
 | target | string | 是 | 手机号或邮箱地址 |
 | target_type | string | 是 | 类型：phone 或 email |
 | code | string | 是 | 验证码（scene=reset_password） |
-| new_password | string | 是 | 新密码 |
+| new_password | string | 是 | 新密码（6-72 位） |
 
 返回 data：`null`（HTTP 200 表示成功）。
 
@@ -571,7 +571,7 @@ Body 参数：
 |---|---|---:|---|
 | email | string | 否 | 邮箱 |
 | phone | string | 否 | 手机号 |
-| password | string | 是 | 初始密码 |
+| password | string | 是 | 初始密码（6-72 位） |
 | role_ids | array | 否 | 角色 ID 列表 |
 | status | string | 否 | 用户状态 |
 
