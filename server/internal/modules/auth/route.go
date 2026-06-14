@@ -86,4 +86,6 @@ func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc 
 	mux.Handle("POST /api/admin/users", adminAuthVerified(h.CreateAdminUser))
 	// A-29：管理员修改用户邮箱/手机号/状态（需登录 + user:manage 权限 + 双重认证）
 	mux.Handle("PATCH /api/admin/users/{id}", adminAuthVerified(h.UpdateAdminUser))
+	// A-30：管理员查看用户登录日志分页（需登录 + user:list 权限 + 双重认证）
+	mux.Handle("GET /api/admin/users/{id}/login-logs", adminUserList(h.ListUserLoginLogs))
 }

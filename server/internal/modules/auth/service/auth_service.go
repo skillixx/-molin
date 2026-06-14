@@ -1076,6 +1076,34 @@ func (s *AuthService) recordAdminUserAudit(ctx context.Context, action string, t
 	_ = s.auditSvc.Record(ctx, &op, "auth", action, &targetType, &targetID, ip, nil)
 }
 
+// ListUserLoginLogs A-30：分页查询指定用户的登录日志，账号字段按类型脱敏。
+func (s *AuthService) ListUserLoginLogs(ctx context.Context, userID uint64, offset, limit int) ([]dto.LoginLogItem, int64, error) {
+	logs, total, err := s.loginLogRepo.FindPagedByUser(ctx, userID, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	items := make([]dto.LoginLogItem, 0, len(logs))
+	for _, l := range logs {
+		account := l.LoginAccount
+		switch l.LoginType {
+		case "phone":
+			account = dto.MaskPhone(account)
+		case "email":
+			account = dto.MaskEmail(account)
+		}
+		items = append(items, dto.LoginLogItem{
+			ID:           l.ID,
+			LoginType:    l.LoginType,
+			LoginAccount: account,
+			IP:           l.IP,
+			UserAgent:    l.UserAgent,
+			Status:       l.Status,
+			CreatedAt:    l.CreatedAt.Format(time.RFC3339),
+		})
+	}
+	return items, total, nil
+}
+
 // mapUserRepoError 将仓储层唯一键错误映射为 auth service 对外暴露的业务错误。
 func mapUserRepoError(err error) error {
 	if err == nil {

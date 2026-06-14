@@ -522,6 +522,25 @@ func (h *AuthHandler) GetUser(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, user)
 }
 
+// ListUserLoginLogs GET /api/admin/users/{id}/login-logs — 管理员分页查看用户登录日志，A-30
+func (h *AuthHandler) ListUserLoginLogs(w http.ResponseWriter, r *http.Request) {
+	targetID, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "用户 ID 不合法")
+		return
+	}
+	p := pagination.Parse(r)
+	items, total, err := h.authSvc.ListUserLoginLogs(r.Context(), targetID, p.Offset(), p.PageSize)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
+		return
+	}
+	response.JSON(w, http.StatusOK, adminPagedResp{
+		List:       items,
+		Pagination: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
+	})
+}
+
 func handleAuthError(w http.ResponseWriter, err error) {
 	switch err {
 	case service.ErrEmailAlreadyExists, service.ErrPhoneAlreadyExists:
