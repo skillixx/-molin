@@ -198,6 +198,8 @@ func NewApp() (*App, error) {
 	authService.SetRoleAssigner(iamService)
 	// D-85：注入 RolesFetcher，用于 ListUsers / GetUser 附带 roles 字段
 	authService.SetRolesFetcher(iamService)
+	// D-86：注入 PermissionOverridesFetcher，用于 GetUser 附带 permission_overrides 字段
+	authService.SetPermissionOverridesFetcher(iamService)
 
 	// ——— Identity 模块 ———
 	// D-04：注入 auditSvc，用于审核操作写全局审计日志

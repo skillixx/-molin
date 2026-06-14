@@ -54,8 +54,8 @@ type ChangePasswordReq struct {
 
 // ResetPasswordReq 密码重置请求（OTP 验证，无需旧密码，未登录状态使用）。
 type ResetPasswordReq struct {
-	Target      string `json:"target"`       // 手机号或邮箱
-	TargetType  string `json:"target_type"`  // "phone" 或 "email"
+	Target      string `json:"target"`      // 手机号或邮箱
+	TargetType  string `json:"target_type"` // "phone" 或 "email"
 	Code        string `json:"code"`
 	NewPassword string `json:"new_password"`
 }
@@ -157,19 +157,32 @@ type AdminRoleItem struct {
 	Name string `json:"name"`
 }
 
+// AdminPermissionOverrideItem D-86：用户权限覆盖摘要，内嵌于 AdminUserResp.PermissionOverrides。
+type AdminPermissionOverrideItem struct {
+	ID             uint64  `json:"id"`
+	PermissionID   uint64  `json:"permission_id"`
+	PermissionCode string  `json:"permission_code"`
+	Effect         string  `json:"effect"`
+	Reason         *string `json:"reason,omitempty"`
+	ExpiresAt      *string `json:"expires_at,omitempty"`
+	CreatedBy      *uint64 `json:"created_by,omitempty"`
+	CreatedAt      string  `json:"created_at"`
+}
+
 // AdminUserResp 管理员查看用户列表/详情时的响应 DTO（敏感字段已脱敏）。
 type AdminUserResp struct {
-	ID             uint64          `json:"id"`
-	Username       *string         `json:"username"`
-	Email          *string         `json:"email"`           // 已脱敏
-	EmailVerified  bool            `json:"email_verified"`
-	Phone          *string         `json:"phone"`           // 已脱敏
-	PhoneVerified  bool            `json:"phone_verified"`
-	RealNameStatus string          `json:"real_name_status"`
-	Status         string          `json:"status"`
-	Roles          []AdminRoleItem `json:"roles"`
-	CreatedAt      string          `json:"created_at"`
-	LastLoginAt    *string         `json:"last_login_at"`
+	ID                  uint64                        `json:"id"`
+	Username            *string                       `json:"username"`
+	Email               *string                       `json:"email"` // 已脱敏
+	EmailVerified       bool                          `json:"email_verified"`
+	Phone               *string                       `json:"phone"` // 已脱敏
+	PhoneVerified       bool                          `json:"phone_verified"`
+	RealNameStatus      string                        `json:"real_name_status"`
+	Status              string                        `json:"status"`
+	Roles               []AdminRoleItem               `json:"roles"`
+	PermissionOverrides []AdminPermissionOverrideItem `json:"permission_overrides"`
+	CreatedAt           string                        `json:"created_at"`
+	LastLoginAt         *string                       `json:"last_login_at"`
 }
 
 // LoginLogItem A-30：管理员查看用户登录日志的单条响应字段。
