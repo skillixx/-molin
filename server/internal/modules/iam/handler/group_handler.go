@@ -57,7 +57,12 @@ func (h *GroupHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	g, err := h.groupSvc.GetGroup(r.Context(), id)
 	if err != nil {
-		response.Error(w, http.StatusNotFound, 40400, "分组不存在")
+		// D-74：区分"分组不存在"与其他 DB 错误，避免 DB 故障时客户端误以为资源不存在
+		if errors.Is(err, repository.ErrGroupNotFound) {
+			response.Error(w, http.StatusNotFound, 40400, "分组不存在")
+		} else {
+			response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
+		}
 		return
 	}
 	response.JSON(w, http.StatusOK, groupToResp(*g))
@@ -74,9 +79,28 @@ func (h *GroupHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "code 和 name 不能为空")
 		return
 	}
+	// D-76：字段长度上限校验，防止超长输入被 MySQL 截断或导致 500
+	if len(req.Code) > 128 {
+		response.Error(w, http.StatusBadRequest, 40000, "code 长度不能超过 128 字符")
+		return
+	}
+	if len(req.Name) > 128 {
+		response.Error(w, http.StatusBadRequest, 40000, "name 长度不能超过 128 字符")
+		return
+	}
+	if req.Description != nil && len(*req.Description) > 512 {
+		response.Error(w, http.StatusBadRequest, 40000, "description 长度不能超过 512 字符")
+		return
+	}
 	groupType := req.Type
 	if groupType == "" {
 		groupType = "custom"
+	}
+	// D-73：type 枚举白名单校验，拒绝非法值
+	validTypes := map[string]bool{"region": true, "org": true, "custom": true}
+	if !validTypes[groupType] {
+		response.Error(w, http.StatusBadRequest, 40000, "type 只能为 region/org/custom")
+		return
 	}
 	g := &model.UserGroup{
 		Code:        req.Code,
@@ -107,12 +131,28 @@ func (h *GroupHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	// 只将 JSON 中明确传了值的字段（非 nil）放入 map，避免零值覆盖现有数据（PATCH 语义）。
 	updates := map[string]interface{}{}
 	if req.Name != nil {
+		// D-76：name 长度上限校验
+		if len(*req.Name) > 128 {
+			response.Error(w, http.StatusBadRequest, 40000, "name 长度不能超过 128 字符")
+			return
+		}
 		updates["name"] = *req.Name
 	}
 	if req.Type != nil {
+		// D-73：UpdateGroup 的 type 枚举白名单校验
+		validTypes := map[string]bool{"region": true, "org": true, "custom": true}
+		if !validTypes[*req.Type] {
+			response.Error(w, http.StatusBadRequest, 40000, "type 只能为 region/org/custom")
+			return
+		}
 		updates["type"] = *req.Type
 	}
 	if req.Description != nil {
+		// D-76：description 长度上限校验
+		if len(*req.Description) > 512 {
+			response.Error(w, http.StatusBadRequest, 40000, "description 长度不能超过 512 字符")
+			return
+		}
 		updates["description"] = *req.Description
 	}
 	if req.IsDefault != nil {
@@ -211,6 +251,11 @@ func (h *GroupHandler) AddMember(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, repository.ErrUserNotFound) {
 			// D-35：用户不存在，返回 404
 			response.Error(w, http.StatusNotFound, 40400, "用户不存在")
+			return
+		}
+		// D-71：分组不存在，返回 404
+		if errors.Is(err, repository.ErrGroupNotFound) {
+			response.Error(w, http.StatusNotFound, 40400, "分组不存在")
 			return
 		}
 		if errors.Is(err, repository.ErrMemberAlreadyExists) {
@@ -418,11 +463,26 @@ func (h *GroupHandler) CreateInviteCode(w http.ResponseWriter, r *http.Request) 
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
+	// D-69：max_uses 不能为负数（负值导致 used_count < max_uses 恒 false，邀请码永不可用）
+	if req.MaxUses < 0 {
+		response.Error(w, http.StatusBadRequest, 40000, "max_uses 不能为负数")
+		return
+	}
+	// D-76：自定义邀请码长度上限校验
+	if len(req.Code) > 64 {
+		response.Error(w, http.StatusBadRequest, 40000, "邀请码长度不能超过 64 字符")
+		return
+	}
 	var expiresAt *time.Time
 	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
 		t, parseErr := time.Parse(isoFmt, *req.ExpiresAt)
 		if parseErr != nil {
 			response.Error(w, http.StatusBadRequest, 40000, "expires_at 格式错误，需 ISO 8601")
+			return
+		}
+		// D-72：expires_at 不能为过去时间，否则邀请码创建后立即失效
+		if t.Before(time.Now()) {
+			response.Error(w, http.StatusBadRequest, 40000, "expires_at 不能为过去时间")
 			return
 		}
 		expiresAt = &t

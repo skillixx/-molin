@@ -84,6 +84,14 @@ func (s *GroupService) AddMember(ctx context.Context, groupID, userID uint64, ro
 	if !exists {
 		return repository.ErrUserNotFound
 	}
+	// D-71：校验目标分组是否存在，防止向不存在的 groupID 写入孤立成员记录
+	groupExists, err := s.repo.ExistsGroupByID(ctx, groupID)
+	if err != nil {
+		return err
+	}
+	if !groupExists {
+		return repository.ErrGroupNotFound
+	}
 	m := &model.UserGroupMember{GroupID: groupID, UserID: userID, GroupRole: role}
 	if err := s.repo.AddMember(ctx, m); err != nil {
 		return err
@@ -159,10 +167,19 @@ func (s *GroupService) ListGroupPermissions(ctx context.Context, groupID uint64)
 
 func (s *GroupService) CreateInviteCode(ctx context.Context, groupID uint64, code, defaultRole string, maxUses int, expiresAt *time.Time, createdBy uint64) (*model.GroupInviteCode, error) {
 	if code == "" {
-		code = repository.GenerateCode()
+		// D-70：GenerateCode 改为 crypto/rand，签名变为 (string, error)，需处理错误
+		generated, err := repository.GenerateCode()
+		if err != nil {
+			return nil, err
+		}
+		code = generated
 	}
 	if defaultRole == "" {
 		defaultRole = "member"
+	}
+	// D-68：default_group_role 枚举校验，防止写入非法角色值绕过 AddMember 的角色检查
+	if defaultRole != "admin" && defaultRole != "member" {
+		return nil, errors.New("default_group_role 只能为 admin 或 member")
 	}
 	ic := &model.GroupInviteCode{
 		Code:             code,
