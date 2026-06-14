@@ -279,7 +279,7 @@ def setup_admin_user(user_id):
 print(f"\n{BOLD}前置准备 Step 2：注册测试账号{RESET}")
 
 print(f"\n  注册主管理员 {ADMIN_EMAIL}...")
-admin_user_id, _ = register_user_via_api(ADMIN_EMAIL, ADMIN_PHONE, ADMIN_PASSWORD, "adm69")
+admin_user_id, _ = register_user_via_api(ADMIN_EMAIL, ADMIN_PHONE, ADMIN_PASSWORD, f"adm69{TS}")
 if admin_user_id:
     setup_admin_user(admin_user_id)
     print(f"  管理员注册成功: id={admin_user_id}")
@@ -295,7 +295,7 @@ if not admin_token:
 print(f"  管理员登录成功")
 
 print(f"\n  注册 D-59 测试账号 {D59_EMAIL}...")
-d59_user_id, _ = register_user_via_api(D59_EMAIL, D59_PHONE, D59_PASSWORD, "d59pr69")
+d59_user_id, _ = register_user_via_api(D59_EMAIL, D59_PHONE, D59_PASSWORD, f"d59pr69{TS}")
 if d59_user_id:
     print(f"  D-59 用户注册成功: id={d59_user_id}")
 else:
@@ -303,7 +303,7 @@ else:
     d59_user_id = None
 
 print(f"\n  注册 D-61 测试账号 {D61_EMAIL}...")
-d61_user_id, _ = register_user_via_api(D61_EMAIL, D61_PHONE, D61_PASSWORD, "d61pr69")
+d61_user_id, _ = register_user_via_api(D61_EMAIL, D61_PHONE, D61_PASSWORD, f"d61pr69{TS}")
 if d61_user_id:
     print(f"  D-61 用户注册成功: id={d61_user_id}")
 else:
