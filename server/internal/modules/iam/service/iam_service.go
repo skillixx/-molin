@@ -350,15 +350,16 @@ func (s *IAMService) GetEffectiveOverrides(ctx context.Context, userID uint64) (
 	return s.overrideRepo.FindByUser(ctx, userID)
 }
 
-// ListAuditLogs 分页查询审计日志，支持按 module/action 过滤。
+// ListAuditLogs 分页查询审计日志，支持按 module/action/operatorID/时间范围过滤。
 // BUG-05 修复：新增此方法支持 GET /api/admin/audit-logs 接口。
 // A-04：审计日志读写能力迁移至独立 audit 模块，此处仅做转发。
 // D-45：加 nil 守卫，auditSvc 未注入时返回空列表而非 panic。
-func (s *IAMService) ListAuditLogs(ctx context.Context, module, action string, offset, limit int) ([]auditmodel.AuditLog, int64, error) {
+// D-82：扩展 operatorID/startTime/endTime 参数，支持合规必备的操作人和时间过滤。
+func (s *IAMService) ListAuditLogs(ctx context.Context, module, action string, operatorID uint64, startTime, endTime time.Time, offset, limit int) ([]auditmodel.AuditLog, int64, error) {
 	if s.auditSvc == nil {
 		return nil, 0, nil
 	}
-	return s.auditSvc.ListPaged(ctx, module, action, offset, limit)
+	return s.auditSvc.ListPaged(ctx, module, action, operatorID, startTime, endTime, offset, limit)
 }
 
 // evalPerms 从缓存的权限码列表判断是否拥有 permCode。

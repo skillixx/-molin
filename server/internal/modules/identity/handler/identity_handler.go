@@ -42,6 +42,12 @@ func (h *IdentityHandler) Submit(w http.ResponseWriter, r *http.Request) {
 			response.Error(w, http.StatusConflict, 40901, err.Error())
 		case service.ErrIDCardAlreadyBound:
 			response.Error(w, http.StatusConflict, 40902, err.Error())
+		// D-77：输入校验错误映射为 400
+		case service.ErrInvalidRealName, service.ErrRealNameTooLong, service.ErrInvalidIDCardNo:
+			response.Error(w, http.StatusBadRequest, 40000, err.Error())
+		// D-80：附件校验错误映射为 400
+		case service.ErrTooManyAttachments, service.ErrAttachmentNotHTTPS:
+			response.Error(w, http.StatusBadRequest, 40000, err.Error())
 		default:
 			response.Error(w, http.StatusInternalServerError, 50000, "提交失败")
 		}
@@ -62,11 +68,24 @@ func (h *IdentityHandler) GetMyVerification(w http.ResponseWriter, r *http.Reque
 	response.JSON(w, http.StatusOK, resp)
 }
 
+// validIdentityStatus 审核状态枚举白名单，空字符串表示查全部状态。
+var validIdentityStatus = map[string]bool{
+	"":         true,
+	"pending":  true,
+	"verified": true,
+	"rejected": true,
+}
+
 // ListPending GET /api/admin/identity-verifications
 // 支持 ?status=pending|verified|rejected（空值=全部）和分页参数 ?page=1&page_size=20。
 func (h *IdentityHandler) ListPending(w http.ResponseWriter, r *http.Request) {
 	// status 非空时按状态过滤，空字符串时查全部状态（兼容旧调用方默认只看 pending）
 	status := r.URL.Query().Get("status")
+	// D-79：status 参数枚举白名单校验，非法值返回 400，管理员拼写错误有明确提示
+	if !validIdentityStatus[status] {
+		response.Error(w, http.StatusBadRequest, 40000, "status 参数无效，允许值：pending/verified/rejected")
+		return
+	}
 	p := pagination.Parse(r)
 	list, total, err := h.identitySvc.ListPaged(r.Context(), status, p.Offset(), p.PageSize)
 	if err != nil {
@@ -115,6 +134,12 @@ func (h *IdentityHandler) Review(w http.ResponseWriter, r *http.Request) {
 		// D-06：拒绝审核时未填写驳回理由，返回 400
 		case service.ErrReasonRequired:
 			response.Error(w, http.StatusBadRequest, 40000, err.Error())
+		// D-81：驳回理由超长，返回 400 而非 500（MySQL Data too long 兜底）
+		case service.ErrReasonTooLong:
+			response.Error(w, http.StatusBadRequest, 40000, err.Error())
+		// D-40：批准时同一身份证号已被其他账号实名认证，返回 409
+		case service.ErrIDCardAlreadyVerified:
+			response.Error(w, http.StatusConflict, 40902, err.Error())
 		default:
 			response.Error(w, http.StatusInternalServerError, 50000, "审核失败")
 		}
