@@ -3,7 +3,7 @@
 **适用范围：** 所有列表查询接口（后端工程师、前端工程师必读）
 **制定日期：** 2026-06-05
 **2026-06-15 更新（D-95）：** 分页响应结构由嵌套 `{ list, pagination:{...} }` 改为**扁平** `{ items, page, page_size, total }`。`list` 字段统一改为 `items`，`page`/`page_size`/`total` 直接置于 `data` 顶层。
-> **迁移状态**：auth/iam/identity 模块（后端甲）已全部迁移为扁平结构；product/order/billing 模块（后端乙）尚未迁移（D-95 姊妹问题），仍为旧的嵌套结构，前端对接乙模块时需按旧结构处理，待乙完成迁移后本规范全量生效。
+> **迁移状态**：auth/iam/identity 模块（后端甲）已全部迁移为扁平结构；product/order/billing/finance_consumer 模块（后端乙）尚未迁移（D-95 姊妹问题），仍为旧的嵌套结构。已在 `docs/backend-dev-plan-backend-b.md` §7 阶段 R1 规划迁移（C-1），含所有新增列表接口；前端对接乙模块前需确认是否已迁移，迁移完成后本规范全量生效。
 
 ---
 
@@ -157,9 +157,9 @@ const totalPages = computed(() => Math.ceil(pagination.total / pagination.pageSi
 
 `GET /api/admin/roles`、`/permissions`、`/users`、`/users/{id}/roles`、`/users/{id}/permission-overrides`、`/users/{id}/login-logs`、`/identity-verifications`、`/audit-logs`、`/user-groups` 及其成员/邀请码列表等——均返回扁平 `{ items, page, page_size, total }`。
 
-### 后端乙（product/order/billing）— 待迁移（D-95 姊妹问题）
+### 后端乙（product/order/billing/finance_consumer）— 待迁移（D-95 姊妹问题）
 
-`product_handler.go` / `admin_product_handler.go` / `order_handler.go` / `billing_handler.go` / `admin_billing_handler.go` 仍使用旧的嵌套 `Pagination pagination.Result \`json:"pagination"\`` 写法，需按 §三 模板改为匿名嵌入扁平化。前端对接这些接口前需确认是否已迁移。
+`product_handler.go` / `admin_product_handler.go` / `order_handler.go` / `billing_handler.go` / `admin_billing_handler.go` 仍使用旧的嵌套 `"list"` + `"pagination"` 写法，需按 §三 模板改为匿名嵌入扁平化。新增的消费记录列表（finance_consumer 的 F2/F3）也必须按扁平结构实现。完整迁移与新增清单见 `docs/backend-dev-plan-backend-b.md` §3、§7（阶段 R1）。前端对接这些接口前需确认是否已迁移。
 
 > **重要：** 所有新增列表接口，开发阶段就必须按本规范（扁平结构）实现分页，不允许先全量返回再补分页，也不允许新写嵌套结构。
 

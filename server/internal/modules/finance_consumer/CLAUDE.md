@@ -85,8 +85,22 @@ func (s *ConsumerService) Handle(ctx context.Context, event ProductUsageEvent) (
 }
 ```
 
+## 接口清单
+
+> 权威设计见 `docs/backend-dev-plan-backend-b.md` §3.4。列表统一 **D-95 扁平分页** `{items,page,page_size,total}`。
+
+```text
+POST  /api/internal/product-usage-events       -- 内部上报（IP 白名单 + Idempotency-Key）
+                                                  返回 {consumption_record_id,wallet_transaction_id,amount,idempotency_key}
+GET   /api/product-consumption-records         -- 用户查本人消费记录 [扁平分页]（待新增）
+                                                  query: product_id,usage_type,created_from,created_to
+GET   /api/admin/product-consumption-records   -- [wallet:view] 全量消费记录 [扁平分页]（待新增）query 同上 + user_id
+```
+
+> 待办（详见设计文档 §7）：消费记录查询 F2/F3 尚未实现（C-7）；上报响应字段由 `{record_id,amount,idempotency_key}` 改为含 `consumption_record_id`/`wallet_transaction_id`（C-5）。
+
 ## 依赖关系
 
-- 依赖 `modules/billing/service` — 调用 WalletService.Deduct
+- 依赖 `modules/billing/service` — 调用 WalletService.Deduct / DeductTx
 - 依赖 `modules/product/repository` — 查询 product_billing_rules
 - 被业务模块（token_gateway、resource 等）调用

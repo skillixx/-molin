@@ -1271,11 +1271,13 @@ items 字段：role_id、can_view、can_buy、can_use。
 PATCH /api/admin/products/:id/prices
 ```
 
-Body 参数：items。
+Body 参数：items（批量覆盖写入）。
 
-items 字段：product_plan_id、role_id、membership_level_id、price_amount、currency、discount_rate、effective_from、effective_to。
+items 字段：product_plan_id、role_id（可空=非角色价）、membership_level_id（可空=非会员价）、price_amount、currency。
 
 返回 data：`updated`。
+
+> 价格优先级：会员价（membership_level_id 非空）> 角色价（role_id 非空）> 默认价（两者均空）。
 
 ### 4.12 商品处理器
 
@@ -1405,13 +1407,21 @@ Path 参数：
 ### 4.19 用户钱包后台接口
 
 ```text
-GET   /api/admin/users/:id/wallet
-PATCH /api/admin/users/:id/wallet/freeze
+GET   /api/admin/users/:id/wallet              -- 权限 wallet:view
+PATCH /api/admin/users/:id/wallet/freeze       -- 权限 wallet:manage
 ```
 
-冻结 Body 参数：amount、reason。
+冻结/解冻 Body 参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| action | string | 是 | freeze / unfreeze |
+| amount | string | 是 | 冻结/解冻金额 |
+| reason | string | 否 | 操作原因 |
 
 返回 data：钱包信息或 `updated`。
+
+> `wallet:manage` 为冻结操作专用权限码，需配套 seed migration 写入 admin 角色。
 
 ### 4.20 按量计费事件
 
@@ -1421,23 +1431,29 @@ POST /api/internal/product-usage-events
 
 Header：必须传 `Idempotency-Key`。
 
-Body 参数：event_id、user_id、product_id、product_plan_id、instance_id、usage_type、usage_amount、usage_unit、occurred_at、idempotency_key。
+Body 参数：event_id、user_id、product_id、product_type、product_code、product_plan_id、instance_id、usage_type、usage_amount、usage_unit、occurred_at、idempotency_key。
 
-返回 data：consumption_record_id、wallet_transaction_id、amount。
+返回 data：consumption_record_id、wallet_transaction_id、amount、idempotency_key。
+
+> 内部接口（IP 白名单保护），不对外公开。金额 = 命中 product_billing_rules 的 price_amount × 扣除 free_quota 后的计费用量。
 
 ### 4.21 计费规则和消费记录
 
 ```text
-GET   /api/product-consumption-records
-GET   /api/admin/product-billing-rules
-POST  /api/admin/product-billing-rules
-PATCH /api/admin/product-billing-rules/:id
-GET   /api/admin/product-consumption-records
+GET   /api/product-consumption-records          -- 用户查本人消费记录（登录）
+GET   /api/admin/product-consumption-records    -- 管理员查全量（权限 wallet:view）
+GET   /api/admin/product-billing-rules          -- 计费规则列表（权限 product:view）
+POST  /api/admin/product-billing-rules          -- 新增计费规则（权限 product:create）
+PATCH /api/admin/product-billing-rules/:id      -- 修改计费规则（权限 product:edit）
 ```
 
-计费规则 Body 参数：product_id、product_plan_id、usage_type、usage_unit、price_amount、currency、billing_mode、free_quota、status。
+消费记录 Query 参数：product_id、usage_type、created_from、created_to、page、page_size（管理员额外支持 user_id）。返回 data.items：记录 ID、商品、用量、金额、关联流水、时间。
 
-返回 data：规则信息、消费记录列表或 `updated`。
+计费规则 Body 参数：product_id、product_plan_id（可空=商品级通用规则）、usage_type、usage_unit、price_amount、currency、billing_mode、free_quota、status。
+
+返回 data：规则信息、消费记录列表（扁平分页）或 `updated`。
+
+> 计费规则归 product 模块管理，消费记录归 finance_consumer 模块；均由后端乙负责。
 
 ## 5. 用户资产、会员、应用和内容接口
 

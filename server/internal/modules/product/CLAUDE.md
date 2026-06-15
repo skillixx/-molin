@@ -188,18 +188,29 @@ CREATE TABLE IF NOT EXISTS product_billing_rules (
 
 ## 接口清单
 
+> 权威设计见 `docs/backend-dev-plan-backend-b.md` §3.1。列表接口统一 **D-95 扁平分页** `{items,page,page_size,total}`；批量写入 body 统一用 `items` 键。
+
 ```text
-GET    /api/products               -- 用户端商品市场（按角色过滤可见商品）
-GET    /api/products/:id           -- 商品详情 + 套餐 + 价格预览
-POST   /api/products/:id/purchase  -- 购买（需 Idempotency-Key 请求头）
-GET    /api/admin/products
-POST   /api/admin/products
-PUT    /api/admin/products/:id
-GET    /api/admin/products/:id/plans
-POST   /api/admin/products/:id/plans
-PUT    /api/admin/products/:id/plans/:plan_id/prices
-PUT    /api/admin/products/:id/access
+GET    /api/products                              -- 商品市场（按角色 can_view 过滤）[扁平分页]
+GET    /api/products/:id                          -- 详情 + 套餐 + 用户实际价格
+GET    /api/products/:id/plans                    -- 套餐列表（含 user_price）
+POST   /api/products/:id/purchase                 -- 购买（需 Idempotency-Key 请求头）
+GET    /api/admin/products                        -- [product:view] [扁平分页]
+POST   /api/admin/products                        -- [product:create]
+GET    /api/admin/products/:id                    -- [product:view]
+PATCH  /api/admin/products/:id                    -- [product:edit]
+PATCH  /api/admin/products/:id/status             -- [product:edit] 上下架
+GET    /api/admin/products/:id/plans              -- [product:view]（原误用 product:create，需改正）
+POST   /api/admin/products/:id/plans              -- [product:create]
+PATCH  /api/admin/products/:id/plans/:plan_id     -- [product:edit]
+PATCH  /api/admin/products/:id/access             -- [product:edit] body {items:[{role_id,can_view,can_buy,can_use}]}
+PATCH  /api/admin/products/:id/prices             -- [product:edit] body {items:[{product_plan_id,role_id?,membership_level_id?,price_amount,currency}]}
+GET    /api/admin/product-billing-rules           -- [product:view] 计费规则列表（待新增）[扁平分页]
+POST   /api/admin/product-billing-rules           -- [product:create] 新增计费规则（待新增）
+PATCH  /api/admin/product-billing-rules/:id       -- [product:edit] 改计费规则（待新增）
 ```
+
+> 待办（详见设计文档 §7）：计费规则 CRUD（P15/P16/P17）尚未实现；`access`/`prices` 批量 body 需由 `accesses`/`prices` 改为 `items`（C-2）；列表需扁平化（C-1）。
 
 ## 依赖关系
 

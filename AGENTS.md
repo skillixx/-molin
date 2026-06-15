@@ -38,7 +38,7 @@
 | 角色 | 负责范围 | Agent 文件 |
 |---|---|---|
 | 后端 A | auth / identity / iam / audit | `server/internal/modules/auth/CLAUDE.md` 等 |
-| 后端 B | product / order / billing / finance_consumer | `server/internal/modules/billing/CLAUDE.md` 等 |
+| 后端 B | product / order / billing / finance_consumer | `docs/backend-dev-plan-backend-b.md`（架构权威）+ 各模块 `CLAUDE.md` |
 | 后端 C | asset / membership / app / content | `server/internal/modules/asset/CLAUDE.md` 等 |
 | 前端 A | web/admin-console | `web/admin-console/CLAUDE.md` |
 | 前端 B | web/user-console | `web/user-console/CLAUDE.md` |
@@ -120,18 +120,15 @@ skills
 
 职责：
 
-- 统一商品。
-- 商品套餐。
-- 商品价格。
-- 商品角色可见规则。
-- 会员商品规则。
-- 订单。
-- 钱包。
-- 钱包流水。
-- 充值。
-- 消费。
-- 按量计费。
+- 统一商品、商品套餐、商品价格（会员价 > 角色价 > 默认价）。
+- 商品角色可见规则、会员商品规则、按量计费规则（product_billing_rules）。
+- 订单（状态机 pending→paid/cancelled/failed，paid→refunded）、订单支付与取消。
+- 钱包（乐观锁扣费）、钱包流水（只追加）、充值、支付回调验签与幂等入账。
+- 消费事件接收、按量计费、消费记录查询。
 - 支付和消费事件幂等。
+
+架构与接口权威设计：`docs/backend-dev-plan-backend-b.md`（含签名级接口清单、核心流程、R1-R6 任务）。
+Round 7 红线：所有列表接口统一 D-95 扁平分页 `{items,page,page_size,total}`；批量写入 body 统一 `items` 键；字段契约变更必须同步前端；新增权限码（如 `wallet:manage`）必须配 seed migration。
 
 后端 3 负责：
 

@@ -144,16 +144,20 @@ func (s *PaymentService) HandleNotify(ctx context.Context, provider string, rawB
 
 ## 接口清单
 
+> 权威设计见 `docs/backend-dev-plan-backend-b.md` §3.3。列表统一 **D-95 扁平分页** `{items,page,page_size,total}`。
+
 ```text
-GET  /api/wallet
-GET  /api/wallet/transactions
-POST /api/recharge/orders
-POST /api/payments/notify/:provider       -- 无需登录，需签名校验
-GET  /api/admin/wallet-transactions
-GET  /api/admin/users/:id/wallet
-PATCH /api/admin/users/:id/wallet/freeze
-GET  /api/admin/payment-callbacks
+GET   /api/wallet                              -- 钱包余额 {wallet_id,balance_amount,frozen_amount,currency}
+GET   /api/wallet/transactions                 -- 本人流水 [扁平分页] query: type,direction,created_from,created_to
+POST  /api/recharge/orders                     -- 创建充值订单 返回 {order_id,order_no,amount,status,pay_url}
+POST  /api/payments/notify/:provider           -- 无需登录，需验签 + 幂等
+GET   /api/admin/wallet-transactions           -- [wallet:view] 全量流水 [扁平分页]
+GET   /api/admin/users/:id/wallet              -- [wallet:view] 指定用户钱包
+PATCH /api/admin/users/:id/wallet/freeze       -- [wallet:manage] body {action:"freeze"/"unfreeze",amount,reason}
+GET   /api/admin/payment-callbacks             -- [wallet:view] 回调记录 [扁平分页]（禁回传明文 notify_body）
 ```
+
+> 待办（详见设计文档 §7）：充值响应补 order_no/amount/status（C-3）；冻结 body 由 `{amount,action,remark}` 改 `{action,amount,reason}`（C-4）；冻结权限码 wallet:view→wallet:manage（C-10，需 seed migration）；列表扁平化（C-1）。
 
 ## 依赖关系
 
