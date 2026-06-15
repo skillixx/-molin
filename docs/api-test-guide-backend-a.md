@@ -4,6 +4,15 @@
 > 基于代码当前状态整理（2026-06-12），main 分支 commit `88114e1`。
 > 2026-06-13 更新：同步 PR#20（手机号登录改为验证码登录）、PR#22（退出登录吊销当前 Access Token）、PR#25（登录接口对未注册账号返回 404/40404）。
 > 2026-06-13 更新：新增 PR#31 权限查询接口 —— 2.7 `GET /api/me/permissions`（A-10）、6.7 `GET /api/admin/roles/{id}/permissions`（A-11）、7.9 `GET /api/admin/users/{id}/effective-permissions`（A-12），原 6.7/6.8 顺延为 6.8/6.9。
+> **2026-06-15 更新（Round 7 审计 D-83/D-89/D-90/D-93/D-94/D-95/D-96 全部闭环）**：
+> - **D-95**：auth/iam/identity 模块所有分页响应改为**扁平结构**（`page`/`page_size`/`total` 直接位于 `data` 顶层，不再嵌套 `pagination` 子对象）。
+> - **D-93**：登录/注册/刷新令牌（1.3~1.6）响应新增 `user` 对象。
+> - **D-94**：密码长度统一约束为 **6-72 位**（注册/改密/重置/创建后台用户）。
+> - **D-96**：`bind_phone`/`bind_email`/`admin_verify` 三个 scene 从公开发码端点移除，迁移到专属认证态端点（新增 2.8/2.9、3.3/3.4）。
+> - **D-90**：查询我的实名记录路径由 `/api/identity/verifications/me` 改为 `/api/identity/verifications/latest`（5.2）。
+> - **D-89**：实名审核请求体由 `{approve, reason}` 改为 `{action, reject_reason}`（5.5）。
+> - **D-83**：审计日志接口（第八节）权限码由 `role:manage` 独立为 `audit:read`。
+> - **新增接口补全**：2.10 `PATCH /api/me/profile`（A-27）、4.4 `POST /api/admin/users`（A-28）、4.5 `PATCH /api/admin/users/{id}`（A-29）、4.6 `GET /api/admin/users/{id}/login-logs`（A-30）、5.6 `GET /api/admin/users/{id}/identity`（A-31）。
 
 ## 0. 通用说明
 
@@ -45,13 +54,16 @@ Authorization: Bearer <access_token>
 - `page`：默认 1，最小 1
 - `page_size`：默认 20，最大 100
 
-分页响应统一结构：
+分页响应统一结构（D-95，2026-06-15 起为**扁平结构**）：
 ```json
 {
   "items": [ /* 列表数据 */ ],
-  "pagination": { "page": 1, "page_size": 20, "total": 123 }
+  "page": 1,
+  "page_size": 20,
+  "total": 123
 }
 ```
+> ⚠️ `page`/`page_size`/`total` 已直接位于 `data` 顶层，**不再**嵌套在 `pagination` 子对象内。本手册第一至九节（auth/iam/identity 模块）的分页接口均按此结构返回。
 
 ### 0.5 验证码获取方式（重要）
 
@@ -87,7 +99,7 @@ password: Admin@Test123!
 ```
 
 该账号在 `roles`/`user_roles` 中已绑定 `admin` 角色，admin 角色拥有：
-`user:manage`、`user:list`、`role:manage`、`identity:review`、`group:manage`、`scope:all`、`app:manage`、`product:view`、`order:list` 等权限码。
+`user:manage`、`user:list`、`role:manage`、`audit:read`、`identity:review`、`group:manage`、`scope:all`、`app:manage`、`product:view`、`order:list` 等权限码。
 
 **方式二：自行注册新账号**（走第 1 节"无需鉴权"接口完成注册），但新账号默认无任何角色，访问 `/api/admin/*` 会返回 `403 40003`，需要先用方式一的管理员账号给该账号分配角色（见 7.3 `PATCH /api/admin/users/{id}/roles`）。
 
@@ -96,16 +108,19 @@ password: Admin@Test123!
 以下接口除了需要对应权限码，**还需要管理员双重认证（手机+邮箱均在有效期内）**：
 - `PATCH /api/admin/users/{id}/status`
 - `GET /api/admin/users`、`GET /api/admin/users/{id}`
-- `iam` 模块所有 `/api/admin/roles*`、`/api/admin/permissions*`、`/api/admin/users/{id}/roles*`、`/api/admin/users/{id}/permission-overrides*`、`/api/admin/audit-logs`
-- `identity` 模块所有 `/api/admin/identity-verifications*`
-- `iam` 模块所有 `/api/admin/user-groups*`、`/api/admin/users/{id}/groups`
+- `iam` 模块所有 `/api/admin/roles*`、`/api/admin/permissions*`、`/api/admin/users/{id}/roles*`、`/api/admin/users/{id}/permission-overrides*`（`role:manage`）
+- `iam` 模块 `/api/admin/audit-logs`（**D-83 起改为 `audit:read` 权限码**，admin 角色已绑定）
+- `identity` 模块所有 `/api/admin/identity-verifications*`、`/api/admin/users/{id}/identity`（`identity:review`）
+- `iam` 模块所有 `/api/admin/user-groups*`、`/api/admin/users/{id}/groups`（`group:manage`）
 
 **完成双重认证的步骤**（用管理员账号登录后的 token）：
 
-1. 发管理员本人手机验证码：
+> ⚠️ **D-96（2026-06-15）**：管理员双重认证发码已迁移到**专属认证态端点** `POST /api/admin/auth/verification-codes/{phone,email}`（需 Bearer + user:manage），**不再**走公开端点 `/api/auth/verification-codes/*`（公开端点传 `scene=admin_verify` 现返回 `400 40000`）。
+
+1. 发管理员本人手机验证码（D-96，认证态，scene 由服务端固定 admin_verify）：
    ```
-   POST /api/auth/verification-codes/phone
-   { "phone": "<管理员手机号>", "scene": "admin_verify" }
+   POST /api/admin/auth/verification-codes/phone   (Bearer 管理员 token)
+   { }    // 目标为当前管理员自己绑定的手机号，无需传参
    ```
    非生产环境会在 `data.code` 返回明文验证码。
 2. 提交手机双重认证：
@@ -113,10 +128,10 @@ password: Admin@Test123!
    POST /api/admin/auth/verify-phone   (Bearer 管理员 token)
    { "code": "<上一步拿到的验证码>" }
    ```
-3. 发管理员本人邮箱验证码：
+3. 发管理员本人邮箱验证码（D-96，认证态）：
    ```
-   POST /api/auth/verification-codes/email
-   { "email": "<管理员邮箱>", "scene": "admin_verify" }
+   POST /api/admin/auth/verification-codes/email   (Bearer 管理员 token)
+   { }    // 目标为当前管理员自己绑定的邮箱，无需传参
    ```
 4. 提交邮箱双重认证：
    ```
@@ -137,13 +152,14 @@ password: Admin@Test123!
 ```json
 { "email": "user@example.com", "scene": "register" }
 ```
-- `scene` 取值：`register` / `login` / `reset_password` / `admin_verify` / `bind_email`
+- `scene` 取值（**D-96 后公开端点仅接受这 3 个**）：`register` / `login` / `reset_password`
 - 两字段均必填，缺失返回 `400 40000`
+- ⚠️ **D-96**：`admin_verify` / `bind_email` 已从公开端点移除，传入返回 `400 40000`；换绑邮箱发码改用 2.9，管理员认证发码改用 3.4
 
 **前置校验（按 scene）**
 - `scene=register`：邮箱已注册 → `409 40900` "邮箱已被注册"
 - `scene=login`：邮箱未注册 → `404 40404` "邮箱未注册，请先注册"
-- 其他 scene（reset_password / admin_verify / bind_email）不做存在性校验
+- `scene=reset_password`：不做存在性校验
 
 **成功响应** `200`
 ```json
@@ -160,7 +176,8 @@ password: Admin@Test123!
 ```json
 { "phone": "13800001234", "scene": "register" }
 ```
-- `scene` 取值：`register` / `login` / `reset_password` / `admin_verify` / `bind_phone`
+- `scene` 取值（**D-96 后公开端点仅接受这 3 个**）：`register` / `login` / `reset_password`
+- ⚠️ **D-96**：`admin_verify` / `bind_phone` 已从公开端点移除，传入返回 `400 40000`；换绑手机发码改用 2.8，管理员认证发码改用 3.3
 - `scene=register` 手机已注册 → `409 40900` "手机号已被注册"
 - `scene=login` 手机未注册 → `404 40404` "手机号未注册，请先注册"
 
@@ -186,21 +203,30 @@ password: Admin@Test123!
 | 字段 | 说明 |
 |---|---|
 | username | 必填，`^[a-zA-Z0-9_]{2,32}$`（字母/数字/下划线，2-32位） |
+| password | 必填，长度 **6-72 位**（D-94），越界返回 `400 40000` |
 | phone_code | scene=register 的手机验证码（先调 1.2 获取） |
 | email_code | scene=register 的邮箱验证码（先调 1.1 获取） |
 
-**成功响应** `201`
+**成功响应** `201`（D-93：新增 `user` 对象，email/phone 已脱敏）
 ```json
 {
   "code": 0, "message": "ok",
   "data": {
     "access_token": "eyJ...",
     "refresh_token": "xxxx",
-    "expires_in": 3600
+    "expires_in": 3600,
+    "user": {
+      "id": 1,
+      "email": "al***@example.com",
+      "phone": "138****1234",
+      "real_name_status": "unverified",
+      "status": "active"
+    }
   }
 }
 ```
 注册成功后 `phone_verified`/`email_verified` 自动置为 `true`。
+> 下文 1.4/1.5/1.6 的「TokenPair（同 1.3）」均指含此 `user` 对象的结构（D-93）。
 
 **错误**
 | code | HTTP | 场景 |
@@ -281,6 +307,7 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
 ```
 - `target_type`：`phone` 或 `email`
 - `code`：对应 `target` 在 `scene=reset_password` 下获取的验证码（先调 1.1/1.2）
+- `new_password`：长度 **6-72 位**（D-94），越界返回 `400 40000`
 
 **成功响应** `200`：`data: null`
 
@@ -343,6 +370,8 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
 ```json
 { "old_password": "Alice@123", "new_password": "NewAlice@456" }
 ```
+- `new_password`：长度 **6-72 位**（D-94），越界返回 `400 40000`
+
 **成功响应** `200`：`data: null`，并吊销该用户所有 Refresh Token（需重新登录）
 
 **错误**
@@ -370,7 +399,7 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
 ---
 
 ### 2.5 PATCH /api/me/phone
-修改手机号，需先用**新手机号**发送 `scene=bind_phone` 验证码（1.2）。
+修改手机号，需先用**新手机号**通过 **2.8**（D-96 认证态发码）获取验证码。
 
 **请求体**
 ```json
@@ -387,7 +416,7 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
 ---
 
 ### 2.6 PATCH /api/me/email
-修改邮箱，需先用**新邮箱**发送 `scene=bind_email` 验证码（1.1）。
+修改邮箱，需先用**新邮箱**通过 **2.9**（D-96 认证态发码）获取验证码。
 
 **请求体**
 ```json
@@ -396,6 +425,58 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
 **成功响应** `200`：`data: null`，成功后 `email_verified` 置为 `true`
 
 **错误**：同 2.5（40000 验证码错误 / 40900 邮箱已被使用）
+
+---
+
+### 2.8 POST /api/me/verification-codes/phone （D-96，需 Bearer）
+向**新手机号**发送换绑验证码（scene 由服务端固定为 `bind_phone`），配合 2.5 完成换绑。按用户限流 5 次/分钟。
+
+**请求体**
+```json
+{ "phone": "13900005678" }
+```
+**成功响应** `200`：`data: { "code": "123456" }`（测试环境返回明文；生产为空对象）
+
+**错误**
+| code | HTTP | 场景 |
+|---|---|---|
+| 40000 | 400 | phone 缺失 |
+| 40001 | 401 | 未登录 |
+| 42900 | 429 | 超过 5 次/分钟限流 |
+
+---
+
+### 2.9 POST /api/me/verification-codes/email （D-96，需 Bearer）
+向**新邮箱**发送换绑验证码（scene 固定为 `bind_email`），配合 2.6 完成换绑。按用户限流 5 次/分钟。
+
+**请求体**
+```json
+{ "email": "alice_new@example.com" }
+```
+**成功响应** `200`：`data: { "code": "123456" }`（测试环境）
+
+**错误**：同 2.8（40000 email 缺失 / 40001 未登录 / 42900 限流）
+
+---
+
+### 2.10 PATCH /api/me/profile （A-27，需 Bearer）
+修改个人资料（昵称 / 头像），PATCH 语义：字段为 `null`（不传）表示不更新，传 `""` 表示清空。
+
+**请求体**
+```json
+{ "nickname": "新昵称", "avatar_url": "https://cdn.example.com/a.jpg" }
+```
+| 字段 | 说明 |
+|---|---|
+| nickname | 可选，最长 64 字符；传 `""` 清空 |
+| avatar_url | 可选，须以 `https://` 开头，最长 512 字符；传 `""` 清空 |
+
+**成功响应** `200`：`data: null`（更新后可调 2.2 `GET /api/me` 查看 `nickname`/`avatar_url`）
+
+**错误**
+| code | HTTP | 场景 |
+|---|---|---|
+| 40000 | 400 | nickname 超长 / avatar_url 格式非法或超长 |
 
 ---
 
@@ -451,6 +532,33 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
 | 40000 | 400 | 尚未完成手机号认证（"请先完成手机号认证"） |
 | 40001 | 401 | 当前账号未绑定邮箱 |
 | 40000 | 400 | 验证码错误或已过期 |
+
+---
+
+### 3.3 POST /api/admin/auth/verification-codes/phone （D-96，需 Bearer + user:manage）
+向**当前管理员自己绑定的手机号**发送 `scene=admin_verify` 验证码，配合 3.1 完成手机双重认证。按用户限流 5 次/分钟。
+
+**请求体**：`{}`（目标为管理员自己的手机号，无需传参）
+
+**成功响应** `200`：`data: { "code": "123456" }`（测试环境返回明文）
+
+**错误**
+| code | HTTP | 场景 |
+|---|---|---|
+| 40001 | 401 | 当前账号未绑定手机号 |
+| 40003 | 403 | 无 user:manage 权限 |
+| 42900 | 429 | 超过 5 次/分钟限流 |
+
+---
+
+### 3.4 POST /api/admin/auth/verification-codes/email （D-96，需 Bearer + user:manage）
+向**当前管理员自己绑定的邮箱**发送 `scene=admin_verify` 验证码，配合 3.2 完成邮箱双重认证。
+
+**请求体**：`{}`
+
+**成功响应** `200`：`data: { "code": "123456" }`（测试环境）
+
+**错误**：同 3.3（40001 未绑定邮箱 / 40003 无权限 / 42900 限流）
 
 ---
 
@@ -515,7 +623,9 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
         "last_login_at": "2026-06-12T09:00:00+08:00"
       }
     ],
-    "pagination": { "page": 1, "page_size": 20, "total": 1 }
+    "page": 1,
+    "page_size": 20,
+    "total": 1
   }
 }
 ```
@@ -536,6 +646,97 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
 
 ---
 
+### 4.4 POST /api/admin/users （A-28，需 user:manage + 双重认证）
+管理员直接创建后台用户（**跳过 OTP**），可同时分配角色。
+
+**请求体**
+```json
+{
+  "email": "ops01@example.com",
+  "phone": "13700001234",
+  "password": "Ops@123456",
+  "role_ids": [2, 3],
+  "status": "active"
+}
+```
+| 字段 | 说明 |
+|---|---|
+| email / phone | **至少传一个**（两者皆可选，但不能都为空） |
+| password | 必填，长度 **6-72 位**（D-94） |
+| role_ids | 可选，角色 ID 数组；省略则不分配角色 |
+| status | 可选，`active`（默认） / `disabled` |
+
+**成功响应** `201`
+```json
+{ "code": 0, "message": "ok", "data": { "user_id": 50 } }
+```
+
+**错误**
+| code | HTTP | 场景 |
+|---|---|---|
+| 40000 | 400 | email/phone 都为空 / password 越界 / status 非法 |
+| 40900 | 409 | 邮箱或手机号已被注册 |
+
+---
+
+### 4.5 PATCH /api/admin/users/{id} （A-29，需 user:manage + 双重认证）
+管理员修改用户的邮箱 / 手机号 / 状态，PATCH 语义：字段为 `null`（不传）表示不更新。
+
+**Path 参数**：`id` — 目标用户 ID
+
+**请求体**（按需传字段）
+```json
+{ "email": "new@example.com", "phone": "13900009999", "status": "disabled" }
+```
+| 字段 | 说明 |
+|---|---|
+| email | 可选，改后自动 `email_verified=true` |
+| phone | 可选，改后自动 `phone_verified=true` |
+| status | 可选，`active` / `disabled` |
+
+**成功响应** `200`：`data: null`
+
+**错误**
+| code | HTTP | 场景 |
+|---|---|---|
+| 40000 | 400 | id 不合法 / status 非法 |
+| 40900 | 409 | 新邮箱或手机号已被其他账号占用 |
+| 40400 | 404 | 用户不存在 |
+
+---
+
+### 4.6 GET /api/admin/users/{id}/login-logs （A-30，需 user:list + 双重认证）
+分页查询指定用户的登录日志。
+
+**Path 参数**：`id` — 目标用户 ID
+**Query 参数**：`page` / `page_size`
+
+**成功响应** `200`
+```json
+{
+  "code": 0, "message": "ok",
+  "data": {
+    "items": [
+      {
+        "id": 1001,
+        "login_type": "email",
+        "login_account": "al***@example.com",
+        "ip": "127.0.0.1",
+        "user_agent": "Mozilla/5.0 ...",
+        "status": "success",
+        "created_at": "2026-06-15T09:00:00+08:00"
+      }
+    ],
+    "page": 1,
+    "page_size": 20,
+    "total": 1
+  }
+}
+```
+- `login_type`：`email` / `phone`；`login_account` 已脱敏；`status`：`success` / `failed`
+
+---
+
 ## 五、Identity 模块 — 实名认证
 
 ### 5.1 POST /api/identity/verifications（需 Bearer）
@@ -546,10 +747,12 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
 {
   "real_name": "张三",
   "id_card_no": "330102199001011234",
+  "verification_type": "id_card",
   "attachments": ["https://minio.example.com/idcard/front.jpg"]
 }
 ```
 - `id_card_no`：18 位身份证号，**不会被存储为明文**
+- `verification_type`：可选，认证类型，当前仅支持 `id_card`
 - `attachments`：可选，附件 URL 数组
 
 **成功响应** `201`
@@ -565,7 +768,9 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
 
 ---
 
-### 5.2 GET /api/identity/verifications/me（需 Bearer）
+### 5.2 GET /api/identity/verifications/latest（需 Bearer）
+> ⚠️ **D-90（2026-06-15）**：路径由旧的 `/api/identity/verifications/me` 改为 `/api/identity/verifications/latest`，旧路径已下线。
+
 查询当前用户最近一条认证记录。无请求体。
 
 **成功响应** `200`
@@ -600,7 +805,7 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
 | status | 可选，`pending`/`verified`/`rejected`，空值返回全部状态 |
 | page / page_size | 分页 |
 
-**成功响应** `200`：`{ items: [VerificationResp...], pagination: {...} }`，item 结构同 5.2 的 `data`
+**成功响应** `200`：扁平分页 `{ items: [VerificationResp...], page, page_size, total }`，item 结构同 5.2 的 `data`
 
 ---
 
@@ -615,21 +820,47 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
 
 ### 5.5 PATCH /api/admin/identity-verifications/{id}/review（同 5.3 权限）
 管理员审核。
+> ⚠️ **D-89（2026-06-15）**：请求体字段由旧的 `{approve, reason}` 改为 `{action, reject_reason}`，旧字段不再生效。
 
-**请求体**
+**请求体**（通过）
 ```json
-{ "approve": true, "reason": "" }
+{ "action": "approve" }
 ```
 或拒绝：
 ```json
-{ "approve": false, "reason": "身份证照片不清晰" }
+{ "action": "reject", "reject_reason": "身份证照片不清晰" }
 ```
-- `approve=true` → 记录状态 `verified`，同步写 `users.real_name_status=verified`，记录 `verified_at`
-- `approve=false` → 记录状态 `rejected`，`reject_reason=reason`
+| 字段 | 说明 |
+|---|---|
+| action | 必填，`approve` 或 `reject` |
+| reject_reason | `action=reject` 时必填；`approve` 时可省略 |
+
+- `action=approve` → 记录状态 `verified`，同步写 `users.real_name_status=verified`，记录 `verified_at`
+- `action=reject` → 记录状态 `rejected`，`reject_reason` 写入拒绝原因
 
 **成功响应** `200`：`data: null`
 
+**错误**
+| code | HTTP | 场景 |
+|---|---|---|
+| 40000 | 400 | action 非法 / `action=reject` 但未填 reject_reason |
+| 40400 | 404 | 记录不存在 |
+
 写审核日志（`identity_verification_logs`）记录 operator_id。
+
+---
+
+### 5.6 GET /api/admin/users/{id}/identity （A-31，需 Bearer + identity:review + 双重认证）
+管理员查看指定用户的实名信息卡片（返回该用户最近一条认证记录，结构同 5.2）。
+
+**Path 参数**：`id` — 目标用户 ID
+
+**成功响应** `200`：单条 `VerificationResp`（结构同 5.2 的 `data`，含 `id_card_no_masked` 脱敏证件号）
+
+**错误**
+| code | HTTP | 场景 |
+|---|---|---|
+| 40400 | 404 | 该用户暂无实名认证记录 |
 
 ---
 
@@ -644,7 +875,9 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
   "items": [
     { "id": 1, "code": "admin", "name": "超级管理员", "description": "系统管理员" }
   ],
-  "pagination": { "page": 1, "page_size": 20, "total": 1 }
+  "page": 1,
+  "page_size": 20,
+  "total": 1
 }
 ```
 `description` 为 `*string`，可能不出现（omitempty）
@@ -738,7 +971,9 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
   "items": [
     { "id": 1, "code": "user:manage", "name": "用户管理", "resource": "user", "action": "manage" }
   ],
-  "pagination": { "page": 1, "page_size": 20, "total": 1 }
+  "page": 1,
+  "page_size": 20,
+  "total": 1
 }
 ```
 
@@ -783,7 +1018,9 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
   "items": [
     { "id": 1, "code": "admin", "name": "超级管理员", "description": "系统管理员", "created_at": "2026-06-01T10:00:00+08:00" }
   ],
-  "pagination": { "page": 1, "page_size": 20, "total": 1 }
+  "page": 1,
+  "page_size": 20,
+  "total": 1
 }
 ```
 
@@ -852,7 +1089,9 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
       "created_by": 1, "created_at": "2026-06-12T10:00:00+08:00"
     }
   ],
-  "pagination": { "page": 1, "page_size": 20, "total": 1 }
+  "page": 1,
+  "page_size": 20,
+  "total": 1
 }
 ```
 `expires_at` 为 `null` 时该字段不出现（omitempty）。
@@ -943,7 +1182,9 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
 
 ---
 
-## 八、IAM 模块 — 审计日志（需 Bearer + role:manage + 双重认证）
+## 八、IAM 模块 — 审计日志（需 Bearer + audit:read + 双重认证）
+
+> ⚠️ **D-83（2026-06-15）**：本接口权限码已从 `role:manage` 独立为 **`audit:read`**（最小权限原则）。0.7 中的 admin 测试账号已绑定 `audit:read`（migration 000021），可直接访问。
 
 ### 8.1 GET /api/admin/audit-logs
 **Query 参数**
@@ -968,7 +1209,9 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
       "created_at": "2026-06-12T10:00:00+08:00"
     }
   ],
-  "pagination": { "page": 1, "page_size": 20, "total": 1 }
+  "page": 1,
+  "page_size": 20,
+  "total": 1
 }
 ```
 
@@ -991,7 +1234,9 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
       "created_at": "2026-06-12T10:00:00+08:00"
     }
   ],
-  "pagination": { "page": 1, "page_size": 20, "total": 1 }
+  "page": 1,
+  "page_size": 20,
+  "total": 1
 }
 ```
 
@@ -1051,7 +1296,9 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
   "items": [
     { "id": 1, "user_id": 5, "group_id": 1, "group_role": "member", "created_at": "2026-06-12T10:00:00+08:00" }
   ],
-  "pagination": { "page": 1, "page_size": 20, "total": 1 }
+  "page": 1,
+  "page_size": 20,
+  "total": 1
 }
 ```
 
@@ -1177,7 +1424,9 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
       "created_by": 1, "created_at": "2026-06-12T10:00:00+08:00"
     }
   ],
-  "pagination": { "page": 1, "page_size": 20, "total": 1 }
+  "page": 1,
+  "page_size": 20,
+  "total": 1
 }
 ```
 
