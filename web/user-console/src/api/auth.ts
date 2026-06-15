@@ -57,9 +57,9 @@ export function refreshToken(refresh_token: string) {
   return http.post<unknown, TokenPair>('/auth/refresh', { refresh_token })
 }
 
-// 退出登录（需 Bearer Token）
-export function logout() {
-  return http.post<unknown, void>('/auth/logout')
+// 退出登录（需 Bearer Token），发送空对象可兼容后端 JSON Decode 行为
+export function logout(refresh_token?: string) {
+  return http.post<unknown, void>('/auth/logout', { refresh_token })
 }
 
 // 获取当前用户信息（需 Bearer Token）

@@ -90,7 +90,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function logout() {
     try {
       // 通知后端吊销 Token
-      await apiLogout()
+      await apiLogout(localStorage.getItem('refresh_token') ?? undefined)
     } catch {
       // 忽略退出接口的错误，本地状态照常清理
     } finally {
