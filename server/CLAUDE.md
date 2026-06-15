@@ -91,3 +91,18 @@ sshpass -p '$TEST_SSH_PASS' ssh -p 10003 pc@8.130.9.163 \
 - 禁止在代码中硬编码密钥、密码、Token
 - 身份证号必须 HMAC-SHA256 存储（详见全局 `CLAUDE.md` 安全约定）
 - Refresh Token DB 只存 HMAC-SHA256 哈希值
+
+## 各后端模块架构权威文档
+
+| 负责人 | 模块 | 架构权威文档 |
+|---|---|---|
+| 后端甲 | auth / iam / identity / audit | `docs/api-test-guide-backend-a.md`、各模块 `CLAUDE.md` |
+| 后端乙 | product / order / billing / finance_consumer | **`docs/backend-dev-plan-backend-b.md`**、各模块 `CLAUDE.md` |
+| 后端丙 | asset / membership / app / provision / content | 各模块 `CLAUDE.md` |
+
+## Round 7 全后端红线（列表/契约一致性）
+
+- **D-95 扁平分页**：所有列表接口返回 `{items,page,page_size,total}`（`data` 顶层），禁止嵌套 `{list,pagination}`；参见 `docs/api-pagination-standard.md`。
+- **批量写入 body 统一 `items` 键**（如商品 access/prices 覆盖写）。
+- **接口字段/错误码必须与 `docs/full-api-design.md` 一致**；契约变更后必须同步 `docs/frontend-api-reference.md` 与两端控制台（字段变更未同步前端为反复出现根因）。
+- **新增/变更权限码必须同时建 seed migration**（历史多次因缺 seed 导致上线 P1）。
