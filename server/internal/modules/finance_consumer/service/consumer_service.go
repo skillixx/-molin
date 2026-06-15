@@ -63,20 +63,35 @@ func (s *ConsumerService) Handle(ctx context.Context, event consumermodel.Produc
 		return nil, ErrNoBillingRule
 	}
 
-	// 3. 计算扣费金额（单价 × 使用量）
-	amount := rule.PriceAmount.Mul(event.UsageAmount)
-	if amount.LessThanOrEqual(decimal.Zero) {
-		return nil, ErrInvalidAmount
+	// 3. 计算计费用量与扣费金额。
+	// B-03/F2：必须先扣减免费额度（free_quota），仅对超出部分计费。
+	// billable = max(0, UsageAmount - FreeQuota)，FreeQuota 为 *decimal.Decimal，nil 视为 0。
+	freeQuota := decimal.Zero
+	if rule.FreeQuota != nil {
+		freeQuota = *rule.FreeQuota
 	}
+	billable := event.UsageAmount.Sub(freeQuota)
+	if billable.LessThan(decimal.Zero) {
+		billable = decimal.Zero
+	}
+	// amount = 单价 × 计费用量（超出免费额度的部分）
+	amount := rule.PriceAmount.Mul(billable)
 
-	// 4. 事务：扣费 + 写消费记录（原子性保证）
+	// 4. 事务：扣费（仅当 amount>0）+ 写消费记录（原子性保证）。
+	// B-03/F2：当全部用量都在免费额度内（billable<=0 → amount=0）时不调用 DeductTx，
+	// 但仍在事务内写一条 amount=0 的消费记录，保留幂等键与用量留痕。
 	var result *consumermodel.ConsumptionResult
 	err = s.db.Transaction(func(tx *gorm.DB) error {
-		// 调用 billing.WalletService.DeductTx（在外部事务内执行，不再嵌套事务）
-		// C-5：DeductTx 返回钱包流水 ID，用于填充消费上报响应 wallet_transaction_id。
-		walletTxID, err := s.walletSvc.DeductTx(tx, event.UserID, amount, 0, "消费扣费: "+event.UsageType)
-		if err != nil {
-			return err
+		// 仅当存在应计费金额时才扣款；amount=0 时跳过扣费，wallet_transaction_id 保持 0。
+		var walletTxID uint64
+		if amount.GreaterThan(decimal.Zero) {
+			// 调用 billing.WalletService.DeductTx（在外部事务内执行，不再嵌套事务）
+			// C-5：DeductTx 返回钱包流水 ID，用于填充消费上报响应 wallet_transaction_id。
+			txID, err := s.walletSvc.DeductTx(tx, event.UserID, amount, 0, "消费扣费: "+event.UsageType)
+			if err != nil {
+				return err
+			}
+			walletTxID = txID
 		}
 
 		var planID *uint64
@@ -90,24 +105,31 @@ func (s *ConsumerService) Handle(ctx context.Context, event consumermodel.Produc
 			instanceID = &id
 		}
 
+		// B-03：将本次扣费产生的钱包流水 ID 持久化到消费记录，
+		// 使幂等重发时 ToResult() 能返回相同的真实 txid；免费额度内（walletTxID=0）则存 NULL。
+		var walletTxIDPtr *uint64
+		if walletTxID > 0 {
+			walletTxIDPtr = &walletTxID
+		}
+
 		record := &consumermodel.ProductConsumptionRecord{
-			EventID:        event.EventID,
-			UserID:         event.UserID,
-			ProductID:      event.ProductID,
-			ProductPlanID:  planID,
-			InstanceID:     instanceID,
-			UsageType:      event.UsageType,
-			UsageAmount:    event.UsageAmount,
-			UsageUnit:      event.UsageUnit,
-			Amount:         amount,
-			IdempotencyKey: event.IdempotencyKey,
+			EventID:             event.EventID,
+			UserID:              event.UserID,
+			ProductID:           event.ProductID,
+			ProductPlanID:       planID,
+			InstanceID:          instanceID,
+			UsageType:           event.UsageType,
+			UsageAmount:         event.UsageAmount,
+			UsageUnit:           event.UsageUnit,
+			Amount:              amount,
+			IdempotencyKey:      event.IdempotencyKey,
+			WalletTransactionID: walletTxIDPtr,
 		}
 		if err := s.consumptionRepo.Create(tx, record); err != nil {
 			return err
 		}
+		// ToResult 会自动带出持久化后的 wallet_transaction_id（免费额度内为 0）。
 		result = record.ToResult()
-		// C-5：透传本次扣费产生的钱包流水 ID
-		result.WalletTransactionID = walletTxID
 		return nil
 	})
 	return result, err

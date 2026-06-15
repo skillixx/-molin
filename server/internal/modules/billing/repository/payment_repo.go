@@ -32,6 +32,14 @@ func (r *PaymentRepository) Upsert(ctx context.Context, callback *model.PaymentC
 	}).Create(callback).Error
 }
 
+// MarkIgnored 将尚未处理的回调标记为 ignored（B-01 金额不匹配场景）。
+// 仅当当前 status 不为 processed 时更新，避免覆盖已成功入账的记录。
+func (r *PaymentRepository) MarkIgnored(ctx context.Context, provider, providerTradeNo string) error {
+	return r.db.WithContext(ctx).Model(&model.PaymentCallback{}).
+		Where("provider = ? AND provider_trade_no = ? AND status <> ?", provider, providerTradeNo, "processed").
+		Update("status", "ignored").Error
+}
+
 // IsProcessed 检查支付回调是否已处理完成（status = processed）。
 func (r *PaymentRepository) IsProcessed(ctx context.Context, provider, providerTradeNo string) bool {
 	var count int64

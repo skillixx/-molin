@@ -15,6 +15,10 @@ import (
 var (
 	// ErrOrderNotPending 订单非 pending 状态，无法支付/取消（状态机越界）。
 	ErrOrderNotPending = errors.New("订单状态不可操作")
+	// ErrOrderTypeNotPayable 订单类型不支持钱包支付（B-02 安全护栏）。
+	// 仅 product 订单可走 O3 钱包支付；recharge 等其它类型订单不可被钱包「支付」，
+	// 否则会出现扣款不入账、订单被错误置为 paid。
+	ErrOrderTypeNotPayable = errors.New("该订单不支持钱包支付")
 	// ErrInsufficientBalance 余额不足（code=60001）。
 	// 由注入的 BillingService 实现（bootstrap 适配器）在扣费余额不足时返回本哨兵错误，
 	// 使 order 模块无需反向依赖 billing 包即可识别该业务语义。
@@ -79,6 +83,12 @@ func (s *PayService) Pay(ctx context.Context, orderID, userID uint64) (*PayResul
 	if order.UserID != userID {
 		// 非本人订单：按"不存在"处理，避免暴露他人订单存在性
 		return nil, ErrOrderNotFound
+	}
+
+	// 1.1 订单类型校验（B-02）：仅产品订单可走钱包支付。
+	// recharge 等其它类型订单严禁被钱包「支付」（否则扣款不入账且订单错置 paid）。
+	if order.OrderType != "product" {
+		return nil, ErrOrderTypeNotPayable
 	}
 
 	// 2. 状态校验

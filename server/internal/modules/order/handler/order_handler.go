@@ -5,14 +5,46 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"molin/server/internal/middleware"
 	"molin/server/internal/modules/order/dto"
 	"molin/server/internal/modules/order/model"
+	"molin/server/internal/modules/order/repository"
 	"molin/server/internal/modules/order/service"
 	"molin/server/pkg/pagination"
 	"molin/server/pkg/response"
 )
+
+// parseOrderTimeParam 解析订单时间过滤参数，支持 RFC3339（如 2026-06-01T00:00:00Z）
+// 与日期（2006-01-02）两种格式，无法解析返回 nil（即忽略该过滤，与 finance_consumer 保持一致）。
+func parseOrderTimeParam(raw string) *time.Time {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return &t
+	}
+	if t, err := time.Parse("2006-01-02", raw); err == nil {
+		return &t
+	}
+	// 非法格式：忽略该过滤条件（返回 nil），不返回 400，保持列表查询的宽松容错
+	return nil
+}
+
+// parseOrderFilter 从 query 解析订单列表公共过滤条件（status / order_type / 时间区间）。
+// 不解析 user_id（用户端由登录态强制、管理端单独解析），避免越权语义混入。
+func parseOrderFilter(r *http.Request) repository.OrderFilter {
+	q := r.URL.Query()
+	return repository.OrderFilter{
+		Status:      strings.TrimSpace(q.Get("status")),
+		OrderType:   strings.TrimSpace(q.Get("order_type")),
+		CreatedFrom: parseOrderTimeParam(q.Get("created_from")),
+		CreatedTo:   parseOrderTimeParam(q.Get("created_to")),
+	}
+}
 
 // PagedResp 统一分页响应结构（D-95：扁平，匿名嵌入 pagination.Result 使 page/page_size/total 与 items 同级）。
 type PagedResp struct {
@@ -32,13 +64,16 @@ func NewOrderHandler(orderSvc *service.OrderService, paySvc *service.PayService)
 	return &OrderHandler{orderSvc: orderSvc, paySvc: paySvc}
 }
 
-// ListOrders 用户查自己的订单列表（分页）。
+// ListOrders 用户查自己的订单列表（分页+过滤，仅本人）。
 // GET /api/orders
+// query：order_type / status / created_from / created_to / page / page_size。
+// created_from/created_to 支持 RFC3339 与 2006-01-02 两种格式，非法格式忽略该过滤。
 func (h *OrderHandler) ListOrders(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	pg := pagination.Parse(r)
+	filter := parseOrderFilter(r)
 
-	orders, total, err := h.orderSvc.ListByUser(r.Context(), userID, pg.Offset(), pg.PageSize)
+	orders, total, err := h.orderSvc.ListByUser(r.Context(), userID, filter, pg.Offset(), pg.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询订单列表失败")
 		return
@@ -112,6 +147,8 @@ func (h *OrderHandler) Pay(w http.ResponseWriter, r *http.Request) {
 			response.Error(w, http.StatusNotFound, 40004, "订单不存在")
 		case errors.Is(err, service.ErrInsufficientBalance):
 			response.Error(w, http.StatusBadRequest, 60001, "余额不足")
+		case errors.Is(err, service.ErrOrderTypeNotPayable):
+			response.Error(w, http.StatusBadRequest, 40000, "该订单不支持钱包支付")
 		case errors.Is(err, service.ErrOrderNotPending):
 			response.Error(w, http.StatusBadRequest, 40900, "订单状态不可支付")
 		case errors.Is(err, service.ErrConcurrentUpdate):
@@ -161,20 +198,21 @@ func (h *OrderHandler) Cancel(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, dto.CancelOrderResp{Cancelled: true})
 }
 
-// AdminListOrders 管理员查所有订单（分页+过滤）。
+// AdminListOrders 管理员查所有订单（分页+过滤，需 order:list 权限）。
 // GET /api/admin/orders
+// query：user_id / status / order_type / created_from / created_to / page / page_size。
+// created_from/created_to 支持 RFC3339 与 2006-01-02 两种格式，非法格式忽略该过滤。
 func (h *OrderHandler) AdminListOrders(w http.ResponseWriter, r *http.Request) {
 	pg := pagination.Parse(r)
 
-	// 解析过滤参数
-	var userID uint64
-	if uidStr := r.URL.Query().Get("user_id"); uidStr != "" {
-		userID, _ = strconv.ParseUint(uidStr, 10, 64)
+	// 解析公共过滤参数（status / order_type / 时间区间）
+	filter := parseOrderFilter(r)
+	// 管理端额外支持按 user_id 过滤
+	if uidStr := strings.TrimSpace(r.URL.Query().Get("user_id")); uidStr != "" {
+		filter.UserID, _ = strconv.ParseUint(uidStr, 10, 64)
 	}
-	status := r.URL.Query().Get("status")
-	orderType := r.URL.Query().Get("order_type")
 
-	orders, total, err := h.orderSvc.AdminListAll(r.Context(), userID, status, orderType, pg.Offset(), pg.PageSize)
+	orders, total, err := h.orderSvc.AdminListAll(r.Context(), filter, pg.Offset(), pg.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询订单列表失败")
 		return

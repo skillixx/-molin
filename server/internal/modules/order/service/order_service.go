@@ -113,6 +113,18 @@ func (s *OrderService) MarkFailed(ctx context.Context, orderID uint64) error {
 	return nil
 }
 
+// DeletePendingTransient 删除因「瞬时锁冲突」（乐观锁重试耗尽）而未能完成扣费的 pending 订单。
+// 此类失败本质是并发瞬时冲突，并非真实业务失败（如余额不足），订单从未发生任何资金变动，
+// 删除可避免遗留大量 failed 垃圾订单。带 status='pending' 守卫，绝不会误删已支付订单。
+// 返回是否删除成功（false 表示订单已非 pending，调用方应改走 MarkFailed）。
+func (s *OrderService) DeletePendingTransient(ctx context.Context, orderID uint64) (bool, error) {
+	rows, err := s.repo.DeletePending(ctx, orderID)
+	if err != nil {
+		return false, err
+	}
+	return rows > 0, nil
+}
+
 // MarkPaidByOrderNo 按订单号将充值订单标记为已支付（用于支付回调，在事务内调用）。
 func (s *OrderService) MarkPaidByOrderNo(tx *gorm.DB, orderNo string) (*model.Order, error) {
 	order, err := s.repo.FindByOrderNo(context.Background(), orderNo)
@@ -147,9 +159,11 @@ func (s *OrderService) GetByID(ctx context.Context, orderID, userID uint64) (*mo
 	return order, nil
 }
 
-// ListByUser 查询用户订单列表（分页）。
-func (s *OrderService) ListByUser(ctx context.Context, userID uint64, offset, limit int) ([]model.Order, int64, error) {
-	return s.repo.ListByUser(ctx, userID, offset, limit)
+// ListByUser 查询用户订单列表（分页+过滤）。
+// 强制将 filter.UserID 设为登录用户 ID，保证仅本人可见（O1 约束）。
+func (s *OrderService) ListByUser(ctx context.Context, userID uint64, filter repository.OrderFilter, offset, limit int) ([]model.Order, int64, error) {
+	filter.UserID = userID
+	return s.repo.ListByUser(ctx, filter, offset, limit)
 }
 
 // AdminGetByID 管理员查询订单详情（不做用户过滤）。
@@ -162,6 +176,6 @@ func (s *OrderService) AdminGetByID(ctx context.Context, orderID uint64) (*model
 }
 
 // AdminListAll 管理员查询所有订单（分页+过滤）。
-func (s *OrderService) AdminListAll(ctx context.Context, userID uint64, status, orderType string, offset, limit int) ([]model.Order, int64, error) {
-	return s.repo.AdminListAll(ctx, userID, status, orderType, offset, limit)
+func (s *OrderService) AdminListAll(ctx context.Context, filter repository.OrderFilter, offset, limit int) ([]model.Order, int64, error) {
+	return s.repo.AdminListAll(ctx, filter, offset, limit)
 }

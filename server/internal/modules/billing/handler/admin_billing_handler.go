@@ -2,31 +2,29 @@ package handler
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"molin/server/internal/modules/billing/dto"
 	"molin/server/internal/modules/billing/model"
 	"molin/server/internal/modules/billing/repository"
 	"molin/server/internal/modules/billing/service"
-	"molin/server/pkg/crypto"
 	"molin/server/pkg/pagination"
 	"molin/server/pkg/response"
 )
 
 // AdminBillingHandler 管理端钱包接口处理器。
 type AdminBillingHandler struct {
-	walletSvc     *service.WalletService
-	walletRepo    *repository.WalletRepository
-	txRepo        *repository.TransactionRepository
-	paymentRepo   *repository.PaymentRepository
-	// notifyBodyKey 支付回调报文解密密钥；为空时不解密，直接返回存储值。
-	notifyBodyKey []byte
+	walletSvc   *service.WalletService
+	walletRepo  *repository.WalletRepository
+	txRepo      *repository.TransactionRepository
+	paymentRepo *repository.PaymentRepository
 }
 
 // NewAdminBillingHandler 创建管理端计费处理器实例。
-// notifyBodyKey 与 PaymentService 保持一致，用于解密 notify_body 字段后返回给管理员。
+// notifyBodyKey 参数保留以兼容调用方签名（bootstrap），但 B-04 安全红线下
+// 列表接口不再回传 notify_body，故 handler 内部不再持有/使用该密钥。
 func NewAdminBillingHandler(
 	walletSvc *service.WalletService,
 	walletRepo *repository.WalletRepository,
@@ -34,31 +32,13 @@ func NewAdminBillingHandler(
 	paymentRepo *repository.PaymentRepository,
 	notifyBodyKey string,
 ) *AdminBillingHandler {
-	h := &AdminBillingHandler{
+	_ = notifyBodyKey // B-04：不再用于解密回传，保留参数以免破坏调用方签名
+	return &AdminBillingHandler{
 		walletSvc:   walletSvc,
 		walletRepo:  walletRepo,
 		txRepo:      txRepo,
 		paymentRepo: paymentRepo,
 	}
-	if notifyBodyKey != "" {
-		h.notifyBodyKey = []byte(notifyBodyKey)
-	}
-	return h
-}
-
-// decryptCallbackBody 解密单个回调记录的 notify_body；解密失败时返回空字符串，不影响主流程。
-func (h *AdminBillingHandler) decryptCallbackBody(cb *model.PaymentCallback) string {
-	if len(h.notifyBodyKey) == 0 {
-		// 未配置加密密钥，原样返回（兼容明文降级模式）
-		return cb.NotifyBody
-	}
-	plaintext, err := crypto.Decrypt(cb.NotifyBody, h.notifyBodyKey)
-	if err != nil {
-		// 解密失败（如旧数据明文）时返回空字符串，不影响主流程
-		log.Printf("[WARN] notify_body 解密失败 callback_id=%d: %v", cb.ID, err)
-		return ""
-	}
-	return plaintext
 }
 
 // GetUserWallet 管理员查用户钱包。
@@ -85,17 +65,31 @@ func (h *AdminBillingHandler) GetUserWallet(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-// ListAllTransactions 管理员查所有流水（分页，可按 user_id 过滤）。
+// ListAllTransactions 管理员查所有流水（分页，支持 user_id/type/direction/created_from/created_to 过滤）。
 // GET /api/admin/wallet-transactions
+// query 参数：
+//
+//	user_id      按用户过滤（空=不过滤）
+//	type         流水类型：recharge/consume/refund/freeze/unfreeze（空=不过滤）
+//	direction    流水方向：in/out（空=不过滤）
+//	created_from 起始时间，RFC3339 或 2006-01-02（空=不过滤）
+//	created_to   截止时间，RFC3339 或 2006-01-02（空=不过滤）
 func (h *AdminBillingHandler) ListAllTransactions(w http.ResponseWriter, r *http.Request) {
 	pg := pagination.Parse(r)
 
-	var userID uint64
-	if uidStr := r.URL.Query().Get("user_id"); uidStr != "" {
-		userID, _ = strconv.ParseUint(uidStr, 10, 64)
+	// 解析完整过滤条件（user_id + type/direction/时间区间）
+	q := r.URL.Query()
+	filter := repository.TransactionFilter{
+		Type:        strings.TrimSpace(q.Get("type")),
+		Direction:   strings.TrimSpace(q.Get("direction")),
+		CreatedFrom: parseTxTimeParam(q.Get("created_from")),
+		CreatedTo:   parseTxTimeParam(q.Get("created_to")),
+	}
+	if uidStr := q.Get("user_id"); uidStr != "" {
+		filter.UserID, _ = strconv.ParseUint(uidStr, 10, 64)
 	}
 
-	records, total, err := h.txRepo.AdminListAll(r.Context(), userID, pg.Offset(), pg.PageSize)
+	records, total, err := h.txRepo.AdminListAll(r.Context(), filter, pg.Offset(), pg.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询流水失败")
 		return
@@ -160,7 +154,7 @@ func (h *AdminBillingHandler) FreezeUserWallet(w http.ResponseWriter, r *http.Re
 
 // ListPaymentCallbacks 管理员查支付回调记录。
 // GET /api/admin/payment-callbacks
-// notify_body 字段在返回前解密（配置了 NOTIFY_BODY_KEY 时），解密失败则返回空字符串。
+// 安全红线（B-04）：响应只返回元信息，禁止回传 notify_body（明文/密文均不回传）。
 func (h *AdminBillingHandler) ListPaymentCallbacks(w http.ResponseWriter, r *http.Request) {
 	pg := pagination.Parse(r)
 	provider := r.URL.Query().Get("provider")
@@ -172,17 +166,24 @@ func (h *AdminBillingHandler) ListPaymentCallbacks(w http.ResponseWriter, r *htt
 		return
 	}
 
-	// 解密 notify_body 后再返回（避免将加密密文直接暴露给调用方）
+	// 映射为不含 notify_body 的 DTO，避免明文/密文回传给调用方。
+	items := make([]dto.PaymentCallbackResp, 0, len(callbacks))
 	for i := range callbacks {
-		callbacks[i].NotifyBody = h.decryptCallbackBody(&callbacks[i])
+		cb := &callbacks[i]
+		items = append(items, dto.PaymentCallbackResp{
+			ID:              cb.ID,
+			OrderID:         cb.OrderID,
+			Provider:        cb.Provider,
+			ProviderTradeNo: cb.ProviderTradeNo,
+			Status:          cb.Status,
+			ProcessedAt:     cb.ProcessedAt,
+			CreatedAt:       cb.CreatedAt,
+			UpdatedAt:       cb.UpdatedAt,
+		})
 	}
 
-	// 空列表返回 [] 而非 null
-	if callbacks == nil {
-		callbacks = []model.PaymentCallback{}
-	}
 	response.JSON(w, http.StatusOK, PagedResp{
-		Items: callbacks,
+		Items: items,
 		Result: pagination.Result{
 			Page:     pg.Page,
 			PageSize: pg.PageSize,

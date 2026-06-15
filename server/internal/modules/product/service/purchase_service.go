@@ -6,10 +6,11 @@ import (
 
 	"gorm.io/gorm"
 
-	"molin/server/internal/modules/product/dto"
-	"molin/server/internal/modules/product/repository"
+	billingsvc "molin/server/internal/modules/billing/service"
 	orderrepo "molin/server/internal/modules/order/repository"
 	ordersvc "molin/server/internal/modules/order/service"
+	"molin/server/internal/modules/product/dto"
+	"molin/server/internal/modules/product/repository"
 )
 
 // 错误码定义（对应业务规范）。
@@ -134,16 +135,25 @@ func (s *PurchaseService) Purchase(ctx context.Context, userID, productID, planI
 		}, nil
 	}
 
-	// 6. 钱包扣费（乐观锁，最多重试 3 次）
-	var deductErr error
-	for i := 0; i < 3; i++ {
-		deductErr = s.billingSvc.Deduct(ctx, userID, price, order.ID, "购买商品")
-		if deductErr == nil {
-			break
-		}
-	}
+	// 6. 钱包扣费。
+	// WalletService.Deduct 内部已实现「FOR UPDATE + 乐观锁 + 指数退避抖动重试」，
+	// 这里不再叠加外层重试循环（旧实现的外层 3 次重试会放大 failed 脏单且无意义）。
+	deductErr := s.billingSvc.Deduct(ctx, userID, price, order.ID, "购买商品")
 	if deductErr != nil {
-		// 扣费失败：将订单标记为 failed
+		// 区分失败类型，决定订单去向（F6 并发健壮性）：
+		if errors.Is(deductErr, billingsvc.ErrConcurrentUpdate) {
+			// 6a. 纯瞬时锁冲突（重试耗尽）：本质是并发瞬时冲突，并非真实业务失败，
+			//     订单从未发生任何资金变动。删除该 pending 订单，避免遗留 failed 垃圾订单。
+			//     幂等保持正确：FindByIdempotencyKey + idempotency_key 唯一键时序未变，
+			//     客户端凭同一 Idempotency-Key 重试将重新建单并扣费；删除带 status='pending'
+			//     守卫，绝不会误删已支付订单。
+			if deleted, delErr := s.orderSvc.DeletePendingTransient(ctx, order.ID); delErr != nil || !deleted {
+				// 删除失败或订单已非 pending（极端情况）：退化为 MarkFailed 兜底，保证一致性。
+				_ = s.orderSvc.MarkFailed(ctx, order.ID)
+			}
+			return nil, deductErr
+		}
+		// 6b. 真实业务失败（如余额不足 60001）：订单置 failed 合理，保留供用户/对账查看。
 		_ = s.orderSvc.MarkFailed(ctx, order.ID)
 		return nil, deductErr
 	}
