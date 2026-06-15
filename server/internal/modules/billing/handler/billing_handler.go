@@ -3,6 +3,8 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
+	"time"
 
 	"molin/server/internal/middleware"
 	"molin/server/internal/modules/billing/dto"
@@ -22,9 +24,9 @@ type PagedResp struct {
 
 // BillingHandler 钱包和充值接口处理器（用户端）。
 type BillingHandler struct {
-	walletSvc   *service.WalletService
-	paymentSvc  *service.PaymentService
-	txRepo      *repository.TransactionRepository
+	walletSvc  *service.WalletService
+	paymentSvc *service.PaymentService
+	txRepo     *repository.TransactionRepository
 }
 
 // NewBillingHandler 创建计费处理器实例。
@@ -38,6 +40,25 @@ func NewBillingHandler(
 		paymentSvc: paymentSvc,
 		txRepo:     txRepo,
 	}
+}
+
+// parseTxTimeParam 解析流水过滤时间参数，支持 RFC3339 和 2006-01-02 两种格式。
+// 非法格式静默忽略，返回 nil（不返回 400）。
+func parseTxTimeParam(raw string) *time.Time {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	// 优先尝试 RFC3339 精确格式（如 2024-06-04T00:00:00Z）
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return &t
+	}
+	// 兼容日期格式（如 2024-06-04）
+	if t, err := time.Parse("2006-01-02", raw); err == nil {
+		return &t
+	}
+	// 非法格式静默忽略，不返回 400
+	return nil
 }
 
 // GetWallet 查当前用户钱包余额。
@@ -58,13 +79,28 @@ func (h *BillingHandler) GetWallet(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetTransactions 查钱包流水（分页）。
+// GetTransactions 查钱包流水（分页，支持 type/direction/created_from/created_to 过滤）。
 // GET /api/wallet/transactions
+// query 参数：
+//
+//	type         流水类型：recharge/consume/refund/freeze/unfreeze（空=不过滤）
+//	direction    流水方向：in/out（空=不过滤）
+//	created_from 起始时间，RFC3339 或 2006-01-02（nil=不过滤）
+//	created_to   截止时间，RFC3339 或 2006-01-02（nil=不过滤）
 func (h *BillingHandler) GetTransactions(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	pg := pagination.Parse(r)
 
-	records, total, err := h.txRepo.ListByUserID(r.Context(), userID, pg.Offset(), pg.PageSize)
+	// 解析可选过滤参数
+	q := r.URL.Query()
+	filter := repository.TransactionFilter{
+		Type:        strings.TrimSpace(q.Get("type")),
+		Direction:   strings.TrimSpace(q.Get("direction")),
+		CreatedFrom: parseTxTimeParam(q.Get("created_from")),
+		CreatedTo:   parseTxTimeParam(q.Get("created_to")),
+	}
+
+	records, total, err := h.txRepo.ListByUserID(r.Context(), userID, filter, pg.Offset(), pg.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询流水失败")
 		return
