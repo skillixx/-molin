@@ -55,15 +55,63 @@ migration **绝不硬编码明文密码**（违反 CLAUDE.md 安全约定，且 
 
 ### 方案 B：受控 bootstrap（密码哈希由环境变量注入）
 
-若需自动化初始化（如 CI / 一键部署），后续可新增一个**独立**的 bootstrap CLI
-（如 `cmd/seed-admin`），从环境变量读取首个管理员账号与**密码哈希**（不是明文），
-在用户不存在时创建并绑定 admin 角色：
+用于自动化初始化（如 CI / 一键部署）。**已实现独立 CLI `cmd/seed-admin`**
+（源码：`server/cmd/seed-admin/main.go`），从环境变量读取首个管理员账号与
+**密码哈希**（不是明文），在用户不存在时创建并绑定 admin 角色。
 
-- 账号：`BOOTSTRAP_ADMIN_PHONE` / `BOOTSTRAP_ADMIN_EMAIL`
-- 密码哈希：`BOOTSTRAP_ADMIN_PASSWORD_HASH`（bcrypt cost=12，由部署方离线生成后注入）
-- 幂等：账号已存在则只补绑 admin 角色，不覆盖密码。
+#### 环境变量
 
-该 CLI 不属于本 PR，列为后续可选项；当前以方案 A 作为默认落地方式。
+| 变量 | 必填 | 说明 |
+|---|---|---|
+| `BOOTSTRAP_ADMIN_PHONE` | 二选一 | 管理员手机号（与 EMAIL 至少提供一个） |
+| `BOOTSTRAP_ADMIN_EMAIL` | 二选一 | 管理员邮箱（与 PHONE 至少提供一个） |
+| `BOOTSTRAP_ADMIN_PASSWORD_HASH` | 是 | **bcrypt 哈希**（cost=12，由部署方离线生成后注入；绝不传明文） |
+| `BOOTSTRAP_ADMIN_USERNAME` | 否 | 用户名，可选 |
+| `BOOTSTRAP_ADMIN_NICKNAME` | 否 | 昵称，可选 |
+
+数据库连接复用主程序配置（`MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_USER` /
+`MYSQL_PASSWORD` / `MYSQL_DATABASE`，见 `internal/config`）。
+
+#### 离线生成 bcrypt 哈希示例
+
+务必在受控环境离线生成哈希，**不要把明文密码写进任何脚本 / 仓库 / CI 变量**：
+
+```bash
+# 方式一：Python（passlib）
+python3 -c "from passlib.hash import bcrypt; print(bcrypt.using(rounds=12).hash('你的强密码'))"
+
+# 方式二：htpasswd（apache2-utils），-B 即 bcrypt，-C 12 指定 cost
+htpasswd -nbBC 12 '' '你的强密码' | cut -d: -f2
+```
+
+把得到的 `$2b$12$...`（长度 60）作为 `BOOTSTRAP_ADMIN_PASSWORD_HASH` 注入。
+登录校验侧使用 `bcrypt.CompareHashAndPassword`，对任意 cost 均兼容。
+
+#### 运行
+
+```bash
+# 前置：必须已执行 migrate up 到 000024（admin 角色由 000024 seed）
+export BOOTSTRAP_ADMIN_PHONE=13800000000
+export BOOTSTRAP_ADMIN_EMAIL=admin@example.com
+export BOOTSTRAP_ADMIN_PASSWORD_HASH='$2b$12$....'   # 离线生成的 bcrypt 哈希
+go run ./cmd/seed-admin            # 或部署时构建二进制：go build -o seed-admin ./cmd/seed-admin
+```
+
+#### 行为与幂等
+
+- 用户不存在 → 创建用户（写入注入的 bcrypt 哈希到 `password_hash`，
+  `status=active`、`real_name_status=unverified`，提供的 phone/email 标记为已验证）并绑定 admin 角色。
+- 用户已存在（按规范化后的 phone / email 任一命中）→ **只补绑 admin 角色，绝不覆盖密码、不改动既有字段**。
+- admin 角色绑定本身也幂等（已绑定则跳过），可重复执行。
+- admin 角色不存在时报错「请先执行 migrate up 到 000024」并以非 0 退出码退出，**不擅自建角色**。
+
+#### 安全与退出码
+
+- 绝不读取 / 落库明文密码；日志只输出「已设置 / 未设置」，不打印手机号、邮箱、哈希等敏感内容。
+- 校验 `BOOTSTRAP_ADMIN_PASSWORD_HASH` 形似合法 bcrypt 哈希（`$2a$/$2b$/$2y$` 前缀且长度 60），否则报错退出。
+- 退出码：成功 `0`；环境变量缺失 / 哈希校验失败 / admin 角色缺失 / 数据库错误等任意失败 `1`（便于 CI 判断）。
+
+> 方案 A 与方案 B 二选一即可；CI / 一键部署推荐方案 B，受控人工环境可用方案 A。
 
 ## 4. 对已有测试库的影响
 
