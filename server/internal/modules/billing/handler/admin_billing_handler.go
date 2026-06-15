@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"molin/server/internal/modules/billing/dto"
 	"molin/server/internal/modules/billing/model"
@@ -64,17 +65,31 @@ func (h *AdminBillingHandler) GetUserWallet(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-// ListAllTransactions 管理员查所有流水（分页，可按 user_id 过滤）。
+// ListAllTransactions 管理员查所有流水（分页，支持 user_id/type/direction/created_from/created_to 过滤）。
 // GET /api/admin/wallet-transactions
+// query 参数：
+//
+//	user_id      按用户过滤（空=不过滤）
+//	type         流水类型：recharge/consume/refund/freeze/unfreeze（空=不过滤）
+//	direction    流水方向：in/out（空=不过滤）
+//	created_from 起始时间，RFC3339 或 2006-01-02（空=不过滤）
+//	created_to   截止时间，RFC3339 或 2006-01-02（空=不过滤）
 func (h *AdminBillingHandler) ListAllTransactions(w http.ResponseWriter, r *http.Request) {
 	pg := pagination.Parse(r)
 
-	var userID uint64
-	if uidStr := r.URL.Query().Get("user_id"); uidStr != "" {
-		userID, _ = strconv.ParseUint(uidStr, 10, 64)
+	// 解析完整过滤条件（user_id + type/direction/时间区间）
+	q := r.URL.Query()
+	filter := repository.TransactionFilter{
+		Type:        strings.TrimSpace(q.Get("type")),
+		Direction:   strings.TrimSpace(q.Get("direction")),
+		CreatedFrom: parseTxTimeParam(q.Get("created_from")),
+		CreatedTo:   parseTxTimeParam(q.Get("created_to")),
+	}
+	if uidStr := q.Get("user_id"); uidStr != "" {
+		filter.UserID, _ = strconv.ParseUint(uidStr, 10, 64)
 	}
 
-	records, total, err := h.txRepo.AdminListAll(r.Context(), userID, pg.Offset(), pg.PageSize)
+	records, total, err := h.txRepo.AdminListAll(r.Context(), filter, pg.Offset(), pg.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询流水失败")
 		return
