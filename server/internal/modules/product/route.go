@@ -86,7 +86,8 @@ func RegisterRoutes(
 	mux.Handle("GET /api/admin/products/{id}", adminAuth("product:view", adminHandler.GetProduct))
 	mux.Handle("PATCH /api/admin/products/{id}", adminAuth("product:edit", adminHandler.UpdateProduct))
 	mux.Handle("PATCH /api/admin/products/{id}/status", adminAuth("product:edit", adminHandler.UpdateProductStatus))
-	mux.Handle("GET /api/admin/products/{id}/plans", adminAuth("product:create", adminHandler.ListPlans))
+	// C-9：套餐列表为只读接口，权限码由 product:create 改正为 product:view
+	mux.Handle("GET /api/admin/products/{id}/plans", adminAuth("product:view", adminHandler.ListPlans))
 	mux.Handle("POST /api/admin/products/{id}/plans", adminAuth("product:create", adminHandler.CreatePlan))
 	mux.Handle("PATCH /api/admin/products/{id}/plans/{plan_id}", adminAuth("product:edit", adminHandler.UpdatePlan))
 	mux.Handle("PATCH /api/admin/products/{id}/access", adminAuth("product:edit", adminHandler.ReplaceAccess))

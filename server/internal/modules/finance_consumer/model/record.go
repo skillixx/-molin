@@ -24,17 +24,20 @@ type ProductConsumptionRecord struct {
 }
 
 // ConsumptionResult 消费处理结果（用于幂等返回）。
+// C-5：RecordID 改为 ConsumptionRecordID，新增 WalletTransactionID（钱包流水 ID）。
 type ConsumptionResult struct {
-	RecordID       uint64          `json:"record_id"`
-	Amount         decimal.Decimal `json:"amount"`
-	IdempotencyKey string          `json:"idempotency_key"`
+	ConsumptionRecordID uint64          `json:"consumption_record_id"`
+	WalletTransactionID uint64          `json:"wallet_transaction_id"`
+	Amount              decimal.Decimal `json:"amount"`
+	IdempotencyKey      string          `json:"idempotency_key"`
 }
 
 // ToResult 将消费记录转换为结果对象。
+// 幂等返回时无法重新获知扣费流水 ID，WalletTransactionID 由调用方按需填充（幂等命中时为 0）。
 func (r *ProductConsumptionRecord) ToResult() *ConsumptionResult {
 	return &ConsumptionResult{
-		RecordID:       r.ID,
-		Amount:         r.Amount,
-		IdempotencyKey: r.IdempotencyKey,
+		ConsumptionRecordID: r.ID,
+		Amount:              r.Amount,
+		IdempotencyKey:      r.IdempotencyKey,
 	}
 }

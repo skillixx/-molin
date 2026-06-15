@@ -110,14 +110,18 @@ func (h *BillingHandler) CreateRechargeOrder(w http.ResponseWriter, r *http.Requ
 		idempotencyKey = key
 	}
 
-	payURL, orderID, err := h.paymentSvc.CreateRechargeOrder(r.Context(), userID, req.Amount, idempotencyKey)
+	order, payURL, err := h.paymentSvc.CreateRechargeOrder(r.Context(), userID, req.Amount, idempotencyKey)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "创建充值订单失败: "+err.Error())
 		return
 	}
 
+	// C-3：响应补充 order_no / amount / status，新建充值订单状态为 pending。
 	response.JSON(w, http.StatusCreated, dto.CreateRechargeOrderResp{
-		OrderID: orderID,
+		OrderID: order.ID,
+		OrderNo: order.OrderNo,
+		Amount:  order.Amount,
+		Status:  order.Status,
 		PayURL:  payURL,
 	})
 }

@@ -80,9 +80,10 @@ func (h *ConsumerHandler) HandleUsageEvent(w http.ResponseWriter, r *http.Reques
 	}
 
 	response.JSON(w, http.StatusOK, dto.ConsumptionResultResp{
-		RecordID:       result.RecordID,
-		Amount:         result.Amount,
-		IdempotencyKey: result.IdempotencyKey,
+		ConsumptionRecordID: result.ConsumptionRecordID,
+		Amount:              result.Amount,
+		IdempotencyKey:      result.IdempotencyKey,
+		WalletTransactionID: result.WalletTransactionID,
 	})
 }
 

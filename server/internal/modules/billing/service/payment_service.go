@@ -13,6 +13,7 @@ import (
 
 	"molin/server/internal/modules/billing/model"
 	"molin/server/internal/modules/billing/repository"
+	ordermodel "molin/server/internal/modules/order/model"
 	orderrepo "molin/server/internal/modules/order/repository"
 	ordersvc "molin/server/internal/modules/order/service"
 	"molin/server/pkg/crypto"
@@ -230,12 +231,14 @@ func (s *PaymentService) parse(provider string, rawBody []byte) (orderNo, provid
 
 // CreateRechargeOrder 创建充值订单（调用 order 模块创建 recharge 类型订单）。
 // 返回模拟的支付 URL（Week 2 阶段不对接真实支付，仅创建订单）。
-func (s *PaymentService) CreateRechargeOrder(ctx context.Context, userID uint64, amount decimal.Decimal, idempotencyKey string) (string, uint64, error) {
+// CreateRechargeOrder 创建充值订单，返回创建出的订单对象与模拟支付 URL。
+// C-3：返回订单对象以便 handler 填充 order_no / amount / status。
+func (s *PaymentService) CreateRechargeOrder(ctx context.Context, userID uint64, amount decimal.Decimal, idempotencyKey string) (*ordermodel.Order, string, error) {
 	order, err := s.orderSvc.Create(ctx, userID, 0, 0, amount, "recharge", idempotencyKey, "")
 	if err != nil {
-		return "", 0, err
+		return nil, "", err
 	}
 	// 模拟支付 URL（实际需对接微信/支付宝 API）
 	payURL := fmt.Sprintf("/api/simulate-pay?order_no=%s&amount=%s", order.OrderNo, amount.String())
-	return payURL, order.ID, nil
+	return order, payURL, nil
 }
