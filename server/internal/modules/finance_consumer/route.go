@@ -40,10 +40,14 @@ func RegisterRoutes(
 	walletSvc := billingsvc.NewWalletService(db, walletRepo, txRepo)
 	consumerSvc := service.NewConsumerService(db, consumptionRepo, billingRuleRepo, walletSvc)
 
-	// 解析 IP 白名单（从环境变量 INTERNAL_ALLOWED_IPS 读取，逗号分隔）
+	// 解析 IP 白名单（从环境变量 INTERNAL_ALLOWED_IPS 读取，逗号分隔，辅助防线）
 	allowedIPs := parseAllowedIPs(os.Getenv("INTERNAL_ALLOWED_IPS"))
 
-	h := handler.NewConsumerHandler(consumerSvc, allowedIPs)
+	// B-06：内部接口共享密钥（INTERNAL_API_TOKEN），作为内部上报接口的鉴权主闸。
+	// 未配置时 handler 将 fail-closed 拒绝该接口（这是扣款接口，必须显式配置）。
+	internalToken := strings.TrimSpace(os.Getenv("INTERNAL_API_TOKEN"))
+
+	h := handler.NewConsumerHandler(consumerSvc, allowedIPs, internalToken)
 
 	// 内部接口（不对外，需 IP 白名单）
 	mux.HandleFunc("POST /api/internal/product-usage-events", h.HandleUsageEvent)

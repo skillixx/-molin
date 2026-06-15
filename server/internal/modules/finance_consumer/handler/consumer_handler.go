@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,25 +25,46 @@ type PagedResp struct {
 	pagination.Result             // 匿名嵌入 → page/page_size/total 与 items 同级
 }
 
-// ConsumerHandler 消费事件内部接口处理器（IP 白名单校验）。
+// ConsumerHandler 消费事件内部接口处理器。
+// 安全设计（B-06）：内部上报接口直接扣用户钱包，存在「任意扣款」风险，
+// 因此以「内部共享密钥（X-Internal-Token）」为主闸，IP 白名单为辅助防线。
 type ConsumerHandler struct {
 	consumerSvc *service.ConsumerService
-	// allowedIPs 内部接口允许访问的 IP 白名单（从配置加载，此处简化）
+	// allowedIPs 内部接口允许访问的 IP 白名单（附加防线，非唯一防线）
 	allowedIPs []string
+	// internalToken 内部接口共享密钥（来自环境变量 INTERNAL_API_TOKEN）。
+	// 为空表示未配置：扣款接口将 fail-closed 全部拒绝，必须显式配置才可用。
+	internalToken string
 }
 
 // NewConsumerHandler 创建消费事件处理器实例。
-func NewConsumerHandler(consumerSvc *service.ConsumerService, allowedIPs []string) *ConsumerHandler {
+// internalToken 为内部接口共享密钥（INTERNAL_API_TOKEN），空字符串表示未配置（fail-closed）。
+func NewConsumerHandler(consumerSvc *service.ConsumerService, allowedIPs []string, internalToken string) *ConsumerHandler {
 	return &ConsumerHandler{
-		consumerSvc: consumerSvc,
-		allowedIPs:  allowedIPs,
+		consumerSvc:   consumerSvc,
+		allowedIPs:    allowedIPs,
+		internalToken: internalToken,
 	}
 }
 
 // HandleUsageEvent 处理消费事件上报（内部接口，需 IP 白名单）。
 // POST /api/internal/product-usage-events
 func (h *ConsumerHandler) HandleUsageEvent(w http.ResponseWriter, r *http.Request) {
-	// IP 白名单校验（内部服务调用，防止外网直接访问）
+	// B-06 主闸：内部共享密钥鉴权（fail-closed）。
+	// fail-closed：未配置 INTERNAL_API_TOKEN 时一律拒绝——这是扣款接口，必须显式配置才可用。
+	if h.internalToken == "" {
+		log.Printf("[finance_consumer] 拒绝内部上报：INTERNAL_API_TOKEN 未配置，扣款接口已 fail-closed 全拒")
+		response.Error(w, http.StatusForbidden, 40003, "内部接口鉴权失败")
+		return
+	}
+	// 常量时间比较请求头 X-Internal-Token 与配置的密钥，防止时序侧信道；日志不打印 token。
+	reqToken := r.Header.Get("X-Internal-Token")
+	if subtle.ConstantTimeCompare([]byte(reqToken), []byte(h.internalToken)) != 1 {
+		response.Error(w, http.StatusForbidden, 40003, "内部接口鉴权失败")
+		return
+	}
+
+	// 辅助防线：IP 白名单校验（保留，防止外网直接访问，但不作为唯一防线）
 	if !h.isAllowedIP(r) {
 		response.Error(w, http.StatusForbidden, 40003, "访问被拒绝：IP 未在白名单中")
 		return
