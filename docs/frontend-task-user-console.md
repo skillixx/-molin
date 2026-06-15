@@ -1,0 +1,327 @@
+# 任务单 · 前端工程师乙（用户控制台 user-console）
+
+> **派发对象**：前端工程师乙
+> **仓库目录**：`web/user-console/`
+> **对接范围**：后端甲面向终端用户的接口 —— 注册/登录/找回密码、个人中心、实名提交、凭邀请码加入分组
+> **来源规划**：`docs/frontend-dev-plan-backend-a.md`（§4）
+> **接口字段 SSOT**：`docs/frontend-api-reference.md`；与之冲突时以 `server/internal/modules/*/route.go` 现行代码为准（见下方「⚠️ 现存代码需修正」）
+> **状态**：可直接开工；编码前请确认本单「待确认事项」。
+
+---
+
+## 0. 开工前必读约定
+
+| 项 | 约定 |
+|---|---|
+| 分层 | 页面只调用 `src/api/*.ts`，禁止组件内直接 `import axios` |
+| 分页 | 后端甲已 **D-95 扁平化**：`{items, page, page_size, total}`，无 `pagination`/`list`。⚠️ 但商品/订单/钱包（后端乙）仍是**嵌套**，跨对接乙模块时勿用同一假设 |
+| 错误码 | 40001→跳登录、40404→引导注册、42900→频率超限、70001→引导实名，统一在 `http.ts` 处理 |
+| 安全红线 | 身份证号前端不缓存、不打印日志（CLAUDE.md 安全约定） |
+| 文案/品牌 | 全中文；品牌「墨灵」，署名「爱斯琴网络科技有限公司」 |
+
+### ⚠️ 现存代码需修正（与 Round 7 不一致）
+1. **D-90**：`src/api/identity.ts` 的 `getMyVerification` 仍请求 `/identity/verifications/me`，**必须改为 `/identity/verifications/latest`**（见 B4）。
+2. **D-96**：`src/api/auth.ts` 的 `sendEmailCode/sendPhoneCode` 把 `bind_email/bind_phone` 当作 public 端点的 scene 传入，**已失效**。换绑发码必须改走认证态端点 `POST /api/me/verification-codes/{phone,email}`（见 B3，本单已细化签名）。
+
+---
+
+## 1. 任务总览（阶段 B1–B5）
+
+| 阶段 | 内容 | 工期 | 现状 |
+|---|---|---|---|
+| **B1** | 基础设施与鉴权 | 2d | http.ts 有骨架，缺刷新队列 |
+| **B2** | 注册/登录/找回密码 | 4d | 有页面骨架 |
+| **B3** | 个人中心 ★本单细化到签名级 | 4d | 有 ProfileView 骨架，换绑发码需改 D-96 |
+| **B4** | 实名认证 | 2d | 有 VerificationView，需改 D-90 |
+| **B5** | 凭邀请码加入分组 | 0.5d | 未开始 |
+
+---
+
+## 2. 各阶段任务清单（B1、B2、B4、B5）
+
+### B1 基础设施
+- [ ] `http.ts` 401 静默刷新（队列重放；refresh 自身 401 不再触发刷新）
+- [ ] `types/api.ts` 统一 `PageResult<T>`（扁平）；标注甲扁平/乙嵌套差异
+- [ ] `stores/auth.ts`：登录态、`currentUser`（`GET /api/me`，含 `real_name_status`）
+
+### B2 注册 / 登录 / 找回密码
+- [ ] 注册（双 OTP 单入口）：`sendEmailCode`+`sendPhoneCode`+`register`（`email/phone/scene` 必填；密码 6-72 位）
+- [ ] 邮箱密码登录 `POST /api/auth/login/email`（响应含 `user`，D-93）
+- [ ] 手机验证码登录 `POST /api/auth/login/phone`（`{phone, code}`；未注册 40404→引导注册）
+- [ ] 找回密码 `POST /api/auth/password/reset`（发码校验，无需旧密码）
+- [ ] 退出登录 `POST /api/auth/logout`（退出后 Access Token 立即吊销）
+
+### B4 实名认证
+- [ ] 提交实名 `POST /api/identity/verifications`（响应 `{id, status}`；身份证号不留存）
+- [ ] **查我的认证（改 D-90）**：`GET /api/identity/verifications/latest`
+- [ ] 状态机 UI：依 `real_name_status` 展示 未认证/待审/通过/驳回（驳回显示 `reject_reason`）
+
+### B5 凭邀请码加入分组
+- [ ] 输入邀请码加入 `POST /api/user-groups/join`（仅登录）
+
+---
+
+## 3. ★ 阶段 B3 细化到接口签名级别（个人中心）
+
+> 重点：换绑手机/邮箱必须落地 **D-96** 两步流程（认证态发码 → 提交换绑），并替换现有 `auth.ts` 中失效的 bind scene 写法。
+
+### 3.1 类型定义 `src/types/auth.ts`（补充）
+
+```typescript
+export interface User {
+  id: number
+  username: string | null
+  email: string | null              // 脱敏，如 "us***@example.com"
+  email_verified: boolean
+  phone: string | null              // 脱敏，如 "138****5678"
+  phone_verified: boolean
+  real_name_status: 'unverified' | 'pending' | 'verified' | 'rejected'
+  status: 'active' | 'disabled'
+  admin_phone_verified: boolean
+  admin_email_verified: boolean
+  created_at: string                // ISO 8601
+  last_login_at: string | null
+}
+
+export interface UpdateProfileBody {
+  nickname?: string                 // 可单字段更新（PATCH 语义）
+  avatar?: string
+}
+```
+
+### 3.2 API 层签名
+
+**`src/api/account.ts`（新建，集中个人中心接口）**
+
+```typescript
+import http from './http'
+import type { User, UpdateProfileBody } from '@/types/auth'
+
+/** 获取当前用户信息 */
+export function getMe() {
+  return http.get<unknown, User>('/me')
+}
+
+/** 当前用户最终生效权限码（用户端一般用于功能可见性） */
+export function getMyPermissions() {
+  return http.get<unknown, { codes: string[] }>('/me/permissions')
+}
+
+/** 修改昵称/头像（PATCH，可单字段） */
+export function updateProfile(body: UpdateProfileBody) {
+  return http.patch<unknown, null>('/me/profile', body)
+}
+
+/** 修改用户名（2-32 位字母/数字/下划线，全局唯一，409=重复） */
+export function updateUsername(username: string) {
+  return http.patch<unknown, null>('/me/username', { username })
+}
+
+/** 修改密码（需旧密码；新密码 6-72 位 D-94） */
+export function changePassword(params: { old_password: string; new_password: string }) {
+  return http.patch<unknown, null>('/me/password', params)
+}
+
+/* ===== 换绑手机/邮箱：D-96 两步流程 ===== */
+
+/** 第①步：向新手机号发送换绑验证码（认证态，scene 由服务端固定 bind_phone） */
+export function sendBindPhoneCode(phone: string) {
+  return http.post<unknown, null>('/me/verification-codes/phone', { phone })
+}
+
+/** 第②步：提交换绑手机号（成功后 phone_verified 自动 true） */
+export function updatePhone(params: { phone: string; code: string }) {
+  return http.patch<unknown, null>('/me/phone', params)
+}
+
+/** 第①步：向新邮箱发送换绑验证码（认证态，scene 由服务端固定 bind_email） */
+export function sendBindEmailCode(email: string) {
+  return http.post<unknown, null>('/me/verification-codes/email', { email })
+}
+
+/** 第②步：提交换绑邮箱（成功后 email_verified 自动 true） */
+export function updateEmail(params: { email: string; code: string }) {
+  return http.patch<unknown, null>('/me/email', params)
+}
+```
+
+> 🔧 **清理项**：把上述 `updatePhone/updateEmail/changePassword/updateUsername` 从旧 `src/api/auth.ts` 迁出到 `account.ts`；删除 `auth.ts` 中 `sendEmailCode/sendPhoneCode` 的 `bind_email/bind_phone` scene 选项（D-96 后这两个 scene 公开端点已拒绝）。`auth.ts` 仅保留 `register/login/reset` 场景的发码。
+
+### 3.3 B3 视图层任务
+
+| 视图 | 用到的 API | 关键交互 |
+|---|---|---|
+| `views/profile/ProfileView.vue` | `getMe/updateProfile/updateUsername` | 展示脱敏手机邮箱+实名状态；昵称/头像/用户名编辑；409 用户名重复提示 |
+| `views/profile/SecurityView.vue`（新建或并入） | `changePassword` | 改密表单，6-72 位校验 |
+| `views/profile/BindPhoneDialog.vue` | `sendBindPhoneCode → updatePhone` | 发码按钮 60s 倒计时；42900 提示不重置倒计时 |
+| `views/profile/BindEmailDialog.vue` | `sendBindEmailCode → updateEmail` | 同上 |
+
+### 3.4 换绑交互流程（D-96，组件内）
+```
+用户输入新手机号
+  → 点「获取验证码」: sendBindPhoneCode(newPhone)  // 命中 42900 → 提示，倒计时不重置
+  → 按钮进入 60s 倒计时禁用
+  → 用户输入收到的 code
+  → 点「确认换绑」: updatePhone({phone:newPhone, code})
+  → 成功: 重新 getMe() 刷新展示，phone_verified=true
+（邮箱换绑同构）
+```
+
+### 3.5 B3 验收标准
+- [ ] 个人信息正确展示脱敏手机/邮箱与 `real_name_status`
+- [ ] 昵称/头像 PATCH 单字段更新成功；用户名重复返回 409 有友好提示
+- [ ] 改密 6-72 位边界校验（5 位、73 位拒绝）
+- [ ] 换绑手机/邮箱走 **D-96 认证态发码端点**，发码按 5次/分钟限流（命中 42900 提示），换绑成功后 verified 置 true
+- [ ] 代码中无任何指向公开端点 + bind scene 的换绑发码调用残留
+
+---
+
+## 4. ★ 阶段 B2 细化到接口签名级别（注册 / 登录 / 找回密码）
+
+> 关键点：注册是**双 OTP 单入口**（手机 + 邮箱验证码同时提交）；登录/注册/刷新响应均含 `user` 对象（D-93），登录成功后可直接用，**无需再调 `GET /api/me`**；公开发码 scene 仅剩 `register`/`login`/`reset_password`（D-96 移除了 bind/admin）。
+
+### 4.1 类型定义 `src/types/auth.ts`（补充）
+
+```typescript
+// 发码场景（公开端点，D-96 后仅这 3 个）
+export type PublicCodeScene = 'register' | 'login' | 'reset_password'
+
+// 登录/注册/刷新响应中的精简用户对象（D-93，脱敏）
+export interface AuthUser {
+  id: number
+  email: string | null            // 脱敏
+  phone: string | null            // 脱敏
+  real_name_status: 'unverified' | 'pending' | 'verified' | 'rejected'
+  status: 'active' | 'disabled'
+}
+
+export interface TokenPair {
+  access_token: string
+  refresh_token: string
+  expires_in: number              // 秒，如 7200
+  user: AuthUser                  // D-93 新增
+}
+
+export interface RegisterBody {
+  username: string
+  phone: string
+  email: string
+  password: string                // 6-72 位（D-94）
+  phone_code: string
+  email_code: string
+}
+
+export interface LoginEmailBody {
+  email: string
+  password: string
+}
+
+export interface LoginPhoneBody {
+  phone: string
+  code: string                    // 先发 scene=login 验证码
+}
+
+export interface ResetPasswordBody {
+  target: string                  // 手机号或邮箱
+  target_type: 'phone' | 'email'
+  code: string
+  new_password: string            // 6-72 位（D-94）
+}
+```
+
+### 4.2 API 层 `src/api/auth.ts`（目标完整签名）
+
+```typescript
+import http from './http'
+import type {
+  TokenPair, RegisterBody, LoginEmailBody, LoginPhoneBody, ResetPasswordBody, PublicCodeScene,
+} from '@/types/auth'
+
+/* ===== 发码（公开端点，scene 仅 register/login/reset_password；D-96 后不再接受 bind/admin） ===== */
+
+/** 发送邮箱验证码 */
+export function sendEmailCode(email: string, scene: PublicCodeScene) {
+  return http.post<unknown, null>('/auth/verification-codes/email', { email, scene })
+}
+
+/** 发送手机验证码 */
+export function sendPhoneCode(phone: string, scene: PublicCodeScene) {
+  return http.post<unknown, null>('/auth/verification-codes/phone', { phone, scene })
+}
+
+/* ===== 注册（双 OTP 单入口） ===== */
+
+/** 统一注册：手机+邮箱+用户名+双验证码，成功返回 TokenPair（含 user，D-93） */
+export function register(body: RegisterBody) {
+  return http.post<unknown, TokenPair>('/auth/register', body)
+}
+
+/* ===== 登录 ===== */
+
+/** 邮箱密码登录（未注册→40404；禁用→40003；密码错→40001） */
+export function loginByEmail(body: LoginEmailBody) {
+  return http.post<unknown, TokenPair>('/auth/login/email', body)
+}
+
+/** 手机验证码登录（先发 scene=login 验证码；未注册→40404；码错→40000） */
+export function loginByPhone(body: LoginPhoneBody) {
+  return http.post<unknown, TokenPair>('/auth/login/phone', body)
+}
+
+/* ===== Token / 退出 ===== */
+
+/** 刷新 Token（响应含新 token 对 + user，D-93） */
+export function refreshToken(refresh_token: string) {
+  return http.post<unknown, TokenPair>('/auth/refresh', { refresh_token })
+}
+
+/** 退出登录（须带 refresh_token；退出后当前 Access Token 即时吊销 PR#22） */
+export function logout(refresh_token: string) {
+  return http.post<unknown, null>('/auth/logout', { refresh_token })
+}
+
+/* ===== 找回密码（无需旧密码） ===== */
+
+/** 重置密码（先发 scene=reset_password 验证码；new_password 6-72 位） */
+export function resetPassword(body: ResetPasswordBody) {
+  return http.post<unknown, null>('/auth/password/reset', body)
+}
+```
+
+> 🔧 **与现有代码的差异（必须改）**：
+> 1. `sendEmailCode/sendPhoneCode` 的 scene 联合类型删掉 `bind_email/bind_phone`（D-96 公开端点已拒绝），换绑发码迁到 `account.ts`（见 §3）。
+> 2. 现有 `logout()` **无 body**，须改为 `logout(refresh_token)` 传 `{refresh_token}`（§1.5）。
+> 3. `updatePhone/updateEmail/changePassword/updateUsername` 从 `auth.ts` 迁出到 `account.ts`（见 §3.2 清理项）。
+
+### 4.3 B2 视图层任务
+
+| 视图 | 用到的 API | 关键交互 |
+|---|---|---|
+| `views/auth/RegisterView.vue` | `sendPhoneCode('register')`+`sendEmailCode('register')`+`register` | 手机/邮箱各一个发码按钮（60s 倒计时）；密码 6-72 位校验；已注册→40900 提示；成功后用响应 `user` 直接写入 store |
+| `views/auth/LoginView.vue` | `loginByEmail` / `loginByPhone` + `sendPhoneCode('login')` | 邮箱密码 / 手机验证码 双 Tab；40404→引导去注册；禁用→40003 提示 |
+| `views/auth/ResetPasswordView.vue` | `sendEmailCode('reset_password')`/`sendPhoneCode('reset_password')` + `resetPassword` | 选择手机/邮箱找回；发码倒计时；新密码 6-72 位 |
+| 顶栏退出按钮 | `logout(refresh_token)` | 退出后清本地 token + 跳登录 |
+
+### 4.4 B2 登录态写入约定（配合 store）
+```
+register / loginByEmail / loginByPhone 成功 →
+  存 access_token + refresh_token（refresh_token 不入可被 XSS 读取的位置，按 http.ts 约定）
+  → currentUser 直接取响应 user（D-93），无需再 GET /api/me
+刷新 token 成功（refreshToken）→ 同步更新 access_token 与 currentUser
+```
+
+### 4.5 B2 验收标准
+- [ ] 注册需手机+邮箱双验证码，缺一不可；密码 5 位/73 位被拒（D-94 边界）
+- [ ] 两种登录方式均通；未注册账号统一 40404 → 引导注册
+- [ ] 登录/注册/刷新后 `currentUser` 来自响应 `user`，无多余 `GET /api/me` 调用
+- [ ] 退出登录传 `refresh_token`，退出后旧 Access Token 再次请求得 40001 并已跳登录
+- [ ] 找回密码全流程通；发码按钮统一 60s 倒计时，命中 42900 不重置倒计时
+- [ ] 代码中无 `bind_email/bind_phone/admin_verify` scene 走公开发码端点的残留
+
+---
+
+## 5. 待确认事项（编码前与后端甲/产品经理对齐）
+- [ ] `PATCH /api/me/profile` 的字段名（`nickname`/`avatar`？参考文档 §1.8 未列字段细节）
+- [ ] `GET /api/me/permissions` 响应结构（`{codes:[]}` 或数组）
+- [ ] 找回密码（B2）是否复用注册发码倒计时组件
+- [ ] 用户端是否需要展示「我所在的分组」（当前后端该接口归 group:manage 管理态，用户端暂无对应只读接口）
