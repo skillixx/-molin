@@ -20,7 +20,10 @@ type ProductConsumptionRecord struct {
 	UsageUnit      string          `gorm:"size:32;not null" json:"usage_unit"`
 	Amount         decimal.Decimal `gorm:"type:decimal(18,6);not null" json:"amount"` // 实际扣费金额
 	IdempotencyKey string          `gorm:"size:128;not null;uniqueIndex" json:"idempotency_key"`
-	CreatedAt      time.Time       `json:"created_at"`
+	// WalletTransactionID 本次扣费产生的钱包流水 ID（B-03）。
+	// 免费额度内未产生扣费（amount=0）时为 NULL；持久化后幂等重发可返回相同的真实 txid。
+	WalletTransactionID *uint64   `json:"wallet_transaction_id,omitempty"`
+	CreatedAt           time.Time `json:"created_at"`
 }
 
 // ConsumptionResult 消费处理结果（用于幂等返回）。
@@ -33,11 +36,16 @@ type ConsumptionResult struct {
 }
 
 // ToResult 将消费记录转换为结果对象。
-// 幂等返回时无法重新获知扣费流水 ID，WalletTransactionID 由调用方按需填充（幂等命中时为 0）。
+// B-03：WalletTransactionID 已持久化到记录，幂等重发时可直接带出原扣费流水 ID；
+// 免费额度内（amount=0）未产生流水时该列为 NULL，结果中保持 0。
 func (r *ProductConsumptionRecord) ToResult() *ConsumptionResult {
-	return &ConsumptionResult{
+	res := &ConsumptionResult{
 		ConsumptionRecordID: r.ID,
 		Amount:              r.Amount,
 		IdempotencyKey:      r.IdempotencyKey,
 	}
+	if r.WalletTransactionID != nil {
+		res.WalletTransactionID = *r.WalletTransactionID
+	}
+	return res
 }

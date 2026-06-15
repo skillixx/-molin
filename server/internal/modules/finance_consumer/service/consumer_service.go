@@ -105,24 +105,31 @@ func (s *ConsumerService) Handle(ctx context.Context, event consumermodel.Produc
 			instanceID = &id
 		}
 
+		// B-03：将本次扣费产生的钱包流水 ID 持久化到消费记录，
+		// 使幂等重发时 ToResult() 能返回相同的真实 txid；免费额度内（walletTxID=0）则存 NULL。
+		var walletTxIDPtr *uint64
+		if walletTxID > 0 {
+			walletTxIDPtr = &walletTxID
+		}
+
 		record := &consumermodel.ProductConsumptionRecord{
-			EventID:        event.EventID,
-			UserID:         event.UserID,
-			ProductID:      event.ProductID,
-			ProductPlanID:  planID,
-			InstanceID:     instanceID,
-			UsageType:      event.UsageType,
-			UsageAmount:    event.UsageAmount,
-			UsageUnit:      event.UsageUnit,
-			Amount:         amount,
-			IdempotencyKey: event.IdempotencyKey,
+			EventID:             event.EventID,
+			UserID:              event.UserID,
+			ProductID:           event.ProductID,
+			ProductPlanID:       planID,
+			InstanceID:          instanceID,
+			UsageType:           event.UsageType,
+			UsageAmount:         event.UsageAmount,
+			UsageUnit:           event.UsageUnit,
+			Amount:              amount,
+			IdempotencyKey:      event.IdempotencyKey,
+			WalletTransactionID: walletTxIDPtr,
 		}
 		if err := s.consumptionRepo.Create(tx, record); err != nil {
 			return err
 		}
+		// ToResult 会自动带出持久化后的 wallet_transaction_id（免费额度内为 0）。
 		result = record.ToResult()
-		// C-5：透传本次扣费产生的钱包流水 ID
-		result.WalletTransactionID = walletTxID
 		return nil
 	})
 	return result, err
