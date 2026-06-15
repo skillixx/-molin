@@ -5,8 +5,8 @@
     :collapse="collapsed"
     class="side-menu"
     background-color="transparent"
-    text-color="#94A3B8"
-    active-text-color="#6366F1"
+    text-color="#8fa3bd"
+    active-text-color="#38bdf8"
     router
   >
     <!-- 品牌 Logo 区域 -->
@@ -29,19 +29,35 @@
         <el-icon><User /></el-icon>
         <template #title>用户管理</template>
       </el-menu-item>
-      <el-menu-item index="/roles">
+      <el-menu-item v-if="can('role:manage')" index="/roles">
         <el-icon><Medal /></el-icon>
         <template #title>角色管理</template>
       </el-menu-item>
-      <el-menu-item index="/permissions">
+      <el-menu-item v-if="can('role:manage')" index="/permissions">
         <el-icon><Key /></el-icon>
         <template #title>权限列表</template>
       </el-menu-item>
     </el-sub-menu>
 
-    <el-menu-item index="/identity">
+    <el-sub-menu v-if="can('group:manage')" index="groups">
+      <template #title>
+        <el-icon><Connection /></el-icon>
+        <span>用户分组</span>
+      </template>
+      <el-menu-item index="/groups">
+        <el-icon><Collection /></el-icon>
+        <template #title>分组列表</template>
+      </el-menu-item>
+    </el-sub-menu>
+
+    <el-menu-item v-if="can('identity:review')" index="/identity">
       <el-icon><Stamp /></el-icon>
       <template #title>实名审核</template>
+    </el-menu-item>
+
+    <el-menu-item v-if="can('audit:read')" index="/audit-logs">
+      <el-icon><DocumentChecked /></el-icon>
+      <template #title>审计日志</template>
     </el-menu-item>
 
     <el-menu-item index="/products">
@@ -74,14 +90,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 
 defineProps<{
   collapsed: boolean
 }>()
 
 const route = useRoute()
-// 当前激活菜单项
-const activeMenu = computed(() => route.path)
+const auth = useAuthStore()
+// 动态详情页归属到对应的固定菜单入口，保证侧边栏高亮稳定。
+const activeMenu = computed(() => {
+  if (route.path.startsWith('/groups/')) return '/groups'
+  return route.path
+})
+const can = (code: string) => auth.hasPermission(code)
 </script>
 
 <style scoped>
@@ -95,14 +117,14 @@ const activeMenu = computed(() => route.path)
   display: flex;
   align-items: center;
   justify-content: center;
-  border-bottom: 1px solid rgba(99, 102, 241, 0.2);
+  border-bottom: 1px solid var(--mc-border);
   margin-bottom: 8px;
 }
 
 .brand-name {
   font-size: 20px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6366F1, #8B5CF6);
+  background: linear-gradient(135deg, var(--mc-primary), var(--mc-accent));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -112,9 +134,28 @@ const activeMenu = computed(() => route.path)
 .brand-icon {
   font-size: 22px;
   font-weight: 700;
-  background: linear-gradient(135deg, #6366F1, #8B5CF6);
+  background: linear-gradient(135deg, var(--mc-primary), var(--mc-accent));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+
+:deep(.el-menu-item),
+:deep(.el-sub-menu__title) {
+  height: 42px;
+  margin: 2px 10px;
+  border-radius: 7px;
+}
+
+:deep(.el-menu-item:hover),
+:deep(.el-sub-menu__title:hover) {
+  background: rgba(56, 189, 248, 0.08) !important;
+  color: var(--mc-text) !important;
+}
+
+:deep(.el-menu-item.is-active) {
+  background: rgba(56, 189, 248, 0.13) !important;
+  color: var(--mc-primary) !important;
+  box-shadow: inset 3px 0 0 var(--mc-primary);
 }
 </style>

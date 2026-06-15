@@ -6,6 +6,17 @@
       <el-button type="primary" :icon="Plus" @click="openCreateDialog">新建角色</el-button>
     </div>
 
+    <SearchForm
+      :model="searchForm"
+      :loading="loading"
+      @search="handleSearch"
+      @reset="handleReset"
+    >
+      <el-form-item label="关键词">
+        <el-input v-model="searchForm.keyword" placeholder="角色代码 / 名称" clearable style="width: 220px" />
+      </el-form-item>
+    </SearchForm>
+
     <!-- 数据表格 -->
     <div class="table-card">
       <DataTable
@@ -15,6 +26,7 @@
         :page="pagination.page"
         :page-size="pagination.page_size"
         @page-change="handlePageChange"
+        @page-size-change="handlePageSizeChange"
       >
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="code" label="角色代码" width="160">
@@ -29,9 +41,10 @@
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right">
+        <el-table-column label="操作" width="210" fixed="right">
           <template #default="{ row }">
             <el-button size="small" type="primary" text @click="openEditDialog(row)">编辑</el-button>
+            <el-button size="small" type="primary" text @click="openPermissionDialog(row)">权限</el-button>
             <el-button size="small" type="danger" text @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -77,6 +90,28 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 角色权限配置 -->
+    <el-dialog
+      v-model="permissionDialogVisible"
+      :title="`配置权限 — ${permissionRole?.name || ''}`"
+      width="760px"
+    >
+      <el-transfer
+        v-model="selectedPermissionIds"
+        filterable
+        :titles="['可选权限', '已分配权限']"
+        :data="permissionOptions"
+        :props="{ key: 'id', label: 'label' }"
+        class="permission-transfer"
+      />
+      <template #footer>
+        <el-button @click="permissionDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="savingPermissions" @click="handleSavePermissions">
+          保存权限
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -86,13 +121,23 @@ import { ElMessageBox, ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import DataTable from '@/components/common/DataTable.vue'
-import { listRoles, createRole, updateRole, deleteRole } from '@/api/role'
-import type { Role } from '@/types/user'
+import SearchForm from '@/components/common/SearchForm.vue'
+import {
+  createRole,
+  deleteRole,
+  getRolePermissions,
+  listPermissions,
+  listRoles,
+  setRolePermissions,
+  updateRole,
+} from '@/api/role'
+import type { Permission, Role } from '@/types/user'
 import type { Pagination } from '@/types/api'
 
 const loading = ref(false)
 const roles = ref<Role[]>([])
 const pagination = reactive<Pagination>({ page: 1, page_size: 20, total: 0 })
+const searchForm = reactive({ keyword: '' })
 
 const dialogVisible = ref(false)
 const isEdit = ref(false)
@@ -101,6 +146,12 @@ const editingId = ref<number>(0)
 
 const formRef = ref<FormInstance>()
 const form = reactive({ code: '', name: '', description: '' })
+
+const permissionDialogVisible = ref(false)
+const permissionRole = ref<Role | null>(null)
+const selectedPermissionIds = ref<number[]>([])
+const permissionOptions = ref<Array<{ id: number; code: string; label: string }>>([])
+const savingPermissions = ref(false)
 
 const rules: FormRules = {
   code: [
@@ -117,7 +168,11 @@ onMounted(() => {
 async function fetchRoles() {
   loading.value = true
   try {
-    const res = await listRoles({ page: pagination.page, page_size: pagination.page_size })
+    const res = await listRoles({
+      page: pagination.page,
+      page_size: pagination.page_size,
+      keyword: searchForm.keyword || undefined,
+    })
     roles.value = res.items
     // D-95：分页字段已扁平化，直接从 res 顶层读取
     pagination.page = res.page
@@ -128,8 +183,25 @@ async function fetchRoles() {
   }
 }
 
+function handleSearch() {
+  pagination.page = 1
+  fetchRoles()
+}
+
+function handleReset() {
+  searchForm.keyword = ''
+  pagination.page = 1
+  fetchRoles()
+}
+
 function handlePageChange(page: number) {
   pagination.page = page
+  fetchRoles()
+}
+
+function handlePageSizeChange(pageSize: number) {
+  pagination.page = 1
+  pagination.page_size = pageSize
   fetchRoles()
 }
 
@@ -146,7 +218,7 @@ function openEditDialog(role: Role) {
   editingId.value = role.id
   form.code = role.code
   form.name = role.name
-  form.description = role.description
+  form.description = role.description ?? ''
   dialogVisible.value = true
 }
 
@@ -157,7 +229,7 @@ async function handleSubmit() {
   submitting.value = true
   try {
     if (isEdit.value) {
-      await updateRole(editingId.value, { name: form.name, description: form.description })
+      await updateRole(editingId.value, { name: form.name, description: form.description || null })
       ElMessage.success('角色更新成功')
     } else {
       await createRole({ code: form.code, name: form.name, description: form.description })
@@ -167,6 +239,38 @@ async function handleSubmit() {
     fetchRoles()
   } finally {
     submitting.value = false
+  }
+}
+
+async function openPermissionDialog(role: Role) {
+  permissionRole.value = role
+  permissionDialogVisible.value = true
+  const [permissions, rolePermissions] = await Promise.all([
+    listPermissions({ page: 1, page_size: 500 }),
+    getRolePermissions(role.id),
+  ])
+  permissionOptions.value = permissions.items.map((item: Permission) => ({
+    id: item.id,
+    code: item.code,
+    label: `${item.name}（${item.code}）`,
+  }))
+  const selectedCodes = rolePermissions.permissions ?? rolePermissions.codes ?? []
+  selectedPermissionIds.value = permissions.items
+    .filter((item) => selectedCodes.includes(item.code))
+    .map((item) => item.id)
+}
+
+async function handleSavePermissions() {
+  if (!permissionRole.value) return
+  savingPermissions.value = true
+  try {
+    await setRolePermissions(permissionRole.value.id, {
+      permission_ids: selectedPermissionIds.value,
+    })
+    ElMessage.success('角色权限已保存')
+    permissionDialogVisible.value = false
+  } finally {
+    savingPermissions.value = false
   }
 }
 
@@ -209,15 +313,23 @@ function formatDate(dateStr: string) {
 .page-title-text {
   font-size: 18px;
   font-weight: 600;
-  color: #F1F5F9;
+  color: var(--mc-text);
   margin: 0;
 }
 
 .table-card {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(99, 102, 241, 0.2);
-  border-radius: 10px;
+  background: var(--mc-surface);
+  border: 1px solid var(--mc-border-soft);
+  border-radius: var(--mc-radius);
   padding: 16px;
-  backdrop-filter: blur(12px);
+}
+
+.permission-transfer {
+  display: flex;
+  justify-content: center;
+}
+
+:deep(.el-transfer-panel) {
+  width: 290px;
 }
 </style>

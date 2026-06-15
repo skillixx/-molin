@@ -139,7 +139,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -180,6 +180,20 @@ let emailTimer: ReturnType<typeof setInterval> | null = null
 // 脱敏手机和邮箱（直接从 currentUser 取，后端返回已脱敏）
 const maskedPhone = computed(() => authStore.currentUser?.phone ?? '未绑定')
 const maskedEmail = computed(() => authStore.currentUser?.email ?? '未绑定')
+
+onMounted(() => {
+  // 已完成双重认证时不重复停留在认证页，直接进入原目标页面。
+  if (authStore.adminVerified) {
+    const redirect = (route.query.redirect as string) || '/dashboard'
+    router.replace(redirect)
+    return
+  }
+
+  // 如果手机认证仍有效，只要求继续完成邮箱认证。
+  if (authStore.currentUser?.admin_phone_verified) {
+    currentStep.value = 2
+  }
+})
 
 /** 启动倒计时（60秒） */
 function startPhoneCountdown() {
@@ -229,6 +243,7 @@ async function handleVerifyPhone() {
   try {
     await adminVerifyPhone({ code: phoneCode.value })
     ElMessage.success('手机验证成功')
+    await authStore.fetchMe()
     currentStep.value = 2
   } catch (err: unknown) {
     handleApiError(err, 'phone')
@@ -264,6 +279,8 @@ async function handleVerifyEmail() {
     currentStep.value = 4
     // 刷新用户信息，使 admin_phone_verified / admin_email_verified 更新
     await authStore.fetchMe()
+    await authStore.fetchPermissions()
+    sessionStorage.removeItem('admin_verify_pending')
     ElMessage.success('认证成功，有效期 24 小时')
     const redirect = (route.query.redirect as string) || '/dashboard'
     router.push(redirect)
@@ -304,19 +321,37 @@ onUnmounted(() => {
 <style scoped>
 .verify-page {
   min-height: 100vh;
-  background: #0A0F1E;
+  background: var(--mc-bg-grid);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.verify-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--mc-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--mc-grid-line) 1px, transparent 1px),
+    linear-gradient(var(--mc-grid-line-strong) 1px, transparent 1px),
+    linear-gradient(90deg, var(--mc-grid-line-strong) 1px, transparent 1px);
+  background-size: 34px 34px, 34px 34px, 136px 136px, 136px 136px;
+  mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.92), rgba(0, 0, 0, 0.35));
+  pointer-events: none;
 }
 
 .verify-card {
+  position: relative;
+  z-index: 1;
   width: 100%;
   max-width: 640px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(99, 102, 241, 0.2);
-  border-radius: 16px;
+  background: rgba(22, 32, 51, 0.94);
+  border: 1px solid var(--mc-border-soft);
+  border-radius: var(--mc-radius);
   padding: 40px 48px;
   backdrop-filter: blur(12px);
 }
@@ -334,20 +369,20 @@ onUnmounted(() => {
 }
 
 .brand-icon {
-  color: #6366F1;
-  filter: drop-shadow(0 0 12px rgba(99, 102, 241, 0.5));
+  color: var(--mc-primary);
+  filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.28));
 }
 
 .verify-title {
   font-size: 22px;
   font-weight: 700;
-  color: #F1F5F9;
+  color: var(--mc-text);
   margin: 0 0 8px;
 }
 
 .verify-subtitle {
   font-size: 14px;
-  color: #94A3B8;
+  color: var(--mc-text-muted);
   margin: 0;
   line-height: 1.6;
 }
@@ -359,37 +394,37 @@ onUnmounted(() => {
 
 :deep(.el-step__title) {
   font-size: 12px;
-  color: #94A3B8;
+  color: var(--mc-text-muted);
 }
 
 :deep(.el-step__title.is-finish) {
-  color: #6366F1;
+  color: var(--mc-primary);
 }
 
 :deep(.el-step__title.is-process) {
-  color: #F1F5F9;
+  color: var(--mc-text);
 }
 
 :deep(.el-step__head.is-process .el-step__icon) {
-  border-color: #6366F1;
-  background: linear-gradient(135deg, #6366F1, #8B5CF6);
-  color: #fff;
+  border-color: var(--mc-primary);
+  background: var(--mc-primary);
+  color: #06111f;
 }
 
 :deep(.el-step__head.is-finish .el-step__icon) {
-  border-color: #6366F1;
-  color: #6366F1;
+  border-color: var(--mc-primary);
+  color: var(--mc-primary);
 }
 
 :deep(.el-step__line) {
-  background-color: rgba(99, 102, 241, 0.2);
+  background-color: rgba(56, 189, 248, 0.18);
 }
 
 /* 步骤卡片 */
 .step-card {
-  background: rgba(255, 255, 255, 0.03) !important;
-  border: 1px solid rgba(99, 102, 241, 0.15) !important;
-  border-radius: 12px !important;
+  background: var(--mc-surface) !important;
+  border: 1px solid var(--mc-border-soft) !important;
+  border-radius: var(--mc-radius) !important;
 }
 
 :deep(.el-card__body) {
@@ -404,43 +439,43 @@ onUnmounted(() => {
 }
 
 .step-icon {
-  color: #6366F1;
+  color: var(--mc-primary);
 }
 
 .phone-icon {
-  color: #8B5CF6;
+  color: var(--mc-accent);
 }
 
 .email-icon {
-  color: #06B6D4;
+  color: var(--mc-primary);
 }
 
 .success-icon {
-  color: #10B981;
-  filter: drop-shadow(0 0 12px rgba(16, 185, 129, 0.4));
+  color: var(--mc-success);
+  filter: drop-shadow(0 0 12px rgba(34, 197, 94, 0.28));
 }
 
 .step-title {
   font-size: 17px;
   font-weight: 600;
-  color: #F1F5F9;
+  color: var(--mc-text);
   margin: 0;
 }
 
 .success-title {
-  color: #10B981;
+  color: var(--mc-success);
 }
 
 .step-desc {
   font-size: 14px;
-  color: #94A3B8;
+  color: var(--mc-text-muted);
   margin: 0;
   text-align: center;
   line-height: 1.6;
 }
 
 .highlight-text {
-  color: #06B6D4;
+  color: var(--mc-primary);
   font-weight: 500;
 }
 
@@ -451,18 +486,18 @@ onUnmounted(() => {
 }
 
 :deep(.code-input .el-input__wrapper) {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(99, 102, 241, 0.3);
+  background: #0f1a2d;
+  border: 1px solid var(--mc-border);
   box-shadow: none;
 }
 
 :deep(.code-input .el-input__wrapper.is-focus) {
-  border-color: #6366F1;
-  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.3);
+  border-color: var(--mc-primary);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.26);
 }
 
 :deep(.code-input .el-input__inner) {
-  color: #F1F5F9;
+  color: var(--mc-text);
   text-align: center;
   font-size: 18px;
   letter-spacing: 4px;
@@ -470,9 +505,9 @@ onUnmounted(() => {
 
 /* 按钮 */
 .action-btn {
-  background: linear-gradient(135deg, #6366F1, #8B5CF6);
+  background: linear-gradient(135deg, var(--mc-primary-strong), var(--mc-primary));
   border: none;
-  color: #fff;
+  color: #06111f;
   padding: 10px 32px;
   font-size: 14px;
   font-weight: 500;
@@ -496,17 +531,17 @@ onUnmounted(() => {
 }
 
 .back-btn {
-  color: #94A3B8;
+  color: var(--mc-text-muted);
   font-size: 13px;
 }
 
 .back-btn:hover {
-  color: #6366F1;
+  color: var(--mc-primary);
 }
 
 /* 成功卡片 */
 .success-card {
-  border-color: rgba(16, 185, 129, 0.2) !important;
+  border-color: rgba(34, 197, 94, 0.24) !important;
 }
 
 /* 底部 */
@@ -516,12 +551,12 @@ onUnmounted(() => {
 }
 
 .back-login-btn {
-  color: #94A3B8;
+  color: var(--mc-text-muted);
   font-size: 13px;
 }
 
 .back-login-btn:hover {
-  color: #6366F1;
+  color: var(--mc-primary);
 }
 
 /* 移动端适配 */

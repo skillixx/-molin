@@ -1,29 +1,54 @@
-// 认证状态管理：token / 当前用户 / 登录登出
-// 安全约定：只在内存和 localStorage 中存 access_token，refresh_token 仅在内存存储（不写 localStorage）
+// 认证状态管理：token / 当前用户 / 权限码 / 登录登出
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { loginByEmail, logout as apiLogout, getMe } from '@/api/auth'
+import { loginByEmail, logout as apiLogout, getMe, getMePermissions, refreshToken as apiRefreshToken } from '@/api/auth'
 import type { User } from '@/types/user'
 
 export const useAuthStore = defineStore('auth', () => {
-  // access_token 存 localStorage（页面刷新后恢复登录状态）
   const accessToken = ref<string>(localStorage.getItem('access_token') ?? '')
-  // refresh_token 只存内存，不写 localStorage（安全规范）
-  const refreshToken = ref<string>('')
+  const refreshToken = ref<string>(localStorage.getItem('refresh_token') ?? '')
   const currentUser = ref<User | null>(null)
+  const permissionCodes = ref<string[]>([])
 
   const isLoggedIn = computed(() => !!accessToken.value)
+  const adminVerified = computed(() => {
+    const user = currentUser.value
+    return !!user?.admin_phone_verified && !!user?.admin_email_verified
+  })
+  const hasPermission = computed(() => {
+    return (code?: string) => !code || permissionCodes.value.includes(code)
+  })
+
+  /** 写入 token，并同步本地持久化，供页面刷新后恢复登录态 */
+  function setTokens(access: string, refresh: string) {
+    accessToken.value = access
+    refreshToken.value = refresh
+    localStorage.setItem('access_token', access)
+    localStorage.setItem('refresh_token', refresh)
+  }
+
+  /** 仅清理本地登录态，避免在拦截器里再次触发登出请求 */
+  function clearSession() {
+    accessToken.value = ''
+    refreshToken.value = ''
+    currentUser.value = null
+    permissionCodes.value = []
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('refresh_token')
+    sessionStorage.removeItem('admin_verify_pending')
+  }
 
   /** 邮箱登录（D-93：响应已包含 user 字段，无需再额外调用 GET /api/me）*/
   async function login(email: string, password: string) {
     const data = await loginByEmail({ email, password })
-    accessToken.value = data.access_token
-    refreshToken.value = data.refresh_token
-    localStorage.setItem('access_token', data.access_token)
-    // D-93：直接从登录响应中获取用户摘要，再调用 getMe 补全完整字段
-    // 登录响应的 user 只含摘要字段，getMe 返回完整 User（含 username/admin_*_verified 等），
-    // 故仍需调用一次 getMe 以填充侧边栏、权限守卫所需的完整信息
-    currentUser.value = await getMe()
+    setTokens(data.access_token, data.refresh_token)
+    // 邮箱密码校验成功后只建立登录态，权限码在双重认证完成后再拉取。
+    await fetchMe()
+    if (!adminVerified.value) {
+      sessionStorage.setItem('admin_verify_pending', '1')
+    } else {
+      sessionStorage.removeItem('admin_verify_pending')
+    }
   }
 
   /** 登出：调用接口吊销 session，清空本地状态 */
@@ -33,21 +58,19 @@ export const useAuthStore = defineStore('auth', () => {
     } catch {
       // 忽略接口错误，直接清理本地状态
     }
-    accessToken.value = ''
-    refreshToken.value = ''
-    currentUser.value = null
-    localStorage.removeItem('access_token')
+    clearSession()
   }
 
   /** 页面刷新后恢复用户信息（若 token 有效） */
   async function restoreUser() {
     if (accessToken.value && !currentUser.value) {
       try {
-        currentUser.value = await getMe()
+        await fetchMe()
+        if (adminVerified.value) {
+          await fetchPermissions()
+        }
       } catch {
-        // token 已失效，清理
-        accessToken.value = ''
-        localStorage.removeItem('access_token')
+        clearSession()
       }
     }
   }
@@ -57,13 +80,37 @@ export const useAuthStore = defineStore('auth', () => {
     currentUser.value = await getMe()
   }
 
+  /** 拉取当前用户权限码，用于菜单和路由守卫 */
+  async function fetchPermissions() {
+    const res = await getMePermissions()
+    permissionCodes.value = res.permissions ?? res.codes ?? []
+  }
+
+  /** 使用 refresh_token 静默刷新 access_token */
+  async function refreshAccessToken() {
+    if (!refreshToken.value) throw new Error('缺少 refresh_token')
+    const data = await apiRefreshToken({ refresh_token: refreshToken.value })
+    setTokens(data.access_token, data.refresh_token)
+    currentUser.value = data.user as User
+    await fetchPermissions()
+    return data.access_token
+  }
+
   return {
     accessToken,
+    refreshToken,
     currentUser,
+    permissionCodes,
     isLoggedIn,
+    adminVerified,
+    hasPermission,
+    setTokens,
+    clearSession,
     login,
     logout,
     restoreUser,
     fetchMe,
+    fetchPermissions,
+    refreshAccessToken,
   }
 })

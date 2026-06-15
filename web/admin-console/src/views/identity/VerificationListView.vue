@@ -2,7 +2,23 @@
   <!-- 实名认证审核列表 -->
   <div class="identity-list">
     <div class="page-header">
-      <h3 class="page-title-text">实名审核</h3>
+      <div>
+        <h3 class="page-title-text">实名审核</h3>
+        <p class="page-subtitle">审核用户提交的实名资料，身份证号仅展示脱敏字段。</p>
+      </div>
+    </div>
+
+    <div class="filter-card">
+      <div>
+        <div class="filter-title">审核状态</div>
+        <div class="filter-subtitle">切换状态会重新加载列表</div>
+      </div>
+      <el-radio-group v-model="searchForm.status" class="status-filter" @change="handleSearch">
+        <el-radio-button label="">全部</el-radio-button>
+        <el-radio-button label="pending">待审核</el-radio-button>
+        <el-radio-button label="verified">已通过</el-radio-button>
+        <el-radio-button label="rejected">已拒绝</el-radio-button>
+      </el-radio-group>
     </div>
 
     <div class="table-card">
@@ -13,30 +29,47 @@
         :page="pagination.page"
         :page-size="pagination.page_size"
         @page-change="handlePageChange"
+        @page-size-change="handlePageSizeChange"
       >
-        <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="user_id" label="用户 ID" width="100" />
-        <el-table-column prop="real_name" label="真实姓名" width="120" />
-        <el-table-column prop="id_card_masked" label="身份证号（脱敏）" width="200" />
-        <el-table-column label="状态" width="100">
+        <el-table-column label="申请信息" min-width="220" fixed="left">
+          <template #default="{ row }">
+            <div class="applicant-cell">
+              <span class="applicant-name">{{ row.real_name }}</span>
+              <span class="applicant-meta">申请 ID：{{ row.id }} · 用户 ID：{{ row.user_id }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="身份证号" min-width="190">
+          <template #default="{ row }">
+            <span class="masked-card-no">{{ getIdCardMasked(row) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="110" align="center">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small">
               {{ statusLabel(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="submitted_at" label="提交时间" width="180">
-          <template #default="{ row }">{{ formatDate(row.submitted_at) }}</template>
-        </el-table-column>
-        <el-table-column prop="reviewed_at" label="审核时间" width="180">
-          <template #default="{ row }">{{ row.reviewed_at ? formatDate(row.reviewed_at) : '--' }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right">
+        <el-table-column label="审核说明" min-width="200">
           <template #default="{ row }">
-            <template v-if="row.status === 'pending'">
+            <span class="reason-text">{{ getRejectReason(row) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="时间" min-width="220">
+          <template #default="{ row }">
+            <div class="time-cell">
+              <span>提交：{{ formatDate(row.submitted_at) }}</span>
+              <span>审核：{{ row.reviewed_at ? formatDate(row.reviewed_at) : '--' }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="170" fixed="right" align="center">
+          <template #default="{ row }">
+            <div v-if="row.status === 'pending'" class="action-buttons">
               <el-button size="small" type="success" text @click="handleApprove(row)">通过</el-button>
               <el-button size="small" type="danger" text @click="handleReject(row)">拒绝</el-button>
-            </template>
+            </div>
             <span v-else class="reviewed-text">已审核</span>
           </template>
         </el-table-column>
@@ -72,6 +105,7 @@ import type { Pagination } from '@/types/api'
 const loading = ref(false)
 const verifications = ref<IdentityVerification[]>([])
 const pagination = reactive<Pagination>({ page: 1, page_size: 20, total: 0 })
+const searchForm = reactive<{ status: '' | 'pending' | 'verified' | 'rejected' }>({ status: '' })
 
 const rejectDialogVisible = ref(false)
 const rejectReason = ref('')
@@ -85,7 +119,11 @@ onMounted(() => {
 async function fetchList() {
   loading.value = true
   try {
-    const res = await listVerifications({ page: pagination.page, page_size: pagination.page_size })
+    const res = await listVerifications({
+      page: pagination.page,
+      page_size: pagination.page_size,
+      status: searchForm.status || undefined,
+    })
     verifications.value = res.items
     // D-95：分页字段已扁平化，直接从 res 顶层读取
     pagination.page = res.page
@@ -96,8 +134,19 @@ async function fetchList() {
   }
 }
 
+function handleSearch() {
+  pagination.page = 1
+  fetchList()
+}
+
 function handlePageChange(page: number) {
   pagination.page = page
+  fetchList()
+}
+
+function handlePageSizeChange(pageSize: number) {
+  pagination.page = 1
+  pagination.page_size = pageSize
   fetchList()
 }
 
@@ -108,7 +157,7 @@ async function handleApprove(v: IdentityVerification) {
       '确认审核',
       { confirmButtonText: '通过', cancelButtonText: '取消', type: 'success' }
     )
-    await reviewVerification(v.id, { approve: true })
+    await reviewVerification(v.id, { action: 'approve' })
     ElMessage.success('审核通过')
     fetchList()
   } catch {
@@ -129,7 +178,10 @@ async function confirmReject() {
   }
   reviewing.value = true
   try {
-    await reviewVerification(pendingRejectId.value, { approve: false, reason: rejectReason.value })
+    await reviewVerification(pendingRejectId.value, {
+      action: 'reject',
+      reject_reason: rejectReason.value.trim(),
+    })
     ElMessage.success('已拒绝认证申请')
     rejectDialogVisible.value = false
     fetchList()
@@ -156,6 +208,15 @@ function statusLabel(status: string) {
   return map[status] ?? status
 }
 
+function getIdCardMasked(v: IdentityVerification) {
+  return v.id_card_no_masked || v.id_card_masked || '--'
+}
+
+function getRejectReason(v: IdentityVerification) {
+  if (v.status !== 'rejected') return '--'
+  return v.reject_reason || v.reason || '未填写拒绝原因'
+}
+
 function formatDate(dateStr: string) {
   if (!dateStr) return '--'
   return new Date(dateStr).toLocaleString('zh-CN', {
@@ -167,17 +228,87 @@ function formatDate(dateStr: string) {
 
 <style scoped>
 .identity-list { padding: 0; }
-.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-.page-title-text { font-size: 18px; font-weight: 600; color: #F1F5F9; margin: 0; }
-.table-card {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(99, 102, 241, 0.2);
-  border-radius: 10px;
+.page-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; }
+.page-title-text { font-size: 18px; font-weight: 600; color: var(--mc-text); margin: 0; }
+.page-subtitle {
+  color: var(--mc-text-muted);
+  font-size: 12px;
+  margin: 6px 0 0;
+}
+.filter-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: var(--mc-surface);
+  border: 1px solid var(--mc-border-soft);
+  border-radius: var(--mc-radius);
   padding: 16px;
-  backdrop-filter: blur(12px);
+  margin-bottom: 16px;
+}
+.filter-title {
+  color: var(--mc-text);
+  font-size: 14px;
+  font-weight: 700;
+}
+.filter-subtitle {
+  color: var(--mc-text-muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+.status-filter {
+  flex-shrink: 0;
+}
+.table-card {
+  background: var(--mc-surface);
+  border: 1px solid var(--mc-border-soft);
+  border-radius: var(--mc-radius);
+  padding: 16px;
+  min-width: 0;
+}
+.applicant-cell,
+.time-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.45;
+}
+.applicant-name {
+  color: var(--mc-text);
+  font-size: 14px;
+  font-weight: 700;
+}
+.applicant-meta,
+.time-cell span {
+  color: var(--mc-text-muted);
+  font-size: 12px;
+}
+.masked-card-no {
+  color: var(--mc-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+.reason-text {
+  color: var(--mc-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.action-buttons {
+  display: inline-flex;
+  gap: 4px;
 }
 .reviewed-text {
-  color: #94A3B8;
+  color: var(--mc-text-muted);
   font-size: 13px;
+}
+@media (max-width: 760px) {
+  .filter-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .status-filter {
+    overflow-x: auto;
+    max-width: 100%;
+  }
 }
 </style>
