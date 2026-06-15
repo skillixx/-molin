@@ -16,8 +16,8 @@ import {
   updatePhone,
   updateEmail,
   changePassword,
-  sendPhoneCode,
-  sendEmailCode,
+  sendBindPhoneCode,
+  sendBindEmailCode,
 } from '@/api/auth'
 
 const authStore = useAuthStore()
@@ -105,7 +105,7 @@ async function sendPhoneVerifyCode() {
 
   phoneSending.value = true
   try {
-    await sendPhoneCode(phoneForm.phone, 'bind_phone')
+    await sendBindPhoneCode(phoneForm.phone)
     ElMessage.success('验证码已发送至新手机号')
     phoneStep.value = 2
     phoneCountdown.value = 60
@@ -185,7 +185,7 @@ async function sendEmailVerifyCode() {
 
   emailSending.value = true
   try {
-    await sendEmailCode(emailForm.email, 'bind_email')
+    await sendBindEmailCode(emailForm.email)
     ElMessage.success('验证码已发送至新邮箱')
     emailStep.value = 2
     emailCountdown.value = 60

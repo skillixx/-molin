@@ -74,7 +74,7 @@ const codeValidator = (label: string) => (_: unknown, value: string, callback: (
 // 密码格式
 const passwordValidator = (_: unknown, value: string, callback: (err?: Error) => void) => {
   if (!value) return callback(new Error('请输入密码'))
-  if (value.length < 8 || value.length > 32) return callback(new Error('密码长度为 8-32 位'))
+  if (value.length < 6 || value.length > 72) return callback(new Error('密码长度为 6-72 位'))
   if (!/[a-zA-Z]/.test(value) || !/\d/.test(value)) return callback(new Error('密码须包含字母和数字'))
   callback()
 }
@@ -165,11 +165,7 @@ async function handleRegister() {
       phone_code: form.phoneCode,
       email_code: form.emailCode,
     })
-    // 保存 Token 并拉取用户信息
-    localStorage.setItem('access_token', tokens.access_token)
-    localStorage.setItem('refresh_token', tokens.refresh_token)
-    authStore.accessToken = tokens.access_token
-    await authStore.fetchMe()
+    await authStore.applyLoginResponse(tokens)
     ElMessage.success('注册成功，欢迎使用墨灵！')
     router.push('/marketplace')
   } finally {

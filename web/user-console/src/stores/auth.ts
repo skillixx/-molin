@@ -10,14 +10,17 @@ import {
   logout as apiLogout,
   refreshToken as apiRefreshToken,
   getMe,
+  getMyPermissions,
 } from '@/api/auth'
-import type { User } from '@/types/auth'
+import type { TokenPair, User } from '@/types/auth'
 
 export const useAuthStore = defineStore('auth', () => {
   // 访问令牌（持久化到 localStorage）
   const accessToken = ref<string>(localStorage.getItem('access_token') ?? '')
   // 当前用户信息
   const currentUser = ref<User | null>(null)
+  // 当前用户最终生效权限码，用于菜单和按钮级权限控制
+  const permissions = ref<string[]>([])
 
   // 是否已登录
   const isLoggedIn = computed(() => !!accessToken.value)
@@ -35,8 +38,7 @@ export const useAuthStore = defineStore('auth', () => {
    */
   async function loginWithEmail(email: string, password: string) {
     const data = await loginByEmail({ email, password })
-    _applyTokens(data.access_token, data.refresh_token)
-    await fetchMe()
+    await applyLoginResponse(data)
   }
 
   /**
@@ -44,8 +46,7 @@ export const useAuthStore = defineStore('auth', () => {
    */
   async function loginWithPhone(phone: string, code: string) {
     const data = await loginByPhone({ phone, code })
-    _applyTokens(data.access_token, data.refresh_token)
-    await fetchMe()
+    await applyLoginResponse(data)
   }
 
   /**
@@ -56,17 +57,31 @@ export const useAuthStore = defineStore('auth', () => {
     if (!raw) throw new Error('无 refresh_token，请重新登录')
     const data = await apiRefreshToken(raw)
     _applyTokens(data.access_token, data.refresh_token)
+    if (data.user) currentUser.value = toUser(data.user)
+    await fetchPermissions()
   }
 
   /**
    * 拉取当前用户信息
    */
   async function fetchMe() {
-    try {
-      currentUser.value = await getMe()
-    } catch {
-      // 获取用户信息失败不影响已有状态
-    }
+    currentUser.value = await getMe()
+    await fetchPermissions()
+  }
+
+  /**
+   * 拉取当前登录用户权限码
+   */
+  async function fetchPermissions() {
+    const res = await getMyPermissions()
+    permissions.value = res.permissions ?? []
+  }
+
+  /**
+   * 判断当前用户是否拥有指定权限
+   */
+  function hasPermission(code: string) {
+    return permissions.value.includes(code)
   }
 
   /**
@@ -83,6 +98,15 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  /**
+   * 注册/登录成功后统一写入 Token、用户摘要，并补全用户详情和权限码。
+   */
+  async function applyLoginResponse(data: TokenPair) {
+    _applyTokens(data.access_token, data.refresh_token)
+    if (data.user) currentUser.value = toUser(data.user)
+    await fetchMe()
+  }
+
   // 应用新 Token 到内存和 localStorage
   function _applyTokens(access: string, refresh: string) {
     accessToken.value = access
@@ -94,13 +118,27 @@ export const useAuthStore = defineStore('auth', () => {
   function _clearTokens() {
     accessToken.value = ''
     currentUser.value = null
+    permissions.value = []
     localStorage.removeItem('access_token')
     localStorage.removeItem('refresh_token')
+  }
+
+  // 登录响应只返回用户摘要，这里转换成兼容完整 User 的最小对象。
+  function toUser(user: NonNullable<TokenPair['user']>): User {
+    return {
+      id: user.id,
+      username: null,
+      email: user.email,
+      phone: user.phone,
+      real_name_status: user.real_name_status,
+      status: user.status,
+    }
   }
 
   return {
     accessToken,
     currentUser,
+    permissions,
     isLoggedIn,
     realNameStatus,
     isRealNameVerified,
@@ -108,6 +146,9 @@ export const useAuthStore = defineStore('auth', () => {
     loginWithPhone,
     refreshToken,
     fetchMe,
+    fetchPermissions,
+    hasPermission,
+    applyLoginResponse,
     logout,
   }
 })

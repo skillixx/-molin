@@ -76,7 +76,9 @@ async function handleSubmit() {
     verification.value = await submitVerification({
       real_name: form.real_name,
       id_card_no: form.id_card_no,
+      verification_type: 'id_card',
     })
+    await fetchStatus()
     showForm.value = false
     // 刷新 authStore 用户信息（更新 real_name_status）
     await authStore.fetchMe()
@@ -101,6 +103,10 @@ function formatDate(dateStr: string) {
   })
 }
 
+function idCardMasked(value?: string) {
+  return value || '--'
+}
+
 onMounted(fetchStatus)
 </script>
 
@@ -123,16 +129,16 @@ onMounted(fetchStatus)
           <div class="info-list">
             <div class="info-item">
               <span class="info-label">姓名</span>
-              <span class="info-value">{{ verification.real_name }}</span>
+              <span class="info-value">{{ verification.real_name || '--' }}</span>
             </div>
             <div class="info-item">
               <span class="info-label">身份证号</span>
               <!-- 只展示后端返回的脱敏值，禁止前端展示原始号码 -->
-              <span class="info-value id-masked">{{ verification.id_card_no_masked }}</span>
+              <span class="info-value id-masked">{{ idCardMasked(verification.id_card_no_masked) }}</span>
             </div>
             <div class="info-item">
               <span class="info-label">认证时间</span>
-              <span class="info-value">{{ formatDate(verification.submitted_at) }}</span>
+              <span class="info-value">{{ formatDate(verification.submitted_at || '') }}</span>
             </div>
           </div>
         </div>
@@ -145,15 +151,15 @@ onMounted(fetchStatus)
           <div class="info-list">
             <div class="info-item">
               <span class="info-label">姓名</span>
-              <span class="info-value">{{ verification.real_name }}</span>
+              <span class="info-value">{{ verification.real_name || '--' }}</span>
             </div>
             <div class="info-item">
               <span class="info-label">身份证号</span>
-              <span class="info-value id-masked">{{ verification.id_card_no_masked }}</span>
+              <span class="info-value id-masked">{{ idCardMasked(verification.id_card_no_masked) }}</span>
             </div>
             <div class="info-item">
               <span class="info-label">提交时间</span>
-              <span class="info-value">{{ formatDate(verification.submitted_at) }}</span>
+              <span class="info-value">{{ formatDate(verification.submitted_at || '') }}</span>
             </div>
           </div>
           <p class="pending-tip">

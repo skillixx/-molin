@@ -5,13 +5,14 @@
  * 登录成功后跳转到商品市场
  */
 import { ref, reactive, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { sendPhoneCode } from '@/api/auth'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 
 // 当前 Tab
@@ -68,7 +69,7 @@ async function handleEmailLogin() {
   try {
     await authStore.loginWithEmail(emailForm.email, emailForm.password)
     ElMessage.success('登录成功')
-    router.push('/marketplace')
+    router.push(getRedirectPath())
   } finally {
     submitting.value = false
   }
@@ -116,7 +117,7 @@ async function handlePhoneLogin() {
   try {
     await authStore.loginWithPhone(phoneForm.phone, phoneForm.code)
     ElMessage.success('登录成功')
-    router.push('/marketplace')
+    router.push(getRedirectPath())
   } catch (err: unknown) {
     const code = (err as { response?: { data?: { code?: number } } })?.response?.data?.code
     if (code === 40000) {
@@ -130,6 +131,11 @@ async function handlePhoneLogin() {
 }
 
 onUnmounted(() => clearInterval(countdownTimer))
+
+function getRedirectPath() {
+  const redirect = route.query.redirect
+  return typeof redirect === 'string' && redirect.startsWith('/') ? redirect : '/marketplace'
+}
 </script>
 
 <template>
