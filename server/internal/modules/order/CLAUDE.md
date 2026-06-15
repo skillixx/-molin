@@ -91,12 +91,18 @@ func (s *OrderService) MarkPaid(ctx context.Context, orderID uint64) error {
 
 ## 接口清单
 
+> 权威设计见 `docs/backend-dev-plan-backend-b.md` §3.2。列表统一 **D-95 扁平分页** `{items,page,page_size,total}`。
+
 ```text
-GET  /api/orders           -- 用户查自己的订单列表
-GET  /api/orders/:id       -- 用户查单个订单
-GET  /api/admin/orders     -- 管理员查所有订单
-GET  /api/admin/orders/:id -- 管理员查订单详情
+GET   /api/orders                -- 用户订单列表（仅本人）[扁平分页] query: order_type,status,created_from,created_to
+GET   /api/orders/:id            -- 用户订单详情（含 order_items）
+POST  /api/orders/:id/pay        -- 钱包支付存量 pending 订单（需 Idempotency-Key）body {pay_method:"wallet"}（待新增）
+POST  /api/orders/:id/cancel     -- 取消 pending 订单 body {reason}（待新增）
+GET   /api/admin/orders          -- [order:list] [扁平分页] query: user_id,order_type,status,created_from,created_to
+GET   /api/admin/orders/:id      -- [order:list] 订单详情
 ```
+
+> 待办（详见设计文档 §7）：O3 支付（pending→paid）、O4 取消（pending→cancelled）尚未实现；列表需扁平化（C-1）。状态机守卫一律用 `WHERE status='pending'` 的 RowsAffected 判定。
 
 ## 注意：充值订单
 
