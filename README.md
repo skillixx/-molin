@@ -45,6 +45,20 @@ iam 用户分组系统（Phase 0-3，已合并到 main）：
 - Migration 000015（新增 `user_groups`/`user_group_members`/`group_permissions`/`group_invite_codes` 四张表）、000016（seed `group:manage`、`scope:all` 权限码并绑定 admin 角色）
 - 邀请码当前仅支持管理员侧的生成/查询/停用，尚未接入注册流程（按邀请码自动落组为后续阶段）
 
+后端乙（product / order / billing / finance_consumer）架构重设计与系统补全（2026-06-15，已全部合并到 main）：
+- 架构设计：新增 `docs/backend-dev-plan-backend-b.md`（交易与计费域的权威架构与签名级接口设计，含 ER、核心流程、依赖注入、R1~R6 任务分解）
+- R1（PR#106）：商品/订单/钱包列表分页统一为 D-95 扁平结构 `{items,page,page_size,total}`，消除嵌套 `{list,pagination}`
+- R2（PR#107）：契约修正——批量写入 body 统一 `items` 键、充值响应补 `order_no/amount/status`、冻结 body 改 `{action,amount,reason}`、消费上报响应补 `consumption_record_id/wallet_transaction_id`、套餐列表权限码改 `product:view`
+- R3（PR#108）：新增订单支付 `POST /api/orders/{id}/pay`（钱包支付存量 pending 订单，状态机守卫 + 幂等）与取消 `POST /api/orders/{id}/cancel`
+- R4（PR#109）：新增商品计费规则管理 CRUD（`/api/admin/product-billing-rules`，P15/P16/P17）
+- R5（PR#110）：新增消费记录查询（用户端 `GET /api/product-consumption-records` 强制本人过滤 + 管理端 `GET /api/admin/product-consumption-records`）
+- R6（PR#111）：新增 `wallet:manage` 权限码（Migration 000023）并把钱包冻结接口权限由 `wallet:view` 收紧为 `wallet:manage`
+- 收尾（PR#112）：前端对接文档 `docs/frontend-api-reference.md` 全量回写 R1~R6 契约；计费规则「商品不存在」错误码由 60003 统一为 404/40004
+
+基础角色 seed 与 admin bootstrap（2026-06-15，已合并到 main）：
+- Migration 000024（PR#113）：补齐「无任何 migration seed 初始角色」的系统性缺口——`INSERT IGNORE` 写入 `admin` 超级管理员，并 `CROSS JOIN` 将全部权限治愈绑定到 admin（修复 000011~000023 在全新库上因 admin 缺失而 no-op 的绑定）；自此全新库 `migrate up` 即得到全权 admin 角色
+- admin bootstrap CLI（PR#115）：新增 `server/cmd/seed-admin`，从环境变量注入 bcrypt 密码哈希幂等创建首个管理员并绑定 admin 角色（不读明文、不覆盖既有密码），用法见 `server/migrations/README-base-roles.md`
+
 ---
 
 ## 快速启动
@@ -166,7 +180,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | 开发者 | 负责模块 | 分支前缀 | Agent 文件 |
 |---|---|---|---|
 | 后端 A | auth / iam / identity | `feature/backend-a-*` | `server/internal/modules/auth/CLAUDE.md` |
-| 后端 B | product / order / billing | `feature/backend-b-*` | `server/internal/modules/billing/CLAUDE.md` |
+| 后端 B | product / order / billing / finance_consumer | `feature/backend-b-*` | `docs/backend-dev-plan-backend-b.md`（架构权威）+ 各模块 `CLAUDE.md` |
 | 后端 C | asset / membership / app / content | `feature/backend-c-*` | `server/internal/modules/asset/CLAUDE.md` |
 | 前端 A | web/admin-console | `feature/frontend-a-*` | `web/admin-console/CLAUDE.md` |
 | 前端 B | web/user-console | `feature/frontend-b-*` | `web/user-console/CLAUDE.md` |
