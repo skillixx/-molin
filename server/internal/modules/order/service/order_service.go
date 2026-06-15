@@ -113,6 +113,18 @@ func (s *OrderService) MarkFailed(ctx context.Context, orderID uint64) error {
 	return nil
 }
 
+// DeletePendingTransient 删除因「瞬时锁冲突」（乐观锁重试耗尽）而未能完成扣费的 pending 订单。
+// 此类失败本质是并发瞬时冲突，并非真实业务失败（如余额不足），订单从未发生任何资金变动，
+// 删除可避免遗留大量 failed 垃圾订单。带 status='pending' 守卫，绝不会误删已支付订单。
+// 返回是否删除成功（false 表示订单已非 pending，调用方应改走 MarkFailed）。
+func (s *OrderService) DeletePendingTransient(ctx context.Context, orderID uint64) (bool, error) {
+	rows, err := s.repo.DeletePending(ctx, orderID)
+	if err != nil {
+		return false, err
+	}
+	return rows > 0, nil
+}
+
 // MarkPaidByOrderNo 按订单号将充值订单标记为已支付（用于支付回调，在事务内调用）。
 func (s *OrderService) MarkPaidByOrderNo(tx *gorm.DB, orderNo string) (*model.Order, error) {
 	order, err := s.repo.FindByOrderNo(context.Background(), orderNo)

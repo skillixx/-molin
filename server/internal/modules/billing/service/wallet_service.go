@@ -3,12 +3,27 @@ package service
 import (
 	"context"
 	"errors"
+	"math/rand"
+	"time"
 
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
 	"molin/server/internal/modules/billing/model"
 	"molin/server/internal/modules/billing/repository"
+)
+
+// 扣费乐观锁重试参数（F6 并发健壮性）。
+// 在 FOR UPDATE 行锁串行化的前提下，乐观锁冲突仅为「读取与更新之间被其他事务抢先提交」
+// 造成的瞬时冲突。适当增大重试次数 + 指数退避 + 随机抖动，可让高竞争下每个请求
+// 最终都能拿到锁并得到确定结果（成功 / 余额不足），而不再因重试耗尽返回裸 500。
+const (
+	// deductMaxRetries 扣费乐观锁最大重试次数（原为 3，提高以覆盖高并发场景）。
+	deductMaxRetries = 8
+	// deductBaseBackoff 退避基数：第 n 次重试退避约 base*2^(n-1) + 抖动。
+	deductBaseBackoff = 5 * time.Millisecond
+	// deductMaxBackoff 单次退避上限，避免高重试次数下退避过长。
+	deductMaxBackoff = 200 * time.Millisecond
 )
 
 // ErrInsufficientBalance 余额不足（code=60001）。
@@ -44,21 +59,42 @@ func (s *WalletService) GetByUserID(ctx context.Context, userID uint64) (*model.
 	return s.walletRepo.GetOrCreate(ctx, userID)
 }
 
-// Deduct 从用户钱包扣款（乐观锁事务，最多重试 3 次）。
+// Deduct 从用户钱包扣款（乐观锁事务，带指数退避 + 抖动重试）。
 // 业务规范要求：先行锁（FOR UPDATE）+ 乐观锁双重保护，不得省略。
 // code=60001 表示余额不足。
+//
+// F6 并发健壮性：余额充足/不足的判定在 FOR UPDATE 持锁期间完成，资金不变量
+// （无双扣、无负余额）由「FOR UPDATE 行锁 + 乐观锁 version 守卫」保证，本方法仅
+// 通过增大重试次数与退避来提升「最终拿到确定结果」的概率，绝不放宽余额校验或乐观锁。
 func (s *WalletService) Deduct(ctx context.Context, userID uint64, amount decimal.Decimal, orderID uint64, remark string) error {
-	for i := 0; i < 3; i++ {
+	for i := 0; i < deductMaxRetries; i++ {
 		err := s.deductOnce(ctx, userID, amount, orderID, remark)
 		if err == nil {
 			return nil
 		}
 		if !errors.Is(err, ErrConcurrentUpdate) {
+			// 余额不足等真实业务错误直接返回，不重试。
 			return err
 		}
-		// 乐观锁冲突，继续重试
+		// 乐观锁瞬时冲突：指数退避 + 随机抖动后重试（抖动避免多请求同时重试形成惊群）。
+		if i < deductMaxRetries-1 {
+			time.Sleep(backoffWithJitter(i))
+		}
 	}
+	// 重试耗尽仍冲突：返回 ErrConcurrentUpdate，由 handler 映射为 409「系统繁忙，请重试」。
 	return ErrConcurrentUpdate
+}
+
+// backoffWithJitter 计算第 attempt 次重试（从 0 开始）的退避时长：
+// base*2^attempt 截断到 deductMaxBackoff，再叠加 [0, 退避值) 的随机抖动。
+func backoffWithJitter(attempt int) time.Duration {
+	backoff := deductBaseBackoff << attempt
+	if backoff > deductMaxBackoff {
+		backoff = deductMaxBackoff
+	}
+	// 叠加随机抖动，分散并发请求的重试时刻，避免惊群再次同时冲突。
+	jitter := time.Duration(rand.Int63n(int64(backoff)))
+	return backoff + jitter
 }
 
 // deductOnce 单次扣费尝试（事务内）。
