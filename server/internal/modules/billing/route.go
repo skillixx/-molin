@@ -62,7 +62,7 @@ func RegisterRoutes(
 	// 管理端路由（需要登录 + wallet:view 权限）
 	mux.Handle("GET /api/admin/users/{id}/wallet", adminAuth("wallet:view", adminBillingH.GetUserWallet))
 	mux.Handle("GET /api/admin/wallet-transactions", adminAuth("wallet:view", adminBillingH.ListAllTransactions))
-	mux.Handle("PATCH /api/admin/users/{id}/wallet/freeze", adminAuth("wallet:view", adminBillingH.FreezeUserWallet))
+	mux.Handle("PATCH /api/admin/users/{id}/wallet/freeze", adminAuth("wallet:manage", adminBillingH.FreezeUserWallet))
 	mux.Handle("GET /api/admin/payment-callbacks", adminAuth("wallet:view", adminBillingH.ListPaymentCallbacks))
 }
 
