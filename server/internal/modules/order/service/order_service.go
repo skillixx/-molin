@@ -159,9 +159,11 @@ func (s *OrderService) GetByID(ctx context.Context, orderID, userID uint64) (*mo
 	return order, nil
 }
 
-// ListByUser 查询用户订单列表（分页）。
-func (s *OrderService) ListByUser(ctx context.Context, userID uint64, offset, limit int) ([]model.Order, int64, error) {
-	return s.repo.ListByUser(ctx, userID, offset, limit)
+// ListByUser 查询用户订单列表（分页+过滤）。
+// 强制将 filter.UserID 设为登录用户 ID，保证仅本人可见（O1 约束）。
+func (s *OrderService) ListByUser(ctx context.Context, userID uint64, filter repository.OrderFilter, offset, limit int) ([]model.Order, int64, error) {
+	filter.UserID = userID
+	return s.repo.ListByUser(ctx, filter, offset, limit)
 }
 
 // AdminGetByID 管理员查询订单详情（不做用户过滤）。
@@ -174,6 +176,6 @@ func (s *OrderService) AdminGetByID(ctx context.Context, orderID uint64) (*model
 }
 
 // AdminListAll 管理员查询所有订单（分页+过滤）。
-func (s *OrderService) AdminListAll(ctx context.Context, userID uint64, status, orderType string, offset, limit int) ([]model.Order, int64, error) {
-	return s.repo.AdminListAll(ctx, userID, status, orderType, offset, limit)
+func (s *OrderService) AdminListAll(ctx context.Context, filter repository.OrderFilter, offset, limit int) ([]model.Order, int64, error) {
+	return s.repo.AdminListAll(ctx, filter, offset, limit)
 }

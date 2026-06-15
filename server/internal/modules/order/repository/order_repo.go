@@ -2,11 +2,43 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"gorm.io/gorm"
 
 	"molin/server/internal/modules/order/model"
 )
+
+// OrderFilter 订单列表过滤条件（用户端 O1 与管理端 O5 共用）。
+// 各字段零值表示不按该维度过滤；时间区间用指针区分「未传」与「零值时间」。
+type OrderFilter struct {
+	UserID      uint64     // 用户 ID，>0 时按用户过滤（管理端 O5 可选；用户端 O1 由 service 强制写入登录用户）
+	Status      string     // 订单状态，非空时过滤
+	OrderType   string     // 订单类型，非空时过滤
+	CreatedFrom *time.Time // 创建时间下界（含），created_at >= from
+	CreatedTo   *time.Time // 创建时间上界（含），created_at <= to
+}
+
+// applyFilter 将过滤条件应用到查询上（用户端/管理端共用）。
+func (r *OrderRepository) applyFilter(query *gorm.DB, f OrderFilter) *gorm.DB {
+	if f.UserID > 0 {
+		query = query.Where("user_id = ?", f.UserID)
+	}
+	if f.Status != "" {
+		query = query.Where("status = ?", f.Status)
+	}
+	if f.OrderType != "" {
+		query = query.Where("order_type = ?", f.OrderType)
+	}
+	if f.CreatedFrom != nil {
+		query = query.Where("created_at >= ?", *f.CreatedFrom)
+	}
+	if f.CreatedTo != nil {
+		// 上界含当天/当刻：created_at <= to（与 finance_consumer 消费记录查询保持一致）
+		query = query.Where("created_at <= ?", *f.CreatedTo)
+	}
+	return query
+}
 
 // OrderRepository 订单数据访问层。
 type OrderRepository struct {
@@ -76,9 +108,11 @@ func (r *OrderRepository) UpdateStatusTx(tx *gorm.DB, id uint64, fromStatus, toS
 	return result.RowsAffected, result.Error
 }
 
-// ListByUser 查询用户自己的订单列表（分页）。
-func (r *OrderRepository) ListByUser(ctx context.Context, userID uint64, offset, limit int) ([]model.Order, int64, error) {
-	query := r.db.WithContext(ctx).Model(&model.Order{}).Where("user_id = ?", userID)
+// ListByUser 查询用户自己的订单列表（分页+过滤）。
+// filter.UserID 由 service 层强制写入登录用户 ID，保证仅本人可见（O1 约束不变）；
+// 额外支持 status / order_type / 创建时间区间过滤。
+func (r *OrderRepository) ListByUser(ctx context.Context, filter OrderFilter, offset, limit int) ([]model.Order, int64, error) {
+	query := r.applyFilter(r.db.WithContext(ctx).Model(&model.Order{}), filter)
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -91,18 +125,9 @@ func (r *OrderRepository) ListByUser(ctx context.Context, userID uint64, offset,
 }
 
 // AdminListAll 管理员查询所有订单（分页+过滤）。
-func (r *OrderRepository) AdminListAll(ctx context.Context, userID uint64, status, orderType string, offset, limit int) ([]model.Order, int64, error) {
-	query := r.db.WithContext(ctx).Model(&model.Order{})
-	if userID > 0 {
-		query = query.Where("user_id = ?", userID)
-	}
-	if status != "" {
-		query = query.Where("status = ?", status)
-	}
-	if orderType != "" {
-		query = query.Where("order_type = ?", orderType)
-	}
-
+// 支持 user_id / status / order_type / 创建时间区间过滤。
+func (r *OrderRepository) AdminListAll(ctx context.Context, filter OrderFilter, offset, limit int) ([]model.Order, int64, error) {
+	query := r.applyFilter(r.db.WithContext(ctx).Model(&model.Order{}), filter)
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
