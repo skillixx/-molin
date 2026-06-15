@@ -101,9 +101,13 @@ func (h *AdminBillingHandler) ListAllTransactions(w http.ResponseWriter, r *http
 		return
 	}
 
-	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"list": records,
-		"pagination": pagination.Result{
+	// 空列表返回 [] 而非 null
+	if records == nil {
+		records = []model.WalletTransaction{}
+	}
+	response.JSON(w, http.StatusOK, PagedResp{
+		Items: records,
+		Result: pagination.Result{
 			Page:     pg.Page,
 			PageSize: pg.PageSize,
 			Total:    total,
@@ -172,9 +176,13 @@ func (h *AdminBillingHandler) ListPaymentCallbacks(w http.ResponseWriter, r *htt
 		callbacks[i].NotifyBody = h.decryptCallbackBody(&callbacks[i])
 	}
 
-	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"list": callbacks,
-		"pagination": pagination.Result{
+	// 空列表返回 [] 而非 null
+	if callbacks == nil {
+		callbacks = []model.PaymentCallback{}
+	}
+	response.JSON(w, http.StatusOK, PagedResp{
+		Items: callbacks,
+		Result: pagination.Result{
 			Page:     pg.Page,
 			PageSize: pg.PageSize,
 			Total:    total,

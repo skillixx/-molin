@@ -15,6 +15,12 @@ import (
 	"molin/server/pkg/response"
 )
 
+// PagedResp 统一分页响应结构（D-95：扁平，匿名嵌入 pagination.Result 使 page/page_size/total 与 items 同级）。
+type PagedResp struct {
+	Items             interface{} `json:"items"`
+	pagination.Result             // 匿名嵌入 → page/page_size/total 与 items 同级
+}
+
 // ProductHandler 用户端商品接口处理器。
 type ProductHandler struct {
 	productSvc  *service.ProductService
@@ -47,9 +53,13 @@ func (h *ProductHandler) ListProducts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"list": products,
-		"pagination": pagination.Result{
+	// 空列表返回 [] 而非 null
+	if products == nil {
+		products = []model.Product{}
+	}
+	response.JSON(w, http.StatusOK, PagedResp{
+		Items: products,
+		Result: pagination.Result{
 			Page:     pg.Page,
 			PageSize: pg.PageSize,
 			Total:    total,

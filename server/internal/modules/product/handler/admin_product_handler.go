@@ -36,9 +36,13 @@ func (h *AdminProductHandler) ListProducts(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"list": products,
-		"pagination": pagination.Result{
+	// 空列表返回 [] 而非 null
+	if products == nil {
+		products = []model.Product{}
+	}
+	response.JSON(w, http.StatusOK, PagedResp{
+		Items: products,
+		Result: pagination.Result{
 			Page:     pg.Page,
 			PageSize: pg.PageSize,
 			Total:    total,

@@ -5,10 +5,17 @@ import (
 	"strconv"
 
 	"molin/server/internal/middleware"
+	"molin/server/internal/modules/order/model"
 	"molin/server/internal/modules/order/service"
 	"molin/server/pkg/pagination"
 	"molin/server/pkg/response"
 )
+
+// PagedResp 统一分页响应结构（D-95：扁平，匿名嵌入 pagination.Result 使 page/page_size/total 与 items 同级）。
+type PagedResp struct {
+	Items             interface{} `json:"items"`
+	pagination.Result             // 匿名嵌入 → page/page_size/total 与 items 同级
+}
 
 // OrderHandler 订单接口处理器（用户端 + 管理端）。
 type OrderHandler struct {
@@ -32,9 +39,13 @@ func (h *OrderHandler) ListOrders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"list": orders,
-		"pagination": pagination.Result{
+	// 空列表返回 [] 而非 null
+	if orders == nil {
+		orders = []model.Order{}
+	}
+	response.JSON(w, http.StatusOK, PagedResp{
+		Items: orders,
+		Result: pagination.Result{
 			Page:     pg.Page,
 			PageSize: pg.PageSize,
 			Total:    total,
@@ -79,9 +90,13 @@ func (h *OrderHandler) AdminListOrders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"list": orders,
-		"pagination": pagination.Result{
+	// 空列表返回 [] 而非 null
+	if orders == nil {
+		orders = []model.Order{}
+	}
+	response.JSON(w, http.StatusOK, PagedResp{
+		Items: orders,
+		Result: pagination.Result{
 			Page:     pg.Page,
 			PageSize: pg.PageSize,
 			Total:    total,
