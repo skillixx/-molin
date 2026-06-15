@@ -55,6 +55,17 @@ func (r *OrderRepository) UpdateStatus(ctx context.Context, id uint64, updates m
 	return r.db.WithContext(ctx).Model(&model.Order{}).Where("id = ?", id).Updates(updates).Error
 }
 
+// DeletePending 删除仍处于 pending 状态的订单（带状态守卫）。
+// 仅用于「瞬时锁冲突」等非真实业务失败场景：扣费从未成功、订单无任何资金影响，
+// 删除可避免遗留 failed 垃圾订单。WHERE 限定 status='pending' 防止误删已支付订单。
+// 返回受影响行数：0 表示订单已非 pending（不删除，调用方应保留并走 MarkFailed 等路径）。
+func (r *OrderRepository) DeletePending(ctx context.Context, id uint64) (int64, error) {
+	result := r.db.WithContext(ctx).
+		Where("id = ? AND status = ?", id, "pending").
+		Delete(&model.Order{})
+	return result.RowsAffected, result.Error
+}
+
 // UpdateStatusTx 在事务内更新订单状态，校验状态前置条件（RowsAffected=0 表示状态不匹配）。
 func (r *OrderRepository) UpdateStatusTx(tx *gorm.DB, id uint64, fromStatus, toStatus string, extraUpdates map[string]interface{}) (int64, error) {
 	updates := map[string]interface{}{"status": toStatus}

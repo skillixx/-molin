@@ -159,6 +159,10 @@ func (h *ProductHandler) Purchase(w http.ResponseWriter, r *http.Request) {
 			response.Error(w, http.StatusForbidden, 40003, "无购买权限")
 		case errors.Is(err, billingsvc.ErrInsufficientBalance):
 			response.Error(w, http.StatusBadRequest, 60001, "余额不足")
+		case errors.Is(err, billingsvc.ErrConcurrentUpdate):
+			// F6：高并发下乐观锁重试耗尽（瞬时锁冲突），非真实业务失败，
+			// 返回 409 明确「系统繁忙，请重试」，而非裸 500/50000。
+			response.Error(w, http.StatusConflict, 50000, "系统繁忙，请稍后重试")
 		case errors.Is(err, service.ErrNoPriceConfigured):
 			response.Error(w, http.StatusBadRequest, 40000, "该套餐未配置价格")
 		default:
