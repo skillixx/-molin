@@ -1,7 +1,10 @@
 package billing
 
 import (
+	"log"
 	"net/http"
+	"os"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -32,8 +35,12 @@ func RegisterRoutes(
 	// 初始化服务
 	walletSvc := service.NewWalletService(db, walletRepo, txRepo)
 	orderSvc := ordersvc.NewOrderService(db, orderRepo)
-	wechatVerifier := service.NewWechatVerifier()
-	alipayVerifier := service.NewAlipayVerifier()
+	// 支付验签公钥从环境变量注入（PEM 文本或文件路径，二选一）：
+	//   WECHAT_PLATFORM_PUBLIC_KEY —— 微信支付平台证书公钥（APIv3 RSA-SHA256 验签）
+	//   ALIPAY_PUBLIC_KEY          —— 支付宝公钥（RSA2 验签）
+	// 未配置时对应渠道验签器 fail-closed：所有回调一律拒绝（资金回调无法验签必须拒绝）。
+	wechatVerifier := service.NewWechatVerifier(loadPEMFromEnv("WECHAT_PLATFORM_PUBLIC_KEY"))
+	alipayVerifier := service.NewAlipayVerifier(loadPEMFromEnv("ALIPAY_PUBLIC_KEY"))
 	paymentSvc := service.NewPaymentService(db, paymentRepo, walletSvc, orderRepo, orderSvc, wechatVerifier, alipayVerifier, notifyBodyKey)
 
 	// 初始化处理器
@@ -64,6 +71,29 @@ func RegisterRoutes(
 	mux.Handle("GET /api/admin/wallet-transactions", adminAuth("wallet:view", adminBillingH.ListAllTransactions))
 	mux.Handle("PATCH /api/admin/users/{id}/wallet/freeze", adminAuth("wallet:manage", adminBillingH.FreezeUserWallet))
 	mux.Handle("GET /api/admin/payment-callbacks", adminAuth("wallet:view", adminBillingH.ListPaymentCallbacks))
+}
+
+// loadPEMFromEnv 从环境变量读取 PEM 公钥配置，支持两种形式（二选一）：
+//   - 直接的 PEM 文本（以 "-----BEGIN" 开头）；
+//   - 指向 PEM 文件的绝对/相对路径。
+// 未配置或读取失败时返回空串（验签器据此 fail-closed）；仅记录是否注入成功，不打印密钥内容。
+func loadPEMFromEnv(envKey string) string {
+	raw := strings.TrimSpace(os.Getenv(envKey))
+	if raw == "" {
+		log.Printf("[WARN] %s 未配置，对应支付渠道回调验签将 fail-closed（全部拒绝）", envKey)
+		return ""
+	}
+	// PEM 文本形式：直接返回。
+	if strings.HasPrefix(raw, "-----BEGIN") {
+		return raw
+	}
+	// 否则视为文件路径，读取文件内容。
+	data, err := os.ReadFile(raw)
+	if err != nil {
+		log.Printf("[WARN] 读取 %s 指定的公钥文件失败，验签将 fail-closed", envKey)
+		return ""
+	}
+	return string(data)
 }
 
 // NewWalletService 供外部模块（product/finance_consumer）注入，返回独立的 WalletService 实例。
