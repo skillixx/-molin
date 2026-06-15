@@ -61,7 +61,7 @@
 }
 ```
 
-> **注意**：auth/iam/identity 模块（第一至五章）的分页响应已统一为扁平结构（D-95，2026-06-15），`page`/`page_size`/`total` 直接位于 `data` 顶层，不再嵌套在 `pagination` 子对象内。`list` 字段已全面改为 `items`。第六/七/八章（商品/订单/钱包，后端乙模块）暂未同步扁平化，待乙完成 D-95 姊妹修复后一并更新。
+> **注意**：全部列表接口（第一至八章，含商品/订单/钱包/消费记录等后端乙模块）已统一为扁平结构（D-95 及其姊妹修复，2026-06-15 全量完成），`items`/`page`/`page_size`/`total` 同级位于 `data` 顶层，不再有 `list` 字段或 `pagination` 子对象。
 
 ---
 
@@ -887,10 +887,10 @@ Query 参数：
 
 **GET** `/api/products?page=1&page_size=10` *(需登录)*
 
-响应 `data`：
+响应 `data`（D-95 扁平分页）：
 ```json
 {
-  "list": [
+  "items": [
     {
       "id": 1,
       "product_type": "service",
@@ -900,7 +900,9 @@ Query 参数：
       "status": "active"
     }
   ],
-  "pagination": { "page": 1, "page_size": 10, "total": 5 }
+  "page": 1,
+  "page_size": 10,
+  "total": 5
 }
 ```
 
@@ -993,7 +995,7 @@ Query 参数：
 ```
 `status`：`draft` / `active` / `inactive`
 
-**GET** `/api/admin/products/{id}/plans` *(需 `product:create` 权限)*
+**GET** `/api/admin/products/{id}/plans` *(需 `product:view` 权限)*
 
 **POST** `/api/admin/products/{id}/plans` *(需 `product:create` 权限)*
 ```json
@@ -1014,13 +1016,13 @@ Query 参数：
 
 **PATCH** `/api/admin/products/{id}/prices` *(需 `product:edit` 权限)*
 
-覆盖写入（全量替换该套餐的价格）：
+覆盖写入（全量替换该套餐的价格）。**批量写入键名统一为 `items`**：
 ```json
 {
-  "prices": [
-    { "price_amount": "10.00", "currency": "CNY" },
-    { "role_id": 2, "price_amount": "8.00", "currency": "CNY" },
-    { "membership_level_id": 1, "price_amount": "6.00", "currency": "CNY" }
+  "items": [
+    { "product_plan_id": 1, "price_amount": "10.00", "currency": "CNY" },
+    { "product_plan_id": 1, "role_id": 2, "price_amount": "8.00", "currency": "CNY" },
+    { "product_plan_id": 1, "membership_level_id": 1, "price_amount": "6.00", "currency": "CNY" }
   ]
 }
 ```
@@ -1029,15 +1031,61 @@ Query 参数：
 
 **PATCH** `/api/admin/products/{id}/access` *(需 `product:edit` 权限)*
 
-覆盖写入角色访问规则：
+覆盖写入角色访问规则。**批量写入键名统一为 `items`**：
 ```json
 {
-  "accesses": [
+  "items": [
     { "role_id": 1, "can_view": true, "can_buy": true, "can_use": true },
     { "role_id": 2, "can_view": true, "can_buy": false, "can_use": false }
   ]
 }
 ```
+
+---
+
+### 5.4 计费规则（按量计费，需对应权限）
+
+商品按量计费规则管理（对应 `product_billing_rules`）。
+
+**GET** `/api/admin/product-billing-rules?page=1&page_size=10` *(需 `product:view` 权限)*
+
+支持过滤：`?product_id=1&status=active`。响应 `data` 为 D-95 扁平分页，`items` 单条结构：
+```json
+{
+  "id": 1,
+  "product_id": 1,
+  "product_plan_id": 1,
+  "usage_type": "api_call",
+  "usage_unit": "次",
+  "price_amount": "0.010000",
+  "currency": "CNY",
+  "billing_mode": "per_unit",
+  "free_quota": "100",
+  "status": "active",
+  "created_at": "2026-06-15T10:00:00Z",
+  "updated_at": "2026-06-15T10:00:00Z"
+}
+```
+
+**POST** `/api/admin/product-billing-rules` *(需 `product:create` 权限)*
+```json
+{
+  "product_id": 1,
+  "product_plan_id": 1,
+  "usage_type": "api_call",
+  "usage_unit": "次",
+  "price_amount": "0.01",
+  "currency": "CNY",
+  "billing_mode": "per_unit",
+  "free_quota": "100",
+  "status": "active"
+}
+```
+说明：`product_plan_id` 可空（空=商品级通用规则）；`price_amount` 必须 > 0；商品不存在返回 `404 40004`；必填项缺失返回 `40000`。返回 `data` 为规则详情（含 `id`）。
+
+**PATCH** `/api/admin/product-billing-rules/{id}` *(需 `product:edit` 权限)*
+
+body 字段均可选：`usage_type`、`usage_unit`、`price_amount`、`currency`、`billing_mode`、`free_quota`、`status`。规则不存在返回 `404 40004`。返回 `data`：`{ "updated": true }`。
 
 ---
 
@@ -1049,10 +1097,10 @@ Query 参数：
 
 支持过滤：`?status=paid&order_type=purchase`
 
-响应 `data`：
+响应 `data`（D-95 扁平分页）：
 ```json
 {
-  "list": [
+  "items": [
     {
       "id": 101,
       "order_no": "ORD2026060600001",
@@ -1066,7 +1114,9 @@ Query 参数：
       "created_at": "2026-06-06T09:59:00Z"
     }
   ],
-  "pagination": { "page": 1, "page_size": 10, "total": 3 }
+  "page": 1,
+  "page_size": 10,
+  "total": 3
 }
 ```
 
@@ -1155,7 +1205,7 @@ Query 参数：
 
 **GET** `/api/wallet/transactions?page=1&page_size=10` *(需登录)*
 
-响应 `data.list` 单条结构：
+响应 `data` 为 D-95 扁平分页（`items`/`page`/`page_size`/`total`），`items` 单条结构：
 ```json
 {
   "id": 1,
@@ -1177,17 +1227,20 @@ Query 参数：
 ```json
 {
   "amount": "100.00",
-  "provider": "wechat",
-  "remark": "充值"
+  "payment_method": "wechat",
+  "return_url": "https://console.example.com/wallet"
 }
 ```
 
-`provider`：`wechat` / `alipay`
+`payment_method`：`wechat` / `alipay`；`return_url` 可选（仅用于前端展示跳转，不作为充值完成依据）。
 
 响应 `data`：
 ```json
 {
   "order_id": 201,
+  "order_no": "RCG2026060600001",
+  "amount": "100.00",
+  "status": "pending",
   "pay_url": "https://pay.example.com/..."
 }
 ```
@@ -1221,19 +1274,50 @@ Wechatpay-Nonce: <随机串>
 
 支持过滤：`?user_id=1`
 
-**PATCH** `/api/admin/users/{id}/wallet/freeze` *(需 `wallet:view` 权限)*
+**PATCH** `/api/admin/users/{id}/wallet/freeze` *(需 `wallet:manage` 权限)*
 ```json
 {
-  "amount": "50.00",
   "action": "freeze",
-  "remark": "风控冻结"
+  "amount": "50.00",
+  "reason": "风控冻结"
 }
 ```
-`action`：`freeze` / `unfreeze`
+`action`：`freeze` / `unfreeze`；`reason` 可选。
+> 该接口为写操作，权限码由 `wallet:view` 收紧为 **`wallet:manage`**（最小权限原则，需 migration 000023 已执行）。
 
 **GET** `/api/admin/payment-callbacks?page=1&page_size=10` *(需 `wallet:view` 权限)*
 
-支持过滤：`?provider=wechat&status=processed`
+支持过滤：`?provider=wechat&status=processed`。响应 `data` 为 D-95 扁平分页（不返回明文 `notify_body`）。
+
+---
+
+### 7.4 消费记录（按量计费流水）
+
+**GET** `/api/product-consumption-records?page=1&page_size=10` *(需登录，仅本人)*
+
+支持过滤：`?product_id=1&usage_type=api_call&created_from=2026-06-01&created_to=2026-06-15`。
+> 强制按当前登录用户过滤，query 传 `user_id` 对本接口无效，无法查询他人记录。
+
+响应 `data` 为 D-95 扁平分页，`items` 单条结构：
+```json
+{
+  "id": 1,
+  "user_id": 1,
+  "product_id": 1,
+  "product_plan_id": 1,
+  "instance_id": 0,
+  "usage_type": "api_call",
+  "usage_amount": "120",
+  "usage_unit": "次",
+  "amount": "0.200000",
+  "event_id": "evt-uuid",
+  "created_at": "2026-06-15T10:00:00Z"
+}
+```
+
+**GET** `/api/admin/product-consumption-records?page=1&page_size=10` *(需 `wallet:view` 权限)*
+
+管理端查询全量消费记录，过滤参数同上，额外支持 `?user_id=1`（不传=全量）。响应结构同上。
 
 ---
 
@@ -1265,7 +1349,8 @@ Wechatpay-Nonce: <随机串>
 | `product:create` | 创建商品/套餐 |
 | `product:edit` | 编辑商品/价格/权限 |
 | `order:list` | 查看订单 |
-| `wallet:view` | 查看钱包/流水/回调 |
+| `wallet:view` | 查看钱包/流水/回调/消费记录（只读） |
+| `wallet:manage` | 钱包写操作（冻结/解冻），migration 000023 起生效 |
 
 ### 枚举值汇总
 
