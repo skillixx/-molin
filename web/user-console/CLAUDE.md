@@ -445,95 +445,105 @@ npm install -D @types/uuid @types/node
 
 ---
 
-## Auth 接口速查（Week 1 新接口，★ 为本次新增）
+## Auth 接口速查（已对齐 Round 7；字段 SSOT 见 `docs/frontend-api-reference.md`，任务见 `docs/frontend-task-user-console.md`）
 
-### ★ 统一注册
+### 统一注册（唯一入口）
 
 ```typescript
-// POST /api/auth/register
-// 推荐用此接口，同时绑定手机+邮箱，双OTP验证
+// POST /api/auth/register —— 旧的 /register/email、/register/phone 已下线
+// 同时绑定手机+邮箱，双 OTP 验证
 async function register(params: {
+  username: string     // 必填，2-32位字母/数字/下划线
   phone: string
   email: string
-  password: string
+  password: string     // 6-72 位（D-94）
   phone_code: string   // scene=register 的短信验证码
   email_code: string   // scene=register 的邮箱验证码
-  username?: string    // 可选，2-32位字母/数字/下划线
-}): Promise<{ access_token: string; refresh_token: string; expires_in: number }>
+}): Promise<LoginResp>  // D-93：含 user 对象，见下
 ```
 
 注册成功后 `phone_verified` 和 `email_verified` 自动为 `true`。
 
-### ★ OTP 密码重置
+### 登录/注册/刷新统一响应（D-93）
 
 ```typescript
-// POST /api/auth/password/reset
-// 无需登录；重置成功后该用户所有 Refresh Token 被吊销
+interface LoginResp {
+  access_token: string
+  refresh_token: string
+  expires_in: number
+  user: {                // D-93 新增，email/phone 已脱敏
+    id: number
+    email: string | null
+    phone: string | null
+    real_name_status: 'unverified' | 'pending' | 'verified' | 'rejected'
+    status: 'active' | 'disabled'
+  }
+}
+// 登录/注册/刷新后可直接用 user 写入 store，省去额外 GET /api/me
+```
+
+### OTP 密码重置（找回密码）
+
+```typescript
+// POST /api/auth/password/reset —— 无需登录；成功后该用户所有 Refresh Token 被吊销
 async function resetPassword(params: {
-  target: string       // 手机号或邮箱
+  target: string
   target_type: 'phone' | 'email'
-  code: string         // scene=reset_password 的验证码
-  new_password: string
+  code: string           // scene=reset_password 的验证码
+  new_password: string   // 6-72 位（D-94）
 }): Promise<null>
 ```
 
-### GET /api/me 响应字段（新增字段）
+### GET /api/me 响应字段
 
 ```typescript
 interface User {
   id: number
-  username: string | null        // 用户名（未设置时为 null）
-  email: string | null           // 脱敏邮箱，如 "ab***@example.com"
-  phone: string | null           // 脱敏手机，如 "138****5678"
+  username: string | null
+  nickname: string | null        // A-27
+  avatar_url: string | null      // A-27
+  email: string | null           // 脱敏，如 "ab***@example.com"
+  phone: string | null           // 脱敏，如 "138****5678"
   email_verified: boolean
   phone_verified: boolean
   real_name_status: 'unverified' | 'pending' | 'verified' | 'rejected'
   status: 'active' | 'disabled'
-  admin_phone_verified: boolean  // 管理员手机认证是否在有效期内
-  admin_email_verified: boolean  // 管理员邮箱认证是否在有效期内
-  created_at: string             // ISO 8601
-  last_login_at: string | null   // ISO 8601
+  admin_phone_verified: boolean
+  admin_email_verified: boolean
+  created_at: string
+  last_login_at: string | null
 }
 ```
 
-### ★ 修改用户名
+### 修改资料 / 用户名
 
 ```typescript
-// PATCH /api/me/username   需要 Bearer Token
+// PATCH /api/me/profile （A-27，PATCH 语义：不传=不改，传 "" =清空）
+async function updateProfile(params: { nickname?: string; avatar_url?: string }): Promise<null>
+// avatar_url 须以 https:// 开头
+
+// PATCH /api/me/username  —— 2-32位字母/数字/下划线，全局唯一，409=重复
 async function updateUsername(username: string): Promise<null>
-// 用户名规则：2-32位字母/数字/下划线，全局唯一，409=重复
 ```
 
-### ★ 修改手机号
+### 换绑手机/邮箱（D-96 两步流程）
 
 ```typescript
-// PATCH /api/me/phone   需要 Bearer Token
-// 前置：先向新手机号发送 scene=bind_phone 的短信验证码
-async function updatePhone(params: {
-  phone: string  // 新手机号
-  code: string   // 新手机号收到的验证码
-}): Promise<null>
-// 成功后 phone_verified 自动置为 true
+// ① 发码：D-96 认证态端点（scene 由服务端固定，不再走公开端点）
+async function sendBindPhoneCode(phone: string): Promise<null>   // POST /api/me/verification-codes/phone
+async function sendBindEmailCode(email: string): Promise<null>   // POST /api/me/verification-codes/email
+// ② 提交换绑（成功后对应 verified 自动置 true）
+async function updatePhone(params: { phone: string; code: string }): Promise<null>  // PATCH /api/me/phone
+async function updateEmail(params: { email: string; code: string }): Promise<null>  // PATCH /api/me/email
 ```
 
-### ★ 修改邮箱
+### 验证码场景（scene）汇总（D-96 后）
 
-```typescript
-// PATCH /api/me/email   需要 Bearer Token
-// 前置：先向新邮箱发送 scene=bind_email 的邮箱验证码
-async function updateEmail(params: {
-  email: string  // 新邮箱
-  code: string   // 新邮箱收到的验证码
-}): Promise<null>
-// 成功后 email_verified 自动置为 true
-```
-
-### 验证码场景（scene）汇总
-
-| scene 值 | 用途 | 接口 |
+| scene 值 | 用途 | 发码接口 |
 |---|---|---|
-| `register` | 注册时验证手机/邮箱 | 统一注册 / 邮箱注册 / 手机注册 |
-| `reset_password` | 重置密码 | OTP密码重置 |
-| `bind_phone` | 绑定/修改手机号 | PATCH /api/me/phone |
-| `bind_email` | 绑定/修改邮箱 | PATCH /api/me/email |
-| `admin_verify` | 管理员双重认证 | 管理员双重认证接口 |
+| `register` | 注册验证手机/邮箱 | `POST /api/auth/verification-codes/{email,phone}`（公开） |
+| `login` | 手机验证码登录 | 同上（公开） |
+| `reset_password` | 找回密码 | 同上（公开） |
+| `bind_phone`/`bind_email` | 换绑手机/邮箱（**服务端固定 scene**） | `POST /api/me/verification-codes/{phone,email}`（**认证态，D-96**） |
+
+> ⚠️ **D-96**：`bind_phone`/`bind_email`/`admin_verify` 已从公开发码端点移除，传入返回 `400 40000`；换绑改用上表认证态端点。

@@ -281,7 +281,8 @@ Week 1 实现简版，显示欢迎信息和系统状态：
 ```
 □ 6.  src/types/api.ts
       interface ApiResponse<T> { code: number; message: string; data: T }
-      interface PageResponse<T> { list: T[]; pagination: { page, page_size, total } }
+      // D-95：后端甲分页为扁平结构（无 pagination 子对象，list 已改 items）
+      interface PageResult<T> { items: T[]; page: number; page_size: number; total: number }
 
 □ 7.  src/types/user.ts
       interface User { id, email, phone, real_name_status, created_at, ... }
@@ -382,25 +383,39 @@ Week 1 实现简版，显示欢迎信息和系统状态：
 
 ---
 
-## 四、后端接口对照（Week 1 可用）
+## 四、后端接口对照（后端甲，已对齐 Round 7）
 
-> 后端 A 已完成，测试环境 `http://8.130.9.163:8080` 可直接联调。
+> 后端甲已完成，测试环境 `http://8.130.9.163:8080` 可直接联调。
+> **接口字段以 `docs/frontend-api-reference.md` 为唯一事实来源；任务拆解见 `docs/frontend-task-admin-console.md`；可对照 `docs/api-test-guide-backend-a.md` 自测。** 下表仅为常用速查，完整端点（A1–A6 共数十个）见任务单。
 
 | 功能 | 方法 | 路径 | 说明 |
 |---|---|---|---|
-| 管理员登录 | POST | `/api/auth/login/email` | body: { email, password } |
-| 获取当前用户 | GET | `/api/me` | 需 Bearer Token |
-| 登出 | POST | `/api/auth/logout` | 需 Bearer Token |
-| 角色列表 | GET | `/api/admin/roles` | ?page=1&page_size=20 |
-| 创建角色 | POST | `/api/admin/roles` | body: { code, name, description } |
-| 更新角色 | PUT | `/api/admin/roles/:id` | body: { name, description } |
-| 删除角色 | DELETE | `/api/admin/roles/:id` | — |
-| 权限列表 | GET | `/api/admin/permissions` | ?page=1&page_size=20 |
-| 实名审核列表 | GET | `/api/admin/identity-verifications` | ?page=1&page_size=20 |
-| 实名审核详情 | GET | `/api/admin/identity-verifications/:id` | — |
-| 实名审核操作 | PATCH | `/api/admin/identity-verifications/:id/review` | body: { approve, reason } |
+| 管理员登录 | POST | `/api/auth/login/email` | body: { email, password }；响应含 `user`（D-93） |
+| 获取当前用户 | GET | `/api/me` | 需 Bearer；含 `admin_phone_verified`/`admin_email_verified` |
+| 当前用户权限码 | GET | `/api/me/permissions` | 用于按钮级权限控制 |
+| 登出 | POST | `/api/auth/logout` | body: { refresh_token } |
+| 管理员双认证发码 | POST | `/api/admin/auth/verification-codes/{phone,email}` | **D-96 专属端点**，需 user:manage；body 空 |
+| 管理员双认证提交 | POST | `/api/admin/auth/verify-{phone,email}` | body: { code } |
+| 用户列表/详情 | GET | `/api/admin/users[/{id}]` | user:list + 双认证 + 数据范围 |
+| 创建/编辑/封禁用户 | POST/PATCH | `/api/admin/users[/{id}][/status]` | A-28/A-29；user:manage + 双认证 |
+| 登录日志 | GET | `/api/admin/users/{id}/login-logs` | A-30 |
+| 角色 CRUD | GET/POST/PUT/DELETE | `/api/admin/roles[/{id}]` | role:manage + 双认证 |
+| 角色权限配置/查询 | PATCH/GET | `/api/admin/roles/{id}/permissions` | A-06/A-11 |
+| 权限列表/新建 | GET/POST | `/api/admin/permissions` | — |
+| 用户角色/权限覆盖 | …/roles、…/permission-overrides | `/api/admin/users/{id}/...` | 含批量替换(A-06) |
+| 用户最终生效权限 | GET | `/api/admin/users/{id}/effective-permissions` | A-12 |
+| 用户分组（16 端点） | … | `/api/admin/user-groups/...` | group:manage + 双认证 |
+| 实名审核列表/详情 | GET | `/api/admin/identity-verifications[/{id}]` | identity:review + 双认证 |
+| 实名审核操作 | PATCH | `/api/admin/identity-verifications/{id}/review` | **body: { action, reject_reason }（D-89）** |
+| 用户实名卡片 | GET | `/api/admin/users/{id}/identity` | A-31 |
+| 审计日志 | GET | `/api/admin/audit-logs` | **audit:read（D-83）** + 双认证 |
 
-> ⚠️ **注意：** `/api/admin/users`（用户列表）为 Week 2 后端 B 的任务，Week 1 用户管理页暂不开发，仪表盘用快捷入口替代。
+> ⚠️ **Round 7 对接红线（照旧版会出错）**：
+> - 分页响应为**扁平** `{items,page,page_size,total}`（D-95），无 `pagination` 子对象。
+> - 实名审核请求体 `{action,reject_reason}`（D-89），废弃 `{approve,reason}`。
+> - 双重认证/换绑发码走**专属认证态端点**（D-96），公开端点的 `admin_verify`/`bind_*` scene 已失效。
+> - 审计日志权限码为 `audit:read`（D-83），与 `role:manage` 分离，菜单/守卫单独判定。
+> - 密码长度统一 **6-72 位**（D-94）。
 
 ---
 

@@ -1,5 +1,8 @@
 # 三、Identity 模块（实名认证）手动测试文档
 
+> ⚠️ **已弃用（2026-06-15）**：本文档为早期分模块版本，未同步 Round 7 变更（如审核请求体 D-89 `{action,reject_reason}`、查询路由 D-90 `/latest`、分页扁平化 D-95）。
+> **请改用整合后的最新手册：[`docs/api-test-guide-backend-a.md`](./api-test-guide-backend-a.md)**（覆盖 auth/iam/identity/audit 全部接口，已对齐现行代码）。
+
 ## 基本信息
 
 | 项目 | 内容 |
