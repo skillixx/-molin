@@ -2,9 +2,13 @@ package bootstrap
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+
+	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 
 	"molin/server/internal/config"
 	"molin/server/internal/httpserver"
@@ -33,6 +37,7 @@ import (
 	membershipmod "molin/server/internal/modules/membership"
 	membershipsvc "molin/server/internal/modules/membership/service"
 	ordermod "molin/server/internal/modules/order"
+	ordersvc "molin/server/internal/modules/order/service"
 	productmod "molin/server/internal/modules/product"
 	productrep "molin/server/internal/modules/product/repository"
 	productservice "molin/server/internal/modules/product/service"
@@ -134,6 +139,28 @@ func (a *membershipCheckerAdapter) HasActiveMembership(ctx context.Context, user
 // productRouteAdapter 将真实 provisionService 适配传入 product 模块路由。
 // provision service 已经实现了 product/service.ProvisionService 接口（Provision 方法签名完全匹配），
 // 所以可以直接传入，无需额外适配。
+
+// orderBillingAdapter 将 *billingsvc.WalletService 适配为 ordersvc.BillingService 接口。
+// 关键职责：把 billing 模块的业务错误（余额不足/乐观锁冲突）归一化为 order 模块的哨兵错误，
+// 使 order 模块无需反向依赖 billing 包（避免 billing→order→billing 循环导入）即可识别这些语义。
+type orderBillingAdapter struct {
+	svc *billingsvc.WalletService
+}
+
+// DeductTx 在外部事务内扣费并返回钱包流水 ID；错误归一化为 order 模块语义。
+func (a *orderBillingAdapter) DeductTx(tx *gorm.DB, userID uint64, amount decimal.Decimal, orderID uint64, remark string) (uint64, error) {
+	txID, err := a.svc.DeductTx(tx, userID, amount, orderID, remark)
+	if err != nil {
+		if errors.Is(err, billingsvc.ErrInsufficientBalance) {
+			return 0, ordersvc.ErrInsufficientBalance
+		}
+		if errors.Is(err, billingsvc.ErrConcurrentUpdate) {
+			return 0, ordersvc.ErrConcurrentUpdate
+		}
+		return 0, err
+	}
+	return txID, nil
+}
 
 // NewApp 初始化所有基础设施和模块，完成依赖注入，返回可启动的 App。
 func NewApp() (*App, error) {
@@ -254,8 +281,11 @@ func NewApp() (*App, error) {
 	// 注册 billing 模块（钱包、充值、支付回调），传入 notify_body 加密密钥
 	billingmod.RegisterRoutes(mux, gormDB, cfg.JWTSecret, authService, iamService, cfg.NotifyBodyKey)
 
-	// 注册 order 模块（订单查询）
-	ordermod.RegisterRoutes(mux, gormDB, cfg.JWTSecret, authService, iamService)
+	// 注册 order 模块（订单查询 + O3 支付 / O4 取消）
+	// orderBillingAdapt：钱包扣费适配器（事务内扣费 + 错误归一化）；
+	// provisionService：支付成功后异步开通（与 product 购买链路复用同一 provision 实现）。
+	orderBillingAdapt := &orderBillingAdapter{svc: walletService}
+	ordermod.RegisterRoutes(mux, gormDB, cfg.JWTSecret, authService, iamService, orderBillingAdapt, provisionService)
 
 	// 注册 product 模块（商品、套餐、价格、购买）
 	// provisionService 直接满足 productservice.ProvisionService 接口（Provision 方法签名完全匹配）

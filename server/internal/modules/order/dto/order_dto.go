@@ -26,3 +26,26 @@ type AdminOrderFilter struct {
 	Status    string
 	OrderType string
 }
+
+// PayOrderReq O3 支付订单请求体。
+type PayOrderReq struct {
+	PayMethod string `json:"pay_method"` // 目前仅支持 wallet
+}
+
+// PayOrderResp O3 支付订单响应。
+type PayOrderResp struct {
+	OrderID             uint64 `json:"order_id"`
+	Status              string `json:"status"`
+	WalletTransactionID uint64 `json:"wallet_transaction_id"`
+	AssetID             uint64 `json:"asset_id"`
+}
+
+// CancelOrderReq O4 取消订单请求体。
+type CancelOrderReq struct {
+	Reason string `json:"reason"` // 取消原因（可选）
+}
+
+// CancelOrderResp O4 取消订单响应。
+type CancelOrderResp struct {
+	Cancelled bool `json:"cancelled"`
+}
