@@ -177,6 +177,11 @@ func (s *PaymentService) rechargeTx(tx *gorm.DB, userID uint64, amount decimal.D
 
 	wallet, err := walletRepo.GetForUpdate(tx, userID)
 	if err != nil {
+		// 仅当确为「记录不存在」时才自动创建钱包；其余 DB 错误如实上抛，
+		// 避免连接中断 / 锁等待超时等真实错误被误判为「钱包不存在」而错误新建钱包。
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
 		// 用户无钱包，自动创建
 		newWallet := &model.Wallet{UserID: userID, Currency: "CNY"}
 		if createErr := tx.Create(newWallet).Error; createErr != nil {

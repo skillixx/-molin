@@ -32,6 +32,10 @@ var ErrInsufficientBalance = errors.New("余额不足")
 // ErrConcurrentUpdate 乐观锁冲突，需重试。
 var ErrConcurrentUpdate = errors.New("并发更新冲突，请重试")
 
+// ErrWalletNotFound 钱包不存在（用户从未充值/初始化钱包）。
+// 用于解冻等无法走「懒创建」语义的场景，避免把 gorm.ErrRecordNotFound 原文透传给用户。
+var ErrWalletNotFound = errors.New("钱包不存在")
+
 // WalletService 负责钱包扣费、充值、冻结解冻等核心操作。
 // 所有涉及金额变动的操作必须在事务内执行，配合乐观锁防止并发问题。
 type WalletService struct {
@@ -198,6 +202,11 @@ func (s *WalletService) Recharge(ctx context.Context, userID uint64, amount deci
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		wallet, err := s.walletRepo.GetForUpdate(tx, userID)
 		if err != nil {
+			// 仅当确为「记录不存在」时才走自动创建分支；其余 DB 错误（连接中断、
+			// 锁等待超时等）必须如实上抛，避免被误判为「钱包不存在」而错误新建钱包。
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
 			// 用户无钱包时自动创建（GetOrCreate 的 tx 版本）
 			newWallet := &model.Wallet{UserID: userID, Currency: "CNY"}
 			if createErr := tx.Create(newWallet).Error; createErr != nil {
@@ -274,6 +283,12 @@ func (s *WalletService) Unfreeze(ctx context.Context, userID uint64, amount deci
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		wallet, err := s.walletRepo.GetForUpdate(tx, userID)
 		if err != nil {
+			// 钱包不存在：返回中文业务错误（由 handler 映射为 400），
+			// 不把 gorm.ErrRecordNotFound 原文（record not found）透传给用户；
+			// 其余 DB 错误如实上抛，由上层映射为 500。
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrWalletNotFound
+			}
 			return err
 		}
 		if wallet.FrozenAmount.LessThan(amount) {
