@@ -101,14 +101,13 @@ web/user-console/src/
 **表单验证规则：**
 - 邮箱：格式校验（`/^[^\s@]+@[^\s@]+\.[^\s@]+$/`）
 - 手机号：11 位数字（`/^1[3-9]\d{9}$/`）
-- 密码：8-32 位，含字母和数字
+- 密码：6-72 位（D-94）
 - 确认密码：与密码字段完全一致
 
 **对接接口：**
 - 发送邮箱验证码：`POST /api/auth/verification-codes/email`（scene: "register"）
 - 发送短信验证码：`POST /api/auth/verification-codes/phone`（scene: "register"）
-- 邮箱注册：`POST /api/auth/register/email`
-- 手机号注册：`POST /api/auth/register/phone`
+- 统一注册（**唯一入口**）：`POST /api/auth/register`，body 同时含 phone+email+username+双验证码（旧的 `/register/email`、`/register/phone` 已下线）
 
 ---
 
@@ -286,8 +285,8 @@ web/user-console/src/
 ```
 
 **对接接口：**
-- 查询状态（进页先查）：`GET /api/identity/verifications/me`
-- 提交认证：`POST /api/identity/verifications`，body: `{ real_name, id_card_no }`
+- 查询状态（进页先查）：`GET /api/identity/verifications/latest`（**D-90，旧 `/me` 已下线**）
+- 提交认证：`POST /api/identity/verifications`，body: `{ real_name, id_card_no, verification_type? }`；响应 `{ id, status }`
 
 ---
 
@@ -364,7 +363,8 @@ web/user-console/src/
 ```
 □ 6.  src/types/api.ts
       interface ApiResponse<T> { code: number; message: string; data: T }
-      interface PageResponse<T> { list: T[]; pagination: { page, page_size, total } }
+      // D-95：后端甲分页为扁平结构（无 pagination 子对象，list 已改 items）；商品/钱包(后端乙)仍为嵌套，勿混用
+      interface PageResult<T> { items: T[]; page: number; page_size: number; total: number }
 
 □ 7.  src/types/auth.ts
       interface TokenPair { access_token: string; refresh_token: string }
@@ -389,18 +389,18 @@ web/user-console/src/
       关键：isRefreshing 标志 + waitQueue 队列，防止并发 401 多次刷新
 
 □ 9.  src/api/auth.ts
-      sendEmailCode(email, scene)      → POST /api/auth/verification-codes/email
+      sendEmailCode(email, scene)      → POST /api/auth/verification-codes/email   (scene: register/login/reset_password)
       sendPhoneCode(phone, scene)      → POST /api/auth/verification-codes/phone
-      registerByEmail(body)            → POST /api/auth/register/email
-      registerByPhone(body)            → POST /api/auth/register/phone
+      register(body)                   → POST /api/auth/register   (唯一入口，phone+email+username+双验证码)
       loginByEmail(body)               → POST /api/auth/login/email
-      loginByPhone(body)               → POST /api/auth/login/phone
-      logout()                         → POST /api/auth/logout
+      loginByPhone(body)               → POST /api/auth/login/phone   ({ phone, code })
+      logout(refresh_token)            → POST /api/auth/logout
       refreshToken(refresh_token)      → POST /api/auth/refresh
       getMe()                          → GET  /api/me
+      // 换绑发码（D-96 认证态）：sendBindPhoneCode/sendBindEmailCode → POST /api/me/verification-codes/{phone,email}
 
 □ 10. src/api/identity.ts
-      getMyVerification()              → GET  /api/identity/verifications/me
+      getMyVerification()              → GET  /api/identity/verifications/latest   (D-90)
       submitVerification(body)         → POST /api/identity/verifications
 ```
 
@@ -475,25 +475,36 @@ web/user-console/src/
 
 ---
 
-## 四、后端接口对照（Week 1 可用）
+## 四、后端接口对照（后端甲，已对齐 Round 7）
 
-> 后端 A 已完成，测试环境 `http://8.130.9.163:8080` 可直接联调。
+> 后端甲已完成，测试环境 `http://8.130.9.163:8080` 可直接联调。
+> **接口字段以 `docs/frontend-api-reference.md` 为唯一事实来源；任务拆解见 `docs/frontend-task-user-console.md`；可对照 `docs/api-test-guide-backend-a.md` 自测。**
 
 | 功能 | 方法 | 路径 | 说明 |
 |---|---|---|---|
-| 发送邮箱验证码 | POST | `/api/auth/verification-codes/email` | body: { email, scene } |
-| 发送短信验证码 | POST | `/api/auth/verification-codes/phone` | body: { phone, scene } |
-| 邮箱注册 | POST | `/api/auth/register/email` | body: { email, code, password } |
-| 手机号注册 | POST | `/api/auth/register/phone` | body: { phone, code, password } |
-| 邮箱登录 | POST | `/api/auth/login/email` | body: { email, password } |
-| 手机号登录 | POST | `/api/auth/login/phone` | body: { phone, code } |
-| 刷新 Token | POST | `/api/auth/refresh` | body: { refresh_token } |
-| 退出登录 | POST | `/api/auth/logout` | 需 Bearer Token |
-| 获取当前用户 | GET | `/api/me` | 需 Bearer Token，含 real_name_status |
-| 提交实名认证 | POST | `/api/identity/verifications` | body: { real_name, id_card_no } |
-| 查询实名状态 | GET | `/api/identity/verifications/me` | 需 Bearer Token |
+| 发送邮箱/手机验证码 | POST | `/api/auth/verification-codes/{email,phone}` | body: { email\|phone, scene }；**scene 仅 register/login/reset_password（D-96）** |
+| 统一注册 | POST | `/api/auth/register` | **唯一入口**，body: { username, phone, email, password, phone_code, email_code }；响应含 `user`（D-93） |
+| 邮箱密码登录 | POST | `/api/auth/login/email` | body: { email, password } |
+| 手机验证码登录 | POST | `/api/auth/login/phone` | body: { phone, code }；未注册→40404 |
+| 刷新 Token | POST | `/api/auth/refresh` | body: { refresh_token }；响应含 `user` |
+| 退出登录 | POST | `/api/auth/logout` | body: { refresh_token } |
+| 找回密码 | POST | `/api/auth/password/reset` | body: { target, target_type, code, new_password } |
+| 获取当前用户 | GET | `/api/me` | 含 `real_name_status`/`nickname`/`avatar_url` |
+| 改资料/用户名/密码 | PATCH | `/api/me/{profile,username,password}` | A-27 / 改密 6-72 位(D-94) |
+| 换绑手机/邮箱发码 | POST | `/api/me/verification-codes/{phone,email}` | **D-96 认证态端点**，body: { phone\|email } |
+| 换绑手机/邮箱提交 | PATCH | `/api/me/{phone,email}` | body: { phone\|email, code } |
+| 提交实名认证 | POST | `/api/identity/verifications` | body: { real_name, id_card_no, verification_type? }；响应 { id, status } |
+| 查询我的实名 | GET | `/api/identity/verifications/latest` | **D-90（旧 `/me` 已下线）** |
+| 凭邀请码加入分组 | POST | `/api/user-groups/join` | 仅需登录 |
 
-> ⚠️ **注意：** 商品 API（`GET /api/products`）、钱包 API 等为 Week 2 后端 B 任务，Week 1 页面用骨架屏占位，**禁止**自行 mock 数据绕过后端接口，保持接口边界清晰。
+> ⚠️ **Round 7 对接红线（照旧版会出错）**：
+> - 注册唯一入口 `/api/auth/register`，旧的 `/register/email`、`/register/phone` **已下线**。
+> - 实名查询走 `/api/identity/verifications/latest`（D-90），旧 `/me` 已下线。
+> - 换绑发码走认证态端点 `/api/me/verification-codes/{phone,email}`（D-96），公开端点的 `bind_*` scene 已失效。
+> - 后端甲分页响应为**扁平** `{items,page,page_size,total}`（D-95）；商品/钱包（后端乙）仍为嵌套，勿混用同一假设。
+> - 登录/注册/刷新响应含 `user` 对象，可省去额外 `GET /api/me`（D-93）；密码统一 6-72 位（D-94）。
+
+> ⚠️ **注意：** 商品 API、钱包 API 等为后端乙/丙任务，对应页面用骨架屏占位，**禁止**自行 mock 数据绕过后端接口，保持接口边界清晰。
 
 ---
 

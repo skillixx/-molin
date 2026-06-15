@@ -377,14 +377,16 @@ npm install -D @types/node unplugin-vue-components unplugin-auto-import
 
 ---
 
-## Auth 接口速查（Week 1 新接口，★ 为本次新增）
+## Auth 接口速查（已对齐 Round 7；字段 SSOT 见 `docs/frontend-api-reference.md`，任务见 `docs/frontend-task-admin-console.md`）
 
-### GET /api/me 响应字段（新增字段）
+### GET /api/me 响应字段
 
 ```typescript
 interface User {
   id: number
-  username: string | null         // 用户名（未设置时为 null）
+  username: string | null
+  nickname: string | null         // A-27
+  avatar_url: string | null       // A-27
   email: string | null            // 脱敏邮箱，如 "ab***@example.com"
   phone: string | null            // 脱敏手机，如 "138****5678"
   email_verified: boolean
@@ -398,35 +400,38 @@ interface User {
 }
 ```
 
-### ★ 管理员手机双重认证
+> 登录响应（`POST /api/auth/login/email`）含 `user` 对象（D-93），登录后可直接写入 store。
+
+### 管理员双重认证（D-96，发码端点已迁移）
 
 ```typescript
-// POST /api/admin/auth/verify-phone
-// 需要 Bearer Token + user:manage 权限
-// 前置：向管理员自己的手机号发送 scene=admin_verify 短信验证码
-async function adminVerifyPhone(code: string): Promise<null>
-// 成功后 admin_phone_verified 变为 true（有效期由服务端 ADMIN_VERIFY_EXPIRE_HOURS 控制，默认24小时）
+// ① 发码：D-96 专属认证态端点（需 Bearer + user:manage，目标为管理员自己绑定的手机/邮箱）
+async function sendAdminVerifyPhoneCode(): Promise<null>  // POST /api/admin/auth/verification-codes/phone  body: {}
+async function sendAdminVerifyEmailCode(): Promise<null>  // POST /api/admin/auth/verification-codes/email  body: {}
+// ② 提交认证
+async function adminVerifyPhone(code: string): Promise<null>  // POST /api/admin/auth/verify-phone
+async function adminVerifyEmail(code: string): Promise<null>  // POST /api/admin/auth/verify-email（须先完成手机认证）
+// 成功后 admin_phone_verified / admin_email_verified 变为 true，有效期 ADMIN_VERIFY_EXPIRE_HOURS（默认 24h）
 ```
 
-### ★ 管理员邮箱双重认证
-
-```typescript
-// POST /api/admin/auth/verify-email
-// 需要 Bearer Token + user:manage 权限
-// 前置：手机认证必须已在有效期内（先完成 verify-phone），再向管理员自己的邮箱发送 scene=admin_verify 验证码
-async function adminVerifyEmail(code: string): Promise<null>
-// 成功后 admin_email_verified 变为 true
-```
-
-### 管理员双重认证完整流程
+### 管理员双重认证完整流程（D-96）
 
 ```text
-1. 发送手机验证码：POST /api/auth/verification-codes/phone { target: 管理员手机号, scene: "admin_verify" }
-2. 提交手机认证：POST /api/admin/auth/verify-phone { code: "XXXXXX" }
-3. 发送邮箱验证码：POST /api/auth/verification-codes/email { target: 管理员邮箱, scene: "admin_verify" }
-4. 提交邮箱认证：POST /api/admin/auth/verify-email { code: "XXXXXX" }
-认证有效期：24小时（服务端配置 ADMIN_VERIFY_EXPIRE_HOURS）
+1. 发手机验证码：POST /api/admin/auth/verification-codes/phone   (Bearer + user:manage)   body: {}
+2. 提交手机认证：POST /api/admin/auth/verify-phone               { code: "XXXXXX" }
+3. 发邮箱验证码：POST /api/admin/auth/verification-codes/email   (Bearer + user:manage)   body: {}
+4. 提交邮箱认证：POST /api/admin/auth/verify-email               { code: "XXXXXX" }
+认证有效期：24 小时（ADMIN_VERIFY_EXPIRE_HOURS）
 ```
+
+> ⚠️ **D-96**：双重认证发码**不再**走公开端点 `/api/auth/verification-codes/*`（传 `scene=admin_verify` 返回 `400 40000`），必须用上述专属认证态端点。
+
+### Round 7 对接红线（照旧版会出错）
+
+- 分页响应为**扁平** `{items,page,page_size,total}`（D-95），无 `pagination` 子对象。
+- 实名审核请求体 `{action, reject_reason}`（D-89），废弃 `{approve, reason}`。
+- 审计日志权限码为 `audit:read`（D-83），与 `role:manage` 分离。
+- 密码长度统一 **6-72 位**（D-94）。
 
 ### 错误码参考
 
@@ -434,6 +439,7 @@ async function adminVerifyEmail(code: string): Promise<null>
 |---|---|
 | 40001 | 未登录或 Token 无效 |
 | 40003 | 权限不足（普通用户访问管理员接口） |
-| 40000 | 验证码错误或已过期 |
+| 40031 | 管理员未完成双重认证（需先完成 verify-phone + verify-email） |
+| 40000 | 验证码错误或已过期 / 参数错误 |
 | 40900 | 邮箱/手机号/用户名重复 |
 | 42900 | 请求频率超限 |

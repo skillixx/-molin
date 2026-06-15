@@ -113,7 +113,7 @@ Body 参数：
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
 | email | string | 是 | 邮箱地址 |
-| scene | string | 是 | 场景：register、login、bind_email、bind_phone、reset_password、admin_verify |
+| scene | string | 是 | 场景（**D-96：公开端点仅接受** register、login、reset_password）；bind_email/bind_phone/admin_verify 已移除，传入返回 400/40000 |
 
 返回 data：
 
@@ -133,7 +133,7 @@ Body 参数：
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
 | phone | string | 是 | 手机号 |
-| scene | string | 是 | 场景：register、login、bind_email、bind_phone、reset_password、admin_verify |
+| scene | string | 是 | 场景（**D-96：公开端点仅接受** register、login、reset_password）；bind_email/bind_phone/admin_verify 已移除，传入返回 400/40000 |
 
 返回 data：
 
@@ -141,6 +141,10 @@ Body 参数：
 |---|---|---|
 | sent | boolean | 是否发送成功 |
 | expires_in | integer | 有效秒数 |
+
+> ⚠️ **D-96（2026-06-15）**：换绑/管理员认证发码已迁移到专属认证态端点，公开端点不再接受对应 scene：
+> - 换绑手机/邮箱：`POST /api/me/verification-codes/{phone,email}`（需登录）
+> - 管理员双重认证：`POST /api/admin/auth/verification-codes/{phone,email}`（需 user:manage）
 
 ### 2.3 统一注册（手机+邮箱+用户名，唯一注册入口）
 

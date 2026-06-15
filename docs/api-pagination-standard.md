@@ -2,6 +2,8 @@
 
 **适用范围：** 所有列表查询接口（后端工程师、前端工程师必读）
 **制定日期：** 2026-06-05
+**2026-06-15 更新（D-95）：** 分页响应结构由嵌套 `{ list, pagination:{...} }` 改为**扁平** `{ items, page, page_size, total }`。`list` 字段统一改为 `items`，`page`/`page_size`/`total` 直接置于 `data` 顶层。
+> **迁移状态**：auth/iam/identity 模块（后端甲）已全部迁移为扁平结构；product/order/billing 模块（后端乙）尚未迁移（D-95 姊妹问题），仍为旧的嵌套结构，前端对接乙模块时需按旧结构处理，待乙完成迁移后本规范全量生效。
 
 ---
 
@@ -24,31 +26,30 @@ GET /api/admin/roles?page=1&page_size=20
 
 ## 二、统一响应结构
 
-所有列表接口返回值必须包含 `list` 和 `pagination` 两个字段：
+所有列表接口返回值为**扁平结构**（D-95），`items` + `page`/`page_size`/`total` 同级置于 `data` 下：
 
 ```json
 {
   "code": 0,
   "message": "ok",
   "data": {
-    "list": [ ...数据数组... ],
-    "pagination": {
-      "page": 1,
-      "page_size": 20,
-      "total": 100
-    }
+    "items": [ ...数据数组... ],
+    "page": 1,
+    "page_size": 20,
+    "total": 100
   }
 }
 ```
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `data.list` | array | 当前页数据，空时为 `[]` 而非 `null` |
-| `data.pagination.page` | int | 当前页码 |
-| `data.pagination.page_size` | int | 每页条数 |
-| `data.pagination.total` | int | 总记录数（用于前端计算总页数） |
+| `data.items` | array | 当前页数据，空时为 `[]` 而非 `null` |
+| `data.page` | int | 当前页码 |
+| `data.page_size` | int | 每页条数 |
+| `data.total` | int | 总记录数（用于前端计算总页数） |
 
 > 前端计算总页数：`Math.ceil(total / page_size)`
+> ⚠️ 旧结构 `{ list, pagination:{...} }` 已废弃（D-95）；`list` → `items`，不再有 `pagination` 子对象。
 
 ---
 
@@ -98,10 +99,10 @@ func (s *XxxService) ListPaged(ctx context.Context, offset, limit int) ([]model.
 ### 3.4 Handler 层模板
 
 ```go
-// PagedResp 统一分页响应结构。
+// PagedResp 统一分页响应结构（D-95：扁平，匿名嵌入 pagination.Result 使字段同级）。
 type PagedResp struct {
-    List       interface{}       `json:"list"`
-    Pagination pagination.Result `json:"pagination"`
+    Items interface{} `json:"items"`
+    pagination.Result             // 匿名嵌入 → page/page_size/total 与 items 同级
 }
 
 func (h *XxxHandler) ListXxx(w http.ResponseWriter, r *http.Request) {
@@ -116,8 +117,8 @@ func (h *XxxHandler) ListXxx(w http.ResponseWriter, r *http.Request) {
         list = []model.Xxx{}
     }
     response.JSON(w, http.StatusOK, PagedResp{
-        List: list,
-        Pagination: pagination.Result{
+        Items: list,
+        Result: pagination.Result{
             Page:     p.Page,
             PageSize: p.PageSize,
             Total:    total,
@@ -125,6 +126,7 @@ func (h *XxxHandler) ListXxx(w http.ResponseWriter, r *http.Request) {
     })
 }
 ```
+> 后端乙做 D-95 姊妹修复时可直接参考此模板（将 `Pagination pagination.Result` 改为匿名嵌入即可扁平化）。
 
 ---
 
@@ -139,8 +141,8 @@ async function fetchList() {
   const res = await api.get('/admin/roles', {
     params: { page: pagination.page, page_size: pagination.pageSize }
   })
-  list.value = res.data.list
-  pagination.total = res.data.pagination.total
+  list.value = res.data.items
+  pagination.total = res.data.total
 }
 
 // 总页数计算
@@ -151,31 +153,15 @@ const totalPages = computed(() => Math.ceil(pagination.total / pagination.pageSi
 
 ## 五、当前接口分页状态汇总
 
-### 已完成分页（Week 1）
+### 后端甲（auth/iam/identity）— 已全部迁移为扁平结构（D-95，2026-06-15）
 
-| 接口 | 状态 |
-|---|---|
-| `GET /api/admin/roles` | ✅ 已支持分页 |
-| `GET /api/admin/permissions` | ✅ 已支持分页 |
-| `GET /api/admin/users/{id}/roles` | ✅ 已支持分页 |
-| `GET /api/admin/identity-verifications` | ✅ 已支持分页 |
+`GET /api/admin/roles`、`/permissions`、`/users`、`/users/{id}/roles`、`/users/{id}/permission-overrides`、`/users/{id}/login-logs`、`/identity-verifications`、`/audit-logs`、`/user-groups` 及其成员/邀请码列表等——均返回扁平 `{ items, page, page_size, total }`。
 
-### 待修复（Week 1 遗漏）
+### 后端乙（product/order/billing）— 待迁移（D-95 姊妹问题）
 
-| 接口 | 问题 | 优先级 |
-|---|---|---|
-| `GET /api/admin/users/{id}/permission-overrides` | 全量返回，无分页结构 | P2 |
+`product_handler.go` / `admin_product_handler.go` / `order_handler.go` / `billing_handler.go` / `admin_billing_handler.go` 仍使用旧的嵌套 `Pagination pagination.Result \`json:"pagination"\`` 写法，需按 §三 模板改为匿名嵌入扁平化。前端对接这些接口前需确认是否已迁移。
 
-### Week 2+ 新增接口（开发时必须从一开始支持分页）
-
-| 接口（计划） | 说明 |
-|---|---|
-| `GET /api/admin/users` | 用户列表 |
-| `GET /api/admin/orders` | 订单列表 |
-| `GET /api/admin/audit-logs` | 审计日志 |
-| `GET /api/products` | 商品列表 |
-
-> **重要：** Week 2 起所有新增列表接口，开发阶段就必须按本规范实现分页，不允许先全量返回再补分页。
+> **重要：** 所有新增列表接口，开发阶段就必须按本规范（扁平结构）实现分页，不允许先全量返回再补分页，也不允许新写嵌套结构。
 
 ---
 
@@ -183,7 +169,8 @@ const totalPages = computed(() => Math.ceil(pagination.total / pagination.pageSi
 
 | 错误做法 | 正确做法 |
 |---|---|
-| `data: [...]` 直接返回数组 | `data: { list: [...], pagination: {...} }` |
+| `data: [...]` 直接返回数组 | `data: { items: [...], page, page_size, total }`（扁平，D-95） |
+| 用嵌套 `data: { list, pagination:{...} }` | 用扁平 `data: { items, page, page_size, total }`（D-95） |
 | 空列表返回 `null` | 空列表返回 `[]` |
 | `page` 从 0 开始 | `page` 从 1 开始 |
 | 不限制 `page_size` 最大值 | `page_size` 最大 100，超出截断 |

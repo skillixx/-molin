@@ -1,5 +1,8 @@
 # 一、认证模块（Auth）接口手动测试文档
 
+> ⚠️ **已弃用（2026-06-15）**：本文档为早期分模块版本，未同步 Round 7（D-83/D-89/D-90/D-93/D-94/D-95/D-96）变更，部分接口契约已过期。
+> **请改用整合后的最新手册：[`docs/api-test-guide-backend-a.md`](./api-test-guide-backend-a.md)**（覆盖 auth/iam/identity/audit 全部接口，已对齐现行代码）。
+
 ## 基本信息
 
 | 项目 | 内容 |
