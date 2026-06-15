@@ -10,13 +10,15 @@
 
 | 序 | 分支 | 修复项 | 优先级 | 依赖 |
 |---|---|---|---|---|
-| **F1** | `feature/backend-b-fix-txn-safeguard` | #1a 回调金额校验 + #2 O3 限制 order_type | 🔴 最高（资金硬护栏） | 无 |
+| **F1** | `feature/backend-b-fix-txn-safeguard` | #1a 回调金额校验 + #2 O3 限制 order_type + **#1c payment-callbacks 移除明文 notify_body（B-04）** | 🔴 最高（资金/安全护栏） | 无 |
 | **F2** | `feature/backend-b-fix-billing-correctness` | #3 free_quota 扣减 + #6 消费幂等返原结果 | 🟠 高（计费正确性） | 无 |
 | **F3** | `feature/backend-b-fix-order-filters` | #4 订单列表补全过滤参数 | 🟡 中（契约补全） | 无 |
 | **F4** | `feature/backend-b-fix-wallet-robustness` | #5 GetForUpdate 错误区分 NotFound | 🟢 低（健壮性） | 无 |
 | **F5** | `feature/backend-b-payment-real-verify` | #1b 真实验签（微信 APIv3 / 支付宝 RSA2） | 🔴 上线前必须 | **外部**：支付渠道证书/密钥（运维配 env） |
+| **F6** | `feature/backend-b-fix-concurrency-robustness` | **B-05 并发锁冲突返裸 500 + 遗留 failed 垃圾订单** | 🟡 中（健壮性，资金已安全） | 无 |
 
-> 五序彼此独立、无代码依赖，可并行；建议按 **F1 → F5** 顺序，先落「资金硬护栏」。F5 因需外部凭据单独排期，不阻塞前四项。每序一个 feature 分支 + PR，独立验收。
+> 各序彼此独立、无代码依赖，可并行；建议优先级 **B-01/B-02(P0,F1) → B-03/B-04(P1,F2/F1) → F5 验签 → B-05(P2,F6) → 运维项 → 契约同步**。每序一个 feature 分支 + PR，独立验收。F5 因需外部凭据单独排期。
+> QA 复测确认的新增发现（B-04/B-05/B-06、D-01/D-02）详见文末「附录」。
 
 ---
 
@@ -98,4 +100,36 @@
 
 ## 审查中确认正确、无需改动的部分（避免误改）
 乐观锁 `version+1`、扣费 `FOR UPDATE`+乐观锁+流水原子、O3 扣费与 `pending→paid` 同事务 + `RowsAffected` 守卫 + 3 次重试、回调幂等用事务外 `originalStatus` 快照（规避 MarkPaid 返回值陷阱）、`notify_body` AES-256-GCM 加密、计费规则 plan→商品级回退匹配、R4 参数校验、R6 freeze 权限收紧、扁平分页 + 空列表 `[]`、越权防护（pay/cancel 仅本人、F2 强制本人过滤）——均正确，勿动。
-</content>
+
+---
+
+## 附录：QA 复测新增发现（2026-06-15，测试报告 `docs/test-report-backend-b-interfaces.md`）
+
+测试工程师对部署到测试服的接口做了全面验收：R1/R2/R3/R4/R5 常规契约、并发资金安全（20 并发购买余额精确归 0、无超扣无负余额）、幂等均通过；**F1#1a、F1#2、F2#3 复测确认真实存在；F2#6 已正确修复**。在此基础上**新增以下发现**，纳入本任务单一并修复：
+
+### 并入 F1（交易安全护栏）
+
+**#1c admin payment-callbacks 明文回传 notify_body（B-04，P1，安全红线）**
+- **文件**：`server/internal/modules/billing/handler/admin_billing_handler.go`（`ListPaymentCallbacks`，约 line 175-177 主动解密回传）
+- **问题**：`GET /api/admin/payment-callbacks` 响应直接返回完整回调 JSON（含明文 `notify_body`），违反 B8「响应禁止返回明文 notify_body」红线；测试服未配 `NOTIFY_BODY_KEY` 时 DB 亦明文存储。
+- **修复**：管理端列表**移除 notify_body 字段**（或仅返回脱敏摘要/元信息）；并由运维注入 `NOTIFY_BODY_KEY` 修复存储侧。
+- **验收**：`/api/admin/payment-callbacks` 响应不含明文报文；配置 key 后 DB 密文存储。
+
+### 新增 F6 — 并发健壮性（B-05，P2）
+
+- **文件**：`server/internal/modules/product/service/purchase_service.go` + `order` 创建时序
+- **问题**：高竞争下乐观锁 3 次重试耗尽 → 向客户端返回**裸 500**；且每次冲突已先建订单 → 扣费失败置 `failed`，遗留大量 `failed` 垃圾订单（瞬时锁冲突非真实业务失败）。**资金本身安全（无超扣/无负余额）**。
+- **修复**：扩大重试上限 + 指数退避；或将「创建订单」移到「扣费成功之后」，避免锁冲突产生 failed 脏单；耗尽重试时返回明确业务码（如 409 + 重试提示）而非 500。
+- **验收**：20 并发购买不产生 failed 垃圾订单、不返回裸 500；资金不变量仍成立。
+
+### 运维项（B-06，P3 + B-04 存储侧）
+
+- 测试/生产环境注入 `NOTIFY_BODY_KEY`（回调报文加密）与 `INTERNAL_ALLOWED_IPS`（内部上报 IP 白名单）；并确认反代是否透传真实源 IP（否则 `/api/internal/product-usage-events` 白名单形同虚设）。**属运维配置，非代码。**
+
+### 契约/文档同步（D-01/D-02，非缺陷，归 Claude/后端甲）
+
+- **D-01**：`PATCH /api/admin/products/{id}/prices` 实际 body 为顶层 `plan_id` + `items:[{role_id?,membership_level_id?,price_amount,currency}]`（item **无** `product_plan_id`，一次配一个套餐），与本文档 §3 P14 / `frontend-api-reference.md` §5.4 不一致——以代码为准更新对接文档（或反之修代码，二选一）。
+- **D-02**：创建类接口（如 `POST /api/admin/products`、计费规则创建）返回 **HTTP 201** + 完整对象（字段 `id` 而非 `product_id`），前端需兼容 201。
+- 旁注（属后端甲/iam）：注册流程不分配默认全局角色（库无 `user` 角色），新用户 0 角色 → 开箱无法购买，需后端甲确认是否预期。
+
+> 修复优先级（含新增）：**B-01/B-02(P0) → B-03/B-04(P1) → F5 验签 → B-05(P2) → 运维 B-06 → 契约同步**。
