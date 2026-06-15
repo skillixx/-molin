@@ -74,7 +74,7 @@ const codeValidator = (label: string) => (_: unknown, value: string, callback: (
 // 密码格式
 const passwordValidator = (_: unknown, value: string, callback: (err?: Error) => void) => {
   if (!value) return callback(new Error('请输入密码'))
-  if (value.length < 8 || value.length > 32) return callback(new Error('密码长度为 8-32 位'))
+  if (value.length < 6 || value.length > 72) return callback(new Error('密码长度为 6-72 位'))
   if (!/[a-zA-Z]/.test(value) || !/\d/.test(value)) return callback(new Error('密码须包含字母和数字'))
   callback()
 }
@@ -165,11 +165,7 @@ async function handleRegister() {
       phone_code: form.phoneCode,
       email_code: form.emailCode,
     })
-    // 保存 Token 并拉取用户信息
-    localStorage.setItem('access_token', tokens.access_token)
-    localStorage.setItem('refresh_token', tokens.refresh_token)
-    authStore.accessToken = tokens.access_token
-    await authStore.fetchMe()
+    await authStore.applyLoginResponse(tokens)
     ElMessage.success('注册成功，欢迎使用墨灵！')
     router.push('/marketplace')
   } finally {
@@ -186,126 +182,170 @@ onUnmounted(() => {
 
 <template>
   <div class="auth-page page-bg">
-    <div class="auth-card glass-card">
-      <!-- Logo -->
-      <div class="auth-logo">
-        <span class="logo-text">墨灵</span>
-        <p class="auth-subtitle">爱斯琴网络科技有限公司</p>
-      </div>
+    <div class="register-shell">
+      <section class="register-panel">
+        <div class="brand-mark">
+          <span class="logo-text">墨灵</span>
+          <span class="brand-badge">Create Account</span>
+        </div>
+        <h1 class="brand-title">开通你的云资源账号</h1>
+        <p class="brand-desc">完成手机号与邮箱双重验证后，即可进入墨灵用户控制台。</p>
 
-      <p class="auth-hint">注册需同时验证手机号与邮箱，请确保两者均可正常接收验证码</p>
-
-      <el-form
-        ref="formRef"
-        :model="form"
-        :rules="rules"
-        label-position="top"
-        class="auth-form"
-      >
-        <el-form-item label="用户名（选填）" prop="username">
-          <el-input
-            v-model="form.username"
-            placeholder="2-32位字母/数字/下划线"
-            autocomplete="username"
-          />
-        </el-form-item>
-
-        <!-- 手机号区块 -->
-        <div class="form-section">
-          <div class="form-section-title">手机号验证</div>
-          <el-form-item label="手机号" prop="phone">
-            <el-input
-              v-model="form.phone"
-              placeholder="请输入11位手机号"
-              maxlength="11"
-              autocomplete="tel"
-            />
-          </el-form-item>
-
-          <el-form-item label="手机验证码" prop="phoneCode">
-            <div class="code-row">
-              <el-input
-                v-model="form.phoneCode"
-                placeholder="请输入短信验证码"
-                maxlength="6"
-              />
-              <button
-                class="code-btn"
-                :disabled="phoneCountdown > 0 || sendingPhoneCode"
-                @click.prevent="sendPhoneVerifyCode"
-              >
-                {{ phoneCountdown > 0 ? `${phoneCountdown}s 后重发` : '发送验证码' }}
-              </button>
+        <div class="step-list">
+          <div class="step-item">
+            <span class="step-index">01</span>
+            <div>
+              <strong>填写账号信息</strong>
+              <p>设置用户名和登录密码。</p>
             </div>
-          </el-form-item>
+          </div>
+          <div class="step-item">
+            <span class="step-index">02</span>
+            <div>
+              <strong>完成双 OTP 验证</strong>
+              <p>手机号和邮箱都需要通过验证码。</p>
+            </div>
+          </div>
+          <div class="step-item">
+            <span class="step-index">03</span>
+            <div>
+              <strong>进入用户控制台</strong>
+              <p>注册成功后自动登录并进入商品市场。</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="auth-card glass-card">
+        <!-- Logo -->
+        <div class="auth-logo">
+          <span class="auth-kicker">新用户注册</span>
+          <h2 class="auth-title">创建墨灵账号</h2>
+          <p class="auth-subtitle">爱斯琴网络科技有限公司</p>
         </div>
 
-        <!-- 邮箱区块 -->
-        <div class="form-section">
-          <div class="form-section-title">邮箱验证</div>
-          <el-form-item label="邮箱地址" prop="email">
-            <el-input
-              v-model="form.email"
-              placeholder="user@example.com"
-              type="email"
-              autocomplete="email"
-            />
-          </el-form-item>
-
-          <el-form-item label="邮箱验证码" prop="emailCode">
-            <div class="code-row">
+        <el-form
+          ref="formRef"
+          :model="form"
+          :rules="rules"
+          label-position="top"
+          class="auth-form"
+        >
+          <div class="form-section">
+            <div class="form-section-title">账号信息</div>
+            <el-form-item label="用户名（选填）" prop="username">
               <el-input
-                v-model="form.emailCode"
-                placeholder="请输入邮箱验证码"
-                maxlength="6"
+                v-model="form.username"
+                placeholder="2-32位字母/数字/下划线"
+                autocomplete="username"
+                size="large"
               />
-              <button
-                class="code-btn"
-                :disabled="emailCountdown > 0 || sendingEmailCode"
-                @click.prevent="sendEmailVerifyCode"
-              >
-                {{ emailCountdown > 0 ? `${emailCountdown}s 后重发` : '发送验证码' }}
-              </button>
+            </el-form-item>
+            <div class="password-grid">
+              <el-form-item label="设置密码" prop="password">
+                <el-input
+                  v-model="form.password"
+                  type="password"
+                  placeholder="6-72位，包含字母和数字"
+                  show-password
+                  autocomplete="new-password"
+                  size="large"
+                />
+              </el-form-item>
+              <el-form-item label="确认密码" prop="confirmPassword">
+                <el-input
+                  v-model="form.confirmPassword"
+                  type="password"
+                  placeholder="再次输入密码"
+                  show-password
+                  autocomplete="new-password"
+                  size="large"
+                />
+              </el-form-item>
             </div>
+          </div>
+
+          <!-- 手机号区块 -->
+          <div class="form-section">
+            <div class="form-section-title">手机号验证</div>
+            <el-form-item label="手机号" prop="phone">
+              <el-input
+                v-model="form.phone"
+                placeholder="请输入11位手机号"
+                maxlength="11"
+                autocomplete="tel"
+                size="large"
+              />
+            </el-form-item>
+
+            <el-form-item label="手机验证码" prop="phoneCode">
+              <div class="code-row">
+                <el-input
+                  v-model="form.phoneCode"
+                  placeholder="请输入短信验证码"
+                  maxlength="6"
+                  size="large"
+                />
+                <button
+                  class="code-btn"
+                  :disabled="phoneCountdown > 0 || sendingPhoneCode"
+                  @click.prevent="sendPhoneVerifyCode"
+                >
+                  {{ phoneCountdown > 0 ? `${phoneCountdown}s 后重发` : '发送验证码' }}
+                </button>
+              </div>
+            </el-form-item>
+          </div>
+
+          <!-- 邮箱区块 -->
+          <div class="form-section">
+            <div class="form-section-title">邮箱验证</div>
+            <el-form-item label="邮箱地址" prop="email">
+              <el-input
+                v-model="form.email"
+                placeholder="user@example.com"
+                type="email"
+                autocomplete="email"
+                size="large"
+              />
+            </el-form-item>
+
+            <el-form-item label="邮箱验证码" prop="emailCode">
+              <div class="code-row">
+                <el-input
+                  v-model="form.emailCode"
+                  placeholder="请输入邮箱验证码"
+                  maxlength="6"
+                  size="large"
+                />
+                <button
+                  class="code-btn"
+                  :disabled="emailCountdown > 0 || sendingEmailCode"
+                  @click.prevent="sendEmailVerifyCode"
+                >
+                  {{ emailCountdown > 0 ? `${emailCountdown}s 后重发` : '发送验证码' }}
+                </button>
+              </div>
+            </el-form-item>
+          </div>
+
+          <el-form-item>
+            <button
+              class="btn-primary auth-submit"
+              :disabled="submitting"
+              @click.prevent="handleRegister"
+            >
+              {{ submitting ? '注册中...' : '立即注册' }}
+            </button>
           </el-form-item>
-        </div>
+        </el-form>
 
-        <el-form-item label="设置密码" prop="password">
-          <el-input
-            v-model="form.password"
-            type="password"
-            placeholder="8-32位，包含字母和数字"
-            show-password
-            autocomplete="new-password"
-          />
-        </el-form-item>
-
-        <el-form-item label="确认密码" prop="confirmPassword">
-          <el-input
-            v-model="form.confirmPassword"
-            type="password"
-            placeholder="再次输入密码"
-            show-password
-            autocomplete="new-password"
-          />
-        </el-form-item>
-
-        <el-form-item>
-          <button
-            class="btn-primary"
-            :disabled="submitting"
-            @click.prevent="handleRegister"
-          >
-            {{ submitting ? '注册中...' : '立即注册' }}
-          </button>
-        </el-form-item>
-      </el-form>
-
-      <!-- 底部跳转 -->
-      <p class="auth-footer">
-        已有账号？
-        <router-link to="/login" class="auth-link">去登录 →</router-link>
-      </p>
+        <!-- 底部跳转 -->
+        <p class="auth-footer">
+          已有账号？
+          <router-link to="/login" class="auth-link">去登录</router-link>
+        </p>
+      </section>
     </div>
   </div>
 </template>
@@ -316,31 +356,170 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: 40px 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+.auth-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 12% 18%, rgba(6, 182, 212, 0.2), transparent 25%),
+    radial-gradient(circle at 88% 16%, rgba(139, 92, 246, 0.2), transparent 28%),
+    linear-gradient(115deg, transparent 0 40%, rgba(99, 102, 241, 0.08) 48%, transparent 58%);
+  pointer-events: none;
+}
+
+.auth-page::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(99, 102, 241, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(6, 182, 212, 0.08) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.25));
+  pointer-events: none;
+}
+
+.register-shell {
+  position: relative;
+  z-index: 1;
+  width: min(1120px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 0.86fr) minmax(520px, 1fr);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.register-panel {
+  min-height: 660px;
+  border: 1px solid rgba(99, 102, 241, 0.18);
+  border-radius: 20px;
+  padding: 42px;
+  background:
+    linear-gradient(145deg, rgba(99, 102, 241, 0.14), rgba(6, 182, 212, 0.06)),
+    rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(18px);
+  position: relative;
+  overflow: hidden;
+}
+
+.register-panel::after {
+  content: "";
+  position: absolute;
+  right: -110px;
+  bottom: -140px;
+  width: 400px;
+  height: 400px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.2), transparent 62%);
+}
+
+.brand-mark {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 92px;
+}
+
+.brand-badge {
+  color: var(--color-accent);
+  border: 1px solid rgba(6, 182, 212, 0.28);
+  background: rgba(6, 182, 212, 0.08);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.brand-title {
+  max-width: 480px;
+  color: var(--color-text);
+  font-size: 40px;
+  line-height: 1.14;
+  font-weight: 800;
+  margin-bottom: 18px;
+}
+
+.brand-desc {
+  max-width: 430px;
+  color: var(--color-text-muted);
+  font-size: 16px;
+  line-height: 1.8;
+}
+
+.step-list {
+  position: absolute;
+  left: 42px;
+  right: 42px;
+  bottom: 42px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  z-index: 1;
+}
+
+.step-item {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 14px;
+  background: rgba(10, 15, 30, 0.46);
+}
+
+.step-index {
+  color: var(--color-accent);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.step-item strong {
+  color: var(--color-text);
+  font-size: 15px;
+}
+
+.step-item p {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  margin-top: 4px;
 }
 
 .auth-card {
-  width: 440px;
-  padding: 40px;
+  width: 100%;
+  padding: 34px;
+  border-radius: 20px;
+  background: rgba(11, 16, 32, 0.76);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.36);
 }
 
 .auth-logo {
-  text-align: center;
-  margin-bottom: 16px;
+  margin-bottom: 22px;
+}
+
+.auth-kicker {
+  display: inline-flex;
+  color: var(--color-accent);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.auth-title {
+  color: var(--color-text);
+  font-size: 28px;
+  line-height: 1.2;
+  margin-bottom: 8px;
 }
 
 .auth-subtitle {
   color: var(--color-text-muted);
-  font-size: 12px;
-  margin-top: 6px;
-}
-
-.auth-hint {
-  text-align: center;
-  color: var(--color-text-muted);
-  font-size: 12px;
-  margin: 0 0 20px;
-  line-height: 1.6;
+  font-size: 13px;
 }
 
 .auth-form {
@@ -350,10 +529,10 @@ onUnmounted(() => {
 /* 区块容器：手机号区块 / 邮箱区块 */
 .form-section {
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 16px 16px 4px;
-  margin-bottom: 18px;
-  background: rgba(99, 102, 241, 0.04);
+  border-radius: 14px;
+  padding: 16px 16px 2px;
+  margin-bottom: 14px;
+  background: rgba(99, 102, 241, 0.055);
 }
 
 .form-section-title {
@@ -361,6 +540,12 @@ onUnmounted(() => {
   font-weight: 600;
   color: var(--color-primary);
   margin-bottom: 12px;
+}
+
+.password-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
 }
 
 /* 验证码行 */
@@ -376,12 +561,13 @@ onUnmounted(() => {
 
 .code-btn {
   flex-shrink: 0;
+  min-width: 112px;
   padding: 0 14px;
-  height: 32px;
+  height: 40px;
   background: rgba(99, 102, 241, 0.12);
   border: 1px solid var(--color-border);
   color: var(--color-primary);
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
@@ -414,5 +600,70 @@ onUnmounted(() => {
 
 .auth-link:hover {
   color: var(--color-primary-end);
+}
+
+.auth-submit {
+  height: 46px;
+  margin-top: 4px;
+}
+
+:deep(.el-input__wrapper) {
+  min-height: 42px;
+  border-radius: 9px;
+}
+
+@media (max-width: 980px) {
+  .register-shell {
+    grid-template-columns: 1fr;
+    max-width: 560px;
+  }
+
+  .register-panel {
+    min-height: auto;
+    padding: 28px;
+  }
+
+  .brand-mark {
+    margin-bottom: 34px;
+  }
+
+  .brand-title {
+    font-size: 30px;
+  }
+
+  .step-list {
+    position: relative;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    margin-top: 28px;
+  }
+}
+
+@media (max-width: 560px) {
+  .auth-page {
+    padding: 20px 14px;
+  }
+
+  .register-panel {
+    display: none;
+  }
+
+  .auth-card {
+    padding: 28px 20px;
+  }
+
+  .password-grid {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .code-row {
+    flex-direction: column;
+  }
+
+  .code-btn {
+    width: 100%;
+  }
 }
 </style>

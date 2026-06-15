@@ -9,15 +9,15 @@
  *   5. 修改密码
  */
 import type { FormInstance, FormRules } from 'element-plus'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import {
   updateUsername,
   updatePhone,
   updateEmail,
   changePassword,
-  sendPhoneCode,
-  sendEmailCode,
+  sendBindPhoneCode,
+  sendBindEmailCode,
 } from '@/api/auth'
 
 const authStore = useAuthStore()
@@ -105,7 +105,7 @@ async function sendPhoneVerifyCode() {
 
   phoneSending.value = true
   try {
-    await sendPhoneCode(phoneForm.phone, 'bind_phone')
+    await sendBindPhoneCode(phoneForm.phone)
     ElMessage.success('验证码已发送至新手机号')
     phoneStep.value = 2
     phoneCountdown.value = 60
@@ -185,7 +185,7 @@ async function sendEmailVerifyCode() {
 
   emailSending.value = true
   try {
-    await sendEmailCode(emailForm.email, 'bind_email')
+    await sendBindEmailCode(emailForm.email)
     ElMessage.success('验证码已发送至新邮箱')
     emailStep.value = 2
     emailCountdown.value = 60
@@ -272,6 +272,20 @@ async function handleChangePassword() {
   const valid = await passwordFormRef.value?.validate().catch(() => false)
   if (!valid) return
 
+  try {
+    await ElMessageBox.confirm(
+      '修改密码后，请使用新密码进行后续登录。确认要修改密码吗？',
+      '确认修改密码',
+      {
+        confirmButtonText: '确认修改',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
+  } catch {
+    return
+  }
+
   passwordSubmitting.value = true
   try {
     await changePassword({
@@ -302,408 +316,627 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="profile-page">
-    <!-- 页面标题 -->
-    <div class="page-header">
-      <h2 class="page-title">个人信息</h2>
-      <p class="page-desc">管理你的账号信息和安全设置</p>
-    </div>
-
-    <div class="profile-content">
-
-      <!-- 模块一：基本信息展示 -->
-      <div class="profile-card glass-card">
-        <div class="card-header">
-          <el-icon class="card-icon"><user /></el-icon>
-          <span class="card-title">基本信息</span>
+  <div class="profile-page page-bg">
+    <div class="profile-container">
+      <!-- 页面标题 -->
+      <div class="page-header">
+        <div>
+          <p class="page-kicker">Account Center</p>
+          <h2 class="page-title">个人信息</h2>
+          <p class="page-desc">管理账号资料、安全绑定和登录密码。</p>
         </div>
-        <div class="info-grid">
-          <div class="info-item">
-            <span class="info-label">用户 ID</span>
-            <span class="info-value accent">{{ authStore.currentUser?.id ?? '—' }}</span>
+        <el-tag :type="realNameTag.type" effect="dark">
+          {{ realNameTag.label }}
+        </el-tag>
+      </div>
+
+      <section class="profile-hero glass-card">
+        <div class="hero-main">
+          <div class="avatar-orb">
+            <el-icon><user-filled /></el-icon>
           </div>
-          <div class="info-item">
-            <span class="info-label">用户名</span>
-            <span class="info-value" :class="{ muted: !authStore.currentUser?.username }">
-              {{ authStore.currentUser?.username ?? '未设置' }}
-            </span>
+          <div class="hero-copy">
+            <p class="hero-label">当前账号</p>
+            <h3>{{ authStore.currentUser?.username || authStore.currentUser?.email || authStore.currentUser?.phone || '墨灵用户' }}</h3>
+            <p>用户 ID：<span>{{ authStore.currentUser?.id ?? '—' }}</span></p>
           </div>
-          <div class="info-item">
-            <span class="info-label">手机号</span>
-            <span class="info-value" :class="{ muted: !authStore.currentUser?.phone }">
+        </div>
+        <div class="hero-stats">
+          <div class="hero-stat">
+            <span class="stat-label">手机号</span>
+            <strong :class="{ muted: !authStore.currentUser?.phone }">
               {{ authStore.currentUser?.phone ?? '未绑定' }}
-            </span>
+            </strong>
           </div>
-          <div class="info-item">
-            <span class="info-label">邮箱</span>
-            <span class="info-value" :class="{ muted: !authStore.currentUser?.email }">
+          <div class="hero-stat">
+            <span class="stat-label">邮箱</span>
+            <strong :class="{ muted: !authStore.currentUser?.email }">
               {{ authStore.currentUser?.email ?? '未绑定' }}
-            </span>
+            </strong>
           </div>
-          <div class="info-item">
-            <span class="info-label">实名认证</span>
-            <el-tag
-              :type="realNameTag.type"
-              size="small"
-              effect="dark"
-            >
-              {{ realNameTag.label }}
-            </el-tag>
-          </div>
-          <div class="info-item">
-            <span class="info-label">注册时间</span>
-            <span class="info-value muted">
+          <div class="hero-stat">
+            <span class="stat-label">注册时间</span>
+            <strong class="muted">
               {{ authStore.currentUser?.created_at
                   ? new Date(authStore.currentUser.created_at).toLocaleDateString('zh-CN')
                   : '—' }}
-            </span>
+            </strong>
           </div>
         </div>
-      </div>
+      </section>
 
-      <!-- 模块二：修改用户名 -->
-      <div class="profile-card glass-card">
-        <div class="card-header">
-          <el-icon class="card-icon"><edit /></el-icon>
-          <span class="card-title">修改用户名</span>
-        </div>
-        <p class="card-hint">2-32位字母、数字或下划线，提交后全局唯一</p>
-        <el-form
-          ref="usernameFormRef"
-          :model="usernameForm"
-          :rules="usernameRules"
-          label-position="top"
-          class="profile-form"
-        >
-          <el-form-item label="新用户名" prop="username">
-            <div class="inline-row">
-              <el-input
-                v-model="usernameForm.username"
-                placeholder="请输入新用户名"
-                maxlength="32"
-                :prefix-icon="'User'"
-              />
-              <el-button
-                type="primary"
-                :loading="usernameSubmitting"
-                class="inline-btn"
-                @click="handleUpdateUsername"
-              >
-                保存
-              </el-button>
+      <div class="profile-content">
+        <!-- 模块一：基本信息展示 -->
+        <div class="profile-card glass-card info-card">
+          <div class="card-header">
+            <span class="icon-box">
+              <el-icon><user /></el-icon>
+            </span>
+            <div>
+              <span class="card-title">基本信息</span>
+              <p class="card-subtitle">账号当前展示资料</p>
             </div>
-          </el-form-item>
-        </el-form>
-      </div>
-
-      <!-- 模块三：修改手机号 -->
-      <div class="profile-card glass-card">
-        <div class="card-header">
-          <el-icon class="card-icon"><phone /></el-icon>
-          <span class="card-title">修改手机号</span>
+          </div>
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="info-label">用户 ID</span>
+              <span class="info-value accent">{{ authStore.currentUser?.id ?? '—' }}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">用户名</span>
+              <span class="info-value" :class="{ muted: !authStore.currentUser?.username }">
+                {{ authStore.currentUser?.username ?? '未设置' }}
+              </span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">手机号</span>
+              <span class="info-value" :class="{ muted: !authStore.currentUser?.phone }">
+                {{ authStore.currentUser?.phone ?? '未绑定' }}
+              </span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">邮箱</span>
+              <span class="info-value" :class="{ muted: !authStore.currentUser?.email }">
+                {{ authStore.currentUser?.email ?? '未绑定' }}
+              </span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">实名认证</span>
+              <el-tag
+                :type="realNameTag.type"
+                size="small"
+                effect="dark"
+              >
+                {{ realNameTag.label }}
+              </el-tag>
+            </div>
+            <div class="info-item">
+              <span class="info-label">注册时间</span>
+              <span class="info-value muted">
+                {{ authStore.currentUser?.created_at
+                    ? new Date(authStore.currentUser.created_at).toLocaleDateString('zh-CN')
+                    : '—' }}
+              </span>
+            </div>
+          </div>
         </div>
-        <p v-if="authStore.currentUser?.phone" class="card-hint">
-          当前绑定：<span class="accent">{{ authStore.currentUser.phone }}</span>
-        </p>
 
-        <el-form
-          ref="phoneFormRef"
-          :model="phoneForm"
-          :rules="phoneStep === 1 ? phoneStep1Rules : phoneStep2Rules"
-          label-position="top"
-          class="profile-form"
-        >
-          <!-- Step 1：输入新手机号 -->
-          <template v-if="phoneStep === 1">
-            <el-form-item label="新手机号" prop="phone">
+        <!-- 模块二：修改用户名 -->
+        <div class="profile-card glass-card">
+          <div class="card-header">
+            <span class="icon-box">
+              <el-icon><edit /></el-icon>
+            </span>
+            <div>
+              <span class="card-title">修改用户名</span>
+              <p class="card-subtitle">2-32位字母、数字或下划线</p>
+            </div>
+          </div>
+          <el-form
+            ref="usernameFormRef"
+            :model="usernameForm"
+            :rules="usernameRules"
+            label-position="top"
+            class="profile-form"
+          >
+            <el-form-item label="新用户名" prop="username">
               <div class="inline-row">
                 <el-input
-                  v-model="phoneForm.phone"
-                  placeholder="请输入新手机号"
-                  maxlength="11"
+                  v-model="usernameForm.username"
+                  placeholder="请输入新用户名"
+                  maxlength="32"
+                  :prefix-icon="'User'"
+                  size="large"
                 />
                 <el-button
                   type="primary"
-                  :loading="phoneSending"
+                  :loading="usernameSubmitting"
                   class="inline-btn"
-                  @click="sendPhoneVerifyCode"
+                  @click="handleUpdateUsername"
                 >
-                  发送验证码
+                  保存
                 </el-button>
               </div>
             </el-form-item>
-          </template>
+          </el-form>
+        </div>
 
-          <!-- Step 2：输入验证码 -->
-          <template v-else>
-            <p class="step-hint">
-              验证码已发送至 <span class="accent">{{ phoneForm.phone }}</span>
-              <el-link class="change-link" @click="resetPhoneStep">更换号码</el-link>
-            </p>
-            <el-form-item label="验证码" prop="code">
-              <div class="code-row">
-                <el-input
-                  v-model="phoneForm.code"
-                  placeholder="请输入6位验证码"
-                  maxlength="6"
-                />
-                <button
-                  class="code-btn"
-                  :disabled="phoneCountdown > 0 || phoneSending"
-                  @click.prevent="sendPhoneVerifyCode"
+        <!-- 模块三：修改手机号 -->
+        <div class="profile-card glass-card">
+          <div class="card-header">
+            <span class="icon-box">
+              <el-icon><phone /></el-icon>
+            </span>
+            <div>
+              <span class="card-title">修改手机号</span>
+              <p class="card-subtitle">
+                当前绑定：<span :class="{ accent: authStore.currentUser?.phone, muted: !authStore.currentUser?.phone }">{{ authStore.currentUser?.phone || '未绑定' }}</span>
+              </p>
+            </div>
+          </div>
+
+          <el-form
+            ref="phoneFormRef"
+            :model="phoneForm"
+            :rules="phoneStep === 1 ? phoneStep1Rules : phoneStep2Rules"
+            label-position="top"
+            class="profile-form"
+          >
+            <!-- Step 1：输入新手机号 -->
+            <template v-if="phoneStep === 1">
+              <el-form-item label="新手机号" prop="phone">
+                <div class="inline-row">
+                  <el-input
+                    v-model="phoneForm.phone"
+                    placeholder="请输入新手机号"
+                    maxlength="11"
+                    size="large"
+                  />
+                  <el-button
+                    type="primary"
+                    :loading="phoneSending"
+                    class="inline-btn"
+                    @click="sendPhoneVerifyCode"
+                  >
+                    发送验证码
+                  </el-button>
+                </div>
+              </el-form-item>
+            </template>
+
+            <!-- Step 2：输入验证码 -->
+            <template v-else>
+              <p class="step-hint">
+                验证码已发送至 <span class="accent">{{ phoneForm.phone }}</span>
+                <el-link class="change-link" @click="resetPhoneStep">更换号码</el-link>
+              </p>
+              <el-form-item label="验证码" prop="code">
+                <div class="code-row">
+                  <el-input
+                    v-model="phoneForm.code"
+                    placeholder="请输入6位验证码"
+                    maxlength="6"
+                    size="large"
+                  />
+                  <button
+                    class="code-btn"
+                    :disabled="phoneCountdown > 0 || phoneSending"
+                    @click.prevent="sendPhoneVerifyCode"
+                  >
+                    {{ phoneCountdown > 0 ? `${phoneCountdown}s 后重发` : '重新发送' }}
+                  </button>
+                </div>
+              </el-form-item>
+              <el-form-item>
+                <el-button
+                  type="primary"
+                  :loading="phoneSubmitting"
+                  class="submit-btn"
+                  @click="handleUpdatePhone"
                 >
-                  {{ phoneCountdown > 0 ? `${phoneCountdown}s 后重发` : '重新发送' }}
-                </button>
-              </div>
+                  确认修改手机号
+                </el-button>
+              </el-form-item>
+            </template>
+          </el-form>
+        </div>
+
+        <!-- 模块四：修改邮箱 -->
+        <div class="profile-card glass-card">
+          <div class="card-header">
+            <span class="icon-box">
+              <el-icon><message /></el-icon>
+            </span>
+            <div>
+              <span class="card-title">修改邮箱</span>
+              <p class="card-subtitle">
+                当前绑定：<span :class="{ accent: authStore.currentUser?.email, muted: !authStore.currentUser?.email }">{{ authStore.currentUser?.email || '未绑定' }}</span>
+              </p>
+            </div>
+          </div>
+
+          <el-form
+            ref="emailFormRef"
+            :model="emailForm"
+            :rules="emailStep === 1 ? emailStep1Rules : emailStep2Rules"
+            label-position="top"
+            class="profile-form"
+          >
+            <!-- Step 1：输入新邮箱 -->
+            <template v-if="emailStep === 1">
+              <el-form-item label="新邮箱地址" prop="email">
+                <div class="inline-row">
+                  <el-input
+                    v-model="emailForm.email"
+                    placeholder="请输入新邮箱地址"
+                    type="email"
+                    size="large"
+                  />
+                  <el-button
+                    type="primary"
+                    :loading="emailSending"
+                    class="inline-btn"
+                    @click="sendEmailVerifyCode"
+                  >
+                    发送验证码
+                  </el-button>
+                </div>
+              </el-form-item>
+            </template>
+
+            <!-- Step 2：输入验证码 -->
+            <template v-else>
+              <p class="step-hint">
+                验证码已发送至 <span class="accent">{{ emailForm.email }}</span>
+                <el-link class="change-link" @click="resetEmailStep">更换邮箱</el-link>
+              </p>
+              <el-form-item label="验证码" prop="code">
+                <div class="code-row">
+                  <el-input
+                    v-model="emailForm.code"
+                    placeholder="请输入6位验证码"
+                    maxlength="6"
+                    size="large"
+                  />
+                  <button
+                    class="code-btn"
+                    :disabled="emailCountdown > 0 || emailSending"
+                    @click.prevent="sendEmailVerifyCode"
+                  >
+                    {{ emailCountdown > 0 ? `${emailCountdown}s 后重发` : '重新发送' }}
+                  </button>
+                </div>
+              </el-form-item>
+              <el-form-item>
+                <el-button
+                  type="primary"
+                  :loading="emailSubmitting"
+                  class="submit-btn"
+                  @click="handleUpdateEmail"
+                >
+                  确认修改邮箱
+                </el-button>
+              </el-form-item>
+            </template>
+          </el-form>
+        </div>
+
+        <!-- 模块五：修改密码 -->
+        <div class="profile-card glass-card password-card">
+          <div class="card-header">
+            <span class="icon-box">
+              <el-icon><lock /></el-icon>
+            </span>
+            <div>
+              <span class="card-title">修改密码</span>
+              <p class="card-subtitle">建议使用不少于8位的高强度密码</p>
+            </div>
+          </div>
+          <el-form
+            ref="passwordFormRef"
+            :model="passwordForm"
+            :rules="passwordRules"
+            label-position="top"
+            class="profile-form password-form"
+          >
+            <el-form-item label="当前密码" prop="old_password">
+              <el-input
+                v-model="passwordForm.old_password"
+                type="password"
+                placeholder="请输入当前密码"
+                show-password
+                autocomplete="current-password"
+                size="large"
+              />
+            </el-form-item>
+            <el-form-item label="新密码" prop="new_password">
+              <el-input
+                v-model="passwordForm.new_password"
+                type="password"
+                placeholder="至少8位"
+                show-password
+                autocomplete="new-password"
+                size="large"
+              />
+            </el-form-item>
+            <el-form-item label="确认新密码" prop="confirm_password">
+              <el-input
+                v-model="passwordForm.confirm_password"
+                type="password"
+                placeholder="再次输入新密码"
+                show-password
+                autocomplete="new-password"
+                size="large"
+              />
             </el-form-item>
             <el-form-item>
               <el-button
                 type="primary"
-                :loading="phoneSubmitting"
+                :loading="passwordSubmitting"
                 class="submit-btn"
-                @click="handleUpdatePhone"
+                @click="handleChangePassword"
               >
-                确认修改手机号
+                修改密码
               </el-button>
             </el-form-item>
-          </template>
-        </el-form>
-      </div>
-
-      <!-- 模块四：修改邮箱 -->
-      <div class="profile-card glass-card">
-        <div class="card-header">
-          <el-icon class="card-icon"><message /></el-icon>
-          <span class="card-title">修改邮箱</span>
+          </el-form>
         </div>
-        <p v-if="authStore.currentUser?.email" class="card-hint">
-          当前绑定：<span class="accent">{{ authStore.currentUser.email }}</span>
-        </p>
-
-        <el-form
-          ref="emailFormRef"
-          :model="emailForm"
-          :rules="emailStep === 1 ? emailStep1Rules : emailStep2Rules"
-          label-position="top"
-          class="profile-form"
-        >
-          <!-- Step 1：输入新邮箱 -->
-          <template v-if="emailStep === 1">
-            <el-form-item label="新邮箱地址" prop="email">
-              <div class="inline-row">
-                <el-input
-                  v-model="emailForm.email"
-                  placeholder="请输入新邮箱地址"
-                  type="email"
-                />
-                <el-button
-                  type="primary"
-                  :loading="emailSending"
-                  class="inline-btn"
-                  @click="sendEmailVerifyCode"
-                >
-                  发送验证码
-                </el-button>
-              </div>
-            </el-form-item>
-          </template>
-
-          <!-- Step 2：输入验证码 -->
-          <template v-else>
-            <p class="step-hint">
-              验证码已发送至 <span class="accent">{{ emailForm.email }}</span>
-              <el-link class="change-link" @click="resetEmailStep">更换邮箱</el-link>
-            </p>
-            <el-form-item label="验证码" prop="code">
-              <div class="code-row">
-                <el-input
-                  v-model="emailForm.code"
-                  placeholder="请输入6位验证码"
-                  maxlength="6"
-                />
-                <button
-                  class="code-btn"
-                  :disabled="emailCountdown > 0 || emailSending"
-                  @click.prevent="sendEmailVerifyCode"
-                >
-                  {{ emailCountdown > 0 ? `${emailCountdown}s 后重发` : '重新发送' }}
-                </button>
-              </div>
-            </el-form-item>
-            <el-form-item>
-              <el-button
-                type="primary"
-                :loading="emailSubmitting"
-                class="submit-btn"
-                @click="handleUpdateEmail"
-              >
-                确认修改邮箱
-              </el-button>
-            </el-form-item>
-          </template>
-        </el-form>
       </div>
-
-      <!-- 模块五：修改密码 -->
-      <div class="profile-card glass-card">
-        <div class="card-header">
-          <el-icon class="card-icon"><lock /></el-icon>
-          <span class="card-title">修改密码</span>
-        </div>
-        <el-form
-          ref="passwordFormRef"
-          :model="passwordForm"
-          :rules="passwordRules"
-          label-position="top"
-          class="profile-form"
-        >
-          <el-form-item label="当前密码" prop="old_password">
-            <el-input
-              v-model="passwordForm.old_password"
-              type="password"
-              placeholder="请输入当前密码"
-              show-password
-              autocomplete="current-password"
-            />
-          </el-form-item>
-          <el-form-item label="新密码" prop="new_password">
-            <el-input
-              v-model="passwordForm.new_password"
-              type="password"
-              placeholder="至少8位"
-              show-password
-              autocomplete="new-password"
-            />
-          </el-form-item>
-          <el-form-item label="确认新密码" prop="confirm_password">
-            <el-input
-              v-model="passwordForm.confirm_password"
-              type="password"
-              placeholder="再次输入新密码"
-              show-password
-              autocomplete="new-password"
-            />
-          </el-form-item>
-          <el-form-item>
-            <el-button
-              type="primary"
-              :loading="passwordSubmitting"
-              class="submit-btn"
-              @click="handleChangePassword"
-            >
-              修改密码
-            </el-button>
-          </el-form-item>
-        </el-form>
-      </div>
-
     </div>
   </div>
 </template>
 
 <style scoped>
-/* 页面标题区 */
 .profile-page {
-  padding: 24px;
-  max-width: 720px;
+  min-height: 100%;
+  padding: 34px 24px 56px;
+  position: relative;
+  overflow: hidden;
+}
+
+.profile-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 12% 12%, rgba(6, 182, 212, 0.16), transparent 24%),
+    radial-gradient(circle at 88% 8%, rgba(139, 92, 246, 0.14), transparent 26%);
+  pointer-events: none;
+}
+
+.profile-container {
+  position: relative;
+  z-index: 1;
+  max-width: 1120px;
   margin: 0 auto;
 }
 
-@media (max-width: 767px) {
-  .profile-page {
-    padding: 16px;
-  }
-}
-
 .page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 18px;
   margin-bottom: 24px;
 }
 
-.page-title {
-  font-size: 22px;
+.page-kicker {
+  color: var(--color-accent);
+  font-size: 12px;
   font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.page-title {
+  font-size: 30px;
+  line-height: 1.2;
+  font-weight: 800;
   color: var(--color-text);
+  margin-bottom: 10px;
 }
 
 .page-desc {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--color-text-muted);
-  margin-top: 6px;
+  line-height: 1.7;
 }
 
-/* 卡片 */
-.profile-content {
+.profile-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 28px;
+  align-items: center;
+  padding: 30px;
+  margin-bottom: 22px;
+  background:
+    linear-gradient(145deg, rgba(99, 102, 241, 0.14), rgba(6, 182, 212, 0.06)),
+    rgba(11, 16, 32, 0.74);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+  position: relative;
+}
+
+.profile-hero::after {
+  content: "";
+  position: absolute;
+  right: -120px;
+  bottom: -150px;
+  width: 340px;
+  height: 340px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.16), transparent 66%);
+  pointer-events: none;
+}
+
+.hero-main,
+.hero-stats {
+  position: relative;
+  z-index: 1;
+}
+
+.hero-main {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+
+.avatar-orb {
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 20px;
+  color: var(--color-accent);
+  font-size: 34px;
+  background: rgba(6, 182, 212, 0.12);
+  border: 1px solid rgba(6, 182, 212, 0.28);
+  box-shadow: 0 18px 42px rgba(6, 182, 212, 0.14);
+}
+
+.hero-copy {
+  min-width: 0;
+}
+
+.hero-label {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.hero-copy h3 {
+  color: var(--color-text);
+  font-size: 26px;
+  line-height: 1.25;
+  font-weight: 800;
+  margin-bottom: 8px;
+  word-break: break-word;
+}
+
+.hero-copy p {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.hero-copy p span {
+  color: var(--color-accent);
+}
+
+.hero-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(130px, 1fr));
+  gap: 12px;
+}
+
+.hero-stat {
+  min-height: 72px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 14px;
+  background: rgba(10, 15, 30, 0.46);
+}
+
+.stat-label {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.hero-stat strong {
+  display: block;
+  max-width: 190px;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.profile-content {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
 }
 
 .profile-card {
   padding: 24px;
+  background: rgba(11, 16, 32, 0.74);
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.22);
 }
 
-@media (max-width: 767px) {
-  .profile-card {
-    padding: 18px 16px;
-    border-radius: 12px;
-  }
+.info-card,
+.password-card {
+  grid-column: 1 / -1;
 }
 
-/* 卡片头部 */
 .card-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: 12px;
+  margin-bottom: 18px;
 }
 
-.card-icon {
-  font-size: 18px;
-  color: var(--color-primary);
+.icon-box {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-accent);
+  border-radius: 12px;
+  background: rgba(6, 182, 212, 0.1);
+  border: 1px solid rgba(6, 182, 212, 0.22);
+  font-size: 19px;
 }
 
 .card-title {
+  display: block;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--color-text);
+  margin-bottom: 4px;
 }
 
-.card-hint {
+.card-subtitle {
   font-size: 13px;
   color: var(--color-text-muted);
-  margin-bottom: 16px;
+  line-height: 1.5;
 }
 
-/* 基本信息网格 */
 .info-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px 24px;
-}
-
-@media (max-width: 480px) {
-  .info-grid {
-    grid-template-columns: 1fr;
-  }
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .info-item {
+  min-height: 74px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  justify-content: center;
+  gap: 7px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: rgba(99, 102, 241, 0.055);
+  min-width: 0;
 }
 
 .info-label {
   font-size: 12px;
   color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
 .info-value {
+  min-width: 0;
   font-size: 14px;
   color: var(--color-text);
-  font-weight: 500;
+  font-weight: 600;
+  word-break: break-word;
 }
 
 .info-value.accent {
@@ -712,21 +945,29 @@ onUnmounted(() => {
 
 .info-value.muted,
 .muted {
-  color: var(--color-text-muted);
-  font-weight: 400;
+  color: var(--color-text-muted) !important;
+  font-weight: 500;
 }
 
-/* 强调色文本 */
 .accent {
   color: var(--color-accent);
 }
 
-/* 表单 */
 .profile-form {
   margin-top: 4px;
 }
 
-/* 行内布局（输入框 + 按钮同行） */
+.password-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 14px;
+  align-items: start;
+}
+
+.password-form .el-form-item:last-child {
+  grid-column: 1 / -1;
+}
+
 .inline-row {
   display: flex;
   gap: 10px;
@@ -739,27 +980,28 @@ onUnmounted(() => {
 
 .inline-btn {
   flex-shrink: 0;
-  background: var(--gradient-primary);
-  border: none;
-  color: #fff;
+  min-width: 112px;
+  height: 40px;
+  background: var(--gradient-primary) !important;
+  border: none !important;
+  color: #fff !important;
   font-size: 13px;
-  transition: filter 0.2s;
+  transition: filter 0.2s, box-shadow 0.2s;
 }
 
 .inline-btn:hover {
   filter: brightness(1.15);
+  box-shadow: var(--shadow-glow);
 }
 
-/* 提交按钮（全宽变体） */
 .submit-btn {
   width: 100%;
-  height: 42px;
+  height: 44px;
   background: var(--gradient-primary) !important;
   border: none !important;
   font-size: 14px;
 }
 
-/* 步骤提示 */
 .step-hint {
   font-size: 13px;
   color: var(--color-text-muted);
@@ -768,6 +1010,10 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  padding: 11px 13px;
+  border: 1px solid rgba(6, 182, 212, 0.18);
+  border-radius: 12px;
+  background: rgba(6, 182, 212, 0.06);
 }
 
 .change-link {
@@ -776,7 +1022,6 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-/* 验证码行 */
 .code-row {
   display: flex;
   gap: 10px;
@@ -789,16 +1034,17 @@ onUnmounted(() => {
 
 .code-btn {
   flex-shrink: 0;
+  min-width: 106px;
   padding: 0 12px;
-  height: 32px;
+  height: 40px;
   background: rgba(99, 102, 241, 0.12);
   border: 1px solid var(--color-border);
   color: var(--color-primary);
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.2s;
+  transition: background 0.2s, border-color 0.2s;
 }
 
 .code-btn:hover:not(:disabled) {
@@ -810,5 +1056,60 @@ onUnmounted(() => {
   color: var(--color-text-disabled);
   border-color: rgba(99, 102, 241, 0.1);
   cursor: not-allowed;
+}
+
+:deep(.el-input__wrapper) {
+  min-height: 42px;
+  border-radius: 9px;
+}
+
+@media (max-width: 980px) {
+  .profile-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-stats,
+  .info-grid,
+  .password-form {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-content {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .profile-page {
+    padding: 24px 14px 40px;
+  }
+
+  .page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .page-title {
+    font-size: 26px;
+  }
+
+  .profile-hero,
+  .profile-card {
+    padding: 22px;
+  }
+
+  .hero-main {
+    align-items: flex-start;
+  }
+
+  .inline-row,
+  .code-row {
+    flex-direction: column;
+  }
+
+  .inline-btn,
+  .code-btn {
+    width: 100%;
+  }
 }
 </style>
