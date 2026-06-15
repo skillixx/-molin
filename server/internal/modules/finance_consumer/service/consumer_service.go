@@ -7,6 +7,7 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
+	"molin/server/internal/modules/finance_consumer/dto"
 	consumermodel "molin/server/internal/modules/finance_consumer/model"
 	"molin/server/internal/modules/finance_consumer/repository"
 	productrepo "molin/server/internal/modules/product/repository"
@@ -110,4 +111,34 @@ func (s *ConsumerService) Handle(ctx context.Context, event consumermodel.Produc
 		return nil
 	})
 	return result, err
+}
+
+// ListRecords 按过滤条件分页查询消费记录（F2/F3 共用）。
+// 业务约定：
+//   - F2（用户端）：调用方必须在 filter.UserID 写入登录用户 ID，禁止越权查他人；
+//   - F3（管理端）：filter.UserID 为可选过滤，0 表示查全量。
+//
+// 返回 DTO 列表（避免直接暴露模型），total 用于扁平分页。
+func (s *ConsumerService) ListRecords(ctx context.Context, filter dto.ConsumptionRecordFilter, offset, limit int) ([]dto.ConsumptionRecordItem, int64, error) {
+	records, total, err := s.consumptionRepo.ListPaged(ctx, filter, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	items := make([]dto.ConsumptionRecordItem, 0, len(records))
+	for _, rec := range records {
+		items = append(items, dto.ConsumptionRecordItem{
+			ID:            rec.ID,
+			UserID:        rec.UserID,
+			ProductID:     rec.ProductID,
+			ProductPlanID: rec.ProductPlanID,
+			InstanceID:    rec.InstanceID,
+			UsageType:     rec.UsageType,
+			UsageAmount:   rec.UsageAmount,
+			UsageUnit:     rec.UsageUnit,
+			Amount:        rec.Amount,
+			EventID:       rec.EventID,
+			CreatedAt:     rec.CreatedAt,
+		})
+	}
+	return items, total, nil
 }

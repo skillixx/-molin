@@ -293,8 +293,10 @@ func NewApp() (*App, error) {
 	productmod.RegisterRoutes(mux, gormDB, cfg.JWTSecret, authService, iamService, walletService, userRepoAdapter,
 		provisionService, membershipAdapt)
 
-	// 注册 finance_consumer 模块（内部消费事件接口，IP 白名单保护）
-	financemod.RegisterRoutes(mux, gormDB)
+	// 注册 finance_consumer 模块
+	//   - 内部消费事件上报接口（IP 白名单保护）
+	//   - 消费记录查询 F2（用户本人）/ F3（管理端 wallet:view）
+	financemod.RegisterRoutes(mux, gormDB, cfg.JWTSecret, authService, iamService)
 
 	// 注册 asset 模块（用户资产 + 管理端资产管理）
 	assetmod.RegisterRoutes(mux, gormDB, cfg.JWTSecret, authService, iamService)
