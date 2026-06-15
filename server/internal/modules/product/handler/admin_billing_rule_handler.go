@@ -168,7 +168,8 @@ func writeBillingRuleErr(w http.ResponseWriter, err error) {
 	case errors.Is(err, service.ErrBillingRuleNotFound):
 		response.Error(w, http.StatusNotFound, 40004, "计费规则不存在")
 	case errors.Is(err, service.ErrBillingProductNotFound):
-		response.Error(w, http.StatusBadRequest, 60003, "关联商品不存在")
+		// 与 admin_product_handler「商品不存在」保持一致：404 / 40004（资源不存在）
+		response.Error(w, http.StatusNotFound, 40004, "关联商品不存在")
 	case errors.Is(err, service.ErrInvalidPriceAmount),
 		errors.Is(err, service.ErrMissingBillingField):
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
