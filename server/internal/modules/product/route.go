@@ -36,6 +36,7 @@ func RegisterRoutes(
 	planRepo := repository.NewPlanRepository(db)
 	priceRepo := repository.NewPriceRepository(db)
 	accessRepo := repository.NewAccessRepository(db)
+	billingRuleRepo := repository.NewBillingRuleRepository(db)
 
 	// 降级处理：若外部未注入真实实现，使用 stub（保持 Week 2 兼容性）
 	if provisionSvc == nil {
@@ -48,6 +49,7 @@ func RegisterRoutes(
 	// 初始化服务
 	pricingSvc := service.NewPricingService(priceRepo, iamSvc, membershipSvc)
 	productSvc := service.NewProductService(productRepo, accessRepo, planRepo, priceRepo, iamSvc)
+	billingRuleSvc := service.NewBillingRuleService(billingRuleRepo, productRepo)
 
 	// 初始化 order 相关（购买接口依赖）
 	orderRepo := orderrepo.NewOrderRepository(db)
@@ -61,6 +63,7 @@ func RegisterRoutes(
 	// 初始化处理器
 	userHandler := handler.NewProductHandler(productSvc, pricingSvc, purchaseSvc)
 	adminHandler := handler.NewAdminProductHandler(productSvc)
+	adminBillingRuleHandler := handler.NewAdminBillingRuleHandler(billingRuleSvc)
 
 	// 认证中间件（需要登录 + 封禁检查）
 	auth := func(next http.HandlerFunc) http.Handler {
@@ -92,4 +95,10 @@ func RegisterRoutes(
 	mux.Handle("PATCH /api/admin/products/{id}/plans/{plan_id}", adminAuth("product:edit", adminHandler.UpdatePlan))
 	mux.Handle("PATCH /api/admin/products/{id}/access", adminAuth("product:edit", adminHandler.ReplaceAccess))
 	mux.Handle("PATCH /api/admin/products/{id}/prices", adminAuth("product:edit", adminHandler.ReplacePrices))
+
+	// 计费规则管理路由（C-6 / P15-P17）
+	// 列表只读用 product:view，新增用 product:create，修改用 product:edit
+	mux.Handle("GET /api/admin/product-billing-rules", adminAuth("product:view", adminBillingRuleHandler.ListBillingRules))
+	mux.Handle("POST /api/admin/product-billing-rules", adminAuth("product:create", adminBillingRuleHandler.CreateBillingRule))
+	mux.Handle("PATCH /api/admin/product-billing-rules/{id}", adminAuth("product:edit", adminBillingRuleHandler.UpdateBillingRule))
 }

@@ -87,6 +87,46 @@ type PurchaseResult struct {
 	Idempotent bool            `json:"idempotent"` // true 表示重复请求，返回已有订单
 }
 
+// CreateBillingRuleReq 新增计费规则请求体（P16）。
+type CreateBillingRuleReq struct {
+	ProductID     uint64           `json:"product_id"`               // 必填，指向存在的商品
+	ProductPlanID *uint64          `json:"product_plan_id"`          // 可选，空=商品级通用规则
+	UsageType     string           `json:"usage_type"`               // 必填，计费用量类型
+	UsageUnit     string           `json:"usage_unit"`               // 必填，计量单位
+	PriceAmount   decimal.Decimal  `json:"price_amount"`             // 必填，单价，必须 > 0
+	Currency      string           `json:"currency"`                 // 可选，默认 CNY
+	BillingMode   string           `json:"billing_mode"`             // 必填，计费模式
+	FreeQuota     *decimal.Decimal `json:"free_quota"`               // 可选，免费额度
+	Status        string           `json:"status"`                   // 可选，默认 active
+}
+
+// UpdateBillingRuleReq 修改计费规则请求体（P17，全部字段可选）。
+type UpdateBillingRuleReq struct {
+	UsageType   *string          `json:"usage_type,omitempty"`
+	UsageUnit   *string          `json:"usage_unit,omitempty"`
+	PriceAmount *decimal.Decimal `json:"price_amount,omitempty"`
+	Currency    *string          `json:"currency,omitempty"`
+	BillingMode *string          `json:"billing_mode,omitempty"`
+	FreeQuota   *decimal.Decimal `json:"free_quota,omitempty"`
+	Status      *string          `json:"status,omitempty"`
+}
+
+// BillingRuleItem 计费规则响应项（P15 列表 / 详情）。
+type BillingRuleItem struct {
+	ID            uint64           `json:"id"`
+	ProductID     uint64           `json:"product_id"`
+	ProductPlanID *uint64          `json:"product_plan_id,omitempty"`
+	UsageType     string           `json:"usage_type"`
+	UsageUnit     string           `json:"usage_unit"`
+	PriceAmount   decimal.Decimal  `json:"price_amount"`
+	Currency      string           `json:"currency"`
+	BillingMode   string           `json:"billing_mode"`
+	FreeQuota     *decimal.Decimal `json:"free_quota,omitempty"`
+	Status        string           `json:"status"`
+	CreatedAt     string           `json:"created_at"`
+	UpdatedAt     string           `json:"updated_at"`
+}
+
 // PlanWithPrice 套餐信息（含用户实际价格）。
 type PlanWithPrice struct {
 	ID           uint64          `json:"id"`
