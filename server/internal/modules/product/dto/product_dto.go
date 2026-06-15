@@ -52,8 +52,9 @@ type PriceItem struct {
 }
 
 // ReplacePricesReq 批量覆盖写入价格请求体。
+// C-2：批量写入 body 键名统一为 items（原 prices）。
 type ReplacePricesReq struct {
-	Prices []PriceItem `json:"prices"`
+	Items []PriceItem `json:"items"`
 }
 
 // AccessItem 单条角色访问规则（用于批量配置请求）。
@@ -65,8 +66,9 @@ type AccessItem struct {
 }
 
 // ReplaceAccessReq 批量覆盖写入访问权限请求体。
+// C-2：批量写入 body 键名统一为 items（原 accesses）。
 type ReplaceAccessReq struct {
-	Accesses []AccessItem `json:"accesses"`
+	Items []AccessItem `json:"items"`
 }
 
 // PurchaseReq 购买请求体（Idempotency-Key 在请求头中，此结构体用于 Body）。

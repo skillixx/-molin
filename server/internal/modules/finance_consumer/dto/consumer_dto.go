@@ -23,8 +23,10 @@ type ProductUsageEventReq struct {
 }
 
 // ConsumptionResultResp 消费处理结果响应。
+// C-5：record_id 改为 consumption_record_id，新增 wallet_transaction_id（钱包流水 ID）。
 type ConsumptionResultResp struct {
-	RecordID       uint64          `json:"record_id"`
-	Amount         decimal.Decimal `json:"amount"`
-	IdempotencyKey string          `json:"idempotency_key"`
+	ConsumptionRecordID uint64          `json:"consumption_record_id"`
+	Amount              decimal.Decimal `json:"amount"`
+	IdempotencyKey      string          `json:"idempotency_key"`
+	WalletTransactionID uint64          `json:"wallet_transaction_id"`
 }

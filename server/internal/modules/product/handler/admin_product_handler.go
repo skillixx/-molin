@@ -256,8 +256,8 @@ func (h *AdminProductHandler) ReplaceAccess(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	accesses := make([]model.ProductRoleAccess, 0, len(req.Accesses))
-	for _, a := range req.Accesses {
+	accesses := make([]model.ProductRoleAccess, 0, len(req.Items))
+	for _, a := range req.Items {
 		accesses = append(accesses, model.ProductRoleAccess{
 			ProductID: productID,
 			RoleID:    a.RoleID,
@@ -285,17 +285,18 @@ func (h *AdminProductHandler) ReplacePrices(w http.ResponseWriter, r *http.Reque
 	_ = productID // 当前通过 plan_id 配置，productID 用于校验
 
 	// 解析请求：包含 plan_id 和价格列表
+	// C-2：批量写入价格列表键名统一为 items（原 prices）。
 	var body struct {
 		PlanID uint64          `json:"plan_id"`
-		Prices []dto.PriceItem `json:"prices"`
+		Items  []dto.PriceItem `json:"items"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PlanID == 0 {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误，plan_id 为必填项")
 		return
 	}
 
-	prices := make([]model.ProductPrice, 0, len(body.Prices))
-	for _, p := range body.Prices {
+	prices := make([]model.ProductPrice, 0, len(body.Items))
+	for _, p := range body.Items {
 		prices = append(prices, model.ProductPrice{
 			ProductPlanID:     body.PlanID,
 			RoleID:            p.RoleID,

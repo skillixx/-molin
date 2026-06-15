@@ -138,7 +138,8 @@ func (h *AdminBillingHandler) FreezeUserWallet(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	remark := req.Remark
+	// C-4：冻结/解冻原因字段由 remark 改为 reason。
+	remark := req.Reason
 	if remark == "" {
 		remark = "管理员操作"
 	}

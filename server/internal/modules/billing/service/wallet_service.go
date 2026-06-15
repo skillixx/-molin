@@ -111,35 +111,36 @@ func (s *WalletService) deductOnce(ctx context.Context, userID uint64, amount de
 
 // DeductTx 在已有事务内执行扣费（供 finance_consumer 模块调用，传入外部事务 tx）。
 // 注意：此方法不重试，调用方负责重试逻辑。
-func (s *WalletService) DeductTx(tx *gorm.DB, userID uint64, amount decimal.Decimal, orderID uint64, remark string) error {
+// C-5：返回新建钱包流水（wallet_transaction）的 ID，供消费上报响应透传。
+func (s *WalletService) DeductTx(tx *gorm.DB, userID uint64, amount decimal.Decimal, orderID uint64, remark string) (uint64, error) {
 	// 加行锁查询钱包
 	wallet, err := s.walletRepo.GetForUpdate(tx, userID)
 	if err != nil {
 		// 钱包记录不存在时，语义上等价于余额为 0，统一返回"余额不足"业务错误，
 		// 避免 gorm.ErrRecordNotFound 透传到上层导致 500。
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrInsufficientBalance
+			return 0, ErrInsufficientBalance
 		}
-		return err
+		return 0, err
 	}
 	if wallet.BalanceAmount.LessThan(amount) {
-		return ErrInsufficientBalance
+		return 0, ErrInsufficientBalance
 	}
 	rows, err := s.walletRepo.UpdateWithOptimisticLock(tx, int64(wallet.ID), wallet.Version, map[string]interface{}{
 		"balance_amount": gorm.Expr("balance_amount - ?", amount),
 	})
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if rows == 0 {
-		return ErrConcurrentUpdate
+		return 0, ErrConcurrentUpdate
 	}
 	balanceAfter := wallet.BalanceAmount.Sub(amount)
 	var relatedOrderID *uint64
 	if orderID > 0 {
 		relatedOrderID = &orderID
 	}
-	return s.txRepo.Create(tx, &model.WalletTransaction{
+	txRecord := &model.WalletTransaction{
 		WalletID:       wallet.ID,
 		UserID:         userID,
 		Type:           "consume",
@@ -148,7 +149,12 @@ func (s *WalletService) DeductTx(tx *gorm.DB, userID uint64, amount decimal.Deci
 		BalanceAfter:   balanceAfter,
 		RelatedOrderID: relatedOrderID,
 		Remark:         remark,
-	})
+	}
+	if err := s.txRepo.Create(tx, txRecord); err != nil {
+		return 0, err
+	}
+	// gorm 在 Create 后会回填自增主键 ID
+	return txRecord.ID, nil
 }
 
 // Recharge 充值（事务内入账并写流水）。

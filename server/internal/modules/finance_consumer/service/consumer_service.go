@@ -72,7 +72,9 @@ func (s *ConsumerService) Handle(ctx context.Context, event consumermodel.Produc
 	var result *consumermodel.ConsumptionResult
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		// 调用 billing.WalletService.DeductTx（在外部事务内执行，不再嵌套事务）
-		if err := s.walletSvc.DeductTx(tx, event.UserID, amount, 0, "消费扣费: "+event.UsageType); err != nil {
+		// C-5：DeductTx 返回钱包流水 ID，用于填充消费上报响应 wallet_transaction_id。
+		walletTxID, err := s.walletSvc.DeductTx(tx, event.UserID, amount, 0, "消费扣费: "+event.UsageType)
+		if err != nil {
 			return err
 		}
 
@@ -103,6 +105,8 @@ func (s *ConsumerService) Handle(ctx context.Context, event consumermodel.Produc
 			return err
 		}
 		result = record.ToResult()
+		// C-5：透传本次扣费产生的钱包流水 ID
+		result.WalletTransactionID = walletTxID
 		return nil
 	})
 	return result, err
