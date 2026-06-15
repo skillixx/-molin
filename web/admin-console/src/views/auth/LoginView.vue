@@ -113,8 +113,12 @@ async function handleLogin() {
 
   try {
     await authStore.login(form.email, form.password)
-    // 登录成功，跳转到来源页面或首页
     const redirect = (route.query.redirect as string) || '/'
+    // 管理员必须先完成手机和邮箱双重认证，才能进入后台页面。
+    if (!authStore.adminVerified) {
+      router.push({ path: '/admin-verify', query: { redirect } })
+      return
+    }
     router.push(redirect)
   } catch (err: unknown) {
     // 错误已由 http 拦截器的 ElMessage 处理，这里只保留本地提示
@@ -135,17 +139,22 @@ async function handleLogin() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: #0A0F1E;
+  background: var(--mc-bg-grid);
   position: relative;
   overflow: hidden;
 }
 
-/* 点阵背景 */
+/* 网格背景 */
 .bg-grid {
   position: absolute;
   inset: 0;
-  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
-  background-size: 28px 28px;
+  background-image:
+    linear-gradient(var(--mc-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--mc-grid-line) 1px, transparent 1px),
+    linear-gradient(var(--mc-grid-line-strong) 1px, transparent 1px),
+    linear-gradient(90deg, var(--mc-grid-line-strong) 1px, transparent 1px);
+  background-size: 34px 34px, 34px 34px, 136px 136px, 136px 136px;
+  mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.92), rgba(0, 0, 0, 0.35));
   pointer-events: none;
   z-index: 0;
 }
@@ -155,11 +164,11 @@ async function handleLogin() {
   z-index: 1;
   width: 420px;
   padding: 40px 36px 32px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(99, 102, 241, 0.25);
-  border-radius: 16px;
-  backdrop-filter: blur(12px);
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.4), 0 0 60px rgba(99, 102, 241, 0.08);
+  background: rgba(22, 32, 51, 0.92);
+  border: 1px solid var(--mc-border-soft);
+  border-radius: var(--mc-radius);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 24px 60px rgba(2, 6, 23, 0.42);
 }
 
 .brand {
@@ -170,7 +179,7 @@ async function handleLogin() {
 .brand-title {
   font-size: 36px;
   font-weight: 800;
-  background: linear-gradient(135deg, #6366F1, #8B5CF6);
+  background: linear-gradient(135deg, var(--mc-primary), var(--mc-accent));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -179,7 +188,7 @@ async function handleLogin() {
 }
 
 .brand-sub {
-  color: #94A3B8;
+  color: var(--mc-text-muted);
   font-size: 13px;
   margin: 0;
 }
@@ -192,7 +201,7 @@ async function handleLogin() {
 
 .login-btn {
   width: 100%;
-  background: linear-gradient(135deg, #6366F1, #8B5CF6);
+  background: linear-gradient(135deg, var(--mc-primary-strong), var(--mc-primary));
   border: none;
   font-size: 15px;
   font-weight: 500;
@@ -201,8 +210,8 @@ async function handleLogin() {
 }
 
 .login-btn:hover {
-  background: linear-gradient(315deg, #6366F1, #8B5CF6);
-  box-shadow: 0 0 20px rgba(99, 102, 241, 0.5);
+  background: linear-gradient(135deg, #0284c7, #38bdf8);
+  box-shadow: 0 12px 24px rgba(14, 165, 233, 0.24);
   transform: translateY(-1px);
 }
 
@@ -213,7 +222,7 @@ async function handleLogin() {
 
 .footer-text {
   text-align: center;
-  color: #475569;
+  color: var(--mc-text-subtle);
   font-size: 12px;
   margin: 20px 0 0;
 }

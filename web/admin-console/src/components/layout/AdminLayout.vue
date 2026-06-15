@@ -54,8 +54,8 @@ void router
 .admin-layout {
   display: flex;
   height: 100vh;
-  background-color: #0A0F1E;
-  color: #F1F5F9;
+  background: var(--mc-bg-grid);
+  color: var(--mc-text);
   overflow: hidden;
 }
 
@@ -63,8 +63,8 @@ void router
 .aside {
   width: 220px;
   min-height: 100vh;
-  background: rgba(255, 255, 255, 0.03);
-  border-right: 1px solid rgba(99, 102, 241, 0.2);
+  background: var(--mc-sidebar);
+  border-right: 1px solid var(--mc-border);
   transition: width 0.25s ease;
   overflow: hidden;
   flex-shrink: 0;
@@ -94,10 +94,24 @@ void router
 .bg-grid {
   position: fixed;
   inset: 0;
-  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
-  background-size: 28px 28px;
+  background-image:
+    linear-gradient(var(--mc-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--mc-grid-line) 1px, transparent 1px),
+    linear-gradient(var(--mc-grid-line-strong) 1px, transparent 1px),
+    linear-gradient(90deg, var(--mc-grid-line-strong) 1px, transparent 1px);
+  background-size: 36px 36px, 36px 36px, 144px 144px, 144px 144px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.35));
   pointer-events: none;
   z-index: 0;
+}
+
+.bg-grid::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(115deg, transparent 0 38%, rgba(34, 211, 238, 0.08) 47%, transparent 56%),
+    radial-gradient(circle at 74% 18%, rgba(251, 191, 36, 0.08), transparent 18%);
 }
 
 /* 内容需要在纹理上层 */

@@ -102,9 +102,9 @@ async function handleCommand(cmd: string) {
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  background: rgba(255, 255, 255, 0.03);
-  border-bottom: 1px solid rgba(99, 102, 241, 0.15);
-  backdrop-filter: blur(12px);
+  background: rgba(15, 23, 42, 0.88);
+  border-bottom: 1px solid var(--mc-border);
+  backdrop-filter: blur(10px);
 }
 
 .top-bar-left {
@@ -114,17 +114,17 @@ async function handleCommand(cmd: string) {
 }
 
 .collapse-btn {
-  color: #94A3B8;
+  color: var(--mc-text-muted);
 }
 
 .collapse-btn:hover {
-  color: #6366F1;
+  color: var(--mc-primary);
 }
 
 .page-title {
   font-size: 15px;
   font-weight: 500;
-  color: #F1F5F9;
+  color: var(--mc-text);
 }
 
 .top-bar-right {
@@ -146,16 +146,16 @@ async function handleCommand(cmd: string) {
 }
 
 .badge-ok {
-  color: #10B981;
+  color: var(--mc-success);
 }
 
 .badge-warn {
-  color: #F59E0B;
+  color: var(--mc-warning);
   cursor: pointer;
 }
 
 .badge-warn:hover {
-  background: rgba(245, 158, 11, 0.1);
+  background: rgba(245, 158, 11, 0.14);
 }
 
 .user-info {
@@ -169,22 +169,22 @@ async function handleCommand(cmd: string) {
 }
 
 .user-info:hover {
-  background: rgba(99, 102, 241, 0.1);
+  background: var(--mc-surface-muted);
 }
 
 .user-avatar {
-  background: linear-gradient(135deg, #6366F1, #8B5CF6);
+  background: linear-gradient(135deg, var(--mc-primary-strong), var(--mc-accent));
   font-size: 14px;
   font-weight: 600;
 }
 
 .username {
-  color: #F1F5F9;
+  color: var(--mc-text);
   font-size: 14px;
 }
 
 .arrow-icon {
-  color: #94A3B8;
+  color: var(--mc-text-muted);
   font-size: 12px;
 }
 </style>

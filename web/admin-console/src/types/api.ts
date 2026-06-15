@@ -24,3 +24,6 @@ export interface PageResponse<T> {
   page_size: number
   total: number
 }
+
+/** D-95 扁平分页别名，后端甲 auth/iam/identity 模块统一使用 */
+export type PageResult<T> = PageResponse<T>

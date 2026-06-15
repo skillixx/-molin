@@ -19,8 +19,10 @@ export interface User {
   admin_phone_verified: boolean
   admin_email_verified: boolean
   last_login_at: string | null
+  roles?: Array<{ id: number; code: string; name: string }>
+  permission_overrides?: PermissionOverride[]
   created_at: string
-  updated_at: string
+  updated_at?: string
 }
 
 /** 角色信息 */
@@ -28,9 +30,9 @@ export interface Role {
   id: number
   code: string
   name: string
-  description: string
-  created_at: string
-  updated_at: string
+  description?: string | null
+  created_at?: string
+  updated_at?: string
 }
 
 /** 权限信息 */
@@ -38,16 +40,26 @@ export interface Permission {
   id: number
   code: string
   name: string
-  description: string
-  group: string
+  resource: string
+  action: string
+  description?: string
+  group?: string
+  module?: string
+  created_at?: string
+  updated_at?: string
 }
 
 /** 用户角色关联 */
 export interface UserRole {
   id: number
   user_id: number
-  role_id: number
-  role: Role
+  role_id?: number
+  code?: string
+  name?: string
+  description?: string | null
+  role?: Role
+  role_code?: string
+  role_name?: string
   reason: string
   created_at: string
 }
@@ -57,10 +69,24 @@ export interface PermissionOverride {
   id: number
   user_id: number
   permission_id: number
-  permission: Permission
+  permission?: Permission
+  permission_code?: string
   effect: 'allow' | 'deny'
   reason: string
+  expires_at?: string | null
   created_at: string
+}
+
+/** 用户最终生效权限 */
+export interface EffectivePermission {
+  permissions?: string[]
+  codes?: string[]
+  overrides: Array<{
+    permission_code?: string
+    code?: string
+    effect: 'allow' | 'deny'
+    source?: string
+  }>
 }
 
 /** 实名认证记录 */
@@ -69,9 +95,12 @@ export interface IdentityVerification {
   user_id: number
   user?: User
   real_name: string
-  id_card_masked: string
+  id_card_no_masked?: string
+  id_card_masked?: string
   status: 'pending' | 'verified' | 'rejected'
+  reject_reason?: string
   reason?: string
+  attachments?: string[]
   submitted_at: string
   reviewed_at?: string
   reviewed_by?: number
@@ -92,4 +121,38 @@ export interface LoginResponse {
   refresh_token: string
   expires_in: number
   user: LoginUserInfo
+}
+
+/** 当前登录用户权限响应 */
+export interface MePermissionsResponse {
+  permissions?: string[]
+  codes?: string[]
+}
+
+/** 管理员创建用户请求 */
+export interface CreateAdminUserPayload {
+  email?: string
+  phone?: string
+  password: string
+  role_ids?: number[]
+  status?: UserStatus
+}
+
+/** 管理员编辑用户请求 */
+export interface UpdateAdminUserPayload {
+  email?: string
+  phone?: string
+  status?: UserStatus
+}
+
+/** 用户登录日志 */
+export interface UserLoginLog {
+  id: number
+  login_type: string
+  login_account?: string
+  ip: string
+  user_agent: string
+  status: string
+  message?: string
+  created_at: string
 }

@@ -1,7 +1,6 @@
 // 认证相关接口：登录/登出/刷新 Token/获取当前用户
 import http from './http'
-import type { LoginResponse } from '@/types/user'
-import type { User } from '@/types/user'
+import type { LoginResponse, MePermissionsResponse, User } from '@/types/user'
 
 /** 邮箱登录 */
 export function loginByEmail(params: { email: string; password: string }) {
@@ -20,7 +19,8 @@ export function refreshToken(params: { refresh_token: string }) {
 
 /** 退出登录（吊销当前 session） */
 export function logout() {
-  return http.post<unknown, null>('/auth/logout')
+  const refreshToken = localStorage.getItem('refresh_token')
+  return http.post<unknown, null>('/auth/logout', refreshToken ? { refresh_token: refreshToken } : {})
 }
 
 /** 获取当前登录用户信息 */
@@ -28,9 +28,14 @@ export function getMe() {
   return http.get<unknown, User>('/me')
 }
 
+/** 获取当前登录用户权限码 */
+export function getMePermissions() {
+  return http.get<unknown, MePermissionsResponse>('/me/permissions')
+}
+
 /** 修改密码 */
 export function changePassword(params: { old_password: string; new_password: string }) {
-  return http.post<unknown, null>('/auth/change-password', params)
+  return http.patch<unknown, null>('/me/password', params)
 }
 
 /**
@@ -51,7 +56,7 @@ export function sendVerificationCode(
  * 需要 Bearer Token + user:manage 权限，固定用于 admin_verify 场景，无需传 scene 字段
  */
 export function sendAdminVerificationCode(targetType: 'phone' | 'email') {
-  return http.post<unknown, null>(`/admin/auth/verification-codes/${targetType}`)
+  return http.post<unknown, null>(`/admin/auth/verification-codes/${targetType}`, {})
 }
 
 /** 管理员手机双重认证（需先调用 sendAdminVerificationCode('phone') 发码）*/

@@ -19,9 +19,11 @@
         :total="total"
         :page-size="pageSize"
         :current-page="page"
-        layout="total, prev, pager, next, jumper"
+        :page-sizes="[10, 20, 50, 100]"
+        layout="total, sizes, prev, pager, next, jumper"
         background
         @current-change="$emit('page-change', $event)"
+        @size-change="$emit('page-size-change', $event)"
       />
     </div>
   </div>
@@ -38,19 +40,21 @@ defineProps<{
 
 defineEmits<{
   'page-change': [page: number]
+  'page-size-change': [pageSize: number]
 }>()
 
 // 统一表头样式（深色主题）
 const headerStyle = {
-  background: 'rgba(99, 102, 241, 0.1)',
-  color: '#94A3B8',
-  fontWeight: '500',
+  background: '#1a263b',
+  color: '#8fa3bd',
+  fontWeight: '600',
   fontSize: '13px',
-  borderBottom: '1px solid rgba(99, 102, 241, 0.2)',
+  borderBottom: '1px solid rgba(148, 163, 184, 0.18)',
 }
 
 const rowStyle = {
-  background: 'transparent',
+  background: '#162033',
+  color: '#e5edf7',
 }
 </script>
 
@@ -60,12 +64,12 @@ const rowStyle = {
 }
 
 .data-table {
-  --el-table-border-color: rgba(99, 102, 241, 0.15);
-  --el-table-bg-color: rgba(255, 255, 255, 0.02);
-  --el-table-tr-bg-color: transparent;
-  --el-table-row-hover-bg-color: rgba(99, 102, 241, 0.08);
-  --el-table-text-color: #F1F5F9;
-  --el-table-header-text-color: #94A3B8;
+  --el-table-border-color: var(--mc-border-soft);
+  --el-table-bg-color: var(--mc-surface);
+  --el-table-tr-bg-color: var(--mc-surface);
+  --el-table-row-hover-bg-color: var(--mc-surface-muted);
+  --el-table-text-color: var(--mc-text);
+  --el-table-header-text-color: var(--mc-text-muted);
   border-radius: 8px;
   overflow: hidden;
 }

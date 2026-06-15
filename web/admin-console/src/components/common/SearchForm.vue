@@ -42,9 +42,9 @@ defineEmits<{
 
 <style scoped>
 .search-form-wrap {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(99, 102, 241, 0.2);
-  border-radius: 10px;
+  background: var(--mc-surface);
+  border: 1px solid var(--mc-border-soft);
+  border-radius: var(--mc-radius);
   padding: 16px 20px 4px;
   margin-bottom: 16px;
   backdrop-filter: blur(12px);
@@ -52,6 +52,6 @@ defineEmits<{
 }
 
 .search-form-wrap:hover {
-  box-shadow: 0 0 24px rgba(99, 102, 241, 0.15);
+  box-shadow: 0 12px 26px rgba(2, 6, 23, 0.18);
 }
 </style>

@@ -30,10 +30,10 @@ import { User, Medal, List, Wallet } from '@element-plus/icons-vue'
 const authStore = useAuthStore()
 
 const statCards = [
-  { label: '注册用户', icon: User, color: '#6366F1' },
-  { label: '活跃角色', icon: Medal, color: '#8B5CF6' },
-  { label: '今日订单', icon: List, color: '#06B6D4' },
-  { label: '钱包余额', icon: Wallet, color: '#10B981' },
+  { label: '注册用户', icon: User, color: '#38bdf8' },
+  { label: '活跃角色', icon: Medal, color: '#818cf8' },
+  { label: '今日订单', icon: List, color: '#22c55e' },
+  { label: '钱包余额', icon: Wallet, color: '#f59e0b' },
 ]
 </script>
 
@@ -49,12 +49,12 @@ const statCards = [
 .welcome-title {
   font-size: 22px;
   font-weight: 600;
-  color: #F1F5F9;
+  color: var(--mc-text);
   margin: 0 0 6px;
 }
 
 .welcome-sub {
-  color: #94A3B8;
+  color: var(--mc-text-muted);
   font-size: 14px;
   margin: 0;
 }
@@ -70,15 +70,14 @@ const statCards = [
   align-items: center;
   gap: 16px;
   padding: 20px 24px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(99, 102, 241, 0.2);
-  border-radius: 12px;
-  backdrop-filter: blur(12px);
+  background: var(--mc-surface);
+  border: 1px solid var(--mc-border-soft);
+  border-radius: var(--mc-radius);
   transition: box-shadow 0.2s, transform 0.2s;
 }
 
 .stat-card:hover {
-  box-shadow: 0 0 24px rgba(99, 102, 241, 0.3);
+  box-shadow: 0 16px 34px rgba(2, 6, 23, 0.24);
   transform: translateY(-2px);
 }
 
@@ -88,20 +87,20 @@ const statCards = [
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(99, 102, 241, 0.1);
+  background: var(--mc-primary-soft);
   border-radius: 10px;
 }
 
 .stat-value {
   font-size: 24px;
   font-weight: 700;
-  color: #06B6D4;
+  color: var(--mc-primary);
   line-height: 1.2;
 }
 
 .stat-label {
   font-size: 13px;
-  color: #94A3B8;
+  color: var(--mc-text-muted);
   margin-top: 2px;
 }
 </style>
