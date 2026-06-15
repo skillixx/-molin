@@ -299,5 +299,3 @@ billing 对外暴露 `NewWalletService(db)` 供 product / finance_consumer 注�
 | `server/internal/modules/{product,order,billing,finance_consumer}/CLAUDE.md` | 模块级开发规范；接口清单已同步本文档 |
 | `docs/frontend-api-reference.md` | 前端契约；C-1~C-8 落地后需同步 |
 | `.claude/agents/后端工程师乙.md` | agent 任务与红线，已按本文档刷新 |
-</content>
-</invoke>
