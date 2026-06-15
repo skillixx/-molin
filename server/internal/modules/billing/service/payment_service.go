@@ -126,6 +126,18 @@ func (s *PaymentService) HandleNotify(ctx context.Context, provider string, rawB
 	}
 	_ = s.paymentRepo.Upsert(ctx, callback)
 
+	// 4.1 金额一致性校验（B-01 安全护栏）：
+	// 回调金额必须与订单金额完全一致，否则拒绝入账，防止超额/免费充值。
+	// 不一致时：将回调记为 ignored，不调用 rechargeTx、不 MarkPaid，记 warn 后返回 nil。
+	// （按第三方协议返回成功以停止重试，但绝不入账。）
+	if !amount.Equal(order.Amount) {
+		log.Printf("[WARN] 支付回调金额不匹配，拒绝入账 order_no=%s 订单金额=%s 回调金额=%s provider=%s trade_no=%s",
+			orderNo, order.Amount.String(), amount.String(), provider, providerTradeNo)
+		// 将回调记为 ignored（仅当未 processed），不入账、不流转订单。
+		_ = s.paymentRepo.MarkIgnored(ctx, provider, providerTradeNo)
+		return nil
+	}
+
 	// 5. 幂等检查：若已处理则直接返回
 	if s.paymentRepo.IsProcessed(ctx, provider, providerTradeNo) {
 		return nil

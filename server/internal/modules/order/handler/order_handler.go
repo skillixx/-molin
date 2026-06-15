@@ -112,6 +112,8 @@ func (h *OrderHandler) Pay(w http.ResponseWriter, r *http.Request) {
 			response.Error(w, http.StatusNotFound, 40004, "订单不存在")
 		case errors.Is(err, service.ErrInsufficientBalance):
 			response.Error(w, http.StatusBadRequest, 60001, "余额不足")
+		case errors.Is(err, service.ErrOrderTypeNotPayable):
+			response.Error(w, http.StatusBadRequest, 40000, "该订单不支持钱包支付")
 		case errors.Is(err, service.ErrOrderNotPending):
 			response.Error(w, http.StatusBadRequest, 40900, "订单状态不可支付")
 		case errors.Is(err, service.ErrConcurrentUpdate):

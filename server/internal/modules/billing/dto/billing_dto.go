@@ -1,6 +1,23 @@
 package dto
 
-import "github.com/shopspring/decimal"
+import (
+	"time"
+
+	"github.com/shopspring/decimal"
+)
+
+// PaymentCallbackResp 支付回调记录响应（管理端列表）。
+// 安全红线（B-04）：禁止返回 notify_body（明文/密文均不回传），仅暴露元信息。
+type PaymentCallbackResp struct {
+	ID              uint64     `json:"id"`
+	OrderID         uint64     `json:"order_id"`
+	Provider        string     `json:"provider"`
+	ProviderTradeNo string     `json:"provider_trade_no"`
+	Status          string     `json:"status"`
+	ProcessedAt     *time.Time `json:"processed_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
 
 // WalletResp 钱包余额响应。
 type WalletResp struct {
