@@ -1078,6 +1078,54 @@ Query 参数：
 
 ---
 
+**POST** `/api/orders/{id}/pay` *(需登录，仅本人订单)*
+
+用钱包余额支付存量 `pending` 订单（O3）。
+
+请求头：`Idempotency-Key` 必填（缺失返回 `code=40000`）。
+
+请求 body：
+```json
+{ "pay_method": "wallet" }
+```
+> 目前仅支持 `wallet`，传其它值返回 `code=40000`。
+
+响应 `data`：
+```json
+{
+  "order_id": 101,
+  "status": "paid",
+  "wallet_transaction_id": 5001,
+  "asset_id": 0
+}
+```
+说明：
+- `wallet_transaction_id`：本次扣费生成的钱包流水 ID（真实返回）。
+- `asset_id`：开通由后端异步执行，支付响应阶段恒为 `0`；资产生效后请通过「我的资产」接口查询。
+- 幂等：对已 `paid` 订单重复调用返回成功（`status=paid`），不重复扣费。
+- 错误码：余额不足 `60001`；订单不存在/非本人 `404 40004`；订单状态不可支付（cancelled/failed 等）`40900`。
+
+---
+
+**POST** `/api/orders/{id}/cancel` *(需登录，仅本人订单)*
+
+取消存量 `pending` 订单（O4）。
+
+请求 body（可选）：
+```json
+{ "reason": "用户主动取消" }
+```
+
+响应 `data`：
+```json
+{ "cancelled": true }
+```
+说明：
+- 仅 `pending` 订单可取消；非 pending 返回 `40900`。
+- `reason` 落地到订单 `remark` 字段（订单无独立 cancel_reason 列）。
+
+---
+
 ### 6.2 管理端
 
 **GET** `/api/admin/orders?page=1&page_size=10` *(需 `order:list` 权限)*
