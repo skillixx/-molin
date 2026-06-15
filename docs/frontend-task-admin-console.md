@@ -1,0 +1,481 @@
+# 任务单 · 前端工程师甲（管理后台 admin-console）
+
+> **派发对象**：前端工程师甲
+> **仓库目录**：`web/admin-console/`
+> **对接范围**：后端甲全部 `/api/admin/*` 管理接口 + 管理员登录与双重认证
+> **来源规划**：`docs/frontend-dev-plan-backend-a.md`（§3）
+> **接口字段 SSOT**：`docs/frontend-api-reference.md`；与之冲突时以 `server/internal/modules/*/route.go` 现行代码为准（见下方「⚠️ 文档过期点」）
+> **状态**：可直接开工；编码前请确认本单「待确认事项」。
+
+---
+
+## 0. 开工前必读约定
+
+| 项 | 约定 |
+|---|---|
+| 分层 | 页面只调用 `src/api/*.ts`，禁止组件内直接 `import axios` |
+| 分页 | 后端甲已 **D-95 扁平化**：`data` 顶层即 `{items, page, page_size, total}`，无 `pagination`、无 `list`；`page_size` 固定 20 |
+| 错误码 | 40001→跳登录、40003→无权限提示、40031→跳 `/admin-verify`、42900→频率超限提示，统一在 `http.ts` 处理 |
+| 破坏性操作 | 删除/封禁/解封必须 `ElMessageBox.confirm` 二次确认 |
+| 文案/品牌 | 全中文；品牌「墨灵」，署名「爱斯琴网络科技有限公司」 |
+| 主题 | 深色 + 蓝紫渐变（见 `web/admin-console/CLAUDE.md` 主题规范） |
+
+### ⚠️ 文档过期点（以代码为准，请勿照抄旧文档）
+1. **审计日志权限**：`frontend-api-reference.md §3.5` 写 `role:manage`，实际 `route.go` 已是 **`audit:read`（D-83）**。菜单与守卫按 `audit:read` 判定。
+2. **实名审核格式**：`frontend-api-reference.md §5` 仍写 `{approve, reason}`，实际已是 **D-89 `{action:"approve"|"reject", reject_reason}`**。现有 `src/api/identity.ts` 的 `reviewVerification` 是旧格式，**必须改**（见 A6）。
+
+---
+
+## 1. 任务总览（阶段 A1–A6）
+
+| 阶段 | 内容 | 工期 | 现状 |
+|---|---|---|---|
+| **A1** | 基础设施与鉴权链路对齐 | 3.5d | 部分（http.ts 缺 40031/刷新） |
+| **A2** | 管理员登录 + 双重认证闭环 | 2.5d | 有骨架 |
+| **A3** | 用户管理（含 A-28/29/30） | 4.5d | 有列表骨架 |
+| **A4** | 角色/权限/用户授权 ★本单细化到签名级 | 6.5d | role.ts 仅覆盖约一半端点 |
+| **A5** | 用户分组管理（16 端点） | 5.5d | 未开始 |
+| **A6** | 实名审核 + 审计日志 | 4d | 实名列表有骨架；审核格式待改、审计页未做 |
+
+---
+
+## 2. 各阶段任务清单（A1–A3、A5–A6）
+
+### A1 基础设施与鉴权
+- [ ] `http.ts` 增加 40031 处理 → 跳 `/admin-verify`
+- [ ] `http.ts` 增加 401 静默刷新（队列重放，refresh 自身 401 不再触发刷新）
+- [ ] `types/api.ts` 统一 `PageResult<T>`（扁平），删除任何 `pagination` 嵌套假设
+- [ ] `stores/auth.ts` 落地 `currentUser` + `permissionCodes`（`GET /api/me/permissions`）+ `adminVerified`
+
+### A2 管理员登录 + 双重认证
+- [ ] 邮箱密码登录 `POST /api/auth/login/email`（复核响应 `user` 字段 D-93）
+- [ ] 双重认证四步页（发码用 **`/api/admin/auth/verification-codes/*`**，D-96）
+- [ ] 路由守卫：`adminVerified=false` 时拦截到双重认证页
+
+### A3 用户管理
+- [ ] 用户列表 `GET /api/admin/users`（`keyword` 搜索、扁平分页、受数据范围影响）
+- [ ] 用户详情 `GET /api/admin/users/{id}`
+- [ ] 封禁/解封 `PATCH /api/admin/users/{id}/status`（二次确认）
+- [ ] 创建后台用户 `POST /api/admin/users`（A-28，密码 6-72 位 D-94）
+- [ ] 编辑用户 `PATCH /api/admin/users/{id}`（A-29）
+- [ ] 登录日志 `GET /api/admin/users/{id}/login-logs`（A-30，详情页 Tab）
+
+### A5 用户分组管理（16 端点）
+- [ ] 分组 CRUD：`GET/POST/GET{id}/PUT{id}/DELETE{id} /api/admin/user-groups`
+- [ ] 成员：`GET/POST .../{id}/members`，`PATCH/DELETE .../{id}/members/{uid}`
+- [ ] 组权限：`GET/POST .../{id}/permissions`，`DELETE .../{id}/permissions/{code}`
+- [ ] 邀请码：`GET/POST .../{id}/invite-codes`，`PATCH .../{id}/invite-codes/{invite_id}/disable`
+- [ ] 用户所在分组：`GET /api/admin/users/{id}/groups`
+
+### A6 实名审核 + 审计日志
+- [ ] 待审列表 `GET /api/admin/identity-verifications`（`status` 过滤、扁平分页）
+- [ ] 审核详情 `GET /api/admin/identity-verifications/{id}`
+- [ ] **审核操作改 D-89 格式**：`PATCH .../{id}/review` body `{action:"approve"}` / `{action:"reject", reject_reason}`
+- [ ] 用户实名卡片 `GET /api/admin/users/{id}/identity`（A-31，详情页内嵌）
+- [ ] 审计日志页 `GET /api/admin/audit-logs`（`module`/`action` 过滤；菜单按 **`audit:read`** 控制可见）
+
+---
+
+## 3. ★ 阶段 A4 细化到接口签名级别（角色 / 权限 / 用户授权）
+
+> 现有 `src/api/role.ts` 仅实现 8 个函数，缺 `getRole`、`setRolePermissions`(A-06)、`getRolePermissions`(A-11)、`createPermission`、`replaceUserRoles`、`replaceUserOverrides`、`getUserEffectivePermissions`(A-12)。本节给出**完整目标签名**。
+
+### 3.1 类型定义 `src/types/iam.ts`（新建/补充）
+
+```typescript
+// 与后端 IAM DTO 对齐，字段保持 snake_case
+
+export interface Role {
+  id: number
+  code: string
+  name: string
+  description: string
+}
+
+export interface Permission {
+  id: number
+  code: string
+  name: string
+  description: string
+}
+
+// 用户已分配角色（列表项）
+export interface UserRole {
+  id: number          // user_roles 记录 ID
+  user_id: number
+  role_id: number
+  role_code: string
+  role_name: string
+  reason: string
+  created_at: string  // ISO 8601
+}
+
+// 权限覆盖（字段见 frontend-api-reference.md §3.4）
+export interface PermissionOverride {
+  id: number
+  user_id: number
+  permission_id: number
+  permission_code: string
+  effect: 'allow' | 'deny'
+  reason: string
+  expires_at: string | null
+  created_at: string
+}
+
+// A-12 最终生效权限（字段以后端甲确认为准，下方为预期结构）
+export interface EffectivePermission {
+  codes: string[]                 // 最终生效权限码集合（角色∪组，叠加 override）
+  overrides: {
+    permission_code: string
+    effect: 'allow' | 'deny'
+    source: string                // 来源说明
+  }[]
+}
+```
+
+`PageResult<T>` 复用 `src/types/api.ts`：
+```typescript
+export interface PageResult<T> {
+  items: T[]
+  page: number
+  page_size: number
+  total: number
+}
+```
+
+### 3.2 API 层 `src/api/role.ts`（目标完整签名）
+
+```typescript
+import http from './http'
+import type { Role, Permission, UserRole, PermissionOverride, EffectivePermission } from '@/types/iam'
+import type { PageResult } from '@/types/api'
+
+/* ========== 角色 CRUD ========== */
+
+/** 角色列表（keyword 模糊搜索 code/name） */
+export function listRoles(params: { keyword?: string; page?: number; page_size?: number } = {}) {
+  return http.get<unknown, PageResult<Role>>('/admin/roles', { params })
+}
+
+/** 角色详情（BUG-04 后已注册） */
+export function getRole(id: number) {
+  return http.get<unknown, Role>(`/admin/roles/${id}`)
+}
+
+/** 创建角色 */
+export function createRole(data: { code: string; name: string; description: string }) {
+  return http.post<unknown, Role>('/admin/roles', data)
+}
+
+/** 更新角色（PUT，body 含 code/name/description） */
+export function updateRole(id: number, data: { code: string; name: string; description: string }) {
+  return http.put<unknown, Role>(`/admin/roles/${id}`, data)
+}
+
+/** 删除角色 */
+export function deleteRole(id: number) {
+  return http.delete<unknown, null>(`/admin/roles/${id}`)
+}
+
+/* ========== 角色权限（A-06 / A-11） ========== */
+
+/** 查询角色当前权限码（A-11） — 返回结构待与后端甲核对，按 code 列表预期 */
+export function getRolePermissions(id: number) {
+  return http.get<unknown, { codes: string[] }>(`/admin/roles/${id}/permissions`)
+}
+
+/** 配置角色权限：全量替换（A-06，PATCH） — body 字段名待与后端甲核对 */
+export function setRolePermissions(id: number, data: { permission_codes: string[] }) {
+  return http.patch<unknown, null>(`/admin/roles/${id}/permissions`, data)
+}
+
+/* ========== 权限码 ========== */
+
+/** 权限列表（keyword 模糊搜索 code/name） */
+export function listPermissions(params: { keyword?: string; page?: number; page_size?: number } = {}) {
+  return http.get<unknown, PageResult<Permission>>('/admin/permissions', { params })
+}
+
+/** 创建权限码（A-06） */
+export function createPermission(data: { code: string; name: string; description: string }) {
+  return http.post<unknown, Permission>('/admin/permissions', data)
+}
+
+/* ========== 用户角色分配（A-06） ========== */
+
+/** 查询用户角色 */
+export function listUserRoles(userId: number, params: { page?: number; page_size?: number } = {}) {
+  return http.get<unknown, PageResult<UserRole>>(`/admin/users/${userId}/roles`, { params })
+}
+
+/** 分配单个角色给用户 */
+export function assignRole(userId: number, data: { role_id: number; reason: string }) {
+  return http.post<unknown, UserRole>(`/admin/users/${userId}/roles`, data)
+}
+
+/** 批量替换用户角色（A-06，PATCH） — body 字段名待与后端甲核对 */
+export function replaceUserRoles(userId: number, data: { role_ids: number[] }) {
+  return http.patch<unknown, null>(`/admin/users/${userId}/roles`, data)
+}
+
+/** 撤销用户单个角色 */
+export function revokeRole(userId: number, roleId: number) {
+  return http.delete<unknown, null>(`/admin/users/${userId}/roles/${roleId}`)
+}
+
+/* ========== 用户权限覆盖（A-06） ========== */
+
+/** 查询权限覆盖（支持 effect / permission_code 过滤） */
+export function listPermissionOverrides(
+  userId: number,
+  params: { effect?: 'allow' | 'deny'; permission_code?: string; page?: number; page_size?: number } = {}
+) {
+  return http.get<unknown, PageResult<PermissionOverride>>(`/admin/users/${userId}/permission-overrides`, { params })
+}
+
+/** 新增单条权限覆盖（effect 仅小写 allow/deny） */
+export function setPermissionOverride(
+  userId: number,
+  data: { permission_id: number; effect: 'allow' | 'deny'; reason: string }
+) {
+  return http.post<unknown, PermissionOverride>(`/admin/users/${userId}/permission-overrides`, data)
+}
+
+/** 批量替换权限覆盖（A-06，PATCH） — body 字段名待与后端甲核对 */
+export function replaceUserOverrides(
+  userId: number,
+  data: { overrides: { permission_id: number; effect: 'allow' | 'deny' }[] }
+) {
+  return http.patch<unknown, null>(`/admin/users/${userId}/permission-overrides`, data)
+}
+
+/** 删除单条权限覆盖 */
+export function deletePermissionOverride(userId: number, overrideId: number) {
+  return http.delete<unknown, null>(`/admin/users/${userId}/permission-overrides/${overrideId}`)
+}
+
+/* ========== 最终生效权限（A-12） ========== */
+
+/** 查询用户最终生效权限码（角色∪组∪override，含调整明细） */
+export function getUserEffectivePermissions(userId: number) {
+  return http.get<unknown, EffectivePermission>(`/admin/users/${userId}/effective-permissions`)
+}
+```
+
+### 3.3 A4 视图层任务（基于上述 API）
+
+| 视图 | 用到的 API | 关键交互 |
+|---|---|---|
+| `views/iam/RoleListView.vue` | `listRoles/getRole/createRole/updateRole/deleteRole` | 列表+搜索+CRUD 弹窗；删除二次确认 |
+| `views/iam/RolePermissionPanel.vue` | `getRolePermissions/setRolePermissions/listPermissions` | 穿梭框（el-transfer）全量替换 |
+| `views/iam/PermissionListView.vue` | `listPermissions/createPermission` | 列表+搜索+新建权限码 |
+| `views/user/UserRolesPanel.vue` | `listUserRoles/assignRole/replaceUserRoles/revokeRole` | 用户详情内嵌；批量替换用 PATCH |
+| `views/user/UserOverridesPanel.vue` | `listPermissionOverrides/setPermissionOverride/replaceUserOverrides/deletePermissionOverride` | allow/deny 标签区分 |
+| `views/user/UserEffectivePermView.vue` | `getUserEffectivePermissions` | 展示最终权限码 + override 来源明细 |
+
+### 3.4 A4 验收标准
+- [ ] 角色 CRUD 全通；删除有二次确认
+- [ ] 角色权限穿梭框保存后再次进入回显一致（全量替换语义）
+- [ ] 用户角色「批量替换」与「单个增删」均正确，分页扁平解析无误
+- [ ] 权限覆盖 allow/deny 过滤生效；新增/删除/批量替换正确
+- [ ] A-12 最终权限页能展示生效集合与 override 来源
+
+---
+
+## 4. ★ 阶段 A5 细化到接口签名级别（用户分组管理 · 16 端点）
+
+> 全部 16 个接口均需 `Bearer Token` + `group:manage` 权限 + 管理员双重认证。分页接口走扁平 `PageResult<T>`；**注意有 2 个接口返回的是非分页裸数组**（用户所在分组、组权限列表），类型不要套 `PageResult`。
+
+### 4.1 类型定义 `src/types/group.ts`（新建）
+
+```typescript
+export type GroupType = 'region' | 'org' | 'custom'
+export type GroupRole = 'admin' | 'member'
+export type InviteStatus = 'active' | 'disabled'
+
+export interface UserGroup {
+  id: number
+  code: string
+  name: string
+  type: GroupType
+  is_default: boolean
+  description: string
+  created_at: string          // ISO 8601
+}
+
+export interface GroupMember {
+  id: number                  // 成员关系记录 ID
+  user_id: number
+  group_id: number
+  group_role: GroupRole
+  created_at: string
+}
+
+// 用户所在分组（GET /users/{id}/groups 返回的裸数组项）
+export interface UserGroupRef {
+  group_id: number
+  group_role: GroupRole
+  joined_at: string
+}
+
+// 组权限（GET .../permissions 返回的裸数组项）
+export interface GroupPermission {
+  id: number
+  group_id: number
+  permission_code: string
+  created_at: string
+}
+
+export interface InviteCode {
+  id: number
+  code: string
+  group_id: number
+  default_group_role: GroupRole
+  max_uses: number            // 0 = 不限次数
+  used_count: number
+  expires_at: string | null   // null = 永不过期
+  status: InviteStatus
+  created_by: number
+  created_at: string
+}
+```
+
+### 4.2 API 层 `src/api/group.ts`（完整 16 个签名）
+
+```typescript
+import http from './http'
+import type {
+  UserGroup, GroupMember, UserGroupRef, GroupPermission, InviteCode,
+  GroupType, GroupRole, InviteStatus,
+} from '@/types/group'
+import type { PageResult } from '@/types/api'
+
+/* ===== 5.1.1 分组 CRUD ===== */
+
+/** ① 分组列表（type 过滤 / keyword 搜索 code,name） */
+export function listGroups(
+  params: { type?: GroupType; keyword?: string; page?: number; page_size?: number } = {}
+) {
+  return http.get<unknown, PageResult<UserGroup>>('/admin/user-groups', { params })
+}
+
+/** ② 创建分组（code/name 必填；type 默认 custom） */
+export function createGroup(data: {
+  code: string; name: string; type?: GroupType; is_default?: boolean; description?: string
+}) {
+  return http.post<unknown, UserGroup>('/admin/user-groups', data)
+}
+
+/** ③ 分组详情 */
+export function getGroup(id: number) {
+  return http.get<unknown, UserGroup>(`/admin/user-groups/${id}`)
+}
+
+/** ④ 更新分组（code 不可改；PUT 全量） */
+export function updateGroup(id: number, data: {
+  name: string; type: GroupType; is_default: boolean; description: string
+}) {
+  return http.put<unknown, null>(`/admin/user-groups/${id}`, data)
+}
+
+/** ⑤ 删除分组（有成员→40901；有有效邀请码→40902，需先处理） */
+export function deleteGroup(id: number) {
+  return http.delete<unknown, null>(`/admin/user-groups/${id}`)
+}
+
+/* ===== 5.1.2 成员管理 ===== */
+
+/** ⑥ 成员列表（group_role 过滤） */
+export function listMembers(
+  id: number,
+  params: { group_role?: GroupRole; page?: number; page_size?: number } = {}
+) {
+  return http.get<unknown, PageResult<GroupMember>>(`/admin/user-groups/${id}/members`, { params })
+}
+
+/** ⑦ 添加成员（user_id 必填；已存在→40900） */
+export function addMember(id: number, data: { user_id: number; group_role?: GroupRole }) {
+  return http.post<unknown, null>(`/admin/user-groups/${id}/members`, data)
+}
+
+/** ⑧ 修改成员组内角色（不在组中→40400） */
+export function updateMemberRole(id: number, uid: number, data: { group_role: GroupRole }) {
+  return http.patch<unknown, null>(`/admin/user-groups/${id}/members/${uid}`, data)
+}
+
+/** ⑨ 移除成员 */
+export function removeMember(id: number, uid: number) {
+  return http.delete<unknown, null>(`/admin/user-groups/${id}/members/${uid}`)
+}
+
+/* ===== 5.1.3 用户所在分组（裸数组，非分页） ===== */
+
+/** ⑩ 查询某用户所属全部分组 */
+export function getUserGroups(userId: number) {
+  return http.get<unknown, UserGroupRef[]>(`/admin/users/${userId}/groups`)
+}
+
+/* ===== 5.1.4 组权限（裸数组，非分页） ===== */
+
+/** ⑪ 分组权限列表 */
+export function listGroupPermissions(id: number) {
+  return http.get<unknown, GroupPermission[]>(`/admin/user-groups/${id}/permissions`)
+}
+
+/** ⑫ 给分组添加权限码（permission_code 必填；重复→40900） */
+export function addGroupPermission(id: number, data: { permission_code: string }) {
+  return http.post<unknown, null>(`/admin/user-groups/${id}/permissions`, data)
+}
+
+/** ⑬ 移除分组权限码（code 拼在路径，如 app:use:cloud-disk） */
+export function removeGroupPermission(id: number, code: string) {
+  return http.delete<unknown, null>(`/admin/user-groups/${id}/permissions/${encodeURIComponent(code)}`)
+}
+
+/* ===== 5.1.5 邀请码 ===== */
+
+/** ⑭ 邀请码列表（status 过滤） */
+export function listInviteCodes(
+  id: number,
+  params: { status?: InviteStatus; page?: number; page_size?: number } = {}
+) {
+  return http.get<unknown, PageResult<InviteCode>>(`/admin/user-groups/${id}/invite-codes`, { params })
+}
+
+/** ⑮ 创建邀请码（code 留空后端自动生成 8 位；max_uses=0 不限；expires_at=null 永久） */
+export function createInviteCode(id: number, data: {
+  code?: string; default_group_role?: GroupRole; max_uses?: number; expires_at?: string | null
+}) {
+  return http.post<unknown, InviteCode>(`/admin/user-groups/${id}/invite-codes`, data)
+}
+
+/** ⑯ 禁用邀请码（禁用后 status=disabled，不可再用于注册） */
+export function disableInviteCode(id: number, inviteId: number) {
+  return http.patch<unknown, null>(`/admin/user-groups/${id}/invite-codes/${inviteId}/disable`)
+}
+```
+
+### 4.3 A5 视图层任务
+
+| 视图 | 用到的 API | 关键交互 |
+|---|---|---|
+| `views/iam/GroupListView.vue` | `listGroups/createGroup/getGroup/updateGroup/deleteGroup` | 列表+type 过滤+搜索+CRUD；删除前提示「需先移除成员/禁用邀请码」（40901/40902） |
+| `views/iam/GroupMembersPanel.vue` | `listMembers/addMember/updateMemberRole/removeMember` | 成员表+角色下拉；添加成员校验 user_id |
+| `views/iam/GroupPermissionsPanel.vue` | `listGroupPermissions/addGroupPermission/removeGroupPermission` | 裸数组渲染（无分页器）；权限码 tag 增删 |
+| `views/iam/GroupInviteCodesPanel.vue` | `listInviteCodes/createInviteCode/disableInviteCode` | 列表+status 过滤；生成弹窗（次数/有效期/默认角色）；禁用二次确认 |
+| `views/user/UserGroupsPanel.vue` | `getUserGroups` | 用户详情内嵌，裸数组展示用户所属分组 |
+
+### 4.4 A5 验收标准
+- [ ] 分组 CRUD 全通；删除受阻（有成员/有效邀请码）时按 40901/40902 给出明确提示，而非笼统报错
+- [ ] 成员增删改、角色过滤、扁平分页正确
+- [ ] 组权限与「用户所在分组」两个**裸数组接口**不套 `PageResult`，页面不渲染分页器
+- [ ] 邀请码生成（含留空自动生成、不限次数、永久）与禁用流程正确，禁用后 status 回显 disabled
+- [ ] 删除权限码时路径对 `code` 做 `encodeURIComponent`（权限码含 `:`）
+
+---
+
+## 5. 待确认事项（编码前与后端甲/产品经理对齐）
+- [ ] A-06 三个 PATCH 批量接口（`roles/{id}/permissions`、`users/{id}/roles`、`users/{id}/permission-overrides`）的**请求体字段名**（`permission_codes` / `role_ids` / `overrides`？参考文档未列）
+- [ ] A-11 `GET roles/{id}/permissions` 与 A-12 `effective-permissions` 的**响应结构**
+- [ ] 前端甲是否需要接入 `PATCH /api/me/*`（管理员自助改资料），还是只做管理态
+- [ ] A5（分组 16 端点，约 5.5 人日）是否本期纳入

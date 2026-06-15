@@ -1,6 +1,6 @@
 # 前端接口参考文档
 
-> **版本**：Week 1 + Week 2 已验收（2026-06-06）；2026-06-10 补丁更新（发码拦截 + 管理员双重认证强制）；2026-06-11 接口变更同步（用户列表 keyword、角色/权限模糊搜索、实名审核 status 过滤、权限覆盖过滤参数及 snake_case 字段、实名审核详情新增 user_id/submitted_at/reviewed_at、POST 实名认证响应新增 data.id）；2026-06-12 更新（认证/角色权限/用户分组/实名认证）：分页响应字段 `list` → `items`（仅认证/角色权限/实名认证相关章节）；发送验证码接口拆分为 `/api/auth/verification-codes/email` 和 `/api/auth/verification-codes/phone` 两个独立接口，`email`/`phone`/`scene` 均为必填；手机号登录改为密码登录（`{phone, password}`）；实名认证提交响应字段修正为 `{id, status}`（`verification_id` 为设计文档冗余字段，已于 2026-06-12 从 `full-api-design.md` 中移除，不再视为缺口）；新增角色详情接口 `GET /api/admin/roles/{id}`；新增审计日志接口 `GET /api/admin/audit-logs`；新增"用户分组管理"章节（16 个接口）；2026-06-13 更新：手机号登录改为验证码登录（`{phone, code}`，PR#20）；退出登录后当前 Access Token 立即吊销，401/40001（PR#22）；`/api/auth/login/phone`、`/api/auth/login/email` 对未注册账号统一返回 404/40404（PR#25）
+> **版本**：Week 1 + Week 2 已验收（2026-06-06）；2026-06-10 补丁更新（发码拦截 + 管理员双重认证强制）；2026-06-11 接口变更同步（用户列表 keyword、角色/权限模糊搜索、实名审核 status 过滤、权限覆盖过滤参数及 snake_case 字段、实名审核详情新增 user_id/submitted_at/reviewed_at、POST 实名认证响应新增 data.id）；2026-06-12 更新（认证/角色权限/用户分组/实名认证）：分页响应字段 `list` → `items`（仅认证/角色权限/实名认证相关章节）；发送验证码接口拆分为 `/api/auth/verification-codes/email` 和 `/api/auth/verification-codes/phone` 两个独立接口，`email`/`phone`/`scene` 均为必填；手机号登录改为密码登录（`{phone, password}`）；实名认证提交响应字段修正为 `{id, status}`（`verification_id` 为设计文档冗余字段，已于 2026-06-12 从 `full-api-design.md` 中移除，不再视为缺口）；新增角色详情接口 `GET /api/admin/roles/{id}`；新增审计日志接口 `GET /api/admin/audit-logs`；新增"用户分组管理"章节（16 个接口）；2026-06-13 更新：手机号登录改为验证码登录（`{phone, code}`，PR#20）；退出登录后当前 Access Token 立即吊销，401/40001（PR#22）；`/api/auth/login/phone`、`/api/auth/login/email` 对未注册账号统一返回 404/40404（PR#25）；**2026-06-15 更新（Round 7 审计 D-93/D-94/D-95/D-96 全部闭环）**：登录/注册/刷新令牌响应新增 `user` 对象（D-93，PR#91）；密码长度约束统一为 6-72 位（D-94，PR#95）；auth/iam/identity 模块 11 个分页接口响应结构改为扁平（去掉嵌套 `pagination` 对象，D-95，PR#97）；`bind_phone`/`bind_email`/`admin_verify` 三个 scene 迁移到专属认证态发码接口，不再接受公开端点的请求（D-96，PR#93）
 > **测试服务器**：`http://8.130.9.163:8080`
 > **鉴权方式**：所有需要登录的接口在 Header 中携带 `Authorization: Bearer <access_token>`
 
@@ -51,19 +51,17 @@
 
 请求：`?page=1&page_size=10`
 
-响应 `data` 结构：
+响应 `data` 结构（auth/iam/identity 模块，D-95 后扁平化）：
 ```json
 {
   "items": [...],
-  "pagination": {
-    "page": 1,
-    "page_size": 10,
-    "total": 100
-  }
+  "page": 1,
+  "page_size": 10,
+  "total": 100
 }
 ```
 
-> 说明：分页响应字段已统一为 `items`（原 `list` 已废弃）。本文档中"认证 / 角色权限 / 用户分组 / 实名认证"相关章节均已按此更新；第六/七/八章（商品/订单/钱包，后端乙模块）暂未同步，仍沿用 `list`，将在对应模块文档更新时一并修正。
+> **注意**：auth/iam/identity 模块（第一至五章）的分页响应已统一为扁平结构（D-95，2026-06-15），`page`/`page_size`/`total` 直接位于 `data` 顶层，不再嵌套在 `pagination` 子对象内。`list` 字段已全面改为 `items`。第六/七/八章（商品/订单/钱包，后端乙模块）暂未同步扁平化，待乙完成 D-95 姊妹修复后一并更新。
 
 ---
 
@@ -95,16 +93,19 @@
 
 > `email`（或 `phone`）和 `scene` 均为必填字段，缺失时返回 HTTP 400 / code=40000："email 和 scene 为必填字段"（手机接口对应为 "phone 和 scene 为必填字段"）。
 
-`scene` 可选值及前置校验规则：
+`scene` 可选值及前置校验规则（公开端点仅接受以下 3 个 scene）：
 
 | scene | 说明 | 前置校验 |
 |---|---|---|
 | `register` | 注册验证码 | 账号已注册 → 返回 409/40900，拒绝发码 |
 | `login` | 登录验证码 | 账号未注册 → 返回 404/40404，提示先注册 |
 | `reset_password` | 重置密码 | 无前置校验 |
-| `bind_phone` | 换绑手机号 | 无前置校验 |
-| `bind_email` | 换绑邮箱 | 无前置校验 |
-| `admin_verify` | 管理员双重认证 | 需要 Bearer Token + user:manage 权限 |
+
+> ⚠️ **D-96（2026-06-15）**：`bind_phone` / `bind_email` / `admin_verify` 三个 scene 已从公开端点移除，调用此端点传入这三个 scene 会返回 `400 40000`。请改用以下专属认证态接口：
+>
+> - 换绑手机号发码：`POST /api/me/verification-codes/phone`（需登录，§1.8.1）
+> - 换绑邮箱发码：`POST /api/me/verification-codes/email`（需登录，§1.8.1）
+> - 管理员双重认证发码：`POST /api/admin/auth/verification-codes/{phone,email}`（需 user:manage 权限，§1.9）
 
 响应：`data: null`（成功即可）；测试环境响应体包含明文 `code` 字段
 
@@ -127,14 +128,25 @@
 }
 ```
 
-响应（HTTP 201）：
+密码 `password` 长度须为 **6-72 位**（D-94）；低于 6 位返回 `400 40000`，超过 72 位同返回 `400 40000`。
+
+响应（HTTP 201，D-93）：
 ```json
 {
   "access_token": "eyJhbGci...",
   "refresh_token": "eyJhbGci...",
-  "expires_in": 7200
+  "expires_in": 7200,
+  "user": {
+    "id": 1,
+    "email": "us***@example.com",
+    "phone": "138****5678",
+    "real_name_status": "unverified",
+    "status": "active"
+  }
 }
 ```
+
+> `user` 字段（D-93）：登录成功后前端可直接读取用户基本信息，无需再单独调用 `GET /api/me`。`email`/`phone` 为脱敏值。
 
 ---
 
@@ -180,7 +192,7 @@
 - 手机号未注册 → `404 40404`「手机号未注册，请先注册」
 - 账号已被禁用 → `403 40003`
 
-响应（两者一致）：同注册，返回 `access_token` / `refresh_token` / `expires_in`
+响应（两者一致，D-93）：与注册响应结构相同，返回 `access_token` / `refresh_token` / `expires_in` / `user`
 
 ---
 
@@ -194,7 +206,7 @@
 }
 ```
 
-响应：同登录，返回新的 token 对
+响应（D-93）：与登录响应结构相同，返回新的 token 对及 `user` 对象
 
 ---
 
@@ -228,6 +240,8 @@
 ```
 
 `target_type`：`phone` 或 `email`
+
+`new_password` 长度须为 **6-72 位**（D-94）；低于 6 位或超过 72 位均返回 `400 40000`。
 
 ---
 
@@ -264,6 +278,8 @@
 { "old_password": "OldPass!", "new_password": "NewPass!" }
 ```
 
+`new_password` 长度须为 **6-72 位**（D-94）；低于 6 位或超过 72 位均返回 `400 40000`。
+
 **PATCH** `/api/me/username` *(需登录)*
 ```json
 { "username": "新用户名" }
@@ -274,12 +290,40 @@
 { "phone": "13912345678", "code": "123456" }
 ```
 
+> 调用前须先通过 `POST /api/me/verification-codes/phone` 向新手机号发送验证码（§1.8.1）。
+
 **PATCH** `/api/me/email` *(需登录)*
 ```json
 { "email": "new@example.com", "code": "123456" }
 ```
 
+> 调用前须先通过 `POST /api/me/verification-codes/email` 向新邮箱发送验证码（§1.8.1）。
+
 响应：`data: null`
+
+---
+
+### 1.8.1 换绑发码（D-96，需登录）
+
+> ⚠️ **D-96（2026-06-15）新增**：换绑手机号/邮箱的验证码不再走公开发码端点，必须使用以下认证态接口（需携带有效 Bearer Token）。
+
+**POST** `/api/me/verification-codes/phone` — 向新手机号发送换绑验证码
+
+```json
+{ "phone": "13912345678" }
+```
+
+**POST** `/api/me/verification-codes/email` — 向新邮箱发送换绑验证码
+
+```json
+{ "email": "new@example.com" }
+```
+
+响应：`data: null`；测试环境响应体包含明文 `code` 字段。
+
+错误：
+- `phone`/`email` 缺失 → `400 40000`
+- 未登录 → `401 40001`
 
 ---
 
@@ -339,14 +383,24 @@
 > 未完成时返回 403/40031"请先完成管理员双重认证（手机+邮箱）"。
 > 认证有效期由服务端 `ADMIN_VERIFY_EXPIRE_HOURS` 配置（默认 24 小时），超时需重新认证。
 
-**流程：**
+**流程（D-96 后，2026-06-15 更新）：**
 ```
-1. 发手机验证码：POST /api/auth/verification-codes/phone  scene=admin_verify
+1. 发手机验证码：POST /api/admin/auth/verification-codes/phone
 2. 完成手机认证：POST /api/admin/auth/verify-phone  {"code": "..."}
-3. 发邮箱验证码：POST /api/auth/verification-codes/email  scene=admin_verify
+3. 发邮箱验证码：POST /api/admin/auth/verification-codes/email
 4. 完成邮箱认证：POST /api/admin/auth/verify-email  {"code": "..."}
 5. 此后可调用管理端接口
 ```
+
+> ⚠️ **D-96（2026-06-15）**：admin_verify 发码已从公开端点（`/api/auth/verification-codes/*`）迁移到以下专属管理员认证端点，旧调用方式不再有效。
+
+**POST** `/api/admin/auth/verification-codes/phone` *(需登录 + user:manage 权限)* — 向当前管理员绑定的手机号发送验证码
+
+响应：`data: null`；测试环境包含明文 `code`。
+
+**POST** `/api/admin/auth/verification-codes/email` *(需登录 + user:manage 权限)* — 向当前管理员绑定的邮箱发送验证码
+
+响应：`data: null`；测试环境包含明文 `code`。
 
 **POST** `/api/admin/auth/verify-phone` *(需登录 + user:manage 权限)*
 ```json
@@ -389,7 +443,9 @@ Query 参数：
       "created_at": "2026-01-01T00:00:00Z"
     }
   ],
-  "pagination": { "page": 1, "page_size": 20, "total": 100 }
+  "page": 1,
+  "page_size": 20,
+  "total": 100
 }
 ```
 
@@ -541,7 +597,9 @@ Query 参数：
       "created_at": "2026-06-12T10:00:00Z"
     }
   ],
-  "pagination": { "page": 1, "page_size": 20, "total": 1 }
+  "page": 1,
+  "page_size": 20,
+  "total": 1
 }
 ```
 
@@ -608,7 +666,9 @@ Query 参数：
       "created_at": "2026-06-01T00:00:00Z"
     }
   ],
-  "pagination": { "page": 1, "page_size": 20, "total": 1 }
+  "page": 1,
+  "page_size": 20,
+  "total": 1
 }
 ```
 
@@ -675,7 +735,9 @@ Query 参数：
       "created_at": "2026-06-01T00:00:00Z"
     }
   ],
-  "pagination": { "page": 1, "page_size": 20, "total": 1 }
+  "page": 1,
+  "page_size": 20,
+  "total": 1
 }
 ```
 
@@ -780,7 +842,9 @@ Query 参数：
       "created_at": "2026-06-01T00:00:00Z"
     }
   ],
-  "pagination": { "page": 1, "page_size": 20, "total": 1 }
+  "page": 1,
+  "page_size": 20,
+  "total": 1
 }
 ```
 
