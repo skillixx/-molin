@@ -6,12 +6,19 @@ import (
 
 	"molin/server/internal/middleware"
 	"molin/server/internal/modules/billing/dto"
+	"molin/server/internal/modules/billing/model"
 	"molin/server/internal/modules/billing/repository"
 	"molin/server/internal/modules/billing/service"
 	"molin/server/pkg/idgen"
 	"molin/server/pkg/pagination"
 	"molin/server/pkg/response"
 )
+
+// PagedResp 统一分页响应结构（D-95：扁平，匿名嵌入 pagination.Result 使 page/page_size/total 与 items 同级）。
+type PagedResp struct {
+	Items             interface{} `json:"items"`
+	pagination.Result             // 匿名嵌入 → page/page_size/total 与 items 同级
+}
 
 // BillingHandler 钱包和充值接口处理器（用户端）。
 type BillingHandler struct {
@@ -63,9 +70,13 @@ func (h *BillingHandler) GetTransactions(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"list": records,
-		"pagination": pagination.Result{
+	// 空列表返回 [] 而非 null
+	if records == nil {
+		records = []model.WalletTransaction{}
+	}
+	response.JSON(w, http.StatusOK, PagedResp{
+		Items: records,
+		Result: pagination.Result{
 			Page:     pg.Page,
 			PageSize: pg.PageSize,
 			Total:    total,
