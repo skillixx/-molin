@@ -1193,7 +1193,9 @@ Body 参数：
 | quantity | integer | 是 | 数量 |
 | remark | string | 否 | 备注 |
 
-返回 data：order_id、order_no、status、asset_id。
+返回 data：order_id、order_no、status、amount、idempotent。
+
+> BUG-A 修复：购买在同一事务内完成扣费与置 paid，`status` 直接返回 `"paid"`（不再经历 `pending` 中间态）。`idempotent: true` 表示同 Idempotency-Key 重复请求，返回原订单，不重复扣费。
 
 ### 4.5 我的商品
 
@@ -1259,11 +1261,13 @@ Body 参数：
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
-| items | array | 是 | 角色访问规则 |
+| items | array | 是 | 角色访问规则（覆盖写入，`[]` 表示清空所有规则） |
 
 items 字段：role_id、can_view、can_buy、can_use。
 
-返回 data：`updated`。
+> D-011：请求体必须包含 `items` 字段，缺失时返回 `400 40000`（不会静默删除已有规则）。传 `"items": []` 为合法操作，表示清空该商品的所有角色访问规则。
+
+返回 data：`{"message": "访问权限配置成功"}`。
 
 ### 4.11 商品价格
 

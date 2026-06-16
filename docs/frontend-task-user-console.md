@@ -14,7 +14,7 @@
 | 项 | 约定 |
 |---|---|
 | 分层 | 页面只调用 `src/api/*.ts`，禁止组件内直接 `import axios` |
-| 分页 | 后端甲已 **D-95 扁平化**：`{items, page, page_size, total}`，无 `pagination`/`list`。⚠️ 但商品/订单/钱包（后端乙）仍是**嵌套**，跨对接乙模块时勿用同一假设 |
+| 分页 | 全模块已 **D-95 扁平化**：`{items, page, page_size, total}`，无 `pagination`/`list`。后端甲（auth/iam）与后端乙（product/order/billing）均已统一，`PageResult<T>` 可复用 |
 | 错误码 | 40001→跳登录、40404→引导注册、42900→频率超限、70001→引导实名，统一在 `http.ts` 处理 |
 | 安全红线 | 身份证号前端不缓存、不打印日志（CLAUDE.md 安全约定） |
 | 文案/品牌 | 全中文；品牌「墨灵」，署名「爱斯琴网络科技有限公司」 |
@@ -41,7 +41,7 @@
 
 ### B1 基础设施
 - [ ] `http.ts` 401 静默刷新（队列重放；refresh 自身 401 不再触发刷新）
-- [ ] `types/api.ts` 统一 `PageResult<T>`（扁平）；标注甲扁平/乙嵌套差异
+- [ ] `types/api.ts` 统一 `PageResult<T>`（扁平）；甲/乙均可复用同一类型
 - [ ] `stores/auth.ts`：登录态、`currentUser`（`GET /api/me`，含 `real_name_status`）
 
 ### B2 注册 / 登录 / 找回密码
@@ -325,3 +325,228 @@ register / loginByEmail / loginByPhone 成功 →
 - [ ] `GET /api/me/permissions` 响应结构（`{codes:[]}` 或数组）
 - [ ] 找回密码（B2）是否复用注册发码倒计时组件
 - [ ] 用户端是否需要展示「我所在的分组」（当前后端该接口归 group:manage 管理态，用户端暂无对应只读接口）
+
+---
+
+## 6. 后端乙对接任务（商品/购买/订单/钱包）
+
+> **接口字段 SSOT**：`docs/frontend-api-reference.md` 第五～八章（商品/订单/钱包/支付模块）
+> **对接版本**：main `4779eb2`（2026-06-16，88/88 回归通过）
+
+### ⚠️ 对接注意事项（与旧文档/旧习惯不同）
+
+| 编号 | 接口 | 变更内容 | PR |
+|---|---|---|---|
+| BUG-A | `POST /api/products/{id}/purchase` | 响应 `status` 直接为 `paid`（无 pending 中间态）；响应新增 `idempotent` 字段 | #136 |
+| D-008 | `GET /api/wallet` | 响应字段 `id` → **`wallet_id`** | #135 |
+
+---
+
+### 6.1 任务总览（C1–C5）
+
+| 阶段 | 内容 | 接口编号 |
+|---|---|---|
+| **C1** | 商品市场列表 + 详情 + 套餐 | P1 / P2 / P3 |
+| **C2** | 购买商品（钱包扣费，含幂等） | P4 |
+| **C3** | 我的订单（列表 + 详情 + 取消） | O1 / O2 / O4 |
+| **C4** | 钱包（余额 + 流水 + 充值） | B1 / B2 / B3 |
+| **C5** | 我的消费记录 | F2 |
+
+---
+
+### 6.2 类型定义 `src/types/product.ts`（新建）
+
+```typescript
+export interface Product {
+  id: number
+  product_type: string
+  product_code: string
+  name: string
+  description: string | null
+  status: string
+}
+
+export interface ProductPlan {
+  id: number
+  plan_code: string
+  name: string
+  billing_type: 'one_time' | 'monthly' | 'yearly' | 'usage'
+  duration_days: number | null
+  user_price: string        // 当前用户实际价格（角色价/会员价/默认价优先级）
+  currency: string
+}
+
+export interface PurchaseResult {
+  order_id: number
+  order_no: string
+  status: 'paid'            // BUG-A：直接 paid，不会出现 pending
+  amount: string
+  idempotent: boolean       // true 表示幂等命中，未重复扣费
+}
+```
+
+### 6.3 类型定义 `src/types/order.ts`（新建）
+
+```typescript
+export type OrderStatus = 'pending' | 'paid' | 'cancelled' | 'failed'
+export type OrderType = 'purchase' | 'recharge'
+
+export interface Order {
+  id: number
+  order_no: string
+  order_type: OrderType
+  product_id: number | null
+  product_plan_id: number | null
+  status: OrderStatus
+  amount: string
+  currency: string
+  paid_at: string | null
+  created_at: string
+}
+```
+
+### 6.4 类型定义 `src/types/wallet.ts`（新建）
+
+```typescript
+export interface Wallet {
+  wallet_id: number         // D-008：字段名为 wallet_id（非 id）
+  user_id: number
+  balance_amount: string
+  frozen_amount: string
+  currency: string
+}
+
+export type TxType = 'recharge' | 'consume' | 'refund' | 'freeze' | 'unfreeze'
+export type TxDirection = 'in' | 'out'
+
+export interface WalletTransaction {
+  id: number
+  type: TxType
+  direction: TxDirection
+  amount: string
+  balance_after: string
+  remark: string
+  created_at: string
+}
+```
+
+---
+
+### 6.5 API 层签名
+
+**`src/api/product.ts`（新建）**
+
+```typescript
+import http from './http'
+import type { Product, ProductPlan, PurchaseResult } from '@/types/product'
+import type { PageResult } from '@/types/api'
+
+export function listProducts(params: {
+  product_type?: string; keyword?: string; page?: number; page_size?: number
+} = {}) {
+  return http.get<unknown, PageResult<Product>>('/products', { params })
+}
+
+export function getProduct(id: number) {
+  return http.get<unknown, { product: Product; plans: ProductPlan[] }>(`/products/${id}`)
+}
+
+export function getProductPlans(id: number) {
+  return http.get<unknown, { plans: ProductPlan[] }>(`/products/${id}/plans`)
+}
+
+/**
+ * 购买商品（钱包扣费）
+ * - Idempotency-Key 必须由前端生成（如 UUID）并传入
+ * - 响应 status 直接为 'paid'（BUG-A，无中间态）
+ * - idempotent=true 表示幂等命中，不重复扣费
+ */
+export function purchaseProduct(
+  id: number,
+  body: { plan_id: number; quantity: number; remark?: string },
+  idempotencyKey: string
+) {
+  return http.post<unknown, PurchaseResult>(`/products/${id}/purchase`, body, {
+    headers: { 'Idempotency-Key': idempotencyKey },
+  })
+}
+```
+
+**`src/api/order.ts`（新建）**
+
+```typescript
+import http from './http'
+import type { Order } from '@/types/order'
+import type { PageResult } from '@/types/api'
+
+export function listMyOrders(params: {
+  status?: string; order_type?: string
+  created_from?: string; created_to?: string
+  page?: number; page_size?: number
+} = {}) {
+  return http.get<unknown, PageResult<Order>>('/orders', { params })
+}
+
+export function getOrder(id: number) {
+  return http.get<unknown, Order>(`/orders/${id}`)
+}
+
+export function cancelOrder(id: number, reason?: string) {
+  return http.post<unknown, { cancelled: boolean }>(`/orders/${id}/cancel`, { reason })
+}
+```
+
+**`src/api/wallet.ts`（新建）**
+
+```typescript
+import http from './http'
+import type { Wallet, WalletTransaction } from '@/types/wallet'
+import type { PageResult } from '@/types/api'
+
+/** 注意：响应字段为 wallet_id（不是 id），D-008 */
+export function getMyWallet() {
+  return http.get<unknown, Wallet>('/wallet')
+}
+
+export function listMyTransactions(params: {
+  type?: string; direction?: string
+  created_from?: string; created_to?: string
+  page?: number; page_size?: number
+} = {}) {
+  return http.get<unknown, PageResult<WalletTransaction>>('/wallet/transactions', { params })
+}
+
+export function createRechargeOrder(body: {
+  amount: string; payment_method: 'wechat' | 'alipay'; return_url?: string
+}) {
+  return http.post<unknown, {
+    order_id: number; order_no: string; amount: string; status: 'pending'; pay_url: string
+  }>('/recharge/orders', body)
+}
+```
+
+---
+
+### 6.6 视图层任务
+
+| 视图 | 用到的 API | 关键交互 |
+|---|---|---|
+| `views/market/ProductListView.vue` | `listProducts` | 扁平分页；按 product_type/keyword 过滤 |
+| `views/market/ProductDetailView.vue` | `getProduct / getProductPlans` | 展示套餐+用户实际价格 |
+| `views/market/PurchaseDialog.vue` | `purchaseProduct` | Idempotency-Key 前端生成；70001→引导实名；60001→引导充值；`idempotent=true` 提示"已购买" |
+| `views/order/OrderListView.vue` | `listMyOrders` | status/order_type/时间过滤；扁平分页 |
+| `views/order/OrderDetailView.vue` | `getOrder / cancelOrder` | 仅 pending 订单显示取消按钮；二次确认 |
+| `views/wallet/WalletView.vue` | `getMyWallet` | 展示 `wallet_id` / `balance_amount` / `frozen_amount` |
+| `views/wallet/TransactionListView.vue` | `listMyTransactions` | type/direction/时间过滤；扁平分页 |
+| `views/wallet/RechargeView.vue` | `createRechargeOrder` | 选 wechat/alipay；金额用字符串（避免浮点精度）；返回 HTTP 201 |
+
+---
+
+### 6.7 C 阶段验收标准
+- [ ] 商品列表按角色 can_view 过滤，非 active 商品不展示
+- [ ] 购买成功后 `status` 直接为 `paid`，`idempotent=true` 有"已购买"提示，不重复扣费
+- [ ] 余额不足（60001）跳充值引导；未实名（70001）跳实名引导
+- [ ] 订单列表 status/order_type/时间区间过滤生效；扁平分页正确
+- [ ] 钱包余额取 `wallet_id` 字段（**不是 `id`**）；`balance_amount` 精确显示
+- [ ] 充值订单返回 HTTP 201（非 200）；`pay_url` 展示二维码或跳转
+- [ ] 消费记录扁平分页正确展示

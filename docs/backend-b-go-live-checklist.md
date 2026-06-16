@@ -15,6 +15,14 @@
 | F4 钱包健壮性 + B-03 幂等 txid（migration 000025） | ✅ #125 |
 | F3 订单列表过滤补全 | ✅ #126 |
 | 两轮 QA 回归（B-01~B-06 + F5 + F3 + F4 + B-03） | ✅ 全闭环 |
+| BUG-A 购买事务完整性（创建+扣费+MarkPaid 同事务，status 直接返回 paid） | ✅ #136 |
+| BUG-B 商品/套餐不存在返回 404/40400（原返回 200 或 500） | ✅ #136 |
+| BUG-C 重复 product_code/plan_code 返回 400 友好提示（屏蔽 MySQL 1062 原文） | ✅ #136 |
+| BUG-D 多套餐价格覆盖写入改为单事务原子操作 | ✅ #136 |
+| D-008 钱包响应字段 `id` → `wallet_id` | ✅ #135 |
+| D-009 价格接口 body 结构对齐：`{"items":[{"product_plan_id":...,...}]}` | ✅ #135 |
+| D-011 ReplaceAccess nil 保护：缺失 `items` 键返回 400（防静默删除） | ✅ #137 |
+| 全量回归（test_bug_abcd + week2_product_billing + test_pr128_filters，88/88 PASS） | ✅ 2026-06-16 |
 
 ## 2. 上线前必办（运维 / 配置，**未完成 ⬜**）
 

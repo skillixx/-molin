@@ -478,4 +478,192 @@ export function disableInviteCode(id: number, inviteId: number) {
 - [ ] A-06 三个 PATCH 批量接口（`roles/{id}/permissions`、`users/{id}/roles`、`users/{id}/permission-overrides`）的**请求体字段名**（`permission_codes` / `role_ids` / `overrides`？参考文档未列）
 - [ ] A-11 `GET roles/{id}/permissions` 与 A-12 `effective-permissions` 的**响应结构**
 - [ ] 前端甲是否需要接入 `PATCH /api/me/*`（管理员自助改资料），还是只做管理态
+
+---
+
+## 6. 后端乙对接任务（商品/订单/钱包管理后台）
+
+> **接口字段 SSOT**：`docs/frontend-api-reference.md` 第五～八章
+> **对接版本**：main `4779eb2`（2026-06-16，88/88 回归通过）
+> **权限要求**：需 `product:view` / `product:create` / `product:edit` / `order:list` / `wallet:view` / `wallet:manage`
+
+### ⚠️ 对接注意事项（与旧文档/旧习惯不同）
+
+| 编号 | 接口 | 变更内容 | PR |
+|---|---|---|---|
+| D-009 | `PATCH /api/admin/products/{id}/prices` | body 结构变更：**移除顶层 `plan_id`**，改为每个 item 内含 `product_plan_id`；支持单次请求配置多套餐 | #135 |
+| D-011 | `PATCH /api/admin/products/{id}/access` | `items` 为必填键，缺失返回 400（旧键名 `accesses` 无效）；`"items": []` 合法（清空所有规则） | #137 |
+| BUG-B | `GET/PATCH /api/admin/products/{id}` 等 | 商品/套餐不存在时返回 **404/40400**（原返回 200/500） | #136 |
+| BUG-C | `POST /api/admin/products` / `POST /api/admin/products/{id}/plans` | 重复 product_code/plan_code 返回 **400/40000** 友好提示 | #136 |
+
+---
+
+### 6.1 任务总览（D1–D5）
+
+| 阶段 | 内容 | 接口编号 |
+|---|---|---|
+| **D1** | 商品管理（CRUD + 状态切换） | P5–P9 |
+| **D2** | 套餐管理（创建/更新/列表）+ 访问权限 + 价格配置 | P10–P14 |
+| **D3** | 计费规则 CRUD | P15–P17 |
+| **D4** | 订单管理（全量列表 + 详情） | O5–O6 |
+| **D5** | 钱包管理（查余额/流水/冻结/回调记录） | B5–B8 |
+
+---
+
+### 6.2 类型定义 `src/types/product-admin.ts`（新建）
+
+```typescript
+export interface AdminProduct {
+  id: number
+  product_type: string
+  product_code: string
+  name: string
+  description: string | null
+  status: 'draft' | 'active' | 'inactive'
+  business_ref_id: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AdminPlan {
+  id: number
+  product_id: number
+  plan_code: string
+  name: string
+  billing_type: 'one_time' | 'monthly' | 'yearly' | 'usage'
+  duration_days: number | null
+  quota_json: string | null
+  status: 'active' | 'inactive'
+}
+
+export interface PriceItem {
+  product_plan_id: number       // D-009：product_plan_id 在每个 item 内
+  role_id?: number              // 空=非角色价
+  membership_level_id?: number  // 空=非会员价
+  price_amount: string
+  currency?: string             // 默认 CNY
+}
+
+export interface AccessItem {
+  role_id: number
+  can_view: boolean
+  can_buy: boolean
+  can_use: boolean
+}
+```
+
+---
+
+### 6.3 API 层签名 `src/api/product-admin.ts`（新建）
+
+```typescript
+import http from './http'
+import type { AdminProduct, AdminPlan, PriceItem, AccessItem } from '@/types/product-admin'
+import type { PageResult } from '@/types/api'
+
+/* ===== 商品 CRUD ===== */
+export function listAdminProducts(params: {
+  keyword?: string; status?: string; type?: string; page?: number; page_size?: number
+} = {}) {
+  return http.get<unknown, PageResult<AdminProduct>>('/admin/products', { params })
+}
+
+export function createProduct(data: {
+  product_type: string; product_code: string; name: string
+  description?: string; status?: string; business_ref_id?: number
+}) {
+  return http.post<unknown, AdminProduct>('/admin/products', data)
+  // 返回 HTTP 201；重复 product_code → 400/40000（BUG-C）
+}
+
+export function getAdminProduct(id: number) {
+  return http.get<unknown, AdminProduct>(`/admin/products/${id}`)
+  // 不存在 → 404/40400（BUG-B）
+}
+
+export function updateProduct(id: number, data: {
+  name?: string; description?: string; business_ref_id?: number
+}) {
+  return http.patch<unknown, { message: string }>(`/admin/products/${id}`, data)
+}
+
+export function updateProductStatus(id: number, status: 'draft' | 'active' | 'inactive') {
+  return http.patch<unknown, { message: string }>(`/admin/products/${id}/status`, { status })
+}
+
+/* ===== 套餐 ===== */
+export function listPlans(productId: number) {
+  return http.get<unknown, PageResult<AdminPlan>>(`/admin/products/${productId}/plans`)
+}
+
+export function createPlan(productId: number, data: {
+  plan_code: string; name: string; billing_type: string
+  duration_days?: number; quota_json?: string; status?: string
+}) {
+  return http.post<unknown, AdminPlan>(`/admin/products/${productId}/plans`, data)
+  // 返回 HTTP 201；重复 plan_code → 400/40000（BUG-C）
+}
+
+export function updatePlan(productId: number, planId: number, data: {
+  name?: string; billing_type?: string; duration_days?: number
+  quota_json?: string; status?: string
+}) {
+  return http.patch<unknown, { message: string }>(
+    `/admin/products/${productId}/plans/${planId}`, data
+  )
+}
+
+/* ===== 访问权限（D-011）===== */
+/**
+ * 覆盖写入角色访问规则
+ * - items 为必填键（缺失返回 400，D-011）
+ * - items=[] 合法，表示清空所有规则
+ */
+export function replaceAccess(productId: number, items: AccessItem[]) {
+  return http.patch<unknown, { message: string }>(
+    `/admin/products/${productId}/access`, { items }
+  )
+}
+
+/* ===== 价格配置（D-009）===== */
+/**
+ * 覆盖写入套餐价格
+ * - product_plan_id 在每个 item 内指定（D-009，已无顶层 plan_id）
+ * - 支持单次请求配置多个套餐的价格
+ */
+export function replacePrices(productId: number, items: PriceItem[]) {
+  return http.patch<unknown, { message: string }>(
+    `/admin/products/${productId}/prices`, { items }
+  )
+}
+```
+
+---
+
+### 6.4 视图层任务
+
+| 视图 | 用到的 API | 关键交互 |
+|---|---|---|
+| `views/product/ProductListView.vue` | `listAdminProducts` | keyword/status/type 过滤；扁平分页 |
+| `views/product/ProductFormDialog.vue` | `createProduct / updateProduct` | 重复 code → 400 友好提示（BUG-C） |
+| `views/product/ProductStatusToggle.vue` | `updateProductStatus` | draft/active/inactive 三态切换；不存在→404 提示（BUG-B） |
+| `views/product/PlanListView.vue` | `listPlans / createPlan / updatePlan` | 套餐 CRUD；扁平分页 |
+| `views/product/AccessConfigPanel.vue` | `replaceAccess` | 多角色勾选 can_view/can_buy/can_use；覆盖写，空数组清空所有规则 |
+| `views/product/PriceConfigPanel.vue` | `replacePrices` | 每个 item 内含 product_plan_id（D-009）；可多套餐批量配置；会员价/角色价/默认价三档 |
+| `views/order/AdminOrderListView.vue` | `GET /api/admin/orders` | user_id/status/order_type/时间过滤；扁平分页 |
+| `views/wallet/AdminWalletView.vue` | `GET /api/admin/users/{id}/wallet` | 按用户 ID 查 |
+| `views/wallet/AdminTxListView.vue` | `GET /api/admin/wallet-transactions` | user_id/type/direction/时间过滤 |
+| `views/wallet/FreezeDialog.vue` | `PATCH /api/admin/users/{id}/wallet/freeze` | action=freeze/unfreeze；需 `wallet:manage` 权限 |
+| `views/billing/CallbackListView.vue` | `GET /api/admin/payment-callbacks` | provider/status 过滤；**响应无 notify_body 字段**（安全红线） |
+
+---
+
+### 6.5 D 阶段验收标准
+- [ ] 商品创建/更新：重复 product_code/plan_code 返回 400 有友好提示（BUG-C）
+- [ ] 商品/套餐详情：ID 不存在时展示 404 提示页（BUG-B）
+- [ ] 访问权限配置：body 使用 `{ "items": [...] }` 键名；空数组清空规则正常
+- [ ] 价格配置：每个 item 内含 `product_plan_id`，**无顶层 `plan_id`**（D-009）
+- [ ] 钱包冻结/解冻需 `wallet:manage` 权限，无权限返回 403
+- [ ] 回调记录列表中**不渲染 notify_body 字段**（安全红线，后端已不返回）
+- [ ] 全部列表接口扁平分页解析正确（`items/page/page_size/total`）
 - [ ] A5（分组 16 端点，约 5.5 人日）是否本期纳入
