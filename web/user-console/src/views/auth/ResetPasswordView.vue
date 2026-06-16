@@ -197,142 +197,173 @@ onUnmounted(() => clearInterval(countdownTimer))
 
 <template>
   <div class="auth-page page-bg">
-    <div class="auth-card glass-card">
-      <!-- Logo -->
-      <div class="auth-logo">
-        <span class="logo-text">墨灵</span>
-        <p class="auth-subtitle">重置密码</p>
-      </div>
+    <div class="reset-shell">
+      <section class="reset-panel">
+        <div class="brand-mark">
+          <span class="logo-text">墨灵</span>
+          <span class="brand-badge">Password Recovery</span>
+        </div>
+        <h1 class="brand-title">找回你的账号访问权限</h1>
+        <p class="brand-desc">通过注册手机号或邮箱完成一次性验证码校验，然后设置新的登录密码。</p>
 
-      <!-- el-steps 两步进度 -->
-      <el-steps :active="currentStep" finish-status="success" class="reset-steps" align-center>
-        <el-step title="验证身份" />
-        <el-step title="设置新密码" />
-      </el-steps>
+        <div class="recovery-flow">
+          <div class="flow-item" :class="{ active: currentStep === 0 }">
+            <span class="flow-index">01</span>
+            <div>
+              <strong>验证账号归属</strong>
+              <p>选择手机号或邮箱并获取验证码。</p>
+            </div>
+          </div>
+          <div class="flow-item" :class="{ active: currentStep === 1 }">
+            <span class="flow-index">02</span>
+            <div>
+              <strong>设置新密码</strong>
+              <p>提交验证码并更新登录密码。</p>
+            </div>
+          </div>
+        </div>
+      </section>
 
-      <!-- 第一步：选择方式 + 发送验证码 -->
-      <div v-if="currentStep === 0" class="step-content">
-        <!-- 重置方式切换 -->
-        <div class="method-tabs">
-          <button
-            class="method-tab"
-            :class="{ active: targetType === 'phone' }"
-            @click="targetType = 'phone'; targetValue = ''"
+      <section class="auth-card glass-card">
+        <div class="auth-logo">
+          <span class="auth-kicker">账号恢复</span>
+          <h2 class="auth-title">重置登录密码</h2>
+          <p class="auth-subtitle">验证码有效期较短，请在收到后及时完成操作。</p>
+        </div>
+
+        <!-- el-steps 两步进度 -->
+        <el-steps :active="currentStep" finish-status="success" class="reset-steps" align-center>
+          <el-step title="验证身份" />
+          <el-step title="设置新密码" />
+        </el-steps>
+
+        <!-- 第一步：选择方式 + 发送验证码 -->
+        <div v-if="currentStep === 0" class="step-content">
+          <div class="method-tabs">
+            <button
+              class="method-tab"
+              :class="{ active: targetType === 'phone' }"
+              @click="targetType = 'phone'; targetValue = ''"
+            >
+              手机号重置
+            </button>
+            <button
+              class="method-tab"
+              :class="{ active: targetType === 'email' }"
+              @click="targetType = 'email'; targetValue = ''"
+            >
+              邮箱重置
+            </button>
+          </div>
+
+          <el-form
+            ref="step1FormRef"
+            :model="{ target: targetValue }"
+            :rules="step1Rules"
+            label-position="top"
+            class="auth-form"
           >
-            手机号重置
-          </button>
-          <button
-            class="method-tab"
-            :class="{ active: targetType === 'email' }"
-            @click="targetType = 'email'; targetValue = ''"
+            <el-form-item
+              :label="targetType === 'phone' ? '注册手机号' : '注册邮箱'"
+              prop="target"
+            >
+              <el-input
+                v-model="targetValue"
+                :placeholder="targetType === 'phone' ? '请输入注册时使用的手机号' : '请输入注册时使用的邮箱'"
+                :type="targetType === 'email' ? 'email' : 'text'"
+                :maxlength="targetType === 'phone' ? 11 : undefined"
+                autocomplete="off"
+                size="large"
+              />
+            </el-form-item>
+
+            <el-form-item>
+              <button
+                class="btn-primary auth-submit"
+                :disabled="sendingCode"
+                @click.prevent="sendCode"
+              >
+                {{ sendingCode ? '发送中...' : '发送验证码' }}
+              </button>
+            </el-form-item>
+          </el-form>
+        </div>
+
+        <!-- 第二步：填写验证码 + 新密码 -->
+        <div v-else class="step-content">
+          <p class="step2-hint">
+            验证码已发送至
+            <span class="hint-target">{{ targetValue }}</span>
+          </p>
+
+          <el-form
+            ref="step2FormRef"
+            :model="step2Form"
+            :rules="step2Rules"
+            label-position="top"
+            class="auth-form"
           >
-            邮箱重置
+            <el-form-item label="验证码" prop="code">
+              <div class="code-row">
+                <el-input
+                  v-model="step2Form.code"
+                  placeholder="请输入6位验证码"
+                  maxlength="6"
+                  size="large"
+                />
+                <button
+                  class="code-btn"
+                  :disabled="countdown > 0 || sendingCode"
+                  @click.prevent="resendCode"
+                >
+                  {{ countdown > 0 ? `${countdown}s 后重发` : '重新发送' }}
+                </button>
+              </div>
+            </el-form-item>
+
+            <el-form-item label="新密码" prop="new_password">
+              <el-input
+                v-model="step2Form.new_password"
+                type="password"
+                placeholder="至少8位"
+                show-password
+                autocomplete="new-password"
+                size="large"
+              />
+            </el-form-item>
+
+            <el-form-item label="确认新密码" prop="confirm_password">
+              <el-input
+                v-model="step2Form.confirm_password"
+                type="password"
+                placeholder="再次输入新密码"
+                show-password
+                autocomplete="new-password"
+                size="large"
+              />
+            </el-form-item>
+
+            <el-form-item>
+              <button
+                class="btn-primary auth-submit"
+                :disabled="submitting"
+                @click.prevent="handleReset"
+              >
+                {{ submitting ? '提交中...' : '确认重置密码' }}
+              </button>
+            </el-form-item>
+          </el-form>
+
+          <button class="back-link" type="button" @click="goBack">
+            重新选择验证方式
           </button>
         </div>
 
-        <el-form
-          ref="step1FormRef"
-          :model="{ target: targetValue }"
-          :rules="step1Rules"
-          label-position="top"
-          class="auth-form"
-        >
-          <el-form-item
-            :label="targetType === 'phone' ? '注册手机号' : '注册邮箱'"
-            prop="target"
-          >
-            <el-input
-              v-model="targetValue"
-              :placeholder="targetType === 'phone' ? '请输入注册时使用的手机号' : '请输入注册时使用的邮箱'"
-              :type="targetType === 'email' ? 'email' : 'text'"
-              :maxlength="targetType === 'phone' ? 11 : undefined"
-              autocomplete="off"
-            />
-          </el-form-item>
-
-          <el-form-item>
-            <button
-              class="btn-primary"
-              :disabled="sendingCode"
-              @click.prevent="sendCode"
-            >
-              {{ sendingCode ? '发送中...' : '发送验证码' }}
-            </button>
-          </el-form-item>
-        </el-form>
-      </div>
-
-      <!-- 第二步：填写验证码 + 新密码 -->
-      <div v-else class="step-content">
-        <p class="step2-hint">
-          验证码已发送至
-          <span class="hint-target">{{ targetValue }}</span>
+        <p class="auth-footer">
+          想起密码了？
+          <router-link to="/login" class="auth-link">返回登录</router-link>
         </p>
-
-        <el-form
-          ref="step2FormRef"
-          :model="step2Form"
-          :rules="step2Rules"
-          label-position="top"
-          class="auth-form"
-        >
-          <el-form-item label="验证码" prop="code">
-            <div class="code-row">
-              <el-input
-                v-model="step2Form.code"
-                placeholder="请输入6位验证码"
-                maxlength="6"
-              />
-              <button
-                class="code-btn"
-                :disabled="countdown > 0 || sendingCode"
-                @click.prevent="resendCode"
-              >
-                {{ countdown > 0 ? `${countdown}s 后重发` : '重新发送' }}
-              </button>
-            </div>
-          </el-form-item>
-
-          <el-form-item label="新密码" prop="new_password">
-            <el-input
-              v-model="step2Form.new_password"
-              type="password"
-              placeholder="至少8位"
-              show-password
-              autocomplete="new-password"
-            />
-          </el-form-item>
-
-          <el-form-item label="确认新密码" prop="confirm_password">
-            <el-input
-              v-model="step2Form.confirm_password"
-              type="password"
-              placeholder="再次输入新密码"
-              show-password
-              autocomplete="new-password"
-            />
-          </el-form-item>
-
-          <el-form-item>
-            <button
-              class="btn-primary"
-              :disabled="submitting"
-              @click.prevent="handleReset"
-            >
-              {{ submitting ? '提交中...' : '确认重置密码' }}
-            </button>
-          </el-form-item>
-        </el-form>
-
-        <!-- 返回上一步 -->
-        <p class="back-link" @click="goBack">← 重新选择验证方式</p>
-      </div>
-
-      <!-- 底部跳转 -->
-      <p class="auth-footer">
-        想起密码了？
-        <router-link to="/login" class="auth-link">返回登录 →</router-link>
-      </p>
+      </section>
     </div>
   </div>
 </template>
@@ -343,34 +374,176 @@ onUnmounted(() => clearInterval(countdownTimer))
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: 40px 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+.auth-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 12% 18%, rgba(6, 182, 212, 0.2), transparent 25%),
+    radial-gradient(circle at 88% 14%, rgba(139, 92, 246, 0.2), transparent 28%),
+    linear-gradient(115deg, transparent 0 40%, rgba(99, 102, 241, 0.08) 48%, transparent 58%);
+  pointer-events: none;
+}
+
+.auth-page::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(99, 102, 241, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(6, 182, 212, 0.08) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.25));
+  pointer-events: none;
+}
+
+.reset-shell {
+  position: relative;
+  z-index: 1;
+  width: min(1040px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 430px;
+  gap: 24px;
+  align-items: stretch;
+}
+
+.reset-panel {
+  min-height: 560px;
+  border: 1px solid rgba(99, 102, 241, 0.18);
+  border-radius: 20px;
+  padding: 42px;
+  background:
+    linear-gradient(145deg, rgba(99, 102, 241, 0.14), rgba(6, 182, 212, 0.06)),
+    rgba(255, 255, 255, 0.035);
+  backdrop-filter: blur(18px);
+  position: relative;
+  overflow: hidden;
+}
+
+.reset-panel::after {
+  content: "";
+  position: absolute;
+  right: -90px;
+  bottom: -130px;
+  width: 380px;
+  height: 380px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.2), transparent 62%);
+}
+
+.brand-mark {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 88px;
+}
+
+.brand-badge {
+  color: var(--color-accent);
+  border: 1px solid rgba(6, 182, 212, 0.28);
+  background: rgba(6, 182, 212, 0.08);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.brand-title {
+  max-width: 520px;
+  color: var(--color-text);
+  font-size: 42px;
+  line-height: 1.12;
+  font-weight: 800;
+  margin-bottom: 18px;
+}
+
+.brand-desc {
+  max-width: 460px;
+  color: var(--color-text-muted);
+  font-size: 16px;
+  line-height: 1.8;
+}
+
+.recovery-flow {
+  position: absolute;
+  left: 42px;
+  right: 42px;
+  bottom: 42px;
+  display: grid;
+  gap: 12px;
+  z-index: 1;
+}
+
+.flow-item {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 14px;
+  background: rgba(10, 15, 30, 0.46);
+}
+
+.flow-item.active {
+  border-color: rgba(6, 182, 212, 0.34);
+  background: rgba(6, 182, 212, 0.09);
+}
+
+.flow-index {
+  color: var(--color-accent);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.flow-item strong {
+  color: var(--color-text);
+  font-size: 15px;
+}
+
+.flow-item p {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+  margin-top: 4px;
 }
 
 .auth-card {
   width: 100%;
-  max-width: 480px;
-  padding: 40px;
-}
-
-/* 移动端全宽 */
-@media (max-width: 767px) {
-  .auth-card {
-    padding: 28px 20px;
-  }
+  padding: 36px;
+  border-radius: 20px;
+  background: rgba(11, 16, 32, 0.76);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.36);
 }
 
 .auth-logo {
-  text-align: center;
   margin-bottom: 24px;
+}
+
+.auth-kicker {
+  display: inline-flex;
+  color: var(--color-accent);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.auth-title {
+  color: var(--color-text);
+  font-size: 28px;
+  line-height: 1.2;
+  margin-bottom: 8px;
 }
 
 .auth-subtitle {
   color: var(--color-text-muted);
   font-size: 14px;
-  margin-top: 8px;
 }
 
-/* 步骤条 */
 .reset-steps {
   margin-bottom: 28px;
 }
@@ -389,6 +562,10 @@ onUnmounted(() => clearInterval(countdownTimer))
   border-color: var(--color-primary) !important;
 }
 
+:deep(.el-step__icon) {
+  background: rgba(11, 16, 32, 0.92) !important;
+}
+
 .step-content {
   animation: fadeIn 0.25s ease;
 }
@@ -404,15 +581,16 @@ onUnmounted(() => clearInterval(countdownTimer))
   gap: 8px;
   margin-bottom: 20px;
   background: rgba(255, 255, 255, 0.03);
-  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
   padding: 4px;
 }
 
 .method-tab {
   flex: 1;
-  height: 36px;
+  height: 38px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: var(--color-text-muted);
   font-size: 14px;
@@ -421,9 +599,9 @@ onUnmounted(() => clearInterval(countdownTimer))
 }
 
 .method-tab.active {
-  background: rgba(99, 102, 241, 0.15);
-  color: var(--color-primary);
-  font-weight: 500;
+  background: var(--gradient-primary);
+  color: #fff;
+  font-weight: 600;
 }
 
 .method-tab:hover:not(.active) {
@@ -436,12 +614,19 @@ onUnmounted(() => clearInterval(countdownTimer))
   margin-top: 4px;
 }
 
-/* 第二步提示文字 */
+.auth-submit {
+  height: 46px;
+  margin-top: 4px;
+}
+
 .step2-hint {
   font-size: 13px;
   color: var(--color-text-muted);
   margin-bottom: 20px;
-  text-align: center;
+  padding: 12px 14px;
+  border: 1px solid rgba(6, 182, 212, 0.18);
+  border-radius: 12px;
+  background: rgba(6, 182, 212, 0.06);
 }
 
 .hint-target {
@@ -463,11 +648,11 @@ onUnmounted(() => clearInterval(countdownTimer))
 .code-btn {
   flex-shrink: 0;
   padding: 0 14px;
-  height: 32px;
+  height: 40px;
   background: rgba(99, 102, 241, 0.12);
   border: 1px solid var(--color-border);
   color: var(--color-primary);
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 13px;
   cursor: pointer;
   white-space: nowrap;
@@ -485,9 +670,11 @@ onUnmounted(() => clearInterval(countdownTimer))
   cursor: not-allowed;
 }
 
-/* 返回链接 */
 .back-link {
-  text-align: center;
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
   color: var(--color-text-muted);
   font-size: 13px;
   margin-top: 8px;
@@ -499,7 +686,6 @@ onUnmounted(() => clearInterval(countdownTimer))
   color: var(--color-primary);
 }
 
-/* 底部 */
 .auth-footer {
   text-align: center;
   color: var(--color-text-muted);
@@ -515,5 +701,60 @@ onUnmounted(() => clearInterval(countdownTimer))
 
 .auth-link:hover {
   color: var(--color-primary-end);
+}
+
+:deep(.el-input__wrapper) {
+  min-height: 42px;
+  border-radius: 9px;
+}
+
+@media (max-width: 900px) {
+  .reset-shell {
+    grid-template-columns: 1fr;
+    max-width: 460px;
+  }
+
+  .reset-panel {
+    min-height: auto;
+    padding: 28px;
+  }
+
+  .brand-mark {
+    margin-bottom: 36px;
+  }
+
+  .brand-title {
+    font-size: 30px;
+  }
+
+  .recovery-flow {
+    position: relative;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    margin-top: 28px;
+  }
+}
+
+@media (max-width: 520px) {
+  .auth-page {
+    padding: 20px 14px;
+  }
+
+  .reset-panel {
+    display: none;
+  }
+
+  .auth-card {
+    padding: 28px 20px;
+  }
+
+  .code-row {
+    flex-direction: column;
+  }
+
+  .code-btn {
+    width: 100%;
+  }
 }
 </style>

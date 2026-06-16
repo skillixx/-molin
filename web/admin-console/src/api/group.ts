@@ -61,11 +61,11 @@ export function listUserGroups(userId: number) {
 }
 
 export function listGroupPermissions(id: number, params: { page?: number; page_size?: number } = {}) {
-  return http.get<unknown, PageResponse<GroupPermission>>(`/admin/user-groups/${id}/permissions`, { params })
+  return http.get<unknown, GroupPermission[] | PageResponse<GroupPermission>>(`/admin/user-groups/${id}/permissions`, { params })
 }
 
 export function addGroupPermission(id: number, data: { permission_code: string }) {
-  return http.post<unknown, GroupPermission>(`/admin/user-groups/${id}/permissions`, data)
+  return http.post<unknown, null>(`/admin/user-groups/${id}/permissions`, data)
 }
 
 export function removeGroupPermission(id: number, code: string) {

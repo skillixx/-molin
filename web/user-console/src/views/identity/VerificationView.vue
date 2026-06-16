@@ -76,7 +76,9 @@ async function handleSubmit() {
     verification.value = await submitVerification({
       real_name: form.real_name,
       id_card_no: form.id_card_no,
+      verification_type: 'id_card',
     })
+    await fetchStatus()
     showForm.value = false
     // 刷新 authStore 用户信息（更新 real_name_status）
     await authStore.fetchMe()
@@ -101,13 +103,24 @@ function formatDate(dateStr: string) {
   })
 }
 
+function idCardMasked(value?: string) {
+  return value || '--'
+}
+
 onMounted(fetchStatus)
 </script>
 
 <template>
-  <div class="verification-page">
+  <div class="verification-page page-bg">
     <div class="page-container">
-      <h2 class="page-title">实名认证</h2>
+      <header class="page-header">
+        <div>
+          <p class="page-kicker">Identity Verification</p>
+          <h2 class="page-title">实名认证</h2>
+          <p class="page-desc">完成实名后可购买商品、开通资产并使用需要身份校验的服务。</p>
+        </div>
+        <StatusTag :status="verification?.status || 'unverified'" />
+      </header>
 
       <!-- 加载中 -->
       <div v-if="pageLoading" class="loading-wrapper">
@@ -115,118 +128,166 @@ onMounted(fetchStatus)
       </div>
 
       <template v-else>
-        <!-- ====== 审核通过（verified）====== -->
-        <div v-if="verification?.status === 'verified'" class="status-card verified-card glass-card">
-          <div class="status-icon verified-icon">✓</div>
-          <h3 class="status-title">实名认证已完成</h3>
-          <StatusTag status="verified" />
-          <div class="info-list">
-            <div class="info-item">
-              <span class="info-label">姓名</span>
-              <span class="info-value">{{ verification.real_name }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">身份证号</span>
-              <!-- 只展示后端返回的脱敏值，禁止前端展示原始号码 -->
-              <span class="info-value id-masked">{{ verification.id_card_no_masked }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">认证时间</span>
-              <span class="info-value">{{ formatDate(verification.submitted_at) }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- ====== 审核中（pending）====== -->
-        <div v-else-if="verification?.status === 'pending'" class="status-card pending-card glass-card">
-          <div class="status-icon pending-icon">🕐</div>
-          <h3 class="status-title">审核中</h3>
-          <StatusTag status="pending" />
-          <div class="info-list">
-            <div class="info-item">
-              <span class="info-label">姓名</span>
-              <span class="info-value">{{ verification.real_name }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">身份证号</span>
-              <span class="info-value id-masked">{{ verification.id_card_no_masked }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">提交时间</span>
-              <span class="info-value">{{ formatDate(verification.submitted_at) }}</span>
-            </div>
-          </div>
-          <p class="pending-tip">
-            审核通常在 1-3 个工作日内完成，请耐心等待。
-          </p>
-        </div>
-
-        <!-- ====== 审核拒绝（rejected）+ 未提交（null）====== -->
-        <template v-else>
-          <!-- 拒绝原因展示 -->
-          <div v-if="verification?.status === 'rejected'" class="status-card rejected-card glass-card">
-            <div class="status-icon rejected-icon">✗</div>
-            <h3 class="status-title">审核未通过</h3>
-            <StatusTag status="rejected" />
-            <div class="reject-reason">
-              <span class="reject-label">拒绝原因：</span>
-              {{ verification.reject_reason || '证件信息不符，请重新提交' }}
-            </div>
-          </div>
-
-          <!-- 提交表单（unverified 或 rejected 时展示） -->
-          <div v-if="showForm" class="form-card glass-card">
-            <!-- 为什么需要实名认证 -->
-            <div class="info-box">
-              <p class="info-box-title">🔒 为什么需要实名认证？</p>
-              <ul class="info-box-list">
-                <li>购买商品和服务</li>
-                <li>申请发票和退款</li>
-                <li>账号安全保障</li>
-              </ul>
-            </div>
-
-            <el-form
-              ref="formRef"
-              :model="form"
-              :rules="formRules"
-              label-position="top"
-              class="verify-form"
+        <div class="identity-layout">
+          <aside class="status-panel glass-card">
+            <div
+              class="status-orb"
+              :class="{
+                'status-orb--verified': verification?.status === 'verified',
+                'status-orb--pending': verification?.status === 'pending',
+                'status-orb--rejected': verification?.status === 'rejected',
+              }"
             >
-              <el-form-item label="真实姓名" prop="real_name">
-                <el-input
-                  v-model="form.real_name"
-                  placeholder="请输入身份证上的姓名"
-                  maxlength="20"
-                  autocomplete="name"
-                />
-              </el-form-item>
-
-              <el-form-item label="身份证号码" prop="id_card_no">
-                <el-input
-                  v-model="form.id_card_no"
-                  placeholder="请输入18位身份证号码"
-                  maxlength="18"
-                  autocomplete="off"
-                />
-              </el-form-item>
-
-              <el-form-item>
-                <button
-                  class="btn-primary"
-                  :disabled="submitting"
-                  @click.prevent="handleSubmit"
-                >
-                  {{ submitting ? '提交中...' : (verification?.status === 'rejected' ? '重新提交实名认证' : '提交实名认证') }}
-                </button>
-              </el-form-item>
-            </el-form>
-
-            <p class="privacy-tip">
-              🔒 身份证信息严格加密存储，仅用于身份核实，绝不泄露第三方
+              <el-icon v-if="verification?.status === 'verified'"><CircleCheck /></el-icon>
+              <el-icon v-else-if="verification?.status === 'pending'"><Clock /></el-icon>
+              <el-icon v-else-if="verification?.status === 'rejected'"><CircleClose /></el-icon>
+              <el-icon v-else><UserFilled /></el-icon>
+            </div>
+            <p class="status-label">当前状态</p>
+            <h3 class="status-title">
+              <span v-if="verification?.status === 'verified'">已完成认证</span>
+              <span v-else-if="verification?.status === 'pending'">资料审核中</span>
+              <span v-else-if="verification?.status === 'rejected'">审核未通过</span>
+              <span v-else>等待提交资料</span>
+            </h3>
+            <p class="status-desc">
+              <span v-if="verification?.status === 'verified'">你的账号已获得实名权益，可继续购买和开通资源。</span>
+              <span v-else-if="verification?.status === 'pending'">审核通常在 1-3 个工作日内完成，期间部分功能仍会受限。</span>
+              <span v-else-if="verification?.status === 'rejected'">请根据拒绝原因修正资料后重新提交。</span>
+              <span v-else>提交真实姓名和身份证号码后，将进入人工审核流程。</span>
             </p>
-          </div>
-        </template>
+
+            <div class="benefit-list">
+              <div class="benefit-item">
+                <el-icon><ShoppingCart /></el-icon>
+                <span>购买商品与服务</span>
+              </div>
+              <div class="benefit-item">
+                <el-icon><Wallet /></el-icon>
+                <span>开通资产和权益</span>
+              </div>
+              <div class="benefit-item">
+                <el-icon><Lock /></el-icon>
+                <span>提升账号安全等级</span>
+              </div>
+            </div>
+          </aside>
+
+          <section class="content-panel glass-card">
+            <!-- ====== 审核通过（verified）====== -->
+            <div v-if="verification?.status === 'verified'" class="result-block">
+              <div class="section-heading">
+                <span class="section-badge">Verified</span>
+                <h3>认证信息</h3>
+              </div>
+              <div class="info-list">
+                <div class="info-item">
+                  <span class="info-label">姓名</span>
+                  <span class="info-value">{{ verification.real_name || '--' }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">身份证号</span>
+                  <!-- 只展示后端返回的脱敏值，禁止前端展示原始号码 -->
+                  <span class="info-value id-masked">{{ idCardMasked(verification.id_card_no_masked) }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">认证时间</span>
+                  <span class="info-value">{{ formatDate(verification.submitted_at || '') }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- ====== 审核中（pending）====== -->
+            <div v-else-if="verification?.status === 'pending'" class="result-block">
+              <div class="section-heading">
+                <span class="section-badge section-badge--warning">Pending</span>
+                <h3>已提交资料</h3>
+              </div>
+              <div class="info-list">
+                <div class="info-item">
+                  <span class="info-label">姓名</span>
+                  <span class="info-value">{{ verification.real_name || '--' }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">身份证号</span>
+                  <span class="info-value id-masked">{{ idCardMasked(verification.id_card_no_masked) }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">提交时间</span>
+                  <span class="info-value">{{ formatDate(verification.submitted_at || '') }}</span>
+                </div>
+              </div>
+              <p class="pending-tip">
+                审核完成后，页面顶部实名状态会自动更新。请勿重复提交相同资料。
+              </p>
+            </div>
+
+            <!-- ====== 审核拒绝（rejected）+ 未提交（null）====== -->
+            <template v-else>
+              <div v-if="verification?.status === 'rejected'" class="reject-reason">
+                <div class="reject-icon">
+                  <el-icon><WarningFilled /></el-icon>
+                </div>
+                <div>
+                  <span class="reject-label">拒绝原因</span>
+                  <p>{{ verification.reject_reason || '证件信息不符，请重新提交' }}</p>
+                </div>
+              </div>
+
+              <!-- 提交表单（unverified 或 rejected 时展示） -->
+              <div v-if="showForm" class="form-area">
+                <div class="section-heading">
+                  <span class="section-badge">Submit</span>
+                  <h3>{{ verification?.status === 'rejected' ? '重新提交实名资料' : '提交实名资料' }}</h3>
+                  <p>请填写与身份证一致的信息，提交后等待平台审核。</p>
+                </div>
+
+                <el-form
+                  ref="formRef"
+                  :model="form"
+                  :rules="formRules"
+                  label-position="top"
+                  class="verify-form"
+                >
+                  <el-form-item label="真实姓名" prop="real_name">
+                    <el-input
+                      v-model="form.real_name"
+                      placeholder="请输入身份证上的姓名"
+                      maxlength="20"
+                      autocomplete="name"
+                      size="large"
+                    />
+                  </el-form-item>
+
+                  <el-form-item label="身份证号码" prop="id_card_no">
+                    <el-input
+                      v-model="form.id_card_no"
+                      placeholder="请输入18位身份证号码"
+                      maxlength="18"
+                      autocomplete="off"
+                      size="large"
+                    />
+                  </el-form-item>
+
+                  <el-form-item>
+                    <button
+                      class="btn-primary submit-btn"
+                      :disabled="submitting"
+                      @click.prevent="handleSubmit"
+                    >
+                      {{ submitting ? '提交中...' : (verification?.status === 'rejected' ? '重新提交实名认证' : '提交实名认证') }}
+                    </button>
+                  </el-form-item>
+                </el-form>
+
+                <div class="privacy-tip">
+                  <el-icon><Lock /></el-icon>
+                  <span>身份证信息由后端加密处理，仅用于身份核实，页面只展示脱敏数据。</span>
+                </div>
+              </div>
+            </template>
+          </section>
+        </div>
       </template>
     </div>
   </div>
@@ -234,183 +295,375 @@ onMounted(fetchStatus)
 
 <style scoped>
 .verification-page {
-  padding: 32px 24px;
+  min-height: 100%;
+  padding: 34px 24px 56px;
+  position: relative;
+  overflow: hidden;
+}
+
+.verification-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 14% 16%, rgba(6, 182, 212, 0.16), transparent 24%),
+    radial-gradient(circle at 82% 12%, rgba(139, 92, 246, 0.14), transparent 26%);
+  pointer-events: none;
 }
 
 .page-container {
-  max-width: 640px;
+  position: relative;
+  z-index: 1;
+  max-width: 1120px;
   margin: 0 auto;
 }
 
-.page-title {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--color-text);
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 18px;
   margin-bottom: 24px;
+}
+
+.page-kicker {
+  color: var(--color-accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.page-title {
+  font-size: 30px;
+  line-height: 1.2;
+  font-weight: 800;
+  color: var(--color-text);
+  margin-bottom: 10px;
+}
+
+.page-desc {
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1.7;
 }
 
 .loading-wrapper {
   padding: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: rgba(11, 16, 32, 0.72);
 }
 
-/* 状态卡片 */
-.status-card {
-  padding: 32px;
-  text-align: center;
-  margin-bottom: 24px;
+.identity-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.76fr) minmax(0, 1.24fr);
+  gap: 22px;
+  align-items: start;
 }
 
-.status-icon {
-  width: 56px;
-  height: 56px;
+.status-panel,
+.content-panel {
+  background: rgba(11, 16, 32, 0.74);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+}
+
+.status-panel {
+  min-height: 500px;
+  padding: 30px;
+  position: sticky;
+  top: 24px;
+  overflow: hidden;
+}
+
+.status-panel::after {
+  content: "";
+  position: absolute;
+  right: -120px;
+  bottom: -140px;
+  width: 300px;
+  height: 300px;
   border-radius: 50%;
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.16), transparent 66%);
+  pointer-events: none;
+}
+
+.status-orb {
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
-  margin: 0 auto 16px;
+  color: var(--color-accent);
+  font-size: 34px;
+  margin-bottom: 28px;
+  background: rgba(6, 182, 212, 0.12);
+  border: 1px solid rgba(6, 182, 212, 0.28);
+  box-shadow: 0 18px 42px rgba(6, 182, 212, 0.14);
 }
 
-.verified-icon {
-  background: rgba(6, 182, 212, 0.15);
-  color: #06b6d4;
-  border: 2px solid rgba(6, 182, 212, 0.3);
+.status-orb--verified {
+  color: var(--color-success);
+  background: rgba(16, 185, 129, 0.13);
+  border-color: rgba(16, 185, 129, 0.3);
 }
 
-.pending-icon {
-  background: rgba(245, 158, 11, 0.15);
-  color: #f59e0b;
-  border: 2px solid rgba(245, 158, 11, 0.3);
+.status-orb--pending {
+  color: var(--color-warning);
+  background: rgba(245, 158, 11, 0.13);
+  border-color: rgba(245, 158, 11, 0.3);
 }
 
-.rejected-icon {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-  border: 2px solid rgba(239, 68, 68, 0.3);
+.status-orb--rejected {
+  color: var(--color-danger);
+  background: rgba(239, 68, 68, 0.13);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.status-label {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  margin-bottom: 8px;
 }
 
 .status-title {
-  font-size: 20px;
-  font-weight: 600;
   color: var(--color-text);
+  font-size: 26px;
+  line-height: 1.25;
+  font-weight: 800;
   margin-bottom: 12px;
 }
 
-/* 信息列表 */
+.status-desc {
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1.8;
+  min-height: 76px;
+}
+
+.benefit-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 34px;
+  position: relative;
+  z-index: 1;
+}
+
+.benefit-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.benefit-item .el-icon {
+  color: var(--color-accent);
+  font-size: 17px;
+}
+
+.content-panel {
+  padding: 30px;
+}
+
+.section-heading {
+  margin-bottom: 22px;
+}
+
+.section-badge {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-accent);
+  border: 1px solid rgba(6, 182, 212, 0.28);
+  background: rgba(6, 182, 212, 0.08);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.section-badge--warning {
+  color: var(--color-warning);
+  border-color: rgba(245, 158, 11, 0.28);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.section-heading h3 {
+  color: var(--color-text);
+  font-size: 22px;
+  line-height: 1.25;
+  margin-bottom: 8px;
+}
+
+.section-heading p {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
 .info-list {
-  margin-top: 20px;
-  text-align: left;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 8px;
-  padding: 16px;
-  border: 1px solid var(--color-border);
+  display: grid;
+  gap: 12px;
 }
 
 .info-item {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 18px;
   align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid rgba(99, 102, 241, 0.08);
-}
-
-.info-item:last-child {
-  border-bottom: none;
+  min-height: 58px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: rgba(99, 102, 241, 0.055);
 }
 
 .info-label {
   color: var(--color-text-muted);
   font-size: 13px;
-  width: 80px;
-  flex-shrink: 0;
 }
 
 .info-value {
+  min-width: 0;
   color: var(--color-text);
-  font-size: 14px;
+  font-size: 15px;
+  text-align: right;
+  word-break: break-word;
 }
 
 .id-masked {
+  color: var(--color-accent);
   font-family: 'Courier New', Courier, monospace;
   letter-spacing: 1px;
-  color: var(--color-accent);
 }
 
 .pending-tip {
-  margin-top: 16px;
+  margin-top: 18px;
+  padding: 14px 16px;
   color: var(--color-text-muted);
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.7;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-radius: 12px;
+  background: rgba(245, 158, 11, 0.07);
 }
 
-/* 拒绝原因 */
 .reject-reason {
-  margin-top: 16px;
-  padding: 12px;
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  gap: 14px;
+  padding: 16px;
+  margin-bottom: 22px;
   background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  border-radius: 6px;
-  color: #ef4444;
-  font-size: 13px;
-  text-align: left;
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  border-radius: 14px;
+}
+
+.reject-icon {
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-danger);
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.12);
 }
 
 .reject-label {
-  font-weight: 600;
-}
-
-/* 表单卡片 */
-.form-card {
-  padding: 32px;
-}
-
-/* 说明框 */
-.info-box {
-  background: rgba(99, 102, 241, 0.06);
-  border: 1px solid rgba(99, 102, 241, 0.15);
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 24px;
-}
-
-.info-box-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text);
-  margin-bottom: 10px;
-}
-
-.info-box-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.info-box-list li {
+  display: block;
+  color: var(--color-danger);
   font-size: 13px;
-  color: var(--color-text-muted);
-  padding: 3px 0;
-  padding-left: 16px;
-  position: relative;
+  font-weight: 700;
+  margin-bottom: 6px;
 }
 
-.info-box-list li::before {
-  content: '•';
-  position: absolute;
-  left: 0;
-  color: var(--color-primary);
+.reject-reason p {
+  color: var(--color-text);
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 .verify-form {
   margin-top: 8px;
 }
 
-/* 隐私提示 */
+.submit-btn {
+  height: 46px;
+  margin-top: 4px;
+}
+
 .privacy-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
   margin-top: 16px;
-  text-align: center;
+  padding: 12px 14px;
   color: var(--color-text-muted);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.6;
+  border: 1px solid rgba(6, 182, 212, 0.18);
+  border-radius: 12px;
+  background: rgba(6, 182, 212, 0.06);
+}
+
+.privacy-tip .el-icon {
+  flex-shrink: 0;
+  color: var(--color-accent);
+  margin-top: 2px;
+}
+
+:deep(.el-input__wrapper) {
+  min-height: 42px;
+  border-radius: 9px;
+}
+
+@media (max-width: 900px) {
+  .identity-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .status-panel {
+    position: relative;
+    top: auto;
+    min-height: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .verification-page {
+    padding: 24px 14px 40px;
+  }
+
+  .page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .page-title {
+    font-size: 26px;
+  }
+
+  .status-panel,
+  .content-panel {
+    padding: 22px;
+  }
+
+  .info-item {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .info-value {
+    text-align: left;
+  }
 }
 </style>

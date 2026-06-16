@@ -109,8 +109,8 @@
 | 序号 | 阶段 | 任务描述 | 分支 | 状态 | 备注 |
 |---|---|---|---|---|---|
 | FB-01 | Week 1 | 注册页（邮箱/手机号）、登录页、Token 刷新逻辑 | `feature/frontend-b-user-register-login` | ✅ 已完成 | 已在 `feature/frontend-b-week1` 等分支完成并合并；2026-06-12 修复补丁：登录页手机号 Tab 由密码登录改为验证码登录，配合后端 PR#20（PR#21，merge commit `2d6e3c1`），新增发送验证码按钮+60s 倒计时 |
-| FB-02 | Week 1 | 实名认证提交页、认证状态展示 | `feature/frontend-b-identity-certification` | ⏳ 待开始 | |
-| FB-03 | Week 1 | 用户控制台布局骨架（顶部导航/侧栏/路由守卫）| `feature/frontend-b-user-layout` | ⏳ 待开始 | 2026-06-13 调查：启动时应在登录/`fetchMe()` 后调用 `GET /api/me/permissions`（A-10，`full-api-design.md` 2.19）拉取权限码存入 auth store（新增 `permissions` ref + `hasPermission(code)` helper），供侧栏菜单/按钮做权限过滤 |
+| FB-02 | Week 1 | 实名认证提交页、认证状态展示 | `feature/frontend-b-work1-backend-a-integration` | ✅ 已完成 | 已对齐 D-90：查询接口改为 `GET /api/identity/verifications/latest`；提交时传 `verification_type=id_card`；提交后刷新 `/me` 同步实名状态 |
+| FB-03 | Week 1 | 用户控制台布局骨架（顶部导航/侧栏/路由守卫）| `feature/frontend-b-work1-backend-a-integration` | ✅ 已完成 | 已接入 `GET /api/me/permissions`，auth store 增加 `permissions` 与 `hasPermission`；路由守卫先恢复 `/me` 与权限后再判断实名；顶部导航补充余额、总览、钱包和公告入口 |
 | FB-04 | Week 2 | 商品市场列表、商品详情、套餐展示 | `feature/frontend-b-marketplace-browse` | ⏳ 待开始 | MarketplaceView.vue 仅占位符 |
 | FB-05 | Week 3 | 购买确认页、Idempotency-Key、订单结果页 | `feature/frontend-b-purchase-flow` | ⏳ 待开始 | |
 | FB-06 | Week 3 | 钱包余额、充值页、账单流水 | `feature/frontend-b-wallet-recharge` | ⏳ 待开始 | |

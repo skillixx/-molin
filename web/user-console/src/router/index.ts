@@ -145,13 +145,7 @@ router.beforeEach(async (to, _from, next) => {
 
   // 需要登录但未登录：跳转到登录页
   if (to.meta.requiresAuth && !auth.isLoggedIn) {
-    next('/login')
-    return
-  }
-
-  // 需要实名认证但未完成：跳转实名认证页（不显示错误弹窗）
-  if (to.meta.requiresRealName && !auth.isRealNameVerified) {
-    next('/identity')
+    next({ path: '/login', query: { redirect: to.fullPath } })
     return
   }
 
@@ -160,8 +154,25 @@ router.beforeEach(async (to, _from, next) => {
     try {
       await auth.fetchMe()
     } catch {
-      // fetchMe 失败不阻断路由，由接口层处理 Token 刷新
+      await auth.logout()
+      next({ path: '/login', query: { redirect: to.fullPath } })
+      return
     }
+  }
+
+  // 已登录但权限码为空时尝试补拉，供菜单和按钮级权限过滤使用。
+  if (auth.isLoggedIn && auth.permissions.length === 0) {
+    try {
+      await auth.fetchPermissions()
+    } catch {
+      // 权限码接口失败不阻断基础页面，具体接口仍由后端权限控制。
+    }
+  }
+
+  // 需要实名认证但未完成：跳转实名认证页（不显示错误弹窗）
+  if (to.meta.requiresRealName && !auth.isRealNameVerified) {
+    next({ path: '/identity', query: { redirect: to.fullPath } })
+    return
   }
 
   next()

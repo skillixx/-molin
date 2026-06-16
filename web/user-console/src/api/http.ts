@@ -50,6 +50,15 @@ http.interceptors.request.use(
 let isRefreshing = false
 let waitQueue: Array<(token: string) => void> = []
 
+// 公开认证接口没有登录态，401 表示登录校验失败，不能按 Token 过期处理。
+function isPublicAuthRequest(url?: string) {
+  return !!url && (
+    url.startsWith('/auth/login/') ||
+    url === '/auth/register' ||
+    url === '/auth/password/reset'
+  )
+}
+
 // 响应拦截器：统一解包 data 字段 + Token 刷新
 http.interceptors.response.use(
   (res) => {
@@ -59,9 +68,10 @@ http.interceptors.response.use(
   async (err) => {
     const status = err.response?.status
     const originalReq = err.config as InternalAxiosRequestConfig & { _retry?: boolean }
+    const publicAuthRequest = isPublicAuthRequest(originalReq.url)
 
     // 处理 401（未登录/Token 过期）
-    if (status === 401 && !originalReq._retry) {
+    if (status === 401 && !publicAuthRequest && !originalReq._retry) {
       originalReq._retry = true
 
       if (isRefreshing) {
@@ -96,8 +106,8 @@ http.interceptors.response.use(
       }
     }
 
-    // 非 401 错误：展示错误提示
-    if (status !== 401) {
+    // 非 401 错误和公开认证接口的 401：展示后端返回的业务提示
+    if (status !== 401 || publicAuthRequest) {
       const msg = err.response?.data?.message || '请求失败，请稍后重试'
       ElMessage.error(msg)
     }

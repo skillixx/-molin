@@ -5,14 +5,16 @@
  * - 右：用户头像 + 下拉菜单（实名认证 / 退出登录）
  * - 毛玻璃背景 + 底部细边框
  */
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useWalletStore } from '@/stores/wallet'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const walletStore = useWalletStore()
 
 // 判断当前路由是否激活
 function isActive(path: string) {
@@ -41,6 +43,10 @@ const displayName = computed(() => {
   if (!user) return '用户'
   return user.username || user.phone || user.email || '用户'
 })
+
+onMounted(() => {
+  walletStore.fetchBalance()
+})
 </script>
 
 <template>
@@ -53,6 +59,13 @@ const displayName = computed(() => {
         </router-link>
 
         <nav class="nav-links">
+          <router-link
+            to="/overview"
+            class="nav-link"
+            :class="{ active: isActive('/overview') }"
+          >
+            总览
+          </router-link>
           <router-link
             to="/marketplace"
             class="nav-link"
@@ -68,6 +81,20 @@ const displayName = computed(() => {
             我的资产
           </router-link>
           <router-link
+            to="/wallet"
+            class="nav-link"
+            :class="{ active: isActive('/wallet') }"
+          >
+            钱包
+          </router-link>
+          <router-link
+            to="/announcements"
+            class="nav-link"
+            :class="{ active: isActive('/announcements') }"
+          >
+            公告
+          </router-link>
+          <router-link
             to="/help"
             class="nav-link"
             :class="{ active: isActive('/help') }"
@@ -79,6 +106,10 @@ const displayName = computed(() => {
 
       <!-- 右：用户下拉菜单 -->
       <div class="nav-right">
+        <router-link to="/wallet" class="wallet-pill">
+          <span class="wallet-label">余额</span>
+          <span class="wallet-value">¥ {{ walletStore.formatBalance() }}</span>
+        </router-link>
         <el-dropdown trigger="click" @command="handleCommand">
           <div class="user-trigger">
             <div class="user-avatar">
@@ -190,6 +221,31 @@ const displayName = computed(() => {
 .nav-right {
   display: flex;
   align-items: center;
+  gap: 10px;
+}
+
+.wallet-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(6, 182, 212, 0.24);
+  border-radius: 999px;
+  background: rgba(6, 182, 212, 0.08);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.wallet-label {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.wallet-value {
+  color: var(--color-accent);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .user-trigger {
@@ -255,5 +311,15 @@ const displayName = computed(() => {
 /* 退出登录项红色 */
 .logout-item {
   color: var(--color-danger) !important;
+}
+
+@media (max-width: 900px) {
+  .nav-links {
+    display: none;
+  }
+
+  .wallet-pill {
+    display: none;
+  }
 }
 </style>

@@ -16,13 +16,16 @@ const authStore = useAuthStore()
 // 是否展示实名认证提示横幅
 const showVerifyBanner = computed(() => {
   const status = authStore.realNameStatus
-  return status === 'unverified' || status === 'pending'
+  return status === 'unverified' || status === 'pending' || status === 'rejected'
 })
 
 // 横幅提示文字
 const bannerText = computed(() => {
   if (authStore.realNameStatus === 'pending') {
     return '您的实名认证正在审核中，部分功能暂时受限。'
+  }
+  if (authStore.realNameStatus === 'rejected') {
+    return '您的实名认证未通过，请重新提交资料后再使用购买等功能。'
   }
   return '您尚未完成实名认证，部分功能受限。'
 })
@@ -48,6 +51,13 @@ function goToIdentity() {
         >
           立即认证 →
         </button>
+        <button
+          v-else-if="authStore.realNameStatus === 'rejected'"
+          class="banner-btn"
+          @click="goToIdentity"
+        >
+          重新认证 →
+        </button>
       </div>
     </div>
 
@@ -70,7 +80,7 @@ function goToIdentity() {
 }
 
 .main-content.has-banner {
-  padding-top: 64px; /* 横幅在导航下方，会撑开 */
+  padding-top: 108px;
 }
 
 /* 实名认证提示横幅 */

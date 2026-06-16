@@ -182,10 +182,26 @@
     <el-dialog v-model="permissionDialogVisible" title="添加组权限" width="460px">
       <el-form :model="permissionForm" label-width="90px">
         <el-form-item label="权限代码" required>
-          <el-select v-model="permissionForm.permission_code" filterable placeholder="请选择权限" style="width: 100%">
+          <el-select
+            v-model="permissionForm.permission_code"
+            filterable
+            allow-create
+            default-first-option
+            :loading="loadingAllPermissions"
+            :placeholder="permissionSelectPlaceholder"
+            style="width: 100%"
+          >
             <el-option v-for="item in allPermissions" :key="item.code" :label="`${item.name}（${item.code}）`" :value="item.code" />
+            <template #empty>
+              <div class="select-empty">
+                {{ permissionSelectEmptyText }}
+              </div>
+            </template>
           </el-select>
         </el-form-item>
+        <div v-if="permissionsLoadFailed" class="form-tip">
+          权限列表加载失败，可直接输入权限码后保存。
+        </div>
       </el-form>
       <template #footer>
         <el-button @click="permissionDialogVisible = false">取消</el-button>
@@ -226,7 +242,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -260,6 +276,8 @@ const members = ref<GroupMember[]>([])
 const groupPermissions = ref<GroupPermission[]>([])
 const inviteCodes = ref<GroupInviteCode[]>([])
 const allPermissions = ref<Permission[]>([])
+const loadingAllPermissions = ref(false)
+const permissionsLoadFailed = ref(false)
 const loadingMembers = ref(false)
 const loadingPermissions = ref(false)
 const loadingInvites = ref(false)
@@ -313,8 +331,17 @@ async function fetchGroup() {
 }
 
 async function fetchAllPermissions() {
-  const res = await listPermissions({ page: 1, page_size: 500 })
-  allPermissions.value = res.items
+  loadingAllPermissions.value = true
+  permissionsLoadFailed.value = false
+  try {
+    const res = await listPermissions({ page: 1, page_size: 500 })
+    allPermissions.value = res.items
+  } catch {
+    allPermissions.value = []
+    permissionsLoadFailed.value = true
+  } finally {
+    loadingAllPermissions.value = false
+  }
 }
 
 async function fetchActiveTab() {
@@ -342,7 +369,7 @@ async function fetchGroupPermissions() {
   loadingPermissions.value = true
   try {
     const res = await listGroupPermissions(groupId, { page: 1, page_size: 100 })
-    groupPermissions.value = res.items
+    groupPermissions.value = Array.isArray(res) ? res : res.items
   } finally {
     loadingPermissions.value = false
   }
@@ -439,6 +466,9 @@ async function handleRemoveMember(member: GroupMember) {
 
 function openAddPermission() {
   permissionForm.permission_code = ''
+  if (allPermissions.value.length === 0 && !loadingAllPermissions.value) {
+    fetchAllPermissions()
+  }
   permissionDialogVisible.value = true
 }
 
@@ -515,6 +545,14 @@ function groupRoleLabel(role: string) {
   const map: Record<string, string> = { admin: '管理员', member: '成员' }
   return map[role] ?? role
 }
+
+const permissionSelectPlaceholder = computed(() =>
+  permissionsLoadFailed.value ? '请输入权限码，如 app:use:cloud-disk' : '请选择或输入权限码'
+)
+
+const permissionSelectEmptyText = computed(() =>
+  permissionsLoadFailed.value ? '权限列表不可用，请直接输入权限码' : '暂无权限数据，可直接输入权限码'
+)
 
 function formatDate(dateStr: string) {
   if (!dateStr) return '--'
@@ -622,6 +660,18 @@ function formatDate(dateStr: string) {
   justify-content: flex-end;
   margin-bottom: 12px;
 }
+.select-empty {
+  padding: 8px 12px;
+  color: var(--mc-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.form-tip {
+  margin: -8px 0 0 90px;
+  color: var(--mc-warning);
+  font-size: 12px;
+  line-height: 1.5;
+}
 @media (max-width: 760px) {
   .page-header,
   .header-main,
@@ -634,6 +684,9 @@ function formatDate(dateStr: string) {
   }
   .info-item--wide {
     grid-column: span 1;
+  }
+  .form-tip {
+    margin-left: 0;
   }
 }
 </style>

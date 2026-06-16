@@ -6,7 +6,7 @@ import type { IdentityVerification, SubmitVerificationBody } from '@/types/auth'
 
 // 查询当前用户的实名认证状态
 export function getMyVerification() {
-  return http.get<unknown, IdentityVerification>('/identity/verifications/me')
+  return http.get<unknown, IdentityVerification>('/identity/verifications/latest')
 }
 
 // 提交实名认证（body 中 id_card_no 为 18 位原始身份证号，后端加密处理）

@@ -14,7 +14,7 @@ import type {
 // 发送邮箱验证码
 export function sendEmailCode(
   email: string,
-  scene: 'register' | 'login' | 'reset_password' | 'bind_email',
+  scene: 'register' | 'login' | 'reset_password',
 ) {
   return http.post<unknown, void>('/auth/verification-codes/email', { email, scene })
 }
@@ -22,9 +22,19 @@ export function sendEmailCode(
 // 发送短信验证码
 export function sendPhoneCode(
   phone: string,
-  scene: 'register' | 'login' | 'reset_password' | 'bind_phone',
+  scene: 'register' | 'login' | 'reset_password',
 ) {
   return http.post<unknown, void>('/auth/verification-codes/phone', { phone, scene })
+}
+
+// 已登录用户更换手机号前发送验证码，scene 由服务端固定为 bind_phone
+export function sendBindPhoneCode(phone: string) {
+  return http.post<unknown, void>('/me/verification-codes/phone', { phone })
+}
+
+// 已登录用户更换邮箱前发送验证码，scene 由服务端固定为 bind_email
+export function sendBindEmailCode(email: string) {
+  return http.post<unknown, void>('/me/verification-codes/email', { email })
 }
 
 // 统一注册（手机号 + 邮箱必须同时提交，需双重 OTP 验证码）
@@ -47,14 +57,19 @@ export function refreshToken(refresh_token: string) {
   return http.post<unknown, TokenPair>('/auth/refresh', { refresh_token })
 }
 
-// 退出登录（需 Bearer Token）
-export function logout() {
-  return http.post<unknown, void>('/auth/logout')
+// 退出登录（需 Bearer Token），发送空对象可兼容后端 JSON Decode 行为
+export function logout(refresh_token?: string) {
+  return http.post<unknown, void>('/auth/logout', { refresh_token })
 }
 
 // 获取当前用户信息（需 Bearer Token）
 export function getMe() {
   return http.get<unknown, User>('/me')
+}
+
+// 获取当前用户最终生效权限码（需 Bearer Token）
+export function getMyPermissions() {
+  return http.get<unknown, { permissions: string[] }>('/me/permissions')
 }
 
 // 修改密码（需旧密码，已登录）
