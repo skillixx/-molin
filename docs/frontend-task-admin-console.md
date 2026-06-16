@@ -679,6 +679,133 @@ export function listConsumptionRecords(params: {
 }
 ```
 
+#### 计费规则（P15–P17）`src/types/billing-rule.ts` + `src/api/billing-rule.ts`（新建）
+
+> ⚠️ create 返回 **HTTP 201 + 规则对象**；update 返回 `{ updated: true }`。规则/关联商品不存在均返回 **404/40004**（注意：**非** 商品的 40400）。`price_amount` 必须 > 0。
+
+```typescript
+// types/billing-rule.ts
+export interface BillingRule {
+  id: number
+  product_id: number
+  product_plan_id: number | null   // null=商品级通用规则
+  usage_type: string
+  usage_unit: string
+  price_amount: string             // 单价（字符串），必须 > 0
+  currency: string
+  billing_mode: string
+  free_quota: string | null        // 免费额度，可为 null
+  status: string
+  created_at: string               // RFC3339
+  updated_at: string
+}
+```
+
+```typescript
+// api/billing-rule.ts
+import http from './http'
+import type { BillingRule } from '@/types/billing-rule'
+import type { PageResult } from '@/types/api'
+
+/** P15 计费规则列表（product:view；可按 product_id / status 过滤） */
+export function listBillingRules(params: {
+  product_id?: number; status?: string; page?: number; page_size?: number
+} = {}) {
+  return http.get<unknown, PageResult<BillingRule>>('/admin/product-billing-rules', { params })
+}
+
+/** P16 新增计费规则（product:create）。返回 201 + 规则对象 */
+export function createBillingRule(data: {
+  product_id: number; product_plan_id?: number
+  usage_type: string; usage_unit: string
+  price_amount: string; currency?: string
+  billing_mode: string; free_quota?: string; status?: string
+}) {
+  return http.post<unknown, BillingRule>('/admin/product-billing-rules', data)
+}
+
+/** P17 修改计费规则（product:edit，部分更新）。返回 { updated: true } */
+export function updateBillingRule(id: number, data: Partial<{
+  usage_type: string; usage_unit: string
+  price_amount: string; currency: string
+  billing_mode: string; free_quota: string; status: string
+}>) {
+  return http.patch<unknown, { updated: boolean }>(`/admin/product-billing-rules/${id}`, data)
+}
+```
+
+#### 管理端订单（O5–O6）`src/api/order-admin.ts`（新建）
+
+> 复用用户端 `Order`/`OrderItem` 类型（见 `frontend-task-user-console.md` §6.3）。订单不存在返回 **404/40004**。
+
+```typescript
+// api/order-admin.ts
+import http from './http'
+import type { Order } from '@/types/order'
+import type { PageResult } from '@/types/api'
+
+/** O5 全量订单（order:list；user_id/status/order_type/时间过滤） */
+export function listAdminOrders(params: {
+  user_id?: number; status?: string; order_type?: string
+  created_from?: string; created_to?: string
+  page?: number; page_size?: number
+} = {}) {
+  return http.get<unknown, PageResult<Order>>('/admin/orders', { params })
+}
+
+/** O6 订单详情（order:list，不做用户过滤） */
+export function getAdminOrder(id: number) {
+  return http.get<unknown, Order>(`/admin/orders/${id}`)
+}
+```
+
+#### 管理端钱包（B5–B8）`src/api/wallet-admin.ts`（新建）
+
+> 复用用户端 `Wallet`/`WalletTransaction` 类型（见 `frontend-task-user-console.md` §6.4）。
+
+```typescript
+// api/wallet-admin.ts
+import http from './http'
+import type { Wallet, WalletTransaction } from '@/types/wallet'
+import type { PageResult } from '@/types/api'
+
+/** B5 查指定用户钱包（wallet:view）。响应字段为 wallet_id（D-008） */
+export function getUserWallet(userId: number) {
+  return http.get<unknown, Wallet>(`/admin/users/${userId}/wallet`)
+}
+
+/** B6 全量流水（wallet:view；user_id/type/direction/时间过滤） */
+export function listAllTransactions(params: {
+  user_id?: number; type?: string; direction?: string
+  created_from?: string; created_to?: string
+  page?: number; page_size?: number
+} = {}) {
+  return http.get<unknown, PageResult<WalletTransaction>>('/admin/wallet-transactions', { params })
+}
+
+/**
+ * B7 冻结/解冻（wallet:manage）。返回 { message }
+ * - amount 必填且 > 0（freeze 与 unfreeze 都要，否则 400）
+ * - 操作失败（如余额不足以冻结）→ 60001
+ * - 无 wallet:manage 权限 → 403
+ */
+export function freezeUserWallet(userId: number, data: {
+  action: 'freeze' | 'unfreeze'; amount: string; reason?: string
+}) {
+  return http.patch<unknown, { message: string }>(`/admin/users/${userId}/wallet/freeze`, data)
+}
+
+/** B8 支付回调记录（wallet:view；provider/status 过滤）。响应无 notify_body（安全红线 B-04） */
+export function listPaymentCallbacks(params: {
+  provider?: string; status?: string; page?: number; page_size?: number
+} = {}) {
+  return http.get<unknown, PageResult<{
+    id: number; order_id: number; provider: string; provider_trade_no: string
+    status: string; processed_at: string | null; created_at: string; updated_at: string
+  }>>('/admin/payment-callbacks', { params })
+}
+```
+
 ---
 
 ### 6.4 视图层任务
@@ -691,12 +818,14 @@ export function listConsumptionRecords(params: {
 | `views/product/PlanListView.vue` | `listPlans / createPlan / updatePlan` | 套餐 CRUD；扁平分页 |
 | `views/product/AccessConfigPanel.vue` | `replaceAccess` | 多角色勾选 can_view/can_buy/can_use；覆盖写，空数组清空所有规则 |
 | `views/product/PriceConfigPanel.vue` | `replacePrices` | 每个 item 内含 product_plan_id（D-009）；可多套餐批量配置；会员价/角色价/默认价三档；**items 不可为空（空→400），与 access 不同** |
-| `views/order/AdminOrderListView.vue` | `GET /api/admin/orders` | user_id/status/order_type/时间过滤；扁平分页 |
-| `views/wallet/AdminWalletView.vue` | `GET /api/admin/users/{id}/wallet` | 按用户 ID 查 |
-| `views/wallet/AdminTxListView.vue` | `GET /api/admin/wallet-transactions` | user_id/type/direction/时间过滤 |
-| `views/wallet/FreezeDialog.vue` | `PATCH /api/admin/users/{id}/wallet/freeze` | body `{action:'freeze'\|'unfreeze', amount, reason}`（C-4 字段名）；需 `wallet:manage` 权限；二次确认 |
-| `views/billing/CallbackListView.vue` | `GET /api/admin/payment-callbacks` | provider/status 过滤；**响应无 notify_body 字段**（安全红线） |
-| `views/consumption/AdminConsumptionView.vue` | `GET /api/admin/product-consumption-records` | F3；user_id/product_id/usage_type/时间过滤；扁平分页；列表无 wallet_transaction_id，以 event_id 对账 |
+| `views/product/BillingRuleListView.vue` | `listBillingRules / createBillingRule / updateBillingRule` | D3；product_id/status 过滤；create→201、update→`{updated}`；price_amount>0；不存在→40004 |
+| `views/order/AdminOrderListView.vue` | `listAdminOrders` | user_id/status/order_type/时间过滤；扁平分页 |
+| `views/order/AdminOrderDetailView.vue` | `getAdminOrder` | 含 `items` 明细；不存在→40004 |
+| `views/wallet/AdminWalletView.vue` | `getUserWallet` | 按用户 ID 查；字段 `wallet_id`（D-008） |
+| `views/wallet/AdminTxListView.vue` | `listAllTransactions` | user_id/type/direction/时间过滤；扁平分页 |
+| `views/wallet/FreezeDialog.vue` | `freezeUserWallet` | body `{action:'freeze'\|'unfreeze', amount, reason}`（C-4）；**amount 必填且>0**；失败→60001；需 `wallet:manage`，无权限→403；二次确认 |
+| `views/billing/CallbackListView.vue` | `listPaymentCallbacks` | provider/status 过滤；**响应无 notify_body 字段**（安全红线） |
+| `views/consumption/AdminConsumptionView.vue` | `listConsumptionRecords` | F3；user_id/product_id/usage_type/时间过滤；扁平分页；列表无 wallet_transaction_id，以 event_id 对账 |
 
 ---
 

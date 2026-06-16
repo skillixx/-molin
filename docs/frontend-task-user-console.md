@@ -468,6 +468,26 @@ export interface WalletTransaction {
 }
 ```
 
+### 6.4b 类型定义 `src/types/consumption.ts`（新建，C5/F2）
+
+```typescript
+// 我的消费记录列表项（F2，与管理端 F3 同构）
+// 注：列表不含 wallet_transaction_id（后端刻意不返回恒 null 字段），对账以 event_id 追溯
+export interface ConsumptionRecord {
+  id: number
+  user_id: number
+  product_id: number
+  product_plan_id: number | null
+  instance_id: number | null
+  usage_type: string
+  usage_amount: string
+  usage_unit: string
+  amount: string            // 扣费金额（字符串，精度红线）
+  event_id: string          // 唯一事件 ID，用于对账
+  created_at: string
+}
+```
+
 ---
 
 ### 6.5 API 层签名
@@ -594,6 +614,28 @@ export function createRechargeOrder(body: {
 }
 ```
 
+**`src/api/consumption.ts`（新建，C5/F2）**
+
+```typescript
+import http from './http'
+import type { ConsumptionRecord } from '@/types/consumption'
+import type { PageResult } from '@/types/api'
+
+/**
+ * 我的消费记录（F2，强制本人过滤，无需传 user_id）
+ * query：product_id / usage_type / created_from / created_to / page / page_size
+ */
+export function listMyConsumptionRecords(params: {
+  product_id?: number; usage_type?: string
+  created_from?: string; created_to?: string
+  page?: number; page_size?: number
+} = {}) {
+  return http.get<unknown, PageResult<ConsumptionRecord>>(
+    '/product-consumption-records', { params }
+  )
+}
+```
+
 ---
 
 ### 6.6 视图层任务
@@ -608,6 +650,7 @@ export function createRechargeOrder(body: {
 | `views/wallet/WalletView.vue` | `getMyWallet` | 展示 `wallet_id` / `balance_amount` / `frozen_amount` |
 | `views/wallet/TransactionListView.vue` | `listMyTransactions` | type/direction/时间过滤；扁平分页 |
 | `views/wallet/RechargeView.vue` | `createRechargeOrder` | 选 wechat/alipay；金额用字符串（避免浮点精度）；返回 HTTP 201 |
+| `views/consumption/MyConsumptionView.vue` | `listMyConsumptionRecords` | C5/F2；product_id/usage_type/时间过滤；扁平分页；列表无 wallet_transaction_id，以 event_id 对账 |
 
 ---
 
@@ -621,4 +664,4 @@ export function createRechargeOrder(body: {
 - [ ] 存量 pending 订单可经 O3 钱包支付成功（status→paid，返回 wallet_transaction_id）；已支付(60002)/状态冲突(40900)有正确提示
 - [ ] 钱包余额取 `wallet_id` 字段（**不是 `id`**）；`balance_amount` 精确显示
 - [ ] 充值订单返回 HTTP 201（非 200）；`pay_url` 展示二维码或跳转
-- [ ] 消费记录扁平分页正确展示
+- [ ] 我的消费记录（F2）：`listMyConsumptionRecords` 强制本人、product_id/usage_type/时间过滤生效；扁平分页正确；不依赖 wallet_transaction_id 字段

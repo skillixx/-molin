@@ -1,6 +1,6 @@
 # 前端开发规范与任务规划（基于后端乙接口）
 
-> **版本**：v1.1 规划稿，2026-06-16（v1.1 据后端乙源码逐接口复核，补订 §3.1 契约勘误）
+> **版本**：v1.2 规划稿，2026-06-16（v1.1 据源码逐接口复核补订 §3.1 契约勘误；v1.2 补齐用户端 F2 消费记录、管理端 P15-P17/O5-O6/B5-B8 类型与签名，补充分页上限/冻结校验/404 边界）
 > **作者**：架构（senior-architect 方法论）
 > **范围**：仅覆盖**后端工程师乙**负责的四个模块对接 —— `product`（商品/套餐/价格/访问规则/计费规则）、`order`（订单状态机/支付/取消）、`billing`（钱包/流水/充值/回调）、`finance_consumer`（消费记录）。
 > **对接基线**：main `4779eb2`（2026-06-16，全量回归 88/88 PASS）。
@@ -43,6 +43,8 @@ export interface PageResult<T> {
 ```
 
 > 历史提示：`frontend-dev-plan-backend-a.md` 早期稿曾注明「乙模块仍嵌套 pagination」，**该说法已过期**，以本节为准。两端不再需要为乙模块写差异化的分页解析。
+
+**分页入参契约**（`server/pkg/pagination/pagination.go`）：query 参数为 `page` / `page_size`；`page` 缺省/<1 取 1；`page_size` 缺省/<1 取 **20**，**上限 100（超过静默截断为 100）**。前端按惯例固定 `page_size=20` 即可，如需大页长不要超过 100。
 
 ### 1.2 后端乙专属约定（区别于后端甲）
 
@@ -147,7 +149,7 @@ export interface PageResult<T> {
 | 4 | 支付 `POST /orders/{id}/pay` 错误码 | 除 60001 外，还有 **60002「订单已支付」(D-007)**、40900「状态不可支付/冲突」、40000「不支持的支付方式」、40004「订单不存在」 | `order/handler/order_handler.go:146-158` |
 | 5 | 价格 `PATCH .../prices` 空数组 | prices 的 `items` **不可为空**（空→400「items 不能为空」）；与 access（空→清空规则，合法）**行为相反** | `product/handler/admin_product_handler.go:345` |
 | 6 | 订单类型 `Order` / `OrderItem` | 列表/详情返回完整 `model.Order`（含 `user_id/cancelled_at/failed_at/remark/updated_at/items[]`）；`order_type` 取值为 **`product`**（非 `purchase`）；明细类型 `OrderItem` 需单独定义 | `order/model/order.go:16` |
-| 7 | 用户端"不存在"错误码 | 用户端 `GetProduct`/`GetOrder` 返回 **40004**（管理端 BUG-B 才是 40400），按 404 通用处理 | `product/handler/product_handler.go:86`、`order/handler/order_handler.go:108` |
+| 7 | "不存在"错误码边界 | **40400 仅用于管理端商品/套餐**（BUG-B / D-006）；其余一律 **40004**：用户端 `GetProduct`/`GetOrder`、管理端订单（O6）、管理端计费规则（P17）均为 40004。即"管理端=40400"不成立，按 404 通用处理 | `product_handler.go:86`、`order_handler.go:108`、`admin_billing_rule_handler.go:169`、`admin_product_handler.go:101` |
 | 8 | `WalletTransaction` 类型 | 实际含 `wallet_id/user_id/related_order_id`，v1.0 类型漏列 | `billing/model` + `billing_handler.go:114` |
 | 9 | `user_price` 未配置取值 | DTO 注释为 `-1`、handler 回退为 `0`，**语义不一致，需后端乙澄清**；前端"价格未配置"判定勿写死 | `product/dto/product_dto.go:144` vs `product_handler.go:207` |
 | 10 | 订单 JSON 含 `idempotency_key` | 列表/详情会原样返回 `idempotency_key`，前端忽略即可（可提请后端评估是否隐藏） | `order/model/order.go:25` |
@@ -196,7 +198,7 @@ export interface PageResult<T> {
 |---|---|---|---|---|
 | D5-1 | 按用户查钱包 | B5 | 输入/选择 user_id | 0.5d |
 | D5-2 | 全量流水（user_id/type/direction/时间过滤） | B6 | 扁平分页 | 1d |
-| D5-3 | 冻结/解冻 | B7 | body `{action:'freeze'\|'unfreeze', amount, reason}`；需 `wallet:manage`，无权限 403；二次确认 | 1d |
+| D5-3 | 冻结/解冻 | B7 | body `{action:'freeze'\|'unfreeze', amount, reason}`；**amount 必填且>0**（两动作都要）；操作失败（如余额不足以冻结）→60001；需 `wallet:manage`，无权限 403；二次确认 | 1d |
 | D5-4 | 回调记录列表（provider/status 过滤） | B8 | **不渲染 notify_body**（安全红线 B-04） | 0.5d |
 
 ### 阶段 D6 — 全量消费记录（F3）
