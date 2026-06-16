@@ -395,7 +395,7 @@ def test_b02(admin_uid, admin_token, normal_role_id):
 
     if not product_id:
         fail("创建商品响应缺少 id 字段", str(d)[:200])
-        return None, None
+        return None, None, None
 
     # 2. GET /api/admin/products 列表
     s, b = get("/api/admin/products", token=admin_token)
@@ -438,7 +438,7 @@ def test_b02(admin_uid, admin_token, normal_role_id):
 
     if not plan_id:
         fail("创建套餐响应缺少 id 字段", str(get_data(b))[:200])
-        return product_id, None
+        return product_id, None, None
 
     # 3b. GET /api/admin/products/:id/plans 列表
     s, b = get(f"/api/admin/products/{product_id}/plans", token=admin_token)
@@ -462,6 +462,25 @@ def test_b02(admin_uid, admin_token, normal_role_id):
     }, token=admin_token)
     assert_code("PATCH /api/admin/products/:id/prices 配置价格 50 CNY → 200", s, b, 200)
 
+    # 5b. 额外创建一个"未配置价格"的套餐，用于验证 user_price 未配置时返回 -1（#144）。
+    # 故意不调用 /prices 为它配置价格。
+    unpriced_plan_id = None
+    s, b = post(f"/api/admin/products/{product_id}/plans", {
+        "plan_code": f"plan_noprice_{ts}",
+        "name": "未定价套餐",
+        "billing_type": "one_time",
+        "status": "active"
+    }, token=admin_token)
+    assert_code("POST /api/admin/products/:id/plans 创建未定价套餐 → 201", s, b, 201)
+    unpriced_plan_id = get_data(b).get("id")
+    if not unpriced_plan_id:
+        s2, b2 = get(f"/api/admin/products/{product_id}/plans", token=admin_token)
+        if s2 == 200:
+            d2 = get_data(b2)
+            lst = d2.get("plans") or d2.get("list") or d2.get("items") or (d2 if isinstance(d2, list) else [])
+            if lst:
+                unpriced_plan_id = lst[-1].get("id")
+
     # 6. PATCH /api/admin/products/:id/status 切换状态
     s, b = patch(f"/api/admin/products/{product_id}/status", {
         "status": "active"
@@ -472,13 +491,13 @@ def test_b02(admin_uid, admin_token, normal_role_id):
     s, b = get("/api/admin/products")
     assert_code("无 Token 访问 /api/admin/products → 401", s, b, 401)
 
-    return product_id, plan_id
+    return product_id, plan_id, unpriced_plan_id
 
 
 # ════════════════════════════════════════════════════════
 # B-03  用户端商品
 # ════════════════════════════════════════════════════════
-def test_b03(user_token, product_id, plan_id):
+def test_b03(user_token, product_id, plan_id, unpriced_plan_id=None):
     section("B-03  用户端商品（user products）")
 
     # 1. GET /api/products 按角色过滤
@@ -508,11 +527,42 @@ def test_b03(user_token, product_id, plan_id):
         if has_plans:
             plans_list = d.get("plans", [])
             if plans_list and len(plans_list) > 0:
-                first_plan = plans_list[0]
-                if "user_price" in first_plan:
-                    ok(f"商品详情 plans[0] 含 user_price={first_plan.get('user_price')}")
+                # 建立 plan_id → user_price 映射，便于按套餐校验取价
+                price_map = {str(p.get("id")): p.get("user_price") for p in plans_list if "user_price" in p}
+                if not price_map:
+                    fail("商品详情 plans 均缺少 user_price 字段", str(plans_list)[:200])
                 else:
-                    fail("商品详情 plans[0] 缺少 user_price 字段", str(first_plan)[:200])
+                    ok(f"商品详情 plans 含 user_price 字段（{len(price_map)} 个套餐）")
+
+                # 已配置价格的套餐（B-02 配了 50 CNY）应返回 50，且不得为 -1（未配置哨兵）
+                priced = price_map.get(str(plan_id))
+                if priced is not None:
+                    try:
+                        if abs(float(priced) - 50.0) < 1e-9:
+                            ok(f"已配置套餐 user_price={priced}（=50，取价正确）")
+                        else:
+                            fail("已配置套餐 user_price 不等于 50", f"plan_id={plan_id}, user_price={priced}")
+                    except (TypeError, ValueError):
+                        fail("已配置套餐 user_price 非法数值", f"user_price={priced}")
+                else:
+                    info(f"未在 plans 中找到已配置套餐 {plan_id}（跳过 50 校验）")
+
+                # #144：未配置价格的套餐 user_price 必须为 -1（区别于合法免费价 0）
+                if unpriced_plan_id is not None:
+                    unpriced = price_map.get(str(unpriced_plan_id))
+                    if unpriced is not None:
+                        try:
+                            if abs(float(unpriced) - (-1.0)) < 1e-9:
+                                ok(f"#144 未配置套餐 user_price={unpriced}（=-1，符合未配置哨兵）")
+                            else:
+                                fail("#144 未配置套餐 user_price 应为 -1",
+                                     f"plan_id={unpriced_plan_id}, user_price={unpriced}（0 表示免费、-1 才表示未配置）")
+                        except (TypeError, ValueError):
+                            fail("未配置套餐 user_price 非法数值", f"user_price={unpriced}")
+                    else:
+                        fail("未在 plans 中找到未配置套餐", f"unpriced_plan_id={unpriced_plan_id}")
+                else:
+                    info("未传入 unpriced_plan_id（跳过 #144 -1 校验）")
             else:
                 ok("商品详情含 plans 字段（列表可能为空）")
         else:
@@ -992,10 +1042,10 @@ def main():
 
     # ── 执行测试 ──
     test_b01()
-    product_id, plan_id = test_b02(admin_uid, admin_token, normal_role_id)
+    product_id, plan_id, unpriced_plan_id = test_b02(admin_uid, admin_token, normal_role_id)
 
     if product_id and plan_id:
-        test_b03(normal_token, product_id, plan_id)
+        test_b03(normal_token, product_id, plan_id, unpriced_plan_id)
         test_b04(normal_uid, normal_token, product_id, plan_id, normal_role_id)
         test_b07(admin_token, normal_role_id)
     else:
