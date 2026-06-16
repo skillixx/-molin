@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/shopspring/decimal"
+
 	"molin/server/internal/middleware"
 	billingsvc "molin/server/internal/modules/billing/service"
 	"molin/server/internal/modules/product/dto"
@@ -201,14 +203,26 @@ func (h *ProductHandler) enrichPlansWithPrice(r *http.Request, plans []model.Pro
 			Currency:     "CNY",
 		}
 		price, err := h.pricingSvc.GetPrice(r.Context(), plan.ID, userID)
-		if err == nil {
-			p.UserPrice = price
-		} else {
-			p.UserPrice = price // decimal.Zero
-		}
+		p.UserPrice = resolveUserPrice(price, err)
 		result = append(result, p)
 	}
 	return result
+}
+
+// userPriceUnconfigured 表示"未配置价格"的统一取值（-1）。
+// 0 是合法的免费价，无法表达"未配置"，故用 -1 区分，与 DTO PlanWithPrice.UserPrice 注释一致。
+var userPriceUnconfigured = decimal.NewFromInt(-1)
+
+// resolveUserPrice 统一"套餐用户实际价格"的取值语义：
+//   - 取价成功（err == nil）：原样返回该价格（合法价格，含免费 0）；
+//   - 取价失败（err != nil，含 service.ErrNoPriceConfigured）：返回 -1 表示未配置。
+//
+// 抽出为纯函数以便对该取值语义做无依赖单元测试。
+func resolveUserPrice(price decimal.Decimal, err error) decimal.Decimal {
+	if err != nil {
+		return userPriceUnconfigured
+	}
+	return price
 }
 
 // parseIDFromPath 从路径参数解析 uint64 类型的 ID。
