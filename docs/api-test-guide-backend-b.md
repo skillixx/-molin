@@ -89,7 +89,7 @@ Authorization: Bearer {{token}}
 {
   "code": 0,
   "data": {
-    "id": 1,
+    "wallet_id": 1,
     "user_id": 1,
     "balance_amount": "0.000000",
     "frozen_amount": "0.000000",
@@ -97,6 +97,8 @@ Authorization: Bearer {{token}}
   }
 }
 ```
+
+> D-008：字段名 `id` 已改为 `wallet_id`（PR#135）。
 
 ---
 
