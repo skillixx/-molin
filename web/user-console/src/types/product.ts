@@ -1,29 +1,32 @@
-// 商品（Week 2 接口就绪后完善）
 export interface Product {
   id: number
+  product_type: string
+  product_code: string
   name: string
-  description: string
-  category: string
-  icon?: string
-  plans: Plan[]
+  description?: string | null
+  status: string
+  business_ref_id: number | null
   created_at: string
+  updated_at: string
 }
 
-// 套餐
-export interface Plan {
+export interface ProductPlan {
   id: number
-  product_id: number
+  plan_code: string
   name: string
-  description?: string
-  prices: Price[]
+  billing_type: 'one_time' | 'monthly' | 'yearly' | 'usage'
+  duration_days: number | null
+  quota_json: string | null
+  status: string
+  user_price: string
+  currency: string
 }
 
-// 价格（按用户角色/会员等级）
-export interface Price {
-  id: number
-  plan_id: number
-  amount: number       // 单位：分
-  currency: string
-  billing_cycle: 'monthly' | 'yearly' | 'once'
-  user_role?: string   // 适用用户角色
+export interface PurchaseResult {
+  order_id: number
+  order_no: string
+  status: 'paid'
+  amount: string
+  asset_id: number | null
+  idempotent: boolean
 }

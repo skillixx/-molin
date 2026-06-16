@@ -13,3 +13,5 @@ export interface PageResponse<T = unknown> {
   page_size: number
   total: number
 }
+
+export type PageResult<T = unknown> = PageResponse<T>

@@ -84,7 +84,17 @@ const router = createRouter({
           meta: { title: '我的资产 — 墨灵' },
         },
 
-        // 钱包（Week 2）
+        // 订单与钱包
+        {
+          path: 'orders',
+          component: () => import('@/views/order/OrderListView.vue'),
+          meta: { title: '我的订单 — 墨灵' },
+        },
+        {
+          path: 'orders/:id',
+          component: () => import('@/views/order/OrderDetailView.vue'),
+          meta: { title: '订单详情 — 墨灵' },
+        },
         {
           path: 'wallet',
           component: () => import('@/views/wallet/WalletView.vue'),
@@ -99,6 +109,11 @@ const router = createRouter({
           path: 'wallet/transactions',
           component: () => import('@/views/wallet/TransactionView.vue'),
           meta: { title: '账单流水 — 墨灵' },
+        },
+        {
+          path: 'consumption',
+          component: () => import('@/views/consumption/MyConsumptionView.vue'),
+          meta: { title: '我的消费记录 — 墨灵' },
         },
 
         // 会员中心（Week 2）

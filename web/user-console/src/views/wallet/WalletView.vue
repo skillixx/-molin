@@ -1,19 +1,121 @@
 <script setup lang="ts">
-/** 我的钱包（Week 2 实现） */
+import { onMounted } from 'vue'
+import { Refresh, Wallet, Tickets, Plus } from '@element-plus/icons-vue'
+import { useWalletStore } from '@/stores/wallet'
+import { displayAmount } from '@/utils/display'
+
+const walletStore = useWalletStore()
+
+onMounted(walletStore.fetchBalance)
 </script>
+
 <template>
-  <div class="page-placeholder">
+  <div class="wallet-page">
     <div class="page-container">
-      <h2 class="page-title">我的钱包</h2>
-      <div class="coming-soon glass-card">
-        <p>💰 钱包功能 Week 2 上线</p>
+      <div class="page-header">
+        <div>
+          <h2 class="page-title">我的钱包</h2>
+          <p class="page-subtitle">查看余额、冻结金额和资金流水</p>
+        </div>
+        <el-button :icon="Refresh" :loading="walletStore.loading" @click="walletStore.fetchBalance">刷新</el-button>
+      </div>
+
+      <div v-loading="walletStore.loading" class="wallet-grid">
+        <div class="balance-card glass-card">
+          <div class="card-label">可用余额</div>
+          <div class="balance-value">
+            {{ displayAmount(walletStore.wallet?.balance_amount, walletStore.wallet?.currency) }}
+          </div>
+          <div class="wallet-id">钱包 ID：{{ walletStore.wallet?.wallet_id ?? '--' }}</div>
+          <div class="actions">
+            <router-link to="/wallet/recharge">
+              <el-button type="primary" :icon="Plus">充值</el-button>
+            </router-link>
+            <router-link to="/wallet/transactions">
+              <el-button :icon="Tickets">查看流水</el-button>
+            </router-link>
+          </div>
+        </div>
+
+        <div class="metric-card glass-card">
+          <el-icon><Wallet /></el-icon>
+          <span>冻结金额</span>
+          <strong>{{ displayAmount(walletStore.wallet?.frozen_amount, walletStore.wallet?.currency) }}</strong>
+        </div>
+        <div class="metric-card glass-card">
+          <el-icon><Tickets /></el-icon>
+          <span>币种</span>
+          <strong>{{ walletStore.wallet?.currency ?? 'CNY' }}</strong>
+        </div>
       </div>
     </div>
   </div>
 </template>
+
 <style scoped>
-.page-placeholder { padding: 32px 24px; }
-.page-container { max-width: 1280px; margin: 0 auto; }
-.page-title { font-size: 24px; font-weight: 600; color: var(--color-text); margin-bottom: 24px; }
-.coming-soon { padding: 60px; text-align: center; color: var(--color-text-muted); font-size: 15px; }
+.wallet-page { padding: 32px 24px; }
+.page-container { max-width: 1180px; margin: 0 auto; }
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.page-title {
+  color: var(--color-text);
+  font-size: 26px;
+  margin-bottom: 8px;
+}
+.page-subtitle {
+  color: var(--color-text-muted);
+  font-size: 14px;
+}
+.wallet-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 16px;
+}
+.balance-card,
+.metric-card {
+  padding: 24px;
+  border-radius: 8px;
+}
+.card-label,
+.metric-card span,
+.wallet-id {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+.balance-value {
+  margin: 14px 0 8px;
+  color: var(--color-accent);
+  font-size: 36px;
+  font-weight: 800;
+}
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+.metric-card {
+  display: grid;
+  align-content: center;
+  gap: 10px;
+}
+.metric-card .el-icon {
+  color: var(--color-accent);
+  font-size: 24px;
+}
+.metric-card strong {
+  color: var(--color-text);
+  font-size: 22px;
+}
+@media (max-width: 900px) {
+  .wallet-grid {
+    grid-template-columns: 1fr;
+  }
+  .page-header {
+    flex-direction: column;
+  }
+}
 </style>

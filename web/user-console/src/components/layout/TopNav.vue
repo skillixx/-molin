@@ -33,7 +33,9 @@ function handleCommand(cmd: string) {
   if (cmd === 'profile') router.push('/profile')
   else if (cmd === 'identity') router.push('/identity')
   else if (cmd === 'assets') router.push('/assets')
+  else if (cmd === 'orders') router.push('/orders')
   else if (cmd === 'wallet') router.push('/wallet')
+  else if (cmd === 'consumption') router.push('/consumption')
   else if (cmd === 'logout') handleLogout()
 }
 
@@ -81,11 +83,25 @@ onMounted(() => {
             我的资产
           </router-link>
           <router-link
+            to="/orders"
+            class="nav-link"
+            :class="{ active: isActive('/orders') }"
+          >
+            我的订单
+          </router-link>
+          <router-link
             to="/wallet"
             class="nav-link"
             :class="{ active: isActive('/wallet') }"
           >
             钱包
+          </router-link>
+          <router-link
+            to="/consumption"
+            class="nav-link"
+            :class="{ active: isActive('/consumption') }"
+          >
+            消费记录
           </router-link>
           <router-link
             to="/announcements"
@@ -141,9 +157,17 @@ onMounted(() => {
                 <el-icon><box /></el-icon>
                 我的资产
               </el-dropdown-item>
+              <el-dropdown-item command="orders">
+                <el-icon><tickets /></el-icon>
+                我的订单
+              </el-dropdown-item>
               <el-dropdown-item command="wallet">
                 <el-icon><wallet /></el-icon>
                 钱包
+              </el-dropdown-item>
+              <el-dropdown-item command="consumption">
+                <el-icon><list /></el-icon>
+                消费记录
               </el-dropdown-item>
               <el-dropdown-item divided command="logout" class="logout-item">
                 <el-icon><switch-button /></el-icon>
