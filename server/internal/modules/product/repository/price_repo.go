@@ -92,3 +92,16 @@ func (r *PriceRepository) ReplaceByPlanID(ctx context.Context, planID uint64, pr
 		return tx.Create(&prices).Error
 	})
 }
+
+// ReplaceByPlanIDTx 在外部事务内覆盖写入套餐价格（先删后插）。
+// BUG-D 修复：供 ReplaceMultiPlanPrices 调用，让多套餐价格写入共享同一外部事务，
+// 确保部分失败时前序套餐价格可一并回滚，消除价格不一致风险。
+func (r *PriceRepository) ReplaceByPlanIDTx(tx *gorm.DB, planID uint64, prices []model.ProductPrice) error {
+	if err := tx.Where("product_plan_id = ?", planID).Delete(&model.ProductPrice{}).Error; err != nil {
+		return err
+	}
+	if len(prices) == 0 {
+		return nil
+	}
+	return tx.Create(&prices).Error
+}

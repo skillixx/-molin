@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 )
 
 // IAMService 定义 product/service 包所需的 IAM 接口。
@@ -36,6 +37,8 @@ type MembershipService interface {
 // BillingService 定义扣费接口，由 billing.WalletService 实现。
 type BillingService interface {
 	Deduct(ctx context.Context, userID uint64, amount decimal.Decimal, orderID uint64, remark string) error
+	// DeductTx 在外部事务内扣费，返回钱包流水 ID；供 Purchase 单事务保证使用。
+	DeductTx(tx *gorm.DB, userID uint64, amount decimal.Decimal, orderID uint64, remark string) (uint64, error)
 }
 
 // UserRepository 定义实名状态查询接口。
