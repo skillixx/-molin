@@ -1,6 +1,6 @@
 # 前端开发规范与任务规划（基于后端乙接口）
 
-> **版本**：v1.0 规划稿，2026-06-16
+> **版本**：v1.1 规划稿，2026-06-16（v1.1 据后端乙源码逐接口复核，补订 §3.1 契约勘误）
 > **作者**：架构（senior-architect 方法论）
 > **范围**：仅覆盖**后端工程师乙**负责的四个模块对接 —— `product`（商品/套餐/价格/访问规则/计费规则）、`order`（订单状态机/支付/取消）、`billing`（钱包/流水/充值/回调）、`finance_consumer`（消费记录）。
 > **对接基线**：main `4779eb2`（2026-06-16，全量回归 88/88 PASS）。
@@ -135,6 +135,23 @@ export interface PageResult<T> {
 | C-4 | `PATCH /api/admin/users/{id}/wallet/freeze` | body 统一为 `{action, amount, reason}`（原 `remark` → `reason`） | 甲 | — |
 | C-5 | 消费记录 | 上报响应 `record_id` → `consumption_record_id`，新增 `wallet_transaction_id` | （内部） | — |
 
+### 3.1 契约勘误（v1.1，据源码逐接口复核）
+
+> 以下为 v1.0 规划稿与后端乙现行代码（`route.go` + DTO + handler）核对后发现的偏差，已同步修订两端任务单。**前端对接以本节为准**。
+
+| # | 接口 / 类型 | 勘误 | 源码依据 |
+|---|---|---|---|
+| 1 | `GET /api/products/{id}/plans` | 响应是**扁平分页** `{items,page,page_size,total}`，**非** `{plans:[]}`；与商品详情里的 `plans` 字段结构不同，勿混用 | `product/handler/product_handler.go:126` |
+| 2 | 购买响应 `PurchaseResult` | 含 `asset_id`（`number\|null`，异步开通时为 null），v1.0 类型漏列 | `product/dto/product_dto.go:91` |
+| 3 | 购买 `POST /products/{id}/purchase` 错误码 | 除 70001/60001/40003 外，还有 **409/50000「系统繁忙请重试」**（并发锁耗尽）、40000「该套餐未配置价格」 | `product/handler/product_handler.go:174-179` |
+| 4 | 支付 `POST /orders/{id}/pay` 错误码 | 除 60001 外，还有 **60002「订单已支付」(D-007)**、40900「状态不可支付/冲突」、40000「不支持的支付方式」、40004「订单不存在」 | `order/handler/order_handler.go:146-158` |
+| 5 | 价格 `PATCH .../prices` 空数组 | prices 的 `items` **不可为空**（空→400「items 不能为空」）；与 access（空→清空规则，合法）**行为相反** | `product/handler/admin_product_handler.go:345` |
+| 6 | 订单类型 `Order` / `OrderItem` | 列表/详情返回完整 `model.Order`（含 `user_id/cancelled_at/failed_at/remark/updated_at/items[]`）；`order_type` 取值为 **`product`**（非 `purchase`）；明细类型 `OrderItem` 需单独定义 | `order/model/order.go:16` |
+| 7 | 用户端"不存在"错误码 | 用户端 `GetProduct`/`GetOrder` 返回 **40004**（管理端 BUG-B 才是 40400），按 404 通用处理 | `product/handler/product_handler.go:86`、`order/handler/order_handler.go:108` |
+| 8 | `WalletTransaction` 类型 | 实际含 `wallet_id/user_id/related_order_id`，v1.0 类型漏列 | `billing/model` + `billing_handler.go:114` |
+| 9 | `user_price` 未配置取值 | DTO 注释为 `-1`、handler 回退为 `0`，**语义不一致，需后端乙澄清**；前端"价格未配置"判定勿写死 | `product/dto/product_dto.go:144` vs `product_handler.go:207` |
+| 10 | 订单 JSON 含 `idempotency_key` | 列表/详情会原样返回 `idempotency_key`，前端忽略即可（可提请后端评估是否隐藏） | `order/model/order.go:25` |
+
 ---
 
 ## 4. 前端甲（管理后台）任务分解 —— 后端乙管理端
@@ -157,7 +174,7 @@ export interface PageResult<T> {
 |---|---|---|---|---|
 | D2-1 | 套餐列表 + 创建/编辑 | P10 / P11 / P12 | 重复 plan_code → 400（BUG-C） | 1.5d |
 | D2-2 | 访问规则覆盖写（多角色 can_view/can_buy/can_use） | P13 | body `{items:[...]}`；`items:[]` 清空所有规则；**缺 items 键报 400**（D-011） | 1d |
-| D2-3 | 价格配置（默认价/角色价/会员价三档，多套餐批量） | P14 | 每项含 `product_plan_id`，**无顶层 plan_id**（D-009）；可一次提交多套餐（BUG-D） | 1.5d |
+| D2-3 | 价格配置（默认价/角色价/会员价三档，多套餐批量） | P14 | 每项含 `product_plan_id`，**无顶层 plan_id**（D-009）；可一次提交多套餐（BUG-D）；**items 不可为空（空→400，与 access 相反）** | 1.5d |
 
 ### 阶段 D3 — 计费规则 CRUD
 
@@ -242,10 +259,12 @@ export interface PageResult<T> {
 ```
 点「购买」→ 生成 Idempotency-Key(UUID) →
   POST /api/products/{id}/purchase  {plan_id, quantity, remark?}  header: Idempotency-Key
-    ├ 70001 未实名      → 弹窗引导去实名（/identity 提交页）
-    ├ 60001 余额不足    → 弹窗引导去充值（/wallet/recharge）
-    ├ 40003 无购买权限  → 提示「当前角色无购买权限」
-    ├ 成功 status=paid  → 提示「购买成功」，刷新订单/资产
+    ├ 70001 未实名         → 弹窗引导去实名（/identity 提交页）
+    ├ 60001 余额不足       → 弹窗引导去充值（/wallet/recharge）
+    ├ 40003 无购买权限     → 提示「当前角色无购买权限」
+    ├ 40000 套餐未配置价格 → 提示「该套餐暂不可购买」
+    ├ 409/50000 系统繁忙   → 提示「系统繁忙，请重试」（并发锁耗尽，复用同一 key 重试）
+    ├ 成功 status=paid     → 提示「购买成功」，读取 asset_id（可能 null），刷新订单/资产
     └ 成功 idempotent=true → 提示「该订单已购买，未重复扣费」
 ```
 
@@ -259,7 +278,11 @@ export interface PageResult<T> {
 
 续付（O3，钱包支付存量 pending 订单）：
   POST /api/orders/{id}/pay {pay_method:'wallet'}  header: Idempotency-Key
-    ├ 60001 余额不足 → 引导充值
+    ├ 60001 余额不足          → 引导充值
+    ├ 60002 订单已支付(D-007) → 刷新订单状态
+    ├ 40900 状态不可支付/冲突 → 刷新后重试
+    ├ 40000 不支持的支付方式  → 提示
+    ├ 40004 订单不存在        → 提示
     └ 成功 → {order_id, status:'paid', wallet_transaction_id, asset_id}
 ```
 

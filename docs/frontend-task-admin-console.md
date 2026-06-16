@@ -632,6 +632,8 @@ export function replaceAccess(productId: number, items: AccessItem[]) {
  * 覆盖写入套餐价格
  * - product_plan_id 在每个 item 内指定（D-009，已无顶层 plan_id）
  * - 支持单次请求配置多个套餐的价格
+ * - ⚠️ 与 access 不同：prices 的 items **不可为空**，空数组返回 400「items 不能为空」。
+ *   前端价格面板必须至少提交一项，不能用空数组"清空价格"。
  */
 export function replacePrices(productId: number, items: PriceItem[]) {
   return http.patch<unknown, { message: string }>(
@@ -688,7 +690,7 @@ export function listConsumptionRecords(params: {
 | `views/product/ProductStatusToggle.vue` | `updateProductStatus` | draft/active/inactive 三态切换；不存在→404 提示（BUG-B） |
 | `views/product/PlanListView.vue` | `listPlans / createPlan / updatePlan` | 套餐 CRUD；扁平分页 |
 | `views/product/AccessConfigPanel.vue` | `replaceAccess` | 多角色勾选 can_view/can_buy/can_use；覆盖写，空数组清空所有规则 |
-| `views/product/PriceConfigPanel.vue` | `replacePrices` | 每个 item 内含 product_plan_id（D-009）；可多套餐批量配置；会员价/角色价/默认价三档 |
+| `views/product/PriceConfigPanel.vue` | `replacePrices` | 每个 item 内含 product_plan_id（D-009）；可多套餐批量配置；会员价/角色价/默认价三档；**items 不可为空（空→400），与 access 不同** |
 | `views/order/AdminOrderListView.vue` | `GET /api/admin/orders` | user_id/status/order_type/时间过滤；扁平分页 |
 | `views/wallet/AdminWalletView.vue` | `GET /api/admin/users/{id}/wallet` | 按用户 ID 查 |
 | `views/wallet/AdminTxListView.vue` | `GET /api/admin/wallet-transactions` | user_id/type/direction/时间过滤 |
@@ -702,7 +704,7 @@ export function listConsumptionRecords(params: {
 - [ ] 商品创建/更新：重复 product_code/plan_code 返回 400 有友好提示（BUG-C）
 - [ ] 商品/套餐详情：ID 不存在时展示 404 提示页（BUG-B）
 - [ ] 访问权限配置：body 使用 `{ "items": [...] }` 键名；空数组清空规则正常
-- [ ] 价格配置：每个 item 内含 `product_plan_id`，**无顶层 `plan_id`**（D-009）
+- [ ] 价格配置：每个 item 内含 `product_plan_id`，**无顶层 `plan_id`**（D-009）；**空 items 被拒（400），面板不允许提交空价格列表**
 - [ ] 钱包冻结/解冻 body 用 `{action, amount, reason}`（C-4）；需 `wallet:manage` 权限，无权限返回 403 且有明确提示
 - [ ] 回调记录列表中**不渲染 notify_body 字段**（安全红线，后端已不返回）
 - [ ] 全量消费记录（F3）支持 user_id/product_id/usage_type/时间过滤；扁平分页正确；不依赖 wallet_transaction_id 字段
