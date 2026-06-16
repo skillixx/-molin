@@ -120,8 +120,16 @@ func (h *ProductHandler) GetProductPlans(w http.ResponseWriter, r *http.Request)
 	}
 
 	plansWithPrice := h.enrichPlansWithPrice(r, plans, userID)
-	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"plans": plansWithPrice,
+	// D-005：套餐列表改用 D-95 扁平分页格式 {items, page, page_size, total}。
+	// 用户端套餐列表不分页（一次返回全部），page/page_size/total 仍需提供以保持契约一致。
+	pg := pagination.Parse(r)
+	response.JSON(w, http.StatusOK, PagedResp{
+		Items: plansWithPrice,
+		Result: pagination.Result{
+			Page:     pg.Page,
+			PageSize: pg.PageSize,
+			Total:    int64(len(plansWithPrice)),
+		},
 	})
 }
 

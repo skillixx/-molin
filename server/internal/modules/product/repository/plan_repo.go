@@ -2,11 +2,15 @@ package repository
 
 import (
 	"context"
+	"errors"
 
 	"gorm.io/gorm"
 
 	"molin/server/internal/modules/product/model"
 )
+
+// ErrPlanNotFound 套餐不存在（D-006：UpdatePlan 时 plan_id 不存在需返回该错误）。
+var ErrPlanNotFound = errors.New("套餐不存在")
 
 // PlanRepository 套餐数据访问层。
 type PlanRepository struct {
@@ -48,6 +52,14 @@ func (r *PlanRepository) FindAllByProductID(ctx context.Context, productID uint6
 }
 
 // Update 更新套餐字段。
+// D-006：检查 RowsAffected，若为 0 说明 plan_id 不存在，返回 ErrPlanNotFound。
 func (r *PlanRepository) Update(ctx context.Context, id uint64, updates map[string]interface{}) error {
-	return r.db.WithContext(ctx).Model(&model.ProductPlan{}).Where("id = ?", id).Updates(updates).Error
+	result := r.db.WithContext(ctx).Model(&model.ProductPlan{}).Where("id = ?", id).Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrPlanNotFound
+	}
+	return nil
 }

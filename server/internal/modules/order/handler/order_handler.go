@@ -145,6 +145,9 @@ func (h *OrderHandler) Pay(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, service.ErrOrderNotFound):
 			response.Error(w, http.StatusNotFound, 40004, "订单不存在")
+		// D-007：订单已支付时返回 HTTP 400，code=60002，禁止重复扣费。
+		case errors.Is(err, service.ErrOrderAlreadyPaid):
+			response.Error(w, http.StatusBadRequest, 60002, "订单已支付，请勿重复操作")
 		case errors.Is(err, service.ErrInsufficientBalance):
 			response.Error(w, http.StatusBadRequest, 60001, "余额不足")
 		case errors.Is(err, service.ErrOrderTypeNotPayable):
