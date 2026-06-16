@@ -484,6 +484,7 @@ export function disableInviteCode(id: number, inviteId: number) {
 ## 6. 后端乙对接任务（商品/订单/钱包管理后台）
 
 > **接口字段 SSOT**：`docs/frontend-api-reference.md` 第五～八章
+> **架构规划来源**：`docs/frontend-dev-plan-backend-b.md` §4（管理端 D1–D6）与 §2 归属矩阵
 > **对接版本**：main `4779eb2`（2026-06-16，88/88 回归通过）
 > **权限要求**：需 `product:view` / `product:create` / `product:edit` / `order:list` / `wallet:view` / `wallet:manage`
 
@@ -507,6 +508,7 @@ export function disableInviteCode(id: number, inviteId: number) {
 | **D3** | 计费规则 CRUD | P15–P17 |
 | **D4** | 订单管理（全量列表 + 详情） | O5–O6 |
 | **D5** | 钱包管理（查余额/流水/冻结/回调记录） | B5–B8 |
+| **D6** | 全量消费记录 | F3 |
 
 ---
 
@@ -638,6 +640,43 @@ export function replacePrices(productId: number, items: PriceItem[]) {
 }
 ```
 
+#### 全量消费记录（F3）`src/types/consumption.ts` + `src/api/consumption-admin.ts`（新建）
+
+```typescript
+// types/consumption.ts
+export interface ConsumptionRecord {
+  id: number
+  user_id: number
+  product_id: number
+  product_plan_id: number | null
+  instance_id: number | null
+  usage_type: string
+  usage_amount: string
+  usage_unit: string
+  amount: string                // 扣费金额（字符串，精度红线）
+  event_id: string              // 唯一事件 ID，用于对账（列表不含 wallet_transaction_id）
+  created_at: string
+}
+```
+
+```typescript
+// api/consumption-admin.ts
+import http from './http'
+import type { ConsumptionRecord } from '@/types/consumption'
+import type { PageResult } from '@/types/api'
+
+/** F3：全量消费记录（wallet:view；user_id=0/省略表示全量） */
+export function listConsumptionRecords(params: {
+  user_id?: number; product_id?: number; usage_type?: string
+  created_from?: string; created_to?: string
+  page?: number; page_size?: number
+} = {}) {
+  return http.get<unknown, PageResult<ConsumptionRecord>>(
+    '/admin/product-consumption-records', { params }
+  )
+}
+```
+
 ---
 
 ### 6.4 视图层任务
@@ -653,8 +692,9 @@ export function replacePrices(productId: number, items: PriceItem[]) {
 | `views/order/AdminOrderListView.vue` | `GET /api/admin/orders` | user_id/status/order_type/时间过滤；扁平分页 |
 | `views/wallet/AdminWalletView.vue` | `GET /api/admin/users/{id}/wallet` | 按用户 ID 查 |
 | `views/wallet/AdminTxListView.vue` | `GET /api/admin/wallet-transactions` | user_id/type/direction/时间过滤 |
-| `views/wallet/FreezeDialog.vue` | `PATCH /api/admin/users/{id}/wallet/freeze` | action=freeze/unfreeze；需 `wallet:manage` 权限 |
+| `views/wallet/FreezeDialog.vue` | `PATCH /api/admin/users/{id}/wallet/freeze` | body `{action:'freeze'\|'unfreeze', amount, reason}`（C-4 字段名）；需 `wallet:manage` 权限；二次确认 |
 | `views/billing/CallbackListView.vue` | `GET /api/admin/payment-callbacks` | provider/status 过滤；**响应无 notify_body 字段**（安全红线） |
+| `views/consumption/AdminConsumptionView.vue` | `GET /api/admin/product-consumption-records` | F3；user_id/product_id/usage_type/时间过滤；扁平分页；列表无 wallet_transaction_id，以 event_id 对账 |
 
 ---
 
@@ -663,7 +703,8 @@ export function replacePrices(productId: number, items: PriceItem[]) {
 - [ ] 商品/套餐详情：ID 不存在时展示 404 提示页（BUG-B）
 - [ ] 访问权限配置：body 使用 `{ "items": [...] }` 键名；空数组清空规则正常
 - [ ] 价格配置：每个 item 内含 `product_plan_id`，**无顶层 `plan_id`**（D-009）
-- [ ] 钱包冻结/解冻需 `wallet:manage` 权限，无权限返回 403
+- [ ] 钱包冻结/解冻 body 用 `{action, amount, reason}`（C-4）；需 `wallet:manage` 权限，无权限返回 403 且有明确提示
 - [ ] 回调记录列表中**不渲染 notify_body 字段**（安全红线，后端已不返回）
+- [ ] 全量消费记录（F3）支持 user_id/product_id/usage_type/时间过滤；扁平分页正确；不依赖 wallet_transaction_id 字段
 - [ ] 全部列表接口扁平分页解析正确（`items/page/page_size/total`）
 - [ ] A5（分组 16 端点，约 5.5 人日）是否本期纳入

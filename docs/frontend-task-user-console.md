@@ -331,6 +331,7 @@ register / loginByEmail / loginByPhone 成功 →
 ## 6. 后端乙对接任务（商品/购买/订单/钱包）
 
 > **接口字段 SSOT**：`docs/frontend-api-reference.md` 第五～八章（商品/订单/钱包/支付模块）
+> **架构规划来源**：`docs/frontend-dev-plan-backend-b.md` §5（用户端 C1–C5）与 §2 归属矩阵
 > **对接版本**：main `4779eb2`（2026-06-16，88/88 回归通过）
 
 ### ⚠️ 对接注意事项（与旧文档/旧习惯不同）
@@ -339,6 +340,7 @@ register / loginByEmail / loginByPhone 成功 →
 |---|---|---|---|
 | BUG-A | `POST /api/products/{id}/purchase` | 响应 `status` 直接为 `paid`（无 pending 中间态）；响应新增 `idempotent` 字段 | #136 |
 | D-008 | `GET /api/wallet` | 响应字段 `id` → **`wallet_id`** | #135 |
+| O3 | `POST /api/orders/{id}/pay` | 钱包支付**存量 pending 订单**（充值单/中断续付）；body `{pay_method:'wallet'}`，需 Idempotency-Key；响应 `{order_id,status,wallet_transaction_id,asset_id}` | — |
 
 ---
 
@@ -348,7 +350,7 @@ register / loginByEmail / loginByPhone 成功 →
 |---|---|---|
 | **C1** | 商品市场列表 + 详情 + 套餐 | P1 / P2 / P3 |
 | **C2** | 购买商品（钱包扣费，含幂等） | P4 |
-| **C3** | 我的订单（列表 + 详情 + 取消） | O1 / O2 / O4 |
+| **C3** | 我的订单（列表 + 详情 + 支付 + 取消） | O1 / O2 / O3 / O4 |
 | **C4** | 钱包（余额 + 流水 + 充值） | B1 / B2 / B3 |
 | **C5** | 我的消费记录 | F2 |
 
@@ -402,6 +404,14 @@ export interface Order {
   currency: string
   paid_at: string | null
   created_at: string
+}
+
+// O3 钱包支付存量 pending 订单的响应
+export interface PayOrderResult {
+  order_id: number
+  status: 'paid'                // 支付成功后直接 paid
+  wallet_transaction_id: number // 本次扣费流水 ID
+  asset_id: number              // 开通的资产 ID（0 表示无资产，如充值单）
 }
 ```
 
@@ -476,7 +486,7 @@ export function purchaseProduct(
 
 ```typescript
 import http from './http'
-import type { Order } from '@/types/order'
+import type { Order, PayOrderResult } from '@/types/order'
 import type { PageResult } from '@/types/api'
 
 export function listMyOrders(params: {
@@ -489,6 +499,20 @@ export function listMyOrders(params: {
 
 export function getOrder(id: number) {
   return http.get<unknown, Order>(`/orders/${id}`)
+}
+
+/**
+ * O3：钱包支付存量 pending 订单（充值单 / 中断后续付）
+ * - 当前仅支持 pay_method='wallet'
+ * - 需前端生成 Idempotency-Key（UUID）并复用同一动作的重试
+ * - 余额不足 → 60001，引导充值
+ */
+export function payOrder(id: number, idempotencyKey: string) {
+  return http.post<unknown, PayOrderResult>(
+    `/orders/${id}/pay`,
+    { pay_method: 'wallet' },
+    { headers: { 'Idempotency-Key': idempotencyKey } }
+  )
 }
 
 export function cancelOrder(id: number, reason?: string) {
@@ -535,7 +559,7 @@ export function createRechargeOrder(body: {
 | `views/market/ProductDetailView.vue` | `getProduct / getProductPlans` | 展示套餐+用户实际价格 |
 | `views/market/PurchaseDialog.vue` | `purchaseProduct` | Idempotency-Key 前端生成；70001→引导实名；60001→引导充值；`idempotent=true` 提示"已购买" |
 | `views/order/OrderListView.vue` | `listMyOrders` | status/order_type/时间过滤；扁平分页 |
-| `views/order/OrderDetailView.vue` | `getOrder / cancelOrder` | 仅 pending 订单显示取消按钮；二次确认 |
+| `views/order/OrderDetailView.vue` | `getOrder / payOrder / cancelOrder` | 仅 pending 订单显示「钱包支付」(O3)与「取消」按钮；支付带 Idempotency-Key、余额不足→引导充值；取消二次确认 |
 | `views/wallet/WalletView.vue` | `getMyWallet` | 展示 `wallet_id` / `balance_amount` / `frozen_amount` |
 | `views/wallet/TransactionListView.vue` | `listMyTransactions` | type/direction/时间过滤；扁平分页 |
 | `views/wallet/RechargeView.vue` | `createRechargeOrder` | 选 wechat/alipay；金额用字符串（避免浮点精度）；返回 HTTP 201 |
@@ -547,6 +571,7 @@ export function createRechargeOrder(body: {
 - [ ] 购买成功后 `status` 直接为 `paid`，`idempotent=true` 有"已购买"提示，不重复扣费
 - [ ] 余额不足（60001）跳充值引导；未实名（70001）跳实名引导
 - [ ] 订单列表 status/order_type/时间区间过滤生效；扁平分页正确
+- [ ] 存量 pending 订单可经 O3 钱包支付成功（status→paid，返回 wallet_transaction_id）；支付带 Idempotency-Key，余额不足跳充值引导
 - [ ] 钱包余额取 `wallet_id` 字段（**不是 `id`**）；`balance_amount` 精确显示
 - [ ] 充值订单返回 HTTP 201（非 200）；`pay_url` 展示二维码或跳转
 - [ ] 消费记录扁平分页正确展示
