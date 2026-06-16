@@ -366,9 +366,9 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 12% 18%, rgba(6, 182, 212, 0.2), transparent 25%),
-    radial-gradient(circle at 88% 16%, rgba(139, 92, 246, 0.2), transparent 28%),
-    linear-gradient(115deg, transparent 0 40%, rgba(99, 102, 241, 0.08) 48%, transparent 58%);
+    linear-gradient(135deg, rgba(34, 211, 238, 0.13), transparent 34%),
+    linear-gradient(225deg, rgba(251, 191, 36, 0.1), transparent 32%),
+    linear-gradient(115deg, transparent 0 40%, rgba(52, 211, 153, 0.08) 48%, transparent 58%);
   pointer-events: none;
 }
 
@@ -377,10 +377,10 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(99, 102, 241, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(6, 182, 212, 0.08) 1px, transparent 1px);
+    linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.07) 1px, transparent 1px);
   background-size: 42px 42px;
-  mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.25));
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.88), rgba(0, 0, 0, 0.28));
   pointer-events: none;
 }
 
@@ -396,26 +396,15 @@ onUnmounted(() => {
 
 .register-panel {
   min-height: 660px;
-  border: 1px solid rgba(99, 102, 241, 0.18);
-  border-radius: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
   padding: 42px;
   background:
-    linear-gradient(145deg, rgba(99, 102, 241, 0.14), rgba(6, 182, 212, 0.06)),
+    linear-gradient(145deg, rgba(34, 211, 238, 0.12), rgba(52, 211, 153, 0.06)),
     rgba(255, 255, 255, 0.035);
   backdrop-filter: blur(18px);
   position: relative;
   overflow: hidden;
-}
-
-.register-panel::after {
-  content: "";
-  position: absolute;
-  right: -110px;
-  bottom: -140px;
-  width: 400px;
-  height: 400px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(6, 182, 212, 0.2), transparent 62%);
 }
 
 .brand-mark {
@@ -428,8 +417,8 @@ onUnmounted(() => {
 
 .brand-badge {
   color: var(--color-accent);
-  border: 1px solid rgba(6, 182, 212, 0.28);
-  background: rgba(6, 182, 212, 0.08);
+  border: 1px solid rgba(52, 211, 153, 0.28);
+  background: rgba(52, 211, 153, 0.08);
   border-radius: 999px;
   padding: 5px 10px;
   font-size: 12px;
@@ -468,7 +457,7 @@ onUnmounted(() => {
   gap: 14px;
   padding: 16px;
   border: 1px solid rgba(148, 163, 184, 0.14);
-  border-radius: 14px;
+  border-radius: 8px;
   background: rgba(10, 15, 30, 0.46);
 }
 
@@ -493,8 +482,8 @@ onUnmounted(() => {
 .auth-card {
   width: 100%;
   padding: 34px;
-  border-radius: 20px;
-  background: rgba(11, 16, 32, 0.76);
+  border-radius: 8px;
+  background: rgba(10, 16, 26, 0.78);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.36);
 }
 
@@ -529,10 +518,10 @@ onUnmounted(() => {
 /* 区块容器：手机号区块 / 邮箱区块 */
 .form-section {
   border: 1px solid var(--color-border);
-  border-radius: 14px;
+  border-radius: 8px;
   padding: 16px 16px 2px;
   margin-bottom: 14px;
-  background: rgba(99, 102, 241, 0.055);
+  background: rgba(34, 211, 238, 0.055);
 }
 
 .form-section-title {

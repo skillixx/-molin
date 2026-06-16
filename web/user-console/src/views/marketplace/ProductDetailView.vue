@@ -125,23 +125,40 @@ function openPurchase(plan: ProductPlan) {
 </template>
 
 <style scoped>
-.detail-page { padding: 32px 24px; }
-.page-container { max-width: 1180px; margin: 0 auto; }
+.detail-page {
+  padding: 32px 0 0;
+}
+
 .page-header {
   display: flex;
   justify-content: space-between;
   margin-bottom: 18px;
 }
+
 .detail-layout {
   display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
+  grid-template-columns: 380px minmax(0, 1fr);
   gap: 18px;
+  align-items: start;
 }
+
 .product-panel,
 .plan-card {
+  position: relative;
+  overflow: hidden;
   padding: 22px;
   border-radius: 8px;
 }
+
+.product-panel::before,
+.plan-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--gradient-primary);
+}
+
 .product-meta,
 .plan-head {
   display: flex;
@@ -155,8 +172,10 @@ function openPurchase(plan: ProductPlan) {
 .product-panel h2 {
   margin-top: 18px;
   color: var(--color-text);
-  font-size: 24px;
+  font-size: 28px;
+  line-height: 1.25;
 }
+
 .product-code,
 .plan-head p {
   margin-top: 6px;
@@ -168,17 +187,20 @@ function openPurchase(plan: ProductPlan) {
   color: var(--color-text-muted);
   line-height: 1.8;
 }
+
 .info-grid {
   display: grid;
   gap: 12px;
   margin-top: 22px;
 }
+
 .info-grid div {
   display: grid;
   gap: 4px;
   padding: 12px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
 }
 .info-grid span,
 .plan-info {
@@ -199,14 +221,16 @@ function openPurchase(plan: ProductPlan) {
   display: grid;
   gap: 14px;
 }
+
 .plan-head h3 {
   color: var(--color-text);
-  font-size: 17px;
+  font-size: 18px;
 }
+
 .plan-price {
   margin: 18px 0 10px;
   color: var(--color-accent);
-  font-size: 24px;
+  font-size: 28px;
   font-weight: 800;
 }
 .plan-price.muted {
@@ -226,10 +250,16 @@ function openPurchase(plan: ProductPlan) {
   border-radius: 8px;
   color: var(--color-text-muted);
   background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--color-border);
 }
+
 @media (max-width: 900px) {
   .detail-layout {
     grid-template-columns: 1fr;
+  }
+
+  .detail-page {
+    padding-top: 20px;
   }
 }
 </style>

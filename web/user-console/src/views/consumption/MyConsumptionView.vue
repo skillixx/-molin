@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { Refresh, Search } from '@element-plus/icons-vue'
 import { listMyConsumptionRecords } from '@/api/consumption'
 import type { ConsumptionRecord } from '@/types/consumption'
 import { displayAmount, formatDateTime } from '@/utils/display'
 
 const loading = ref(false)
+const loadingTypes = ref(false)
 const rows = ref<ConsumptionRecord[]>([])
+const usageTypes = ref<string[]>([])
 const query = reactive({
   product_id: undefined as number | undefined,
   usage_type: '',
@@ -15,7 +18,17 @@ const query = reactive({
   total: 0,
 })
 
-onMounted(fetchRows)
+const usageTypeOptions = computed(() => {
+  return [
+    { label: '全部', value: '' },
+    ...usageTypes.value.map((item) => ({ label: item, value: item })),
+  ]
+})
+
+onMounted(() => {
+  fetchRows()
+  fetchUsageTypes()
+})
 
 async function fetchRows() {
   loading.value = true
@@ -37,6 +50,23 @@ async function fetchRows() {
   }
 }
 
+async function fetchUsageTypes() {
+  loadingTypes.value = true
+  try {
+    const res = await listMyConsumptionRecords({
+      page: 1,
+      page_size: 100,
+    })
+    const types = new Set<string>()
+    res.items.forEach((item) => {
+      if (item.usage_type) types.add(item.usage_type)
+    })
+    usageTypes.value = Array.from(types)
+  } finally {
+    loadingTypes.value = false
+  }
+}
+
 function search() {
   query.page = 1
   fetchRows()
@@ -53,6 +83,11 @@ function handlePageChange(page: number) {
   query.page = page
   fetchRows()
 }
+
+function selectUsageType(value: string) {
+  query.usage_type = value
+  search()
+}
 </script>
 
 <template>
@@ -65,18 +100,54 @@ function handlePageChange(page: number) {
         </div>
       </div>
 
-      <div class="filter-bar glass-card">
-        <el-input-number v-model="query.product_id" :min="1" placeholder="商品 ID" style="width: 100%" />
-        <el-input v-model="query.usage_type" clearable placeholder="用量类型" />
-        <el-date-picker
-          v-model="query.dates"
-          type="daterange"
-          value-format="YYYY-MM-DD"
-          start-placeholder="开始日期"
-          end-placeholder="结束日期"
-        />
-        <el-button type="primary" :loading="loading" @click="search">查询</el-button>
-        <el-button @click="reset">重置</el-button>
+      <div class="filter-panel glass-card">
+        <div class="filter-main">
+          <el-input-number
+            v-model="query.product_id"
+            class="product-id-input"
+            :min="1"
+            :controls="false"
+            placeholder="商品 ID"
+          />
+          <el-date-picker
+            v-model="query.dates"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+          />
+          <div class="filter-actions">
+            <el-button class="search-btn" type="primary" :icon="Search" :loading="loading" @click="search">
+              查询
+            </el-button>
+            <el-button class="reset-btn" :icon="Refresh" @click="reset">重置</el-button>
+          </div>
+        </div>
+
+        <div class="type-filter">
+          <span class="type-label">用量类型</span>
+          <button
+            v-for="item in usageTypeOptions"
+            :key="item.value || 'all'"
+            class="type-chip"
+            :class="{ active: query.usage_type === item.value }"
+            type="button"
+            :disabled="loadingTypes"
+            @click="selectUsageType(item.value)"
+          >
+            {{ item.label }}
+          </button>
+          <span v-if="!loadingTypes && usageTypes.length === 0" class="type-empty">
+            后端暂无类型数据
+          </span>
+          <el-input
+            v-model="query.usage_type"
+            class="custom-type-input"
+            clearable
+            placeholder="自定义类型"
+            @keyup.enter="search"
+          />
+        </div>
       </div>
 
       <el-table v-loading="loading" :data="rows" class="data-table" border>
@@ -111,19 +182,140 @@ function handlePageChange(page: number) {
 </template>
 
 <style scoped>
-.consumption-page { padding: 32px 24px; }
-.page-container { max-width: 1280px; margin: 0 auto; }
-.page-header { margin-bottom: 18px; }
-.page-title { color: var(--color-text); font-size: 26px; margin-bottom: 8px; }
-.page-subtitle { color: var(--color-text-muted); font-size: 14px; }
-.filter-bar {
+.consumption-page {
+  padding: 34px 0 0;
+}
+
+.page-header {
+  margin-bottom: 18px;
+  padding: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(34, 211, 238, 0.12), transparent 42%),
+    linear-gradient(225deg, rgba(251, 191, 36, 0.1), transparent 36%),
+    rgba(7, 11, 18, 0.56);
+  box-shadow: var(--shadow-card);
+}
+
+.page-title {
+  margin-bottom: 8px;
+}
+
+.filter-panel {
   display: grid;
-  grid-template-columns: 140px 160px minmax(260px, 1fr) auto auto;
   gap: 12px;
   padding: 16px;
   margin-bottom: 16px;
   border-radius: 8px;
 }
+
+.filter-main {
+  display: grid;
+  grid-template-columns: 150px minmax(260px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.product-id-input {
+  width: 100%;
+}
+
+.filter-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.type-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 36px;
+  padding-top: 4px;
+}
+
+.type-label {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  margin-right: 2px;
+}
+
+.type-chip {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.58);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s, box-shadow 0.2s;
+}
+
+.type-chip:hover {
+  border-color: rgba(34, 211, 238, 0.32);
+  background: rgba(34, 211, 238, 0.08);
+  color: var(--color-text);
+}
+
+.type-chip.active {
+  border-color: rgba(52, 211, 153, 0.46);
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--color-accent);
+  box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.12) inset;
+}
+
+.type-chip:disabled {
+  cursor: wait;
+  color: var(--color-text-disabled);
+  border-color: rgba(148, 163, 184, 0.08);
+  background: rgba(15, 23, 42, 0.38);
+}
+
+.type-empty {
+  color: var(--color-text-disabled);
+  font-size: 13px;
+}
+
+.custom-type-input {
+  width: 150px;
+}
+
+.search-btn,
+.reset-btn {
+  height: 36px;
+  min-width: 86px;
+  border-radius: 8px;
+}
+
+.search-btn {
+  border: none;
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.95), rgba(52, 211, 153, 0.9)) !important;
+  color: #041016 !important;
+  font-weight: 700;
+}
+
+.search-btn:hover {
+  filter: brightness(1.06);
+  box-shadow: 0 10px 24px rgba(34, 211, 238, 0.18);
+}
+
+.reset-btn {
+  border-color: rgba(251, 191, 36, 0.22) !important;
+  background: rgba(251, 191, 36, 0.06) !important;
+  color: #F8D57E !important;
+  font-weight: 600;
+}
+
+.reset-btn:hover {
+  border-color: rgba(251, 191, 36, 0.42) !important;
+  background: rgba(251, 191, 36, 0.12) !important;
+  color: #FFE8A3 !important;
+}
+
 .data-table { width: 100%; }
 .pagination-row {
   display: flex;
@@ -131,8 +323,21 @@ function handlePageChange(page: number) {
   margin-top: 18px;
 }
 @media (max-width: 900px) {
-  .filter-bar {
+  .filter-main {
     grid-template-columns: 1fr;
+  }
+
+  .filter-actions {
+    width: 100%;
+  }
+
+  .search-btn,
+  .reset-btn {
+    flex: 1;
+  }
+
+  .custom-type-input {
+    width: 100%;
   }
 }
 </style>

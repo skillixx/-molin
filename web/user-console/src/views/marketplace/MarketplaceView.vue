@@ -58,6 +58,7 @@ function handlePageChange(page: number) {
     <div class="page-container">
       <div class="page-header">
         <div>
+          <span class="page-kicker">墨灵商品市场</span>
           <h2 class="page-title">商品市场</h2>
           <p class="page-subtitle">选择适合当前业务的云资源、应用和服务能力</p>
         </div>
@@ -122,46 +123,74 @@ function handlePageChange(page: number) {
 </template>
 
 <style scoped>
-.marketplace-page { padding: 32px 24px; }
-.page-container { max-width: 1280px; margin: 0 auto; }
+.marketplace-page {
+  padding: 34px 0 0;
+}
+
 .page-header {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 20px;
+  align-items: flex-end;
+  margin-bottom: 22px;
+  padding: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(34, 211, 238, 0.12), transparent 45%),
+    linear-gradient(225deg, rgba(251, 191, 36, 0.1), transparent 34%),
+    rgba(7, 11, 18, 0.56);
+  box-shadow: var(--shadow-card);
 }
-.page-title {
-  font-size: 26px;
+
+.page-kicker {
+  display: inline-flex;
+  margin-bottom: 10px;
+  color: var(--color-accent);
+  font-size: 13px;
   font-weight: 700;
-  color: var(--color-text);
+}
+
+.page-title {
   margin-bottom: 8px;
 }
-.page-subtitle {
-  color: var(--color-text-muted);
-  font-size: 14px;
-}
+
 .filter-bar {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) 180px auto auto;
   gap: 12px;
   padding: 16px;
-  margin-bottom: 18px;
+  margin-bottom: 20px;
   border-radius: 8px;
 }
+
 .product-grid {
   min-height: 220px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(292px, 1fr));
   gap: 16px;
 }
+
 .product-card {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  min-height: 230px;
+  min-height: 248px;
   padding: 20px;
   border-radius: 8px;
   text-decoration: none;
 }
+
+.product-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--gradient-primary);
+  opacity: 0.85;
+}
+
 .card-top,
 .card-footer {
   display: flex;
@@ -172,39 +201,58 @@ function handlePageChange(page: number) {
 .product-type {
   color: var(--color-accent);
   font-size: 12px;
+  font-weight: 700;
 }
+
 .product-name {
   margin-top: 16px;
   color: var(--color-text);
-  font-size: 18px;
+  font-size: 19px;
+  line-height: 1.35;
 }
+
 .product-code {
   margin-top: 6px;
   color: var(--color-text-disabled);
   font-size: 12px;
 }
+
 .product-desc {
   flex: 1;
   margin-top: 14px;
   color: var(--color-text-muted);
   font-size: 13px;
   line-height: 1.7;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
+
 .card-footer {
   margin-top: 18px;
   color: var(--color-text-disabled);
   font-size: 12px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 14px;
 }
+
 .pagination-row {
   display: flex;
   justify-content: flex-end;
   margin-top: 20px;
 }
+
 @media (max-width: 760px) {
+  .marketplace-page {
+    padding-top: 20px;
+  }
+
   .page-header,
   .filter-bar {
     grid-template-columns: 1fr;
     flex-direction: column;
+    align-items: stretch;
   }
 }
 </style>

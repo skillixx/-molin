@@ -14,6 +14,7 @@ onMounted(walletStore.fetchBalance)
     <div class="page-container">
       <div class="page-header">
         <div>
+          <span class="page-kicker">资金中心</span>
           <h2 class="page-title">我的钱包</h2>
           <p class="page-subtitle">查看余额、冻结金额和资金流水</p>
         </div>
@@ -53,33 +54,66 @@ onMounted(walletStore.fetchBalance)
 </template>
 
 <style scoped>
-.wallet-page { padding: 32px 24px; }
-.page-container { max-width: 1180px; margin: 0 auto; }
+.wallet-page {
+  padding: 34px 0 0;
+}
+
 .page-header {
   display: flex;
   justify-content: space-between;
   gap: 16px;
+  align-items: flex-end;
   margin-bottom: 20px;
+  padding: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(52, 211, 153, 0.14), transparent 42%),
+    linear-gradient(225deg, rgba(34, 211, 238, 0.1), transparent 36%),
+    rgba(7, 11, 18, 0.56);
+  box-shadow: var(--shadow-card);
 }
+
+.page-kicker {
+  display: inline-flex;
+  margin-bottom: 10px;
+  color: var(--color-accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .page-title {
-  color: var(--color-text);
-  font-size: 26px;
   margin-bottom: 8px;
 }
-.page-subtitle {
-  color: var(--color-text-muted);
-  font-size: 14px;
-}
+
 .wallet-grid {
   display: grid;
   grid-template-columns: 2fr 1fr 1fr;
   gap: 16px;
 }
+
 .balance-card,
 .metric-card {
   padding: 24px;
   border-radius: 8px;
 }
+
+.balance-card {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(52, 211, 153, 0.12), transparent 42%),
+    var(--color-bg-card);
+}
+
+.balance-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: linear-gradient(90deg, var(--color-accent), var(--color-primary));
+}
+
 .card-label,
 .metric-card span,
 .wallet-id {
@@ -89,33 +123,51 @@ onMounted(walletStore.fetchBalance)
 .balance-value {
   margin: 14px 0 8px;
   color: var(--color-accent);
-  font-size: 36px;
+  font-size: 40px;
   font-weight: 800;
+  line-height: 1.2;
 }
+
 .actions {
   display: flex;
   gap: 12px;
   margin-top: 24px;
+  flex-wrap: wrap;
 }
+
 .metric-card {
   display: grid;
   align-content: center;
   gap: 10px;
 }
+
 .metric-card .el-icon {
   color: var(--color-accent);
   font-size: 24px;
 }
+
 .metric-card strong {
   color: var(--color-text);
   font-size: 22px;
 }
+
 @media (max-width: 900px) {
   .wallet-grid {
     grid-template-columns: 1fr;
   }
   .page-header {
     flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 640px) {
+  .wallet-page {
+    padding-top: 20px;
+  }
+
+  .balance-value {
+    font-size: 30px;
   }
 }
 </style>
