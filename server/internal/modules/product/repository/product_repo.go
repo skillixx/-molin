@@ -2,11 +2,15 @@ package repository
 
 import (
 	"context"
+	"errors"
 
 	"gorm.io/gorm"
 
 	"molin/server/internal/modules/product/model"
 )
+
+// ErrProductNotFound 商品不存在（RowsAffected==0 守卫）。
+var ErrProductNotFound = errors.New("商品不存在")
 
 // ProductRepository 商品 CRUD 数据访问层。
 type ProductRepository struct {
@@ -33,13 +37,29 @@ func (r *ProductRepository) FindByID(ctx context.Context, id uint64) (*model.Pro
 }
 
 // Update 更新商品字段（map 方式支持零值更新）。
+// BUG-B 修复：增加 RowsAffected 检查，id 不存在时返回 ErrProductNotFound 而非 nil。
 func (r *ProductRepository) Update(ctx context.Context, id uint64, updates map[string]interface{}) error {
-	return r.db.WithContext(ctx).Model(&model.Product{}).Where("id = ?", id).Updates(updates).Error
+	result := r.db.WithContext(ctx).Model(&model.Product{}).Where("id = ?", id).Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrProductNotFound
+	}
+	return nil
 }
 
 // UpdateStatus 更新商品上下架状态。
+// BUG-B 修复：增加 RowsAffected 检查，id 不存在时返回 ErrProductNotFound 而非 nil。
 func (r *ProductRepository) UpdateStatus(ctx context.Context, id uint64, status string) error {
-	return r.db.WithContext(ctx).Model(&model.Product{}).Where("id = ?", id).Update("status", status).Error
+	result := r.db.WithContext(ctx).Model(&model.Product{}).Where("id = ?", id).Update("status", status)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrProductNotFound
+	}
+	return nil
 }
 
 // ListAll 查询所有商品（管理端，支持分页和过滤）。

@@ -48,7 +48,8 @@ func RegisterRoutes(
 
 	// 初始化服务
 	pricingSvc := service.NewPricingService(priceRepo, iamSvc, membershipSvc)
-	productSvc := service.NewProductService(productRepo, accessRepo, planRepo, priceRepo, iamSvc)
+	// BUG-D 修复：补入 db 参数，供 ReplaceMultiPlanPrices 开启跨套餐原子事务
+	productSvc := service.NewProductService(db, productRepo, accessRepo, planRepo, priceRepo, iamSvc)
 	billingRuleSvc := service.NewBillingRuleService(billingRuleRepo, productRepo)
 
 	// 初始化 order 相关（购买接口依赖）

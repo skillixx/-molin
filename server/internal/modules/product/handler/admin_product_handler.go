@@ -77,7 +77,12 @@ func (h *AdminProductHandler) CreateProduct(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := h.productSvc.Create(r.Context(), product); err != nil {
-		response.Error(w, http.StatusInternalServerError, 50000, "创建商品失败: "+err.Error())
+		// BUG-C 修复：不透传 err.Error()（含 MySQL 1062 原文），防止 DB schema 泄露
+		if errors.Is(err, service.ErrProductCodeDuplicate) {
+			response.Error(w, http.StatusBadRequest, 40000, "商品编码已存在")
+			return
+		}
+		response.Error(w, http.StatusInternalServerError, 50000, "创建商品失败")
 		return
 	}
 	response.JSON(w, http.StatusCreated, product)
@@ -125,6 +130,11 @@ func (h *AdminProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := h.productSvc.Update(r.Context(), productID, updates); err != nil {
+		// BUG-B 修复：商品不存在时返回 404 而非 200/500
+		if errors.Is(err, service.ErrProductNotFound) {
+			response.Error(w, http.StatusNotFound, 40004, "商品不存在")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, 50000, "更新商品失败")
 		return
 	}
@@ -145,6 +155,11 @@ func (h *AdminProductHandler) UpdateProductStatus(w http.ResponseWriter, r *http
 		return
 	}
 	if err := h.productSvc.UpdateStatus(r.Context(), productID, req.Status); err != nil {
+		// BUG-B 修复：商品不存在时返回 404 而非 400
+		if errors.Is(err, service.ErrProductNotFound) {
+			response.Error(w, http.StatusNotFound, 40004, "商品不存在")
+			return
+		}
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 		return
 	}
@@ -213,7 +228,12 @@ func (h *AdminProductHandler) CreatePlan(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.productSvc.CreatePlan(r.Context(), plan); err != nil {
-		response.Error(w, http.StatusInternalServerError, 50000, "创建套餐失败: "+err.Error())
+		// BUG-C 修复：不透传 err.Error()（含 MySQL 1062 原文），防止 DB schema 泄露
+		if errors.Is(err, service.ErrPlanCodeDuplicate) {
+			response.Error(w, http.StatusBadRequest, 40000, "套餐编码已存在")
+			return
+		}
+		response.Error(w, http.StatusInternalServerError, 50000, "创建套餐失败")
 		return
 	}
 	response.JSON(w, http.StatusCreated, plan)
@@ -345,11 +365,10 @@ func (h *AdminProductHandler) ReplacePrices(w http.ResponseWriter, r *http.Reque
 		})
 	}
 
-	for planID, prices := range grouped {
-		if err := h.productSvc.ReplacePrices(r.Context(), planID, prices); err != nil {
-			response.Error(w, http.StatusInternalServerError, 50000, "配置价格失败")
-			return
-		}
+	// BUG-D 修复：将多套餐价格写入改为单事务原子操作，避免部分失败导致价格不一致
+	if err := h.productSvc.ReplaceMultiPlanPrices(r.Context(), grouped); err != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "配置价格失败")
+		return
 	}
 	response.JSON(w, http.StatusOK, map[string]string{"message": "价格配置成功"})
 }

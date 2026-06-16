@@ -3,6 +3,9 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
+
+	"gorm.io/gorm"
 
 	"molin/server/internal/modules/product/model"
 	"molin/server/internal/modules/product/repository"
@@ -14,8 +17,24 @@ var ErrProductNotFound = errors.New("商品不存在")
 // ErrPlanNotFound 套餐不存在（D-006：UpdatePlan 时 plan_id 不存在需返回该错误）。
 var ErrPlanNotFound = errors.New("套餐不存在")
 
+// ErrProductCodeDuplicate 商品编码已存在（MySQL 1062 唯一键冲突）。
+var ErrProductCodeDuplicate = errors.New("商品编码已存在")
+
+// ErrPlanCodeDuplicate 套餐编码已存在（MySQL 1062 唯一键冲突）。
+var ErrPlanCodeDuplicate = errors.New("套餐编码已存在")
+
+// isDuplicateKey 检测 MySQL 1062 唯一键冲突，避免将 DB 错误原文透传给调用方。
+func isDuplicateKey(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "Duplicate entry") || strings.Contains(msg, "1062")
+}
+
 // ProductService 负责商品 CRUD 和可见性过滤。
 type ProductService struct {
+	db          *gorm.DB   // 用于多套餐价格原子写入（BUG-D 修复）
 	productRepo *repository.ProductRepository
 	accessRepo  *repository.AccessRepository
 	planRepo    *repository.PlanRepository
@@ -24,7 +43,9 @@ type ProductService struct {
 }
 
 // NewProductService 创建商品服务实例。
+// BUG-D 修复：新增 db 参数，用于 ReplaceMultiPlanPrices 开启跨套餐原子事务。
 func NewProductService(
+	db *gorm.DB,
 	productRepo *repository.ProductRepository,
 	accessRepo *repository.AccessRepository,
 	planRepo *repository.PlanRepository,
@@ -32,6 +53,7 @@ func NewProductService(
 	iamSvc IAMService,
 ) *ProductService {
 	return &ProductService{
+		db:          db,
 		productRepo: productRepo,
 		accessRepo:  accessRepo,
 		planRepo:    planRepo,
@@ -85,27 +107,55 @@ func (s *ProductService) AdminGetByID(ctx context.Context, productID uint64) (*m
 }
 
 // Create 创建商品。
+// BUG-C 修复：捕获 MySQL 1062 唯一键冲突，返回哨兵错误而非原始 DB 错误，防止 schema 泄露。
 func (s *ProductService) Create(ctx context.Context, p *model.Product) error {
-	return s.productRepo.Create(ctx, p)
+	if err := s.productRepo.Create(ctx, p); err != nil {
+		if isDuplicateKey(err) {
+			return ErrProductCodeDuplicate
+		}
+		return err
+	}
+	return nil
 }
 
 // Update 更新商品字段。
+// BUG-B 修复：将 repo 层 ErrProductNotFound 映射到 service 层哨兵，供 handler 返回 404。
 func (s *ProductService) Update(ctx context.Context, id uint64, updates map[string]interface{}) error {
-	return s.productRepo.Update(ctx, id, updates)
+	if err := s.productRepo.Update(ctx, id, updates); err != nil {
+		if errors.Is(err, repository.ErrProductNotFound) {
+			return ErrProductNotFound
+		}
+		return err
+	}
+	return nil
 }
 
 // UpdateStatus 上架/下架商品。
+// BUG-B 修复：将 repo 层 ErrProductNotFound 映射到 service 层哨兵，供 handler 返回 404。
 func (s *ProductService) UpdateStatus(ctx context.Context, id uint64, status string) error {
 	validStatuses := map[string]bool{"active": true, "inactive": true}
 	if !validStatuses[status] {
 		return errors.New("无效的商品状态")
 	}
-	return s.productRepo.UpdateStatus(ctx, id, status)
+	if err := s.productRepo.UpdateStatus(ctx, id, status); err != nil {
+		if errors.Is(err, repository.ErrProductNotFound) {
+			return ErrProductNotFound
+		}
+		return err
+	}
+	return nil
 }
 
 // CreatePlan 创建套餐。
+// BUG-C 修复：捕获 MySQL 1062 唯一键冲突，返回哨兵错误而非原始 DB 错误，防止 schema 泄露。
 func (s *ProductService) CreatePlan(ctx context.Context, plan *model.ProductPlan) error {
-	return s.planRepo.Create(ctx, plan)
+	if err := s.planRepo.Create(ctx, plan); err != nil {
+		if isDuplicateKey(err) {
+			return ErrPlanCodeDuplicate
+		}
+		return err
+	}
+	return nil
 }
 
 // UpdatePlan 更新套餐。
@@ -143,4 +193,19 @@ func (s *ProductService) ReplacePrices(ctx context.Context, planID uint64, price
 // GetPrices 查询套餐所有价格配置。
 func (s *ProductService) GetPrices(ctx context.Context, planID uint64) ([]model.ProductPrice, error) {
 	return s.priceRepo.FindByPlanID(ctx, planID)
+}
+
+// ReplaceMultiPlanPrices 在单一事务内原子覆盖写入多套餐价格。
+// BUG-D 修复：原 handler 对多个 product_plan_id 分组后循环调用 ReplacePrices()，
+// 各自提交事务，第 N 组失败后前 N-1 组已写入无法回滚，导致价格不一致。
+// 本方法将所有套餐价格覆盖写入包进同一事务，任一套餐失败则全部回滚。
+func (s *ProductService) ReplaceMultiPlanPrices(ctx context.Context, grouped map[uint64][]model.ProductPrice) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for planID, prices := range grouped {
+			if err := s.priceRepo.ReplaceByPlanIDTx(tx, planID, prices); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

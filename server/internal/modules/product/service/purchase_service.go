@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"time"
 
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
@@ -143,32 +144,28 @@ func (s *PurchaseService) Purchase(ctx context.Context, userID, productID, planI
 		}, nil
 	}
 
-	// 6. 钱包扣费（使用 total 而非单价 price）。
-	// WalletService.Deduct 内部已实现「FOR UPDATE + 乐观锁 + 指数退避抖动重试」，
-	// 这里不再叠加外层重试循环（旧实现的外层 3 次重试会放大 failed 脏单且无意义）。
-	deductErr := s.billingSvc.Deduct(ctx, userID, total, order.ID, "购买商品")
-	if deductErr != nil {
-		// 区分失败类型，决定订单去向（F6 并发健壮性）：
-		if errors.Is(deductErr, billingsvc.ErrConcurrentUpdate) {
-			// 6a. 纯瞬时锁冲突（重试耗尽）：本质是并发瞬时冲突，并非真实业务失败，
-			//     订单从未发生任何资金变动。删除该 pending 订单，避免遗留 failed 垃圾订单。
-			//     幂等保持正确：FindByIdempotencyKey + idempotency_key 唯一键时序未变，
-			//     客户端凭同一 Idempotency-Key 重试将重新建单并扣费；删除带 status='pending'
-			//     守卫，绝不会误删已支付订单。
+	// 6+7. 单事务：扣费 + pending→paid（最多重试 3 次应对乐观锁冲突）。
+	// BUG-A 修复：原先扣费与 MarkPaid 分属两个独立事务，进程在两步之间崩溃会导致
+	// 钱包已扣但订单永远 pending（用户丢钱）。现合并为 purchasePayTx 确保原子性。
+	var txErr error
+	for i := 0; i < 3; i++ {
+		txErr = s.purchasePayTx(ctx, order.ID, userID, total, order.OrderNo)
+		if txErr == nil || !errors.Is(txErr, billingsvc.ErrConcurrentUpdate) {
+			break
+		}
+	}
+	if txErr != nil {
+		if errors.Is(txErr, billingsvc.ErrConcurrentUpdate) {
+			// 瞬时锁冲突重试耗尽：删除 pending 订单，避免遗留垃圾单。
+			// 客户端凭同一 Idempotency-Key 重试将重新建单并扣费。
 			if deleted, delErr := s.orderSvc.DeletePendingTransient(ctx, order.ID); delErr != nil || !deleted {
-				// 删除失败或订单已非 pending（极端情况）：退化为 MarkFailed 兜底，保证一致性。
 				_ = s.orderSvc.MarkFailed(ctx, order.ID)
 			}
-			return nil, deductErr
+			return nil, txErr
 		}
-		// 6b. 真实业务失败（如余额不足 60001）：订单置 failed 合理，保留供用户/对账查看。
+		// 真实业务失败（余额不足等）：订单置 failed，保留供用户/对账查看。
 		_ = s.orderSvc.MarkFailed(ctx, order.ID)
-		return nil, deductErr
-	}
-
-	// 7. 更新订单为 paid
-	if err := s.orderSvc.MarkPaid(ctx, order.ID); err != nil {
-		return nil, err
+		return nil, txErr
 	}
 
 	// 8. 同步触发商品开通（D-004：改异步 goroutine 为同步调用）。
@@ -187,4 +184,28 @@ func (s *PurchaseService) Purchase(ctx context.Context, userID, productID, planI
 		AssetID:    nil,     // D-004：provision 接口当前只返回 error，asset_id 由前端通过 /api/my/products 查询
 		Idempotent: false,
 	}, nil
+}
+
+// purchasePayTx 单次扣费+状态流转尝试（同一事务）。
+// BUG-A 修复：将扣费（DeductTx）与 pending→paid 状态变更包进同一数据库事务，
+// 确保进程崩溃时两者同时回滚，消除「钱扣了但订单永远 pending」的数据不一致风险。
+func (s *PurchaseService) purchasePayTx(ctx context.Context, orderID, userID uint64, amount decimal.Decimal, remark string) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 1. 在外部事务内扣费（FOR UPDATE + 乐观锁，不重试，由外层循环负责重试）
+		if _, err := s.billingSvc.DeductTx(tx, userID, amount, orderID, "购买商品："+remark); err != nil {
+			return err
+		}
+		// 2. pending→paid（RowsAffected 守卫，==0 说明状态已变，回滚事务）
+		now := time.Now()
+		rows, err := s.orderRepo.UpdateStatusTx(tx, orderID, "pending", "paid", map[string]interface{}{
+			"paid_at": now,
+		})
+		if err != nil {
+			return err
+		}
+		if rows == 0 {
+			return ordersvc.ErrInvalidStatusTransition
+		}
+		return nil
+	})
 }
