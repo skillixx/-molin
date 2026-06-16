@@ -178,7 +178,7 @@ function getRedirectPath() {
       <section class="brand-panel">
         <div class="brand-mark">
           <span class="logo-text">墨灵</span>
-          <span class="brand-badge">User Console</span>
+          <span class="brand-badge">用户控制台</span>
         </div>
         <h1 class="brand-title">云资源与 AI 应用控制台</h1>
         <p class="brand-desc">统一管理你的应用、资产、钱包和会员权益。</p>
@@ -376,9 +376,9 @@ function getRedirectPath() {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(circle at 14% 16%, rgba(6, 182, 212, 0.2), transparent 25%),
-    radial-gradient(circle at 84% 22%, rgba(139, 92, 246, 0.22), transparent 28%),
-    linear-gradient(115deg, transparent 0 42%, rgba(99, 102, 241, 0.08) 48%, transparent 56%);
+    linear-gradient(135deg, rgba(34, 211, 238, 0.13), transparent 34%),
+    linear-gradient(225deg, rgba(251, 191, 36, 0.1), transparent 32%),
+    linear-gradient(115deg, transparent 0 42%, rgba(52, 211, 153, 0.08) 48%, transparent 56%);
   pointer-events: none;
 }
 
@@ -390,7 +390,7 @@ function getRedirectPath() {
     linear-gradient(rgba(99, 102, 241, 0.08) 1px, transparent 1px),
     linear-gradient(90deg, rgba(6, 182, 212, 0.08) 1px, transparent 1px);
   background-size: 42px 42px;
-  mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.25));
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.88), rgba(0, 0, 0, 0.28));
   pointer-events: none;
 }
 
@@ -406,26 +406,15 @@ function getRedirectPath() {
 
 .brand-panel {
   min-height: 560px;
-  border: 1px solid rgba(99, 102, 241, 0.18);
-  border-radius: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
   padding: 42px;
   background:
-    linear-gradient(145deg, rgba(99, 102, 241, 0.14), rgba(6, 182, 212, 0.06)),
+    linear-gradient(145deg, rgba(34, 211, 238, 0.12), rgba(52, 211, 153, 0.06)),
     rgba(255, 255, 255, 0.035);
   backdrop-filter: blur(18px);
   position: relative;
   overflow: hidden;
-}
-
-.brand-panel::after {
-  content: "";
-  position: absolute;
-  right: -80px;
-  bottom: -120px;
-  width: 360px;
-  height: 360px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(6, 182, 212, 0.2), transparent 62%);
 }
 
 .brand-mark {
@@ -438,8 +427,8 @@ function getRedirectPath() {
 
 .brand-badge {
   color: var(--color-accent);
-  border: 1px solid rgba(6, 182, 212, 0.28);
-  background: rgba(6, 182, 212, 0.08);
+  border: 1px solid rgba(52, 211, 153, 0.28);
+  background: rgba(52, 211, 153, 0.08);
   border-radius: 999px;
   padding: 5px 10px;
   font-size: 12px;
@@ -475,14 +464,14 @@ function getRedirectPath() {
 .signal-card {
   min-height: 92px;
   border: 1px solid rgba(148, 163, 184, 0.14);
-  border-radius: 14px;
+  border-radius: 8px;
   padding: 14px;
   background: rgba(10, 15, 30, 0.46);
 }
 
 .signal-card--accent {
-  border-color: rgba(6, 182, 212, 0.34);
-  background: rgba(6, 182, 212, 0.09);
+  border-color: rgba(52, 211, 153, 0.34);
+  background: rgba(52, 211, 153, 0.09);
 }
 
 .signal-label {
@@ -500,8 +489,8 @@ function getRedirectPath() {
 .auth-card {
   width: 100%;
   padding: 36px;
-  border-radius: 20px;
-  background: rgba(11, 16, 32, 0.76);
+  border-radius: 8px;
+  background: rgba(10, 16, 26, 0.78);
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.36);
 }
 
@@ -556,15 +545,15 @@ function getRedirectPath() {
   flex-shrink: 0;
   min-width: 118px;
   height: 42px;
-  border: 1px solid rgba(6, 182, 212, 0.28);
-  border-radius: 9px;
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  border-radius: 8px;
   color: var(--color-accent);
   background:
-    linear-gradient(135deg, rgba(6, 182, 212, 0.12), rgba(99, 102, 241, 0.12)),
+    linear-gradient(135deg, rgba(34, 211, 238, 0.12), rgba(52, 211, 153, 0.1)),
     repeating-linear-gradient(45deg, transparent 0 7px, rgba(255, 255, 255, 0.06) 7px 8px);
   font-size: 18px;
   font-weight: 800;
-  letter-spacing: 0.18em;
+  letter-spacing: 0;
   cursor: pointer;
   user-select: none;
   transition: border-color 0.2s, filter 0.2s, box-shadow 0.2s;
@@ -573,7 +562,7 @@ function getRedirectPath() {
 .captcha-code:hover {
   border-color: var(--color-accent);
   filter: brightness(1.12);
-  box-shadow: 0 0 18px rgba(6, 182, 212, 0.18);
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.18);
 }
 
 /* 验证码行 */
@@ -592,7 +581,7 @@ function getRedirectPath() {
   min-width: 112px;
   padding: 0 14px;
   height: 40px;
-  background: rgba(99, 102, 241, 0.12);
+  background: rgba(34, 211, 238, 0.1);
   border: 1px solid var(--color-border);
   color: var(--color-primary);
   border-radius: 8px;
@@ -603,13 +592,13 @@ function getRedirectPath() {
 }
 
 .code-btn:hover:not(:disabled) {
-  background: rgba(99, 102, 241, 0.2);
+  background: rgba(34, 211, 238, 0.18);
   border-color: var(--color-primary);
 }
 
 .code-btn:disabled {
   color: var(--color-text-disabled);
-  border-color: rgba(99, 102, 241, 0.1);
+  border-color: rgba(34, 211, 238, 0.1);
   cursor: not-allowed;
 }
 
@@ -647,7 +636,7 @@ function getRedirectPath() {
 
 :deep(.el-input__wrapper) {
   min-height: 42px;
-  border-radius: 9px;
+  border-radius: 8px;
 }
 
 @media (max-width: 900px) {

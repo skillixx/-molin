@@ -33,7 +33,9 @@ function handleCommand(cmd: string) {
   if (cmd === 'profile') router.push('/profile')
   else if (cmd === 'identity') router.push('/identity')
   else if (cmd === 'assets') router.push('/assets')
+  else if (cmd === 'orders') router.push('/orders')
   else if (cmd === 'wallet') router.push('/wallet')
+  else if (cmd === 'consumption') router.push('/consumption')
   else if (cmd === 'logout') handleLogout()
 }
 
@@ -81,11 +83,25 @@ onMounted(() => {
             我的资产
           </router-link>
           <router-link
+            to="/orders"
+            class="nav-link"
+            :class="{ active: isActive('/orders') }"
+          >
+            我的订单
+          </router-link>
+          <router-link
             to="/wallet"
             class="nav-link"
             :class="{ active: isActive('/wallet') }"
           >
             钱包
+          </router-link>
+          <router-link
+            to="/consumption"
+            class="nav-link"
+            :class="{ active: isActive('/consumption') }"
+          >
+            消费记录
           </router-link>
           <router-link
             to="/announcements"
@@ -141,9 +157,17 @@ onMounted(() => {
                 <el-icon><box /></el-icon>
                 我的资产
               </el-dropdown-item>
+              <el-dropdown-item command="orders">
+                <el-icon><tickets /></el-icon>
+                我的订单
+              </el-dropdown-item>
               <el-dropdown-item command="wallet">
                 <el-icon><wallet /></el-icon>
                 钱包
+              </el-dropdown-item>
+              <el-dropdown-item command="consumption">
+                <el-icon><list /></el-icon>
+                消费记录
               </el-dropdown-item>
               <el-dropdown-item divided command="logout" class="logout-item">
                 <el-icon><switch-button /></el-icon>
@@ -165,14 +189,15 @@ onMounted(() => {
   right: 0;
   height: 64px;
   z-index: 100;
-  background: rgba(10, 15, 30, 0.92);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(99, 102, 241, 0.15);
+  background: rgba(7, 11, 18, 0.82);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.2);
 }
 
 .nav-inner {
-  max-width: 1280px;
+  max-width: 1320px;
   margin: 0 auto;
   height: 100%;
   display: flex;
@@ -185,36 +210,46 @@ onMounted(() => {
 .nav-left {
   display: flex;
   align-items: center;
-  gap: 32px;
+  min-width: 0;
+  gap: 26px;
 }
 
 .nav-logo {
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  min-width: 56px;
 }
 
 .nav-links {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 4px;
+  min-width: 0;
 }
 
 .nav-link {
-  padding: 6px 12px;
-  border-radius: 6px;
+  padding: 7px 10px;
+  border-radius: 999px;
   text-decoration: none;
   color: var(--color-text-muted);
-  font-size: 14px;
-  transition: color 0.2s, background 0.2s;
+  font-size: 13px;
+  line-height: 1;
+  border: 1px solid transparent;
+  transition: color 0.2s, background 0.2s, border-color 0.2s;
 }
 
 .nav-link:hover {
   color: var(--color-text);
-  background: rgba(99, 102, 241, 0.08);
+  background: rgba(34, 211, 238, 0.08);
+  border-color: rgba(34, 211, 238, 0.16);
 }
 
 .nav-link.active {
-  color: var(--color-primary);
-  background: rgba(99, 102, 241, 0.1);
+  color: #DFFBFF;
+  background: rgba(34, 211, 238, 0.12);
+  border-color: rgba(34, 211, 238, 0.32);
 }
 
 /* 右侧 */
@@ -222,6 +257,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
 }
 
 .wallet-pill {
@@ -230,9 +266,9 @@ onMounted(() => {
   gap: 6px;
   height: 34px;
   padding: 0 12px;
-  border: 1px solid rgba(6, 182, 212, 0.24);
+  border: 1px solid rgba(52, 211, 153, 0.28);
   border-radius: 999px;
-  background: rgba(6, 182, 212, 0.08);
+  background: rgba(16, 185, 129, 0.08);
   text-decoration: none;
   white-space: nowrap;
 }
@@ -254,13 +290,15 @@ onMounted(() => {
   gap: 8px;
   cursor: pointer;
   padding: 6px 12px;
-  border-radius: 8px;
-  transition: background 0.2s;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  transition: background 0.2s, border-color 0.2s;
   color: var(--color-text-muted);
 }
 
 .user-trigger:hover {
-  background: rgba(99, 102, 241, 0.1);
+  background: rgba(34, 211, 238, 0.08);
+  border-color: rgba(34, 211, 238, 0.18);
   color: var(--color-text);
 }
 
@@ -276,6 +314,7 @@ onMounted(() => {
   font-size: 14px;
   font-weight: 600;
   flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18) inset;
 }
 
 .user-name {
@@ -320,6 +359,14 @@ onMounted(() => {
 
   .wallet-pill {
     display: none;
+  }
+
+  .nav-inner {
+    padding: 0 14px;
+  }
+
+  .user-name {
+    max-width: 84px;
   }
 }
 </style>

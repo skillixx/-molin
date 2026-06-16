@@ -61,7 +61,7 @@ function goToIdentity() {
       </div>
     </div>
 
-    <!-- 主内容区 -->
+    <!-- 主内容区承载所有登录后的业务页面，统一留出顶部导航和内容呼吸感。 -->
     <main class="main-content" :class="{ 'has-banner': showVerifyBanner }">
       <router-view />
     </main>
@@ -73,10 +73,11 @@ function goToIdentity() {
   min-height: 100vh;
 }
 
-/* 主内容区（顶部留 64px 给固定导航） */
+/* 主内容区顶部留给固定导航，底部留出空间避免最后一屏贴边。 */
 .main-content {
   padding-top: 64px;
   min-height: 100vh;
+  padding-bottom: 48px;
 }
 
 .main-content.has-banner {
@@ -90,14 +91,16 @@ function goToIdentity() {
   left: 0;
   right: 0;
   z-index: 99;
-  background: rgba(245, 158, 11, 0.08);
+  background: rgba(120, 53, 15, 0.34);
   border-bottom: 1px solid rgba(245, 158, 11, 0.2);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 .verify-banner-inner {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 10px 24px;
+  padding: 11px 24px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -117,7 +120,7 @@ function goToIdentity() {
 }
 
 .banner-btn {
-  background: none;
+  background: rgba(251, 191, 36, 0.1);
   border: 1px solid rgba(245, 158, 11, 0.5);
   color: #f59e0b;
   font-size: 13px;
@@ -131,5 +134,15 @@ function goToIdentity() {
 .banner-btn:hover {
   background: rgba(245, 158, 11, 0.12);
   border-color: #f59e0b;
+}
+
+@media (max-width: 760px) {
+  .main-content {
+    padding-bottom: 32px;
+  }
+
+  .verify-banner-inner {
+    padding: 10px 14px;
+  }
 }
 </style>
