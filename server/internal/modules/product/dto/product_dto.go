@@ -84,7 +84,8 @@ type PurchaseResult struct {
 	OrderNo    string          `json:"order_no"`
 	Status     string          `json:"status"`
 	Amount     decimal.Decimal `json:"amount"`
-	Idempotent bool            `json:"idempotent"` // true 表示重复请求，返回已有订单
+	AssetID    *uint64         `json:"asset_id,omitempty"` // 异步开通时为 nil；前端通过 /api/my/products 查询资产状态
+	Idempotent bool            `json:"idempotent"`         // true 表示重复请求，返回已有订单
 }
 
 // CreateBillingRuleReq 新增计费规则请求体（P16）。

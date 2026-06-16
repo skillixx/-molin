@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"errors"
+	"log"
 
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
 	billingsvc "molin/server/internal/modules/billing/service"
@@ -63,13 +65,13 @@ func NewPurchaseService(
 //  1. 校验实名制（real_name_status = verified，code=70001）
 //  2. 校验购买权限（product_role_access.can_buy，code=40003）
 //  3. 计算用户实际价格（会员价 > 角色价 > 默认价）
-//  4. 幂等检查（Idempotency-Key 唯一索引，重复请求返回已有订单）
-//  5. 创建订单（pending 状态，remark 写入订单备注）
-//  6. 钱包扣费（乐观锁，最多重试 3 次）
-//  7. 更新订单为 paid
-//  8. 触发商品开通（异步，不阻塞响应）
+//  4. 按 quantity 计算总价（total = price × quantity）
+//  5. 幂等检查（Idempotency-Key 唯一索引，重复请求返回已有订单）
+//  6. 创建订单（pending 状态，remark 写入订单备注，total 作为订单金额）
+//  7. 钱包扣费（乐观锁，最多重试 3 次）
+//  8. 更新订单为 paid
+//  9. 同步触发商品开通（失败仅记 warn，不回滚已 paid 订单）
 //
-// quantity 暂时不影响计价逻辑（TODO: Week 3 按数量计算总价）。
 // remark 写入订单备注字段。
 func (s *PurchaseService) Purchase(ctx context.Context, userID, productID, planID uint64, idempotencyKey string, quantity int, remark string) (*dto.PurchaseResult, error) {
 	// 1. 实名校验
@@ -98,11 +100,18 @@ func (s *PurchaseService) Purchase(ctx context.Context, userID, productID, planI
 		return nil, ErrNoAccess
 	}
 
-	// 3. 计算价格
+	// 3. 计算单价
 	price, err := s.pricingSvc.GetPrice(ctx, planID, userID)
 	if err != nil {
 		return nil, err
 	}
+
+	// 3.1 按 quantity 计算总价（D-003：quantity 参与计价）
+	// quantity 兜底：purchase handler 已校验 ≥1，此处再次兜底防御性保护
+	if quantity <= 0 {
+		quantity = 1
+	}
+	total := price.Mul(decimal.NewFromInt(int64(quantity)))
 
 	// 4. 幂等检查：先查是否已有同幂等键订单
 	existing, queryErr := s.orderRepo.FindByIdempotencyKey(ctx, idempotencyKey)
@@ -116,10 +125,9 @@ func (s *PurchaseService) Purchase(ctx context.Context, userID, productID, planI
 		}, nil
 	}
 
-	// 5. 创建订单（pending 状态），写入 remark 备注。
+	// 5. 创建订单（pending 状态），传入 total 作为订单金额，quantity 用于写入 order_items。
 	// 若 idempotency_key 并发竞争导致唯一索引冲突，Create 内部会重查返回已有订单。
-	// TODO: Week 3 按 quantity 计算总价（当前 quantity 暂不参与计价）
-	order, err := s.orderSvc.Create(ctx, userID, productID, planID, price, "product", idempotencyKey, remark)
+	order, err := s.orderSvc.Create(ctx, userID, productID, planID, total, "product", idempotencyKey, remark, quantity)
 	if err != nil {
 		return nil, err
 	}
@@ -135,10 +143,10 @@ func (s *PurchaseService) Purchase(ctx context.Context, userID, productID, planI
 		}, nil
 	}
 
-	// 6. 钱包扣费。
+	// 6. 钱包扣费（使用 total 而非单价 price）。
 	// WalletService.Deduct 内部已实现「FOR UPDATE + 乐观锁 + 指数退避抖动重试」，
 	// 这里不再叠加外层重试循环（旧实现的外层 3 次重试会放大 failed 脏单且无意义）。
-	deductErr := s.billingSvc.Deduct(ctx, userID, price, order.ID, "购买商品")
+	deductErr := s.billingSvc.Deduct(ctx, userID, total, order.ID, "购买商品")
 	if deductErr != nil {
 		// 区分失败类型，决定订单去向（F6 并发健壮性）：
 		if errors.Is(deductErr, billingsvc.ErrConcurrentUpdate) {
@@ -163,17 +171,20 @@ func (s *PurchaseService) Purchase(ctx context.Context, userID, productID, planI
 		return nil, err
 	}
 
-	// 8. 异步触发商品开通（不阻塞响应，失败不影响订单）
-	go func() {
-		bgCtx := context.Background()
-		_ = s.provisionSvc.Provision(bgCtx, order.ID, productID, planID, userID)
-	}()
+	// 8. 同步触发商品开通（D-004：改异步 goroutine 为同步调用）。
+	// provision 失败不回滚已 paid 订单（钱已扣、订单已付），仅记 warn 供运维补偿。
+	// 当前 ProvisionService.Provision 接口只返回 error（不返回 asset_id），
+	// asset_id 留 nil，前端通过 /api/my/products 轮询资产状态。
+	if provErr := s.provisionSvc.Provision(ctx, order.ID, productID, planID, userID); provErr != nil {
+		log.Printf("[WARN] provision 失败，orderID=%d: %v", order.ID, provErr)
+	}
 
 	return &dto.PurchaseResult{
 		OrderID:    order.ID,
 		OrderNo:    order.OrderNo,
 		Status:     "paid",
-		Amount:     price,
+		Amount:     total,   // D-003：返回总价（price × quantity）
+		AssetID:    nil,     // D-004：provision 接口当前只返回 error，asset_id 由前端通过 /api/my/products 查询
 		Idempotent: false,
 	}, nil
 }
