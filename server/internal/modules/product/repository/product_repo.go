@@ -69,7 +69,8 @@ func (r *ProductRepository) ListAll(ctx context.Context, keyword, status, produc
 }
 
 // ListVisible 查询用户可见的商品（状态为 active，且角色在 product_role_access 中 can_view=1）。
-func (r *ProductRepository) ListVisible(ctx context.Context, roleIDs []uint64, offset, limit int) ([]model.Product, int64, error) {
+// 支持 keyword（名称/描述模糊匹配）和 productType 过滤，空字符串表示不过滤。
+func (r *ProductRepository) ListVisible(ctx context.Context, roleIDs []uint64, keyword, productType string, offset, limit int) ([]model.Product, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.Product{}).Where("status = ?", "active")
 	if len(roleIDs) > 0 {
 		// 只显示有 can_view 权限的商品
@@ -79,6 +80,16 @@ func (r *ProductRepository) ListVisible(ctx context.Context, roleIDs []uint64, o
 	} else {
 		// 无角色用户不可见任何商品
 		query = query.Where("1 = 0")
+	}
+
+	// 关键词模糊过滤：匹配 name 或 description
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where("(name LIKE ? OR description LIKE ?)", like, like)
+	}
+	// 商品类型过滤
+	if productType != "" {
+		query = query.Where("product_type = ?", productType)
 	}
 
 	var total int64
