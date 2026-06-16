@@ -55,10 +55,15 @@ func (r *OrderRepository) Create(ctx context.Context, order *model.Order) error 
 	return r.db.WithContext(ctx).Create(order).Error
 }
 
-// FindByID 按 ID 查询订单。
+// CreateItem 创建订单商品明细（order_items）。
+func (r *OrderRepository) CreateItem(ctx context.Context, item *model.OrderItem) error {
+	return r.db.WithContext(ctx).Create(item).Error
+}
+
+// FindByID 按 ID 查询订单，同时预加载 order_items 明细（同时修复 O2 用户详情和 O6 管理员详情）。
 func (r *OrderRepository) FindByID(ctx context.Context, id uint64) (*model.Order, error) {
 	var order model.Order
-	if err := r.db.WithContext(ctx).First(&order, id).Error; err != nil {
+	if err := r.db.WithContext(ctx).Preload("Items").First(&order, id).Error; err != nil {
 		return nil, err
 	}
 	return &order, nil

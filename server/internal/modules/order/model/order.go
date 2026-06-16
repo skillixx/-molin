@@ -30,6 +30,8 @@ type Order struct {
 	Remark         *string         `gorm:"size:512" json:"remark,omitempty"`
 	CreatedAt      time.Time       `json:"created_at"`
 	UpdatedAt      time.Time       `json:"updated_at"`
+	// Items 订单商品明细，通过 Preload 加载（omitempty：空时不输出 null）
+	Items          []OrderItem     `gorm:"foreignKey:OrderID" json:"items,omitempty"`
 }
 
 // OrderItem 订单商品明细，对应 order_items 表。

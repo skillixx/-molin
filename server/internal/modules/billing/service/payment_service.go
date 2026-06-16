@@ -251,7 +251,8 @@ func (s *PaymentService) parse(provider string, rawBody []byte) (orderNo, provid
 // CreateRechargeOrder 创建充值订单，返回创建出的订单对象与模拟支付 URL。
 // C-3：返回订单对象以便 handler 填充 order_no / amount / status。
 func (s *PaymentService) CreateRechargeOrder(ctx context.Context, userID uint64, amount decimal.Decimal, idempotencyKey string) (*ordermodel.Order, string, error) {
-	order, err := s.orderSvc.Create(ctx, userID, 0, 0, amount, "recharge", idempotencyKey, "")
+	// 充值订单无商品明细，quantity 固定传 1
+	order, err := s.orderSvc.Create(ctx, userID, 0, 0, amount, "recharge", idempotencyKey, "", 1)
 	if err != nil {
 		return nil, "", err
 	}
