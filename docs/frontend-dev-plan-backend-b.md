@@ -1,6 +1,6 @@
 # 前端开发规范与任务规划（基于后端乙接口）
 
-> **版本**：v1.3 规划稿，2026-06-16（v1.1 契约勘误；v1.2 补齐 F2/管理端签名+分页上限/冻结/404 边界；v1.3 修正商品状态仅 active⇄inactive、user_price 未配置统一 -1、Product 类型补全/枚举为约定）
+> **版本**：v1.4 规划稿，2026-06-16（v1.1 契约勘误；v1.2 补齐 F2/管理端签名+分页上限/冻结/404 边界；v1.3 商品状态仅 active⇄inactive、user_price 未配置统一 -1、Product 类型补全；v1.4 order_type 值订正为 product、O3 仅 product 订单、SSOT frontend-api-reference 同步 #144）
 > **作者**：架构（senior-architect 方法论）
 > **范围**：仅覆盖**后端工程师乙**负责的四个模块对接 —— `product`（商品/套餐/价格/访问规则/计费规则）、`order`（订单状态机/支付/取消）、`billing`（钱包/流水/充值/回调）、`finance_consumer`（消费记录）。
 > **对接基线**：main `4779eb2`（2026-06-16，全量回归 88/88 PASS）。
@@ -153,6 +153,8 @@ export interface PageResult<T> {
 | 8 | `WalletTransaction` 类型 | 实际含 `wallet_id/user_id/related_order_id`，v1.0 类型漏列 | `billing/model` + `billing_handler.go:114` |
 | 9 | `user_price` 未配置取值 | **已定**：未配置统一返回 `-1`（区别于合法免费价 `0`）；前端以 `user_price === '-1'`（或 <0）判定"未配置/暂不可购买"。后端统一由 `feature/backend-product-userprice-unify` 落地（见对应后端 PR） | `product/dto/product_dto.go:144`、`product_handler.go` enrichPlansWithPrice |
 | 10 | 订单 JSON 含 `idempotency_key` | 列表/详情会原样返回 `idempotency_key`，前端忽略即可（可提请后端评估是否隐藏） | `order/model/order.go:25` |
+| 11 | `order_type` 取值 | 购买订单 `order_type` 实际为 **`product`**（非 `purchase`）；充值为 `recharge`。过滤/展示按 `product` | `order/service/pay_service.go:92`、`order/CLAUDE.md` |
+| 12 | O3 钱包支付适用范围 | `POST /api/orders/{id}/pay` **仅支持 `order_type=product` 的 pending 订单**；recharge 订单不可钱包支付（返回 40000「该订单不支持钱包支付」），走第三方 pay_url。原文档"充值单续付"表述有误已订正 | `order/service/pay_service.go:92` |
 
 ---
 
@@ -234,7 +236,7 @@ export interface PageResult<T> {
 |---|---|---|---|---|
 | C3-1 | 订单列表（status/order_type/时间过滤） | O1 | 扁平分页 | 1d |
 | C3-2 | 订单详情 | O2 | 含 order_items | 0.5d |
-| C3-3 | **支付存量 pending 订单（钱包）** | O3 | body `{pay_method:'wallet'}`，需 Idempotency-Key；响应 `{order_id,status,wallet_transaction_id,asset_id}`；余额不足 60001→引导充值。**主要场景：充值订单已存在 pending 时的二次支付、或购买流程被中断后的续付** | 1d |
+| C3-3 | **支付存量 pending 购买订单（钱包）** | O3 | body `{pay_method:'wallet'}`，需 Idempotency-Key；响应 `{order_id,status,wallet_transaction_id,asset_id}`；余额不足 60001→引导充值。**仅 `order_type=product` 的 pending 订单可用；recharge 订单不支持钱包支付（40000）。场景：购买订单存量 pending 的续付** | 1d |
 | C3-4 | 取消 pending 订单 | O4 | body `{reason}`；仅 pending 显示取消按钮；二次确认 | 0.5d |
 
 ### 阶段 C4 — 钱包（余额 + 流水 + 充值）
@@ -270,15 +272,16 @@ export interface PageResult<T> {
     └ 成功 idempotent=true → 提示「该订单已购买，未重复扣费」
 ```
 
-### 6.2 充值 → （必要时）续付流程（B3 + O3）
+### 6.2 充值流程（B3）+ 购买订单续付（O3）
 ```
-充值：POST /api/recharge/orders {amount, payment_method, return_url?}
+充值（recharge）：POST /api/recharge/orders {amount, payment_method, return_url?}
   → 返回 {order_id, order_no, amount, status:'pending', pay_url}（HTTP 201）
   → 展示 pay_url 二维码 / 跳转第三方
   → 第三方回调（POST /api/payments/notify/{provider}，前端不参与）→ 订单转 paid、钱包入账
   → 前端轮询/手动刷新订单状态
+  ⚠️ 充值订单（order_type=recharge）只能由第三方支付，不能用 O3 钱包支付
 
-续付（O3，钱包支付存量 pending 订单）：
+续付（O3，钱包支付存量 pending 的购买订单，仅 order_type=product）：
   POST /api/orders/{id}/pay {pay_method:'wallet'}  header: Idempotency-Key
     ├ 60001 余额不足          → 引导充值
     ├ 60002 订单已支付(D-007) → 刷新订单状态
@@ -313,7 +316,7 @@ export interface PageResult<T> {
 3. **金额精度红线**：全程字符串，禁止浮点运算后展示。
 4. **安全红线**：回调记录（B8）不渲染 `notify_body`；钱包冻结（B7）需 `wallet:manage`，无权限 403 要给明确提示而非笼统报错。
 5. **权限码依赖**：管理端依赖 `product:view/create/edit`、`order:list`、`wallet:view/manage`。`wallet:manage` 为 Round 7 新增（seed migration 000023），前端菜单/按钮可见性按权限码控制；如测试环境 403，先确认后端已迁移至 000025。
-6. **O3 与 P4 的区别**：P4（购买）是「创建即支付」的单事务，正常路径不产生 pending；O3（支付）用于**已存在的 pending 订单**（充值单、或异常中断后的存量单）的钱包续付。前端不要把两者混用。
+6. **O3 与 P4 的区别**：P4（购买）是「创建即支付」的单事务，正常路径不产生 pending；O3（支付）用于**已存在的 pending 购买订单**（`order_type=product`，异常中断后的存量单）的钱包续付，**不适用于充值订单**（recharge 走第三方 pay_url）。前端不要把两者混用。
 7. **消费记录无 wallet_transaction_id**：F2/F3 列表项不含扣费流水 ID（后端刻意不返回恒 null 字段），对账以 `event_id` 追溯。
 
 ---

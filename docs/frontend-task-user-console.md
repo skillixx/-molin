@@ -340,7 +340,7 @@ register / loginByEmail / loginByPhone 成功 →
 |---|---|---|---|
 | BUG-A | `POST /api/products/{id}/purchase` | 响应 `status` 直接为 `paid`（无 pending 中间态）；响应新增 `idempotent` 字段 | #136 |
 | D-008 | `GET /api/wallet` | 响应字段 `id` → **`wallet_id`** | #135 |
-| O3 | `POST /api/orders/{id}/pay` | 钱包支付**存量 pending 订单**（充值单/中断续付）；body `{pay_method:'wallet'}`，需 Idempotency-Key；响应 `{order_id,status,wallet_transaction_id,asset_id}` | — |
+| O3 | `POST /api/orders/{id}/pay` | 钱包支付**存量 pending 购买订单**（仅 `order_type=product`；recharge 订单不支持钱包支付，返回 40000）；body `{pay_method:'wallet'}`，需 Idempotency-Key；响应 `{order_id,status,wallet_transaction_id,asset_id}` | — |
 
 ---
 
@@ -440,7 +440,7 @@ export interface PayOrderResult {
   order_id: number
   status: 'paid'                // 支付成功后直接 paid
   wallet_transaction_id: number // 本次扣费流水 ID
-  asset_id: number              // 开通的资产 ID（0 表示无资产，如充值单）
+  asset_id: number              // 开通的资产 ID（0 表示尚无资产）
 }
 ```
 
@@ -566,7 +566,7 @@ export function getOrder(id: number) {
 }
 
 /**
- * O3：钱包支付存量 pending 订单（充值单 / 中断后续付）
+ * O3：钱包支付存量 pending 购买订单（仅 order_type=product；recharge 订单不可，返回 40000）
  * - 当前仅支持 pay_method='wallet'
  * - 需前端生成 Idempotency-Key（UUID）并复用同一动作的重试
  * 错误码（前端需分别处理）：

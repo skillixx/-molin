@@ -1,6 +1,6 @@
 # 前端接口参考文档
 
-> **版本**：Week 1 + Week 2 已验收（2026-06-06）；2026-06-10 补丁更新（发码拦截 + 管理员双重认证强制）；2026-06-11 接口变更同步（用户列表 keyword、角色/权限模糊搜索、实名审核 status 过滤、权限覆盖过滤参数及 snake_case 字段、实名审核详情新增 user_id/submitted_at/reviewed_at、POST 实名认证响应新增 data.id）；2026-06-12 更新（认证/角色权限/用户分组/实名认证）：分页响应字段 `list` → `items`（仅认证/角色权限/实名认证相关章节）；发送验证码接口拆分为 `/api/auth/verification-codes/email` 和 `/api/auth/verification-codes/phone` 两个独立接口，`email`/`phone`/`scene` 均为必填；手机号登录改为密码登录（`{phone, password}`）；实名认证提交响应字段修正为 `{id, status}`（`verification_id` 为设计文档冗余字段，已于 2026-06-12 从 `full-api-design.md` 中移除，不再视为缺口）；新增角色详情接口 `GET /api/admin/roles/{id}`；新增审计日志接口 `GET /api/admin/audit-logs`；新增"用户分组管理"章节（16 个接口）；2026-06-13 更新：手机号登录改为验证码登录（`{phone, code}`，PR#20）；退出登录后当前 Access Token 立即吊销，401/40001（PR#22）；`/api/auth/login/phone`、`/api/auth/login/email` 对未注册账号统一返回 404/40404（PR#25）；**2026-06-15 更新（Round 7 审计 D-93/D-94/D-95/D-96 全部闭环）**：登录/注册/刷新令牌响应新增 `user` 对象（D-93，PR#91）；密码长度约束统一为 6-72 位（D-94，PR#95）；auth/iam/identity 模块 11 个分页接口响应结构改为扁平（去掉嵌套 `pagination` 对象，D-95，PR#97）；`bind_phone`/`bind_email`/`admin_verify` 三个 scene 迁移到专属认证态发码接口，不再接受公开端点的请求（D-96，PR#93）；**2026-06-16 更新（后端乙缺陷修复闭环，88/88 回归全通过）**：`GET /api/wallet` 响应字段 `id` → `wallet_id`（D-008，PR#135）；`PATCH /api/admin/products/{id}/prices` body 结构统一为 `{"items":[{"product_plan_id":...,...}]}`（D-009，PR#135）；`PATCH /api/admin/products/{id}/access` body key 统一为 `items`，缺失 `items` 字段返回 400（D-011，PR#137）；购买接口 `POST /api/products/{id}/purchase` 响应新增 `idempotent` 字段，`status` 直接返回 `paid`（BUG-A，PR#136）；商品/套餐/计划不存在时接口统一返回 404/40400（BUG-B，PR#136）；重复 product_code/plan_code 返回 400 友好提示（BUG-C，PR#136）；多套餐价格覆盖写入改为单事务原子操作（BUG-D，PR#136）
+> **版本**：Week 1 + Week 2 已验收（2026-06-06）；2026-06-10 补丁更新（发码拦截 + 管理员双重认证强制）；2026-06-11 接口变更同步（用户列表 keyword、角色/权限模糊搜索、实名审核 status 过滤、权限覆盖过滤参数及 snake_case 字段、实名审核详情新增 user_id/submitted_at/reviewed_at、POST 实名认证响应新增 data.id）；2026-06-12 更新（认证/角色权限/用户分组/实名认证）：分页响应字段 `list` → `items`（仅认证/角色权限/实名认证相关章节）；发送验证码接口拆分为 `/api/auth/verification-codes/email` 和 `/api/auth/verification-codes/phone` 两个独立接口，`email`/`phone`/`scene` 均为必填；手机号登录改为密码登录（`{phone, password}`）；实名认证提交响应字段修正为 `{id, status}`（`verification_id` 为设计文档冗余字段，已于 2026-06-12 从 `full-api-design.md` 中移除，不再视为缺口）；新增角色详情接口 `GET /api/admin/roles/{id}`；新增审计日志接口 `GET /api/admin/audit-logs`；新增"用户分组管理"章节（16 个接口）；2026-06-13 更新：手机号登录改为验证码登录（`{phone, code}`，PR#20）；退出登录后当前 Access Token 立即吊销，401/40001（PR#22）；`/api/auth/login/phone`、`/api/auth/login/email` 对未注册账号统一返回 404/40404（PR#25）；**2026-06-15 更新（Round 7 审计 D-93/D-94/D-95/D-96 全部闭环）**：登录/注册/刷新令牌响应新增 `user` 对象（D-93，PR#91）；密码长度约束统一为 6-72 位（D-94，PR#95）；auth/iam/identity 模块 11 个分页接口响应结构改为扁平（去掉嵌套 `pagination` 对象，D-95，PR#97）；`bind_phone`/`bind_email`/`admin_verify` 三个 scene 迁移到专属认证态发码接口，不再接受公开端点的请求（D-96，PR#93）；**2026-06-16 更新（后端乙缺陷修复闭环，88/88 回归全通过）**：`GET /api/wallet` 响应字段 `id` → `wallet_id`（D-008，PR#135）；`PATCH /api/admin/products/{id}/prices` body 结构统一为 `{"items":[{"product_plan_id":...,...}]}`（D-009，PR#135）；`PATCH /api/admin/products/{id}/access` body key 统一为 `items`，缺失 `items` 字段返回 400（D-011，PR#137）；购买接口 `POST /api/products/{id}/purchase` 响应新增 `idempotent` 字段，`status` 直接返回 `paid`（BUG-A，PR#136）；商品/套餐/计划不存在时接口统一返回 404/40400（BUG-B，PR#136）；重复 product_code/plan_code 返回 400 友好提示（BUG-C，PR#136）；多套餐价格覆盖写入改为单事务原子操作（BUG-D，PR#136）；**2026-06-16 更新（二）（后端乙契约勘误 + #144，已部署测试服回归 52/52 通过）**：套餐 `user_price` 未配置价格时统一返回 `"-1"`（区别于合法免费价 `"0"`，#144，PR#144）；`GET /api/products/{id}/plans` 响应订正为 D-95 扁平分页 `{items,page,page_size,total}`（原文档误写 `{plans:[]}`）；购买响应补 `asset_id` 字段（异步开通时为 `null`/`0`）；`order_type` 取值订正为 `product`（购买）/`recharge`（充值）（原误写 `purchase`）；商品状态切换 `PATCH /api/admin/products/{id}/status` 仅接受 `active`/`inactive`（`draft` 为创建初始态、不可设置）
 > **测试服务器**：`http://8.130.9.163:8080`
 > **鉴权方式**：所有需要登录的接口在 Header 中携带 `Authorization: Bearer <access_token>`
 
@@ -919,6 +919,7 @@ Query 参数：
       "name": "基础版一年",
       "billing_type": "one_time",
       "duration_days": 365,
+      "quota_json": null,
       "user_price": "10.000000",
       "currency": "CNY",
       "status": "active"
@@ -927,9 +928,12 @@ Query 参数：
 }
 ```
 
+> **`user_price`（#144，2026-06-16）**：为「当前用户实际价格」（按 会员价 > 角色价 > 默认价 优先级计算）。
+> **未配置任何价格时返回 `"-1"`**（哨兵值），用以与「合法免费价 `"0"`」区分。前端应以 `user_price === "-1"`（或 `Number(user_price) < 0`）判定「未定价/暂不可购买」并禁用购买按钮，**不要**把 `"0"` 当作未配置。
+
 **GET** `/api/products/{id}/plans` *(需登录)*
 
-响应 `data`：`{ "plans": [...] }`（含用户实际价格）
+响应 `data`（**D-95 扁平分页**，注意不是 `{plans:[]}`）：`{ "items": [ /* 同上 plan 结构，含 user_price */ ], "page": 1, "page_size": 20, "total": N }`。用户端套餐不真正分页，但契约仍为扁平分页结构。
 
 ---
 
@@ -954,16 +958,20 @@ Query 参数：
   "order_no": "ORD2026060600001",
   "status": "paid",
   "amount": "10.000000",
+  "asset_id": null,
   "idempotent": false
 }
 ```
 
 `idempotent: true` 表示该 Idempotency-Key 已存在，返回原订单，不重复扣费。
+`asset_id`：开通的资产 ID；异步开通时为 `null`，资产生效后请通过「我的资产」接口查询。
 
-**常见错误**：
-- `70001` — 需要先完成实名认证
-- `40003` — 无购买权限（角色未配置 can_buy）
-- `60001` — 余额不足
+**常见错误**（前端需分别处理）：
+- `70001`（HTTP 400）— 需要先完成实名认证 → 引导实名
+- `40003`（HTTP 403）— 无购买权限（角色未配置 can_buy）
+- `60001`（HTTP 400）— 余额不足 → 引导充值
+- `40000`（HTTP 400）— 该套餐未配置价格 / `plan_id` 缺失
+- `50000`（HTTP 409）— 系统繁忙（高并发乐观锁耗尽）→ 可复用同一 Idempotency-Key 重试
 
 ---
 
@@ -1095,7 +1103,7 @@ body 字段均可选：`usage_type`、`usage_unit`、`price_amount`、`currency`
 
 **GET** `/api/orders?page=1&page_size=10` *(需登录)*
 
-支持过滤：`?status=paid&order_type=purchase`
+支持过滤：`?status=paid&order_type=product`
 
 响应 `data`（D-95 扁平分页）：
 ```json
@@ -1104,7 +1112,7 @@ body 字段均可选：`usage_type`、`usage_unit`、`price_amount`、`currency`
     {
       "id": 101,
       "order_no": "ORD2026060600001",
-      "order_type": "purchase",
+      "order_type": "product",
       "product_id": 1,
       "product_plan_id": 1,
       "status": "paid",
@@ -1122,7 +1130,7 @@ body 字段均可选：`usage_type`、`usage_unit`、`price_amount`、`currency`
 
 `status`：`pending` / `paid` / `cancelled` / `failed`
 
-`order_type`：`purchase`（购买订单）/ `recharge`（充值订单）
+`order_type`：`product`（购买订单）/ `recharge`（充值订单）
 
 **GET** `/api/orders/{id}` *(需登录)*
 
@@ -1130,7 +1138,7 @@ body 字段均可选：`usage_type`、`usage_unit`、`price_amount`、`currency`
 
 **POST** `/api/orders/{id}/pay` *(需登录，仅本人订单)*
 
-用钱包余额支付存量 `pending` 订单（O3）。
+用钱包余额支付存量 `pending` 的**购买订单**（O3）。**仅 `order_type=product` 的 pending 订单可用钱包支付**；`recharge`（充值）订单不支持钱包支付（充值通过第三方 `pay_url` 完成），对其调用返回 `40000`「该订单不支持钱包支付」。
 
 请求头：`Idempotency-Key` 必填（缺失返回 `code=40000`）。
 
@@ -1153,7 +1161,7 @@ body 字段均可选：`usage_type`、`usage_unit`、`price_amount`、`currency`
 - `wallet_transaction_id`：本次扣费生成的钱包流水 ID（真实返回）。
 - `asset_id`：开通由后端异步执行，支付响应阶段恒为 `0`；资产生效后请通过「我的资产」接口查询。
 - 幂等：对已 `paid` 订单重复调用返回成功（`status=paid`），不重复扣费。
-- 错误码：余额不足 `60001`；订单不存在/非本人 `404 40004`；订单状态不可支付（cancelled/failed 等）`40900`。
+- 错误码：余额不足 `60001`；订单已支付 `60002`（请勿重复操作，D-007）；订单不存在/非本人 `404 40004`；订单状态不可支付（cancelled/failed 等）`40900`；非 product 订单 / 不支持的支付方式 `40000`。
 
 ---
 
@@ -1180,7 +1188,7 @@ body 字段均可选：`usage_type`、`usage_unit`、`price_amount`、`currency`
 
 **GET** `/api/admin/orders?page=1&page_size=10` *(需 `order:list` 权限)*
 
-支持过滤：`?user_id=1&status=paid&order_type=purchase`
+支持过滤：`?user_id=1&status=paid&order_type=product`
 
 **GET** `/api/admin/orders/{id}` *(需 `order:list` 权限)*
 
@@ -1360,7 +1368,7 @@ Wechatpay-Nonce: <随机串>
 |------|--------|
 | `real_name_status` | `unverified` / `pending` / `verified` / `rejected` |
 | `order.status` | `pending` / `paid` / `cancelled` / `failed` |
-| `order.order_type` | `purchase` / `recharge` |
+| `order.order_type` | `product` / `recharge` |
 | `product.status` | `draft` / `active` / `inactive` |
 | `wallet_transaction.type` | `recharge` / `consume` / `refund` / `freeze` / `unfreeze` |
 | `wallet_transaction.direction` | `in` / `out` |
