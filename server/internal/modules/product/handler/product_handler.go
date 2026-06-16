@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"molin/server/internal/middleware"
 	billingsvc "molin/server/internal/modules/billing/service"
@@ -42,12 +43,15 @@ func NewProductHandler(
 }
 
 // ListProducts 用户端商品市场（按角色 can_view 过滤，仅返回 active 商品）。
-// GET /api/products
+// GET /api/products?keyword=xxx&product_type=xxx&page=1&page_size=20
 func (h *ProductHandler) ListProducts(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	pg := pagination.Parse(r)
+	// 解析可选过滤参数
+	keyword := strings.TrimSpace(r.URL.Query().Get("keyword"))
+	productType := strings.TrimSpace(r.URL.Query().Get("product_type"))
 
-	products, total, err := h.productSvc.ListVisible(r.Context(), userID, pg.Offset(), pg.PageSize)
+	products, total, err := h.productSvc.ListVisible(r.Context(), userID, keyword, productType, pg.Offset(), pg.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询商品列表失败")
 		return

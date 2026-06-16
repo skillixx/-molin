@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -65,6 +66,24 @@ func (s *OrderService) Create(ctx context.Context, userID, productID, planID uin
 		}
 		return nil, err
 	}
+
+	// 产品订单写入 order_items 明细（充值订单无商品明细，跳过）
+	if orderType == "product" && productID > 0 && planID > 0 {
+		item := &model.OrderItem{
+			OrderID:       order.ID,
+			ProductID:     productID,
+			ProductPlanID: planID,
+			Quantity:      1, // D-003 修复 quantity 前暂定 1
+			UnitPrice:     amount,
+			TotalPrice:    amount,
+		}
+		if err := s.repo.CreateItem(ctx, item); err != nil {
+			// order_item 写入失败：订单已创建，记录错误但不回滚订单
+			// （保证扣费流程可继续，运维可通过日志+对账补录 order_items）
+			log.Printf("[WARN] 创建 order_item 失败，orderID=%d: %v", order.ID, err)
+		}
+	}
+
 	return order, nil
 }
 

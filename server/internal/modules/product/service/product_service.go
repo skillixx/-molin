@@ -38,9 +38,10 @@ func NewProductService(
 }
 
 // ListVisible 查询用户可见的商品列表（按角色 can_view 过滤，状态为 active）。
-func (s *ProductService) ListVisible(ctx context.Context, userID uint64, offset, limit int) ([]model.Product, int64, error) {
+// 支持 keyword（名称/描述模糊匹配）和 productType 过滤，空字符串表示不过滤。
+func (s *ProductService) ListVisible(ctx context.Context, userID uint64, keyword, productType string, offset, limit int) ([]model.Product, int64, error) {
 	roleIDs, _ := s.iamSvc.GetUserRoleIDs(ctx, userID)
-	return s.productRepo.ListVisible(ctx, roleIDs, offset, limit)
+	return s.productRepo.ListVisible(ctx, roleIDs, keyword, productType, offset, limit)
 }
 
 // GetByID 获取商品详情，并校验用户是否可见（can_view 角色校验）。
