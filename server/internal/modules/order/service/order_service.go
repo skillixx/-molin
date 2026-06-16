@@ -33,7 +33,8 @@ func NewOrderService(db *gorm.DB, repo *repository.OrderRepository) *OrderServic
 
 // Create 创建订单（幂等保护：若 idempotency_key 已存在则返回已有订单）。
 // remark 为订单备注，可传空字符串。
-func (s *OrderService) Create(ctx context.Context, userID, productID, planID uint64, amount decimal.Decimal, orderType, idempotencyKey string, remark string) (*model.Order, error) {
+// quantity 为购买数量，传 0 或负数时自动置为 1；amount 为总价（price × quantity，由调用方计算传入）。
+func (s *OrderService) Create(ctx context.Context, userID, productID, planID uint64, amount decimal.Decimal, orderType, idempotencyKey string, remark string, quantity int) (*model.Order, error) {
 	var productIDPtr, planIDPtr *uint64
 	if productID > 0 {
 		productIDPtr = &productID
@@ -69,13 +70,20 @@ func (s *OrderService) Create(ctx context.Context, userID, productID, planID uin
 
 	// 产品订单写入 order_items 明细（充值订单无商品明细，跳过）
 	if orderType == "product" && productID > 0 && planID > 0 {
+		// quantity 兜底：传 0 或负数时视为 1
+		qty := quantity
+		if qty <= 0 {
+			qty = 1
+		}
+		// amount 为总价（price × qty），单价由总价除以数量反推
+		unitPrice := amount.Div(decimal.NewFromInt(int64(qty)))
 		item := &model.OrderItem{
 			OrderID:       order.ID,
 			ProductID:     productID,
 			ProductPlanID: planID,
-			Quantity:      1, // D-003 修复 quantity 前暂定 1
-			UnitPrice:     amount,
-			TotalPrice:    amount,
+			Quantity:      qty,
+			UnitPrice:     unitPrice, // 单价 = 总价 / 数量
+			TotalPrice:    amount,    // 总价即传入的 amount
 		}
 		if err := s.repo.CreateItem(ctx, item); err != nil {
 			// order_item 写入失败：订单已创建，记录错误但不回滚订单
