@@ -364,8 +364,11 @@ export interface Product {
   product_type: string
   product_code: string
   name: string
-  description: string | null
+  description: string | null  // 后端 omitempty：为空时字段可能缺失（undefined），判空需容忍
   status: string
+  business_ref_id: number | null
+  created_at: string
+  updated_at: string
 }
 
 export interface ProductPlan {
@@ -376,10 +379,11 @@ export interface ProductPlan {
   duration_days: number | null
   quota_json: string | null  // 套餐配额（JSON 字符串），可能为 null
   status: string
-  user_price: string         // 当前用户实际价格（角色价/会员价/默认价优先级）
+  user_price: string         // 当前用户实际价格（会员价>角色价>默认价优先级）
   currency: string
-  // ⚠️ user_price 未配置价格时的取值待后端乙澄清：DTO 注释为 "-1"，
-  //    但 handler 当前回退为 "0"。前端"价格未配置"判定请勿写死，按后端最终确认实现。
+  // user_price 未配置统一返回 "-1"（区别于合法免费价 "0"）：
+  //   前端以 user_price === '-1'（或 Number(user_price) < 0）判定"未配置/暂不可购买"。
+  //   该取值由后端 feature/backend-product-userprice-unify 统一落地。
 }
 
 export interface PurchaseResult {
@@ -643,7 +647,7 @@ export function listMyConsumptionRecords(params: {
 | 视图 | 用到的 API | 关键交互 |
 |---|---|---|
 | `views/market/ProductListView.vue` | `listProducts` | 扁平分页；按 product_type/keyword 过滤 |
-| `views/market/ProductDetailView.vue` | `getProduct / getProductPlans` | 展示套餐+用户实际价格 |
+| `views/market/ProductDetailView.vue` | `getProduct / getProductPlans` | 展示套餐+用户实际价格；`user_price === '-1'` 显示"未定价/暂不可购买"并禁用购买（区别于免费 0） |
 | `views/market/PurchaseDialog.vue` | `purchaseProduct` | Idempotency-Key 前端生成；70001→引导实名；60001→引导充值；40003→无权限；**409/50000「系统繁忙」→ 提示可重试**；`idempotent=true` 提示"已购买" |
 | `views/order/OrderListView.vue` | `listMyOrders` | status/order_type/时间过滤；扁平分页 |
 | `views/order/OrderDetailView.vue` | `getOrder / payOrder / cancelOrder` | 仅 pending 订单显示「钱包支付」(O3)与「取消」按钮；支付带 Idempotency-Key；余额不足(60001)→引导充值、已支付(60002)/状态冲突(40900)→刷新；详情可展示 `items` 明细；取消二次确认 |

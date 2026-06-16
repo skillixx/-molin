@@ -1,6 +1,6 @@
 # 前端开发规范与任务规划（基于后端乙接口）
 
-> **版本**：v1.2 规划稿，2026-06-16（v1.1 据源码逐接口复核补订 §3.1 契约勘误；v1.2 补齐用户端 F2 消费记录、管理端 P15-P17/O5-O6/B5-B8 类型与签名，补充分页上限/冻结校验/404 边界）
+> **版本**：v1.3 规划稿，2026-06-16（v1.1 契约勘误；v1.2 补齐 F2/管理端签名+分页上限/冻结/404 边界；v1.3 修正商品状态仅 active⇄inactive、user_price 未配置统一 -1、Product 类型补全/枚举为约定）
 > **作者**：架构（senior-architect 方法论）
 > **范围**：仅覆盖**后端工程师乙**负责的四个模块对接 —— `product`（商品/套餐/价格/访问规则/计费规则）、`order`（订单状态机/支付/取消）、`billing`（钱包/流水/充值/回调）、`finance_consumer`（消费记录）。
 > **对接基线**：main `4779eb2`（2026-06-16，全量回归 88/88 PASS）。
@@ -151,7 +151,7 @@ export interface PageResult<T> {
 | 6 | 订单类型 `Order` / `OrderItem` | 列表/详情返回完整 `model.Order`（含 `user_id/cancelled_at/failed_at/remark/updated_at/items[]`）；`order_type` 取值为 **`product`**（非 `purchase`）；明细类型 `OrderItem` 需单独定义 | `order/model/order.go:16` |
 | 7 | "不存在"错误码边界 | **40400 仅用于管理端商品/套餐**（BUG-B / D-006）；其余一律 **40004**：用户端 `GetProduct`/`GetOrder`、管理端订单（O6）、管理端计费规则（P17）均为 40004。即"管理端=40400"不成立，按 404 通用处理 | `product_handler.go:86`、`order_handler.go:108`、`admin_billing_rule_handler.go:169`、`admin_product_handler.go:101` |
 | 8 | `WalletTransaction` 类型 | 实际含 `wallet_id/user_id/related_order_id`，v1.0 类型漏列 | `billing/model` + `billing_handler.go:114` |
-| 9 | `user_price` 未配置取值 | DTO 注释为 `-1`、handler 回退为 `0`，**语义不一致，需后端乙澄清**；前端"价格未配置"判定勿写死 | `product/dto/product_dto.go:144` vs `product_handler.go:207` |
+| 9 | `user_price` 未配置取值 | **已定**：未配置统一返回 `-1`（区别于合法免费价 `0`）；前端以 `user_price === '-1'`（或 <0）判定"未配置/暂不可购买"。后端统一由 `feature/backend-product-userprice-unify` 落地（见对应后端 PR） | `product/dto/product_dto.go:144`、`product_handler.go` enrichPlansWithPrice |
 | 10 | 订单 JSON 含 `idempotency_key` | 列表/详情会原样返回 `idempotency_key`，前端忽略即可（可提请后端评估是否隐藏） | `order/model/order.go:25` |
 
 ---
@@ -168,7 +168,7 @@ export interface PageResult<T> {
 | D1-1 | 商品列表（keyword/status/type 过滤、分页） | P5 | 扁平分页 | 1d |
 | D1-2 | 商品详情 | P7 | 不存在 → 404/40400 提示页（BUG-B） | 0.5d |
 | D1-3 | 创建/编辑商品 | P6 / P8 | 重复 product_code → 400/40000 友好提示（BUG-C） | 1d |
-| D1-4 | 上下架（draft/active/inactive 三态） | P9 | 状态切换二次确认 | 0.5d |
+| D1-4 | 上架/下架（active⇄inactive 切换） | P9 | status 仅接受 active/inactive，**draft 仅初始态不可设置（传 draft→400）**；切换二次确认 | 0.5d |
 
 ### 阶段 D2 — 套餐 + 访问权限 + 价格
 

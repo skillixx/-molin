@@ -521,7 +521,7 @@ export interface AdminProduct {
   product_code: string
   name: string
   description: string | null
-  status: 'draft' | 'active' | 'inactive'
+  status: 'draft' | 'active' | 'inactive'   // 取值三种；draft 仅为创建初始态
   business_ref_id: number | null
   created_at: string
   updated_at: string
@@ -532,6 +532,7 @@ export interface AdminPlan {
   product_id: number
   plan_code: string
   name: string
+  // billing_type 为后端约定取值（未来可能扩展），按字符串处理、勿对未知值硬报错
   billing_type: 'one_time' | 'monthly' | 'yearly' | 'usage'
   duration_days: number | null
   quota_json: string | null
@@ -589,7 +590,12 @@ export function updateProduct(id: number, data: {
   return http.patch<unknown, { message: string }>(`/admin/products/${id}`, data)
 }
 
-export function updateProductStatus(id: number, status: 'draft' | 'active' | 'inactive') {
+/**
+ * 上架/下架：status 仅接受 'active' | 'inactive'
+ * ⚠️ 'draft' 是商品创建时的初始态，**不可**通过本接口设置（传 draft → 400）。
+ *   后端校验 validStatuses = {active, inactive}（product_service.go）。
+ */
+export function updateProductStatus(id: number, status: 'active' | 'inactive') {
   return http.patch<unknown, { message: string }>(`/admin/products/${id}/status`, { status })
 }
 
@@ -814,7 +820,7 @@ export function listPaymentCallbacks(params: {
 |---|---|---|
 | `views/product/ProductListView.vue` | `listAdminProducts` | keyword/status/type 过滤；扁平分页 |
 | `views/product/ProductFormDialog.vue` | `createProduct / updateProduct` | 重复 code → 400 友好提示（BUG-C） |
-| `views/product/ProductStatusToggle.vue` | `updateProductStatus` | draft/active/inactive 三态切换；不存在→404 提示（BUG-B） |
+| `views/product/ProductStatusToggle.vue` | `updateProductStatus` | **上架/下架（active⇄inactive）切换；draft 仅初始态、不可设置（传 draft→400）**；不存在→404 提示（BUG-B） |
 | `views/product/PlanListView.vue` | `listPlans / createPlan / updatePlan` | 套餐 CRUD；扁平分页 |
 | `views/product/AccessConfigPanel.vue` | `replaceAccess` | 多角色勾选 can_view/can_buy/can_use；覆盖写，空数组清空所有规则 |
 | `views/product/PriceConfigPanel.vue` | `replacePrices` | 每个 item 内含 product_plan_id（D-009）；可多套餐批量配置；会员价/角色价/默认价三档；**items 不可为空（空→400），与 access 不同** |
@@ -832,6 +838,7 @@ export function listPaymentCallbacks(params: {
 ### 6.5 D 阶段验收标准
 - [ ] 商品创建/更新：重复 product_code/plan_code 返回 400 有友好提示（BUG-C）
 - [ ] 商品/套餐详情：ID 不存在时展示 404 提示页（BUG-B）
+- [ ] 商品状态切换仅在 active⇄inactive 之间；不向后端提交 `draft`（draft 仅创建初始态，提交会 400）
 - [ ] 访问权限配置：body 使用 `{ "items": [...] }` 键名；空数组清空规则正常
 - [ ] 价格配置：每个 item 内含 `product_plan_id`，**无顶层 `plan_id`**（D-009）；**空 items 被拒（400），面板不允许提交空价格列表**
 - [ ] 钱包冻结/解冻 body 用 `{action, amount, reason}`（C-4）；需 `wallet:manage` 权限，无权限返回 403 且有明确提示
