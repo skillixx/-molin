@@ -296,42 +296,60 @@ func (h *AdminProductHandler) ReplaceAccess(w http.ResponseWriter, r *http.Reque
 
 // ReplacePrices 批量配置套餐价格（覆盖写入）。
 // PATCH /api/admin/products/:id/prices
+//
+// D-009：请求体结构调整为 {items:[{product_plan_id,role_id?,membership_level_id?,price_amount,currency}]}，
+// product_plan_id 在每个 item 内指定（原结构要求顶层 plan_id，与 API 文档不符）。
+// 支持在单次请求中为多个不同套餐配置价格，按 product_plan_id 分组执行覆盖写入。
 func (h *AdminProductHandler) ReplacePrices(w http.ResponseWriter, r *http.Request) {
 	productID, err := parseIDFromPath(r, "id")
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, "无效的商品 ID")
 		return
 	}
-	_ = productID // 当前通过 plan_id 配置，productID 用于校验
+	_ = productID // 路径中的商品 ID 用于路由归属，价格归属由各 item 内 product_plan_id 决定
 
-	// 解析请求：包含 plan_id 和价格列表
-	// C-2：批量写入价格列表键名统一为 items（原 prices）。
-	var body struct {
-		PlanID uint64          `json:"plan_id"`
-		Items  []dto.PriceItem `json:"items"`
+	// C-2：批量写入价格列表键名统一为 items。
+	// D-009：移除顶层 plan_id，product_plan_id 改为 items 内每项字段。
+	var req dto.ReplacePricesReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PlanID == 0 {
-		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误，plan_id 为必填项")
+	if len(req.Items) == 0 {
+		response.Error(w, http.StatusBadRequest, 40000, "items 不能为空")
 		return
 	}
 
-	prices := make([]model.ProductPrice, 0, len(body.Items))
-	for _, p := range body.Items {
-		prices = append(prices, model.ProductPrice{
-			ProductPlanID:     body.PlanID,
-			RoleID:            p.RoleID,
-			MembershipLevelID: p.MembershipLevelID,
-			PriceAmount:       p.PriceAmount,
-			Currency:          "CNY",
-		})
-		if p.Currency != "" {
-			prices[len(prices)-1].Currency = p.Currency
+	// 校验所有 item 均指定了 product_plan_id
+	for i, item := range req.Items {
+		if item.ProductPlanID == 0 {
+			response.Error(w, http.StatusBadRequest, 40000,
+				"items["+strconv.Itoa(i)+"].product_plan_id 为必填项")
+			return
 		}
 	}
 
-	if err := h.productSvc.ReplacePrices(r.Context(), body.PlanID, prices); err != nil {
-		response.Error(w, http.StatusInternalServerError, 50000, "配置价格失败")
-		return
+	// 按 product_plan_id 分组，对每个套餐执行一次覆盖写入
+	grouped := make(map[uint64][]model.ProductPrice)
+	for _, p := range req.Items {
+		currency := "CNY"
+		if p.Currency != "" {
+			currency = p.Currency
+		}
+		grouped[p.ProductPlanID] = append(grouped[p.ProductPlanID], model.ProductPrice{
+			ProductPlanID:     p.ProductPlanID,
+			RoleID:            p.RoleID,
+			MembershipLevelID: p.MembershipLevelID,
+			PriceAmount:       p.PriceAmount,
+			Currency:          currency,
+		})
+	}
+
+	for planID, prices := range grouped {
+		if err := h.productSvc.ReplacePrices(r.Context(), planID, prices); err != nil {
+			response.Error(w, http.StatusInternalServerError, 50000, "配置价格失败")
+			return
+		}
 	}
 	response.JSON(w, http.StatusOK, map[string]string{"message": "价格配置成功"})
 }

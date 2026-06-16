@@ -20,8 +20,9 @@ type PaymentCallbackResp struct {
 }
 
 // WalletResp 钱包余额响应。
+// D-008：将 id 字段 JSON 键名改为 wallet_id，与 API 设计规范对齐。
 type WalletResp struct {
-	ID            uint64          `json:"id"`
+	WalletID      uint64          `json:"wallet_id"`
 	UserID        uint64          `json:"user_id"`
 	BalanceAmount decimal.Decimal `json:"balance_amount"`
 	FrozenAmount  decimal.Decimal `json:"frozen_amount"`
