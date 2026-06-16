@@ -301,10 +301,14 @@ Body（raw JSON）：
   "data": {
     "order_id": 5,
     "order_no": "ORD20260616XXXXXXXX",
-    "status": "paid"
+    "status": "paid",
+    "amount": "9.990000",
+    "idempotent": false
   }
 }
 ```
+
+> BUG-A：`status` 直接返回 `"paid"`（创建订单与扣费在同一事务内完成）。`idempotent: true` 表示该 Idempotency-Key 已存在，返回原订单，不重复扣费。
 
 ---
 
@@ -638,6 +642,7 @@ Body（raw JSON）：
 ```
 
 > **覆盖写**：每次请求替换该商品全部角色配置，未在 `items` 中的角色会被删除。
+> **D-011**：`items` 字段为必填，请求体中缺失 `items` 键（如使用旧版 `accesses` 键名）将返回 `400 40000`。传 `"items": []` 为合法操作，表示清空该商品所有角色访问规则。
 
 ---
 
@@ -652,16 +657,17 @@ Content-Type: application/json
 Body（raw JSON）：
 ```json
 {
-  "plan_id": 1,
   "items": [
-    { "price_amount": "9.99", "currency": "CNY" },
-    { "role_id": 2, "price_amount": "7.99", "currency": "CNY" }
+    { "product_plan_id": 1, "price_amount": "9.99", "currency": "CNY" },
+    { "product_plan_id": 1, "role_id": 2, "price_amount": "7.99", "currency": "CNY" },
+    { "product_plan_id": 1, "membership_level_id": 1, "price_amount": "6.99", "currency": "CNY" }
   ]
 }
 ```
 
-> 价格优先级：会员价 > 角色价 > 默认价
-> `role_id` / `membership_level_id` 均为空 = 默认价；必填：`plan_id`
+> **D-009**：`product_plan_id` 在每个 item 内指定（已移除顶层 `plan_id`），支持单次请求配置多个套餐的价格。
+> 价格优先级：**会员价（membership_level_id 非空）> 角色价（role_id 非空）> 默认价（两者均为空）**。
+> `currency` 默认 `CNY`，可省略。
 
 ---
 
