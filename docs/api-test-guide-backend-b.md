@@ -242,6 +242,8 @@ Authorization: Bearer {{token}}
 }
 ```
 
+> **`user_price`（#144）**：未配置价格的套餐返回 `"-1"`（哨兵值），合法免费价返回 `"0"`，两者含义不同。验证时：已配价套餐应为所配金额、未配价套餐应为 `"-1"`、配了 0 元的应为 `"0"`。
+
 ---
 
 ### P3. 商品套餐列表（仅套餐，含用户价格）
@@ -251,17 +253,21 @@ GET {{base_url}}/api/products/{{product_id}}/plans
 Authorization: Bearer {{token}}
 ```
 
-预期返回：
+预期返回（**D-95 扁平分页**，是 `items` 不是 `plans`）：
 ```json
 {
   "code": 0,
   "data": {
-    "plans": [
+    "items": [
       { "id": 1, "plan_code": "basic", "user_price": "9.990000", "currency": "CNY" }
-    ]
+    ],
+    "page": 1,
+    "page_size": 20,
+    "total": 1
   }
 }
 ```
+> `user_price` 取值规则同 P2（未配置→`"-1"`，免费→`"0"`）。
 
 ---
 
