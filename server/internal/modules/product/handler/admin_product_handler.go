@@ -295,6 +295,12 @@ func (h *AdminProductHandler) ReplaceAccess(w http.ResponseWriter, r *http.Reque
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
+	// req.Items == nil 说明请求体中根本没有 items 字段（可能使用了旧版 accesses 键名），
+	// 拒绝此类请求以防止静默删除所有访问规则。
+	if req.Items == nil {
+		response.Error(w, http.StatusBadRequest, 40000, "items 为必填项，不得缺失")
+		return
+	}
 
 	accesses := make([]model.ProductRoleAccess, 0, len(req.Items))
 	for _, a := range req.Items {
