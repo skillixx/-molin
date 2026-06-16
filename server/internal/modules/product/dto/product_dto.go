@@ -44,15 +44,19 @@ type UpdatePlanReq struct {
 }
 
 // PriceItem 单条价格配置（用于批量配置请求）。
+// D-009：product_plan_id 移入 items 每项内，不再由顶层 plan_id 统一指定，
+// 从而支持在一次请求中同时为多个套餐配置价格。
 type PriceItem struct {
-	RoleID            *uint64         `json:"role_id"`
-	MembershipLevelID *uint64         `json:"membership_level_id"`
+	ProductPlanID     uint64          `json:"product_plan_id"`      // 必填，指向具体套餐
+	RoleID            *uint64         `json:"role_id"`              // 可选，角色专属价；为 null 时结合 membership_level_id 判断
+	MembershipLevelID *uint64         `json:"membership_level_id"`  // 可选，会员专属价
 	PriceAmount       decimal.Decimal `json:"price_amount"`
 	Currency          string          `json:"currency"`
 }
 
 // ReplacePricesReq 批量覆盖写入价格请求体。
 // C-2：批量写入 body 键名统一为 items（原 prices）。
+// D-009：移除顶层 plan_id，product_plan_id 改为每项内字段。
 type ReplacePricesReq struct {
 	Items []PriceItem `json:"items"`
 }

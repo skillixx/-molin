@@ -56,8 +56,9 @@ func (h *AdminBillingHandler) GetUserWallet(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// D-008：响应字段 wallet_id（原 id），与 API 设计规范保持一致。
 	response.JSON(w, http.StatusOK, dto.WalletResp{
-		ID:            wallet.ID,
+		WalletID:      wallet.ID,
 		UserID:        wallet.UserID,
 		BalanceAmount: wallet.BalanceAmount,
 		FrozenAmount:  wallet.FrozenAmount,
