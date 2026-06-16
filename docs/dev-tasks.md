@@ -62,8 +62,8 @@
 
 | 序号 | 阶段 | 任务描述 | 分支 | 状态 | 备注 |
 |---|---|---|---|---|---|
-| B-01 | Week 2 | 商品类别、商品 CRUD、上下架接口 | `feature/backend-b-product-catalog` | ⏳ 待开始 | |
-| B-02 | Week 2 | 套餐配置、价格分层（会员/角色/默认） | `feature/backend-b-product-plans-prices` | ⏳ 待开始 | |
+| B-01 | Week 2 | 商品类别、商品 CRUD、上下架接口 | `feature/backend-b-product-catalog` | ✅ 已完成 | 状态回填（代码早已完成，任务板漏更新）：product 模块商品 CRUD + 上下架 `PATCH /admin/products/{id}/status`（仅 active/inactive，draft 为创建初始态不可设置）已实现并注册（bootstrap app.go:293）；经多轮 senior-architect 审查 + 测试服回归（88/88、52/52 通过）；相关修复 BUG-B/BUG-C #136、D-011 #137 |
+| B-02 | Week 2 | 套餐配置、价格分层（会员/角色/默认） | `feature/backend-b-product-plans-prices` | ✅ 已完成 | 状态回填：套餐 CRUD + 价格三档优先级（会员>角色>默认，pricing_service.GetPrice）已实现；价格覆盖写 body `items` 含 product_plan_id（D-009 #135）+ 多套餐单事务（BUG-D #136）；user_price 未配置统一返回 -1（#144）|
 | B-03 | Week 3 | 钱包充值、扣费（乐观锁事务）、流水记录 | `feature/backend-b-billing-wallet` | ⏳ 待开始 | |
 | B-04 | Week 3 | 支付平台回调签名校验、幂等入账 | `feature/backend-b-payment-callback` | ⏳ 待开始 | |
 | B-05 | Week 3 | 购买接口、Idempotency-Key 幂等、订单状态机 | `feature/backend-b-order-purchase` | ⏳ 待开始 | |
@@ -77,8 +77,8 @@
 
 | 序号 | 阶段 | 任务描述 | 分支 | 状态 | 备注 |
 |---|---|---|---|---|---|
-| C-01 | Week 2 | 应用市场列表、应用详情、应用状态管理 | `feature/backend-c-app-market` | ⏳ 待开始 | |
-| C-02 | Week 2 | ProvisionHandler 接口定义及各商品类型实现 | `feature/backend-c-provision-handler` | ⏳ 待开始 | |
+| C-01 | Week 2 | 应用市场列表、应用详情、应用状态管理 | `feature/backend-c-app-market` | ✅ 已完成 | 状态回填：app 模块（应用市场列表/详情/状态）已实现并注册（bootstrap app.go:315）；属后端丙，验收见 Week 4 应用模块测试（`feature/test-week4-app-acceptance`）|
+| C-02 | Week 2 | ProvisionHandler 接口定义及各商品类型实现 | `feature/backend-c-provision-handler` | ✅ 已完成 | 状态回填：provision 模块（购买/支付成功后异步开通编排）已实现，经 order/product 注入 provisionService（bootstrap app.go:288/293）；属后端丙 |
 | C-03 | Week 2-3 | 会员等级 CRUD、用户会员开通/续期/查询 | `feature/backend-c-membership-levels` | ⏳ 待开始 | |
 | C-04 | Week 3 | 用户资产创建、状态机（active/suspended/cancelled）| `feature/backend-c-asset-management` | ⏳ 待开始 | |
 | C-05 | Week 4 | 公告管理、帮助文档、可见范围过滤 | `feature/backend-c-content-cms` | ⏳ 待开始 | |
