@@ -98,7 +98,7 @@ func (h *AdminProductHandler) GetProduct(w http.ResponseWriter, r *http.Request)
 	}
 	product, err := h.productSvc.AdminGetByID(r.Context(), productID)
 	if err != nil {
-		response.Error(w, http.StatusNotFound, 40004, "商品不存在")
+		response.Error(w, http.StatusNotFound, 40400, "商品不存在")
 		return
 	}
 	response.JSON(w, http.StatusOK, product)
@@ -132,7 +132,7 @@ func (h *AdminProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Reque
 	if err := h.productSvc.Update(r.Context(), productID, updates); err != nil {
 		// BUG-B 修复：商品不存在时返回 404 而非 200/500
 		if errors.Is(err, service.ErrProductNotFound) {
-			response.Error(w, http.StatusNotFound, 40004, "商品不存在")
+			response.Error(w, http.StatusNotFound, 40400, "商品不存在")
 			return
 		}
 		response.Error(w, http.StatusInternalServerError, 50000, "更新商品失败")
@@ -157,7 +157,7 @@ func (h *AdminProductHandler) UpdateProductStatus(w http.ResponseWriter, r *http
 	if err := h.productSvc.UpdateStatus(r.Context(), productID, req.Status); err != nil {
 		// BUG-B 修复：商品不存在时返回 404 而非 400
 		if errors.Is(err, service.ErrProductNotFound) {
-			response.Error(w, http.StatusNotFound, 40004, "商品不存在")
+			response.Error(w, http.StatusNotFound, 40400, "商品不存在")
 			return
 		}
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
