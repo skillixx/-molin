@@ -68,6 +68,8 @@
 | 产品经理 | 代码合并 / 评审 / 验收 | `docs/pm-CLAUDE.md` |
 | 测试 | 接口测试 / 功能验收 | `docs/qa-CLAUDE.md` |
 
+系统级 Agent 角色文档统一位于 `docs/agents/`，模块级 `CLAUDE.md` 作为对应 Agent 的细化执行规范。
+
 ## 重要文档
 
 - `README.md`：项目概览和快速启动说明。
@@ -79,6 +81,7 @@
 - `docs/git-workflow.md`：Git 工作流与代码评审规范。
 - `docs/tools.md`：项目工具文档（工具作用、使用者、涉及功能和常用命令）。
 - `docs/test-plan.md`：测试计划与验收 Checklist。
+- `docs/agents/README.md`：系统 Agent 总览（后端甲/乙/丙、前端甲/乙、测试、运维、产品经理）。
 - `docs/pm-CLAUDE.md`：产品经理 Agent — 合并与评审规范。
 - `docs/qa-CLAUDE.md`：测试 Agent — 功能测试与验收规范。
 - `infra/CLAUDE.md`：运维 Agent — 部署与环境规范。
@@ -398,6 +401,7 @@ AI 适合做：
 - 不允许在源码里写英文注释。
 - 注释必须说明逻辑和代码在做什么。
 - 注释要清晰、具体。
+- 写代码过程中必须同步补充必要且详细的中文注释，说明关键逻辑、数据流、状态变化、异常处理和接口调用意图，方便后续开发者理解和维护。
 - 避免只重复函数名或变量名的空洞注释。
 - 重要业务规则、事务逻辑、权限校验、计费逻辑、实名制逻辑、资产生成逻辑必须写注释。
 
@@ -500,3 +504,5 @@ http://8.130.9.163:6888/aisiqing/molin.git
 ```
 
 实现功能时使用 feature 分支。除项目负责人明确要求的规划和脚手架更新外，不要直接提交到 `main`。
+
+开发任何功能、修复或页面前，必须先确认当前分支；如果当前在 `main`，必须先创建并切换到语义清晰的 feature 分支（如 `feature/user-console-orders-wallet`、`fix/admin-group-permission`）后再写代码。禁止在 `main` 上直接进行日常开发。
