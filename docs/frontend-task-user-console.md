@@ -374,8 +374,12 @@ export interface ProductPlan {
   name: string
   billing_type: 'one_time' | 'monthly' | 'yearly' | 'usage'
   duration_days: number | null
-  user_price: string        // 当前用户实际价格（角色价/会员价/默认价优先级）
+  quota_json: string | null  // 套餐配额（JSON 字符串），可能为 null
+  status: string
+  user_price: string         // 当前用户实际价格（角色价/会员价/默认价优先级）
   currency: string
+  // ⚠️ user_price 未配置价格时的取值待后端乙澄清：DTO 注释为 "-1"，
+  //    但 handler 当前回退为 "0"。前端"价格未配置"判定请勿写死，按后端最终确认实现。
 }
 
 export interface PurchaseResult {
@@ -383,6 +387,7 @@ export interface PurchaseResult {
   order_no: string
   status: 'paid'            // BUG-A：直接 paid，不会出现 pending
   amount: string
+  asset_id: number | null   // 异步开通时为 null；后续凭资产接口查询开通状态
   idempotent: boolean       // true 表示幂等命中，未重复扣费
 }
 ```
@@ -390,12 +395,26 @@ export interface PurchaseResult {
 ### 6.3 类型定义 `src/types/order.ts`（新建）
 
 ```typescript
-export type OrderStatus = 'pending' | 'paid' | 'cancelled' | 'failed'
-export type OrderType = 'purchase' | 'recharge'
+export type OrderStatus = 'pending' | 'paid' | 'cancelled' | 'failed' | 'refunded'
+export type OrderType = 'product' | 'recharge'  // ⚠️ 商品单为 'product'（非 'purchase'）
 
+// 订单商品明细（详情接口 Preload，列表通常不含）
+export interface OrderItem {
+  id: number
+  order_id: number
+  product_id: number
+  product_plan_id: number
+  quantity: number
+  unit_price: string
+  total_price: string
+  created_at: string
+}
+
+// 列表/详情均返回完整 order model（字段以后端 model.Order 为准）
 export interface Order {
   id: number
   order_no: string
+  user_id: number
   order_type: OrderType
   product_id: number | null
   product_plan_id: number | null
@@ -403,7 +422,13 @@ export interface Order {
   amount: string
   currency: string
   paid_at: string | null
+  cancelled_at: string | null
+  failed_at: string | null
+  remark: string | null
   created_at: string
+  updated_at: string
+  items?: OrderItem[]        // 详情接口含明细；列表项一般不返回（omitempty）
+  // 注：后端当前会原样返回 idempotency_key，前端忽略即可（无需展示）
 }
 
 // O3 钱包支付存量 pending 订单的响应
@@ -431,10 +456,13 @@ export type TxDirection = 'in' | 'out'
 
 export interface WalletTransaction {
   id: number
+  wallet_id: number
+  user_id: number
   type: TxType
   direction: TxDirection
   amount: string
   balance_after: string
+  related_order_id: number | null  // 关联订单（充值/消费时有，冻结等可能为 null）
   remark: string
   created_at: string
 }
@@ -457,19 +485,31 @@ export function listProducts(params: {
   return http.get<unknown, PageResult<Product>>('/products', { params })
 }
 
+/** 商品详情：返回 { product, plans }（plans 为裸数组，非分页） */
 export function getProduct(id: number) {
   return http.get<unknown, { product: Product; plans: ProductPlan[] }>(`/products/${id}`)
 }
 
+/**
+ * ⚠️ 套餐子接口返回的是 D-95 扁平分页 { items, page, page_size, total }，
+ * 不是 { plans: [...] }。（与 getProduct 详情里的 plans 字段结构不同，勿混用）
+ * 用户端套餐不真正分页，但契约仍为 PageResult。
+ */
 export function getProductPlans(id: number) {
-  return http.get<unknown, { plans: ProductPlan[] }>(`/products/${id}/plans`)
+  return http.get<unknown, PageResult<ProductPlan>>(`/products/${id}/plans`)
 }
 
 /**
  * 购买商品（钱包扣费）
- * - Idempotency-Key 必须由前端生成（如 UUID）并传入
- * - 响应 status 直接为 'paid'（BUG-A，无中间态）
+ * - Idempotency-Key 必须由前端生成（如 UUID）并传入；重试复用同一 key
+ * - 响应 status 直接为 'paid'（BUG-A，无中间态），含 asset_id（可能为 null）
  * - idempotent=true 表示幂等命中，不重复扣费
+ * 错误码（前端需分别处理）：
+ *   70001 未实名（HTTP 400）→ 引导实名
+ *   60001 余额不足（HTTP 400）→ 引导充值
+ *   40003 无购买权限（HTTP 403）→ 提示无权限
+ *   40000 该套餐未配置价格 / plan_id 缺失（HTTP 400）
+ *   50000 系统繁忙请重试（HTTP 409，并发锁耗尽）→ 可自动/手动重试
  */
 export function purchaseProduct(
   id: number,
@@ -505,7 +545,12 @@ export function getOrder(id: number) {
  * O3：钱包支付存量 pending 订单（充值单 / 中断后续付）
  * - 当前仅支持 pay_method='wallet'
  * - 需前端生成 Idempotency-Key（UUID）并复用同一动作的重试
- * - 余额不足 → 60001，引导充值
+ * 错误码（前端需分别处理）：
+ *   60001 余额不足（HTTP 400）→ 引导充值
+ *   60002 订单已支付，请勿重复操作（HTTP 400，D-007）→ 刷新订单状态
+ *   40900 订单状态不可支付 / 操作冲突（HTTP 400 或 409）→ 刷新后重试
+ *   40000 不支持的支付方式 / 该订单不支持钱包支付（HTTP 400）
+ *   40004 订单不存在（HTTP 404）
  */
 export function payOrder(id: number, idempotencyKey: string) {
   return http.post<unknown, PayOrderResult>(
@@ -557,9 +602,9 @@ export function createRechargeOrder(body: {
 |---|---|---|
 | `views/market/ProductListView.vue` | `listProducts` | 扁平分页；按 product_type/keyword 过滤 |
 | `views/market/ProductDetailView.vue` | `getProduct / getProductPlans` | 展示套餐+用户实际价格 |
-| `views/market/PurchaseDialog.vue` | `purchaseProduct` | Idempotency-Key 前端生成；70001→引导实名；60001→引导充值；`idempotent=true` 提示"已购买" |
+| `views/market/PurchaseDialog.vue` | `purchaseProduct` | Idempotency-Key 前端生成；70001→引导实名；60001→引导充值；40003→无权限；**409/50000「系统繁忙」→ 提示可重试**；`idempotent=true` 提示"已购买" |
 | `views/order/OrderListView.vue` | `listMyOrders` | status/order_type/时间过滤；扁平分页 |
-| `views/order/OrderDetailView.vue` | `getOrder / payOrder / cancelOrder` | 仅 pending 订单显示「钱包支付」(O3)与「取消」按钮；支付带 Idempotency-Key、余额不足→引导充值；取消二次确认 |
+| `views/order/OrderDetailView.vue` | `getOrder / payOrder / cancelOrder` | 仅 pending 订单显示「钱包支付」(O3)与「取消」按钮；支付带 Idempotency-Key；余额不足(60001)→引导充值、已支付(60002)/状态冲突(40900)→刷新；详情可展示 `items` 明细；取消二次确认 |
 | `views/wallet/WalletView.vue` | `getMyWallet` | 展示 `wallet_id` / `balance_amount` / `frozen_amount` |
 | `views/wallet/TransactionListView.vue` | `listMyTransactions` | type/direction/时间过滤；扁平分页 |
 | `views/wallet/RechargeView.vue` | `createRechargeOrder` | 选 wechat/alipay；金额用字符串（避免浮点精度）；返回 HTTP 201 |
@@ -568,10 +613,12 @@ export function createRechargeOrder(body: {
 
 ### 6.7 C 阶段验收标准
 - [ ] 商品列表按角色 can_view 过滤，非 active 商品不展示
-- [ ] 购买成功后 `status` 直接为 `paid`，`idempotent=true` 有"已购买"提示，不重复扣费
-- [ ] 余额不足（60001）跳充值引导；未实名（70001）跳实名引导
-- [ ] 订单列表 status/order_type/时间区间过滤生效；扁平分页正确
-- [ ] 存量 pending 订单可经 O3 钱包支付成功（status→paid，返回 wallet_transaction_id）；支付带 Idempotency-Key，余额不足跳充值引导
+- [ ] 购买成功后 `status` 直接为 `paid`，`idempotent=true` 有"已购买"提示，不重复扣费；正确读取 `asset_id`（可能为 null）
+- [ ] 余额不足（60001）跳充值引导；未实名（70001）跳实名引导；无权限（40003）提示；**并发繁忙（409/50000）可重试**
+- [ ] `getProductPlans` 按 **扁平分页 `PageResult<ProductPlan>`** 解析（非 `{plans}`）
+- [ ] 商品/订单不存在时用户端返回 **40004**（注意：管理端为 40400），按 404 通用处理
+- [ ] 订单列表 status/order_type（取值 `product`/`recharge`）/时间区间过滤生效；扁平分页正确
+- [ ] 存量 pending 订单可经 O3 钱包支付成功（status→paid，返回 wallet_transaction_id）；已支付(60002)/状态冲突(40900)有正确提示
 - [ ] 钱包余额取 `wallet_id` 字段（**不是 `id`**）；`balance_amount` 精确显示
 - [ ] 充值订单返回 HTTP 201（非 200）；`pay_url` 展示二维码或跳转
 - [ ] 消费记录扁平分页正确展示
