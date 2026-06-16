@@ -15,6 +15,8 @@ import (
 var (
 	// ErrOrderNotPending 订单非 pending 状态，无法支付/取消（状态机越界）。
 	ErrOrderNotPending = errors.New("订单状态不可操作")
+	// ErrOrderAlreadyPaid 订单已支付，禁止重复扣费（D-007：code=60002，HTTP 400）。
+	ErrOrderAlreadyPaid = errors.New("订单已支付，请勿重复操作")
 	// ErrOrderTypeNotPayable 订单类型不支持钱包支付（B-02 安全护栏）。
 	// 仅 product 订单可走 O3 钱包支付；recharge 等其它类型订单不可被钱包「支付」，
 	// 否则会出现扣款不入账、订单被错误置为 paid。
@@ -92,16 +94,13 @@ func (s *PayService) Pay(ctx context.Context, orderID, userID uint64) (*PayResul
 	}
 
 	// 2. 状态校验
+	// D-007：订单已为 paid 时，返回 ErrOrderAlreadyPaid（HTTP 400，code=60002），
+	// 明确告知调用方「已支付，禁止重复操作」，避免误导性 200 + 零值字段响应。
 	switch order.Status {
 	case "pending":
 		// 继续支付流程
 	case "paid":
-		// 幂等：已支付订单重复支付直接返回成功，不再扣费
-		return &PayResult{
-			OrderID:    order.ID,
-			Status:     "paid",
-			Idempotent: true,
-		}, nil
+		return nil, ErrOrderAlreadyPaid
 	default:
 		// cancelled / failed / refunded 等：状态机越界，拒绝
 		return nil, ErrOrderNotPending

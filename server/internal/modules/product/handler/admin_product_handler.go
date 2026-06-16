@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -163,7 +164,21 @@ func (h *AdminProductHandler) ListPlans(w http.ResponseWriter, r *http.Request) 
 		response.Error(w, http.StatusInternalServerError, 50000, "查询套餐失败")
 		return
 	}
-	response.JSON(w, http.StatusOK, map[string]interface{}{"plans": plans})
+	// D-005：套餐列表改用 D-95 扁平分页格式 {items, page, page_size, total}。
+	// 管理端套餐列表不分页（一次返回全部），page/page_size/total 仍需提供以保持契约一致。
+	pg := pagination.Parse(r)
+	// 空列表返回 [] 而非 null
+	if plans == nil {
+		plans = []model.ProductPlan{}
+	}
+	response.JSON(w, http.StatusOK, PagedResp{
+		Items: plans,
+		Result: pagination.Result{
+			Page:     pg.Page,
+			PageSize: pg.PageSize,
+			Total:    int64(len(plans)),
+		},
+	})
 }
 
 // CreatePlan 创建套餐。
@@ -236,6 +251,11 @@ func (h *AdminProductHandler) UpdatePlan(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.productSvc.UpdatePlan(r.Context(), planID, updates); err != nil {
+		// D-006：plan_id 不存在时返回 HTTP 404，code=40400。
+		if errors.Is(err, service.ErrPlanNotFound) {
+			response.Error(w, http.StatusNotFound, 40400, "套餐不存在")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, 50000, "更新套餐失败")
 		return
 	}

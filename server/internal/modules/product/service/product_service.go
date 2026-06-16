@@ -11,6 +11,9 @@ import (
 // ErrProductNotFound 商品不存在。
 var ErrProductNotFound = errors.New("商品不存在")
 
+// ErrPlanNotFound 套餐不存在（D-006：UpdatePlan 时 plan_id 不存在需返回该错误）。
+var ErrPlanNotFound = errors.New("套餐不存在")
+
 // ProductService 负责商品 CRUD 和可见性过滤。
 type ProductService struct {
 	productRepo *repository.ProductRepository
@@ -106,8 +109,15 @@ func (s *ProductService) CreatePlan(ctx context.Context, plan *model.ProductPlan
 }
 
 // UpdatePlan 更新套餐。
+// D-006：plan_id 不存在时 repository 返回 ErrPlanNotFound，service 层透传给 handler 映射为 404。
 func (s *ProductService) UpdatePlan(ctx context.Context, id uint64, updates map[string]interface{}) error {
-	return s.planRepo.Update(ctx, id, updates)
+	if err := s.planRepo.Update(ctx, id, updates); err != nil {
+		if errors.Is(err, repository.ErrPlanNotFound) {
+			return ErrPlanNotFound
+		}
+		return err
+	}
+	return nil
 }
 
 // AdminListPlans 管理端查询商品套餐列表（不过滤状态）。
