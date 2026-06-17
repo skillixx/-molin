@@ -35,21 +35,6 @@ func (r *AnnouncementRepository) FindByID(ctx context.Context, id uint64) (*mode
 	return &a, nil
 }
 
-// ListPublished 查询已发布且在有效期内的公告（用于用户端展示，需上层做可见范围过滤）。
-func (r *AnnouncementRepository) ListPublished(ctx context.Context) ([]*model.Announcement, error) {
-	now := time.Now()
-	var list []*model.Announcement
-	if err := r.db.WithContext(ctx).
-		Where("status = 'published'").
-		Where("start_at IS NULL OR start_at <= ?", now).
-		Where("end_at IS NULL OR end_at >= ?", now).
-		Order("sort_order DESC, created_at DESC").
-		Find(&list).Error; err != nil {
-		return nil, err
-	}
-	return list, nil
-}
-
 // ListVisible 用户端可见公告查询（C-FIX-6）：将 status/时间窗/visible_scope 过滤全部下推 SQL，
 // 并在 SQL 层分页，避免「拉全表再内存过滤」。
 //   - all：所有登录用户可见
