@@ -61,7 +61,17 @@ func (h *AssetHandler) GetMyAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.JSON(w, http.StatusOK, toAssetResponse(asset))
+	// 资产详情内嵌关联权益，避免前端二次请求
+	entitlements, err := h.svc.GetAssetEntitlements(r.Context(), assetID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "查询资产权益失败")
+		return
+	}
+
+	response.JSON(w, http.StatusOK, dto.AssetDetailResponse{
+		AssetResponse: toAssetResponse(asset),
+		Entitlements:  toEntitlementResponses(entitlements),
+	})
 }
 
 // ListMyEntitlements 用户查自己的权益列表。

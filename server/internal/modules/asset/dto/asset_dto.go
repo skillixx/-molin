@@ -52,6 +52,12 @@ type EntitlementResponse struct {
 	ExpiresAt       *time.Time       `json:"expires_at,omitempty"`
 }
 
+// AssetDetailResponse 资产详情响应（含关联权益），用于 GET /api/my/assets/{id}。
+type AssetDetailResponse struct {
+	AssetResponse
+	Entitlements []EntitlementResponse `json:"entitlements"`
+}
+
 // AdminAssetActionReq 管理员操作资产请求（冻结/解冻/取消）。
 type AdminAssetActionReq struct {
 	Action string `json:"action"` // freeze / unfreeze / cancel

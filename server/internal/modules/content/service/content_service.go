@@ -35,22 +35,6 @@ func (s *ContentService) ListAnnouncements(ctx context.Context, userRoles []stri
 	return s.announcementRepo.ListVisible(ctx, userRoles, isMember, offset, limit)
 }
 
-// ListPublicAnnouncements 游客端：只返回 visible_scope=all 的已发布公告。
-func (s *ContentService) ListPublicAnnouncements(ctx context.Context) ([]*model.Announcement, error) {
-	all, err := s.announcementRepo.ListPublished(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var result []*model.Announcement
-	for _, a := range all {
-		if a.VisibleScope == "all" {
-			result = append(result, a)
-		}
-	}
-	return result, nil
-}
-
 // isVisible 判断公告是否对当前用户可见。
 // visible_scope 取值规范：all / roles / members / admins，详见 content/CLAUDE.md。
 func (s *ContentService) isVisible(a *model.Announcement, isMember bool, userRoles []string) bool {

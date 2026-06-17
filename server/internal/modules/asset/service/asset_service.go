@@ -154,6 +154,11 @@ func (s *AssetService) ListUserEntitlements(ctx context.Context, userID uint64) 
 	return s.entitlementRepo.FindByUserID(ctx, userID)
 }
 
+// GetAssetEntitlements 查询某资产的全部权益（用于资产详情内嵌展示）。
+func (s *AssetService) GetAssetEntitlements(ctx context.Context, assetID uint64) ([]model.UserEntitlement, error) {
+	return s.entitlementRepo.FindByAssetID(ctx, assetID)
+}
+
 // GetUserAssetSummary 统计用户资产摘要（D-86：供管理端用户详情注入 asset_summary）。
 func (s *AssetService) GetUserAssetSummary(ctx context.Context, userID uint64) (*dto.AssetSummary, error) {
 	counts, err := s.assetRepo.CountByUserStatus(ctx, userID)
@@ -234,8 +239,9 @@ func (s *AssetService) ExpireAsset(ctx context.Context, assetID, operatorID uint
 			return err
 		}
 
-		// 同步更新关联权益状态
-		if err := tx.Model(&model.UserEntitlement{}).Where("asset_id = ?", assetID).
+		// 同步更新关联权益状态（仅翻转非终态权益，保留已 cancelled/expired 记录的保真）
+		if err := tx.Model(&model.UserEntitlement{}).
+			Where("asset_id = ? AND status NOT IN ('cancelled', 'expired')", assetID).
 			Update("status", "expired").Error; err != nil {
 			return err
 		}
@@ -336,8 +342,9 @@ func (s *AssetService) CancelAsset(ctx context.Context, assetID, operatorID uint
 			return err
 		}
 
-		// 同步取消关联权益（避免取消后权益仍可消耗）
-		if err := tx.Model(&model.UserEntitlement{}).Where("asset_id = ?", assetID).
+		// 同步取消关联权益（避免取消后权益仍可消耗；仅翻转非终态权益，保留已 expired/cancelled 记录）
+		if err := tx.Model(&model.UserEntitlement{}).
+			Where("asset_id = ? AND status NOT IN ('cancelled', 'expired')", assetID).
 			Update("status", "cancelled").Error; err != nil {
 			return err
 		}
