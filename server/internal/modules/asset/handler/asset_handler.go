@@ -110,9 +110,10 @@ func (h *AssetHandler) AdminListAssets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"items": toAssetResponses(assets),
-		"total": total,
-		"page":  page,
+		"items":     toAssetResponses(assets),
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
 	})
 }
 
@@ -136,7 +137,7 @@ func (h *AssetHandler) AdminListUserAssets(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// AdminUpdateAsset 管理员冻结/解冻资产。
+// AdminUpdateAsset 管理员冻结/解冻/取消资产。
 // PATCH /api/admin/assets/:id
 func (h *AssetHandler) AdminUpdateAsset(w http.ResponseWriter, r *http.Request) {
 	operatorID := middleware.UserIDFromContext(r.Context())
@@ -163,8 +164,14 @@ func (h *AssetHandler) AdminUpdateAsset(w http.ResponseWriter, r *http.Request) 
 			response.Error(w, http.StatusBadRequest, 40000, err.Error())
 			return
 		}
+	case "cancel":
+		// C-FIX-2a：管理员手动取消资产（active|suspended → cancelled，同步取消关联权益）。
+		if err := h.svc.CancelAsset(r.Context(), assetID, operatorID, req.Remark); err != nil {
+			response.Error(w, http.StatusBadRequest, 40000, err.Error())
+			return
+		}
 	default:
-		response.Error(w, http.StatusBadRequest, 40000, "无效操作，支持：freeze / unfreeze")
+		response.Error(w, http.StatusBadRequest, 40000, "无效操作，支持：freeze / unfreeze / cancel")
 		return
 	}
 

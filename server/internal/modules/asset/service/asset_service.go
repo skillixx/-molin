@@ -254,6 +254,51 @@ func (s *AssetService) UnfreezeAsset(ctx context.Context, assetID, operatorID ui
 	})
 }
 
+// CancelAsset 取消资产（active|suspended → cancelled），同步取消关联权益，写 asset_events。
+// C-FIX-2a：状态机声明的 cancelled 落地路径。本阶段由管理端手动触发；
+// 未来退款自动联动（C-FIX-2b）由 order/billing 退款成功后经 provision.Cancel 复用本方法。
+func (s *AssetService) CancelAsset(ctx context.Context, assetID, operatorID uint64, reason string) error {
+	asset, err := s.assetRepo.FindByID(ctx, assetID)
+	if err != nil {
+		return fmt.Errorf("资产不存在: %w", err)
+	}
+	if asset.Status != "active" && asset.Status != "suspended" {
+		return fmt.Errorf("资产状态 %s 不允许取消（仅 active/suspended 状态可取消）", asset.Status)
+	}
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 更新资产状态
+		if err := tx.Model(&model.UserAsset{}).Where("id = ?", assetID).
+			Update("status", "cancelled").Error; err != nil {
+			return err
+		}
+
+		// 同步取消关联权益（避免取消后权益仍可消耗）
+		if err := tx.Model(&model.UserEntitlement{}).Where("asset_id = ?", assetID).
+			Update("status", "cancelled").Error; err != nil {
+			return err
+		}
+
+		// 写入事件日志
+		before := asset.Status
+		after := "cancelled"
+		var remarkPtr *string
+		if reason != "" {
+			remarkPtr = &reason
+		}
+		event := &model.AssetEvent{
+			AssetID:      assetID,
+			UserID:       asset.UserID,
+			EventType:    "cancelled",
+			BeforeStatus: &before,
+			AfterStatus:  &after,
+			OperatorID:   &operatorID,
+			Remark:       remarkPtr,
+		}
+		return tx.Create(event).Error
+	})
+}
+
 // ConsumeEntitlement 并发安全地消耗权益配额（SELECT FOR UPDATE）。
 func (s *AssetService) ConsumeEntitlement(ctx context.Context, entitlementID uint64, amount decimal.Decimal) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
