@@ -17,7 +17,7 @@ func RegisterRoutes(_ *http.ServeMux) {
 func NewProvisionService(
 	productRepo *productrepository.ProductRepository,
 	planRepo *productrepository.PlanRepository,
-	assetSvc service.AssetCreator,
+	assetSvc service.AssetManager,
 ) *service.ProvisionService {
 	return service.NewProvisionService(productRepo, planRepo, assetSvc)
 }

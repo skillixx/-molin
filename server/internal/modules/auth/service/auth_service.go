@@ -94,6 +94,12 @@ type PermissionOverridesFetcher interface {
 	GetPermissionOverrides(ctx context.Context, userID uint64) ([]iammodel.UserPermissionOverride, error)
 }
 
+// AssetSummaryFetcher D-86：用户资产摘要查询接口，由 asset.AssetService（经 bootstrap adapter）实现。
+// 供 GetUser 详情接口附带 asset_summary 字段，避免 auth/service 直接依赖 asset/service。
+type AssetSummaryFetcher interface {
+	GetAssetSummary(ctx context.Context, userID uint64) (*dto.AdminAssetSummary, error)
+}
+
 // AuthService 负责注册、登录、退出、刷新令牌、修改密码、封禁/解封用户。
 type AuthService struct {
 	userRepo             *repository.UserRepository
@@ -107,6 +113,7 @@ type AuthService struct {
 	roleAssigner         RoleAssigner               // A-28：可选，创建后台用户时分配角色
 	rolesFetcher         RolesFetcher               // D-85：可选，查询用户角色列表（ListUsers/GetUser 附带 roles 字段）
 	permOverridesFetcher PermissionOverridesFetcher // D-86：可选，查询用户权限覆盖列表（GetUser 附带 permission_overrides 字段）
+	assetSummaryFetcher  AssetSummaryFetcher        // D-86：可选，查询用户资产摘要（GetUser 附带 asset_summary 字段）
 	db                   *gorm.DB
 }
 
@@ -149,6 +156,11 @@ func (s *AuthService) SetPermissionOverridesFetcher(f PermissionOverridesFetcher
 	s.permOverridesFetcher = f
 }
 
+// SetAssetSummaryFetcher D-86：注入资产摘要查询器（由 bootstrap 调用）。
+func (s *AuthService) SetAssetSummaryFetcher(f AssetSummaryFetcher) {
+	s.assetSummaryFetcher = f
+}
+
 // fetchRolesForUser D-85：查询单个用户的角色摘要，rolesFetcher 未注入时返回空切片（不阻断主流程）。
 func (s *AuthService) fetchRolesForUser(ctx context.Context, userID uint64) []dto.AdminRoleItem {
 	if s.rolesFetcher == nil {
@@ -183,6 +195,22 @@ func (s *AuthService) fetchPermissionOverridesForUser(ctx context.Context, userI
 		return []dto.AdminPermissionOverrideItem{}
 	}
 	return toAdminPermissionOverrideItems(overrides)
+}
+
+// fetchAssetSummaryForUser D-86：查询单个用户的资产摘要，
+// assetSummaryFetcher 未注入或查询出错时返回零值摘要（不阻断主流程）。
+func (s *AuthService) fetchAssetSummaryForUser(ctx context.Context, userID uint64) dto.AdminAssetSummary {
+	if s.assetSummaryFetcher == nil {
+		return dto.AdminAssetSummary{}
+	}
+	summary, err := s.assetSummaryFetcher.GetAssetSummary(ctx, userID)
+	if err != nil || summary == nil {
+		if err != nil {
+			log.Printf("[auth] fetchAssetSummaryForUser: userID=%d err=%v", userID, err)
+		}
+		return dto.AdminAssetSummary{}
+	}
+	return *summary
 }
 
 // toAdminPermissionOverrideItems 将 iam/model.UserPermissionOverride 切片转换为 DTO 切片。
@@ -789,6 +817,7 @@ func (s *AuthService) toAdminUserResp(ctx context.Context, u *model.User) dto.Ad
 		Status:              u.Status,
 		Roles:               s.fetchRolesForUser(ctx, u.ID),
 		PermissionOverrides: s.fetchPermissionOverridesForUser(ctx, u.ID),
+		AssetSummary:        s.fetchAssetSummaryForUser(ctx, u.ID),
 		CreatedAt:           u.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 	// 邮箱脱敏处理

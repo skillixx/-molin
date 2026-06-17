@@ -32,6 +32,19 @@ type UpdateBenefitReq struct {
 	Status       *string `json:"status"`
 }
 
+// GrantMembershipReq 管理端手动开通/续期用户会员请求。
+type GrantMembershipReq struct {
+	UserID       uint64 `json:"user_id"`
+	LevelID      uint64 `json:"level_id"`
+	DurationDays *int   `json:"duration_days"` // nil 表示永久会员
+}
+
+// UpdateUserMembershipReq 管理端调整/取消用户会员请求。
+type UpdateUserMembershipReq struct {
+	Action    *string    `json:"action"`     // cancel：取消会员（status→cancelled）
+	ExpiresAt *time.Time `json:"expires_at"` // 可选：直接覆盖到期时间
+}
+
 // MembershipResponse 用户会员响应。
 type MembershipResponse struct {
 	ID        uint64     `json:"id"`
