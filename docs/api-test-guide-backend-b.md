@@ -1,8 +1,9 @@
 # 后端乙接口 — APIPost 人工测试手册
 
-> **覆盖模块**：product / order / billing / finance_consumer（共 27 个接口 P1-P17 / O1-O6 / B1-B8 / F1-F3）
+> **覆盖模块**：product / order / billing / finance_consumer（共 34 个接口 P1-P17 / O1-O6 / B1-B8 / F1-F3）
 > **服务地址**：`http://8.130.9.163:8080`
-> **更新日期**：2026-06-16
+> **更新日期**：2026-06-17
+> **本次更新（2026-06-17）**：订正 `billing_type` 取值（one_time/monthly/yearly/usage，原误写 prepaid/postpaid/metered）；P9 商品状态仅 active/inactive（draft 不可设置）；P10 管理端套餐列表为扁平分页（非 {plans}）；P4 购买响应补 asset_id；澄清充值 pay_url 为占位、消费记录与购买的区别。字段以 `docs/frontend-api-reference.md`（SSOT）为准。
 
 ---
 
@@ -51,10 +52,13 @@ Body（raw JSON）：
   "data": {
     "access_token": "eyJhbGci...",
     "refresh_token": "...",
-    "expires_in": 7200
+    "expires_in": 7200,
+    "user": { "id": 1, "email": "...", "phone": "...", "real_name_status": "verified", "status": "active" }
   }
 }
 ```
+
+> D-93：登录/注册/刷新响应均含 `user` 对象（脱敏），登录后可直接用，无需再调 `GET /api/me`。
 
 ### 1-B. 管理员账号登录
 
@@ -166,14 +170,16 @@ Body（raw JSON）：
   "data": {
     "order_id": 1,
     "order_no": "ORD202606161A3B9C2F",
-    "amount": "100.000000",
+    "amount": "100",
     "status": "pending",
-    "pay_url": "https://pay.example.com/..."
+    "pay_url": "/api/simulate-pay?order_no=ORD...&amount=100"
   }
 }
 ```
 
-> **注意**：真实支付验签（PR#123）已启用，实际充值需由支付平台真实回调才能到账。
+> **⚠️ 重要：创建充值订单 ≠ 钱到账。** 本接口只创建一笔 `pending` 充值订单，**不会增加余额、不写钱包流水**。到账需第三方支付回调 `POST /api/payments/notify/{provider}`（带签名）入账后才发生。
+> **`pay_url` 指向的 `/api/simulate-pay` 当前是占位 URL，后端未实现该路由（请求会 404），不能用它完成支付。**
+> 测试环境要给余额（供购买/扣费测试用），最实际的做法是直接改测试库：`UPDATE wallets SET balance_amount=1000 WHERE user_id=<ID>;`（先 GET /api/wallet 触发钱包懒创建）。直塞只改余额、不产生 recharge 流水。
 
 ---
 
@@ -232,8 +238,9 @@ Authorization: Bearer {{token}}
         "id": 1,
         "plan_code": "basic",
         "name": "基础版",
-        "billing_type": "prepaid",
+        "billing_type": "one_time",
         "duration_days": 30,
+        "status": "active",
         "user_price": "9.990000",
         "currency": "CNY"
       }
@@ -309,12 +316,14 @@ Body（raw JSON）：
     "order_no": "ORD20260616XXXXXXXX",
     "status": "paid",
     "amount": "9.990000",
+    "asset_id": null,
     "idempotent": false
   }
 }
 ```
 
-> BUG-A：`status` 直接返回 `"paid"`（创建订单与扣费在同一事务内完成）。`idempotent: true` 表示该 Idempotency-Key 已存在，返回原订单，不重复扣费。
+> BUG-A：`status` 直接返回 `"paid"`（创建订单与扣费在同一事务内完成，无 pending、无需轮询）。`asset_id` 为开通的资产 ID，异步开通时为 `null`。`idempotent: true` 表示该 Idempotency-Key 已存在，返回原订单，不重复扣费。
+> 注意：购买只产生**订单**和一条 `type=consume` 的钱包流水，**不会**产生"消费记录"（见 F2 说明）。
 
 ---
 
@@ -451,6 +460,8 @@ GET {{base_url}}/api/product-consumption-records
 Authorization: Bearer {{token}}
 ```
 
+> **⚠️ 消费记录 ≠ 购买记录。** 本接口查的是"**按量计费的用量消费明细**"，数据**只**由内部上报接口 F1（`POST /api/internal/product-usage-events`）产生。**购买商品不会在这里留记录**——购买记录看订单（O1）、购买扣费看钱包流水（B2 `?type=consume`）。所以只购买、没上报用量时，本接口返回空是正常的。要造数据需先配计费规则（P16）+ 钱包有余额，再走 F1 上报。
+
 **可选过滤参数：**
 
 | 参数 | 说明 |
@@ -571,7 +582,7 @@ Body（raw JSON）：
 { "status": "active" }
 ```
 
-> `status` 枚举：`active`（上架） / `inactive`（下架） / `draft`（草稿）
+> `status` **仅接受** `active`（上架） / `inactive`（下架）。**`draft` 是创建时的初始态，不能通过本接口设置**——传 `draft` 返回 `400`。（后端校验 validStatuses={active,inactive}）
 
 ---
 
@@ -582,7 +593,7 @@ GET {{base_url}}/api/admin/products/{{product_id}}/plans
 Authorization: Bearer {{admin_token}}
 ```
 
-预期返回：`{ "code": 0, "data": { "plans": [...] } }`
+预期返回（**D-95 扁平分页**，是 `items` 不是 `plans`）：`{ "code": 0, "data": { "items": [...], "page": 1, "page_size": 20, "total": N } }`
 
 ---
 
@@ -599,14 +610,16 @@ Body（raw JSON）：
 {
   "plan_code": "basic",
   "name": "基础版",
-  "billing_type": "prepaid",
+  "billing_type": "one_time",
   "duration_days": 30,
   "status": "active"
 }
 ```
 
 > 必填：`plan_code` / `name` / `billing_type`
-> `billing_type`：`prepaid`（预付费） / `postpaid`（后付费） / `metered`（计量）
+> `billing_type` 标准取值：`one_time`（一次性） / `monthly`（包月） / `yearly`（包年） / `usage`（按量）。
+> ⚠️ 后端当前**不对 billing_type 做枚举强校验**（任意非空字符串都接受），但请统一用上面 4 个值，与 SSOT/model 一致。
+> ⚠️ 注意区分：这里是**套餐**的 `billing_type`；计费规则（P16）里的 `billing_mode` 是另一个字段，别混。
 > 返回 HTTP 201，将 `data.id` 保存到 `{{plan_id}}`
 
 ---
