@@ -64,10 +64,10 @@
 |---|---|---|---|---|---|
 | B-01 | Week 2 | 商品类别、商品 CRUD、上下架接口 | `feature/backend-b-product-catalog` | ✅ 已完成 | 状态回填（代码早已完成，任务板漏更新）：product 模块商品 CRUD + 上下架 `PATCH /admin/products/{id}/status`（仅 active/inactive，draft 为创建初始态不可设置）已实现并注册（bootstrap app.go:293）；经多轮 senior-architect 审查 + 测试服回归（88/88、52/52 通过）；相关修复 BUG-B/BUG-C #136、D-011 #137 |
 | B-02 | Week 2 | 套餐配置、价格分层（会员/角色/默认） | `feature/backend-b-product-plans-prices` | ✅ 已完成 | 状态回填：套餐 CRUD + 价格三档优先级（会员>角色>默认，pricing_service.GetPrice）已实现；价格覆盖写 body `items` 含 product_plan_id（D-009 #135）+ 多套餐单事务（BUG-D #136）；user_price 未配置统一返回 -1（#144）|
-| B-03 | Week 3 | 钱包充值、扣费（乐观锁事务）、流水记录 | `feature/backend-b-billing-wallet` | ⏳ 待开始 | |
-| B-04 | Week 3 | 支付平台回调签名校验、幂等入账 | `feature/backend-b-payment-callback` | ⏳ 待开始 | |
-| B-05 | Week 3 | 购买接口、Idempotency-Key 幂等、订单状态机 | `feature/backend-b-order-purchase` | ⏳ 待开始 | |
-| B-06 | Week 3 | RabbitMQ 财务消费者、消费计费路由 | `feature/backend-b-finance-consumer` | ⏳ 待开始 | |
+| B-03 | Week 3 | 钱包充值、扣费（乐观锁事务）、流水记录 | `feature/backend-b-billing-wallet` | ✅ 已完成 | 状态回填：`GET /api/wallet`、`GET /api/wallet/transactions`、`POST /api/recharge/orders`、管理端钱包查询/冻结接口均已实现；乐观锁（version 字段）已实现于 wallet_repo/wallet_service；代码审查（2026-06-17）|
+| B-04 | Week 3 | 支付平台回调签名校验、幂等入账 | `feature/backend-b-payment-callback` | ✅ 已完成 | 状态回填：`POST /api/payments/notify/{provider}` 含签名校验与幂等入账；`GET /api/admin/payment-callbacks` 已实现；代码审查（2026-06-17）|
+| B-05 | Week 3 | 购买接口、Idempotency-Key 幂等、订单状态机 | `feature/backend-b-order-purchase` | ✅ 已完成 | 状态回填：`POST /api/products/{id}/purchase`（Idempotency-Key 幂等）、`POST /api/orders/{id}/pay`、`POST /api/orders/{id}/cancel`、用户/管理员订单列表与详情全部实现；代码审查（2026-06-17）|
+| B-06 | Week 3 | RabbitMQ 财务消费者、消费计费路由 | `feature/backend-b-finance-consumer` | ✅ 已完成 | 状态回填：finance_consumer 模块含 RabbitMQ 集成；`POST /api/internal/product-usage-events`（内部扣费）、`GET /api/product-consumption-records`、`GET /api/admin/product-consumption-records` 已实现；代码审查（2026-06-17）|
 
 ---
 
@@ -154,13 +154,13 @@
 | 开发者 | 总任务数 | 已完成 | 进行中 | 待开始 |
 |---|---|---|---|---|
 | 后端工程师甲 | 39 | 39（9 已审查 + 24 已验收/完成，PR#31/#32/#38/#39/#42/#44/#47/#48/#50/#51/#53/#54/#56/#57/#60/#61/#62/#63/#68/#69/#70/#71/#76/#77/#78/#79/#80/#81/#85）| 0 | 0 |
-| 后端工程师乙 | 6 | 2（B-01/B-02）| 0 | 4 |
+| 后端工程师乙 | 6 | 6（B-01~B-06）| 0 | 0 |
 | 后端工程师丙 | 5 | 2（C-01/C-02）| 0 | 3 |
 | 前端工程师甲 | 8 | 5（FA-01~FA-05）| 0 | 3 |
 | 前端工程师乙 | 8 | 7（FB-01~FB-07）| 0 | 1 |
 | 运维工程师 | 6 | 6 | 0 | 0 |
 | 测试工程师 | 6 | 0 | 0 | 6 |
-| **合计** | **77** | **54** | **0** | **23** |
+| **合计** | **77** | **58** | **0** | **19** |
 
 ---
 
