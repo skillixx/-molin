@@ -316,6 +316,8 @@ func NewApp() (*App, error) {
 
 	// 启动定时任务：到期资产处理（后台 goroutine，随应用生命周期运行）
 	go jobs.NewExpireAssetsJob(gormDB).Start(context.Background())
+	// 启动定时任务：到期会员处理（C-FIX-5，与资产到期任务对齐）
+	go jobs.NewExpireMembershipsJob(gormDB).Start(context.Background())
 
 	// 全局中间件（最外层）
 	handler := middleware.RequestID(middleware.Recovery(middleware.Logger(mux)))

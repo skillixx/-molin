@@ -52,8 +52,8 @@ type EntitlementResponse struct {
 	ExpiresAt       *time.Time       `json:"expires_at,omitempty"`
 }
 
-// AdminAssetActionReq 管理员操作资产请求（冻结/解冻）。
+// AdminAssetActionReq 管理员操作资产请求（冻结/解冻/取消）。
 type AdminAssetActionReq struct {
-	Action string `json:"action"` // freeze / unfreeze
-	Remark string `json:"remark"`
+	Action string `json:"action"` // freeze / unfreeze / cancel
+	Remark string `json:"remark"` // 取消原因或冻结备注
 }

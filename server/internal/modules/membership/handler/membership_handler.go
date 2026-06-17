@@ -224,8 +224,9 @@ func (h *MembershipHandler) AdminListUserMemberships(w http.ResponseWriter, r *h
 	}
 
 	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"items": list,
-		"total": total,
-		"page":  page,
+		"items":     list,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
 	})
 }
