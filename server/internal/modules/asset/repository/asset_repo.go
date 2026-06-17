@@ -67,6 +67,27 @@ func (r *AssetRepository) ListAll(ctx context.Context, userID uint64, status str
 	return assets, total, nil
 }
 
+// CountByUserStatus 统计某用户各状态资产数量（D-86 资产摘要用，按 status 分组）。
+func (r *AssetRepository) CountByUserStatus(ctx context.Context, userID uint64) (map[string]int64, error) {
+	type statusCount struct {
+		Status string
+		Cnt    int64
+	}
+	var rows []statusCount
+	if err := r.db.WithContext(ctx).Model(&model.UserAsset{}).
+		Select("status, COUNT(*) AS cnt").
+		Where("user_id = ?", userID).
+		Group("status").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[string]int64, len(rows))
+	for _, row := range rows {
+		result[row.Status] = row.Cnt
+	}
+	return result, nil
+}
+
 // UpdateStatus 更新资产状态。
 func (r *AssetRepository) UpdateStatus(ctx context.Context, id uint64, status string) error {
 	return r.db.WithContext(ctx).Model(&model.UserAsset{}).

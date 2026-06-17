@@ -230,3 +230,38 @@ func (h *MembershipHandler) AdminListUserMemberships(w http.ResponseWriter, r *h
 		"page_size": pageSize,
 	})
 }
+
+// AdminGrantMembership 管理端手动开通/续期用户会员。
+// POST /api/admin/user-memberships
+func (h *MembershipHandler) AdminGrantMembership(w http.ResponseWriter, r *http.Request) {
+	var req dto.GrantMembershipReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求体格式错误")
+		return
+	}
+	if err := h.svc.AdminGrantMembership(r.Context(), req.UserID, req.LevelID, req.DurationDays); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, err.Error())
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "开通成功"})
+}
+
+// AdminUpdateUserMembership 管理端调整/取消用户会员。
+// PATCH /api/admin/user-memberships/{id}
+func (h *MembershipHandler) AdminUpdateUserMembership(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "会员记录 ID 无效")
+		return
+	}
+	var req dto.UpdateUserMembershipReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求体格式错误")
+		return
+	}
+	if err := h.svc.AdminUpdateUserMembership(r.Context(), id, req.Action, req.ExpiresAt); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, err.Error())
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]string{"message": "更新成功"})
+}

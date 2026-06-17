@@ -57,3 +57,12 @@ type AdminAssetActionReq struct {
 	Action string `json:"action"` // freeze / unfreeze / cancel
 	Remark string `json:"remark"` // 取消原因或冻结备注
 }
+
+// AssetSummary 用户资产摘要（D-86：供管理端用户详情接口注入 asset_summary 字段）。
+type AssetSummary struct {
+	Total     int64 `json:"total"`
+	Active    int64 `json:"active"`
+	Suspended int64 `json:"suspended"`
+	Expired   int64 `json:"expired"`
+	Cancelled int64 `json:"cancelled"`
+}

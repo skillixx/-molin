@@ -76,6 +76,21 @@ func (r *UserMembershipRepository) BatchExpire(ctx context.Context, limit int) (
 	return res.RowsAffected, res.Error
 }
 
+// FindByID 按 ID 查询用户会员记录。
+func (r *UserMembershipRepository) FindByID(ctx context.Context, id uint64) (*model.UserMembership, error) {
+	var m model.UserMembership
+	if err := r.db.WithContext(ctx).First(&m, id).Error; err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+// UpdateByID 更新用户会员记录字段（管理端调整/取消用）。
+func (r *UserMembershipRepository) UpdateByID(ctx context.Context, id uint64, updates map[string]interface{}) error {
+	return r.db.WithContext(ctx).Model(&model.UserMembership{}).
+		Where("id = ?", id).Updates(updates).Error
+}
+
 // HasActiveLevelIn 校验用户当前是否拥有有效会员资格，且等级属于给定的等级 ID 集合。
 // 查询条件：status = active AND (expires_at IS NULL OR expires_at > NOW()) AND level_id IN (...)
 // 用于"会员专属商品"购买门槛校验：判断用户是否具备购买所需的会员等级。

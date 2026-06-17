@@ -45,6 +45,8 @@ func RegisterRoutes(
 	mux.Handle("POST /api/admin/membership-benefits", adminAuth("membership:manage", h.AdminCreateBenefit))
 	mux.Handle("PATCH /api/admin/membership-benefits/{id}", adminAuth("membership:manage", h.AdminUpdateBenefit))
 	mux.Handle("GET /api/admin/user-memberships", adminAuth("membership:view", h.AdminListUserMemberships))
+	mux.Handle("POST /api/admin/user-memberships", adminAuth("membership:manage", h.AdminGrantMembership))
+	mux.Handle("PATCH /api/admin/user-memberships/{id}", adminAuth("membership:manage", h.AdminUpdateUserMembership))
 }
 
 // NewService 创建会员服务（供 bootstrap/app.go 使用）。

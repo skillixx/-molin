@@ -168,3 +168,41 @@ func (s *MembershipService) AdminListUserMemberships(ctx context.Context, userID
 	offset := (page - 1) * pageSize
 	return s.memberRepo.ListByUserID(ctx, userID, offset, pageSize)
 }
+
+// AdminGrantMembership 管理端手动开通/续期用户会员（复用 CreateOrRenewMembership 的续期叠加语义）。
+// 不关联资产（assetID=0），适用于客服补偿、人工纠错等场景。
+func (s *MembershipService) AdminGrantMembership(ctx context.Context, userID, levelID uint64, durationDays *int) error {
+	if userID == 0 || levelID == 0 {
+		return fmt.Errorf("user_id 和 level_id 为必填项")
+	}
+	return s.CreateOrRenewMembership(ctx, userID, levelID, 0, durationDays)
+}
+
+// AdminUpdateUserMembership 管理端调整/取消用户会员。
+// action=cancel 时将 status 置 cancelled；expiresAt 非 nil 时直接覆盖到期时间。
+func (s *MembershipService) AdminUpdateUserMembership(ctx context.Context, id uint64, action *string, expiresAt *time.Time) error {
+	m, err := s.memberRepo.FindByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("会员记录不存在: %w", err)
+	}
+
+	updates := map[string]interface{}{}
+	if action != nil {
+		switch *action {
+		case "cancel":
+			if m.Status == "cancelled" {
+				return fmt.Errorf("会员记录已是 cancelled 状态")
+			}
+			updates["status"] = "cancelled"
+		default:
+			return fmt.Errorf("无效 action，支持：cancel")
+		}
+	}
+	if expiresAt != nil {
+		updates["expires_at"] = *expiresAt
+	}
+	if len(updates) == 0 {
+		return fmt.Errorf("无可更新字段（需提供 action 或 expires_at）")
+	}
+	return s.memberRepo.UpdateByID(ctx, id, updates)
+}

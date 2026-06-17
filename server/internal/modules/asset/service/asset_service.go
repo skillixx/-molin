@@ -154,6 +154,69 @@ func (s *AssetService) ListUserEntitlements(ctx context.Context, userID uint64) 
 	return s.entitlementRepo.FindByUserID(ctx, userID)
 }
 
+// GetUserAssetSummary 统计用户资产摘要（D-86：供管理端用户详情注入 asset_summary）。
+func (s *AssetService) GetUserAssetSummary(ctx context.Context, userID uint64) (*dto.AssetSummary, error) {
+	counts, err := s.assetRepo.CountByUserStatus(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	summary := &dto.AssetSummary{
+		Active:    counts["active"],
+		Suspended: counts["suspended"],
+		Expired:   counts["expired"],
+		Cancelled: counts["cancelled"],
+	}
+	for _, c := range counts {
+		summary.Total += c
+	}
+	return summary, nil
+}
+
+// RenewAsset 续期资产（仅 active）：在原到期时间（若未到期）或当前时间基础上叠加 durationDays，
+// durationDays 为 nil 表示永久（expires_at 置 NULL）；同步顺延关联 active 权益的到期时间，写 asset_events。
+// 供 provision 续期编排调用（C-06 / 资产生命周期）。
+func (s *AssetService) RenewAsset(ctx context.Context, assetID uint64, durationDays *int) error {
+	asset, err := s.assetRepo.FindByID(ctx, assetID)
+	if err != nil {
+		return fmt.Errorf("资产不存在: %w", err)
+	}
+	if asset.Status != "active" {
+		return fmt.Errorf("资产状态 %s 不允许续期（仅 active 状态可续期）", asset.Status)
+	}
+
+	var newExpiry *time.Time
+	if durationDays != nil {
+		base := time.Now()
+		if asset.ExpiresAt != nil && asset.ExpiresAt.After(base) {
+			base = *asset.ExpiresAt
+		}
+		t := base.AddDate(0, 0, *durationDays)
+		newExpiry = &t
+	}
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.UserAsset{}).Where("id = ?", assetID).
+			Update("expires_at", newExpiry).Error; err != nil {
+			return err
+		}
+		// 顺延关联 active 权益的到期时间，保持与资产一致
+		if err := tx.Model(&model.UserEntitlement{}).
+			Where("asset_id = ? AND status = 'active'", assetID).
+			Update("expires_at", newExpiry).Error; err != nil {
+			return err
+		}
+		status := asset.Status
+		event := &model.AssetEvent{
+			AssetID:      assetID,
+			UserID:       asset.UserID,
+			EventType:    "renewed",
+			BeforeStatus: &status,
+			AfterStatus:  &status,
+		}
+		return tx.Create(event).Error
+	})
+}
+
 // ExpireAsset 将资产状态从 active 改为 expired，写 asset_events。
 func (s *AssetService) ExpireAsset(ctx context.Context, assetID, operatorID uint64) error {
 	asset, err := s.assetRepo.FindByID(ctx, assetID)

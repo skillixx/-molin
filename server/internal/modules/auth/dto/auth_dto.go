@@ -207,8 +207,18 @@ type AdminUserResp struct {
 	Status              string                        `json:"status"`
 	Roles               []AdminRoleItem               `json:"roles"`
 	PermissionOverrides []AdminPermissionOverrideItem `json:"permission_overrides"`
+	AssetSummary        AdminAssetSummary             `json:"asset_summary"`
 	CreatedAt           string                        `json:"created_at"`
 	LastLoginAt         *string                       `json:"last_login_at"`
+}
+
+// AdminAssetSummary D-86：管理端用户详情的资产摘要（由 asset 模块经 adapter 注入）。
+type AdminAssetSummary struct {
+	Total     int64 `json:"total"`
+	Active    int64 `json:"active"`
+	Suspended int64 `json:"suspended"`
+	Expired   int64 `json:"expired"`
+	Cancelled int64 `json:"cancelled"`
 }
 
 // LoginLogItem A-30：管理员查看用户登录日志的单条响应字段。
