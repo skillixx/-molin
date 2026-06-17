@@ -79,9 +79,9 @@
 |---|---|---|---|---|---|
 | C-01 | Week 2 | 应用市场列表、应用详情、应用状态管理 | `feature/backend-c-app-market` | ✅ 已完成 | 状态回填：app 模块（应用市场列表/详情/状态）已实现并注册（bootstrap app.go:315）；属后端丙，验收见 Week 4 应用模块测试（`feature/test-week4-app-acceptance`）|
 | C-02 | Week 2 | ProvisionHandler 接口定义及各商品类型实现 | `feature/backend-c-provision-handler` | ✅ 已完成 | 状态回填：provision 模块（购买/支付成功后异步开通编排）已实现，经 order/product 注入 provisionService（bootstrap app.go:288/293）；属后端丙 |
-| C-03 | Week 2-3 | 会员等级 CRUD、用户会员开通/续期/查询 | `feature/backend-c-membership-levels` | ⏳ 待开始 | |
-| C-04 | Week 3 | 用户资产创建、状态机（active/suspended/cancelled）| `feature/backend-c-asset-management` | ⏳ 待开始 | |
-| C-05 | Week 4 | 公告管理、帮助文档、可见范围过滤 | `feature/backend-c-content-cms` | ⏳ 待开始 | |
+| C-03 | Week 2-3 | 会员等级 CRUD、用户会员开通/续期/查询 | `feature/backend-c-membership-levels` | ✅ 已完成 | 状态回填：membership 模块（等级/权益 CRUD、用户会员查询、续期）已实现；senior-architect 审查后修复 C-FIX-1（续期叠加 `CreateOrRenewMembership`、FOR UPDATE 防重复 active、migration 000026 索引）、C-FIX-5（ExpireMembershipsJob 到期任务）；PR#151（merge `7444c47`）；测试工程师接口测试 14/14 通过（2026-06-17，测试服 version=26）|
+| C-04 | Week 3 | 用户资产创建、状态机（active/suspended/cancelled）| `feature/backend-c-asset-management` | ✅ 已完成 | 状态回填：asset 模块（资产创建/查询、状态机、权益、ExpireAssetsJob）已实现；senior-architect 审查后修复 C-FIX-2a（`CancelAsset` 落地 active\|suspended→cancelled + 级联权益 + asset_events，`PATCH .../assets/{id} action:cancel`）；PR#151（merge `7444c47`）；测试工程师接口测试 25/25 通过（2026-06-17）|
+| C-05 | Week 4 | 公告管理、帮助文档、可见范围过滤 | `feature/backend-c-content-cms` | ✅ 已完成 | 状态回填：content 模块（公告/帮助 CRUD、visible_scope 过滤）已实现；senior-architect 审查后修复 C-FIX-6（公告 status/时间窗/visible_scope 全下推 SQL + 分页，roles 用 JSON_CONTAINS）；PR#151（merge `7444c47`）；测试工程师接口测试 19/19 通过（2026-06-17，visible_scope all/roles/members/admins 全覆盖）|
 
 ---
 
@@ -155,12 +155,12 @@
 |---|---|---|---|---|
 | 后端工程师甲 | 39 | 39（9 已审查 + 24 已验收/完成，PR#31/#32/#38/#39/#42/#44/#47/#48/#50/#51/#53/#54/#56/#57/#60/#61/#62/#63/#68/#69/#70/#71/#76/#77/#78/#79/#80/#81/#85）| 0 | 0 |
 | 后端工程师乙 | 6 | 6（B-01~B-06）| 0 | 0 |
-| 后端工程师丙 | 5 | 2（C-01/C-02）| 0 | 3 |
+| 后端工程师丙 | 5 | 5（C-01~C-05；C-03/04/05 经 senior-architect 审查修复 C-FIX-1/2a/4/5/6，PR#151）| 0 | 0 |
 | 前端工程师甲 | 8 | 5（FA-01~FA-05）| 0 | 3 |
 | 前端工程师乙 | 8 | 7（FB-01~FB-07）| 0 | 1 |
 | 运维工程师 | 6 | 6 | 0 | 0 |
 | 测试工程师 | 6 | 0 | 0 | 6 |
-| **合计** | **77** | **58** | **0** | **19** |
+| **合计** | **77** | **63** | **0** | **14** |
 
 ---
 
