@@ -46,12 +46,33 @@ type UpdateUserMembershipReq struct {
 }
 
 // MembershipResponse 用户会员响应。
+// 纯增量：在原有字段基础上内联 level_code / level_name，前端可直接展示等级名，
+// 无需再按 level_id 映射等级列表。level_id 等原字段保持不变。
 type MembershipResponse struct {
 	ID        uint64     `json:"id"`
 	UserID    uint64     `json:"user_id"`
 	LevelID   uint64     `json:"level_id"`
+	LevelCode string     `json:"level_code"`
+	LevelName string     `json:"level_name"`
 	AssetID   *uint64    `json:"asset_id,omitempty"`
 	Status    string     `json:"status"`
 	StartedAt time.Time  `json:"started_at"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+}
+
+// AdminUserMembershipResponse 管理端用户会员列表单项响应。
+// = 原 user_memberships 全部字段 + 内联 level_code / level_name。
+// 不含用户名/邮箱（属后端甲用户域，本轮不做）。
+type AdminUserMembershipResponse struct {
+	ID        uint64     `json:"id"`
+	UserID    uint64     `json:"user_id"`
+	LevelID   uint64     `json:"level_id"`
+	LevelCode string     `json:"level_code"`
+	LevelName string     `json:"level_name"`
+	AssetID   *uint64    `json:"asset_id,omitempty"`
+	Status    string     `json:"status"`
+	StartedAt time.Time  `json:"started_at"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }

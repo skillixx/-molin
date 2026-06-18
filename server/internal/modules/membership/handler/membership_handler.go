@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -34,10 +35,11 @@ func (h *MembershipHandler) ListPublicLevels(w http.ResponseWriter, r *http.Requ
 
 // GetMyMembership 查询当前用户的有效会员（需登录）。
 // GET /api/my/membership
+// 响应 membership 对象已内联 level_code / level_name，前端无需再映射等级列表。
 func (h *MembershipHandler) GetMyMembership(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 
-	m, err := h.svc.GetActiveMembership(r.Context(), userID)
+	m, err := h.svc.GetActiveMembershipResponse(r.Context(), userID)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询会员信息失败")
 		return
@@ -49,17 +51,29 @@ func (h *MembershipHandler) GetMyMembership(w http.ResponseWriter, r *http.Reque
 
 	// 有会员时也统一包成 {"membership": {...}}，与无会员情形结构对称，
 	// 避免前端针对两种返回结构做分支判断。
-	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"membership": dto.MembershipResponse{
-			ID:        m.ID,
-			UserID:    m.UserID,
-			LevelID:   m.LevelID,
-			AssetID:   m.AssetID,
-			Status:    m.Status,
-			StartedAt: m.StartedAt,
-			ExpiresAt: m.ExpiresAt,
-		},
-	})
+	response.JSON(w, http.StatusOK, map[string]interface{}{"membership": m})
+}
+
+// ListPublicLevelBenefits 查询某会员等级的公开权益（无需登录，仅返回 active 权益）。
+// GET /api/memberships/{id}/benefits
+// {id} 为会员等级 ID；等级不存在或未上架时返回 404/40400，避免泄露未上架等级。
+func (h *MembershipHandler) ListPublicLevelBenefits(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseUint(r.PathValue("id"), 10, 64)
+	if err != nil || id == 0 {
+		response.Error(w, http.StatusBadRequest, 40000, "会员等级 ID 无效")
+		return
+	}
+
+	benefits, err := h.svc.ListPublicLevelBenefits(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, service.ErrLevelNotFound) {
+			response.Error(w, http.StatusNotFound, 40400, "会员等级不存在")
+			return
+		}
+		response.Error(w, http.StatusInternalServerError, 50000, "查询权益失败")
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]interface{}{"items": benefits})
 }
 
 // AdminListLevels 管理员查会员等级（含全部状态）。

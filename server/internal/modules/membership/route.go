@@ -33,6 +33,7 @@ func RegisterRoutes(
 
 	// 用户端/公开路由（无需登录）
 	mux.HandleFunc("GET /api/memberships", h.ListPublicLevels)
+	mux.HandleFunc("GET /api/memberships/{id}/benefits", h.ListPublicLevelBenefits)
 
 	// 用户端路由（需要登录）
 	mux.Handle("GET /api/my/membership", auth(h.GetMyMembership))

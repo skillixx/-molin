@@ -55,6 +55,21 @@ func (r *LevelRepository) ListAll(ctx context.Context) ([]*model.MembershipLevel
 	return levels, nil
 }
 
+// FindByIDs 批量按 ID 查询会员等级（用于 M9 列表内联等级名，避免 N+1 查询）。
+// 返回切片可直接用于在 service 层构建 id→level 映射。
+func (r *LevelRepository) FindByIDs(ctx context.Context, ids []uint64) ([]*model.MembershipLevel, error) {
+	if len(ids) == 0 {
+		return []*model.MembershipLevel{}, nil
+	}
+	var levels []*model.MembershipLevel
+	if err := r.db.WithContext(ctx).
+		Where("id IN ?", ids).
+		Find(&levels).Error; err != nil {
+		return nil, err
+	}
+	return levels, nil
+}
+
 // Update 更新会员等级字段。
 func (r *LevelRepository) Update(ctx context.Context, id uint64, updates map[string]interface{}) error {
 	return r.db.WithContext(ctx).Model(&model.MembershipLevel{}).

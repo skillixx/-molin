@@ -30,8 +30,8 @@
 | 分页统一 D-95 扁平 | 所有**管理端列表**返回 `data` 为 `{ items, page, page_size, total }`（顶层，禁止 `{list,pagination}` 嵌套），复用 `PageResult<T>`。`page_size` 已随 C-FIX-4 上线，四类管理列表（asset/membership/content/app）均返回该字段，**无需兜底** |
 | 用户端列表两类 | （1）**不分页**：`GET /api/my/assets`、`/api/my/entitlements`、`/api/memberships`、`/api/help/*` 响应为 `{ items: [...] }`（无分页信封）。（2）**分页**：`GET /api/announcements` 已随 C-FIX-6 上线，返回完整 `{ items, page, page_size, total }`（`page_size` 默认 20、最大 50），前端**直接按分页渲染**，不要再按 `{items}`-only 兜底 |
 | 我的会员结构对称 | `GET /api/my/membership` 统一返回 `data.membership`：有会员为对象、无会员为 `null`，**前端无需 has-membership 分支判断**，直接读 `data.membership?.expires_at`。⚠️ 多等级并存时本接口只返回「永久优先、到期最晚」的**单条最优**会员 |
-| 会员对象只带 level_id | `M2`/`M9` 的会员对象**仅含 `level_id`，无等级名称**；`M9` 还**不含用户名/邮箱**（仅 `user_id`）。展示等级名须按 `level_id` 映射 M1/M3 等级列表；展示用户身份须配合后端甲用户接口。M9 建议主要按 `user_id` 过滤使用 |
-| 等级无权益、无公开权益端点 | `M1` 等级列表**不含权益**，且权益查询 `M6` 为 `membership:view` 管理端权限，**用户端无法取权益**。会员中心本阶段只展示等级名/描述，**不展示权益对比**，待后端丙补公开权益端点后再迭代（缺口已回报，见 §2.2 注） |
+| 会员对象已内联 level_code/level_name | `M2`/`M9` 的会员对象**已在保留 `level_id` 的基础上内联 `level_code`/`level_name`**（纯增量），前端可直接展示等级名，无需再按 `level_id` 映射 M1/M3 等级列表。⚠️ `M9` 仍**不含用户名/邮箱**（仅 `user_id`），展示用户身份须配合后端甲用户接口；M9 建议主要按 `user_id` 过滤使用 |
+| 已提供公开权益端点 | 公开权益端点 `GET /api/memberships/{id}/benefits`（无需登录，仅返回 `status=active` 权益，等级不存在/未上架返回 404/40400）已上线，见 §11.1b。会员中心可对各等级调用本端点展示/对比权益。管理端权益接口 `M6` 仍为 `membership:view` 权限 |
 | 管理端分页上限 | 管理端列表（asset/membership/content/app）`page_size` 上限 **100**；用户端公告 `GET /api/announcements` 上限 **50**；超限按上限钳制 |
 | 会员两条开通路径 | （1）**用户自助**：走商品流程（`product_type=membership` → 下单 → 支付 → provision 开通），用户端「续费」跳商品详情，**无 membership purchase 接口**。（2）**管理员手动**：M10/M11（`POST/PATCH /api/admin/user-memberships`，`membership:manage`），见 §2.2。两路径续期均按 C-FIX-1 在原到期时间叠加；前端成功后重拉对应列表/`/api/my/membership` |
 | 资产 cancel 已上线 | `PATCH /api/admin/assets/{id}` 的 `action:cancel`（active\|suspended→cancelled，同步级联取消关联权益）已随 C-FIX-2a 上线，与 `freeze`/`unfreeze` 同样稳定；取消原因放 `remark` 字段（非 `reason`）。状态机越界（如对 cancelled 资产再操作）返回 400，前端给提示 |
@@ -72,9 +72,9 @@
 
 > M10/M11 为**已注册的真实管理端接口**（非可选），是会员管理页的一等能力；请求体细节见 `frontend-api-reference.md` §11.6 与 `apipost-test-guide-backend-c.md` §2。
 >
-> **⚠️ 缺口（已回报后端丙，待补）**：用户端会员中心需要「按等级展示权益」，但当前**无公开/登录态权益查询端点**（M6 为管理端权限）。建议后端丙新增 `GET /api/memberships/{id}/benefits`（或 M1 内联 active 权益）。在该端点落地前，FB-08 会员中心**不实现权益对比**（见 §4 FB-08 范围）。
+> **✅ 已解决（公开权益端点已上线）**：用户端会员中心「按等级展示权益」现可调用公开端点 `GET /api/memberships/{id}/benefits`（无需登录，仅返回 `status=active` 权益；等级不存在/未上架返回 404/40400），见 §11.1b。FB-08 会员中心可据此实现各等级权益展示/对比。M6 仍为 `membership:view` 管理端权限。
 >
-> **⚠️ 列表展示提示**：M9 返回项仅含 `user_id`/`level_id`，**无等级名/用户名**。FA-09 用户会员列表需前端用 M3 等级列表按 `level_id` 建映射取等级名；用户信息建议本列表主要按 `user_id` 过滤进入（从用户管理页跳转）。
+> **✅ 已解决（M9 内联等级名）**：M9 返回项已在保留 `level_id` 的基础上内联 `level_code`/`level_name`，FA-09 用户会员列表可直接展示等级名，无需再按 M3 等级列表映射（服务端批量加载等级，无 N+1）。⚠️ M9 仍**无用户名/邮箱**（仅 `user_id`），用户信息建议本列表主要按 `user_id` 过滤进入（从用户管理页跳转）。
 
 ### 2.3 内容 content（公告 / 帮助）
 
@@ -121,7 +121,7 @@
 ### FA-09 会员管理（M3~M11，`membership:view`/`membership:manage`）【任务板新增】
 - 会员等级管理：列表（含 inactive）+ 新建（level_code/name/description/sort_order）+ 编辑（name/description/sort_order/status）。
 - 会员权益管理：按 level_id 查权益列表 + 新建/编辑（benefit_type + `benefit_value` JSON 字符串编辑器，校验合法 JSON）。
-- 用户会员列表：M9 分页查询（user_id 过滤），展示 level/status/started_at/expires_at。⚠️ M9 项仅含 `level_id`（无等级名），等级名按 M3 列表 `level_id` 映射；项无用户名，建议主要从用户管理页带 `user_id` 进入。
+- 用户会员列表：M9 分页查询（user_id 过滤），展示 level/status/started_at/expires_at。✅ M9 项已内联 `level_code`/`level_name`，等级名直接展示，无需再按 M3 列表映射；⚠️ 项仍无用户名，建议主要从用户管理页带 `user_id` 进入。
 - **手动开通/调整会员（M10/M11，一等能力，非可选）**：
   - 开通/续期：M10 `POST`，表单 `user_id`/`level_id`/`duration_days`（提供「永久」选项 → 传 `null`）；对已有同级有效会员重复开通即续期叠加。
   - 取消/改期：M11 `PATCH`，「取消会员」按钮传 `{action:"cancel"}`，「修改到期时间」传 `{expires_at}`。
@@ -142,8 +142,8 @@
 - AssetListView 已实现，无需重做；如权益额度页未覆盖 AS3，可在本端补「我的权益」标签。
 
 ### FB-08 会员中心（M1/M2 + 续费引导）
-- 会员等级列表（M1 公开）+ 我的会员卡片（M2，读 `data.membership`，null 显示「暂无会员」）。⚠️ M2 仅含 `level_id`，等级名按 M1 列表 `level_id` 映射；M2 多等级并存时只返回单条最优会员。
-- **范围说明（权益对比暂缓）**：M1 不含权益、且无公开权益端点（详见 §1 红线 + §2.2 缺口注），本阶段会员中心**只展示等级名/描述/排序**，不做「各等级权益对比」；待后端丙补公开权益端点后再迭代。
+- 会员等级列表（M1 公开）+ 我的会员卡片（M2，读 `data.membership`，null 显示「暂无会员」）。✅ M2 已内联 `level_code`/`level_name`，等级名直接展示，无需按 M1 列表映射；M2 多等级并存时只返回单条最优会员。
+- **权益展示**：可对每个等级调用公开端点 `GET /api/memberships/{id}/benefits`（无需登录，仅返回 `status=active` 权益，等级不存在/未上架返回 404/40400，见 §11.1b）拉取权益，用于会员中心各等级权益展示/对比。`benefit_value` 为 JSON 字符串，`JSON.parse` 后渲染并做解析失败兜底。
 - 续费/开通走商品流程：跳转到 `product_type=membership` 商品详情（后端乙 §六），**本端不调 membership 写接口**；支付完成回到会员中心后重新拉 M2 展示新到期时间。
 - 分支 `feature/frontend-b-membership`。
 
