@@ -164,11 +164,12 @@ GET {{base_url}}/api/admin/user-memberships?user_id={{user_id}}&page=1&page_size
 **C3. 调整 / 取消用户会员**（`membership:manage`）
 ```
 PATCH {{base_url}}/api/admin/user-memberships/<会员记录ID>
-Body: { "action": "cancel" }                       // 取消
-# 或调整到期时间：
-Body: { "action": "update", "expires_at": "2027-01-01T00:00:00Z" }
+Body: { "action": "cancel" }                       // 取消：status → cancelled
+# 或调整到期时间（只传 expires_at，不要带 action）：
+Body: { "expires_at": "2027-01-01T00:00:00Z" }
 ```
 - 成功 `data`：`{ "message": "更新成功" }`。
+- ⚠️ `action` 仅接受 `"cancel"`；**改期请只传 `{expires_at}`，不要传 `action:"update"`**（实现无 update 动作，会按无效 action 返回 400）。空 body（既无 action 也无 expires_at）返回 400「无可更新字段」。
 
 > **会员过期（C-FIX-5）**：`ExpireMembershipsJob` 每小时把 `status=active AND expires_at<NOW()` 流转为 `expired`，无 HTTP 接口。验证方式：DB 直写一条 `expires_at` 已过去的 active 记录，等整点任务跑后查 `status` 应变 `expired`（或查源码 `server/internal/jobs/expire_memberships.go` 确认逻辑）。
 
