@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { ArrowLeft, Refresh, Search } from '@element-plus/icons-vue'
 import { listMyTransactions } from '@/api/wallet'
 import type { WalletTransaction } from '@/types/wallet'
 import { displayAmount, formatDateTime, txDirectionLabel, txTypeLabel } from '@/utils/display'
@@ -59,8 +60,14 @@ function handlePageChange(page: number) {
   <div class="transaction-page">
     <div class="page-container">
       <div class="page-header">
-        <h2 class="page-title">账单流水</h2>
-        <router-link to="/wallet"><el-button>返回钱包</el-button></router-link>
+        <div>
+          <span class="page-kicker">钱包明细</span>
+          <h2 class="page-title">账单流水</h2>
+          <p class="page-subtitle">按类型、方向和时间查看钱包资金变更。</p>
+        </div>
+        <router-link to="/wallet" class="back-link">
+          <el-button class="back-btn" :icon="ArrowLeft">返回钱包</el-button>
+        </router-link>
       </div>
 
       <div class="filter-bar glass-card">
@@ -82,8 +89,12 @@ function handlePageChange(page: number) {
           start-placeholder="开始日期"
           end-placeholder="结束日期"
         />
-        <el-button type="primary" :loading="loading" @click="search">查询</el-button>
-        <el-button @click="reset">重置</el-button>
+        <div class="filter-actions">
+          <el-button class="search-btn" type="primary" :icon="Search" :loading="loading" @click="search">
+            查询
+          </el-button>
+          <el-button class="reset-btn" :icon="Refresh" @click="reset">重置</el-button>
+        </div>
       </div>
 
       <el-table v-loading="loading" :data="rows" class="data-table" border>
@@ -122,26 +133,104 @@ function handlePageChange(page: number) {
 </template>
 
 <style scoped>
-.transaction-page { padding: 32px 24px; }
-.page-container { max-width: 1280px; margin: 0 auto; }
+.transaction-page {
+  padding: 34px 0 0;
+}
+
 .page-header {
   display: flex;
   justify-content: space-between;
   gap: 16px;
+  align-items: flex-end;
   margin-bottom: 18px;
+  padding: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(34, 211, 238, 0.12), transparent 42%),
+    linear-gradient(225deg, rgba(52, 211, 153, 0.1), transparent 36%),
+    rgba(7, 11, 18, 0.56);
+  box-shadow: var(--shadow-card);
 }
+
+.page-kicker {
+  display: inline-flex;
+  margin-bottom: 10px;
+  color: var(--color-accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .page-title {
-  color: var(--color-text);
-  font-size: 26px;
+  margin-bottom: 8px;
 }
+
+.back-link {
+  text-decoration: none;
+}
+
+.back-btn {
+  min-width: 104px;
+  height: 36px;
+  border-radius: 8px;
+  border-color: rgba(148, 163, 184, 0.2) !important;
+  background: rgba(15, 23, 42, 0.58) !important;
+  color: var(--color-text-muted) !important;
+}
+
+.back-btn:hover {
+  border-color: rgba(34, 211, 238, 0.36) !important;
+  background: rgba(34, 211, 238, 0.08) !important;
+  color: var(--color-text) !important;
+}
+
 .filter-bar {
   display: grid;
-  grid-template-columns: 140px 120px minmax(260px, 1fr) auto auto;
+  grid-template-columns: 140px 120px minmax(260px, 1fr) auto;
   gap: 12px;
   padding: 16px;
   margin-bottom: 16px;
   border-radius: 8px;
 }
+
+.filter-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.search-btn,
+.reset-btn {
+  height: 36px;
+  min-width: 86px;
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+.search-btn {
+  border: none;
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.95), rgba(52, 211, 153, 0.9)) !important;
+  color: #041016 !important;
+}
+
+.search-btn:hover {
+  filter: brightness(1.06);
+  box-shadow: 0 10px 24px rgba(34, 211, 238, 0.18);
+}
+
+.reset-btn {
+  border-color: rgba(251, 191, 36, 0.22) !important;
+  background: rgba(251, 191, 36, 0.06) !important;
+  color: #F8D57E !important;
+}
+
+.reset-btn:hover {
+  border-color: rgba(251, 191, 36, 0.42) !important;
+  background: rgba(251, 191, 36, 0.12) !important;
+  color: #FFE8A3 !important;
+}
+
 .data-table {
   width: 100%;
 }
@@ -151,8 +240,24 @@ function handlePageChange(page: number) {
   margin-top: 18px;
 }
 @media (max-width: 900px) {
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .filter-bar {
     grid-template-columns: 1fr;
+  }
+
+  .filter-actions {
+    width: 100%;
+  }
+
+  .search-btn,
+  .reset-btn,
+  .back-btn {
+    flex: 1;
+    width: 100%;
   }
 }
 </style>

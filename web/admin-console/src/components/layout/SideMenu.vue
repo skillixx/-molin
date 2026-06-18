@@ -60,20 +60,36 @@
       <template #title>审计日志</template>
     </el-menu-item>
 
-    <el-menu-item index="/products">
-      <el-icon><Goods /></el-icon>
-      <template #title>商品管理</template>
-    </el-menu-item>
+    <el-sub-menu v-if="can('product:view')" index="product">
+      <template #title>
+        <el-icon><Goods /></el-icon>
+        <span>商品与计费</span>
+      </template>
+      <el-menu-item index="/products">
+        <el-icon><Goods /></el-icon>
+        <template #title>商品管理</template>
+      </el-menu-item>
+    </el-sub-menu>
 
-    <el-menu-item index="/orders">
+    <el-menu-item v-if="can('order:list')" index="/orders">
       <el-icon><List /></el-icon>
       <template #title>订单管理</template>
     </el-menu-item>
 
-    <el-menu-item index="/transactions">
-      <el-icon><Wallet /></el-icon>
-      <template #title>钱包流水</template>
-    </el-menu-item>
+    <el-sub-menu v-if="can('wallet:view')" index="wallet">
+      <template #title>
+        <el-icon><Wallet /></el-icon>
+        <span>钱包财务</span>
+      </template>
+      <el-menu-item index="/transactions">
+        <el-icon><Wallet /></el-icon>
+        <template #title>钱包中心</template>
+      </el-menu-item>
+      <el-menu-item index="/consumption-records">
+        <el-icon><Tickets /></el-icon>
+        <template #title>消费记录</template>
+      </el-menu-item>
+    </el-sub-menu>
 
     <el-menu-item index="/assets">
       <el-icon><Box /></el-icon>

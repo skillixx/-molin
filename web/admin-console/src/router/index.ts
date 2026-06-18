@@ -85,19 +85,25 @@ const router = createRouter({
           path: 'products',
           name: 'ProductList',
           component: () => import('@/views/product/ProductListView.vue'),
-          meta: { requiresAuth: true, requiresAdminVerify: true, title: '商品管理' },
+          meta: { requiresAuth: true, requiresAdminVerify: true, title: '商品管理', permission: 'product:view' },
         },
         {
           path: 'orders',
           name: 'OrderList',
           component: () => import('@/views/order/OrderListView.vue'),
-          meta: { requiresAuth: true, requiresAdminVerify: true, title: '订单管理' },
+          meta: { requiresAuth: true, requiresAdminVerify: true, title: '订单管理', permission: 'order:list' },
         },
         {
           path: 'transactions',
           name: 'TransactionList',
           component: () => import('@/views/wallet/TransactionListView.vue'),
-          meta: { requiresAuth: true, requiresAdminVerify: true, title: '钱包流水' },
+          meta: { requiresAuth: true, requiresAdminVerify: true, title: '钱包中心', permission: 'wallet:view' },
+        },
+        {
+          path: 'consumption-records',
+          name: 'AdminConsumption',
+          component: () => import('@/views/consumption/AdminConsumptionView.vue'),
+          meta: { requiresAuth: true, requiresAdminVerify: true, title: '消费记录', permission: 'wallet:view' },
         },
         {
           path: 'assets',

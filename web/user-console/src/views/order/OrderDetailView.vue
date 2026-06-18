@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Refresh } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { ArrowLeft, Refresh, WarningFilled } from '@element-plus/icons-vue'
 import { v4 as uuidv4 } from 'uuid'
 import { cancelOrder, getOrder, payOrder } from '@/api/order'
 import { useWalletStore } from '@/stores/wallet'
@@ -23,9 +23,14 @@ const loading = ref(false)
 const paying = ref(false)
 const cancelling = ref(false)
 const order = ref<Order | null>(null)
+const cancelDialogVisible = ref(false)
+const cancelForm = reactive({
+  reason: '用户主动取消',
+})
 
 const canWalletPay = computed(() => order.value?.status === 'pending' && order.value.order_type === 'product')
 const canCancel = computed(() => order.value?.status === 'pending')
+const cancelReasonValid = computed(() => cancelForm.reason.trim().length > 0)
 
 onMounted(fetchOrder)
 
@@ -69,16 +74,20 @@ async function handlePay() {
 
 async function handleCancel() {
   if (!order.value || !canCancel.value) return
-  const reason = await ElMessageBox.prompt('请输入取消原因', '取消订单', {
-    confirmButtonText: '确认取消',
-    cancelButtonText: '返回',
-    inputValue: '用户主动取消',
-  }).catch(() => null)
-  if (!reason) return
+  cancelForm.reason = order.value.remark || '用户主动取消'
+  cancelDialogVisible.value = true
+}
+
+async function submitCancelOrder() {
+  if (!order.value || !canCancel.value || !cancelReasonValid.value) {
+    ElMessage.warning('请输入取消原因')
+    return
+  }
   cancelling.value = true
   try {
-    await cancelOrder(order.value.id, reason.value)
+    await cancelOrder(order.value.id, cancelForm.reason.trim())
     ElMessage.success('订单已取消')
+    cancelDialogVisible.value = false
     await fetchOrder()
   } finally {
     cancelling.value = false
@@ -149,6 +158,66 @@ async function handleCancel() {
         </section>
       </div>
     </div>
+
+    <el-dialog
+      v-model="cancelDialogVisible"
+      class="cancel-order-dialog"
+      width="480px"
+      append-to-body
+      :close-on-click-modal="!cancelling"
+      :close-on-press-escape="!cancelling"
+      :show-close="!cancelling"
+    >
+      <template #header>
+        <div class="cancel-dialog-head">
+          <div class="cancel-dialog-icon">
+            <el-icon><WarningFilled /></el-icon>
+          </div>
+          <div>
+            <h3>取消订单</h3>
+            <p>取消后订单状态将变更为已取消，请确认原因后提交。</p>
+          </div>
+        </div>
+      </template>
+
+      <div v-if="order" class="cancel-dialog-body">
+        <div class="cancel-order-summary">
+          <div>
+            <span>订单号</span>
+            <strong>{{ order.order_no }}</strong>
+          </div>
+          <div>
+            <span>订单金额</span>
+            <strong>{{ displayAmount(order.amount, order.currency) }}</strong>
+          </div>
+        </div>
+
+        <label class="cancel-reason-label">取消原因</label>
+        <el-input
+          v-model="cancelForm.reason"
+          type="textarea"
+          :rows="4"
+          maxlength="120"
+          show-word-limit
+          placeholder="请输入取消原因"
+        />
+      </div>
+
+      <template #footer>
+        <div class="cancel-dialog-footer">
+          <el-button :disabled="cancelling" @click="cancelDialogVisible = false">返回</el-button>
+          <el-button
+            class="cancel-confirm-btn"
+            type="danger"
+            :disabled="!cancelReasonValid"
+            :loading="cancelling"
+            @click="submitCancelOrder"
+          >
+            确认取消订单
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -214,8 +283,125 @@ async function handleCancel() {
   font-size: 18px;
   font-weight: 700;
 }
+
+:global(.cancel-order-dialog) {
+  border: 1px solid rgba(248, 113, 113, 0.24);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(248, 113, 113, 0.1), transparent 36%),
+    rgba(7, 11, 18, 0.96);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+}
+
+:global(.cancel-order-dialog .el-dialog__header) {
+  margin: 0;
+  padding: 22px 22px 0;
+}
+
+:global(.cancel-order-dialog .el-dialog__body) {
+  padding: 18px 22px 0;
+}
+
+:global(.cancel-order-dialog .el-dialog__footer) {
+  padding: 18px 22px 22px;
+}
+
+.cancel-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.cancel-dialog-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(248, 113, 113, 0.36);
+  border-radius: 8px;
+  color: #fecaca;
+  background: rgba(248, 113, 113, 0.12);
+  font-size: 20px;
+}
+
+.cancel-dialog-head h3 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.cancel-dialog-head p {
+  margin: 6px 0 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.cancel-dialog-body {
+  display: grid;
+  gap: 14px;
+}
+
+.cancel-order-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.9fr);
+  gap: 10px;
+}
+
+.cancel-order-summary div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.58);
+}
+
+.cancel-order-summary span,
+.cancel-reason-label {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.cancel-order-summary strong {
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cancel-reason-label {
+  margin-bottom: -6px;
+}
+
+.cancel-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.cancel-confirm-btn {
+  border: none;
+  background: linear-gradient(135deg, #ef4444, #f97316) !important;
+  color: #fff !important;
+  font-weight: 800;
+  box-shadow: 0 12px 26px rgba(239, 68, 68, 0.22);
+}
+
+.cancel-confirm-btn:hover {
+  background: linear-gradient(135deg, #f05252, #fb923c) !important;
+}
+
 @media (max-width: 760px) {
   .info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cancel-order-summary {
     grid-template-columns: 1fr;
   }
 }

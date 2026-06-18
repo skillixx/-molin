@@ -19,7 +19,7 @@ export function listMyTransactions(params: {
 
 export function createRechargeOrder(body: {
   amount: string
-  payment_method: 'wechat' | 'alipay'
+  payment_method: 'alipay'
   return_url?: string
 }) {
   return http.post<unknown, RechargeOrderResult>('/recharge/orders', body)

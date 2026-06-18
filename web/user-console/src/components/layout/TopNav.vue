@@ -10,11 +10,33 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useWalletStore } from '@/stores/wallet'
 import { ElMessage } from 'element-plus'
+import {
+  Bell,
+  Box,
+  Goods,
+  HomeFilled,
+  List,
+  QuestionFilled,
+  Tickets,
+  Wallet,
+} from '@element-plus/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const walletStore = useWalletStore()
+
+// 顶部主导航入口集中维护，避免页面入口分散在模板中重复书写。
+const navItems = [
+  { path: '/overview', label: '总览', icon: HomeFilled },
+  { path: '/marketplace', label: '商品市场', icon: Goods },
+  { path: '/assets', label: '我的资产', icon: Box },
+  { path: '/orders', label: '我的订单', icon: Tickets },
+  { path: '/wallet', label: '钱包', icon: Wallet },
+  { path: '/consumption', label: '消费记录', icon: List },
+  { path: '/announcements', label: '公告', icon: Bell },
+  { path: '/help', label: '帮助中心', icon: QuestionFilled },
+]
 
 // 判断当前路由是否激活
 function isActive(path: string) {
@@ -62,60 +84,16 @@ onMounted(() => {
 
         <nav class="nav-links">
           <router-link
-            to="/overview"
+            v-for="item in navItems"
+            :key="item.path"
+            :to="item.path"
             class="nav-link"
-            :class="{ active: isActive('/overview') }"
+            :class="{ active: isActive(item.path) }"
           >
-            总览
-          </router-link>
-          <router-link
-            to="/marketplace"
-            class="nav-link"
-            :class="{ active: isActive('/marketplace') }"
-          >
-            商品市场
-          </router-link>
-          <router-link
-            to="/assets"
-            class="nav-link"
-            :class="{ active: isActive('/assets') }"
-          >
-            我的资产
-          </router-link>
-          <router-link
-            to="/orders"
-            class="nav-link"
-            :class="{ active: isActive('/orders') }"
-          >
-            我的订单
-          </router-link>
-          <router-link
-            to="/wallet"
-            class="nav-link"
-            :class="{ active: isActive('/wallet') }"
-          >
-            钱包
-          </router-link>
-          <router-link
-            to="/consumption"
-            class="nav-link"
-            :class="{ active: isActive('/consumption') }"
-          >
-            消费记录
-          </router-link>
-          <router-link
-            to="/announcements"
-            class="nav-link"
-            :class="{ active: isActive('/announcements') }"
-          >
-            公告
-          </router-link>
-          <router-link
-            to="/help"
-            class="nav-link"
-            :class="{ active: isActive('/help') }"
-          >
-            帮助中心
+            <el-icon class="nav-link-icon">
+              <component :is="item.icon" />
+            </el-icon>
+            <span>{{ item.label }}</span>
           </router-link>
         </nav>
       </div>
@@ -123,6 +101,7 @@ onMounted(() => {
       <!-- 右：用户下拉菜单 -->
       <div class="nav-right">
         <router-link to="/wallet" class="wallet-pill">
+          <el-icon class="wallet-icon"><Wallet /></el-icon>
           <span class="wallet-label">余额</span>
           <span class="wallet-value">¥ {{ walletStore.formatBalance() }}</span>
         </router-link>
@@ -211,7 +190,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   min-width: 0;
-  gap: 26px;
+  gap: 22px;
 }
 
 .nav-logo {
@@ -224,32 +203,76 @@ onMounted(() => {
 .nav-links {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.nav-links::-webkit-scrollbar {
+  display: none;
 }
 
 .nav-link {
-  padding: 7px 10px;
-  border-radius: 999px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 11px;
+  border-radius: 8px;
   text-decoration: none;
   color: var(--color-text-muted);
   font-size: 13px;
   line-height: 1;
-  border: 1px solid transparent;
-  transition: color 0.2s, background 0.2s, border-color 0.2s;
+  white-space: nowrap;
+  border: 1px solid rgba(148, 163, 184, 0.08);
+  background: rgba(15, 23, 42, 0.28);
+  transition: color 0.2s, background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.nav-link::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 5px;
+  height: 2px;
+  border-radius: 999px;
+  background: transparent;
+  transition: background 0.2s;
+}
+
+.nav-link-icon {
+  font-size: 15px;
+  color: rgba(142, 197, 255, 0.78);
+  transition: color 0.2s;
 }
 
 .nav-link:hover {
   color: var(--color-text);
-  background: rgba(34, 211, 238, 0.08);
-  border-color: rgba(34, 211, 238, 0.16);
+  background: rgba(22, 119, 255, 0.12);
+  border-color: rgba(22, 119, 255, 0.26);
+}
+
+.nav-link:hover .nav-link-icon {
+  color: #8ec5ff;
 }
 
 .nav-link.active {
-  color: #DFFBFF;
-  background: rgba(34, 211, 238, 0.12);
-  border-color: rgba(34, 211, 238, 0.32);
+  color: #f8fbff;
+  background: linear-gradient(135deg, rgba(22, 119, 255, 0.24), rgba(22, 119, 255, 0.1));
+  border-color: rgba(22, 119, 255, 0.46);
+  box-shadow: 0 10px 22px rgba(22, 119, 255, 0.14);
+}
+
+.nav-link.active::after {
+  background: #40a9ff;
+}
+
+.nav-link.active .nav-link-icon {
+  color: #dcecff;
 }
 
 /* 右侧 */
@@ -263,14 +286,26 @@ onMounted(() => {
 .wallet-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 34px;
-  padding: 0 12px;
-  border: 1px solid rgba(52, 211, 153, 0.28);
-  border-radius: 999px;
-  background: rgba(16, 185, 129, 0.08);
+  gap: 7px;
+  height: 36px;
+  padding: 0 13px;
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.16), rgba(15, 23, 42, 0.5));
   text-decoration: none;
   white-space: nowrap;
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+
+.wallet-pill:hover {
+  border-color: rgba(52, 211, 153, 0.52);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.22), rgba(15, 23, 42, 0.58));
+  box-shadow: 0 10px 22px rgba(16, 185, 129, 0.12);
+}
+
+.wallet-icon {
+  color: var(--color-accent);
+  font-size: 16px;
 }
 
 .wallet-label {
@@ -289,16 +324,19 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  transition: background 0.2s, border-color 0.2s;
+  height: 38px;
+  padding: 0 11px 0 4px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(15, 23, 42, 0.4);
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
   color: var(--color-text-muted);
 }
 
 .user-trigger:hover {
-  background: rgba(34, 211, 238, 0.08);
-  border-color: rgba(34, 211, 238, 0.18);
+  background: rgba(22, 119, 255, 0.1);
+  border-color: rgba(22, 119, 255, 0.28);
+  box-shadow: 0 10px 22px rgba(22, 119, 255, 0.1);
   color: var(--color-text);
 }
 
