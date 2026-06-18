@@ -1602,10 +1602,13 @@ Wechatpay-Nonce: <随机串>
 
 **GET** `/api/marketplace/apps/{id}` *(需登录；🔜 C-OPT-3 拟放开为公开只读)*
 
-响应 `data`：
+响应 `data`（**用户向白名单**，固定为以下字段）：
 ```json
-{ "id": 1, "code": "netdisk-basic", "name": "基础网盘", "type": "netdisk", "description": "...", "icon_url": "https://...", "callback_url": "https://...", "adapter_config_json": null, "status": "active", "created_at": "...", "updated_at": "..." }
+{ "id": 1, "code": "netdisk-basic", "name": "基础网盘", "type": "netdisk", "description": "...", "icon_url": "https://...", "status": "active", "created_at": "..." }
 ```
+
+> 白名单字段：`{id, code, name, type, description, icon_url, status, created_at}`。
+> **不含 `callback_url` / `adapter_config_json`（仅管理端 AP2/AP3 `GET /api/admin/apps`、`GET /api/admin/apps/{id}` 返回），亦不含 `updated_at`。** 这两个字段属内部回调地址与非交易配置（可能含集成参数/内网地址/密钥），用户端禁止下发。
 
 ### 13.2 管理端应用 CRUD
 

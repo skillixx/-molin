@@ -94,7 +94,7 @@
 
 | 编号 | 端点 | 鉴权 | 前端甲 | 前端乙 |
 |---|---|---|:--:|:--:|
-| AP1 | `GET /api/marketplace/apps/{id}` | 登录（C-OPT-3 拟放开为公开只读，属后端后续项，当前按需登录对接） | — | ✅（商品详情辅助） |
+| AP1 | `GET /api/marketplace/apps/{id}` | 登录（C-OPT-3 拟放开为公开只读，属后端后续项，当前按需登录对接） | — | ✅（商品详情辅助；用户端仅返展示白名单字段 `{id,code,name,type,description,icon_url,status,created_at}`，**不含 callback_url / adapter_config_json**） |
 | AP2 | `GET /api/admin/apps?status=&type=&page=&page_size=` | `app:manage` | ✅ | — |
 | AP3 | `GET /api/admin/apps/{id}` | `app:manage` | ✅ | — |
 | AP4 | `POST /api/admin/apps` | `app:manage` | ✅ | — |

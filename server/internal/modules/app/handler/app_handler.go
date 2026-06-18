@@ -40,7 +40,8 @@ func (h *AppHandler) GetAppDetail(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusNotFound, 40400, err.Error())
 		return
 	}
-	response.JSON(w, http.StatusOK, a)
+	// 用户端仅返回白名单字段，剔除 callback_url / adapter_config_json 等敏感/内部字段。
+	response.JSON(w, http.StatusOK, dto.MapMarketplaceApp(a))
 }
 
 // ===================== 管理端：应用 =====================
