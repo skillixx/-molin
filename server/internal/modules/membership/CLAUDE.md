@@ -46,21 +46,25 @@ func (s *MembershipService) GetProductRule(ctx context.Context, productID uint64
 
 ## 接口清单
 
+> 已按 `docs/backend-dev-plan-backend-c.md` 架构审查优化：
+> - **移除 `POST /api/memberships/:id/purchase`**（C-OPT-2）：购买入口单一，会员作为 `product_type=membership` 商品走 product→order→provision→`CreateOrRenewMembership`。
+> - **移除 `/api/admin/product-membership-rules`（×3）**（C-OPT-1）：会员价由 `product_prices`（会员档）唯一承载，不引入第二套定价来源。
+
 ```text
 GET  /api/memberships
 GET  /api/my/membership
-POST /api/memberships/:id/purchase          -- 购买会员（转给 product 模块处理）
 GET  /api/admin/membership-levels
 POST /api/admin/membership-levels
 PATCH /api/admin/membership-levels/:id
 GET  /api/admin/membership-benefits
 POST /api/admin/membership-benefits
 PATCH /api/admin/membership-benefits/:id
-GET  /api/admin/product-membership-rules
-POST /api/admin/product-membership-rules
-PATCH /api/admin/product-membership-rules/:id
 GET  /api/admin/user-memberships
 ```
+
+> **续期（C-FIX-1）**：内部方法应为 `CreateOrRenewMembership(userID, levelID, assetID, duration)`——
+> 同一 `(user_id, level_id)` 存在 active 记录则叠加延长 `expires_at`，否则新建；禁止重复 INSERT 产生多条 active。
+> 另需 `ExpireMembershipsJob` 将过期 active 流转为 expired（C-FIX-5）。
 
 ## 依赖关系
 

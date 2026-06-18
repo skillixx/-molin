@@ -1345,59 +1345,233 @@ Wechatpay-Nonce: <随机串>
 
 ---
 
-## 十、会员模块（后端丙）
+## 十、用户资产模块（后端丙）
 
-### 10.1 会员等级列表（无需登录）
+> ⚠️ **落地状态**（详见 `docs/backend-dev-plan-backend-c.md`）：标 🔜 为规划中、本阶段 C-FIX 落地，前端可提前对接但需等后端发版。
+> - 管理端列表响应补 `page_size`（🔜 C-FIX-4，当前仅返回 `items/total/page`）
+> - 资产 PATCH 新增 `action:cancel`（🔜 C-FIX-2a，当前仅 `freeze/unfreeze`）
 
-**GET** `/api/memberships`
+### 10.1 我的资产列表
 
-响应：
+**GET** `/api/my/assets?status=active` *(需登录)*
+
+响应 `data`：`{ "items": [资产对象] }`（用户端不分页，`status` 可选过滤）。资产对象：
 ```json
 {
-  "code": 0,
-  "data": {
-    "items": [
-      { "id": 1, "level_code": "vip", "name": "VIP 会员", "description": "享会员价", "sort_order": 1, "status": "active" }
-    ]
-  }
+  "id": 1,
+  "user_id": 1,
+  "asset_type": "application",
+  "product_id": 10,
+  "product_plan_id": 5,
+  "source_order_id": 100,
+  "business_instance_id": null,
+  "status": "active",
+  "started_at": "2026-06-17T10:00:00Z",
+  "expires_at": "2026-12-17T10:00:00Z",
+  "created_at": "2026-06-17T10:00:00Z"
+}
+```
+> `expires_at` 为 `null` 表示永久资产；`status`：`active`/`suspended`(冻结)/`expired`(到期)/`cancelled`(取消)。
+
+### 10.2 资产详情
+
+**GET** `/api/my/assets/{id}` *(需登录，非本人返回 403)*
+
+响应 `data` 为单个资产对象（结构同上）。
+
+### 10.3 我的权益额度
+
+**GET** `/api/my/entitlements` *(需登录)*
+
+响应 `data`：`{ "items": [权益对象] }`。权益对象：
+```json
+{
+  "id": 1,
+  "user_id": 1,
+  "asset_id": 1,
+  "entitlement_type": "api_calls",
+  "product_id": 10,
+  "quota_total": "100000000",
+  "quota_used": "0",
+  "quota_unit": "次",
+  "status": "active",
+  "expires_at": "2026-12-17T10:00:00Z"
+}
+```
+> `quota_total` 为 `null` 表示不限量；剩余 = `quota_total - quota_used`。买断配额消耗（`quota_used` 递增）为 LATER 功能，本阶段恒为 `"0"`。
+
+### 10.4 管理端资产列表
+
+**GET** `/api/admin/assets?user_id=&status=&page=1&page_size=20` *(需 `asset:view`)*
+
+响应 `data` 为 D-95 扁平分页 `{ items, page, page_size🔜, total }`，`items` 单条结构同 10.1。
+
+### 10.5 指定用户的资产
+
+**GET** `/api/admin/users/{id}/assets` *(需 `asset:view`)*
+
+响应 `data`：`{ "items": [资产对象] }`（不分页）。
+
+### 10.6 冻结 / 解冻 / 取消资产
+
+**PATCH** `/api/admin/assets/{id}` *(需 `asset:manage`)*
+```json
+{ "action": "freeze", "remark": "违规冻结" }
+```
+- `action`：`freeze`（active→suspended）/ `unfreeze`（suspended→active）/ `cancel`（🔜 C-FIX-2a，active|suspended→cancelled，建议带 `reason`）
+- 成功返回 `{ "message": "操作成功" }`；状态机越界返回 400。
+
+---
+
+## 十一、会员模块（后端丙）
+
+> 🔜 C-FIX-1：会员**续期**——同一用户重复购买同等级时，`expires_at` 在原有效期上叠加延长（而非新增一条记录）。前端「会员中心」续费后应重新拉取 `/api/my/membership` 展示新到期时间。
+> 会员**购买**统一走商品流程（`product_type=membership` 商品 → 下单 → 支付 → 开通），**无独立 purchase 接口**。
+
+### 11.1 会员等级列表（公开）
+
+**GET** `/api/memberships` *(公开，无需登录)*
+
+响应 `data`：`{ "items": [等级对象] }`（仅 `status=active`）。等级对象：
+```json
+{
+  "id": 1,
+  "level_code": "vip",
+  "name": "黄金会员",
+  "description": "尊享折扣",
+  "sort_order": 1,
+  "status": "active",
+  "created_at": "2026-06-17T10:00:00Z",
+  "updated_at": "2026-06-17T10:00:00Z"
 }
 ```
 
-### 10.2 我的会员
+### 11.2 我的会员
 
-**GET** `/api/my/membership`（需登录）
+**GET** `/api/my/membership` *(需登录)*
 
-查询当前登录用户的有效会员（`status = active` 且 `expires_at` 为空或大于当前时间）。
+响应统一为 `data.membership`（有会员/无会员两种情形结构对称，前端无需分支判断）：
+- 有有效会员时，`data.membership` 为会员对象：
+```json
+{ "membership": { "id": 1, "user_id": 1, "level_id": 1, "asset_id": 2, "status": "active", "started_at": "2026-06-17T10:00:00Z", "expires_at": "2026-12-17T10:00:00Z" } }
+```
+- 无有效会员时，`data.membership` 为 `null`：`{ "membership": null }`。
 
-响应结构在「有会员」与「无会员」两种情形下统一为 `data.membership`：
+### 11.3 管理端会员等级
 
-- 无会员时，`data.membership` 为 `null`：
+- **GET** `/api/admin/membership-levels` *(需 `membership:view`)* → `{ "items": [等级对象] }`（含 inactive）
+- **POST** `/api/admin/membership-levels` *(需 `membership:manage`)*
+  ```json
+  { "level_code": "vip", "name": "黄金会员", "description": "尊享折扣", "sort_order": 1 }
+  ```
+- **PATCH** `/api/admin/membership-levels/{id}` *(需 `membership:manage`)* → 可改 `name`/`description`/`sort_order`/`status`
+
+### 11.4 管理端会员权益
+
+- **GET** `/api/admin/membership-benefits?level_id=1` *(需 `membership:view`)* → `{ "items": [权益对象] }`
+- **POST** `/api/admin/membership-benefits` *(需 `membership:manage`)*
+  ```json
+  { "level_id": 1, "benefit_type": "discount", "benefit_value": "{\"rate\":0.8}" }
+  ```
+  > `benefit_value` 为 JSON 字符串，业务自定义结构。
+- **PATCH** `/api/admin/membership-benefits/{id}` *(需 `membership:manage`)* → 可改 `benefit_type`/`benefit_value`/`status`
+
+### 11.5 管理端用户会员列表
+
+**GET** `/api/admin/user-memberships?user_id=&page=1&page_size=20` *(需 `membership:view`)*
+
+响应 `data` 为扁平分页 `{ items, page, page_size🔜, total }`，`items` 单条结构同 11.2。
+
+---
+
+## 十二、内容模块（公告 / 帮助，后端丙）
+
+> 🔜 C-FIX-6：用户端公告列表新增分页参数 `page`/`page_size`（当前一次性返回全部已发布公告，无分页）。
+
+### 12.1 公告列表（用户端）
+
+**GET** `/api/announcements?page=1&page_size=20` *(需登录，按可见范围过滤)*
+
+响应 `data`：`{ "items": [公告对象] }`（🔜 补分页信封）。公告对象：
 ```json
 {
-  "code": 0,
-  "data": { "membership": null }
+  "id": 1,
+  "title": "系统维护通知",
+  "content": "...",
+  "visible_scope": "all",
+  "target_roles_json": null,
+  "status": "published",
+  "start_at": "2026-06-17T00:00:00Z",
+  "end_at": null,
+  "sort_order": 0,
+  "created_by": 1,
+  "created_at": "2026-06-17T10:00:00Z"
 }
 ```
+> `visible_scope`：`all`（所有登录用户）/`roles`（命中 `target_roles_json` 任一角色）/`members`（有效会员）/`admins`（用户端不可见）。仅返回 `status=published` 且当前在 `start_at`/`end_at` 时间窗内的公告。
 
-- 有会员时，`data.membership` 为会员对象：
+### 12.2 帮助文档（公开）
+
+- **GET** `/api/help/categories` *(公开)* → `{ "items": [{id,name,description,sort_order,status}] }`（仅 active）
+- **GET** `/api/help/articles?category_id=1` *(公开)* → `{ "items": [文章对象] }`（仅 published，`category_id` 可选）
+- **GET** `/api/help/articles/{id}` *(公开)* → 单篇文章（仅 published，否则 404）
+
+文章对象：
 ```json
-{
-  "code": 0,
-  "data": {
-    "membership": {
-      "id": 10,
-      "user_id": 100,
-      "level_id": 1,
-      "asset_id": 50,
-      "status": "active",
-      "started_at": "2026-06-01T00:00:00Z",
-      "expires_at": "2026-12-01T00:00:00Z"
-    }
-  }
-}
+{ "id": 1, "category_id": 1, "title": "如何充值", "content": "...", "sort_order": 0, "status": "published", "created_by": 1, "created_at": "2026-06-17T10:00:00Z" }
 ```
 
-> 前端统一读取 `data.membership`，为 `null` 表示无有效会员，无需针对两种返回结构做分支判断。
+### 12.3 管理端公告
+
+- **GET** `/api/admin/announcements?page=1&page_size=20` *(需 `content:manage`)* → 扁平分页 `{ items, page, page_size🔜, total }`
+- **POST** `/api/admin/announcements` *(需 `content:manage`)*
+  ```json
+  { "title": "标题", "content": "正文", "visible_scope": "roles", "target_roles_json": "[\"merchant\",\"vip\"]", "start_at": "2026-06-17T00:00:00Z", "end_at": null, "sort_order": 0 }
+  ```
+  > 创建后默认 `status=draft`，需 PATCH 改为 `published` 才对用户端可见。
+- **PATCH** `/api/admin/announcements/{id}` *(需 `content:manage`)* → 可改 title/content/visible_scope/target_roles_json/`status`(published/offline/draft)/start_at/end_at/sort_order
+
+### 12.4 管理端帮助分类 / 文章
+
+- 分类：**GET/POST** `/api/admin/help/categories`、**PATCH** `/api/admin/help/categories/{id}` *(需 `content:manage`)*
+  - POST body：`{ "name": "充值相关", "description": "...", "sort_order": 0 }`
+- 文章：**GET** `/api/admin/help/articles?category_id=&page=1&page_size=20`、**POST** `/api/admin/help/articles`、**PATCH** `/api/admin/help/articles/{id}` *(需 `content:manage`)*
+  - POST body：`{ "category_id": 1, "title": "如何充值", "content": "...", "sort_order": 0 }`（默认 draft）
+  - 列表为扁平分页 `{ items, page, page_size🔜, total }`
+
+---
+
+## 十三、应用模块（后端丙）
+
+> 应用 `applications` 仅存业务详情（图标/描述/回调/适配器配置）；套餐/价格/角色权限走商品模块（§六），上架为可购买商品需在商品管理新建 `product_type=application` 且 `business_ref_id` 指向应用 ID。
+
+### 13.1 应用详情（用户端）
+
+**GET** `/api/marketplace/apps/{id}` *(需登录；🔜 C-OPT-3 拟放开为公开只读)*
+
+响应 `data`：
+```json
+{ "id": 1, "code": "netdisk-basic", "name": "基础网盘", "type": "netdisk", "description": "...", "icon_url": "https://...", "callback_url": "https://...", "adapter_config_json": null, "status": "active", "created_at": "...", "updated_at": "..." }
+```
+
+### 13.2 管理端应用 CRUD
+
+- **GET** `/api/admin/apps?status=&type=&page=1&page_size=20` *(需 `app:manage`)* → 扁平分页 `{ items, page, page_size🔜, total }`
+- **GET** `/api/admin/apps/{id}` *(需 `app:manage`)* → 单个应用对象
+- **POST** `/api/admin/apps` *(需 `app:manage`)*
+  ```json
+  { "code": "netdisk-basic", "name": "基础网盘", "type": "netdisk", "description": "...", "icon_url": "https://...", "callback_url": "https://...", "adapter_config_json": null }
+  ```
+- **PATCH** `/api/admin/apps/{id}` *(需 `app:manage`)* → 可改 name/type/description/icon_url/callback_url/adapter_config_json/`status`(draft/active/inactive/archived)
+
+### 13.3 管理端适配器
+
+- **GET** `/api/admin/app-adapters` *(需 `app:manage`)* → 适配器列表
+- **POST** `/api/admin/app-adapters` *(需 `app:manage`)*
+  ```json
+  { "app_code": "netdisk-basic", "app_name": "基础网盘", "app_type": "netdisk", "adapter_type": "internal", "service_name": "netdisk-svc", "callback_url": "https://...", "supported_actions_json": "[\"provision\",\"renew\",\"cancel\"]", "usage_event_types_json": "[\"storage_gb\"]" }
+  ```
+- **PATCH** `/api/admin/app-adapters/{id}` *(需 `app:manage`)* → 可改各字段及 `status`(active/inactive)
 
 ---
 
@@ -1417,6 +1591,12 @@ Wechatpay-Nonce: <随机串>
 | `order:list` | 查看订单 |
 | `wallet:view` | 查看钱包/流水/回调/消费记录（只读） |
 | `wallet:manage` | 钱包写操作（冻结/解冻），migration 000023 起生效 |
+| `asset:view` | 查看用户资产（只读，后端丙） |
+| `asset:manage` | 资产写操作（冻结/解冻/取消，后端丙） |
+| `membership:view` | 查看会员等级/权益/用户会员（只读，后端丙） |
+| `membership:manage` | 会员等级/权益写操作（后端丙） |
+| `content:manage` | 公告/帮助文档管理（后端丙） |
+| `app:manage` | 应用与适配器管理（后端丙） |
 
 ### 枚举值汇总
 
@@ -1430,4 +1610,13 @@ Wechatpay-Nonce: <随机串>
 | `wallet_transaction.direction` | `in` / `out` |
 | `payment_callback.status` | `received` / `processed` / `ignored` |
 | `billing_type` | `one_time` / `monthly` / `yearly` / `usage` |
+| `user_asset.status` | `active` / `suspended` / `expired` / `cancelled` |
+| `entitlement.status` | `active` / `suspended` / `expired` / `cancelled` |
+| `user_membership.status` | `active` / `expired` / `cancelled` |
+| `membership_level.status` | `active` / `inactive` |
+| `announcement.visible_scope` | `all` / `roles` / `members` / `admins` |
+| `announcement.status` | `draft` / `published` / `offline` |
+| `help_article.status` / `help_category.status` | `draft` / `published`（分类：`active` / `inactive`） |
+| `application.status` | `draft` / `active` / `inactive` / `archived` |
+| `app_adapter.status` | `active` / `inactive` |
 | `provider` | `wechat` / `alipay` |
