@@ -165,8 +165,22 @@ GET  /api/my/assets/:id          -- 用户查资产详情
 GET  /api/my/entitlements        -- 用户查权益额度
 GET  /api/admin/assets           -- 管理员查所有资产
 GET  /api/admin/users/:id/assets -- 管理员查指定用户资产
-PATCH /api/admin/assets/:id      -- 管理员冻结/解冻资产
+PATCH /api/admin/assets/:id      -- 管理员操作资产，action: freeze | unfreeze | cancel
 ```
+
+> **`cancel` 落地（C-FIX-2，详见 `docs/backend-dev-plan-backend-c.md`）**：状态机声明的
+> `active → cancelled（退款后）` 此前无实现路径。需补 `CancelAsset(assetID, operatorID, reason)`
+> （`active|suspended → cancelled`，同步置关联 entitlement 为 cancelled，写 asset_events），
+> 并由 provision.Cancel 在 order/billing 退款成功后调用。
+>
+> **买断配额消耗（C-FIX-3，LATER，本阶段不立项）**：`ConsumeEntitlement` 当前无调用方，
+> 买断配额永不递增。经架构复评（详见 `docs/backend-dev-plan-backend-c.md` §3.4）：本阶段无买断
+> 配额商品需求，按量计费（钱包，含 `free_quota` 免费额度）已覆盖现有场景，故该功能**降级为
+> LATER**。确有买断商品时再补 `ConsumeEntitlementBy(userID, productID, entitlementType, amount,
+> idemKey)`（按业务维度定位、选最早到期 active 权益、幂等），且**仅走丙自有内部接口**
+> `POST /api/internal/entitlement-consume`（`X-Internal-Token` + IP 白名单 + 幂等键），由业务侧直接
+> 上报——**不经 finance_consumer**（其 CLAUDE.md 明确不负责资产额度更新；原"经 finance_consumer
+> 优先抵扣"方案已作废）。
 
 ## 到期处理（定时任务）
 
