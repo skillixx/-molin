@@ -21,7 +21,8 @@ MYSQL_USER="${MYSQL_USER:-molin}"
 MYSQL_PASSWORD="${MYSQL_PASSWORD:-molin_password}"
 
 MIGRATIONS_DIR="$(cd "$(dirname "$0")/../server/migrations" && pwd)"
-DB_URL="mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_HOST}:${MYSQL_PORT})/${MYSQL_DATABASE}?multiStatements=true"
+# charset=utf8mb4 必须保留，否则 golang-migrate 默认以 latin1 连接，会导致中文 seed migration 写库乱码
+DB_URL="mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_HOST}:${MYSQL_PORT})/${MYSQL_DATABASE}?multiStatements=true&charset=utf8mb4"
 
 # 检查 migrate 命令是否存在
 if ! command -v migrate &>/dev/null; then
