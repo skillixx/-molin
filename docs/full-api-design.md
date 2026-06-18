@@ -1482,19 +1482,23 @@ Query 参数：asset_type、status、product_id、page、page_size。
 
 ```text
 GET   /api/memberships
+GET   /api/memberships/:id/benefits      # 公开：某等级 active 权益（#168）
 GET   /api/my/membership
-POST  /api/memberships/:id/purchase
 GET   /api/admin/membership-levels
 POST  /api/admin/membership-levels
 PATCH /api/admin/membership-levels/:id
 GET   /api/admin/membership-benefits
 POST  /api/admin/membership-benefits
 PATCH /api/admin/membership-benefits/:id
-GET   /api/admin/product-membership-rules
-POST  /api/admin/product-membership-rules
-PATCH /api/admin/product-membership-rules/:id
 GET   /api/admin/user-memberships
+POST  /api/admin/user-memberships        # 管理端手动开通/续期（M10，#154）
+PATCH /api/admin/user-memberships/:id    # 管理端取消/改期（M11，#154）
 ```
+
+> 变更记录：
+> - 会员**购买无独立接口**，统一走商品流程（`product_type=membership` → order → provision → `CreateOrRenewMembership`）；原 `POST /api/memberships/:id/purchase` 与 `/api/admin/product-membership-rules`（×3）已删除（C-OPT-1/2）。
+> - `GET /api/my/membership` 与 `GET /api/admin/user-memberships` 的会员对象已内联 `level_code`/`level_name`（保留 `level_id`，纯增量，#168）；`asset_id` 无关联资产时返回 `null`（key 恒在，#169）。
+> - 字段契约与示例以 `docs/frontend-api-reference.md` §十一为准。
 
 会员等级 Body 参数：code、name、level_order、status。
 
