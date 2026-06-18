@@ -1444,6 +1444,9 @@ Wechatpay-Nonce: <随机串>
 }
 ```
 
+> ⚠️ **本接口仅返回等级本身，不含权益（benefits）明细**；权益查询接口 `§11.4 GET /api/admin/membership-benefits` 为 `membership:view` 管理端权限，**用户端无法调用**。
+> **缺口（待后端丙补充，已回报）**：用户端「会员中心」如需按等级展示/对比权益，需后端新增一个公开或登录态只读的权益查询端点（如 `GET /api/memberships/{id}/benefits`，仅返回 `status=active` 权益）。在该端点落地前，用户端会员中心只能展示等级名称/描述/排序，**暂不展示权益对比**（见 `frontend-dev-plan-backend-c.md` FB-08 范围说明）。
+
 ### 11.2 我的会员
 
 **GET** `/api/my/membership` *(需登录)*
@@ -1454,6 +1457,9 @@ Wechatpay-Nonce: <随机串>
 { "membership": { "id": 1, "user_id": 1, "level_id": 1, "asset_id": 2, "status": "active", "started_at": "2026-06-17T10:00:00Z", "expires_at": "2026-12-17T10:00:00Z" } }
 ```
 - 无有效会员时，`data.membership` 为 `null`：`{ "membership": null }`。
+
+> ⚠️ **会员对象仅含 `level_id`，不含等级名称**（无 `level_code`/`level_name`）。前端如需展示可读等级名，须用 `§11.1 GET /api/memberships`（或管理端 `§11.3`）的等级列表，按 `level_id` 建映射后取名。
+> ⚠️ **多等级并存时只返回一条**：同一用户可同时持有不同等级的多条有效会员（管理员手动叠加开通），本接口按「永久会员优先，其次到期时间最晚」只返回**单条最优**会员。如需查看用户全部有效会员，用管理端 `§11.5 GET /api/admin/user-memberships?user_id=`。
 
 ### 11.3 管理端会员等级
 
@@ -1478,7 +1484,9 @@ Wechatpay-Nonce: <随机串>
 
 **GET** `/api/admin/user-memberships?user_id=&page=1&page_size=20` *(需 `membership:view`)*
 
-响应 `data` 为扁平分页 `{ items, page, page_size, total }`，`items` 单条结构同 11.2。
+响应 `data` 为扁平分页 `{ items, page, page_size, total }`（`page_size` 最大 100），`items` 单条结构同 11.2。
+
+> ⚠️ `items` 单条同 11.2，**仅含 `user_id` 与 `level_id`，不含用户身份（用户名/邮箱）与等级名称**。前端「用户会员列表」展示等级名须按 `level_id` 映射 §11.3 等级列表；展示用户信息须配合后端甲用户接口（如按 `user_id` 查用户详情）。**建议本列表主要按 `user_id` 过滤使用**（从用户管理页进入），全量浏览时仅能显示数字 `user_id`。
 
 ### 11.6 管理端手动开通 / 调整用户会员
 
@@ -1529,15 +1537,17 @@ Wechatpay-Nonce: <随机串>
 
 - **GET** `/api/help/categories` *(公开)* → `{ "items": [{id,name,description,sort_order,status}] }`（仅 active）
 - **GET** `/api/help/articles?category_id=1` *(公开)* → `{ "items": [文章对象] }`（仅 published，`category_id` 可选）
-- **GET** `/api/help/articles/{id}` *(公开)* → 单篇文章（仅 published，否则 404）
+- **GET** `/api/help/articles/{id}` *(公开)* → 单篇文章（仅 published，否则 404/40400）；**`data` 直接为文章对象本身，非 `{item}`/`{article}` 包裹**，前端直接取 `data.title` 等字段。
 
-文章对象：
+文章对象（即 `/api/help/articles/{id}` 的 `data`，也是列表 `items` 单条）：
 ```json
 { "id": 1, "category_id": 1, "title": "如何充值", "content": "...", "sort_order": 0, "status": "published", "created_by": 1, "created_at": "2026-06-17T10:00:00Z" }
 ```
+> 帮助分类 `§12.2 /api/help/categories`、文章列表 `/api/help/articles` 均为不分页 `{ items: [...] }`。
 
 ### 12.3 管理端公告
 
+> 管理端列表 `page_size` 上限 100（用户端公告 `§12.1` 上限 50）；超限按上限钳制。
 - **GET** `/api/admin/announcements?page=1&page_size=20` *(需 `content:manage`)* → 扁平分页 `{ items, page, page_size, total }`
 - **POST** `/api/admin/announcements` *(需 `content:manage`)*
   ```json
