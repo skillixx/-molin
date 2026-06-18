@@ -54,7 +54,7 @@ type MembershipResponse struct {
 	LevelID   uint64     `json:"level_id"`
 	LevelCode string     `json:"level_code"`
 	LevelName string     `json:"level_name"`
-	AssetID   *uint64    `json:"asset_id,omitempty"`
+	AssetID   *uint64    `json:"asset_id"` // key 恒在；无关联资产时序列化为 null（与契约 §11.2 对齐，不省略）
 	Status    string     `json:"status"`
 	StartedAt time.Time  `json:"started_at"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
@@ -69,7 +69,7 @@ type AdminUserMembershipResponse struct {
 	LevelID   uint64     `json:"level_id"`
 	LevelCode string     `json:"level_code"`
 	LevelName string     `json:"level_name"`
-	AssetID   *uint64    `json:"asset_id,omitempty"`
+	AssetID   *uint64    `json:"asset_id"` // key 恒在；无关联资产时序列化为 null（与契约 §11.5 对齐，不省略）
 	Status    string     `json:"status"`
 	StartedAt time.Time  `json:"started_at"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
