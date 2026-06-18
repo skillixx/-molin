@@ -1345,6 +1345,62 @@ Wechatpay-Nonce: <随机串>
 
 ---
 
+## 十、会员模块（后端丙）
+
+### 10.1 会员等级列表（无需登录）
+
+**GET** `/api/memberships`
+
+响应：
+```json
+{
+  "code": 0,
+  "data": {
+    "items": [
+      { "id": 1, "level_code": "vip", "name": "VIP 会员", "description": "享会员价", "sort_order": 1, "status": "active" }
+    ]
+  }
+}
+```
+
+### 10.2 我的会员
+
+**GET** `/api/my/membership`（需登录）
+
+查询当前登录用户的有效会员（`status = active` 且 `expires_at` 为空或大于当前时间）。
+
+响应结构在「有会员」与「无会员」两种情形下统一为 `data.membership`：
+
+- 无会员时，`data.membership` 为 `null`：
+```json
+{
+  "code": 0,
+  "data": { "membership": null }
+}
+```
+
+- 有会员时，`data.membership` 为会员对象：
+```json
+{
+  "code": 0,
+  "data": {
+    "membership": {
+      "id": 10,
+      "user_id": 100,
+      "level_id": 1,
+      "asset_id": 50,
+      "status": "active",
+      "started_at": "2026-06-01T00:00:00Z",
+      "expires_at": "2026-12-01T00:00:00Z"
+    }
+  }
+}
+```
+
+> 前端统一读取 `data.membership`，为 `null` 表示无有效会员，无需针对两种返回结构做分支判断。
+
+---
+
 ## 附录
 
 ### 权限码清单
