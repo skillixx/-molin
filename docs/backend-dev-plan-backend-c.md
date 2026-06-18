@@ -205,6 +205,8 @@ graph TD
 
 > 边界：`applications` 仅存业务详情；套餐/价格/角色权限走 product；上架为可购买商品需在商品管理新建 `product_type=application` 且 `business_ref_id` 指向应用 ID。
 
+> **AP1 用户向白名单 DTO（响应契约）**：`GET /api/marketplace/apps/{id}` 用 `dto.MarketplaceAppResponse` 映射 `*model.Application` 后返回，响应 `data` 字段固定为 `{id, code, name, type, description, icon_url, status, created_at}`。**剔除 `callback_url`（内部回调地址）与 `adapter_config_json`（应用非交易配置，freeform JSON，可能含集成参数/内网地址/密钥），亦剔除 `updated_at`**，避免敏感配置过度暴露给登录用户。`status==active` 过滤与 404/40400 错误码保持不变；管理端 AP2/AP3（`/api/admin/apps`、`/api/admin/apps/{id}`）仍返回完整 `model.Application`。映射逻辑抽为纯函数 `dto.MapMarketplaceApp`，并有 `encoding/json` 序列化单测断言不含 `callback_url`/`adapter_config_json`。
+
 ### 4.4 content（公告 / 帮助）
 
 | 方法 | 路径 | 鉴权 | 说明 |

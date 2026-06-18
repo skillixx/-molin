@@ -303,6 +303,15 @@ PATCH {{base_url}}/api/admin/app-adapters/{{adapter_id}}   Body: { "status": "in
 GET {{base_url}}/api/marketplace/apps/{{app_id}}
 ```
 - 用 `{{user_token}}`：仅返回 `status=active` 应用的展示字段（icon/description 等）。无 token → 401。
+- **响应 `data` 为用户向白名单**：`{id, code, name, type, description, icon_url, status, created_at}`。
+- **断言：响应不含 `callback_url`、不含 `adapter_config_json`**（这两个为内部回调地址/非交易配置，仅管理端 AP2/AP3 返回），亦不含 `updated_at`。
+  ```js
+  // ApiPost 后置脚本断言（用户端白名单）
+  var d = JSON.parse(responseBody).data;
+  assert(d.callback_url === undefined, "用户端不应返回 callback_url");
+  assert(d.adapter_config_json === undefined, "用户端不应返回 adapter_config_json");
+  assert(d.id !== undefined && d.code !== undefined && d.icon_url !== undefined, "白名单展示字段应存在");
+  ```
 - > C-OPT-3：拟放开为公开只读，当前仍要求登录。
 
 ---
