@@ -97,8 +97,10 @@
 | FA-03 | Week 1-2 | 角色列表/新建、权限分配、RBAC 配置页 | `feature/frontend-a-admin-role-permission` | ✅ 已完成 | RoleListView.vue 220 行 + PermissionListView.vue 74 行；管理员双重认证 AdminVerifyView.vue 544 行；PM 审核通过（2026-06-10）|
 | FA-04 | Week 2-3 | 商品管理、套餐配置、价格分层表单 | `feature/frontend-a-admin-product-manage` | ✅ 已完成 | ProductListView.vue 812行，含商品 CRUD、套餐配置、价格分层、计费规则（billing_rule）、角色访问控制（access）全部实现；代码审查（2026-06-17）|
 | FA-05 | Week 3 | 订单列表/详情、钱包流水查询 | `feature/frontend-a-admin-order-wallet` | ✅ 已完成 | OrderListView.vue 247行 + TransactionListView.vue 330行，含分页/过滤/详情查看；代码审查（2026-06-17）|
-| FA-06 | Week 3-4 | 用户资产列表、实名认证审核页 | `feature/frontend-a-admin-asset-identity` | ⏳ 待开始 | |
-| FA-07 | Week 4 | 公告管理、帮助文档管理 | `feature/frontend-a-admin-content-cms` | ⏳ 待开始 | |
+| FA-06 | Week 3-4 | 用户资产管理（后端丙）：资产列表（user_id/status 过滤 + D-95 分页）、指定用户资产、冻结/解冻/取消（PATCH action，cancel 为 🔜 C-FIX-2a）。agent：前端工程师甲 | `feature/frontend-a-admin-asset` | ⏳ 待开始 | 接口 AS4/AS5/AS6（`asset:view`/`asset:manage`），见 `docs/frontend-dev-plan-backend-c.md` §3。原「实名认证审核页」属后端甲对接，归入 agent 任务 A6（`feature/frontend-a-admin-identity-audit`），不在本任务内。当前 `views/asset/AssetListView.vue` 为 9 行占位骨架、无 API 封装 |
+| FA-07 | Week 4 | 内容管理（后端丙）：公告管理（列表分页 + CRUD + 发布状态）、帮助分类/文章管理。agent：前端工程师甲 | `feature/frontend-a-admin-content-cms` | ⏳ 待开始 | 接口 C5~C9（`content:manage`），见 `docs/frontend-dev-plan-backend-c.md` §3。公告新建默认 draft，需显式发布才对用户端可见；target_roles_json 为 JSON 字符串。当前 `views/content/AnnouncementListView.vue` 为 9 行占位骨架、无 API 封装 |
+| FA-09 | Week 4 | 会员管理（后端丙）：会员等级 CRUD、会员权益 CRUD（benefit_value JSON）、用户会员列表（分页）。agent：前端工程师甲 | `feature/frontend-a-admin-membership` | ⏳ 待开始 | 【任务板新增，原缺失】接口 M3~M9（`membership:view`/`membership:manage`），见 `docs/frontend-dev-plan-backend-c.md` §3。admin-console 当前无 membership 目录/路由/API 封装 |
+| FA-10 | Week 4 | 应用与适配器管理（后端丙）：应用 CRUD（status/type 过滤 + 分页）、适配器 CRUD（三个 JSON 字符串字段）。agent：前端工程师甲 | `feature/frontend-a-admin-app` | ⏳ 待开始 | 【任务板新增，原缺失】接口 AP2~AP6（`app:manage`），见 `docs/frontend-dev-plan-backend-c.md` §3。应用仅业务详情，上架为商品需在商品管理建 `product_type=application`。admin-console 当前无 app 目录/路由/API 封装 |
 | FA-08 | 待排期 | 接入 PR#31 权限查询接口：(1) SideMenu/路由守卫基于 `GET /api/me/permissions`（A-10）做菜单与路由级权限过滤；(2) RoleListView 补充"配置角色权限"弹窗，用 `GET /api/admin/roles/{id}/permissions`（A-11）预填充当前权限，配合既有 `PATCH /api/admin/roles/{id}/permissions` 全量替换保存 | `feature/frontend-a-admin-permission-sync` | ⏳ 待开始 | 2026-06-13 调查：当前 SideMenu 菜单硬编码无权限过滤，路由守卫 `meta.permission` 校验仅为 TODO 占位，auth store/User 类型均无 `permissions` 字段；RoleListView 当前**无**"配置角色权限"入口（无弹窗），`src/api/role.ts` 缺角色权限查询/全量替换封装。接口详见 `full-api-design.md` 2.19/3.12（A-10/A-11）|
 
 ---
@@ -116,7 +118,8 @@
 | FB-05 | Week 3 | 购买确认页、Idempotency-Key、订单结果页 | `feature/frontend-b-purchase-flow` | ✅ 已完成 | PurchaseDialog.vue 集成在 ProductDetailView 内，含套餐选择、Idempotency-Key、购买结果展示；代码审查（2026-06-17）|
 | FB-06 | Week 3 | 钱包余额、充值页、账单流水 | `feature/frontend-b-wallet-recharge` | ✅ 已完成 | WalletView.vue 237行 + RechargeView.vue 494行 + TransactionView.vue 263行，含余额展示/充值/流水分页；代码审查（2026-06-17）|
 | FB-07 | Week 3 | 我的资产列表、资产详情、状态展示 | `feature/frontend-b-asset-management` | ✅ 已完成 | AssetListView.vue 491行，含资产列表/状态/分页；代码审查（2026-06-17）|
-| FB-08 | Week 4 | 会员中心、公告列表、帮助文档 | `feature/frontend-b-membership-content` | ⏳ 待开始 | |
+| FB-08 | Week 4 | 会员中心（后端丙）：会员等级列表（公开）、我的会员卡片（`data.membership` 对称读取）、续费引导（走商品流程，无独立购买接口）。agent：前端工程师乙 | `feature/frontend-b-membership` | ⏳ 待开始 | 接口 M1/M2，见 `docs/frontend-dev-plan-backend-c.md` §4。续费跳 `product_type=membership` 商品详情；支付后重拉 M2 验证 C-FIX-1 续期叠加。当前 `views/membership/MembershipView.vue` 为 19 行占位骨架、无 API 封装 |
+| FB-09 | Week 4 | 公告与帮助中心（后端丙）：公告列表（按可见范围，后端已过滤）、帮助分类/文章列表/文章详情。agent：前端工程师乙 | `feature/frontend-b-content` | ⏳ 待开始 | 【由原 FB-08 拆出】接口 C1~C4，见 `docs/frontend-dev-plan-backend-c.md` §4。公告分页为 🔜 C-FIX-6，先按 `{items}` 渲染并兼容后续分页信封；前端不做二次可见性判断。当前 `views/content/` 两个视图为 19 行占位骨架、无 API 封装 |
 
 ---
 
@@ -157,11 +160,11 @@
 | 后端工程师甲 | 39 | 39（9 已审查 + 24 已验收/完成，PR#31/#32/#38/#39/#42/#44/#47/#48/#50/#51/#53/#54/#56/#57/#60/#61/#62/#63/#68/#69/#70/#71/#76/#77/#78/#79/#80/#81/#85）| 0 | 0 |
 | 后端工程师乙 | 6 | 6（B-01~B-06）| 0 | 0 |
 | 后端工程师丙 | 6 | 5（C-01~C-05；C-03/04/05 经 senior-architect 审查修复 C-FIX-1/2a/4/5/6，PR#151）| 0 | 1（C-06 provision 接入会员开通）|
-| 前端工程师甲 | 8 | 5（FA-01~FA-05）| 0 | 3 |
-| 前端工程师乙 | 8 | 7（FB-01~FB-07）| 0 | 1 |
+| 前端工程师甲 | 10 | 5（FA-01~FA-05）| 0 | 5（FA-06 资产 / FA-07 内容 / FA-08 权限同步 / FA-09 会员 / FA-10 应用）|
+| 前端工程师乙 | 9 | 7（FB-01~FB-07）| 0 | 2（FB-08 会员中心 / FB-09 公告帮助）|
 | 运维工程师 | 6 | 6 | 0 | 0 |
 | 测试工程师 | 6 | 0 | 0 | 6 |
-| **合计** | **78** | **63** | **0** | **15** |
+| **合计** | **81** | **63** | **0** | **18** |
 
 ---
 
