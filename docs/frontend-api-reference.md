@@ -1444,8 +1444,30 @@ Wechatpay-Nonce: <随机串>
 }
 ```
 
-> ⚠️ **本接口仅返回等级本身，不含权益（benefits）明细**；权益查询接口 `§11.4 GET /api/admin/membership-benefits` 为 `membership:view` 管理端权限，**用户端无法调用**。
-> **缺口（待后端丙补充，已回报）**：用户端「会员中心」如需按等级展示/对比权益，需后端新增一个公开或登录态只读的权益查询端点（如 `GET /api/memberships/{id}/benefits`，仅返回 `status=active` 权益）。在该端点落地前，用户端会员中心只能展示等级名称/描述/排序，**暂不展示权益对比**（见 `frontend-dev-plan-backend-c.md` FB-08 范围说明）。
+> ℹ️ **本接口仅返回等级本身，不含权益（benefits）明细**；如需按等级展示/对比权益，请用下方 `§11.1b GET /api/memberships/{id}/benefits`（公开端点，仅返回 `status=active` 权益）。管理端权益接口 `§11.4 GET /api/admin/membership-benefits` 为 `membership:view` 权限，用户端不可用。
+
+### 11.1b 会员等级权益（公开）
+
+**GET** `/api/memberships/{id}/benefits` *(公开，无需登录)*
+
+- `{id}` 为**会员等级 ID**。
+- 响应 `data`：`{ "items": [权益对象] }`，**仅含 `status=active` 的权益**。权益对象结构同 §11.4：
+  ```json
+  {
+    "id": 1,
+    "level_id": 1,
+    "benefit_type": "discount",
+    "benefit_value": "{\"rate\":0.8}",
+    "status": "active",
+    "created_at": "2026-06-17T10:00:00Z",
+    "updated_at": "2026-06-17T10:00:00Z"
+  }
+  ```
+  > `benefit_value` 为 JSON 字符串，前端读取时需 `JSON.parse` 并做解析失败兜底。
+- 等级不存在 **或** 未上架（`status != active`）→ `404 / code 40400`，message「会员等级不存在」（避免泄露未上架等级）。
+- 等级存在且 active 但无任何 active 权益时返回 `{ "items": [] }`。
+
+> 用户端「会员中心」可对每个等级调用本端点拉取权益用于展示/对比；无需登录，可与 `§11.1` 等级列表配合使用。
 
 ### 11.2 我的会员
 
@@ -1454,11 +1476,11 @@ Wechatpay-Nonce: <随机串>
 响应统一为 `data.membership`（有会员/无会员两种情形结构对称，前端无需分支判断）：
 - 有有效会员时，`data.membership` 为会员对象：
 ```json
-{ "membership": { "id": 1, "user_id": 1, "level_id": 1, "asset_id": 2, "status": "active", "started_at": "2026-06-17T10:00:00Z", "expires_at": "2026-12-17T10:00:00Z" } }
+{ "membership": { "id": 1, "user_id": 1, "level_id": 1, "level_code": "vip", "level_name": "黄金会员", "asset_id": 2, "status": "active", "started_at": "2026-06-17T10:00:00Z", "expires_at": "2026-12-17T10:00:00Z" } }
 ```
 - 无有效会员时，`data.membership` 为 `null`：`{ "membership": null }`。
 
-> ⚠️ **会员对象仅含 `level_id`，不含等级名称**（无 `level_code`/`level_name`）。前端如需展示可读等级名，须用 `§11.1 GET /api/memberships`（或管理端 `§11.3`）的等级列表，按 `level_id` 建映射后取名。
+> ✅ **会员对象已内联 `level_code`/`level_name`**（在保留 `level_id` 的基础上新增，纯增量）。前端可直接展示等级名，无需再按 `level_id` 映射等级列表（等级查询异常的极端情形下两字段可能为空字符串，前端可兜底回退到 §11.1 映射）。
 > ⚠️ **多等级并存时只返回一条**：同一用户可同时持有不同等级的多条有效会员（管理员手动叠加开通），本接口按「永久会员优先，其次到期时间最晚」只返回**单条最优**会员。如需查看用户全部有效会员，用管理端 `§11.5 GET /api/admin/user-memberships?user_id=`。
 
 ### 11.3 管理端会员等级
@@ -1484,9 +1506,13 @@ Wechatpay-Nonce: <随机串>
 
 **GET** `/api/admin/user-memberships?user_id=&page=1&page_size=20` *(需 `membership:view`)*
 
-响应 `data` 为扁平分页 `{ items, page, page_size, total }`（`page_size` 最大 100），`items` 单条结构同 11.2。
+响应 `data` 为扁平分页 `{ items, page, page_size, total }`（`page_size` 最大 100）。`items` 单条在 §11.2 会员字段基础上额外含 `created_at`/`updated_at`，并**已内联 `level_code`/`level_name`**：
+```json
+{ "id": 1, "user_id": 1, "level_id": 1, "level_code": "vip", "level_name": "黄金会员", "asset_id": 2, "status": "active", "started_at": "2026-06-17T10:00:00Z", "expires_at": "2026-12-17T10:00:00Z", "created_at": "2026-06-17T10:00:00Z", "updated_at": "2026-06-17T10:00:00Z" }
+```
 
-> ⚠️ `items` 单条同 11.2，**仅含 `user_id` 与 `level_id`，不含用户身份（用户名/邮箱）与等级名称**。前端「用户会员列表」展示等级名须按 `level_id` 映射 §11.3 等级列表；展示用户信息须配合后端甲用户接口（如按 `user_id` 查用户详情）。**建议本列表主要按 `user_id` 过滤使用**（从用户管理页进入），全量浏览时仅能显示数字 `user_id`。
+> ✅ `items` 已内联 `level_code`/`level_name`，前端无需再按 `level_id` 映射 §11.3 等级列表即可展示等级名（服务端批量加载等级，无 N+1）。
+> ⚠️ **仍不含用户身份（用户名/邮箱），仅 `user_id`**（属后端甲用户域，本轮未做）。展示用户信息须配合后端甲用户接口（如按 `user_id` 查用户详情）。**建议本列表主要按 `user_id` 过滤使用**（从用户管理页进入），全量浏览时用户列仅能显示数字 `user_id`。
 
 ### 11.6 管理端手动开通 / 调整用户会员
 

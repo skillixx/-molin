@@ -45,6 +45,17 @@ func (r *BenefitRepository) FindByLevelID(ctx context.Context, levelID uint64) (
 	return benefits, nil
 }
 
+// FindActiveByLevelID 查询某等级的所有 active 权益（公开端点用，仅返回上架权益）。
+func (r *BenefitRepository) FindActiveByLevelID(ctx context.Context, levelID uint64) ([]*model.MembershipBenefit, error) {
+	var benefits []*model.MembershipBenefit
+	if err := r.db.WithContext(ctx).Model(&model.MembershipBenefit{}).
+		Where("level_id = ? AND status = 'active'", levelID).
+		Order("id ASC").Find(&benefits).Error; err != nil {
+		return nil, err
+	}
+	return benefits, nil
+}
+
 // Update 更新权益字段。
 func (r *BenefitRepository) Update(ctx context.Context, id uint64, updates map[string]interface{}) error {
 	return r.db.WithContext(ctx).Model(&model.MembershipBenefit{}).
