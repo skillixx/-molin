@@ -137,11 +137,19 @@ GET {{base_url}}/api/memberships
 ```
 - `data`：`{ items:[等级对象] }`，**仅 `status=active`**。
 
+**B1b. 某等级权益列表（公开，无需登录，#168）**
+```
+GET {{base_url}}/api/memberships/{{level_id}}/benefits
+```
+- `data`：`{ items:[权益对象] }`，**仅返回 `status=active` 权益**；权益对象同 A4（id/level_id/benefit_type/benefit_value/status/created_at/updated_at）。
+- 负向：不存在的 level_id 或**未上架（inactive）等级** → HTTP 404 / `code 40400`「会员等级不存在」（fail-closed 防泄露）；active 等级但无 active 权益 → `{ items: [] }`。
+
 **B2. 我的会员**（需登录）
 ```
 GET {{base_url}}/api/my/membership
 ```
-- 统一为 `data.membership`：有会员为对象 `{id,user_id,level_id,asset_id,status,started_at,expires_at}`，无会员为 `null`（#156 已统一，前端无需分支判断）。
+- 统一为 `data.membership`：有会员为对象 `{id,user_id,level_id,level_code,level_name,asset_id,status,started_at,expires_at}`，无会员为 `null`（#156 统一结构；#168 内联 `level_code`/`level_name`，前端无需分支判断、无需再映射等级名）。
+- `asset_id` 无关联资产时返回 `null`（key 恒在，不省略，#169）；`level_code`/`level_name` 在等级查询异常的极端情形可能为空字符串。
 
 ### C. 管理端手动开通 / 调整用户会员（用 `{{admin_token}}`，`membership:manage`）
 
