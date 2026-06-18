@@ -73,7 +73,7 @@ apt.variables.set("user_token", data.access_token);
 
 ```
 登录(admin + user)
-  ── 会员 ──→ A. 管理端建等级/权益 → B. 用户端看等级/我的会员
+  ── 会员 ──→ A. 管理端建等级/权益 → B. 用户端看等级/某等级权益(公开)/我的会员
                  → C. 管理端手动开通会员(grant) → 用户端复查我的会员(续期叠加)
   ── 内容 ──→ D. 管理端建公告(草稿→发布)/帮助分类/文章 → E. 用户端看公告/帮助
   ── 应用 ──→ F. 管理端建应用/适配器(上下架) → G. 用户端看应用详情
@@ -167,7 +167,8 @@ Body: { "user_id": {{user_id}}, "level_id": {{level_id}}, "duration_days": 30 }
 ```
 GET {{base_url}}/api/admin/user-memberships?user_id={{user_id}}&page=1&page_size=20
 ```
-- 扁平分页 `{items,page,page_size,total}`；`items` 单条同 B2 会员对象。
+- 扁平分页 `{items,page,page_size,total}`（`page_size` 最大 100）；`items` 单条同 B2 会员对象，**已内联 `level_code`/`level_name`**（保留 `level_id`，#168）+ 额外含 `created_at`/`updated_at`；`asset_id` 无关联资产时为 `null`（key 恒在，#169）。⚠️ 仅含 `user_id`、**无用户名/邮箱**（建议带 `user_id` 过滤使用）。
+- 内联验证：同一页造两个不同 `level_id` 的会员，断言各自 `level_code`/`level_name` 与对应等级一致、不串味（佐证服务端批量映射无 N+1）。
 
 **C3. 调整 / 取消用户会员**（`membership:manage`）
 ```
@@ -243,8 +244,10 @@ GET {{base_url}}/api/announcements?page=1&page_size=20
 ```
 GET {{base_url}}/api/help/categories                       // 仅 active 分类
 GET {{base_url}}/api/help/articles?category_id={{category_id}}   // 仅 published，category_id 可选
-GET {{base_url}}/api/help/articles/{{article_id}}          // 单篇，仅 published，否则 404
+GET {{base_url}}/api/help/articles/{{article_id}}          // 单篇，仅 published，否则 404/40400
 ```
+- 分类列表 / 文章列表均为不分页 `{ items:[...] }`。
+- ⚠️ 文章详情 `GET /api/help/articles/{id}` 的 `data` **直接是文章对象本身**（非 `{item}`/`{article}` 包裹）；非 published 返回 `404/40400`。
 
 ---
 
@@ -376,9 +379,11 @@ Body: { "action": "cancel",   "remark": "误开通作废" }  // C-FIX-2a：activ
 
 | 项 | 约定 |
 |---|---|
-| 鉴权 | 非公开接口需 `Authorization: Bearer <token>`；公开：`/api/memberships`、`/api/help/*` |
+| 鉴权 | 非公开接口需 `Authorization: Bearer <token>`；公开：`/api/memberships`、`/api/memberships/{id}/benefits`（#168）、`/api/help/*` |
 | 权限码 | 管理端按 `asset:* / membership:* / content:manage / app:manage`，缺则 **403/40003** |
-| 分页 | 一律扁平 `{items,page,page_size,total}`；用户端 `/api/my/assets`、`/api/my/entitlements` 为 `{items}` 不分页 |
+| 分页 | 一律扁平 `{items,page,page_size,total}`；管理端列表 `page_size` 上限 **100**、用户端公告 `/api/announcements` 上限 **50**（超限钳制）；用户端 `/api/my/assets`、`/api/my/entitlements`、`/api/memberships`、`/api/memberships/{id}/benefits`、`/api/help/*` 为 `{items}` 不分页 |
+| 会员对象 | `my/membership`、`admin/user-memberships` 的会员对象内联 `level_code`/`level_name`（保留 `level_id`，#168）；`asset_id` 空值返 `null`（key 恒在，#169）|
+| 权益查询 | 用户端用公开 `GET /api/memberships/{id}/benefits`（仅 active 权益，等级不存在/未上架 **404/40400** 防泄露）；管理端 `GET /api/admin/membership-benefits` 需 `membership:view` |
 | 公告可见 | `visible_scope`：all/roles/members/admins；未知值 fail-closed 不可见；草稿不可见 |
 | 状态门槛 | 公告须 `published`、应用须 `active`、会员/帮助分类/文章须对应可见态，用户端才看得到 |
 | 资产创建 | 无管理端创建接口，靠购买或 DB 造数 |
@@ -392,7 +397,7 @@ Body: { "action": "cancel",   "remark": "误开通作废" }  // C-FIX-2a：activ
 ## 8. 推荐冒烟顺序（最快跑通一遍）
 
 1. admin 登录、user 登录（拿两个 token，记 `user_id`）
-2. **会员**：A2 建等级(active) → B1/B2 用户端能看到等级、我的会员=null → C1 grant 开通 → B2 复查有会员 → C1 再 grant 同等级验证 `expires_at` 叠加（C-FIX-1）→ C2 列表看一条 active
+2. **会员**：A2 建等级(active) + A5 建 active 权益 → B1/B1b/B2 用户端能看到等级、该等级 active 权益、我的会员=null（B1b 再验不存在/inactive 等级 → 404/40400）→ C1 grant 开通 → B2 复查有会员（含内联 `level_code`/`level_name`、`asset_id:null`）→ C1 再 grant 同等级验证 `expires_at` 叠加（C-FIX-1）→ C2 列表看一条 active
 3. **内容**：D1 建公告(draft) → E1 用户端看不到 → D2 发布 → E1 看到；建 `admins` 范围公告验证用户端不可见（fail-closed）；D4/D5 + E2 帮助分类/文章
 4. **应用**：F1 建应用 → G 用户端 404/看不到（draft）→ F3 置 active → G 能看到详情；F4 适配器 CRUD
 5. **资产**：H 造一条资产 → H1/H2/H3 用户端查（H2 用另一个用户 token 验越权 403）→ I1/I2 管理端查（核对分页四字段）→ I3 freeze→unfreeze→cancel，cancel 后查 `status=cancelled`、权益同步 cancelled
