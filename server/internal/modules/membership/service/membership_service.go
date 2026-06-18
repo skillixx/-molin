@@ -175,6 +175,15 @@ func (s *MembershipService) AdminGrantMembership(ctx context.Context, userID, le
 	if userID == 0 || levelID == 0 {
 		return fmt.Errorf("user_id 和 level_id 为必填项")
 	}
+	// BUG-M10-01：补 user_id 存在性校验，与 level_id 存在性校验对称，
+	// 避免传入不存在的 user_id 时写入孤儿会员记录（脏数据并污染 ExpireMembershipsJob 等后续处理）。
+	exists, err := s.memberRepo.UserExists(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("用户不存在")
+	}
 	return s.CreateOrRenewMembership(ctx, userID, levelID, 0, durationDays)
 }
 

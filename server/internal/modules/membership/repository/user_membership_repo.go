@@ -108,6 +108,18 @@ func (r *UserMembershipRepository) HasActiveLevelIn(ctx context.Context, userID 
 	return count > 0, nil
 }
 
+// UserExists 校验 users 表中是否存在指定用户。
+// BUG-M10-01：管理端手动开通会员前需确认 user_id 存在，避免产生孤儿会员记录。
+// 与 iam 模块校验用户存在的方式一致（Table("users") 计数），不跨模块调用其 repository。
+func (r *UserMembershipRepository) UserExists(ctx context.Context, userID uint64) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Table("users").
+		Where("id = ?", userID).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // ListByUserID 查询用户所有会员记录（支持 userID=0 时查全部）。
 func (r *UserMembershipRepository) ListByUserID(ctx context.Context, userID uint64, offset, limit int) ([]*model.UserMembership, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.UserMembership{})
