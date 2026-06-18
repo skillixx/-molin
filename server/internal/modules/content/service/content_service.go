@@ -28,37 +28,11 @@ func NewContentService(db *gorm.DB) *ContentService {
 	}
 }
 
-// ListAnnouncements 用户端：过滤 published + 时间范围 + visible_scope。
+// ListAnnouncements 用户端：过滤 published + 时间范围 + visible_scope，SQL 层分页（C-FIX-6）。
 // userRoles 为用户的角色 code 列表（从 IAM 获取），isMember 表示是否有有效会员。
-func (s *ContentService) ListAnnouncements(ctx context.Context, userID uint64, userRoles []string, isMember bool) ([]*model.Announcement, error) {
-	all, err := s.announcementRepo.ListPublished(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var result []*model.Announcement
-	for _, a := range all {
-		if s.isVisible(a, isMember, userRoles) {
-			result = append(result, a)
-		}
-	}
-	return result, nil
-}
-
-// ListPublicAnnouncements 游客端：只返回 visible_scope=all 的已发布公告。
-func (s *ContentService) ListPublicAnnouncements(ctx context.Context) ([]*model.Announcement, error) {
-	all, err := s.announcementRepo.ListPublished(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var result []*model.Announcement
-	for _, a := range all {
-		if a.VisibleScope == "all" {
-			result = append(result, a)
-		}
-	}
-	return result, nil
+// 返回 (公告列表, 总数)，过滤与分页全部下推数据库，不再拉全表内存过滤。
+func (s *ContentService) ListAnnouncements(ctx context.Context, userRoles []string, isMember bool, offset, limit int) ([]*model.Announcement, int64, error) {
+	return s.announcementRepo.ListVisible(ctx, userRoles, isMember, offset, limit)
 }
 
 // isVisible 判断公告是否对当前用户可见。

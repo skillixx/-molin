@@ -67,9 +67,10 @@ func (h *AppHandler) AdminListApps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"items": list,
-		"total": total,
-		"page":  page,
+		"items":     list,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
 	})
 }
 
@@ -176,9 +177,10 @@ func (h *AppHandler) AdminListAdapters(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"items": list,
-		"total": total,
-		"page":  page,
+		"items":     list,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
 	})
 }
 

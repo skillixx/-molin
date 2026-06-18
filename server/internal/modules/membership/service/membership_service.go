@@ -46,8 +46,12 @@ func (s *MembershipService) HasActiveLevelIn(ctx context.Context, userID uint64,
 	return s.memberRepo.HasActiveLevelIn(ctx, userID, levelIDs)
 }
 
-// CreateUserMembership 开通用户会员（由 provision 模块通过接口调用）。
-func (s *MembershipService) CreateUserMembership(ctx context.Context, userID, levelID, assetID uint64, expiresAt *time.Time) error {
+// CreateOrRenewMembership 开通或续期用户会员（由 provision 模块在会员商品开通成功后调用）。
+// C-FIX-1：同一用户在同一等级下已有有效会员时执行「续期」——在原有效期基础上叠加 durationDays，
+// 而非新增一条 active 记录（避免重复 active 导致定价/权益判定不确定）。
+// durationDays 为 nil 表示永久会员（expires_at 置 NULL）。
+// 事务内对同等级有效记录加行锁（FOR UPDATE），防止并发重复开通。
+func (s *MembershipService) CreateOrRenewMembership(ctx context.Context, userID, levelID, assetID uint64, durationDays *int) error {
 	// 校验等级是否存在且激活
 	level, err := s.levelRepo.FindByID(ctx, levelID)
 	if err != nil {
@@ -57,19 +61,47 @@ func (s *MembershipService) CreateUserMembership(ctx context.Context, userID, le
 		return fmt.Errorf("会员等级 %s 已停用", level.LevelCode)
 	}
 
-	now := time.Now()
-	m := &model.UserMembership{
-		UserID:    userID,
-		LevelID:   levelID,
-		Status:    "active",
-		StartedAt: now,
-		ExpiresAt: expiresAt,
-	}
-	if assetID > 0 {
-		m.AssetID = &assetID
-	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		existing, err := s.memberRepo.FindActiveByLevelForUpdate(ctx, tx, userID, levelID)
+		if err != nil {
+			return err
+		}
 
-	return s.memberRepo.Create(ctx, m)
+		if existing != nil {
+			// 续期：在原有效期（若尚未到期）或当前时间基础上叠加 durationDays。
+			var newExpiry *time.Time
+			if durationDays != nil {
+				base := now
+				if existing.ExpiresAt != nil && existing.ExpiresAt.After(now) {
+					base = *existing.ExpiresAt
+				}
+				t := base.AddDate(0, 0, *durationDays)
+				newExpiry = &t
+			}
+			// durationDays 为 nil → 升级为永久会员（expires_at 置 NULL）。
+			return tx.Model(&model.UserMembership{}).Where("id = ?", existing.ID).
+				Updates(map[string]interface{}{"expires_at": newExpiry, "status": "active"}).Error
+		}
+
+		// 新建有效会员记录。
+		var expiresAt *time.Time
+		if durationDays != nil {
+			t := now.AddDate(0, 0, *durationDays)
+			expiresAt = &t
+		}
+		m := &model.UserMembership{
+			UserID:    userID,
+			LevelID:   levelID,
+			Status:    "active",
+			StartedAt: now,
+			ExpiresAt: expiresAt,
+		}
+		if assetID > 0 {
+			m.AssetID = &assetID
+		}
+		return tx.Create(m).Error
+	})
 }
 
 // ListLevels 查询所有 active 会员等级（用户端）。
@@ -135,4 +167,42 @@ func (s *MembershipService) UpdateBenefit(ctx context.Context, id uint64, update
 func (s *MembershipService) AdminListUserMemberships(ctx context.Context, userID uint64, page, pageSize int) ([]*model.UserMembership, int64, error) {
 	offset := (page - 1) * pageSize
 	return s.memberRepo.ListByUserID(ctx, userID, offset, pageSize)
+}
+
+// AdminGrantMembership 管理端手动开通/续期用户会员（复用 CreateOrRenewMembership 的续期叠加语义）。
+// 不关联资产（assetID=0），适用于客服补偿、人工纠错等场景。
+func (s *MembershipService) AdminGrantMembership(ctx context.Context, userID, levelID uint64, durationDays *int) error {
+	if userID == 0 || levelID == 0 {
+		return fmt.Errorf("user_id 和 level_id 为必填项")
+	}
+	return s.CreateOrRenewMembership(ctx, userID, levelID, 0, durationDays)
+}
+
+// AdminUpdateUserMembership 管理端调整/取消用户会员。
+// action=cancel 时将 status 置 cancelled；expiresAt 非 nil 时直接覆盖到期时间。
+func (s *MembershipService) AdminUpdateUserMembership(ctx context.Context, id uint64, action *string, expiresAt *time.Time) error {
+	m, err := s.memberRepo.FindByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("会员记录不存在: %w", err)
+	}
+
+	updates := map[string]interface{}{}
+	if action != nil {
+		switch *action {
+		case "cancel":
+			if m.Status == "cancelled" {
+				return fmt.Errorf("会员记录已是 cancelled 状态")
+			}
+			updates["status"] = "cancelled"
+		default:
+			return fmt.Errorf("无效 action，支持：cancel")
+		}
+	}
+	if expiresAt != nil {
+		updates["expires_at"] = *expiresAt
+	}
+	if len(updates) == 0 {
+		return fmt.Errorf("无可更新字段（需提供 action 或 expires_at）")
+	}
+	return s.memberRepo.UpdateByID(ctx, id, updates)
 }

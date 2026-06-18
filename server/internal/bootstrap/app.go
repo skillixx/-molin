@@ -21,6 +21,7 @@ import (
 	auditrepository "molin/server/internal/modules/audit/repository"
 	auditservice "molin/server/internal/modules/audit/service"
 	authmod "molin/server/internal/modules/auth"
+	authdto "molin/server/internal/modules/auth/dto"
 	authrep "molin/server/internal/modules/auth/repository"
 	authsvc "molin/server/internal/modules/auth/service"
 	billingmod "molin/server/internal/modules/billing"
@@ -80,7 +81,7 @@ func (a *membershipAdapter) HasActiveLevelIn(ctx context.Context, userID uint64,
 	return a.svc.HasActiveLevelIn(ctx, userID, levelIDs)
 }
 
-// assetProvisionAdapter 将 *assetsvc.AssetService 适配为 provisionsvc.AssetCreator 接口。
+// assetProvisionAdapter 将 *assetsvc.AssetService 适配为 provisionsvc.AssetManager 接口。
 // provision 模块内定义了自己的 CreateAssetReq/Result 类型，此 adapter 做字段映射。
 type assetProvisionAdapter struct {
 	svc *assetsvc.AssetService
@@ -103,6 +104,51 @@ func (a *assetProvisionAdapter) CreateAsset(ctx context.Context, req provisionsv
 		return nil, err
 	}
 	return &provisionsvc.CreateAssetResult{AssetID: result.AssetID}, nil
+}
+
+// GetAssetProductID 返回资产所属商品 ID（供 provision 按 product_type 路由生命周期操作）。
+func (a *assetProvisionAdapter) GetAssetProductID(ctx context.Context, assetID uint64) (uint64, error) {
+	asset, err := a.svc.GetAsset(ctx, assetID)
+	if err != nil {
+		return 0, err
+	}
+	return asset.ProductID, nil
+}
+
+func (a *assetProvisionAdapter) CancelAsset(ctx context.Context, assetID, operatorID uint64, reason string) error {
+	return a.svc.CancelAsset(ctx, assetID, operatorID, reason)
+}
+
+func (a *assetProvisionAdapter) SuspendAsset(ctx context.Context, assetID, operatorID uint64, reason string) error {
+	return a.svc.FreezeAsset(ctx, assetID, operatorID, reason)
+}
+
+func (a *assetProvisionAdapter) ResumeAsset(ctx context.Context, assetID, operatorID uint64) error {
+	return a.svc.UnfreezeAsset(ctx, assetID, operatorID)
+}
+
+func (a *assetProvisionAdapter) RenewAsset(ctx context.Context, assetID uint64, durationDays *int) error {
+	return a.svc.RenewAsset(ctx, assetID, durationDays)
+}
+
+// authAssetSummaryAdapter 将 *assetsvc.AssetService 适配为 authsvc.AssetSummaryFetcher 接口（D-86）。
+// 把 asset 模块的资产摘要映射为 auth 模块的 DTO，避免 auth 直接依赖 asset。
+type authAssetSummaryAdapter struct {
+	svc *assetsvc.AssetService
+}
+
+func (a *authAssetSummaryAdapter) GetAssetSummary(ctx context.Context, userID uint64) (*authdto.AdminAssetSummary, error) {
+	s, err := a.svc.GetUserAssetSummary(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return &authdto.AdminAssetSummary{
+		Total:     s.Total,
+		Active:    s.Active,
+		Suspended: s.Suspended,
+		Expired:   s.Expired,
+		Cancelled: s.Cancelled,
+	}, nil
 }
 
 // iamRoleGetterAdapter 将 *iamsvc.IAMService 适配为 contenthandler.IAMRoleGetter 接口。
@@ -250,8 +296,10 @@ func NewApp() (*App, error) {
 
 	// ——— Asset 模块 ———
 	assetService := assetsvc.NewAssetService(gormDB)
-	// 适配为 provision/service.AssetCreator 接口（字段类型映射）
+	// 适配为 provision/service.AssetManager 接口（字段类型映射 + 生命周期操作）
 	assetAdapt := &assetProvisionAdapter{svc: assetService}
+	// D-86：注入资产摘要查询器，使管理端 GET /api/admin/users/:id 返回 asset_summary
+	authService.SetAssetSummaryFetcher(&authAssetSummaryAdapter{svc: assetService})
 
 	// ——— Provision 模块 ———
 	provisionService := provisionmod.NewProvisionService(productRepo, planRepo, assetAdapt)
@@ -316,6 +364,8 @@ func NewApp() (*App, error) {
 
 	// 启动定时任务：到期资产处理（后台 goroutine，随应用生命周期运行）
 	go jobs.NewExpireAssetsJob(gormDB).Start(context.Background())
+	// 启动定时任务：到期会员处理（C-FIX-5，与资产到期任务对齐）
+	go jobs.NewExpireMembershipsJob(gormDB).Start(context.Background())
 
 	// 全局中间件（最外层）
 	handler := middleware.RequestID(middleware.Recovery(middleware.Logger(mux)))

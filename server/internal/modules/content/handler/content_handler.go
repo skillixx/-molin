@@ -62,12 +62,27 @@ func (h *ContentHandler) ListAnnouncements(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	announcements, err := h.svc.ListAnnouncements(r.Context(), userID, userRoles, isMember)
+	q := r.URL.Query()
+	page, _ := strconv.Atoi(q.Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	pageSize, _ := strconv.Atoi(q.Get("page_size"))
+	if pageSize < 1 || pageSize > 50 {
+		pageSize = 20
+	}
+
+	announcements, total, err := h.svc.ListAnnouncements(r.Context(), userRoles, isMember, (page-1)*pageSize, pageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询公告失败")
 		return
 	}
-	response.JSON(w, http.StatusOK, map[string]interface{}{"items": announcements})
+	response.JSON(w, http.StatusOK, map[string]interface{}{
+		"items":     announcements,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	})
 }
 
 // ListHelpCategories 查询帮助分类（无需登录）。
@@ -134,9 +149,10 @@ func (h *ContentHandler) AdminListAnnouncements(w http.ResponseWriter, r *http.R
 		return
 	}
 	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"items": list,
-		"total": total,
-		"page":  page,
+		"items":     list,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
 	})
 }
 
@@ -298,9 +314,10 @@ func (h *ContentHandler) AdminListHelpArticles(w http.ResponseWriter, r *http.Re
 		return
 	}
 	response.JSON(w, http.StatusOK, map[string]interface{}{
-		"items": list,
-		"total": total,
-		"page":  page,
+		"items":     list,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
 	})
 }
 

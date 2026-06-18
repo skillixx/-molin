@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"molin/server/internal/modules/membership/model"
 )
@@ -29,7 +30,8 @@ func (r *UserMembershipRepository) FindActive(ctx context.Context, userID uint64
 	var m model.UserMembership
 	err := r.db.WithContext(ctx).
 		Where("user_id = ? AND status = 'active' AND (expires_at IS NULL OR expires_at > NOW())", userID).
-		Order("created_at DESC").
+		// C-FIX-1：永久会员（expires_at IS NULL）优先，其次按到期时间最晚者，语义明确。
+		Order("expires_at IS NULL DESC, expires_at DESC").
 		First(&m).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -38,6 +40,55 @@ func (r *UserMembershipRepository) FindActive(ctx context.Context, userID uint64
 		return nil, err
 	}
 	return &m, nil
+}
+
+// FindActiveByLevelForUpdate 加行锁查询用户在指定等级下的有效会员（续期定位用，必须在事务中调用）。
+// 返回 nil 表示该等级下无有效会员（应新建）。
+func (r *UserMembershipRepository) FindActiveByLevelForUpdate(ctx context.Context, tx *gorm.DB, userID, levelID uint64) (*model.UserMembership, error) {
+	var m model.UserMembership
+	err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("user_id = ? AND level_id = ? AND status = 'active' AND (expires_at IS NULL OR expires_at > NOW())", userID, levelID).
+		Order("expires_at IS NULL DESC, expires_at DESC").
+		First(&m).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &m, nil
+}
+
+// BatchExpire 批量将到期的 active 会员标记为 expired（定时任务使用，每次最多处理 limit 条）。
+// 返回受影响行数。C-FIX-5：与资产到期任务对齐，避免 status 长期陈旧。
+func (r *UserMembershipRepository) BatchExpire(ctx context.Context, limit int) (int64, error) {
+	var ids []uint64
+	if err := r.db.WithContext(ctx).Model(&model.UserMembership{}).
+		Where("status = 'active' AND expires_at IS NOT NULL AND expires_at < NOW()").
+		Limit(limit).Pluck("id", &ids).Error; err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	res := r.db.WithContext(ctx).Model(&model.UserMembership{}).
+		Where("id IN ?", ids).Update("status", "expired")
+	return res.RowsAffected, res.Error
+}
+
+// FindByID 按 ID 查询用户会员记录。
+func (r *UserMembershipRepository) FindByID(ctx context.Context, id uint64) (*model.UserMembership, error) {
+	var m model.UserMembership
+	if err := r.db.WithContext(ctx).First(&m, id).Error; err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+// UpdateByID 更新用户会员记录字段（管理端调整/取消用）。
+func (r *UserMembershipRepository) UpdateByID(ctx context.Context, id uint64, updates map[string]interface{}) error {
+	return r.db.WithContext(ctx).Model(&model.UserMembership{}).
+		Where("id = ?", id).Updates(updates).Error
 }
 
 // HasActiveLevelIn 校验用户当前是否拥有有效会员资格，且等级属于给定的等级 ID 集合。

@@ -154,6 +154,74 @@ func (s *AssetService) ListUserEntitlements(ctx context.Context, userID uint64) 
 	return s.entitlementRepo.FindByUserID(ctx, userID)
 }
 
+// GetAssetEntitlements 查询某资产的全部权益（用于资产详情内嵌展示）。
+func (s *AssetService) GetAssetEntitlements(ctx context.Context, assetID uint64) ([]model.UserEntitlement, error) {
+	return s.entitlementRepo.FindByAssetID(ctx, assetID)
+}
+
+// GetUserAssetSummary 统计用户资产摘要（D-86：供管理端用户详情注入 asset_summary）。
+func (s *AssetService) GetUserAssetSummary(ctx context.Context, userID uint64) (*dto.AssetSummary, error) {
+	counts, err := s.assetRepo.CountByUserStatus(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	summary := &dto.AssetSummary{
+		Active:    counts["active"],
+		Suspended: counts["suspended"],
+		Expired:   counts["expired"],
+		Cancelled: counts["cancelled"],
+	}
+	for _, c := range counts {
+		summary.Total += c
+	}
+	return summary, nil
+}
+
+// RenewAsset 续期资产（仅 active）：在原到期时间（若未到期）或当前时间基础上叠加 durationDays，
+// durationDays 为 nil 表示永久（expires_at 置 NULL）；同步顺延关联 active 权益的到期时间，写 asset_events。
+// 供 provision 续期编排调用（C-06 / 资产生命周期）。
+func (s *AssetService) RenewAsset(ctx context.Context, assetID uint64, durationDays *int) error {
+	asset, err := s.assetRepo.FindByID(ctx, assetID)
+	if err != nil {
+		return fmt.Errorf("资产不存在: %w", err)
+	}
+	if asset.Status != "active" {
+		return fmt.Errorf("资产状态 %s 不允许续期（仅 active 状态可续期）", asset.Status)
+	}
+
+	var newExpiry *time.Time
+	if durationDays != nil {
+		base := time.Now()
+		if asset.ExpiresAt != nil && asset.ExpiresAt.After(base) {
+			base = *asset.ExpiresAt
+		}
+		t := base.AddDate(0, 0, *durationDays)
+		newExpiry = &t
+	}
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.UserAsset{}).Where("id = ?", assetID).
+			Update("expires_at", newExpiry).Error; err != nil {
+			return err
+		}
+		// 顺延关联 active 权益的到期时间，保持与资产一致
+		if err := tx.Model(&model.UserEntitlement{}).
+			Where("asset_id = ? AND status = 'active'", assetID).
+			Update("expires_at", newExpiry).Error; err != nil {
+			return err
+		}
+		status := asset.Status
+		event := &model.AssetEvent{
+			AssetID:      assetID,
+			UserID:       asset.UserID,
+			EventType:    "renewed",
+			BeforeStatus: &status,
+			AfterStatus:  &status,
+		}
+		return tx.Create(event).Error
+	})
+}
+
 // ExpireAsset 将资产状态从 active 改为 expired，写 asset_events。
 func (s *AssetService) ExpireAsset(ctx context.Context, assetID, operatorID uint64) error {
 	asset, err := s.assetRepo.FindByID(ctx, assetID)
@@ -171,8 +239,9 @@ func (s *AssetService) ExpireAsset(ctx context.Context, assetID, operatorID uint
 			return err
 		}
 
-		// 同步更新关联权益状态
-		if err := tx.Model(&model.UserEntitlement{}).Where("asset_id = ?", assetID).
+		// 同步更新关联权益状态（仅翻转非终态权益，保留已 cancelled/expired 记录的保真）
+		if err := tx.Model(&model.UserEntitlement{}).
+			Where("asset_id = ? AND status NOT IN ('cancelled', 'expired')", assetID).
 			Update("status", "expired").Error; err != nil {
 			return err
 		}
@@ -249,6 +318,52 @@ func (s *AssetService) UnfreezeAsset(ctx context.Context, assetID, operatorID ui
 			BeforeStatus: &before,
 			AfterStatus:  &after,
 			OperatorID:   &operatorID,
+		}
+		return tx.Create(event).Error
+	})
+}
+
+// CancelAsset 取消资产（active|suspended → cancelled），同步取消关联权益，写 asset_events。
+// C-FIX-2a：状态机声明的 cancelled 落地路径。本阶段由管理端手动触发；
+// 未来退款自动联动（C-FIX-2b）由 order/billing 退款成功后经 provision.Cancel 复用本方法。
+func (s *AssetService) CancelAsset(ctx context.Context, assetID, operatorID uint64, reason string) error {
+	asset, err := s.assetRepo.FindByID(ctx, assetID)
+	if err != nil {
+		return fmt.Errorf("资产不存在: %w", err)
+	}
+	if asset.Status != "active" && asset.Status != "suspended" {
+		return fmt.Errorf("资产状态 %s 不允许取消（仅 active/suspended 状态可取消）", asset.Status)
+	}
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 更新资产状态
+		if err := tx.Model(&model.UserAsset{}).Where("id = ?", assetID).
+			Update("status", "cancelled").Error; err != nil {
+			return err
+		}
+
+		// 同步取消关联权益（避免取消后权益仍可消耗；仅翻转非终态权益，保留已 expired/cancelled 记录）
+		if err := tx.Model(&model.UserEntitlement{}).
+			Where("asset_id = ? AND status NOT IN ('cancelled', 'expired')", assetID).
+			Update("status", "cancelled").Error; err != nil {
+			return err
+		}
+
+		// 写入事件日志
+		before := asset.Status
+		after := "cancelled"
+		var remarkPtr *string
+		if reason != "" {
+			remarkPtr = &reason
+		}
+		event := &model.AssetEvent{
+			AssetID:      assetID,
+			UserID:       asset.UserID,
+			EventType:    "cancelled",
+			BeforeStatus: &before,
+			AfterStatus:  &after,
+			OperatorID:   &operatorID,
+			Remark:       remarkPtr,
 		}
 		return tx.Create(event).Error
 	})
