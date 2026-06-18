@@ -47,14 +47,18 @@ func (h *MembershipHandler) GetMyMembership(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	response.JSON(w, http.StatusOK, dto.MembershipResponse{
-		ID:        m.ID,
-		UserID:    m.UserID,
-		LevelID:   m.LevelID,
-		AssetID:   m.AssetID,
-		Status:    m.Status,
-		StartedAt: m.StartedAt,
-		ExpiresAt: m.ExpiresAt,
+	// 有会员时也统一包成 {"membership": {...}}，与无会员情形结构对称，
+	// 避免前端针对两种返回结构做分支判断。
+	response.JSON(w, http.StatusOK, map[string]interface{}{
+		"membership": dto.MembershipResponse{
+			ID:        m.ID,
+			UserID:    m.UserID,
+			LevelID:   m.LevelID,
+			AssetID:   m.AssetID,
+			Status:    m.Status,
+			StartedAt: m.StartedAt,
+			ExpiresAt: m.ExpiresAt,
+		},
 	})
 }
 
