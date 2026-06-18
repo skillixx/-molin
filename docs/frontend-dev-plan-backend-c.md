@@ -27,11 +27,11 @@
 
 | 约定 | 说明 |
 |---|---|
-| 分页统一 D-95 扁平 | 所有**管理端列表**返回 `data` 为 `{ items, page, page_size, total }`（顶层，禁止 `{list,pagination}` 嵌套），复用 `PageResult<T>`。⚠️ `page_size` 字段为 C-FIX-4 补齐项（标 🔜），后端发版前部分列表可能暂缺该字段，前端取值需 `page_size ?? 入参 size` 兜底 |
-| 用户端列表不分页 | `GET /api/my/assets`、`/api/my/entitlements`、`/api/memberships`、`/api/help/*` 等用户端列表响应为 `{ items: [...] }`（**无分页信封**）。⚠️ 例外：`GET /api/announcements` 将随 C-FIX-6 补 `page`/`page_size`（标 🔜），前端先按 `{items}` 渲染、兼容后续分页信封 |
+| 分页统一 D-95 扁平 | 所有**管理端列表**返回 `data` 为 `{ items, page, page_size, total }`（顶层，禁止 `{list,pagination}` 嵌套），复用 `PageResult<T>`。`page_size` 已随 C-FIX-4 上线，四类管理列表（asset/membership/content/app）均返回该字段，**无需兜底** |
+| 用户端列表两类 | （1）**不分页**：`GET /api/my/assets`、`/api/my/entitlements`、`/api/memberships`、`/api/help/*` 响应为 `{ items: [...] }`（无分页信封）。（2）**分页**：`GET /api/announcements` 已随 C-FIX-6 上线，返回完整 `{ items, page, page_size, total }`（`page_size` 默认 20、最大 50），前端**直接按分页渲染**，不要再按 `{items}`-only 兜底 |
 | 我的会员结构对称 | `GET /api/my/membership` 统一返回 `data.membership`：有会员为对象、无会员为 `null`，**前端无需 has-membership 分支判断**，直接读 `data.membership?.expires_at` |
-| 会员无独立购买接口 | 会员购买/续费统一走商品流程（`product_type=membership` 商品 → 下单 → 支付 → provision 开通），用户端「续费」按钮跳商品详情/购买流程（后端乙 §六/§七），**不要找 membership purchase 接口**。续费成功后重新拉 `/api/my/membership` 展示新到期时间（C-FIX-1 续期叠加） |
-| 资产 cancel 为 🔜 | `PATCH /api/admin/assets/{id}` 的 `action:cancel`（active\|suspended→cancelled，建议带 `reason`）为 C-FIX-2a 落地项；`freeze`/`unfreeze` 已稳定。前端可提前接，按钮在后端发版前可灰置 |
+| 会员两条开通路径 | （1）**用户自助**：走商品流程（`product_type=membership` → 下单 → 支付 → provision 开通），用户端「续费」跳商品详情，**无 membership purchase 接口**。（2）**管理员手动**：M10/M11（`POST/PATCH /api/admin/user-memberships`，`membership:manage`），见 §2.2。两路径续期均按 C-FIX-1 在原到期时间叠加；前端成功后重拉对应列表/`/api/my/membership` |
+| 资产 cancel 已上线 | `PATCH /api/admin/assets/{id}` 的 `action:cancel`（active\|suspended→cancelled，同步级联取消关联权益）已随 C-FIX-2a 上线，与 `freeze`/`unfreeze` 同样稳定；取消原因放 `remark` 字段（非 `reason`）。状态机越界（如对 cancelled 资产再操作）返回 400，前端给提示 |
 | 公告可见范围 fail-closed | 用户端 `GET /api/announcements` 已由后端按 `visible_scope`（all/roles/members/admins）+ 时间窗 + status=published 全量下推 SQL 过滤，`admins` 范围用户端不可见。前端**不做二次可见性判断**，直接渲染返回项 |
 | JSON 字符串字段 | `target_roles_json`（公告目标角色）、`benefit_value`（会员权益值）、`adapter_config_json`/`supported_actions_json`/`usage_event_types_json`（应用/适配器）均为**JSON 字符串**，前端表单需 `JSON.stringify` 后提交、读取时 `JSON.parse`，并做解析失败兜底 |
 | 买断配额恒 0 | `GET /api/my/entitlements` 的 `quota_used` 本阶段恒为 `"0"`（消耗为 LATER 功能）；剩余额度 = `quota_total - quota_used`，`quota_total=null` 表示不限量。金额/额度字段为字符串，禁止 `parseFloat` 做展示计算 |
@@ -49,7 +49,7 @@
 | AS3 | `GET /api/my/entitlements` | 登录（不分页） | — | ✅ 已完成 |
 | AS4 | `GET /api/admin/assets?user_id=&status=&page=&page_size=` | `asset:view` | ✅ | — |
 | AS5 | `GET /api/admin/users/{id}/assets` | `asset:view`（不分页） | ✅ | — |
-| AS6 | `PATCH /api/admin/assets/{id}`（freeze/unfreeze/cancel🔜） | `asset:manage` | ✅ | — |
+| AS6 | `PATCH /api/admin/assets/{id}`（freeze/unfreeze/cancel，body `{action, remark}`） | `asset:manage` | ✅ | — |
 
 ### 2.2 会员 membership
 
@@ -64,14 +64,16 @@
 | M7 | `POST /api/admin/membership-benefits` | `membership:manage` | ✅ | — |
 | M8 | `PATCH /api/admin/membership-benefits/{id}` | `membership:manage` | ✅ | — |
 | M9 | `GET /api/admin/user-memberships?user_id=&page=&page_size=` | `membership:view` | ✅ | — |
+| M10 | `POST /api/admin/user-memberships`（手动开通/续期，body `{user_id, level_id, duration_days}`，`duration_days=null` 永久） | `membership:manage` | ✅ | — |
+| M11 | `PATCH /api/admin/user-memberships/{id}`（取消/改期，body `{action:"cancel"}` 或 `{expires_at}`） | `membership:manage` | ✅ | — |
 
-> 用户会员的**手动开通/调整**（`POST/PATCH /api/admin/user-memberships`）见 `apipost-test-guide-backend-c.md` §2；如管理后台需手动发会员入口，按该文档补 M10/M11，权限码 `membership:manage`。
+> M10/M11 为**已注册的真实管理端接口**（非可选），是会员管理页的一等能力；请求体细节见 `frontend-api-reference.md` §11.6 与 `apipost-test-guide-backend-c.md` §2。
 
 ### 2.3 内容 content（公告 / 帮助）
 
 | 编号 | 端点 | 鉴权 | 前端甲 | 前端乙 |
 |---|---|---|:--:|:--:|
-| C1 | `GET /api/announcements?page=&page_size=`🔜 | 登录（按可见范围过滤） | — | ✅ |
+| C1 | `GET /api/announcements?page=&page_size=`（完整分页信封） | 登录（按可见范围过滤） | — | ✅ |
 | C2 | `GET /api/help/categories` | 公开（仅 active） | — | ✅ |
 | C3 | `GET /api/help/articles?category_id=` | 公开（仅 published） | — | ✅ |
 | C4 | `GET /api/help/articles/{id}` | 公开（非 published 返回 404） | — | ✅ |
@@ -85,7 +87,7 @@
 
 | 编号 | 端点 | 鉴权 | 前端甲 | 前端乙 |
 |---|---|---|:--:|:--:|
-| AP1 | `GET /api/marketplace/apps/{id}` | 登录（🔜 拟放开公开） | — | ✅（商品详情辅助） |
+| AP1 | `GET /api/marketplace/apps/{id}` | 登录（C-OPT-3 拟放开为公开只读，属后端后续项，当前按需登录对接） | — | ✅（商品详情辅助） |
 | AP2 | `GET /api/admin/apps?status=&type=&page=&page_size=` | `app:manage` | ✅ | — |
 | AP3 | `GET /api/admin/apps/{id}` | `app:manage` | ✅ | — |
 | AP4 | `POST /api/admin/apps` | `app:manage` | ✅ | — |
@@ -99,8 +101,8 @@
 > 路由 `meta.permission` 按权限码控制菜单/按钮显隐（沿用 A-10 `GET /api/me/permissions`）。每任务单独建分支。
 
 ### FA-06 用户资产管理（AS4/AS5/AS6，`asset:view`/`asset:manage`）
-- 资产列表页：`user_id`/`status` 过滤 + D-95 分页（`page_size` 兜底）；展示 asset_type/product_id/status/started_at/expires_at（null=永久）。
-- 行操作：冻结（active→suspended）、解冻（suspended→active）、取消（🔜 cancel，弹窗收集 `reason`，后端未发版前灰置）；调 `PATCH /api/admin/assets/{id}` 后刷新列表，状态机越界 400 提示。
+- 资产列表页：`user_id`/`status` 过滤 + D-95 分页（直接用响应 `page_size`）；展示 asset_type/product_id/status/started_at/expires_at（null=永久）。
+- 行操作（均调 `PATCH /api/admin/assets/{id}`，body `{action, remark}`）：冻结（active→suspended）、解冻（suspended→active）、取消（active|suspended→cancelled，弹窗收集取消原因填 `remark`）；按当前 status 决定可用动作（cancelled/expired 为终态不可再操作），调用后刷新列表，状态机越界 400 给提示。
 - 可选：用户详情页内嵌「该用户资产」标签页（AS5 不分页）。
 - 分支 `feature/frontend-a-admin-asset`。
 
@@ -109,11 +111,14 @@
 - 帮助管理：分类 CRUD（C8）+ 文章 CRUD（C9，列表 D-95 分页，按 category_id 过滤，默认 draft）。
 - 分支 `feature/frontend-a-admin-content-cms`。
 
-### FA-09 会员管理（M3~M9，`membership:view`/`membership:manage`）【任务板新增】
+### FA-09 会员管理（M3~M11，`membership:view`/`membership:manage`）【任务板新增】
 - 会员等级管理：列表（含 inactive）+ 新建（level_code/name/description/sort_order）+ 编辑（name/description/sort_order/status）。
 - 会员权益管理：按 level_id 查权益列表 + 新建/编辑（benefit_type + `benefit_value` JSON 字符串编辑器，校验合法 JSON）。
 - 用户会员列表：M9 分页查询（user_id 过滤），展示 level/status/started_at/expires_at。
-- （可选）手动开通/调整会员入口见 §2.2 备注。
+- **手动开通/调整会员（M10/M11，一等能力，非可选）**：
+  - 开通/续期：M10 `POST`，表单 `user_id`/`level_id`/`duration_days`（提供「永久」选项 → 传 `null`）；对已有同级有效会员重复开通即续期叠加。
+  - 取消/改期：M11 `PATCH`，「取消会员」按钮传 `{action:"cancel"}`，「修改到期时间」传 `{expires_at}`。
+  - 操作后刷新 M9 列表。
 - 分支 `feature/frontend-a-admin-membership`。
 
 ### FA-10 应用与适配器管理（AP2~AP6，`app:manage`）【任务板新增】
@@ -135,7 +140,7 @@
 - 分支 `feature/frontend-b-membership`。
 
 ### FB-09 公告与帮助中心（C1~C4）【由原 FB-08 拆出】
-- 公告列表（C1，登录，按可见范围已由后端过滤；前端兼容后续 🔜 分页信封）+ 公告详情。
+- 公告列表（C1，登录，可见范围已由后端 fail-closed 过滤）：**直接按完整分页信封 `{items,page,page_size,total}` 渲染**（分页/翻页/总数），不做二次可见性判断 + 公告详情。
 - 帮助中心：分类导航（C2）+ 文章列表（C3，按 category_id）+ 文章详情（C4，404 友好提示）。
 - 分支 `feature/frontend-b-content`。
 
@@ -143,10 +148,10 @@
 
 ## 5. 验收标准（两端通用）
 
-1. **契约一致**：字段名/结构/错误码与 `frontend-api-reference.md` §十~§十三 完全一致；分页一律 `PageResult<T>`，`page_size` 缺失走兜底。
+1. **契约一致**：字段名/结构/错误码与 `frontend-api-reference.md` §十~§十三 完全一致；管理端 + 用户端公告分页一律 `PageResult<T>`，直接用响应 `page_size`。
 2. **权限门控**：管理端按钮/菜单按对应权限码（asset/membership/content/app 的 view/manage）显隐，无权限走 403 页不跳登录。
-3. **状态机正确**：资产 freeze/unfreeze/cancel 越界给后端 400 提示；公告 draft 不在用户端出现。
-4. **会员对称读取**：用户端 `data.membership` 无分支判断；续费后到期时间刷新正确（验证 C-FIX-1 叠加）。
+3. **状态机正确**：资产 freeze/unfreeze/cancel 按当前 status 决定可用动作，越界给后端 400 提示；公告 draft 不在用户端出现。
+4. **会员双路径**：用户端 `data.membership` 无分支判断、续费后到期刷新正确（验证 C-FIX-1 叠加）；管理端 M10/M11 手动开通（含永久 `duration_days=null`）/取消/改期均落库并刷新列表。
 5. **JSON 字段健壮**：target_roles_json/benefit_value/adapter 三 JSON 字段提交前 stringify、读取 parse 且解析失败不崩。
-6. **🔜 项兼容**：page_size、announcements 分页、assets cancel 在后端未发版时不报错、不阻塞主流程。
+6. **空/错误态**：列表空数据、加载中、接口报错（40003 无权限 / 40400 不存在 / 400 状态机越界）均有明确 UI 反馈，不白屏。
 7. `npm run type-check` / `lint` / `build` 全绿后开 PR，标题 `[前端-管理后台]` / `[前端-用户控制台]`。

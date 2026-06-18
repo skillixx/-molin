@@ -1347,9 +1347,7 @@ Wechatpay-Nonce: <随机串>
 
 ## 十、用户资产模块（后端丙）
 
-> ⚠️ **落地状态**（详见 `docs/backend-dev-plan-backend-c.md`）：标 🔜 为规划中、本阶段 C-FIX 落地，前端可提前对接但需等后端发版。
-> - 管理端列表响应补 `page_size`（🔜 C-FIX-4，当前仅返回 `items/total/page`）
-> - 资产 PATCH 新增 `action:cancel`（🔜 C-FIX-2a，当前仅 `freeze/unfreeze`）
+> ✅ **落地状态**（2026-06-18 核对代码）：C-FIX-2a（资产 `action:cancel`）、C-FIX-4（管理端列表响应含 `page_size`）、C-FIX-6（用户端公告分页）已随 PR#151 合并 main 并上线，**前端可直接按本文最终形态对接，无需任何"待发版"兜底**。
 
 ### 10.1 我的资产列表
 
@@ -1404,7 +1402,7 @@ Wechatpay-Nonce: <随机串>
 
 **GET** `/api/admin/assets?user_id=&status=&page=1&page_size=20` *(需 `asset:view`)*
 
-响应 `data` 为 D-95 扁平分页 `{ items, page, page_size🔜, total }`，`items` 单条结构同 10.1。
+响应 `data` 为 D-95 扁平分页 `{ items, page, page_size, total }`，`items` 单条结构同 10.1。
 
 ### 10.5 指定用户的资产
 
@@ -1418,15 +1416,15 @@ Wechatpay-Nonce: <随机串>
 ```json
 { "action": "freeze", "remark": "违规冻结" }
 ```
-- `action`：`freeze`（active→suspended）/ `unfreeze`（suspended→active）/ `cancel`（🔜 C-FIX-2a，active|suspended→cancelled，建议带 `reason`）
+- `action`：`freeze`（active→suspended）/ `unfreeze`（suspended→active）/ `cancel`（active|suspended→cancelled，同步取消关联权益，建议带 `remark` 作为取消原因）
 - 成功返回 `{ "message": "操作成功" }`；状态机越界返回 400。
 
 ---
 
 ## 十一、会员模块（后端丙）
 
-> 🔜 C-FIX-1：会员**续期**——同一用户重复购买同等级时，`expires_at` 在原有效期上叠加延长（而非新增一条记录）。前端「会员中心」续费后应重新拉取 `/api/my/membership` 展示新到期时间。
-> 会员**购买**统一走商品流程（`product_type=membership` 商品 → 下单 → 支付 → 开通），**无独立 purchase 接口**。
+> ✅ C-FIX-1（已上线）：会员**续期**——同一用户重复开通同等级时，`expires_at` 在原有效期上叠加延长（而非新增一条记录）。前端「会员中心」续费后应重新拉取 `/api/my/membership` 展示新到期时间。
+> 会员**购买**统一走商品流程（`product_type=membership` 商品 → 下单 → 支付 → 开通），**无独立 purchase 接口**；管理员可经 §11.6 手动开通/调整。
 
 ### 11.1 会员等级列表（公开）
 
@@ -1480,19 +1478,36 @@ Wechatpay-Nonce: <随机串>
 
 **GET** `/api/admin/user-memberships?user_id=&page=1&page_size=20` *(需 `membership:view`)*
 
-响应 `data` 为扁平分页 `{ items, page, page_size🔜, total }`，`items` 单条结构同 11.2。
+响应 `data` 为扁平分页 `{ items, page, page_size, total }`，`items` 单条结构同 11.2。
+
+### 11.6 管理端手动开通 / 调整用户会员
+
+- **POST** `/api/admin/user-memberships` *(需 `membership:manage`)* —— 手动开通 / 续期会员
+  ```json
+  { "user_id": 1, "level_id": 1, "duration_days": 30 }
+  ```
+  > `duration_days` 为 `null` 表示永久会员；对已有同等级有效会员重复开通时按 C-FIX-1 在原到期时间上叠加续期。成功返回 `{ "message": "开通成功" }`。
+- **PATCH** `/api/admin/user-memberships/{id}` *(需 `membership:manage`)* —— 取消会员 / 覆盖到期时间
+  ```json
+  { "action": "cancel" }
+  ```
+  或
+  ```json
+  { "expires_at": "2026-12-31T00:00:00Z" }
+  ```
+  > `action: "cancel"` 将会员 `status` 置为 `cancelled`；`expires_at` 直接覆盖到期时间（两者可单独使用）。
 
 ---
 
 ## 十二、内容模块（公告 / 帮助，后端丙）
 
-> 🔜 C-FIX-6：用户端公告列表新增分页参数 `page`/`page_size`（当前一次性返回全部已发布公告，无分页）。
+> ✅ C-FIX-6（已上线）：用户端公告列表已支持分页参数 `page`/`page_size`（默认 20，最大 50），响应为完整扁平分页信封。
 
 ### 12.1 公告列表（用户端）
 
 **GET** `/api/announcements?page=1&page_size=20` *(需登录，按可见范围过滤)*
 
-响应 `data`：`{ "items": [公告对象] }`（🔜 补分页信封）。公告对象：
+响应 `data` 为扁平分页 `{ items, page, page_size, total }`。公告对象：
 ```json
 {
   "id": 1,
@@ -1523,7 +1538,7 @@ Wechatpay-Nonce: <随机串>
 
 ### 12.3 管理端公告
 
-- **GET** `/api/admin/announcements?page=1&page_size=20` *(需 `content:manage`)* → 扁平分页 `{ items, page, page_size🔜, total }`
+- **GET** `/api/admin/announcements?page=1&page_size=20` *(需 `content:manage`)* → 扁平分页 `{ items, page, page_size, total }`
 - **POST** `/api/admin/announcements` *(需 `content:manage`)*
   ```json
   { "title": "标题", "content": "正文", "visible_scope": "roles", "target_roles_json": "[\"merchant\",\"vip\"]", "start_at": "2026-06-17T00:00:00Z", "end_at": null, "sort_order": 0 }
@@ -1537,7 +1552,7 @@ Wechatpay-Nonce: <随机串>
   - POST body：`{ "name": "充值相关", "description": "...", "sort_order": 0 }`
 - 文章：**GET** `/api/admin/help/articles?category_id=&page=1&page_size=20`、**POST** `/api/admin/help/articles`、**PATCH** `/api/admin/help/articles/{id}` *(需 `content:manage`)*
   - POST body：`{ "category_id": 1, "title": "如何充值", "content": "...", "sort_order": 0 }`（默认 draft）
-  - 列表为扁平分页 `{ items, page, page_size🔜, total }`
+  - 列表为扁平分页 `{ items, page, page_size, total }`
 
 ---
 
@@ -1556,7 +1571,7 @@ Wechatpay-Nonce: <随机串>
 
 ### 13.2 管理端应用 CRUD
 
-- **GET** `/api/admin/apps?status=&type=&page=1&page_size=20` *(需 `app:manage`)* → 扁平分页 `{ items, page, page_size🔜, total }`
+- **GET** `/api/admin/apps?status=&type=&page=1&page_size=20` *(需 `app:manage`)* → 扁平分页 `{ items, page, page_size, total }`
 - **GET** `/api/admin/apps/{id}` *(需 `app:manage`)* → 单个应用对象
 - **POST** `/api/admin/apps` *(需 `app:manage`)*
   ```json
