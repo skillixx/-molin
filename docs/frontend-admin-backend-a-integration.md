@@ -28,7 +28,7 @@
 - `/users`：用户管理，含创建、编辑、详情、登录日志、实名卡片和角色入口。
 - `/roles`：角色管理，含角色 CRUD 和角色权限配置。
 - `/permissions`：权限列表，含搜索和创建权限。
-- `/groups`：用户分组管理，含分组 CRUD、成员管理、组权限和邀请码。
+- `/groups`：用户分组管理，含分组 CRUD、成员管理、组权限、组角色和邀请码。
 - `/identity`：实名认证审核，含状态筛选、通过、拒绝。
 - `/audit-logs`：审计日志列表。
 
@@ -78,6 +78,9 @@
 - `GET /api/admin/user-groups/{id}/permissions`
 - `POST /api/admin/user-groups/{id}/permissions`
 - `DELETE /api/admin/user-groups/{id}/permissions/{code}`
+- `GET /api/admin/user-groups/{id}/roles`
+- `POST /api/admin/user-groups/{id}/roles`
+- `DELETE /api/admin/user-groups/{id}/roles/{role_id}`
 - `GET /api/admin/user-groups/{id}/invite-codes`
 - `POST /api/admin/user-groups/{id}/invite-codes`
 - `PATCH /api/admin/user-groups/{id}/invite-codes/{invite_id}/disable`
