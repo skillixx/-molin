@@ -81,6 +81,13 @@ type RoleAssigner interface {
 	AssignRole(ctx context.Context, userID, roleID, operatorID uint64, reason *string, ip string) error
 }
 
+// GroupJoiner 注册落组接口，由 iam.GroupService 实现。
+// 在 auth/service 包中定义以避免循环导入（与 RoleAssigner 同模式）。
+// inviteCode 为空表示落默认兜底组；落组策略全部封装在 iam 侧。
+type GroupJoiner interface {
+	AssignOnRegister(ctx context.Context, userID uint64, inviteCode string) error
+}
+
 // RolesFetcher D-85：角色查询接口，由 iam.IAMService 实现。
 // 供 ListUsers / GetUser 附带 roles 字段，避免 auth/service 直接依赖 iam/service。
 type RolesFetcher interface {
@@ -111,6 +118,7 @@ type AuthService struct {
 	auditSvc             *auditservice.AuditService
 	permResolver         PermissionResolver
 	roleAssigner         RoleAssigner               // A-28：可选，创建后台用户时分配角色
+	groupJoiner          GroupJoiner                // 可选，注册时按邀请码/默认组落组
 	rolesFetcher         RolesFetcher               // D-85：可选，查询用户角色列表（ListUsers/GetUser 附带 roles 字段）
 	permOverridesFetcher PermissionOverridesFetcher // D-86：可选，查询用户权限覆盖列表（GetUser 附带 permission_overrides 字段）
 	assetSummaryFetcher  AssetSummaryFetcher        // D-86：可选，查询用户资产摘要（GetUser 附带 asset_summary 字段）
@@ -149,6 +157,11 @@ func (s *AuthService) SetRoleAssigner(r RoleAssigner) {
 // SetRolesFetcher D-85：注入角色查询器（由 bootstrap 调用，避免修改 NewAuthService 签名）。
 func (s *AuthService) SetRolesFetcher(r RolesFetcher) {
 	s.rolesFetcher = r
+}
+
+// SetGroupJoiner 注入注册落组器（由 bootstrap 调用，避免修改 NewAuthService 签名）。
+func (s *AuthService) SetGroupJoiner(g GroupJoiner) {
+	s.groupJoiner = g
 }
 
 // SetPermissionOverridesFetcher D-86：注入权限覆盖查询器（由 bootstrap 调用）。
@@ -435,6 +448,13 @@ func (s *AuthService) Register(ctx context.Context, req dto.RegisterReq, ua, ip 
 			return nil, mapped
 		}
 		return nil, err
+	}
+	// 8. 落组：有邀请码按码落组，否则落默认兜底组（方案 A：邀请码无效降级为默认组）。
+	// 与 roleAssigner 同约定，落组失败不回滚注册，仅记日志，保证注册主流程不被阻断。
+	if s.groupJoiner != nil {
+		if joinErr := s.groupJoiner.AssignOnRegister(ctx, user.ID, req.InviteCode); joinErr != nil {
+			log.Printf("[落组] 注册落组失败 userID=%d inviteCode=%q err=%v", user.ID, req.InviteCode, joinErr)
+		}
 	}
 	return s.generateTokenPair(ctx, s.db.WithContext(ctx), user, ua, ip)
 }

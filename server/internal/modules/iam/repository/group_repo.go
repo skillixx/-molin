@@ -117,6 +117,19 @@ func (r *GroupRepository) ClearDefault(db *gorm.DB) error {
 	return db.Model(&model.UserGroup{}).Where("is_default = true").Update("is_default", false).Error
 }
 
+// FindDefaultGroup 查询当前默认组（is_default=true，全局最多一个）。
+// 未配置默认组时返回 ErrGroupNotFound，供注册落组逻辑判断「跳过落组」。
+func (r *GroupRepository) FindDefaultGroup(ctx context.Context) (*model.UserGroup, error) {
+	var g model.UserGroup
+	if err := r.db.WithContext(ctx).Where("is_default = ?", true).First(&g).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrGroupNotFound
+		}
+		return nil, err
+	}
+	return &g, nil
+}
+
 // Delete 删除分组：组内有成员或有效邀请码时拒绝。
 // D-36：使用事务+子查询条件确保"检查成员"与"删除分组"的原子性，消除 TOCTOU 竞态。
 // D-37：在同一事务内先清理 group_permissions 关联记录，再删除分组主记录。

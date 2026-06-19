@@ -26,12 +26,13 @@ type SendBindEmailCodeReq struct {
 
 // RegisterReq 统一注册请求（手机+邮箱+用户名，需双验证码）。
 type RegisterReq struct {
-	Username  string `json:"username"`
-	Phone     string `json:"phone"`
-	Email     string `json:"email"`
-	Password  string `json:"password"`
-	PhoneCode string `json:"phone_code"`
-	EmailCode string `json:"email_code"`
+	Username   string `json:"username"`
+	Phone      string `json:"phone"`
+	Email      string `json:"email"`
+	Password   string `json:"password"`
+	PhoneCode  string `json:"phone_code"`
+	EmailCode  string `json:"email_code"`
+	InviteCode string `json:"invite_code"` // 可选：凭组邀请码注册落对应组；为空或无效则落默认组
 }
 
 // LoginEmailReq 邮箱登录请求。
