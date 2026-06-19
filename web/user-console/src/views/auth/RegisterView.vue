@@ -1,17 +1,18 @@
 <script setup lang="ts">
 /**
  * 注册页
- * 统一注册：手机号 + 邮箱必须同时提交，并需双重 OTP 验证码（手机验证码 + 邮箱验证码）
- * 注册成功后自动登录，跳转到商品市场
+ * 统一注册：手机号 + 邮箱必须同时提交，并需双重 OTP 验证码（手机验证码 + 邮箱验证码）。
+ * 组邀请码在注册接口中作为可选字段提交，由后端完成落组和默认组兜底。
  */
-import { ref, reactive, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { sendEmailCode, sendPhoneCode, register } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 
 // 统一注册表单
@@ -39,6 +40,10 @@ const sendingEmailCode = ref(false)
 
 // 表单 ref
 const formRef = ref<FormInstance>()
+
+onMounted(() => {
+  hydrateInviteCodeFromQuery()
+})
 
 // =================== 表单校验规则 ===================
 
@@ -95,6 +100,23 @@ const rules: FormRules = {
   emailCode: [{ validator: codeValidator('邮箱验证码'), trigger: 'blur' }],
   password: [{ validator: passwordValidator, trigger: 'blur' }],
   confirmPassword: [{ validator: confirmPasswordValidator, trigger: 'blur' }],
+}
+
+function firstQueryValue(value: unknown) {
+  if (Array.isArray(value)) return value[0]
+  return typeof value === 'string' ? value : ''
+}
+
+function hydrateInviteCodeFromQuery() {
+  // 邀请链接支持 /register?invite_code=xxx，同时兼容 inviteCode/code，便于运营侧生成短链接。
+  const inviteCode = firstQueryValue(route.query.invite_code)
+    || firstQueryValue(route.query.inviteCode)
+    || firstQueryValue(route.query.code)
+  if (!inviteCode) return
+  form.inviteCode = inviteCode.trim()
+  if (form.inviteCode) {
+    ElMessage.info('已从邀请链接填入邀请码')
+  }
 }
 
 // =================== 发送验证码 ===================
@@ -158,6 +180,7 @@ async function handleRegister() {
 
   submitting.value = true
   try {
+    const inviteCode = form.inviteCode.trim()
     const tokens = await register({
       username: form.username || undefined,
       phone: form.phone,
@@ -165,8 +188,8 @@ async function handleRegister() {
       password: form.password,
       phone_code: form.phoneCode,
       email_code: form.emailCode,
-      // 邀请码选填：用户填了才带上，留空则不传该字段
-      ...(form.inviteCode.trim() ? { invite_code: form.inviteCode.trim() } : {}),
+      // 邀请码选填：有效码会落入对应分组；无效/过期/已满由后端降级落入默认组，注册本身不失败。
+      ...(inviteCode ? { invite_code: inviteCode } : {}),
     })
     await authStore.applyLoginResponse(tokens)
     ElMessage.success('注册成功，欢迎使用墨灵！')
@@ -247,9 +270,13 @@ onUnmounted(() => {
             <el-form-item label="邀请码（选填）">
               <el-input
                 v-model="form.inviteCode"
-                placeholder="如有邀请码请填写，没有可留空"
+                clearable
+                placeholder="如有组邀请码请填写，没有可留空"
                 size="large"
               />
+              <p class="invite-hint">
+                有效邀请码会把账号加入对应用户分组；邀请码不可用时仍会完成注册，并由系统落入默认分组。
+              </p>
             </el-form-item>
             <div class="password-grid">
               <el-form-item label="设置密码" prop="password">
@@ -609,6 +636,13 @@ onUnmounted(() => {
 :deep(.el-input__wrapper) {
   min-height: 42px;
   border-radius: 9px;
+}
+
+.invite-hint {
+  margin: 8px 0 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 @media (max-width: 980px) {

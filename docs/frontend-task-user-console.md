@@ -2,7 +2,7 @@
 
 > **派发对象**：前端工程师乙
 > **仓库目录**：`web/user-console/`
-> **对接范围**：后端甲面向终端用户的接口 —— 注册/登录/找回密码、个人中心、实名提交、凭邀请码加入分组
+> **对接范围**：后端甲面向终端用户的接口 —— 注册/登录/找回密码、个人中心、实名提交、注册页组邀请码落组
 > **来源规划**：`docs/frontend-dev-plan-backend-a.md`（§4）
 > **接口字段 SSOT**：`docs/frontend-api-reference.md`；与之冲突时以 `server/internal/modules/*/route.go` 现行代码为准（见下方「⚠️ 现存代码需修正」）
 > **状态**：可直接开工；编码前请确认本单「待确认事项」。
@@ -33,7 +33,7 @@
 | **B2** | 注册/登录/找回密码 | 4d | 有页面骨架 |
 | **B3** | 个人中心 ★本单细化到签名级 | 4d | 有 ProfileView 骨架，换绑发码需改 D-96 |
 | **B4** | 实名认证 | 2d | 有 VerificationView，需改 D-90 |
-| **B5** | 凭邀请码加入分组 | 0.5d | 未开始 |
+| **B5** | 注册页组邀请功能 | 0.5d | 已并入注册页 |
 
 ---
 
@@ -56,8 +56,11 @@
 - [ ] **查我的认证（改 D-90）**：`GET /api/identity/verifications/latest`
 - [ ] 状态机 UI：依 `real_name_status` 展示 未认证/待审/通过/驳回（驳回显示 `reject_reason`）
 
-### B5 凭邀请码加入分组
-- [ ] 输入邀请码加入 `POST /api/user-groups/join`（仅登录）
+### B5 注册页组邀请功能
+- [x] 注册页提供组邀请码输入框，提交 `POST /api/auth/register` 时按 `invite_code` 可选字段传给后端。
+- [x] 支持邀请链接自动填入：`/register?invite_code=xxx`，并兼容 `inviteCode`、`code` 查询参数。
+- [x] 页面文案说明后端甲落组规则：有效邀请码进入对应分组；无效/过期/已满时注册仍成功并降级落入默认组。
+- [x] 不调用旧的登录后加入分组接口；当前 SSOT 以注册接口 `invite_code` 为准。
 
 ---
 
