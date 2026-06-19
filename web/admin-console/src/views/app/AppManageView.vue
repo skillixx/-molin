@@ -19,8 +19,8 @@ const appLoading = ref(false)
 const adapterLoading = ref(false)
 const apps = ref<AdminApp[]>([])
 const adapters = ref<AdminAppAdapter[]>([])
-const appFilter = reactive({ status: '', type: '' })
-const adapterFilter = reactive({ status: '' })
+const appFilter = reactive({ status: '', type: '', keyword: '' })
+const adapterFilter = reactive({ status: '', keyword: '' })
 const pagination = reactive<Pagination>({ page: 1, page_size: 20, total: 0 })
 const adapterPagination = reactive<Pagination>({ page: 1, page_size: 20, total: 0 })
 
@@ -60,6 +60,13 @@ onMounted(async () => {
 async function fetchApps() {
   appLoading.value = true
   try {
+    // 应用接口暂无关键词参数；输入关键词时仍只调用既有筛选参数，再在前端做跨页过滤。
+    if (normalizeKeyword(appFilter.keyword)) {
+      const filtered = filterApps(await fetchAllApps(), appFilter.keyword)
+      apps.value = paginateLocalItems(filtered, pagination)
+      pagination.total = filtered.length
+      return
+    }
     // 应用列表走分页接口，状态和类型为空时不传，避免影响后端默认筛选。
     const res = await listAdminApps({
       status: appFilter.status || undefined,
@@ -79,6 +86,13 @@ async function fetchApps() {
 async function fetchAdapters() {
   adapterLoading.value = true
   try {
+    // 适配器接口只支持状态筛选，关键词搜索在前端基于分页结果过滤。
+    if (normalizeKeyword(adapterFilter.keyword)) {
+      const filtered = filterAdapters(await fetchAllAdapters(), adapterFilter.keyword)
+      adapters.value = paginateLocalItems(filtered, adapterPagination)
+      adapterPagination.total = filtered.length
+      return
+    }
     // 适配器接口是分页结构，独立维护分页状态，避免超过 20 条时漏显。
     const res = await listAdminAppAdapters({
       status: adapterFilter.status || undefined,
@@ -94,9 +108,102 @@ async function fetchAdapters() {
   }
 }
 
+async function fetchAllApps() {
+  const items: AdminApp[] = []
+  let page = 1
+  let total = 0
+  do {
+    const res = await listAdminApps({
+      status: appFilter.status || undefined,
+      type: appFilter.type || undefined,
+      page,
+      page_size: 100,
+    })
+    items.push(...res.items)
+    total = res.total
+    page += 1
+    // 管理端分页上限是 100，按 total 停止可避免关键词搜索漏掉后续页数据。
+    if (res.items.length === 0) break
+  } while (items.length < total)
+  return items
+}
+
+async function fetchAllAdapters() {
+  const items: AdminAppAdapter[] = []
+  let page = 1
+  let total = 0
+  do {
+    const res = await listAdminAppAdapters({
+      status: adapterFilter.status || undefined,
+      page,
+      page_size: 100,
+    })
+    items.push(...res.items)
+    total = res.total
+    page += 1
+    // 适配器同样按后端 total 控制跨页拉取，避免分页搜索只查当前页。
+    if (res.items.length === 0) break
+  } while (items.length < total)
+  return items
+}
+
+function normalizeKeyword(value: string) {
+  return value.trim().toLowerCase()
+}
+
+function matchText(keyword: string, values: Array<string | number | null | undefined>) {
+  return values.some(value => String(value ?? '').toLowerCase().includes(keyword))
+}
+
+function filterApps(list: AdminApp[], keywordValue: string) {
+  const keyword = normalizeKeyword(keywordValue)
+  if (!keyword) return list
+  return list.filter(app => matchText(keyword, [
+    app.id,
+    app.code,
+    app.name,
+    app.type,
+    app.description,
+    app.callback_url,
+    app.adapter_config_json,
+    app.status,
+    appStatusLabel(app.status),
+  ]))
+}
+
+function filterAdapters(list: AdminAppAdapter[], keywordValue: string) {
+  const keyword = normalizeKeyword(keywordValue)
+  if (!keyword) return list
+  return list.filter(adapter => matchText(keyword, [
+    adapter.id,
+    adapter.app_code,
+    adapter.app_name,
+    adapter.app_type,
+    adapter.adapter_type,
+    adapter.service_name,
+    adapter.callback_url,
+    adapter.supported_actions_json,
+    adapter.usage_event_types_json,
+    adapter.status,
+    appStatusLabel(adapter.status),
+  ]))
+}
+
+function paginateLocalItems<T>(list: T[], paginationState: Pagination) {
+  const start = (paginationState.page - 1) * paginationState.page_size
+  return list.slice(start, start + paginationState.page_size)
+}
+
 function handleAppSearch() {
   pagination.page = 1
   fetchApps()
+}
+
+function resetAppSearch() {
+  appFilter.status = ''
+  appFilter.type = ''
+  appFilter.keyword = ''
+  handleAppSearch()
 }
 
 function handleAppPageSizeChange(pageSize: number) {
@@ -108,6 +215,12 @@ function handleAppPageSizeChange(pageSize: number) {
 function handleAdapterSearch() {
   adapterPagination.page = 1
   fetchAdapters()
+}
+
+function resetAdapterSearch() {
+  adapterFilter.status = ''
+  adapterFilter.keyword = ''
+  handleAdapterSearch()
 }
 
 function handleAdapterPageSizeChange(pageSize: number) {
@@ -297,6 +410,14 @@ function statusTagType(status: string) {
     <el-tabs v-model="activeTab" class="admin-tabs">
       <el-tab-pane label="应用列表" name="apps">
         <div class="toolbar">
+          <el-input
+            v-model="appFilter.keyword"
+            clearable
+            class="keyword-input"
+            placeholder="搜索应用代码、名称、类型或说明"
+            @keyup.enter="handleAppSearch"
+            @clear="handleAppSearch"
+          />
           <el-select v-model="appFilter.status" clearable placeholder="应用状态">
             <el-option label="草稿" value="draft" />
             <el-option label="启用" value="active" />
@@ -305,7 +426,7 @@ function statusTagType(status: string) {
           </el-select>
           <el-input v-model="appFilter.type" clearable placeholder="应用类型" />
           <el-button type="primary" :icon="Search" :loading="appLoading" @click="handleAppSearch">查询</el-button>
-          <el-button @click="appFilter.status = ''; appFilter.type = ''; handleAppSearch()">重置</el-button>
+          <el-button @click="resetAppSearch">重置</el-button>
           <el-button type="primary" :icon="Plus" @click="openCreateApp">新建应用</el-button>
         </div>
         <el-table :data="apps" v-loading="appLoading" border>
@@ -338,12 +459,20 @@ function statusTagType(status: string) {
 
       <el-tab-pane label="适配器" name="adapters">
         <div class="toolbar">
+          <el-input
+            v-model="adapterFilter.keyword"
+            clearable
+            class="keyword-input"
+            placeholder="搜索应用代码、名称、适配器类型或服务名"
+            @keyup.enter="handleAdapterSearch"
+            @clear="handleAdapterSearch"
+          />
           <el-select v-model="adapterFilter.status" clearable placeholder="适配器状态">
             <el-option label="启用" value="active" />
             <el-option label="停用" value="inactive" />
           </el-select>
           <el-button type="primary" :icon="Search" :loading="adapterLoading" @click="handleAdapterSearch">查询</el-button>
-          <el-button @click="adapterFilter.status = ''; handleAdapterSearch()">重置</el-button>
+          <el-button @click="resetAdapterSearch">重置</el-button>
           <el-button type="primary" :icon="Plus" @click="openCreateAdapter">新建适配器</el-button>
           <el-button :icon="Refresh" @click="fetchAdapters">刷新</el-button>
         </div>
@@ -420,5 +549,6 @@ function statusTagType(status: string) {
 .page-title-text { margin: 0 0 6px; font-size: 18px; }
 .page-subtitle { margin: 0; color: var(--mc-text-muted); }
 .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.keyword-input { width: min(360px, 100%); }
 .pagination-row { display: flex; justify-content: flex-end; margin-top: 14px; }
 </style>
