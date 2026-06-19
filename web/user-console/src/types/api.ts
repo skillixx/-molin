@@ -15,3 +15,8 @@ export interface PageResponse<T = unknown> {
 }
 
 export type PageResult<T = unknown> = PageResponse<T>
+
+// 后端丙用户端部分接口是不分页列表，只返回 items，不带 page/page_size/total。
+export interface ItemsResult<T = unknown> {
+  items: T[]
+}
