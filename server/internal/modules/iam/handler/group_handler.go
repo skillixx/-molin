@@ -425,6 +425,87 @@ func (h *GroupHandler) RemoveGroupPermission(w http.ResponseWriter, r *http.Requ
 	response.JSON(w, http.StatusOK, nil)
 }
 
+// ListGroupRoles GET /api/admin/user-groups/{id}/roles
+func (h *GroupHandler) ListGroupRoles(w http.ResponseWriter, r *http.Request) {
+	groupID, err := pathUint64(r, "id")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "无效分组 ID")
+		return
+	}
+	grs, err := h.groupSvc.ListGroupRoles(r.Context(), groupID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
+		return
+	}
+	list := make([]dto.GroupRoleResp, len(grs))
+	for i, gr := range grs {
+		list[i] = dto.GroupRoleResp{
+			ID:        gr.ID,
+			GroupID:   gr.GroupID,
+			RoleID:    gr.RoleID,
+			CreatedAt: gr.CreatedAt.Format(isoFmt),
+		}
+	}
+	response.JSON(w, http.StatusOK, list)
+}
+
+// AddGroupRole POST /api/admin/user-groups/{id}/roles  body: {"role_id": 5}
+func (h *GroupHandler) AddGroupRole(w http.ResponseWriter, r *http.Request) {
+	groupID, err := pathUint64(r, "id")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "无效分组 ID")
+		return
+	}
+	var req dto.AddGroupRoleReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	if req.RoleID == 0 {
+		response.Error(w, http.StatusBadRequest, 40000, "role_id 不能为空")
+		return
+	}
+	if err := h.groupSvc.AddGroupRole(r.Context(), groupID, req.RoleID); err != nil {
+		switch {
+		case errors.Is(err, repository.ErrGroupRoleExists):
+			response.Error(w, http.StatusConflict, 40900, err.Error())
+		case errors.Is(err, repository.ErrGroupNotFound):
+			response.Error(w, http.StatusNotFound, 40400, "分组不存在")
+		case errors.Is(err, repository.ErrRoleNotFound):
+			response.Error(w, http.StatusBadRequest, 40000, "角色不存在")
+		case errors.Is(err, service.ErrCannotBindSystemRole):
+			response.Error(w, http.StatusBadRequest, 40000, err.Error())
+		default:
+			response.Error(w, http.StatusInternalServerError, 50000, "绑定失败")
+		}
+		return
+	}
+	response.JSON(w, http.StatusCreated, nil)
+}
+
+// RemoveGroupRole DELETE /api/admin/user-groups/{id}/roles/{role_id}
+func (h *GroupHandler) RemoveGroupRole(w http.ResponseWriter, r *http.Request) {
+	groupID, err := pathUint64(r, "id")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "无效分组 ID")
+		return
+	}
+	roleID, err := pathUint64(r, "role_id")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "无效角色 ID")
+		return
+	}
+	if err := h.groupSvc.RemoveGroupRole(r.Context(), groupID, roleID); err != nil {
+		if errors.Is(err, repository.ErrGroupRoleNotBound) {
+			response.Error(w, http.StatusNotFound, 40400, "该角色未绑定到此分组")
+			return
+		}
+		response.Error(w, http.StatusInternalServerError, 50000, "解绑失败")
+		return
+	}
+	response.JSON(w, http.StatusOK, nil)
+}
+
 // ——— 邀请码 ———
 
 // ListInviteCodes GET /api/admin/user-groups/{id}/invite-codes

@@ -38,6 +38,16 @@ type GroupPermission struct {
 	CreatedAt      time.Time
 }
 
+// GroupRole 组绑定的全局角色（多对多）。组员继承所在组绑定的角色。
+// 用途：商品访问/定价授权（GetUserRoleIDs 合并组角色）。
+// A 版约束：组角色只参与商品访问，不进入权限码判定（CheckPermission 不读组角色）。
+type GroupRole struct {
+	ID        uint64    `gorm:"primaryKey;autoIncrement"`
+	GroupID   uint64    `gorm:"not null;uniqueIndex:uk_group_roles"`
+	RoleID    uint64    `gorm:"not null;uniqueIndex:uk_group_roles;index:idx_group_roles_role_id"`
+	CreatedAt time.Time
+}
+
 // GroupInviteCode 组邀请码/注册渠道，注册时按码落到对应组并赋默认组内角色。
 // MaxUses: 0 表示不限次数；Status: active / disabled
 type GroupInviteCode struct {
