@@ -255,6 +255,42 @@ func (s *GroupService) JoinByInviteCode(ctx context.Context, userID uint64, code
 	return ic.GroupID, role, nil
 }
 
+// ——— 注册落组 ———
+
+// AssignOnRegister 注册时按策略落组，由 auth 模块在用户创建成功后调用。
+//   - 有邀请码且有效 → 按邀请码落对应组并赋默认组内角色（复用 JoinByInviteCode）；
+//   - 有邀请码但无效/过期/已满（方案 A）→ 降级为落默认兜底组，不阻断注册；
+//   - 无邀请码 → 落默认兜底组；
+//   - 未配置默认组 → 跳过（返回 nil），保证注册流程不因落组失败被阻断。
+func (s *GroupService) AssignOnRegister(ctx context.Context, userID uint64, inviteCode string) error {
+	if inviteCode != "" {
+		_, _, err := s.JoinByInviteCode(ctx, userID, inviteCode)
+		switch {
+		case err == nil:
+			return nil
+		case errors.Is(err, repository.ErrInviteCodeNotFound), errors.Is(err, repository.ErrInviteCodeFull):
+			// 方案 A：邀请码无效/过期/已满降级为落默认组，继续往下走
+		default:
+			// 其他错误（如 DB 异常、用户不存在）属真实故障，向上抛出
+			return err
+		}
+	}
+	return s.joinDefaultGroup(ctx, userID)
+}
+
+// joinDefaultGroup 将用户落到默认兜底组；未配置默认组时跳过（不报错）。
+func (s *GroupService) joinDefaultGroup(ctx context.Context, userID uint64) error {
+	g, err := s.repo.FindDefaultGroup(ctx)
+	if errors.Is(err, repository.ErrGroupNotFound) {
+		return nil // 未配置默认组，跳过落组
+	}
+	if err != nil {
+		return err
+	}
+	// 复用 AddMember：含用户/分组存在性校验与缓存失效；已在组时返回 ErrMemberAlreadyExists（注册场景不会发生）
+	return s.AddMember(ctx, g.ID, userID, "member")
+}
+
 // ——— 内部工具 ———
 
 // invalidateGroupMembersCache 清除某分组所有成员的权限缓存（组权限变动时批量失效）。

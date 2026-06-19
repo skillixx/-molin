@@ -273,6 +273,8 @@ func NewApp() (*App, error) {
 	authService.SetRolesFetcher(iamService)
 	// D-86：注入 PermissionOverridesFetcher，用于 GetUser 附带 permission_overrides 字段
 	authService.SetPermissionOverridesFetcher(iamService)
+	// 注入 GroupJoiner，用于注册时按邀请码/默认组落组
+	authService.SetGroupJoiner(groupService)
 
 	// ——— Identity 模块 ———
 	// D-04：注入 auditSvc，用于审核操作写全局审计日志
