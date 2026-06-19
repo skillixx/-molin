@@ -1,5 +1,5 @@
 import http from './http'
-import type { ItemsResult, PageResult } from '@/types/api'
+import type { PageResult } from '@/types/api'
 import type { AdminApp, AdminAppAdapter } from '@/types/app-admin'
 
 export function listAdminApps(params: {
@@ -37,9 +37,9 @@ export function updateAdminApp(id: number, data: Partial<{
   return http.patch<unknown, { message: string }>(`/admin/apps/${id}`, data)
 }
 
-export function listAdminAppAdapters() {
-  // 应用适配器当前是不分页列表，页面直接渲染 items。
-  return http.get<unknown, ItemsResult<AdminAppAdapter>>('/admin/app-adapters')
+export function listAdminAppAdapters(params?: { page?: number; page_size?: number; status?: string }) {
+  // 应用适配器是分页接口，超过一页时必须读取 total 并渲染分页控件。
+  return http.get<unknown, PageResult<AdminAppAdapter>>('/admin/app-adapters', { params })
 }
 
 export function createAdminAppAdapter(data: {
@@ -47,7 +47,7 @@ export function createAdminAppAdapter(data: {
   app_name: string
   app_type: string
   adapter_type: string
-  service_name: string
+  service_name?: string | null
   callback_url?: string | null
   supported_actions_json?: string | null
   usage_event_types_json?: string | null
@@ -61,7 +61,7 @@ export function updateAdminAppAdapter(id: number, data: Partial<{
   app_name: string
   app_type: string
   adapter_type: string
-  service_name: string
+  service_name: string | null
   callback_url: string | null
   supported_actions_json: string | null
   usage_event_types_json: string | null

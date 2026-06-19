@@ -20,7 +20,9 @@ const adapterLoading = ref(false)
 const apps = ref<AdminApp[]>([])
 const adapters = ref<AdminAppAdapter[]>([])
 const appFilter = reactive({ status: '', type: '' })
+const adapterFilter = reactive({ status: '' })
 const pagination = reactive<Pagination>({ page: 1, page_size: 20, total: 0 })
+const adapterPagination = reactive<Pagination>({ page: 1, page_size: 20, total: 0 })
 
 const appDialogVisible = ref(false)
 const editingApp = ref<AdminApp | null>(null)
@@ -77,9 +79,16 @@ async function fetchApps() {
 async function fetchAdapters() {
   adapterLoading.value = true
   try {
-    // 适配器接口当前不分页，只返回 items；这里不复用应用列表的分页状态。
-    const res = await listAdminAppAdapters()
+    // 适配器接口是分页结构，独立维护分页状态，避免超过 20 条时漏显。
+    const res = await listAdminAppAdapters({
+      status: adapterFilter.status || undefined,
+      page: adapterPagination.page,
+      page_size: adapterPagination.page_size,
+    })
     adapters.value = res.items
+    adapterPagination.page = res.page
+    adapterPagination.page_size = res.page_size
+    adapterPagination.total = res.total
   } finally {
     adapterLoading.value = false
   }
@@ -88,6 +97,11 @@ async function fetchAdapters() {
 function handleAppSearch() {
   pagination.page = 1
   fetchApps()
+}
+
+function handleAdapterSearch() {
+  adapterPagination.page = 1
+  fetchAdapters()
 }
 
 function normalizeJson(value: string, fieldName: string) {
@@ -190,7 +204,7 @@ function openEditAdapter(adapter: AdminAppAdapter) {
   adapterForm.app_name = adapter.app_name
   adapterForm.app_type = adapter.app_type
   adapterForm.adapter_type = adapter.adapter_type
-  adapterForm.service_name = adapter.service_name
+  adapterForm.service_name = adapter.service_name || ''
   adapterForm.callback_url = adapter.callback_url || ''
   adapterForm.supported_actions_json = adapter.supported_actions_json || ''
   adapterForm.usage_event_types_json = adapter.usage_event_types_json || ''
@@ -199,7 +213,7 @@ function openEditAdapter(adapter: AdminAppAdapter) {
 }
 
 async function saveAdapter() {
-  if (!adapterForm.app_code || !adapterForm.app_name || !adapterForm.app_type || !adapterForm.adapter_type || !adapterForm.service_name) {
+  if (!adapterForm.app_code || !adapterForm.app_name || !adapterForm.app_type || !adapterForm.adapter_type) {
     ElMessage.warning('请填写适配器必填项')
     return
   }
@@ -214,7 +228,7 @@ async function saveAdapter() {
         app_name: adapterForm.app_name,
         app_type: adapterForm.app_type,
         adapter_type: adapterForm.adapter_type,
-        service_name: adapterForm.service_name,
+        service_name: adapterForm.service_name || null,
         callback_url: adapterForm.callback_url || null,
         supported_actions_json: actions,
         usage_event_types_json: events,
@@ -228,7 +242,7 @@ async function saveAdapter() {
         app_name: adapterForm.app_name,
         app_type: adapterForm.app_type,
         adapter_type: adapterForm.adapter_type,
-        service_name: adapterForm.service_name,
+        service_name: adapterForm.service_name || null,
         callback_url: adapterForm.callback_url || null,
         supported_actions_json: actions,
         usage_event_types_json: events,
@@ -303,6 +317,12 @@ function statusTagType(status: string) {
 
       <el-tab-pane label="适配器" name="adapters">
         <div class="toolbar">
+          <el-select v-model="adapterFilter.status" clearable placeholder="适配器状态">
+            <el-option label="启用" value="active" />
+            <el-option label="停用" value="inactive" />
+          </el-select>
+          <el-button type="primary" :icon="Search" :loading="adapterLoading" @click="handleAdapterSearch">查询</el-button>
+          <el-button @click="adapterFilter.status = ''; handleAdapterSearch()">重置</el-button>
           <el-button type="primary" :icon="Plus" @click="openCreateAdapter">新建适配器</el-button>
           <el-button :icon="Refresh" @click="fetchAdapters">刷新</el-button>
         </div>
@@ -311,7 +331,9 @@ function statusTagType(status: string) {
           <el-table-column prop="app_code" label="应用代码" min-width="130" />
           <el-table-column prop="app_name" label="应用名称" min-width="150" />
           <el-table-column prop="adapter_type" label="适配器类型" min-width="130" />
-          <el-table-column prop="service_name" label="服务名" min-width="150" />
+          <el-table-column label="服务名" min-width="150">
+            <template #default="{ row }">{{ row.service_name || '--' }}</template>
+          </el-table-column>
           <el-table-column prop="supported_actions_json" label="支持动作 JSON" min-width="220" show-overflow-tooltip />
           <el-table-column label="状态" width="100">
             <template #default="{ row }"><el-tag :type="statusTagType(row.status)">{{ appStatusLabel(row.status) }}</el-tag></template>
@@ -320,6 +342,16 @@ function statusTagType(status: string) {
             <template #default="{ row }"><el-button text :icon="Edit" @click="openEditAdapter(row)">编辑</el-button></template>
           </el-table-column>
         </el-table>
+        <div class="pagination-row">
+          <el-pagination
+            background
+            layout="prev, pager, next, total"
+            :current-page="adapterPagination.page"
+            :page-size="adapterPagination.page_size"
+            :total="adapterPagination.total"
+            @current-change="(page: number) => { adapterPagination.page = page; fetchAdapters() }"
+          />
+        </div>
       </el-tab-pane>
     </el-tabs>
 
@@ -347,7 +379,7 @@ function statusTagType(status: string) {
         <el-form-item label="应用名称"><el-input v-model="adapterForm.app_name" /></el-form-item>
         <el-form-item label="应用类型"><el-input v-model="adapterForm.app_type" /></el-form-item>
         <el-form-item label="适配器类型"><el-input v-model="adapterForm.adapter_type" /></el-form-item>
-        <el-form-item label="服务名"><el-input v-model="adapterForm.service_name" /></el-form-item>
+        <el-form-item label="服务名"><el-input v-model="adapterForm.service_name" placeholder="可选，留空时按 null 提交" /></el-form-item>
         <el-form-item label="回调地址"><el-input v-model="adapterForm.callback_url" /></el-form-item>
         <el-form-item label="支持动作 JSON"><el-input v-model="adapterForm.supported_actions_json" type="textarea" :rows="4" placeholder='["create","delete"]' /></el-form-item>
         <el-form-item label="消费事件 JSON"><el-input v-model="adapterForm.usage_event_types_json" type="textarea" :rows="4" placeholder='["api_call"]' /></el-form-item>

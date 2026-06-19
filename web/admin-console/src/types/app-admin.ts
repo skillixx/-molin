@@ -21,7 +21,7 @@ export interface AdminAppAdapter {
   app_name: string
   app_type: string
   adapter_type: string
-  service_name: string
+  service_name: string | null
   callback_url: string | null
   supported_actions_json: string | null
   usage_event_types_json: string | null

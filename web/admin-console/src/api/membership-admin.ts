@@ -63,7 +63,7 @@ export function grantUserMembership(data: {
   duration_days: number | null
 }) {
   // duration_days 为 null 表示永久会员，前端不要转换成 0 或空字符串。
-  return http.post<unknown, AdminUserMembership>('/admin/user-memberships', data)
+  return http.post<unknown, { message: string }>('/admin/user-memberships', data)
 }
 
 export function updateUserMembership(id: number, data: { action: 'cancel' } | { expires_at: string }) {
