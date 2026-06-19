@@ -621,7 +621,7 @@ REFRESH_TOKEN_EXPIRE_DAYS    -- Refresh Token 有效天数，建议 30
 
 ID_CARD_HMAC_SECRET          -- 身份证号 HMAC 密钥
 
-TOKEN_PROVIDER_KEY            -- Token 供应商 API Key AES-256-GCM 加密密钥（第三阶段使用）
+TOKEN_PROVIDER_KEY            -- Token 供应商 API Key AES-256-GCM 加密密钥（第二阶段使用）
 WECHAT_PAY_API_V3_KEY        -- 微信支付 APIv3 密钥
 ALIPAY_PUBLIC_KEY             -- 支付宝公钥
 ```

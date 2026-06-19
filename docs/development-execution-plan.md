@@ -17,15 +17,15 @@
   -> 会员制（membership）
   -> 公告和帮助文档（content）
 
-第二阶段（Week 5–7）：GPU 租赁
+第二阶段（Week 5–9）：Token 网关 + Agent / Skills
+  -> Token 上游聚合网关（token_gateway）
+  -> Agent 定制市场（agent）
+  -> Skills 技能市场（skill）
+
+第三阶段（Week 10–12）：GPU 服务器出售
   -> GPU 设备管理与状态机（resource）
   -> 租赁订单和按量计费
   -> 到期释放任务
-
-第三阶段（Week 8–12）：Agent / Skills / Token 网关
-  -> Agent 定制市场（agent）
-  -> Skills 技能市场（skill）
-  -> Token 上游聚合网关（token_gateway）
 ```
 
 最先开发的不是某个应用，而是这四个底座：
@@ -324,19 +324,20 @@
 - 完成并测试第一个完整应用售卖闭环。
 - 第一阶段验收。
 
-### Week 5–7：GPU 租赁（第二阶段）
+### Week 5–9：Token 网关 + Agent / Skills（第二阶段）
+
+- Token 供应商管理（api_key AES-256-GCM 加密）、模型路由（weight + priority）、断路器（熔断切换备用路由）、流式调用（SSE，不缓冲 response body）、用量统计（token_gateway）。
+- Token 接入统一商品中心（product_type=token）、按 input/output tokens 计费、token_quota 额度资产。
+- Agent 模板管理、用户 Agent 创建和定制订单（agent）。
+- Skills 管理、版本、购买、安装、Agent 绑定（skill）。
+
+### Week 10–12：GPU 服务器出售（第三阶段）
 
 - GPU 设备管理和状态机（available → reserved → deploying → running → releasing → released）。
 - 租赁订单（按量计费接入 finance_consumer）。
 - 到期释放定时任务。
 - 用户端租赁页面和我的实例。
 - 管理后台设备和租赁管理。
-
-### Week 8–12：Agent / Skills / Token 网关（第三阶段）
-
-- Agent 模板管理、用户 Agent 创建和定制订单（agent）。
-- Skills 管理、版本、购买、安装、Agent 绑定（skill）。
-- Token 供应商管理（api_key AES-256-GCM 加密）、模型路由（weight + priority）、断路器（熔断切换备用路由）、流式调用（SSE，不缓冲 response body）、用量统计（token_gateway）。
 
 ## 10. AI 开发使用方式
 

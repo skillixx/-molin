@@ -94,13 +94,13 @@
 > **注意：不单独维护 `application_plans`、`application_prices`、`application_role_access`**。  
 > 应用的套餐、价格和角色权限统一走 `product_plans`、`product_prices`、`product_role_access`，通过 `products.business_ref_id = applications.id` 关联。
 
-### 3.4 GPU（第二阶段）
+### 3.4 GPU（第三阶段）
 
 - `gpu_devices`
 - `gpu_rentals`
 - `gpu_device_events`
 
-### 3.5 Agent、Skills、Token 网关（第三阶段）
+### 3.5 Token 网关、Agent、Skills（第二阶段）
 
 - `agent_templates`
 - `user_agents`
