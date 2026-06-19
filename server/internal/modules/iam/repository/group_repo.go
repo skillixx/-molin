@@ -25,6 +25,10 @@ var (
 	ErrMemberNotFound = errors.New("用户不在该分组中")
 	// ErrGroupPermissionExists 组权限已存在。
 	ErrGroupPermissionExists = errors.New("该权限码已添加到此分组")
+	// ErrGroupRoleExists 组角色绑定已存在。
+	ErrGroupRoleExists = errors.New("该角色已绑定到此分组")
+	// ErrGroupRoleNotBound 该角色未绑定到此分组。
+	ErrGroupRoleNotBound = errors.New("该角色未绑定到此分组")
 	// ErrPermissionNotFound 权限记录不存在。
 	ErrPermissionNotFound = errors.New("权限记录不存在")
 	// ErrInviteCodeExists 邀请码已被使用。
@@ -361,6 +365,62 @@ func (r *GroupRepository) GetPermissionCodesByGroups(ctx context.Context, groupI
 		}
 	}
 	return codes, nil
+}
+
+// ——— 组角色绑定 ———
+
+// AddRole 给分组绑定一个全局角色。已存在时返回 ErrGroupRoleExists。
+func (r *GroupRepository) AddRole(ctx context.Context, gr *model.GroupRole) error {
+	err := r.db.WithContext(ctx).Create(gr).Error
+	if err != nil && isConstraintError(err) {
+		return ErrGroupRoleExists
+	}
+	return err
+}
+
+// RemoveRole 解除分组的角色绑定。未绑定时返回 ErrMemberNotFound 语义（rowsAffected==0）。
+func (r *GroupRepository) RemoveRole(ctx context.Context, groupID, roleID uint64) error {
+	res := r.db.WithContext(ctx).
+		Where("group_id = ? AND role_id = ?", groupID, roleID).
+		Delete(&model.GroupRole{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrGroupRoleNotBound
+	}
+	return nil
+}
+
+// ListRoles 列出分组绑定的所有角色绑定记录。
+func (r *GroupRepository) ListRoles(ctx context.Context, groupID uint64) ([]model.GroupRole, error) {
+	var grs []model.GroupRole
+	err := r.db.WithContext(ctx).Where("group_id = ?", groupID).Find(&grs).Error
+	return grs, err
+}
+
+// GetRoleIDsByGroups 批量获取多个分组绑定的角色 ID（去重），供 GetUserRoleIDs 合并组角色。
+func (r *GroupRepository) GetRoleIDsByGroups(ctx context.Context, groupIDs []uint64) ([]uint64, error) {
+	if len(groupIDs) == 0 {
+		return nil, nil
+	}
+	var roleIDs []uint64
+	if err := r.db.WithContext(ctx).Model(&model.GroupRole{}).
+		Where("group_id IN ?", groupIDs).
+		Distinct().Pluck("role_id", &roleIDs).Error; err != nil {
+		return nil, err
+	}
+	return roleIDs, nil
+}
+
+// ExistsByRoleID 判断某角色是否被任意分组绑定（删除角色前的占用校验）。
+func (r *GroupRepository) ExistsByRoleID(ctx context.Context, roleID uint64) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&model.GroupRole{}).
+		Where("role_id = ?", roleID).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 // ——— 邀请码 ———

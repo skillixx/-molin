@@ -36,6 +36,11 @@ type AddGroupPermissionReq struct {
 	PermissionCode string `json:"permission_code"`
 }
 
+// AddGroupRoleReq 给分组绑定全局角色请求。
+type AddGroupRoleReq struct {
+	RoleID uint64 `json:"role_id"`
+}
+
 // CreateInviteCodeReq 生成邀请码请求。
 // Code 为空时自动生成 8 字符随机码。
 type CreateInviteCodeReq struct {
@@ -73,6 +78,14 @@ type GroupPermissionResp struct {
 	GroupID        uint64 `json:"group_id"`
 	PermissionCode string `json:"permission_code"`
 	CreatedAt      string `json:"created_at"`
+}
+
+// GroupRoleResp 分组绑定的全局角色。
+type GroupRoleResp struct {
+	ID        uint64 `json:"id"`
+	GroupID   uint64 `json:"group_id"`
+	RoleID    uint64 `json:"role_id"`
+	CreatedAt string `json:"created_at"`
 }
 
 // InviteCodeResp 邀请码响应 DTO。

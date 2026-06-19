@@ -23,6 +23,9 @@ var ErrPermissionNotFound = gorm.ErrRecordNotFound
 // ErrRoleHasUsers 角色下仍有用户，禁止删除。
 var ErrRoleHasUsers = fmt.Errorf("角色下仍有用户，无法删除")
 
+// ErrRoleInUseByGroup 角色仍被分组绑定，禁止删除（须先解绑）。
+var ErrRoleInUseByGroup = fmt.Errorf("角色已绑定到分组，请先解绑后再删除")
+
 // ErrOverrideNotFound 权限覆盖记录不存在或越权访问（id/userID 不匹配）。
 var ErrOverrideNotFound = fmt.Errorf("权限覆盖记录不存在")
 
@@ -88,9 +91,42 @@ func (s *IAMService) CheckPermission(ctx context.Context, userID uint64, permCod
 	return evalPerms(codes, permCode)
 }
 
-// GetUserRoleIDs 返回用户的角色 ID 列表，供 product 等模块使用。
+// GetUserRoleIDs 返回用户的全部生效角色 ID：用户自身角色 ∪ 所在组绑定的角色，去重。
+// 供 product 等模块判定商品访问与定价。组角色通过 group_roles 绑定、组成员继承，
+// 使「注册落组 → 组绑角色 → 商品按角色开放」链路自动生效，无需逐人配置角色。
+// 该方法为无缓存直查，组角色绑定/解绑即时生效。
 func (s *IAMService) GetUserRoleIDs(ctx context.Context, userID uint64) ([]uint64, error) {
-	return s.userRoleRepo.GetRoleIDs(ctx, userID)
+	seen := make(map[uint64]struct{})
+	ids := make([]uint64, 0)
+
+	// 1. 用户自身角色（user_roles）
+	own, err := s.userRoleRepo.GetRoleIDs(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range own {
+		if _, ok := seen[id]; !ok {
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+
+	// 2. 组绑定角色（group_roles）：用户所在所有组绑定的角色
+	members, _ := s.groupRepo.GetUserGroups(ctx, userID)
+	if len(members) > 0 {
+		groupIDs := make([]uint64, len(members))
+		for i, m := range members {
+			groupIDs[i] = m.GroupID
+		}
+		groupRoleIDs, _ := s.groupRepo.GetRoleIDsByGroups(ctx, groupIDs)
+		for _, id := range groupRoleIDs {
+			if _, ok := seen[id]; !ok {
+				seen[id] = struct{}{}
+				ids = append(ids, id)
+			}
+		}
+	}
+	return ids, nil
 }
 
 // AssignRole 为用户分配角色并写审计日志。
@@ -157,6 +193,12 @@ func (s *IAMService) DeleteRole(ctx context.Context, id uint64) error {
 	}
 	if count > 0 {
 		return ErrRoleHasUsers
+	}
+	// 检查是否被分组绑定（组角色），被绑定时禁止删除，须先解绑
+	if bound, err := s.groupRepo.ExistsByRoleID(ctx, id); err != nil {
+		return err
+	} else if bound {
+		return ErrRoleInUseByGroup
 	}
 	// 事务内清除 role_permissions + 删除 roles
 	return s.roleRepo.DeleteWithCleanup(ctx, id)

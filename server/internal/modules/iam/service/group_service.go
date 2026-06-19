@@ -10,16 +10,23 @@ import (
 	"molin/server/internal/modules/iam/repository"
 )
 
-// GroupService 分组管理业务逻辑（Phase 1：超管管理分组/成员/权限/邀请码）。
+// ErrCannotBindSystemRole 禁止把系统/特权角色（如 admin）绑定到分组。
+var ErrCannotBindSystemRole = errors.New("不允许将系统角色绑定到分组")
+
+// systemRoleCodes 系统/特权角色黑名单，禁止绑定到分组（避免经组角色扩大授权面）。
+var systemRoleCodes = map[string]bool{"admin": true}
+
+// GroupService 分组管理业务逻辑（Phase 1：超管管理分组/成员/权限/邀请码/角色）。
 type GroupService struct {
 	repo       *repository.GroupRepository
 	permRepo   *repository.PermissionRepository // D-62：校验 permission_code 存在性
+	roleRepo   *repository.RoleRepository       // 校验 role 存在性 + 系统角色护栏
 	db         *gorm.DB
 	cacheSvc   *CacheService
 }
 
-func NewGroupService(repo *repository.GroupRepository, permRepo *repository.PermissionRepository, db *gorm.DB, cacheSvc *CacheService) *GroupService {
-	return &GroupService{repo: repo, permRepo: permRepo, db: db, cacheSvc: cacheSvc}
+func NewGroupService(repo *repository.GroupRepository, permRepo *repository.PermissionRepository, roleRepo *repository.RoleRepository, db *gorm.DB, cacheSvc *CacheService) *GroupService {
+	return &GroupService{repo: repo, permRepo: permRepo, roleRepo: roleRepo, db: db, cacheSvc: cacheSvc}
 }
 
 // ——— 分组 CRUD ———
@@ -161,6 +168,39 @@ func (s *GroupService) RemoveGroupPermission(ctx context.Context, groupID uint64
 
 func (s *GroupService) ListGroupPermissions(ctx context.Context, groupID uint64) ([]model.GroupPermission, error) {
 	return s.repo.ListPermissions(ctx, groupID)
+}
+
+// ——— 组角色 ———
+
+// AddGroupRole 给分组绑定一个全局角色。组员经 GetUserRoleIDs 继承该角色（用于商品访问/定价）。
+// 校验：分组存在、角色存在、非系统角色（黑名单护栏）。
+// A 版：组角色不进权限码判定，故无需失效组员权限缓存。
+func (s *GroupService) AddGroupRole(ctx context.Context, groupID, roleID uint64) error {
+	// 校验分组存在
+	if exists, err := s.repo.ExistsGroupByID(ctx, groupID); err != nil {
+		return err
+	} else if !exists {
+		return repository.ErrGroupNotFound
+	}
+	// 校验角色存在
+	role, err := s.roleRepo.FindByID(ctx, roleID)
+	if err != nil {
+		return repository.ErrRoleNotFound
+	}
+	// 系统角色护栏：禁止把 admin 等特权角色绑到组
+	if systemRoleCodes[role.Code] {
+		return ErrCannotBindSystemRole
+	}
+	return s.repo.AddRole(ctx, &model.GroupRole{GroupID: groupID, RoleID: roleID})
+}
+
+// RemoveGroupRole 解除分组的角色绑定。
+func (s *GroupService) RemoveGroupRole(ctx context.Context, groupID, roleID uint64) error {
+	return s.repo.RemoveRole(ctx, groupID, roleID)
+}
+
+func (s *GroupService) ListGroupRoles(ctx context.Context, groupID uint64) ([]model.GroupRole, error) {
+	return s.repo.ListRoles(ctx, groupID)
 }
 
 // ——— 邀请码 ———

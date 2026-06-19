@@ -1075,6 +1075,38 @@ POST 返回 data：`null`，HTTP 201。
 
 DELETE `:code` 为权限码字符串本身（如 `app:use:xxx`），返回 data：`null`。
 
+#### 3.17.4a 组角色（绑定全局角色）
+
+> 组员经 `GetUserRoleIDs` 继承所在组绑定的全局角色，用于商品访问/定价（`product_role_access` / `product_prices` 的角色判定）。设计见 `docs/backend-a-group-roles-design.md`。
+> **A 版边界**：组角色只影响商品访问/定价，**不进入权限码判定**（绑角色 ≠ 获得该角色的管理权限码）。绑定/解绑即时生效（无缓存延迟）。
+
+```text
+GET    /api/admin/user-groups/:id/roles
+POST   /api/admin/user-groups/:id/roles
+DELETE /api/admin/user-groups/:id/roles/:role_id
+```
+
+GET 返回 data（数组，`GroupRoleResp[]`，非分页）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | integer | 记录 ID |
+| group_id | integer | 分组 ID |
+| role_id | integer | 绑定的全局角色 ID |
+| created_at | string | 绑定时间（ISO 8601） |
+
+POST Body：`{ "role_id": <integer> }`，返回 data：`null`，HTTP 201。
+
+错误码：
+
+| 错误码 | HTTP | 说明 |
+|---|---|---|
+| 40000 | 400 | role_id 为空 / 角色不存在 / 绑定系统角色（如 admin）被拒 |
+| 40400 | 404 | 分组不存在（POST）/ 该角色未绑定到此分组（DELETE） |
+| 40900 | 409 | 该角色已绑定到此分组 |
+
+> 约束：被任意分组绑定的角色不可删除，`DELETE /api/admin/roles/:id` 会返回「角色已绑定到分组，请先解绑」，需先解绑。
+
 #### 3.17.5 邀请码
 
 ```text

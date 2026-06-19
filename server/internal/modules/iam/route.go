@@ -86,6 +86,11 @@ func RegisterRoutes(mux *http.ServeMux, iamSvc *service.IAMService, groupSvc *se
 	mux.Handle("POST /api/admin/user-groups/{id}/permissions", adminGroup(gh.AddGroupPermission))
 	mux.Handle("DELETE /api/admin/user-groups/{id}/permissions/{code}", adminGroup(gh.RemoveGroupPermission))
 
+	// 组角色（绑定全局角色，组员继承用于商品访问/定价）
+	mux.Handle("GET /api/admin/user-groups/{id}/roles", adminGroup(gh.ListGroupRoles))
+	mux.Handle("POST /api/admin/user-groups/{id}/roles", adminGroup(gh.AddGroupRole))
+	mux.Handle("DELETE /api/admin/user-groups/{id}/roles/{role_id}", adminGroup(gh.RemoveGroupRole))
+
 	// 邀请码
 	mux.Handle("GET /api/admin/user-groups/{id}/invite-codes", adminGroup(gh.ListInviteCodes))
 	mux.Handle("POST /api/admin/user-groups/{id}/invite-codes", adminGroup(gh.CreateInviteCode))
