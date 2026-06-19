@@ -2,9 +2,28 @@
 
 ## 职责边界
 
-只负责：角色 CRUD、权限 CRUD、用户角色分配、用户权限覆盖、权限计算、权限 Redis 缓存。
+只负责：角色 CRUD、权限 CRUD、用户角色分配、用户权限覆盖、权限计算、权限 Redis 缓存；
+**用户分组管理**（分组 CRUD、组成员、组权限、组邀请码、数据范围 scope）、**注册落组**。
 
 不负责：登录鉴权（auth 模块）、商品访问规则（product 模块）。
+
+---
+
+## 用户分组与注册落组
+
+分组相关代码：`model/group.go`、`repository/group_repo.go`、`service/group_service.go`、`service/scope_service.go`、`handler/group_handler.go`。
+
+**注册落组**（供 auth 模块在用户注册成功后调用，跨模块通过 auth 侧 `GroupJoiner` 接口解耦）：
+
+- `GroupService.AssignOnRegister(ctx, userID, inviteCode)` — 落组策略总入口：
+  - 有效 `inviteCode` → 复用 `JoinByInviteCode`（落对应组、赋邀请码 `default_group_role`、原子递增 `used_count`）；
+  - 无效/过期/已满 `inviteCode`（`ErrInviteCodeNotFound`/`ErrInviteCodeFull`）→ **降级落默认组（方案 A）**；
+  - 无 `inviteCode` → 落默认组；
+  - 未配置默认组（`FindDefaultGroup` 返回 `ErrGroupNotFound`）→ 跳过，返回 nil。
+- `GroupRepository.FindDefaultGroup(ctx)` — 查 `is_default=true` 的默认组（全局最多一个）。
+- 方案 A 适用边界：邀请码当前仅承载「分组归属 + 组内角色」，不承载准入门槛语义；升级为强准入门槛时需重评降级策略。
+
+**权限计算含组权限**：`getAllUserPermCodes` 合并「角色权限 ∪ 用户所在组的权限码」，去重后用于 4 步优先级判定。
 
 ---
 
