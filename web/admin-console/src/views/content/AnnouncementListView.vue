@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Edit, Plus, Refresh } from '@element-plus/icons-vue'
+import { Edit, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import {
   createAnnouncement,
   createHelpArticle,
@@ -27,7 +27,9 @@ const categories = ref<HelpCategory[]>([])
 const articles = ref<HelpArticle[]>([])
 const announcementPagination = reactive<Pagination>({ page: 1, page_size: 20, total: 0 })
 const articlePagination = reactive<Pagination>({ page: 1, page_size: 20, total: 0 })
-const articleFilter = reactive({ category_id: undefined as number | undefined })
+const announcementFilter = reactive({ keyword: '' })
+const categoryFilter = reactive({ keyword: '' })
+const articleFilter = reactive({ category_id: undefined as number | undefined, keyword: '' })
 
 const announcementDialogVisible = ref(false)
 const editingAnnouncement = ref<AdminAnnouncement | null>(null)
@@ -62,6 +64,16 @@ const markdownPreviewVisible = ref(false)
 const markdownPreviewTitle = ref('')
 const markdownPreviewHtml = ref('')
 
+const filteredCategories = computed(() => {
+  const keyword = normalizeKeyword(categoryFilter.keyword)
+  if (!keyword) return categories.value
+  return categories.value.filter(category => matchText(keyword, [
+    category.name,
+    category.description,
+    contentStatusLabel(category.status),
+  ]))
+})
+
 onMounted(async () => {
   // 文章列表依赖分类名称展示，先并行加载公告和分类，再加载文章列表。
   await Promise.all([fetchAnnouncements(), fetchCategories()])
@@ -71,6 +83,13 @@ onMounted(async () => {
 async function fetchAnnouncements() {
   announcementLoading.value = true
   try {
+    // 公告接口暂无关键词参数；输入关键词时使用后端分页接口拉取数据后在前端过滤，避免传未约定参数。
+    if (normalizeKeyword(announcementFilter.keyword)) {
+      const filtered = filterAnnouncements(await fetchAllAnnouncements(), announcementFilter.keyword)
+      announcements.value = paginateLocalItems(filtered, announcementPagination)
+      announcementPagination.total = filtered.length
+      return
+    }
     // 公告管理列表是分页接口，分页字段直接来自后端扁平结构。
     const res = await listAnnouncements({
       page: announcementPagination.page,
@@ -99,6 +118,13 @@ async function fetchCategories() {
 async function fetchArticles() {
   articleLoading.value = true
   try {
+    // 文章接口只支持分类筛选；关键词搜索同样基于已约定分页接口做前端过滤。
+    if (normalizeKeyword(articleFilter.keyword)) {
+      const filtered = filterArticles(await fetchAllArticles(), articleFilter.keyword)
+      articles.value = paginateLocalItems(filtered, articlePagination)
+      articlePagination.total = filtered.length
+      return
+    }
     // 文章列表支持按分类筛选，分页状态与公告分页分开维护，避免两个 tab 互相影响。
     const res = await listHelpArticles({
       category_id: articleFilter.category_id,
@@ -112,6 +138,104 @@ async function fetchArticles() {
   } finally {
     articleLoading.value = false
   }
+}
+
+async function fetchAllAnnouncements() {
+  const items: AdminAnnouncement[] = []
+  let page = 1
+  let total = 0
+  do {
+    const res = await listAnnouncements({ page, page_size: 100 })
+    items.push(...res.items)
+    total = res.total
+    page += 1
+    // 后端分页上限是 100；这里按 total 停止，空页也立即停止，避免异常数据导致循环请求。
+    if (res.items.length === 0) break
+  } while (items.length < total)
+  return items
+}
+
+async function fetchAllArticles() {
+  const items: HelpArticle[] = []
+  let page = 1
+  let total = 0
+  do {
+    const res = await listHelpArticles({ category_id: articleFilter.category_id, page, page_size: 100 })
+    items.push(...res.items)
+    total = res.total
+    page += 1
+    // 按后端返回 total 控制拉取范围，避免关键词搜索遗漏超过一页的数据。
+    if (res.items.length === 0) break
+  } while (items.length < total)
+  return items
+}
+
+function normalizeKeyword(value: string) {
+  return value.trim().toLowerCase()
+}
+
+function matchText(keyword: string, values: Array<string | number | null | undefined>) {
+  return values.some(value => String(value ?? '').toLowerCase().includes(keyword))
+}
+
+function filterAnnouncements(list: AdminAnnouncement[], keywordValue: string) {
+  const keyword = normalizeKeyword(keywordValue)
+  if (!keyword) return list
+  return list.filter(item => matchText(keyword, [
+    item.id,
+    item.title,
+    item.content,
+    item.status,
+    contentStatusLabel(item.status),
+    item.visible_scope,
+    visibleScopeLabel(item.visible_scope),
+    item.target_roles_json,
+  ]))
+}
+
+function filterArticles(list: HelpArticle[], keywordValue: string) {
+  const keyword = normalizeKeyword(keywordValue)
+  if (!keyword) return list
+  return list.filter(item => matchText(keyword, [
+    item.id,
+    item.title,
+    item.content,
+    item.status,
+    contentStatusLabel(item.status),
+    categoryName(item.category_id),
+  ]))
+}
+
+function paginateLocalItems<T>(list: T[], pagination: Pagination) {
+  const start = (pagination.page - 1) * pagination.page_size
+  return list.slice(start, start + pagination.page_size)
+}
+
+function searchAnnouncements() {
+  announcementPagination.page = 1
+  fetchAnnouncements()
+}
+
+function resetAnnouncementSearch() {
+  announcementFilter.keyword = ''
+  announcementPagination.page = 1
+  fetchAnnouncements()
+}
+
+function searchArticles() {
+  articlePagination.page = 1
+  fetchArticles()
+}
+
+function resetArticleSearch() {
+  articleFilter.keyword = ''
+  articleFilter.category_id = undefined
+  articlePagination.page = 1
+  fetchArticles()
+}
+
+function resetCategorySearch() {
+  categoryFilter.keyword = ''
 }
 
 function handleAnnouncementPageSizeChange(pageSize: number) {
@@ -324,7 +448,17 @@ function statusTagType(status: string) {
 
     <el-tabs v-model="activeTab" class="admin-tabs">
       <el-tab-pane label="公告管理" name="announcements">
-        <div class="toolbar">
+        <div class="toolbar search-toolbar">
+          <el-input
+            v-model="announcementFilter.keyword"
+            clearable
+            class="keyword-input"
+            placeholder="搜索公告标题、正文、状态或可见范围"
+            @keyup.enter="searchAnnouncements"
+            @clear="searchAnnouncements"
+          />
+          <el-button type="primary" :icon="Search" @click="searchAnnouncements">搜索</el-button>
+          <el-button @click="resetAnnouncementSearch">重置</el-button>
           <el-button type="primary" :icon="Plus" @click="openCreateAnnouncement">新建公告</el-button>
           <el-button :icon="Refresh" @click="fetchAnnouncements">刷新</el-button>
         </div>
@@ -358,11 +492,19 @@ function statusTagType(status: string) {
       </el-tab-pane>
 
       <el-tab-pane label="帮助分类" name="categories">
-        <div class="toolbar">
+        <div class="toolbar search-toolbar">
+          <el-input
+            v-model="categoryFilter.keyword"
+            clearable
+            class="keyword-input"
+            placeholder="搜索分类名称、说明或状态"
+            @clear="resetCategorySearch"
+          />
+          <el-button @click="resetCategorySearch">重置</el-button>
           <el-button type="primary" :icon="Plus" @click="openCreateCategory">新建分类</el-button>
           <el-button :icon="Refresh" @click="fetchCategories">刷新</el-button>
         </div>
-        <el-table :data="categories" v-loading="categoryLoading" border>
+        <el-table :data="filteredCategories" v-loading="categoryLoading" border>
           <el-table-column prop="id" label="ID" width="80" />
           <el-table-column prop="name" label="分类名称" min-width="160" />
           <el-table-column prop="description" label="说明" min-width="260" show-overflow-tooltip />
@@ -373,10 +515,20 @@ function statusTagType(status: string) {
       </el-tab-pane>
 
       <el-tab-pane label="帮助文章" name="articles">
-        <div class="toolbar">
+        <div class="toolbar search-toolbar">
+          <el-input
+            v-model="articleFilter.keyword"
+            clearable
+            class="keyword-input"
+            placeholder="搜索文章标题、正文、分类或状态"
+            @keyup.enter="searchArticles"
+            @clear="searchArticles"
+          />
           <el-select v-model="articleFilter.category_id" clearable placeholder="文章分类" @change="articlePagination.page = 1; fetchArticles()">
             <el-option v-for="category in categories" :key="category.id" :label="category.name" :value="category.id" />
           </el-select>
+          <el-button type="primary" :icon="Search" @click="searchArticles">搜索</el-button>
+          <el-button @click="resetArticleSearch">重置</el-button>
           <el-button type="primary" :icon="Plus" @click="openCreateArticle">新建文章</el-button>
           <el-button :icon="Refresh" @click="fetchArticles">刷新</el-button>
         </div>
@@ -471,6 +623,8 @@ function statusTagType(status: string) {
 .page-title-text { margin: 0 0 6px; font-size: 18px; }
 .page-subtitle { margin: 0; color: var(--mc-text-muted); }
 .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.search-toolbar { align-items: center; }
+.keyword-input { width: min(360px, 100%); }
 .pagination-row { display: flex; justify-content: flex-end; margin-top: 14px; }
 .markdown-editor {
   display: grid;
