@@ -1425,6 +1425,30 @@ OTP 验证后重置密码（无需旧密码），成功后吊销该用户全部�
 
 ---
 
+### 9.13a 组角色（绑定全局角色，组员继承用于商品访问/定价）
+
+> 设计与边界见 `docs/backend-a-group-roles-design.md`。组员经 `GetUserRoleIDs` 继承所在组绑定的角色，用于 `product_role_access` / `product_prices` 的角色判定。
+> **A 版边界**：组角色【只影响商品访问/定价】，不进入 `CheckPermission` 权限码判定（绑了角色 ≠ 获得该角色的管理权限码）。
+> 权限：`group:manage` + 管理员双重认证。
+
+**GET `/api/admin/user-groups/{id}/roles`** — 列出组绑定的角色
+返回 `200`：`[{ "id":1, "group_id":3, "role_id":5, "created_at":"..." }]`
+
+**POST `/api/admin/user-groups/{id}/roles`** — 给组绑定角色
+请求体：`{ "role_id": 5 }`
+- 成功 `201`：`data: null`；绑定即时生效（无缓存延迟），组员下次取角色即包含。
+- `400 40000`：role_id 为空 / 角色不存在 / **绑定系统角色（如 admin）被拒**。
+- `404 40400`：分组不存在。
+- `409 40900`：该角色已绑定到此分组。
+
+**DELETE `/api/admin/user-groups/{id}/roles/{role_id}`** — 解绑
+- 成功 `200`：`data: null`，即时生效。
+- `404 40400`：该角色未绑定到此分组。
+
+> 关联约束：被任意分组绑定的角色**不可删除**（`DELETE /api/admin/roles/{id}` 返回错误「角色已绑定到分组，请先解绑」），需先解绑。
+
+---
+
 ### 9.14 GET /api/admin/user-groups/{id}/invite-codes
 **Query 参数**：`status`（可选）、`page`、`page_size`
 
