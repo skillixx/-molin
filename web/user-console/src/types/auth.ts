@@ -64,6 +64,7 @@ export interface RegisterBody {
   password: string
   phone_code: string
   email_code: string
+  invite_code?: string  // 组邀请码（可选）：填了就传，落组为后端行为
 }
 
 // 实名认证提交请求体

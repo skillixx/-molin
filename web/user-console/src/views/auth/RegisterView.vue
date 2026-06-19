@@ -23,6 +23,7 @@ const form = reactive({
   emailCode: '',
   password: '',
   confirmPassword: '',
+  inviteCode: '',
 })
 
 // 验证码倒计时
@@ -164,6 +165,8 @@ async function handleRegister() {
       password: form.password,
       phone_code: form.phoneCode,
       email_code: form.emailCode,
+      // 邀请码选填：用户填了才带上，留空则不传该字段
+      ...(form.inviteCode.trim() ? { invite_code: form.inviteCode.trim() } : {}),
     })
     await authStore.applyLoginResponse(tokens)
     ElMessage.success('注册成功，欢迎使用墨灵！')
@@ -238,6 +241,13 @@ onUnmounted(() => {
                 v-model="form.username"
                 placeholder="2-32位字母/数字/下划线"
                 autocomplete="username"
+                size="large"
+              />
+            </el-form-item>
+            <el-form-item label="邀请码（选填）">
+              <el-input
+                v-model="form.inviteCode"
+                placeholder="如有邀请码请填写，没有可留空"
                 size="large"
               />
             </el-form-item>
