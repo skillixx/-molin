@@ -190,8 +190,10 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 ## 开发进度
 
-> 最后更新：2026-06-12
+> 最后更新：2026-06-19
 > 当前阶段：**Week 1 已验收（2026-06-05），Week 2 已验收（2026-06-06），Week 3 已验收（2026-06-07），Week 4 已验收（2026-06-07），第一阶段（Week 1-4）已于 2026-06-07 正式验收通过，并于 2026-06-08 完成最终收尾确认，正式画上句号 ✅（端到端验收 37/37 全部通过，详见 `tests/audit-stage1-final.md`；收尾确认 6/6 全部通过，详见 `tests/audit-stage1-closing-confirm.md`）**
+>
+> **前端进度更新（2026-06-19）**：管理后台（前端 A）与用户控制台（前端 B）的全部业务页面代码已完成并合并到 main（提交 `94b8466 前端甲对接后端丙管理页面`、`f6d85b6 前端乙对接后端丙用户页面` 等）。两端覆盖商品/订单/钱包/资产/会员/内容/应用/消费等模块的页面与 API 封装；后端丙对接任务 FA-06/07/09/10、FB-07/08/09 均已落地（详见各端进度表）。**说明：以下 ✅ 表示「代码已完成并合并 main」；前端页面的正式 QA 验收与产品经理确认为后续独立环节。**
 
 ### 后端 A（auth / iam / identity / audit）
 
@@ -267,7 +269,8 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 ### 前端 A（管理后台 web/admin-console）
 
-> Week 1 已完成，通过 PM 审核（2026-06-10）。登录页、布局、用户管理、角色权限管理、实名审核、管理员双重认证页面全部开发完成。Week 2 商品/订单/资产页面待开发。
+> Week 1 已完成，通过 PM 审核（2026-06-10）。登录页、布局、用户管理、角色权限管理、实名审核、管理员双重认证页面全部开发完成。
+> **2026-06-19 更新**：Week 2+ 全部管理页面（商品/订单/钱包/资产/会员/内容/应用/审计/分组/消费）代码已完成并合并 main，后端丙对接 FA-06/07/09/10 落地。✅ 表示代码已完成并合并；前端正式 QA 验收为后续环节。
 
 | 任务 | 文件 | 状态 |
 |---|---|---|
@@ -275,15 +278,26 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | Auth Store + 路由守卫 | `src/stores/auth.ts` / `src/router/index.ts` | ✅ 已完成 |
 | 登录页 | `src/views/auth/LoginView.vue` | ✅ 已完成 |
 | 管理后台布局（侧边栏/顶栏） | `src/components/layout/` | ✅ 已完成 |
-| 用户管理（列表/封禁/角色分配） | `src/views/user/UserListView.vue` | ✅ 已完成 |
+| 用户管理（列表/封禁/角色分配） | `src/views/user/UserListView.vue` / `UserRolesPanel.vue` | ✅ 已完成 |
 | 角色管理 + 权限列表 | `src/views/iam/RoleListView.vue` / `PermissionListView.vue` | ✅ 已完成 |
 | 实名审核（通过/拒绝） | `src/views/identity/VerificationListView.vue` | ✅ 已完成 |
 | 管理员双重认证（手机+邮箱 OTP） | `src/views/auth/AdminVerifyView.vue` | ✅ 已完成 |
-| 商品/套餐/价格管理 | `src/views/product/` | ⬜ Week 2 |
-| 订单管理 + 钱包流水 + 资产管理 | `src/views/order/` / `src/views/wallet/` / `src/views/asset/` | ⬜ Week 2 |
-| 公告管理 | `src/views/content/AnnouncementListView.vue` | ⬜ Week 2 |
+| 用户分组管理（列表/成员/权限/邀请码） | `src/views/group/UserGroupListView.vue` / `UserGroupManageView.vue` | ✅ 已完成 |
+| 审计日志查询 | `src/views/audit/AuditLogListView.vue` | ✅ 已完成 |
+| 仪表盘 / 总览 | `src/views/dashboard/DashboardView.vue` | ✅ 已完成 |
+| 商品/套餐/价格管理（后端乙） | `src/views/product/ProductListView.vue` | ✅ 已完成 |
+| 订单管理（后端乙） | `src/views/order/OrderListView.vue` | ✅ 已完成 |
+| 钱包流水管理（后端乙） | `src/views/wallet/TransactionListView.vue` | ✅ 已完成 |
+| 消费记录管理（后端乙） | `src/views/consumption/AdminConsumptionView.vue` | ✅ 已完成 |
+| 用户资产管理 FA-06（后端丙 AS4/AS5/AS6） | `src/views/asset/AssetListView.vue` | ✅ 已完成 |
+| 内容管理 FA-07：公告 + 帮助（后端丙 C5~C9） | `src/views/content/AnnouncementListView.vue` | ✅ 已完成 |
+| 会员管理 FA-09：等级/权益/用户会员（后端丙 M3~M11） | `src/views/membership/MembershipManageView.vue` | ✅ 已完成 |
+| 应用与适配器管理 FA-10（后端丙 AP2~AP6） | `src/views/app/AppManageView.vue` | ✅ 已完成 |
 
 ### 前端 B（用户控制台 web/user-console）
+
+> Week 1 已完成（注册/登录/实名/个人中心/重置密码/商品市场）。
+> **2026-06-19 更新**：Week 2+ 全部用户页面（商品详情/购买/总览/资产/钱包/充值/订单/消费/会员中心/公告/帮助）代码已完成并合并 main，后端丙对接 FB-07/08/09 落地。✅ 表示代码已完成并合并；前端正式 QA 验收为后续环节。
 
 | 任务 | 文件 | 状态 |
 |---|---|---|
@@ -296,9 +310,14 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | OTP 密码重置页 | `src/views/auth/ResetPasswordView.vue` | ✅ 已完成 |
 | 个人信息页（用户名/手机/邮箱/密码修改） | `src/views/profile/ProfileView.vue` | ✅ 已完成 |
 | User 类型对齐后端 DTO + API 层 5 个新函数 | `src/types/auth.ts` / `src/api/auth.ts` | ✅ 已完成 |
-| 商品详情 + 购买确认（含 Idempotency-Key） | `src/views/marketplace/ProductDetailView.vue` / `PurchaseView.vue` | ⬜ Week 2 |
-| 总览 + 我的资产 + 钱包 + 充值 + 账单流水 | `src/views/overview/` / `assets/` / `wallet/` | ⬜ Week 2 |
-| 会员中心 + 公告 + 帮助中心 | `src/views/membership/` / `src/views/content/` | ⬜ Week 2 |
+| 总览首页 | `src/views/overview/OverviewView.vue` | ✅ 已完成 |
+| 商品详情 + 购买确认（含 Idempotency-Key，后端乙） | `src/views/marketplace/ProductDetailView.vue` / `PurchaseDialog.vue` / `PurchaseView.vue` | ✅ 已完成 |
+| 订单列表 + 订单详情（后端乙） | `src/views/order/OrderListView.vue` / `OrderDetailView.vue` | ✅ 已完成 |
+| 钱包余额 + 充值 + 账单流水（后端乙） | `src/views/wallet/WalletView.vue` / `RechargeView.vue` / `TransactionView.vue` | ✅ 已完成 |
+| 我的消费记录（后端乙） | `src/views/consumption/MyConsumptionView.vue` | ✅ 已完成 |
+| 我的资产 / 权益 FB-07（后端丙 AS1~AS3） | `src/views/assets/AssetListView.vue` | ✅ 已完成 |
+| 会员中心 FB-08：等级/我的会员/权益展示（后端丙 M1/M2 + 权益端点） | `src/views/membership/MembershipView.vue` | ✅ 已完成 |
+| 公告 + 帮助中心 FB-09（后端丙 C1~C4） | `src/views/content/AnnouncementView.vue` / `HelpCenterView.vue` | ✅ 已完成 |
 
 ### 运维（infra / CI/CD 部署环境）
 
