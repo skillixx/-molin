@@ -111,9 +111,12 @@ Authorization: Bearer <access_token>
   "email": "test001@example.com",
   "password": "Test@123456",
   "phone_code": "xxxxxx",
-  "email_code": "097441"
+  "email_code": "097441",
+  "invite_code": "ABC12345"
 }
 ```
+
+> `invite_code` 为**可选**字段：传有效组邀请码 → 落入对应分组并赋邀请码配置的组内角色；为空/无效/过期/已满 → 降级落入默认组（`is_default=true`）；未配置默认组则不落组。落组为 best-effort，失败不影响注册结果。
 
 - **成功响应（201）：**
 
@@ -133,6 +136,7 @@ Authorization: Bearer <access_token>
   - 手机号已注册 → `409`（错误码 `40900`）
   - 邮箱已注册 → `409`（错误码 `40900`）
   - 用户名已存在或格式不合法 → `409` / `400`
+  - 注意：`invite_code` 无效**不报错**（方案 A 静默降级落默认组）
 
 - **验证旧接口已下线：**
   - `POST /api/auth/register/email` → 应返回 `404`

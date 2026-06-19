@@ -166,10 +166,23 @@ Body 参数：
 | password | string | 是 | 密码（6-72 位） |
 | phone_code | string | 是 | 手机验证码（scene=register） |
 | email_code | string | 是 | 邮箱验证码（scene=register） |
+| invite_code | string | 否 | 组邀请码。传有效码 → 落入对应分组并赋邀请码配置的组内角色；为空/无效/过期/已满 → 落入默认组 |
 
-返回 data：同登录接口（access_token / refresh_token / expires_in）。
+返回 data：同登录接口（access_token / refresh_token / expires_in / user）。
 
 注册成功后 phone_verified 和 email_verified 自动置为 true。
+
+**注册落组**：注册成功后系统按以下策略将新用户落入用户分组（落组逻辑在 `iam.GroupService.AssignOnRegister`）：
+
+| 场景 | 落组结果 |
+|---|---|
+| 传有效 `invite_code` | 落入邀请码对应分组，组内角色 = 邀请码的 `default_group_role` |
+| 传无效/过期/已满 `invite_code` | **降级落入默认组**（方案 A，不报错，注册仍成功） |
+| 不传 `invite_code` | 落入默认组（`user_groups.is_default=true`） |
+| 系统未配置默认组 | 注册成功，但不落任何组 |
+
+落组为 best-effort：落组失败不回滚注册，仅记日志（与创建后台用户分配角色的约定一致）。
+方案 A 适用边界：当前邀请码仅承载「分组归属 + 组内角色」，不承载准入门槛语义；若将来升级为强准入门槛需重新评估降级策略。
 
 ### 2.4 邮箱登录
 

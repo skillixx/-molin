@@ -509,7 +509,7 @@ go get github.com/google/uuid
 -- 无需鉴权 --
 POST /api/auth/verification-codes/email    -- 发送邮箱验证码（scene: register/reset_password/bind_email/admin_verify）
 POST /api/auth/verification-codes/phone    -- 发送短信验证码（scene: register/reset_password/bind_phone/admin_verify）
-POST /api/auth/register                   -- 唯一注册入口：手机号+邮箱必须同时提交，需双重 OTP 验证码（phone_code + email_code）
+POST /api/auth/register                   -- 唯一注册入口：手机号+邮箱必须同时提交，需双重 OTP 验证码（phone_code + email_code）；可选 invite_code 落组（详见下方「注册落组」）
 POST /api/auth/login/email                -- 邮箱登录
 POST /api/auth/login/phone                -- 手机号登录
 POST /api/auth/refresh                    -- 刷新 Access Token
@@ -531,6 +531,17 @@ POST /api/admin/auth/verify-email         -- 管理员邮箱双重认证（需�
 POST /api/admin/auth/verification-codes/phone  -- D-96：向当前管理员自己的手机号发送验证码（scene=admin_verify）★新增
 POST /api/admin/auth/verification-codes/email  -- D-96：向当前管理员自己的邮箱发送验证码（scene=admin_verify）★新增
 ```
+
+## 注册落组（跨 iam 模块）
+
+`Register` 在用户创建成功后、签发 token 前调用 `groupJoiner.AssignOnRegister(ctx, userID, inviteCode)` 把新用户落入分组。
+
+- **跨模块解耦**：auth 不直接依赖 iam，仿 `RoleAssigner` 在 auth/service 定义 `GroupJoiner` 接口，由 `iam.GroupService` 实现，bootstrap 用 `authService.SetGroupJoiner(groupService)` 注入。
+- **落组策略全部封装在 iam 侧**（`AssignOnRegister`）：有效邀请码→对应组+组内角色；无效/过期/已满邀请码→降级落默认组（方案 A）；无邀请码→默认组（`is_default=true`）；未配置默认组→跳过。
+- **best-effort**：落组失败**不回滚注册**，仅 `log.Printf` 记录（与 `roleAssigner` 同约定）。
+- `RegisterReq` 新增可选字段 `invite_code`。
+
+> 落组的读默认组/写成员逻辑在 iam 模块，详见 `server/internal/modules/iam/CLAUDE.md` 及 `group_service.go`。
 
 ## GET /api/me 返回字段（完整）
 

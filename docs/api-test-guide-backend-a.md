@@ -196,7 +196,8 @@ password: Admin@Test123!
   "email": "alice@example.com",
   "password": "Alice@123",
   "phone_code": "123456",
-  "email_code": "654321"
+  "email_code": "654321",
+  "invite_code": "ABC12345"
 }
 ```
 
@@ -206,6 +207,7 @@ password: Admin@Test123!
 | password | 必填，长度 **6-72 位**（D-94），越界返回 `400 40000` |
 | phone_code | scene=register 的手机验证码（先调 1.2 获取） |
 | email_code | scene=register 的邮箱验证码（先调 1.1 获取） |
+| invite_code | **可选**，组邀请码。传有效码落对应组，为空/无效落默认组（详见下方「注册落组」） |
 
 **成功响应** `201`（D-93：新增 `user` 对象，email/phone 已脱敏）
 ```json
@@ -228,12 +230,25 @@ password: Admin@Test123!
 注册成功后 `phone_verified`/`email_verified` 自动置为 `true`。
 > 下文 1.4/1.5/1.6 的「TokenPair（同 1.3）」均指含此 `user` 对象的结构（D-93）。
 
+**注册落组**：注册成功后系统按策略将新用户落入用户分组（`iam.GroupService.AssignOnRegister`，best-effort，失败不回滚注册仅记日志）。
+
+| 场景 | 落组结果 | 验收断言（查 `user_group_members`） |
+|---|---|---|
+| 传有效 `invite_code` | 落邀请码对应组，角色 = 邀请码 `default_group_role`；邀请码 `used_count`+1 | group_id=邀请组、group_role 匹配、恰好 1 条 |
+| 传无效/过期/已满 `invite_code` | 降级落默认组，注册仍成功（方案 A） | group_id=默认组、group_role=member |
+| 不传 `invite_code` | 落默认组（`is_default=true`） | group_id=默认组、group_role=member |
+| 未配置默认组 | 注册成功，不落任何组 | 该 user 无 member 记录 |
+
+> 回归脚本：`tests/test_register_default_group.py`（覆盖上述 A/B/C/C2/D 共 6 项断言，前置数据自建自清）。
+
 **错误**
 | code | HTTP | 场景 |
 |---|---|---|
 | 40000 | 400 | phone_code 或 email_code 错误/过期（统一提示"验证码错误或已过期"） |
 | 40900 | 409 | 手机号已被注册 / 邮箱已被注册 / 用户名已被使用 |
 | 40000 | 400 | 用户名格式不合法（"用户名只能包含字母、数字和下划线，长度2-32位"） |
+
+> 注意：传入的 `invite_code` 无效**不会**返回错误码（方案 A 静默降级落默认组）。
 
 ---
 
