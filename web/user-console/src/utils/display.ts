@@ -75,6 +75,15 @@ export function txDirectionLabel(direction: string) {
   return map[direction] ?? direction
 }
 
+export function membershipStatusLabel(status: string) {
+  const map: Record<string, string> = {
+    active: '生效中',
+    expired: '已到期',
+    cancelled: '已取消',
+  }
+  return map[status] ?? status
+}
+
 export function getErrorCode(error: unknown) {
   const err = error as { response?: { status?: number; data?: { code?: number; message?: string } } }
   return {
