@@ -139,6 +139,10 @@ ROLE_X      = "gr_e2e_role_x"   # 自建测试角色 X
 PROD_CODE   = "gr_e2e_prod"     # 自建测试商品
 PLAN_CODE   = "gr_e2e_plan"
 ADMIN_PERM_CODE = "gr_e2e_admin_perm"  # 仅用于核对，不实际使用
+# GR-001 复验专用自建角色（与既有用例隔离，前置自建自清）
+ROLE_GR_BOUND = "gr_e2e_role_bound"   # 被组绑定的角色（删除应 409，先解绑后才可删）
+ROLE_GR_PLAIN = "gr_e2e_role_plain"   # 无用户无绑定的角色（删除应 200）
+ROLE_GR_USED  = "gr_e2e_role_used"    # 仍有用户、无组绑定的角色（删除应 409 角色下仍有用户）
 
 REGISTERED_USER_CODE = "registered_user"  # 000029 seed 的基础角色
 
@@ -174,6 +178,12 @@ def teardown(silent=False):
     db_exec(f"DELETE FROM user_groups WHERE code IN ('{GRP_NORMAL}','{GRP_DEFAULT}');")
     db_exec(f"DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE code='{ROLE_X}');")
     db_exec(f"DELETE FROM roles WHERE code='{ROLE_X}';")
+    # GR-001 复验专用角色清理：先清组绑定/用户关联，再删角色
+    gr_codes = "'%s','%s','%s'" % (ROLE_GR_BOUND, ROLE_GR_PLAIN, ROLE_GR_USED)
+    db_exec(f"DELETE FROM group_roles WHERE role_id IN (SELECT id FROM roles WHERE code IN ({gr_codes}));")
+    db_exec(f"DELETE FROM user_roles WHERE role_id IN (SELECT id FROM roles WHERE code IN ({gr_codes}));")
+    db_exec(f"DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE code IN ({gr_codes}));")
+    db_exec(f"DELETE FROM roles WHERE code IN ({gr_codes});")
     if not silent:
         print(f"{CYAN}前置/测试数据已清理{RESET}")
 
@@ -555,6 +565,98 @@ def case_E(admin_tok):
     db_exec(f"DELETE FROM group_roles WHERE group_id={gid} AND role_id IN ({radmin},{rx});")
 
 
+def _role_id(code):
+    rows, _ = db_query(f"SELECT id FROM roles WHERE code='{code}';")
+    return int(rows[0][0]) if rows else None
+
+
+def case_GR001(admin_tok):
+    """GR-001 复验：删除被组绑定的角色 → 409/40900；解绑后可删；并回归既有删除路径。
+
+    被测修复：iam_handler.DeleteRole 增加 errors.Is(err, ErrRoleInUseByGroup) → 409/40900，
+    文案「角色已绑定到分组，请先解绑」。service.DeleteRole 删除顺序：
+    存在性 → 有用户(ErrRoleHasUsers) → 被组绑定(ErrRoleInUseByGroup) → 真删。
+    """
+    print(f"\n{BOLD}[GR-001] 删除被组绑定角色返回 409（修复复验）{RESET}")
+    gid = state["grp_normal"]
+
+    # 自建一个待绑定角色（不复用 ROLE_X，避免与 A/B/C 用例数据交叉）
+    db_exec(f"INSERT INTO roles (code,name,description) VALUES ('{ROLE_GR_BOUND}','GR001被绑角色','复验：被组绑定');")
+    rb = _role_id(ROLE_GR_BOUND)
+
+    # ── 子用例 1：正向——角色被组绑定时删除应 409/40900，且角色仍存在 ──────────
+    s, b = http("POST", f"/api/admin/user-groups/{gid}/roles", {"role_id": rb}, token=admin_tok)
+    if s != 201 or b.get("code") != 0:
+        return fail("GR-001 前置 绑定角色到组应 201", f"status={s} body={b}")
+    bound = db_query(f"SELECT id FROM group_roles WHERE group_id={gid} AND role_id={rb};")[0]
+    if not bound:
+        return fail("GR-001 前置 group_roles 未写入绑定记录", f"group={gid} role={rb}")
+
+    s, b = http("DELETE", f"/api/admin/roles/{rb}", token=admin_tok)
+    role_still = bool(db_query(f"SELECT id FROM roles WHERE id={rb};")[0])
+    msg = str(b.get("message", ""))
+    cond_status = (s == 409 and b.get("code") == 40900)
+    cond_msg = ("角色已绑定到分组，请先解绑" in msg)
+    if cond_status and cond_msg and role_still:
+        ok("GR-001(1) 删被绑角色 → 409/40900 且文案匹配，角色未被删",
+           f"status={s} code={b.get('code')} msg={msg}")
+    else:
+        fail("GR-001(1) 删被绑角色未达预期",
+             f"status={s} code={b.get('code')} msg={msg} role_still={role_still} "
+             f"期望 409/40900 + 文案'角色已绑定到分组，请先解绑' + 角色保留")
+
+    # ── 子用例 2：解绑后可删——确认护栏非永久锁死 ─────────────────────────────
+    s, b = http("DELETE", f"/api/admin/user-groups/{gid}/roles/{rb}", token=admin_tok)
+    if s != 200 or b.get("code") != 0:
+        return fail("GR-001(2) 前置 解绑应 200", f"status={s} body={b}")
+    unbound = not db_query(f"SELECT id FROM group_roles WHERE group_id={gid} AND role_id={rb};")[0]
+    if not unbound:
+        return fail("GR-001(2) 前置 解绑后 group_roles 仍有记录", f"group={gid} role={rb}")
+    s, b = http("DELETE", f"/api/admin/roles/{rb}", token=admin_tok)
+    deleted = not db_query(f"SELECT id FROM roles WHERE id={rb};")[0]
+    if s == 200 and b.get("code") == 0 and deleted:
+        ok("GR-001(2) 解绑后删除成功（200）且角色已删 → 护栏非永久锁死",
+           f"status={s} code={b.get('code')}")
+    else:
+        fail("GR-001(2) 解绑后删除未达预期",
+             f"status={s} code={b.get('code')} deleted={deleted} 期望 200 + 角色被删")
+
+    # ── 子用例 3a：回归——无用户、无绑定的角色删除仍正常 200 ────────────────────
+    db_exec(f"INSERT INTO roles (code,name,description) VALUES ('{ROLE_GR_PLAIN}','GR001裸角色','回归：无用户无绑定');")
+    rp = _role_id(ROLE_GR_PLAIN)
+    s, b = http("DELETE", f"/api/admin/roles/{rp}", token=admin_tok)
+    deleted = not db_query(f"SELECT id FROM roles WHERE id={rp};")[0]
+    if s == 200 and b.get("code") == 0 and deleted:
+        ok("GR-001(3a) 回归 删无用户无绑定角色仍 200（删除主路径未破坏）",
+           f"status={s} code={b.get('code')}")
+    else:
+        fail("GR-001(3a) 回归 删裸角色未达预期",
+             f"status={s} code={b.get('code')} deleted={deleted} 期望 200 + 角色被删")
+
+    # ── 子用例 3b：回归——仍有用户、无组绑定的角色删除仍 409「角色下仍有用户」 ──
+    # 注意 service 删除顺序：有用户优先于被组绑定。该角色直配给一个真实用户（不绑组），
+    # 应命中 ErrRoleHasUsers 而非 ErrRoleInUseByGroup。
+    db_exec(f"INSERT INTO roles (code,name,description) VALUES ('{ROLE_GR_USED}','GR001占用角色','回归：仍有用户');")
+    ru = _role_id(ROLE_GR_USED)
+    _, _, email = register()  # 复用造数能力建一个真实用户
+    uid = int(db_query(f"SELECT id FROM users WHERE email='{email}';")[0][0][0])
+    db_exec(f"INSERT INTO user_roles (user_id,role_id,created_at) VALUES ({uid},{ru},NOW());")
+    # 确保该角色未被任何组绑定（隔离干扰）
+    db_exec(f"DELETE FROM group_roles WHERE role_id={ru};")
+    s, b = http("DELETE", f"/api/admin/roles/{ru}", token=admin_tok)
+    role_still = bool(db_query(f"SELECT id FROM roles WHERE id={ru};")[0])
+    msg = str(b.get("message", ""))
+    if s == 409 and b.get("code") == 40900 and "角色下仍有用户" in msg and role_still:
+        ok("GR-001(3b) 回归 删仍有用户的角色仍 409「角色下仍有用户」（既有护栏未受影响）",
+           f"status={s} code={b.get('code')} msg={msg}")
+    else:
+        fail("GR-001(3b) 回归 删占用角色未达预期",
+             f"status={s} code={b.get('code')} msg={msg} role_still={role_still} "
+             f"期望 409/40900 + 文案含'角色下仍有用户' + 角色保留")
+    # 清理本用例占用关系（teardown 也会兜底）
+    db_exec(f"DELETE FROM user_roles WHERE role_id={ru};")
+
+
 def main():
     print(f"{BOLD}{CYAN}=== 组绑定全局角色（group_roles）端到端验收 ==={RESET}")
     print(f"API_BASE={API_BASE}  MYSQL={MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}")
@@ -579,6 +681,7 @@ def main():
         case_C(atok)
         case_D(atok)
         case_E(atok)
+        case_GR001(atok)
     finally:
         teardown()
 
