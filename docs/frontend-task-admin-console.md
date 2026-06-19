@@ -846,3 +846,55 @@ export function listPaymentCallbacks(params: {
 - [ ] 全量消费记录（F3）支持 user_id/product_id/usage_type/时间过滤；扁平分页正确；不依赖 wallet_transaction_id 字段
 - [ ] 全部列表接口扁平分页解析正确（`items/page/page_size/total`）
 - [ ] A5（分组 16 端点，约 5.5 人日）是否本期纳入
+
+---
+
+## 7. 后端丙管理端对接任务（FA-06 / FA-07 / FA-09 / FA-10）
+
+> 本节同步 Claude 在 `.claude/agents/前端工程师甲.md` 中给前端甲安排的后端丙任务。落地时以 `docs/frontend-dev-plan-backend-c.md` 为首要任务依据，以 `docs/frontend-api-reference.md` §十～§十三为字段 SSOT。只开发 `web/admin-console` 前端页面、路由、类型和 `src/api/*.ts` 封装，不实现后端逻辑。
+
+### 7.1 对接红线
+
+- 后端丙管理端列表分两类：分页 `{items,page,page_size,total}` 与不分页 `{items}`，不得一刀切做分页 UI。
+- 管理端分页接口 `page_size` 上限 100，直接使用后端返回的 `page_size`。
+- JSON 字符串字段必须提交前 `JSON.stringify`、读取时 `JSON.parse` 并做解析失败兜底：`target_roles_json`、`benefit_value`、`adapter_config_json`、`supported_actions_json`、`usage_event_types_json`。
+- 资产操作 `PATCH /api/admin/assets/{id}` 的 `action` 支持 `freeze` / `unfreeze` / `cancel`；取消原因字段是 `remark`，不是 `reason`。
+- `GET /api/admin/user-memberships` 已内联 `level_code` / `level_name`，直接展示等级名，无需再按等级列表二次映射；但仍不含用户名/邮箱，仅有 `user_id`。
+- 管理端按钮和菜单按 `asset:view/manage`、`membership:view/manage`、`content:manage`、`app:manage` 做权限门控；无权限不伪造逻辑。
+
+### 7.2 API 与类型文件清单
+
+| 文件 | 任务 |
+|---|---|
+| `src/api/asset-admin.ts` | AS4/AS5/AS6：管理端资产列表、指定用户资产、冻结/解冻/取消 |
+| `src/api/membership-admin.ts` | M3～M11：会员等级、会员权益、用户会员、手动开通/续期/取消/改期 |
+| `src/api/content-admin.ts` | C5～C9：公告管理、帮助分类、帮助文章 |
+| `src/api/app-admin.ts` | AP2～AP6：应用 CRUD、适配器 CRUD |
+| `src/types/asset-admin.ts` | 管理端资产、资产操作类型 |
+| `src/types/membership-admin.ts` | 会员等级、权益、用户会员类型；`benefit_value` 保持字符串 |
+| `src/types/content-admin.ts` | 公告、帮助分类、帮助文章类型；`target_roles_json` 保持字符串 |
+| `src/types/app-admin.ts` | 应用、适配器类型；三个 adapter JSON 字段保持字符串 |
+
+### 7.3 视图层任务
+
+| 阶段 | 分支名 | 视图 | 用到的 API | 关键交互 |
+|---|---|---|---|---|
+| FA-06 | `feature/frontend-a-admin-asset` | `views/asset/AssetListView.vue` | AS4/AS6 | `user_id/status` 过滤；D-95 分页；按状态显示冻结、解冻、取消；取消弹窗提交 `{action:'cancel', remark}` |
+| FA-06 | `feature/frontend-a-admin-asset` | 用户详情内资产区（可选） | AS5 | 指定用户资产不分页 `{items}`，不做分页控件 |
+| FA-07 | `feature/frontend-a-admin-content-cms` | `views/content/AnnouncementListView.vue` | C5/C6/C7 | 公告分页；新建默认 `draft`；显式发布后用户端可见；`visible_scope=roles` 时提交 `target_roles_json` |
+| FA-07 | `feature/frontend-a-admin-content-cms` | `views/content/HelpCategoryView.vue` | C8 | 帮助分类 CRUD；接口不分页 `{items}` |
+| FA-07 | `feature/frontend-a-admin-content-cms` | `views/content/HelpArticleView.vue` | C9 | 帮助文章分页；按 `category_id` 过滤；默认 `draft` |
+| FA-09 | `feature/frontend-a-admin-membership` | `views/membership/MembershipLevelView.vue` | M3/M4/M5 | 等级列表不分页；含 inactive；创建/编辑 level_code/name/description/sort_order/status |
+| FA-09 | `feature/frontend-a-admin-membership` | `views/membership/MembershipBenefitView.vue` | M6/M7/M8 | 按 level_id 查权益；`benefit_value` JSON 字符串编辑器并校验合法 JSON |
+| FA-09 | `feature/frontend-a-admin-membership` | `views/membership/UserMembershipView.vue` | M9/M10/M11 | 用户会员分页；展示内联 `level_name`；手动开通/续期支持永久 `duration_days=null`；取消传 `{action:'cancel'}`；改期传 `{expires_at}` |
+| FA-10 | `feature/frontend-a-admin-app` | `views/app/AppListView.vue` | AP2/AP3/AP4/AP5 | 应用分页、详情、新建、编辑；status 支持 `draft/active/inactive/archived` |
+| FA-10 | `feature/frontend-a-admin-app` | `views/app/AppAdapterView.vue` | AP6 | 适配器列表、新建、编辑；三个 JSON 字符串字段需要 parse/stringify 兜底 |
+
+### 7.4 验收标准
+
+- [ ] FA-06：资产列表分页、状态过滤、冻结/解冻/取消操作均可用；状态机越界 400 有明确提示。
+- [ ] FA-07：公告新建默认草稿，发布/下线状态正确；帮助分类和文章 CRUD 可用；JSON 字段错误不会白屏。
+- [ ] FA-09：会员等级、权益、用户会员列表、手动开通/续期/取消/改期全部实现；M9 直接展示 `level_name`。
+- [ ] FA-10：应用和适配器 CRUD 全覆盖；应用上架为商品只做文案引导，不跨端设计后端逻辑。
+- [ ] 所有页面只通过 `src/api/*.ts` 调接口，组件内不直接 import axios。
+- [ ] `npm run type-check`、`npm run lint`、`npm run build` 全部通过。

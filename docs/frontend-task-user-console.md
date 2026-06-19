@@ -669,3 +669,50 @@ export function listMyConsumptionRecords(params: {
 - [ ] 钱包余额取 `wallet_id` 字段（**不是 `id`**）；`balance_amount` 精确显示
 - [ ] 充值订单返回 HTTP 201（非 200）；`pay_url` 展示二维码或跳转
 - [ ] 我的消费记录（F2）：`listMyConsumptionRecords` 强制本人、product_id/usage_type/时间过滤生效；扁平分页正确；不依赖 wallet_transaction_id 字段
+
+---
+
+## 7. 后端丙用户端对接任务（FB-07 / FB-08 / FB-09）
+
+> 本节同步 Claude 在 `.claude/agents/前端工程师乙.md` 中给前端乙安排的后端丙任务。落地时以 `docs/frontend-dev-plan-backend-c.md` 为首要任务依据，以 `docs/frontend-api-reference.md` §十～§十三为字段 SSOT。只开发 `web/user-console` 前端页面、路由、类型和 `src/api/*.ts` 封装，不实现后端逻辑。
+
+### 7.1 对接红线
+
+- FB-07 我的资产/权益已完成；如后续补权益页，仅按 AS1～AS3 调既有用户端接口。
+- 用户端列表分两类：`GET /api/announcements` 是完整分页 `{items,page,page_size,total}`；`/api/my/assets`、`/api/my/entitlements`、`/api/memberships`、`/api/help/*` 是不分页 `{items}`。
+- `GET /api/my/membership` 统一返回 `data.membership`：有会员为对象、无会员为 `null`；无需 `has_membership` 分支。
+- 会员对象已内联 `level_code` / `level_name`，直接展示等级名，无需再按 M1 等级列表映射。
+- 各等级权益调用公开端点 `GET /api/memberships/{id}/benefits`，只返回 active 权益；`benefit_value` 是 JSON 字符串，读取时解析失败要兜底。
+- 会员开通/续费无独立会员购买接口，必须跳转 `product_type=membership` 的商品购买流程；支付完成后重拉 `/api/my/membership`。
+- 公告可见范围由后端 fail-closed 过滤，前端不做二次权限判断；`admins` 范围不会出现在用户端返回里。
+- 帮助文章详情 `GET /api/help/articles/{id}` 的 `data` 直接是文章对象，不是 `{article}` 或 `{item}` 包裹。
+- 金额、额度、权益值等字符串字段不得用浮点数做资金计算；需要展示计算时优先用字符串安全展示或后端字段。
+
+### 7.2 API 与类型文件清单
+
+| 文件 | 任务 |
+|---|---|
+| `src/api/membership.ts` | M1/M2/公开权益端点：会员等级列表、我的会员、等级权益 |
+| `src/api/content.ts` | C1～C4：公告列表/详情、帮助分类、帮助文章列表/详情 |
+| `src/types/membership.ts` | 会员等级、我的会员、会员权益类型；`benefit_value` 保持字符串 |
+| `src/types/content.ts` | 公告、帮助分类、帮助文章类型 |
+
+### 7.3 视图层任务
+
+| 阶段 | 分支名 | 视图 | 用到的 API | 关键交互 |
+|---|---|---|---|---|
+| FB-07 | `feature/frontend-b-asset-management` | `views/assets/AssetListView.vue` | AS1/AS2/AS3 | 已完成；资产、权益额度展示；`quota_total=null` 表示不限量 |
+| FB-08 | `feature/frontend-b-membership` | `views/membership/MembershipView.vue` | M1/M2/`GET /api/memberships/{id}/benefits` | 会员等级列表、我的会员卡片、权益展示/对比；`membership=null` 显示暂无会员；续费/开通跳会员商品流程 |
+| FB-09 | `feature/frontend-b-content` | `views/content/AnnouncementView.vue` | C1 | 公告完整分页；展示标题、摘要、发布时间、详情；不做可见范围二次过滤 |
+| FB-09 | `feature/frontend-b-content` | `views/content/HelpCenterView.vue` | C2/C3/C4 | 分类导航；按分类查文章列表 `{items}`；文章详情直接按对象渲染；404/40400 友好提示 |
+
+### 7.4 验收标准
+
+- [ ] FB-08：会员等级、我的会员和各等级权益正常展示；`data.membership=null` 时 UI 不报错。
+- [ ] FB-08：会员对象直接使用 `level_name` 展示；不再按 `level_id` 做额外映射。
+- [ ] FB-08：权益 `benefit_value` JSON 解析失败时不白屏，有兜底展示。
+- [ ] FB-08：开通/续费只跳商品流程，不调用不存在的会员购买接口；支付后返回会员中心能刷新 M2。
+- [ ] FB-09：公告按完整分页信封渲染，分页/总数/翻页生效；不按 `{items}`-only 兜底。
+- [ ] FB-09：帮助分类和文章列表不分页；文章详情按直接对象渲染。
+- [ ] 所有页面只通过 `src/api/*.ts` 调接口，组件内不直接 import axios。
+- [ ] `npm run type-check`、`npm run lint`、`npm run build` 全部通过。
