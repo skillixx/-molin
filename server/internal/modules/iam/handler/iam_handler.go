@@ -160,6 +160,11 @@ func (h *IAMHandler) DeleteRole(w http.ResponseWriter, r *http.Request) {
 			response.Error(w, http.StatusConflict, 40900, "角色下仍有用户，无法删除")
 			return
 		}
+		// GR-001：角色仍被分组绑定时返回 409，提示先解绑
+		if errors.Is(err, service.ErrRoleInUseByGroup) {
+			response.Error(w, http.StatusConflict, 40900, "角色已绑定到分组，请先解绑")
+			return
+		}
 		response.Error(w, http.StatusInternalServerError, 50000, "删除失败")
 		return
 	}
