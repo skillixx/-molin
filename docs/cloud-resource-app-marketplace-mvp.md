@@ -62,7 +62,7 @@
 - 分库分表。
 - 企业级审批流。
 
-### 第二阶段：GPU 租赁（Week 5–7）
+### 第三阶段：GPU 服务器出售（Week 10–12）
 
 底座稳定后接入：
 
@@ -74,7 +74,7 @@
 - 用户端：GPU 市场、租赁详情、我的实例。
 - 管理后台：设备管理、租赁管理、设备事件。
 
-### 第三阶段：Agent / Skills / Token 网关（Week 8–12）
+### 第二阶段：Token 网关 + Agent / Skills（Week 5–9）
 
 - Agent 模板管理、用户 Agent 创建与定制、定制订单。
 - Skills 技能市场、版本管理、用户安装与授权、Agent 绑定 Skill。
@@ -177,12 +177,12 @@ audit
 identity
   实名制认证、附件、审核流程
 
--- 第二阶段 --
+-- 第三阶段 --
 
 resource
   GPU 设备、设备分组、租赁、释放、状态同步
 
--- 第三阶段 --
+-- 第二阶段 --
 
 agent
   Agent 模板、用户 agent、定制订单、版本、发布
@@ -828,7 +828,7 @@ help_articles
 - updated_at
 ```
 
-### 6.10 GPU 设备租赁（第二阶段）
+### 6.10 GPU 设备租赁（第三阶段）
 
 ```text
 gpu_devices
@@ -875,7 +875,7 @@ gpu_device_events
 - created_at
 ```
 
-### 6.11 Agent 定制市场（第三阶段）
+### 6.11 Agent 定制市场（第二阶段）
 
 ```text
 agent_templates
@@ -930,7 +930,7 @@ agent_usage_logs
 - created_at
 ```
 
-### 6.12 Skills 技能市场（第三阶段）
+### 6.12 Skills 技能市场（第二阶段）
 
 ```text
 skills
@@ -972,7 +972,7 @@ agent_skill_bindings
 - created_at
 ```
 
-### 6.13 Token 上游聚合网关（第三阶段）
+### 6.13 Token 上游聚合网关（第二阶段）
 
 ```text
 token_providers
@@ -1139,7 +1139,7 @@ token_quota_accounts
   -> Provision Router 开通应用权限
 ```
 
-### 7.6 Token 网关调用流程（第三阶段）
+### 7.6 Token 网关调用流程（第二阶段）
 
 ```text
 用户或 agent 发起模型调用
@@ -1224,14 +1224,14 @@ GET  /api/help/articles/:id
 -- 支付回调（无需登录，签名校验） --
 POST /api/payments/notify/:provider
 
--- GPU（第二阶段） --
+-- GPU（第三阶段） --
 GET  /api/gpu/devices
 GET  /api/gpu/devices/:id
 POST /api/gpu/rentals
 GET  /api/gpu/rentals
 GET  /api/gpu/rentals/:id
 
--- Agent（第三阶段） --
+-- Agent（第二阶段） --
 GET  /api/agents/templates
 GET  /api/agents/templates/:id
 POST /api/agents/customization-orders
@@ -1239,13 +1239,13 @@ GET  /api/my/agents
 POST /api/my/agents
 PATCH /api/my/agents/:id
 
--- Skills（第三阶段） --
+-- Skills（第二阶段） --
 GET  /api/skills
 GET  /api/skills/:id
 POST /api/skills/:id/purchase
 POST /api/my/agents/:id/skills
 
--- Token 网关（第三阶段） --
+-- Token 网关（第二阶段） --
 GET  /api/token/models
 POST /api/token/chat/completions
 GET  /api/token/usage
@@ -1333,26 +1333,26 @@ GET    /api/admin/help/articles
 POST   /api/admin/help/articles
 PATCH  /api/admin/help/articles/:id
 
--- GPU（第二阶段） --
+-- GPU（第三阶段） --
 GET    /api/admin/gpu/devices
 POST   /api/admin/gpu/devices
 PATCH  /api/admin/gpu/devices/:id
 GET    /api/admin/gpu/rentals
 
--- Agent（第三阶段） --
+-- Agent（第二阶段） --
 GET    /api/admin/agent-templates
 POST   /api/admin/agent-templates
 PATCH  /api/admin/agent-templates/:id
 GET    /api/admin/agent-customization-orders
 PATCH  /api/admin/agent-customization-orders/:id
 
--- Skills（第三阶段） --
+-- Skills（第二阶段） --
 GET    /api/admin/skills
 POST   /api/admin/skills
 PATCH  /api/admin/skills/:id
 POST   /api/admin/skills/:id/versions
 
--- Token 网关（第三阶段） --
+-- Token 网关（第二阶段） --
 GET    /api/admin/token/providers
 POST   /api/admin/token/providers
 PATCH  /api/admin/token/providers/:id
@@ -1410,7 +1410,7 @@ GET    /api/admin/token/usage
 - 完善管理后台（订单管理、财务流水、用户资产管理）。
 - 完成第一个完整应用售卖闭环测试。
 
-### 第二阶段：GPU 租赁（Week 5–7）
+### 第三阶段：GPU 服务器出售（Week 10–12）
 
 - GPU 设备管理、状态机。
 - 租赁订单（按量计费接入统一财务消费路由）。
@@ -1418,7 +1418,7 @@ GET    /api/admin/token/usage
 - 用户端租赁页面和我的实例。
 - 管理后台设备和租赁管理。
 
-### 第三阶段：Agent / Skills / Token 网关（Week 8–12）
+### 第二阶段：Token 网关 + Agent / Skills（Week 5–9）
 
 - Agent 模板管理、用户 Agent 创建和定制订单。
 - Skills 管理、版本、购买、安装、Agent 绑定。
