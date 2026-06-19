@@ -297,6 +297,7 @@ Body: {
 PATCH {{base_url}}/api/admin/app-adapters/{{adapter_id}}   Body: { "status": "inactive" }
 ```
 - POST 后执行脚本写 `adapter_id`。
+- ⚠️ `GET /api/admin/app-adapters` 为**分页**接口：`data` 为扁平分页 `{items,page,page_size,total}`（支持 `?page=&page_size=&status=`，page_size 上限 100），**不是不分页 `{items}`**。
 
 ### G. 用户端应用详情（需登录）
 ```

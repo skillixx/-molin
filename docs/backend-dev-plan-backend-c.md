@@ -199,7 +199,7 @@ graph TD
 | GET | `/api/admin/apps/{id}` | app:manage | 应用详情 |
 | POST | `/api/admin/apps` | app:manage | 创建应用 |
 | PATCH | `/api/admin/apps/{id}` | app:manage | 更新 / 上下架（draft/active/inactive/archived） |
-| GET | `/api/admin/app-adapters` | app:manage | 适配器列表 |
+| GET | `/api/admin/app-adapters` | app:manage | 适配器列表，filter `status`，**分页**（扁平 `{items,page,page_size,total}`，page_size 上限 100） |
 | POST | `/api/admin/app-adapters` | app:manage | 注册适配器 |
 | PATCH | `/api/admin/app-adapters/{id}` | app:manage | 更新 / 启停适配器 |
 
