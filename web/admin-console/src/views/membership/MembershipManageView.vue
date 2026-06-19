@@ -27,6 +27,8 @@ const userMemberships = ref<AdminUserMembership[]>([])
 const selectedLevelId = ref<number>()
 const userFilter = reactive({ user_id: undefined as number | undefined })
 const pagination = reactive<Pagination>({ page: 1, page_size: 20, total: 0 })
+const levelPagination = reactive<Pagination>({ page: 1, page_size: 20, total: 0 })
+const benefitPagination = reactive<Pagination>({ page: 1, page_size: 20, total: 0 })
 
 const levelDialogVisible = ref(false)
 const editingLevel = ref<MembershipLevel | null>(null)
@@ -64,6 +66,14 @@ const selectedMembership = ref<AdminUserMembership | null>(null)
 const expireForm = reactive({ expires_at: '' })
 
 const levelOptions = computed(() => levels.value.map(level => ({ label: `${level.name}（${level.level_code}）`, value: level.id })))
+const pagedLevels = computed(() => {
+  const start = (levelPagination.page - 1) * levelPagination.page_size
+  return levels.value.slice(start, start + levelPagination.page_size)
+})
+const pagedBenefits = computed(() => {
+  const start = (benefitPagination.page - 1) * benefitPagination.page_size
+  return benefits.value.slice(start, start + benefitPagination.page_size)
+})
 
 onMounted(async () => {
   await Promise.all([fetchLevels(), fetchUserMemberships()])
@@ -75,6 +85,9 @@ async function fetchLevels() {
     // 会员等级是不分页列表，首次加载后默认选中第一个等级，方便权益页直接查询。
     const res = await listMembershipLevels()
     levels.value = res.items
+    // 等级接口无后端分页，页面做本地分页，避免等级过多时表格过长。
+    levelPagination.total = res.items.length
+    levelPagination.page = 1
     if (!selectedLevelId.value && levels.value[0]) selectedLevelId.value = levels.value[0].id
     await fetchBenefits()
   } finally {
@@ -88,6 +101,9 @@ async function fetchBenefits() {
     // 权益接口按 level_id 过滤，未选等级时让后端返回默认范围，避免前端伪造规则。
     const res = await listMembershipBenefits({ level_id: selectedLevelId.value })
     benefits.value = res.items
+    // 权益接口无后端分页，按当前等级筛选结果做本地分页展示。
+    benefitPagination.total = res.items.length
+    benefitPagination.page = 1
   } finally {
     benefitLoading.value = false
   }
@@ -228,6 +244,12 @@ function handleUserSearch() {
   fetchUserMemberships()
 }
 
+function handleUserPageSizeChange(pageSize: number) {
+  pagination.page_size = pageSize
+  pagination.page = 1
+  fetchUserMemberships()
+}
+
 function openGrantDialog() {
   grantForm.user_id = undefined
   grantForm.level_id = levels.value[0]?.id
@@ -315,7 +337,7 @@ function statusTagType(status: string) {
           <el-button type="primary" :icon="Plus" @click="openCreateLevel">新建等级</el-button>
           <el-button :icon="Refresh" @click="fetchLevels">刷新</el-button>
         </div>
-        <el-table :data="levels" v-loading="levelLoading" border>
+        <el-table :data="pagedLevels" v-loading="levelLoading" border>
           <el-table-column prop="id" label="ID" width="80" />
           <el-table-column prop="level_code" label="等级代码" min-width="140" />
           <el-table-column prop="name" label="等级名称" min-width="140" />
@@ -328,6 +350,18 @@ function statusTagType(status: string) {
             <template #default="{ row }"><el-button text :icon="Edit" @click="openEditLevel(row)">编辑</el-button></template>
           </el-table-column>
         </el-table>
+        <div v-if="levels.length > 0" class="pagination-row">
+          <el-pagination
+            background
+            layout="sizes, prev, pager, next, total"
+            :page-sizes="[10, 20, 50, 100]"
+            :current-page="levelPagination.page"
+            :page-size="levelPagination.page_size"
+            :total="levelPagination.total"
+            @size-change="(pageSize: number) => { levelPagination.page_size = pageSize; levelPagination.page = 1 }"
+            @current-change="(page: number) => { levelPagination.page = page }"
+          />
+        </div>
       </el-tab-pane>
 
       <el-tab-pane label="权益配置" name="benefits">
@@ -338,7 +372,7 @@ function statusTagType(status: string) {
           <el-button type="primary" :icon="Plus" @click="openCreateBenefit">新建权益</el-button>
           <el-button :icon="Refresh" @click="fetchBenefits">刷新</el-button>
         </div>
-        <el-table :data="benefits" v-loading="benefitLoading" border>
+        <el-table :data="pagedBenefits" v-loading="benefitLoading" border>
           <el-table-column prop="id" label="ID" width="80" />
           <el-table-column prop="level_id" label="等级 ID" width="100" />
           <el-table-column prop="benefit_type" label="权益类型" min-width="140" />
@@ -350,6 +384,18 @@ function statusTagType(status: string) {
             <template #default="{ row }"><el-button text :icon="Edit" @click="openEditBenefit(row)">编辑</el-button></template>
           </el-table-column>
         </el-table>
+        <div v-if="benefits.length > 0" class="pagination-row">
+          <el-pagination
+            background
+            layout="sizes, prev, pager, next, total"
+            :page-sizes="[10, 20, 50, 100]"
+            :current-page="benefitPagination.page"
+            :page-size="benefitPagination.page_size"
+            :total="benefitPagination.total"
+            @size-change="(pageSize: number) => { benefitPagination.page_size = pageSize; benefitPagination.page = 1 }"
+            @current-change="(page: number) => { benefitPagination.page = page }"
+          />
+        </div>
       </el-tab-pane>
 
       <el-tab-pane label="用户会员" name="users">
@@ -378,7 +424,16 @@ function statusTagType(status: string) {
           </el-table-column>
         </el-table>
         <div class="pagination-row">
-          <el-pagination background layout="prev, pager, next, total" :current-page="pagination.page" :page-size="pagination.page_size" :total="pagination.total" @current-change="(page: number) => { pagination.page = page; fetchUserMemberships() }" />
+          <el-pagination
+            background
+            layout="sizes, prev, pager, next, total"
+            :page-sizes="[10, 20, 50, 100]"
+            :current-page="pagination.page"
+            :page-size="pagination.page_size"
+            :total="pagination.total"
+            @size-change="handleUserPageSizeChange"
+            @current-change="(page: number) => { pagination.page = page; fetchUserMemberships() }"
+          />
         </div>
       </el-tab-pane>
     </el-tabs>
