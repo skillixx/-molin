@@ -114,6 +114,18 @@ async function fetchArticles() {
   }
 }
 
+function handleAnnouncementPageSizeChange(pageSize: number) {
+  announcementPagination.page_size = pageSize
+  announcementPagination.page = 1
+  fetchAnnouncements()
+}
+
+function handleArticlePageSizeChange(pageSize: number) {
+  articlePagination.page_size = pageSize
+  articlePagination.page = 1
+  fetchArticles()
+}
+
 function normalizeJson(value: string, fieldName: string) {
   const text = value.trim()
   if (!text) return null
@@ -332,7 +344,16 @@ function statusTagType(status: string) {
           </el-table-column>
         </el-table>
         <div class="pagination-row">
-          <el-pagination background layout="prev, pager, next, total" :current-page="announcementPagination.page" :page-size="announcementPagination.page_size" :total="announcementPagination.total" @current-change="(page: number) => { announcementPagination.page = page; fetchAnnouncements() }" />
+          <el-pagination
+            background
+            layout="sizes, prev, pager, next, total"
+            :page-sizes="[10, 20, 50, 100]"
+            :current-page="announcementPagination.page"
+            :page-size="announcementPagination.page_size"
+            :total="announcementPagination.total"
+            @size-change="handleAnnouncementPageSizeChange"
+            @current-change="(page: number) => { announcementPagination.page = page; fetchAnnouncements() }"
+          />
         </div>
       </el-tab-pane>
 
@@ -374,7 +395,16 @@ function statusTagType(status: string) {
           </el-table-column>
         </el-table>
         <div class="pagination-row">
-          <el-pagination background layout="prev, pager, next, total" :current-page="articlePagination.page" :page-size="articlePagination.page_size" :total="articlePagination.total" @current-change="(page: number) => { articlePagination.page = page; fetchArticles() }" />
+          <el-pagination
+            background
+            layout="sizes, prev, pager, next, total"
+            :page-sizes="[10, 20, 50, 100]"
+            :current-page="articlePagination.page"
+            :page-size="articlePagination.page_size"
+            :total="articlePagination.total"
+            @size-change="handleArticlePageSizeChange"
+            @current-change="(page: number) => { articlePagination.page = page; fetchArticles() }"
+          />
         </div>
       </el-tab-pane>
     </el-tabs>

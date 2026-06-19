@@ -99,7 +99,19 @@ function handleAppSearch() {
   fetchApps()
 }
 
+function handleAppPageSizeChange(pageSize: number) {
+  pagination.page_size = pageSize
+  pagination.page = 1
+  fetchApps()
+}
+
 function handleAdapterSearch() {
+  adapterPagination.page = 1
+  fetchAdapters()
+}
+
+function handleAdapterPageSizeChange(pageSize: number) {
+  adapterPagination.page_size = pageSize
   adapterPagination.page = 1
   fetchAdapters()
 }
@@ -311,7 +323,16 @@ function statusTagType(status: string) {
           </el-table-column>
         </el-table>
         <div class="pagination-row">
-          <el-pagination background layout="prev, pager, next, total" :current-page="pagination.page" :page-size="pagination.page_size" :total="pagination.total" @current-change="(page: number) => { pagination.page = page; fetchApps() }" />
+          <el-pagination
+            background
+            layout="sizes, prev, pager, next, total"
+            :page-sizes="[10, 20, 50, 100]"
+            :current-page="pagination.page"
+            :page-size="pagination.page_size"
+            :total="pagination.total"
+            @size-change="handleAppPageSizeChange"
+            @current-change="(page: number) => { pagination.page = page; fetchApps() }"
+          />
         </div>
       </el-tab-pane>
 
@@ -345,10 +366,12 @@ function statusTagType(status: string) {
         <div class="pagination-row">
           <el-pagination
             background
-            layout="prev, pager, next, total"
+            layout="sizes, prev, pager, next, total"
+            :page-sizes="[10, 20, 50, 100]"
             :current-page="adapterPagination.page"
             :page-size="adapterPagination.page_size"
             :total="adapterPagination.total"
+            @size-change="handleAdapterPageSizeChange"
             @current-change="(page: number) => { adapterPagination.page = page; fetchAdapters() }"
           />
         </div>
