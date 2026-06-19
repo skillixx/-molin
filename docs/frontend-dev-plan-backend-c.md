@@ -15,11 +15,11 @@
 
 > 分工互斥：前端只按本文与 `frontend-api-reference.md` 调用既有接口，**不自行设计后端逻辑**；发现接口缺失只回报后端丙补充，不自行实现后端。
 
-### 当前落地状态（2026-06-18 核查）
+### 当前落地状态（2026-06-19 核查 — 已完成）
 
-- **admin-console**：仅 `views/asset/AssetListView.vue`、`views/content/AnnouncementListView.vue` 为 9 行占位骨架；**无任何后端丙 API 封装**；会员管理、应用/适配器管理**目录与路由均缺失**。
-- **user-console**：`FB-07 我的资产` 已完成（`views/assets/AssetListView.vue`）；`views/membership/`、`views/content/` 为 19 行占位骨架；**无 membership/content API 封装**。
-- 结论：后端丙前端对接**整体尚未开始**（除我的资产外），按本文从 0 推进。
+- **admin-console**：后端丙对接全部落地并合并 main——FA-06 资产管理（`views/asset/AssetListView.vue`，274 行）、FA-07 内容管理（`views/content/AnnouncementListView.vue`，516 行）、FA-09 会员管理（`views/membership/MembershipManageView.vue`，436 行）、FA-10 应用管理（`views/app/AppManageView.vue`，369 行）；对应 API 封装 `asset-admin.ts`/`content-admin.ts`/`membership-admin.ts`/`app-admin.ts` 齐全。
+- **user-console**：后端丙对接全部落地并合并 main——FB-07 我的资产（`views/assets/AssetListView.vue`，491 行）、FB-08 会员中心（`views/membership/MembershipView.vue`，297 行）、FB-09 公告+帮助（`views/content/AnnouncementView.vue`/`HelpCenterView.vue`）；对应 API 封装 `asset.ts`/`membership.ts`/`content.ts` 齐全。
+- 结论：后端丙前端对接 **FA-06/07/09/10、FB-07/08/09 代码均已完成并合并 main**（提交 `94b8466`/`f6d85b6`）。本文转为**对接契约/验收参照**用途；前端页面的正式 QA 验收与 PM 确认为后续独立环节。
 
 ---
 
