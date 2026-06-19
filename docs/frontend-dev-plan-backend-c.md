@@ -27,7 +27,7 @@
 
 | 约定 | 说明 |
 |---|---|
-| 分页统一 D-95 扁平 | 所有**管理端列表**返回 `data` 为 `{ items, page, page_size, total }`（顶层，禁止 `{list,pagination}` 嵌套），复用 `PageResult<T>`。`page_size` 已随 C-FIX-4 上线，四类管理列表（asset/membership/content/app）均返回该字段，**无需兜底** |
+| 管理端列表分两类（勿一刀切分页） | 后端丙管理端 GET 列表**并非全部分页**，前端按下表区分：<br>**① 分页** `{ items, page, page_size, total }`（顶层扁平，禁止 `{list,pagination}` 嵌套，复用 `PageResult<T>`，`page_size` 已随 C-FIX-4 上线无需兜底）：AS4 `/admin/assets`、AP2 `/admin/apps`、M9 `/admin/user-memberships`、C5 `/admin/announcements`、C9 `/admin/help/articles`。<br>**② 不分页** `{ items: [...] }`（无 page/page_size/total，**勿建分页 UI**）：M3 `/admin/membership-levels`、M6 `/admin/membership-benefits`、C8 `/admin/help/categories`、AS5 `/admin/users/{id}/assets`。<br>字段以 `frontend-api-reference.md` 各端点描述为准（§11.3/§11.4 等已标注 `{items}`）。 |
 | 用户端列表两类 | （1）**不分页**：`GET /api/my/assets`、`/api/my/entitlements`、`/api/memberships`、`/api/help/*` 响应为 `{ items: [...] }`（无分页信封）。（2）**分页**：`GET /api/announcements` 已随 C-FIX-6 上线，返回完整 `{ items, page, page_size, total }`（`page_size` 默认 20、最大 50），前端**直接按分页渲染**，不要再按 `{items}`-only 兜底 |
 | 我的会员结构对称 | `GET /api/my/membership` 统一返回 `data.membership`：有会员为对象、无会员为 `null`，**前端无需 has-membership 分支判断**，直接读 `data.membership?.expires_at`。⚠️ 多等级并存时本接口只返回「永久优先、到期最晚」的**单条最优**会员 |
 | 会员对象已内联 level_code/level_name | `M2`/`M9` 的会员对象**已在保留 `level_id` 的基础上内联 `level_code`/`level_name`**（纯增量），前端可直接展示等级名，无需再按 `level_id` 映射 M1/M3 等级列表。⚠️ `M9` 仍**不含用户名/邮箱**（仅 `user_id`），展示用户身份须配合后端甲用户接口；M9 建议主要按 `user_id` 过滤使用 |

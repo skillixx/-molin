@@ -1560,6 +1560,7 @@ Wechatpay-Nonce: <随机串>
 }
 ```
 > `visible_scope`：`all`（所有登录用户）/`roles`（命中 `target_roles_json` 任一角色）/`members`（有效会员）/`admins`（用户端不可见）。仅返回 `status=published` 且当前在 `start_at`/`end_at` 时间窗内的公告。
+> ⚠️ `created_by` 为创建公告的管理员用户 ID，**前端勿在用户端展示**（仅内部字段，避免暴露管理员身份）。
 
 ### 12.2 帮助文档（公开）
 
@@ -1572,6 +1573,7 @@ Wechatpay-Nonce: <随机串>
 { "id": 1, "category_id": 1, "title": "如何充值", "content": "...", "sort_order": 0, "status": "published", "created_by": 1, "created_at": "2026-06-17T10:00:00Z" }
 ```
 > 帮助分类 `§12.2 /api/help/categories`、文章列表 `/api/help/articles` 均为不分页 `{ items: [...] }`。
+> ⚠️ `created_by` 为创建文章的管理员用户 ID，**前端勿在用户端展示**（仅内部字段）。
 
 ### 12.3 管理端公告
 
@@ -1587,6 +1589,7 @@ Wechatpay-Nonce: <随机串>
 ### 12.4 管理端帮助分类 / 文章
 
 - 分类：**GET/POST** `/api/admin/help/categories`、**PATCH** `/api/admin/help/categories/{id}` *(需 `content:manage`)*
+  - **GET 响应不分页**：`data` 为 `{ items: [分类对象] }`（无 page/page_size/total，前端勿建分页 UI）
   - POST body：`{ "name": "充值相关", "description": "...", "sort_order": 0 }`
 - 文章：**GET** `/api/admin/help/articles?category_id=&page=1&page_size=20`、**POST** `/api/admin/help/articles`、**PATCH** `/api/admin/help/articles/{id}` *(需 `content:manage`)*
   - POST body：`{ "category_id": 1, "title": "如何充值", "content": "...", "sort_order": 0 }`（默认 draft）
