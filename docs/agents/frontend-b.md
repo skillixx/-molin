@@ -37,6 +37,7 @@
 - `docs/frontend-api-reference.md`
 - `docs/frontend-dev-plan-backend-a.md`
 - `docs/frontend-dev-plan-backend-b.md`
+- `docs/frontend-dev-plan-backend-c.md`
 - `docs/full-api-design.md`
 
 ## 开发要求
@@ -48,7 +49,19 @@
 - 购买、支付、充值等流程必须处理加载态、防重复点击、错误提示和跳转引导。
 - `user_price === "-1"` 表示未配置价格，必须禁购；`"0"` 是合法免费价格。
 - 购买和钱包支付必须生成并传入 `Idempotency-Key`。
+- `GET /api/my/membership` 统一读取 `data.membership`，有会员为对象、无会员为 `null`，直接展示内联 `level_name`。
+- 会员开通/续费走 `product_type=membership` 商品购买流程，不调用不存在的会员购买接口。
+- 用户端公告按完整分页 `{items,page,page_size,total}` 渲染；帮助分类/文章列表按 `{items}` 不分页渲染。
+- Codex 编写前端代码时必须同步补充必要且详细的中文注释，说明关键交互逻辑、接口调用意图、状态变化、异常处理和特殊字段处理规则。
 - 发现接口缺失时，只列出需要后端补充的接口，不自行实现后端逻辑。
+
+## 当前后端丙任务
+
+- FB-07 我的资产/权益：已完成，后续仅按 AS1～AS3 补充体验。
+- FB-08 会员中心：会员等级、我的会员、公开权益端点、续费/开通商品流程引导。
+- FB-09 公告与帮助中心：公告分页、公告详情、帮助分类、文章列表和文章详情。
+
+后端丙任务以 `docs/frontend-dev-plan-backend-c.md` 和 `docs/frontend-task-user-console.md` 第 7 章为准。
 
 ## 交付物
 

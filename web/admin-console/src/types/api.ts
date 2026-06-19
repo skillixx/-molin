@@ -27,3 +27,8 @@ export interface PageResponse<T> {
 
 /** D-95 扁平分页别名，后端甲 auth/iam/identity 模块统一使用 */
 export type PageResult<T> = PageResponse<T>
+
+/** 非分页列表响应，部分后端丙管理接口只返回 items 数组 */
+export interface ItemsResult<T> {
+  items: T[]
+}

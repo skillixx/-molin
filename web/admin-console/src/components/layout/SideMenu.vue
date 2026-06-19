@@ -91,15 +91,43 @@
       </el-menu-item>
     </el-sub-menu>
 
-    <el-menu-item index="/assets">
+    <el-menu-item v-if="can('asset:view')" index="/assets">
       <el-icon><Box /></el-icon>
       <template #title>用户资产</template>
     </el-menu-item>
 
-    <el-menu-item index="/announcements">
-      <el-icon><Bell /></el-icon>
-      <template #title>公告管理</template>
-    </el-menu-item>
+    <el-sub-menu v-if="can('membership:view')" index="membership">
+      <template #title>
+        <el-icon><Medal /></el-icon>
+        <span>会员管理</span>
+      </template>
+      <el-menu-item index="/memberships">
+        <el-icon><Collection /></el-icon>
+        <template #title>会员配置</template>
+      </el-menu-item>
+    </el-sub-menu>
+
+    <el-sub-menu v-if="can('app:manage')" index="apps">
+      <template #title>
+        <el-icon><Box /></el-icon>
+        <span>应用市场</span>
+      </template>
+      <el-menu-item index="/apps">
+        <el-icon><Goods /></el-icon>
+        <template #title>应用管理</template>
+      </el-menu-item>
+    </el-sub-menu>
+
+    <el-sub-menu v-if="can('content:manage')" index="content">
+      <template #title>
+        <el-icon><Bell /></el-icon>
+        <span>内容中心</span>
+      </template>
+      <el-menu-item index="/announcements">
+        <el-icon><DocumentChecked /></el-icon>
+        <template #title>公告与帮助</template>
+      </el-menu-item>
+    </el-sub-menu>
   </el-menu>
 </template>
 
