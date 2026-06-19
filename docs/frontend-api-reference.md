@@ -1625,7 +1625,7 @@ Wechatpay-Nonce: <随机串>
 
 ### 13.3 管理端适配器
 
-- **GET** `/api/admin/app-adapters` *(需 `app:manage`)* → 适配器列表
+- **GET** `/api/admin/app-adapters?status=&page=1&page_size=20` *(需 `app:manage`)* → **扁平分页** `{ items, page, page_size, total }`（`page_size` 默认 20、上限 100，可选 `status` 过滤；前端按分页处理，勿当作不分页 `{items}`）
 - **POST** `/api/admin/app-adapters` *(需 `app:manage`)*
   ```json
   { "app_code": "netdisk-basic", "app_name": "基础网盘", "app_type": "netdisk", "adapter_type": "internal", "service_name": "netdisk-svc", "callback_url": "https://...", "supported_actions_json": "[\"provision\",\"renew\",\"cancel\"]", "usage_event_types_json": "[\"storage_gb\"]" }
