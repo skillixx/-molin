@@ -28,6 +28,13 @@ export interface GroupPermission {
   created_at: string
 }
 
+export interface GroupRoleBinding {
+  id: number
+  group_id: number
+  role_id: number
+  created_at: string
+}
+
 export interface GroupInviteCode {
   id: number
   code: string

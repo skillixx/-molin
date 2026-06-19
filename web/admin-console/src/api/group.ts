@@ -6,6 +6,7 @@ import type {
   GroupMember,
   GroupPermission,
   GroupRole,
+  GroupRoleBinding,
   UserGroup,
   UserGroupMembership,
   UserGroupType,
@@ -70,6 +71,19 @@ export function addGroupPermission(id: number, data: { permission_code: string }
 
 export function removeGroupPermission(id: number, code: string) {
   return http.delete<unknown, null>(`/admin/user-groups/${id}/permissions/${encodeURIComponent(code)}`)
+}
+
+// 组角色：给分组绑定全局角色，成员自动继承（与组权限同构，非分页）
+export function listGroupRoles(id: number) {
+  return http.get<unknown, GroupRoleBinding[]>(`/admin/user-groups/${id}/roles`)
+}
+
+export function addGroupRole(id: number, roleId: number) {
+  return http.post<unknown, null>(`/admin/user-groups/${id}/roles`, { role_id: roleId })
+}
+
+export function removeGroupRole(id: number, roleId: number) {
+  return http.delete<unknown, null>(`/admin/user-groups/${id}/roles/${roleId}`)
 }
 
 export function listInviteCodes(id: number, params: { page?: number; page_size?: number } = {}) {

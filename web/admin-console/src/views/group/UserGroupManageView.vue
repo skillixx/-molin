@@ -94,6 +94,26 @@
             </el-table>
           </el-tab-pane>
 
+          <el-tab-pane label="组角色" name="roles">
+            <div class="tab-toolbar">
+              <el-button type="primary" size="small" :icon="Plus" @click="openAddRole">添加角色</el-button>
+            </div>
+            <el-table :data="groupRoles" v-loading="loadingRoles" size="small" border>
+              <el-table-column label="角色名称" min-width="200">
+                <template #default="{ row }">{{ roleNameLabel(row.role_id) }}</template>
+              </el-table-column>
+              <el-table-column prop="role_id" label="角色 ID" width="120" />
+              <el-table-column prop="created_at" label="绑定时间" min-width="180">
+                <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
+              </el-table-column>
+              <el-table-column label="操作" width="100" fixed="right">
+                <template #default="{ row }">
+                  <el-button size="small" type="danger" text @click="handleRemoveRole(row)">解绑</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-tab-pane>
+
           <el-tab-pane label="邀请码" name="invites">
             <div class="tab-toolbar">
               <el-button type="primary" size="small" :icon="Plus" @click="openCreateInvite">生成邀请码</el-button>
@@ -209,6 +229,37 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="roleDialogVisible" title="添加组角色" width="460px">
+      <el-form :model="roleForm" label-width="90px">
+        <el-form-item label="角色" required>
+          <el-select
+            v-model="roleForm.role_id"
+            filterable
+            :loading="loadingAllRoles"
+            :placeholder="roleSelectPlaceholder"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in bindableRoles"
+              :key="item.id"
+              :label="`${item.name}（${item.code}）`"
+              :value="item.id"
+            />
+            <template #empty>
+              <div class="select-empty">{{ roleSelectEmptyText }}</div>
+            </template>
+          </el-select>
+        </el-form-item>
+        <div v-if="rolesLoadFailed" class="form-tip">
+          角色列表加载失败，请稍后重试。
+        </div>
+      </el-form>
+      <template #footer>
+        <el-button @click="roleDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="savingRole" @click="handleAddRole">保存</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="inviteDialogVisible" title="生成邀请码" width="520px">
       <el-form :model="inviteForm" label-width="100px">
         <el-form-item label="邀请码">
@@ -250,20 +301,34 @@ import { ArrowLeft, Plus } from '@element-plus/icons-vue'
 import {
   addGroupMember,
   addGroupPermission,
+  addGroupRole,
   createInviteCode,
   disableInviteCode,
   getGroup,
   listGroupMembers,
   listGroupPermissions,
+  listGroupRoles,
   listInviteCodes,
   removeGroupMember,
   removeGroupPermission,
+  removeGroupRole,
   updateGroup,
   updateGroupMemberRole,
 } from '@/api/group'
-import { listPermissions } from '@/api/role'
-import type { Permission } from '@/types/user'
-import type { GroupInviteCode, GroupMember, GroupPermission, GroupRole, UserGroup, UserGroupType } from '@/types/group'
+import { listPermissions, listRoles } from '@/api/role'
+import type { Permission, Role } from '@/types/user'
+import type {
+  GroupInviteCode,
+  GroupMember,
+  GroupPermission,
+  GroupRole,
+  GroupRoleBinding,
+  UserGroup,
+  UserGroupType,
+} from '@/types/group'
+
+// 不允许绑定到分组的系统角色（绑定会被后端拒 400），从可选项中过滤
+const SYSTEM_ROLE_CODES = ['admin', 'super_admin', 'superadmin']
 
 const route = useRoute()
 const router = useRouter()
@@ -274,12 +339,17 @@ const loadingGroup = ref(false)
 const activeTab = ref('members')
 const members = ref<GroupMember[]>([])
 const groupPermissions = ref<GroupPermission[]>([])
+const groupRoles = ref<GroupRoleBinding[]>([])
 const inviteCodes = ref<GroupInviteCode[]>([])
 const allPermissions = ref<Permission[]>([])
+const allRoles = ref<Role[]>([])
 const loadingAllPermissions = ref(false)
+const loadingAllRoles = ref(false)
 const permissionsLoadFailed = ref(false)
+const rolesLoadFailed = ref(false)
 const loadingMembers = ref(false)
 const loadingPermissions = ref(false)
+const loadingRoles = ref(false)
 const loadingInvites = ref(false)
 
 const groupDialogVisible = ref(false)
@@ -306,6 +376,10 @@ const permissionDialogVisible = ref(false)
 const savingPermission = ref(false)
 const permissionForm = reactive({ permission_code: '' })
 
+const roleDialogVisible = ref(false)
+const savingRole = ref(false)
+const roleForm = reactive({ role_id: undefined as number | undefined })
+
 const inviteDialogVisible = ref(false)
 const savingInvite = ref(false)
 const inviteForm = reactive({
@@ -316,7 +390,7 @@ const inviteForm = reactive({
 })
 
 onMounted(async () => {
-  await Promise.all([fetchGroup(), fetchAllPermissions()])
+  await Promise.all([fetchGroup(), fetchAllPermissions(), fetchAllRoles()])
   await fetchActiveTab()
 })
 
@@ -344,10 +418,25 @@ async function fetchAllPermissions() {
   }
 }
 
+async function fetchAllRoles() {
+  loadingAllRoles.value = true
+  rolesLoadFailed.value = false
+  try {
+    const res = await listRoles({ page: 1, page_size: 500 })
+    allRoles.value = res.items
+  } catch {
+    allRoles.value = []
+    rolesLoadFailed.value = true
+  } finally {
+    loadingAllRoles.value = false
+  }
+}
+
 async function fetchActiveTab() {
   if (!selectedGroup.value) return
   if (activeTab.value === 'members') await fetchMembers()
   if (activeTab.value === 'permissions') await fetchGroupPermissions()
+  if (activeTab.value === 'roles') await fetchGroupRoles()
   if (activeTab.value === 'invites') await fetchInviteCodes()
 }
 
@@ -372,6 +461,15 @@ async function fetchGroupPermissions() {
     groupPermissions.value = Array.isArray(res) ? res : res.items
   } finally {
     loadingPermissions.value = false
+  }
+}
+
+async function fetchGroupRoles() {
+  loadingRoles.value = true
+  try {
+    groupRoles.value = await listGroupRoles(groupId)
+  } finally {
+    loadingRoles.value = false
   }
 }
 
@@ -505,6 +603,45 @@ async function handleRemovePermission(item: GroupPermission) {
   }
 }
 
+function openAddRole() {
+  roleForm.role_id = undefined
+  if (allRoles.value.length === 0 && !loadingAllRoles.value) {
+    fetchAllRoles()
+  }
+  roleDialogVisible.value = true
+}
+
+async function handleAddRole() {
+  if (!roleForm.role_id) {
+    ElMessage.warning('请选择角色')
+    return
+  }
+  savingRole.value = true
+  try {
+    await addGroupRole(groupId, roleForm.role_id)
+    ElMessage.success('组角色已绑定')
+    roleDialogVisible.value = false
+    await fetchGroupRoles()
+  } finally {
+    savingRole.value = false
+  }
+}
+
+async function handleRemoveRole(item: GroupRoleBinding) {
+  try {
+    await ElMessageBox.confirm(`确认解绑角色「${roleNameLabel(item.role_id)}」？`, '确认解绑', {
+      confirmButtonText: '确认解绑',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    await removeGroupRole(groupId, item.role_id)
+    ElMessage.success('组角色已解绑')
+    await fetchGroupRoles()
+  } catch {
+    // 取消
+  }
+}
+
 function openCreateInvite() {
   inviteForm.code = ''
   inviteForm.default_group_role = 'member'
@@ -545,6 +682,30 @@ function groupRoleLabel(role: string) {
   const map: Record<string, string> = { admin: '管理员', member: '成员' }
   return map[role] ?? role
 }
+
+// 已绑定角色用全局角色列表把 role_id 映射成角色名展示
+function roleNameLabel(roleId: number) {
+  const role = allRoles.value.find((item) => item.id === roleId)
+  if (!role) return `角色 #${roleId}`
+  return `${role.name}（${role.code}）`
+}
+
+// 可绑定角色：过滤掉已绑定的，以及 admin 等系统角色（绑定会被后端拒 400）
+const bindableRoles = computed(() => {
+  const boundRoleIds = new Set(groupRoles.value.map((item) => item.role_id))
+  return allRoles.value.filter(
+    (role) => !boundRoleIds.has(role.id) && !SYSTEM_ROLE_CODES.includes(role.code)
+  )
+})
+
+const roleSelectPlaceholder = computed(() =>
+  rolesLoadFailed.value ? '角色列表加载失败' : '请选择要绑定的角色'
+)
+
+const roleSelectEmptyText = computed(() => {
+  if (rolesLoadFailed.value) return '角色列表加载失败，请稍后重试'
+  return '暂无可绑定的角色'
+})
 
 const permissionSelectPlaceholder = computed(() =>
   permissionsLoadFailed.value ? '请输入权限码，如 app:use:cloud-disk' : '请选择或输入权限码'
