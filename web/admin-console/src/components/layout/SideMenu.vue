@@ -118,6 +118,21 @@
       </el-menu-item>
     </el-sub-menu>
 
+    <el-sub-menu v-if="can('token:manage')" index="token">
+      <template #title>
+        <el-icon><Cpu /></el-icon>
+        <span>Token 网关</span>
+      </template>
+      <el-menu-item index="/token/channels">
+        <el-icon><Connection /></el-icon>
+        <template #title>渠道管理</template>
+      </el-menu-item>
+      <el-menu-item index="/token/models">
+        <el-icon><MagicStick /></el-icon>
+        <template #title>模型目录</template>
+      </el-menu-item>
+    </el-sub-menu>
+
     <el-sub-menu v-if="can('content:manage')" index="content">
       <template #title>
         <el-icon><Bell /></el-icon>

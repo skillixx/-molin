@@ -124,6 +124,18 @@ const router = createRouter({
           meta: { requiresAuth: true, requiresAdminVerify: true, title: '应用管理', permission: 'app:manage' },
         },
         {
+          path: 'token/channels',
+          name: 'TokenChannelList',
+          component: () => import('@/views/token/TokenChannelListView.vue'),
+          meta: { requiresAuth: true, requiresAdminVerify: true, title: '渠道管理', permission: 'token:manage' },
+        },
+        {
+          path: 'token/models',
+          name: 'TokenModelList',
+          component: () => import('@/views/token/TokenModelListView.vue'),
+          meta: { requiresAuth: true, requiresAdminVerify: true, title: '模型目录', permission: 'token:manage' },
+        },
+        {
           path: 'announcements',
           name: 'AnnouncementList',
           component: () => import('@/views/content/AnnouncementListView.vue'),
