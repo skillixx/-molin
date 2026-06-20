@@ -44,7 +44,8 @@
 | 40900 | 409  | 账号已注册（注册发码时账号已存在） |
 | 42900 | 429  | 请求频率超限 |
 | 50000 | 500  | 服务器内部错误 |
-| 60001 | 400  | 余额不足 |
+| 60001 | 400  | 余额不足（钱包） |
+| 60002 | 400  | 套餐额度不足（预付 token 套餐，第二阶段） |
 | 70001 | 400  | 需要先完成实名认证 |
 
 ### 分页参数（列表接口通用）
@@ -1782,6 +1783,42 @@ Wechatpay-Nonce: <随机串>
 
 ---
 
+> 以下为多模型聊天工作台（M3，🔜 后端丁）。Agent / Skill / 插件均**免费**，仅模型 token 调用计费。后端契约见 `docs/backend-chat-workbench-contract.md`。
+
+### 14.8 Agent 对话（站内聊天，tool-use 编排）🔜
+
+- **POST** `/api/agents/{id}/chat` *(登录态 / sk)*
+- 请求：
+  ```json
+  { "messages": [{ "role": "user", "content": "查一下今天的新闻并总结" }], "model": "deepseek-chat", "stream": true }
+  ```
+  - `model` 可选，缺省用该 Agent 的默认模型；`stream=true` 走 SSE。
+- 行为：门面注入 Agent 人设 + 绑定的 skill/插件作为工具，自动执行工具调用循环，返回最终答案。**与 §14.2 的区别**：14.2 是纯透传（开发者自理工具），本接口由门面编排工具。
+- 流式 SSE 事件（建议）：`event: tool_call`（调用工具中）/ `event: tool_result` / `event: message`（最终答案增量）/ `data: [DONE]`。
+- 计费：按 token 累加各轮 / 按次计 1（一次提问算 1 次）。错误码同 §14（40300/50200/50300）。
+
+### 14.9 Agent / 角色（用户端）🔜
+
+- **GET** `/api/agents` *(登录态)* → 可用 Agent 列表：官方预设 + 本人自建
+  ```json
+  { "id": 3, "name": "新闻助手", "description": "...", "avatar": "https://...", "owner_type": "official", "default_model_code": "deepseek-chat", "skills": [{"id":1,"name":"联网搜索"}], "plugins": [] }
+  ```
+- **GET** `/api/agents/{id}` *(登录态)* → 详情（绑定的 skill/插件名称；不含插件凭证）
+- **POST** `/api/agents` *(登录态)* — 用户自建 Agent
+  ```json
+  { "name": "我的助手", "system_prompt": "你是…", "default_model_code": "deepseek-chat", "skill_ids": [1], "plugin_ids": [] }
+  ```
+- **PATCH/DELETE** `/api/agents/{id}` *(登录态)* — 仅本人自建可改/删；官方 Agent 只读（越权 40003）
+- **GET** `/api/skills`、`/api/plugins` *(登录态)* — 列 active 能力供自建 Agent 绑定（精简视图，插件不回 endpoint/凭证）
+
+### 14.10 Agent / Skill / 插件管理（管理端）🔜
+
+- **`/api/admin/agents`** CRUD + `/{id}/skills`、`/{id}/plugins` 绑定 *(需 `agent:manage` + 双重认证)*
+- **`/api/admin/skills`** CRUD *(需 `skill:manage` + 双重认证)*
+- **`/api/admin/plugins`** CRUD *(需 `plugin:manage` + 双重认证)*；插件 `auth_config` 仅入参，响应用 `has_auth` 表征，绝不回凭证
+
+---
+
 ## 附录
 
 ### 权限码清单
@@ -1805,6 +1842,9 @@ Wechatpay-Nonce: <随机串>
 | `content:manage` | 公告/帮助文档管理（后端丙） |
 | `app:manage` | 应用与适配器管理（后端丙） |
 | `token:manage` | Token 网关渠道/模型目录管理 + 全量用量（后端丁，需管理员双重认证） |
+| `agent:manage` | Agent（官方预设）管理 + skill/插件绑定（后端丁，需管理员双重认证） |
+| `skill:manage` | Skill 内置能力管理（后端丁，需管理员双重认证） |
+| `plugin:manage` | 外部插件管理（后端丁，需管理员双重认证） |
 
 ### 枚举值汇总
 
@@ -1835,3 +1875,7 @@ Wechatpay-Nonce: <随机串>
 | `token_usage_log.status` | `success` / `failed` / `timeout` |
 | `api_key.billing_mode` | `postpaid`（按量/按次扣钱包）/ `prepaid`（套餐预付，绑 entitlement 额度） |
 | `api_key.status` | `active` / `revoked` |
+| `billing usage_type`（token） | `input_tokens` / `output_tokens`（按量，unit=tokens）/ `calls`（按次，unit=count） |
+| `agent.owner_type` | `official`（运营预设）/ `user`（用户自建） |
+| `agent.status` / `skill.status` / `plugin.status` | `active` / `inactive` |
+| `entitlement_type`（token 套餐） | `token_quota`（quota_unit=tokens，预付额度） |
