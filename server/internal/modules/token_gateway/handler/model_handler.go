@@ -38,6 +38,31 @@ func (h *ModelHandler) ListModels(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ListPublic GET /api/token/models（用户端，仅登录态）
+// 只返回 status=active 的模型，且仅暴露精简公开字段（不含渠道/上游/商品等内部路由信息）。
+// 支持 ?modality= 过滤 + 分页。
+func (h *ModelHandler) ListPublic(w http.ResponseWriter, r *http.Request) {
+	modality := r.URL.Query().Get("modality")
+	p := pagination.Parse(r)
+	items, total, err := h.svc.ListPaged(r.Context(), "active", modality, p.Offset(), p.PageSize)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
+		return
+	}
+	pub := make([]dto.PublicModelResp, len(items))
+	for i := range items {
+		pub[i] = dto.PublicModelResp{
+			LogicalModelCode: items[i].LogicalModelCode,
+			DisplayName:      items[i].DisplayName,
+			Modality:         items[i].Modality,
+		}
+	}
+	response.JSON(w, http.StatusOK, dto.PagedResp{
+		List:   pub,
+		Result: pagination.Result{Page: p.Page, PageSize: p.PageSize, Total: total},
+	})
+}
+
 // GetModel GET /api/admin/token/models/{id}
 func (h *ModelHandler) GetModel(w http.ResponseWriter, r *http.Request) {
 	id, err := pathUint64(r, "id")
