@@ -44,6 +44,7 @@ import (
 	productservice "molin/server/internal/modules/product/service"
 	provisionmod "molin/server/internal/modules/provision"
 	provisionhandler "molin/server/internal/modules/provision/handler"
+	tokengatewaymod "molin/server/internal/modules/token_gateway"
 	provisionsvc "molin/server/internal/modules/provision/service"
 	"molin/server/pkg/cache"
 	"molin/server/pkg/db"
@@ -308,6 +309,8 @@ func NewApp() (*App, error) {
 	// 注册应用类商品处理器（product_type = "application"）
 	appProvisioner := provisionhandler.NewAppProvisioner(productRepo)
 	provisionService.RegisterHandler("application", appProvisioner)
+	// 注册 token 类商品处理器（product_type = "token"）：开通 token_service 资产（按量先行，不预置额度）
+	provisionService.RegisterHandler("token", provisionhandler.NewTokenProvisioner(productRepo))
 
 	// ——— 构建路由 ———
 	mux := http.NewServeMux()
@@ -363,6 +366,19 @@ func NewApp() (*App, error) {
 
 	// 注册 app 模块（应用业务详情 + 适配器管理；与 product 模块的商品/套餐解耦）
 	appmod.RegisterRoutes(mux, gormDB, cfg.JWTSecret, authService, iamService)
+
+	// 注册 token 网关门面（管理端：渠道/模型目录）。
+	// TOKEN_PROVIDER_KEY 未配置或非法（非 32 字节）时跳过装配，仅记日志，不阻断其他模块启动。
+	if cfg.TokenProviderKey != "" {
+		if tokenGatewayModule, tgErr := tokengatewaymod.New(gormDB, cfg.TokenProviderKey); tgErr != nil {
+			log.Printf("[token_gateway] 初始化失败，管理端未启用: %v", tgErr)
+		} else {
+			tokengatewaymod.RegisterRoutes(mux, tokenGatewayModule.ChannelService, tokenGatewayModule.CatalogService,
+				cfg.JWTSecret, iamService, authService, authService)
+		}
+	} else {
+		log.Printf("[token_gateway] TOKEN_PROVIDER_KEY 未配置，token 网关管理端未启用")
+	}
 
 	// 启动定时任务：到期资产处理（后台 goroutine，随应用生命周期运行）
 	go jobs.NewExpireAssetsJob(gormDB).Start(context.Background())
