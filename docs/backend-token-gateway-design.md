@@ -1,109 +1,111 @@
-# 第二阶段落地方案：Token 网关 = Molin 薄门面 + 外接 one-api 引擎
+# 第二阶段落地方案：Token 网关 = Molin 门面 + 自写薄转发器（v3）
 
-> 状态：方案 v2（架构调整：转发层不自研，外接 MIT 的 one-api）｜阶段：第二阶段（Week 5–9）
-> 决策记录：转发引擎选 **one-api（MIT，活跃维护，支持 Claude/OpenAI/Gemini 等）**，不自研多供应商/格式转换/路由。
+> 状态：方案 v3（转发引擎调整：供应商仅 OpenAI/DeepSeek/Kimi，全部 OpenAI 兼容，**改为自写薄转发器，不再外接 one-api**）
+> 阶段：第二阶段（Week 5–9）｜配套：`docs/backend-token-gateway-integration.md`
 > 上游设计参考：`docs/cloud-resource-app-marketplace-mvp.md` §6.13/§7.6、`docs/full-api-design.md` §6.4
-> 读者：后端工程师丁（实现门面）、运维（部署 one-api）、后端乙/丙（商品/计费/额度对接）、产品经理（验收）
+> 读者：后端工程师丁（实现）、后端甲/乙/丙（集成）、产品经理（验收）
 
 ## 1. 决策与原则
 
-- **转发层不自研**：多供应商接入、OpenAI↔Claude↔Gemini 格式转换、路由、重试、健康检查 —— 全部交给现成引擎 **one-api**，不重复造。
-- **引擎 = one-api（MIT）**：许可证宽松，可自由改/并/闭源商用，无 AGPL 包袱（对比 new-api 的 AGPL 已排除）。
-- **Molin 只建「薄门面」**：鉴权、按角色/会员的访问门禁、钱包/额度闸、用量计费、用量展示、对外模型目录 —— 这部分闭源，是平台差异化。
-- **单一真相源 = Molin**：钱、权限、定价、额度全在 Molin；one-api 退化为「无状态转发翻译器」，其自身的用户/额度/计费**不启用**。
+- **首批供应商：OpenAI / DeepSeek / Kimi(Moonshot)，三家全部 OpenAI 兼容** → 转发无需任何格式转换,近似纯透传。
+- **转发引擎：自写薄转发器,不外接 one-api**。理由:供应商少,one-api 的"广度+多家维护"价值用不上,却要背它的独立服务/独立库/共享 key/双账本/运维成本。自写几百行更简单、可控、单进程、直接和甲乙丙整合。
+- **复用平台底座**:用同一套用户(甲)、钱包/商品(乙)、资产/开通(丙),门面只编排。
+- **单一真相源 = Molin**:钱、权限、定价、额度全在 Molin。
+- **扩展点保留**:渠道带 `type` 字段;将来要加 Claude/Gemini 原生(非 OpenAI 格式)时,只需给渠道加一个 `type=anthropic/gemini` + 一个适配器,不改主流程。
 
 ## 2. 架构总览
 
 ```
 终端用户 / Agent / 外部程序
-   │  (Molin 平台 key 或登录态)
+   │  (Molin 平台 API Key 或登录态)
    ▼
-Molin token_gateway 门面（自建，闭源）
-   ① 鉴权（登录态 Bearer 或 Molin 签发的平台 API Key）
-   ② 访问门禁：是否持有该模型对应的 token 商品权益（复用 product_role_access / 角色·会员）
-   ③ 余额/额度闸：校验 token_quota 额度或钱包（Molin 单一账本）
-   ④ 透传调用 one-api（用【一个内部共享 key】，不给终端用户发 one-api key）
-   ⑤ 读取响应里的 usage → 写 Molin token_usage_logs → 上报 finance_consumer 扣费
-   ⑥ 流式 SSE 直接透传
+Molin token_gateway 门面（自建，单进程）
+   ① 鉴权（登录态 Bearer 或 Molin 签发的平台 API Key，sk 映射 user_id）
+   ② 访问门禁：是否持有该模型对应 token 商品权益（复用 product_role_access / 角色·会员）
+   ③ 余额/额度闸：按量→钱包余额；套餐→套餐余额（Molin 单一账本）
+   ④ 自写转发器：按 logical_model 选渠道 → 换 base_url+key+上游模型名 → 转发上游
+        - 流式：SSE 直接透传，不缓冲 response body
+   ⑤ 读响应 usage → 写 token_usage_logs → 计费（按量上报 finance_consumer / 套餐扣额度）
    │
-   ▼  内网 HTTP，单一共享 key
-one-api（独立服务，MIT，不改源码*）
-   多供应商渠道、模型映射、加权负载均衡、失败重试、流式
-   上游真实 api_key 存在这里；其用户/额度/计费功能【关闭/设为无限】
-   │
-   ▼
-上游供应商（Claude / OpenAI / Gemini / DeepSeek / ...）
+   ▼  直接 HTTPS（三家均 OpenAI 兼容，纯透传）
+OpenAI / DeepSeek / Kimi(Moonshot)
+   上游真实 api_key 由 Molin 的 token_channels 加密持有（AES-256-GCM）
 ```
-\* one-api 是 MIT，可改；但建议先「不改、当独立服务用」，需要定制再评估改造（无 AGPL 约束）。
 
-## 3. Molin 门面的数据模型（大幅精简：从 4 表 → 2 表）
-
-供应商/模型/路由这些**全在 one-api 里维护，Molin 不建表**。Molin 门面只需：
+## 3. 数据模型
 
 ```sql
--- 000030_create_token_facade_tables.up.sql
+-- 000030（已建，PR #191）：对外目录 + 用量
+token_models       -- 对外模型目录
+  id, logical_model_code(uniq, 对外名), display_name, modality(chat/image/audio/video),
+  product_id(关联 token 商品, NULL), status, sort_order, created_at, updated_at
+token_usage_logs   -- 用量与计费（按 api_key_id 可做单 sk 统计）
+  id, request_id(uniq), user_id, api_key_id(NULL), logical_model_code, modality,
+  input_tokens, output_tokens, total_tokens, units, sale_amount, is_stream,
+  status(success/failed/timeout), error_code, created_at
 
-token_models        -- 对外模型目录（上架哪些逻辑模型 + 关联计费）
-  id, logical_model_code(对外名，如 gpt-4o / claude-*), display_name,
-  product_id(关联的 token 商品), status(active/inactive), sort_order, created_at, updated_at
-
-token_usage_logs    -- Molin 侧用量与计费记录（用于展示 + 对账，不依赖 one-api 的库）
-  id, request_id(uniq), user_id, logical_model_code,
-  input_tokens, output_tokens, total_tokens,
-  sale_amount, is_stream, status(success/failed/timeout), error_code, created_at
+-- 000031（下一砖）：渠道 + 模型路由
+token_channels     -- 上游供应商渠道
+  id, code(openai/deepseek/kimi), name, type(默认 openai_compatible),
+  base_url, api_key_encrypted(AES-256-GCM,禁明文/禁返回), status(active/inactive),
+  priority, created_at, updated_at
+-- token_models 增列（路由到渠道）：
+  + channel_id(BIGINT, 指向 token_channels), upstream_model(VARCHAR, 上游真实模型名,如 deepseek-chat)
 ```
-> one-api 连接信息（base_url、内部共享 key）放**配置/环境变量**，不入业务表；共享 key 视为机密。
+> `api_key_encrypted`:AES-256-GCM,密钥经环境变量 `TOKEN_PROVIDER_KEY` 注入(已是仓库安全红线);**任何接口响应绝不返回 Key**。
 
-## 4. 模块结构（后端丁，闭源门面）
+## 4. 模块结构（后端丁）
 
 ```
 server/internal/modules/token_gateway/
-  model/        token_model.go / token_usage_log.go
-  repository/   model_repo / usage_log_repo
-  service/      gateway_service(鉴权后转发 one-api + 读 usage + 计费)
-                catalog_service(对外模型目录 CRUD)
-  handler/      chat_handler(SSE 透传)、catalog_handler、usage_handler
+  model/        token_model / token_usage_log / token_channel
+  repository/   token_model_repo / usage_log_repo / channel_repo
+  service/      forward_service(选渠道+转发上游+读 usage+计费编排)
+                catalog_service(模型目录 CRUD) / channel_service(渠道 CRUD,key 加解密)
+  handler/      chat_handler(OpenAI 兼容, SSE) / catalog_handler / channel_handler / usage_handler
   dto/          route.go
-  client/       oneapi_client.go   -- 封装对 one-api 的 HTTP 调用（单一共享 key）
-server/migrations/000030_create_token_facade_tables.*.sql
-server/migrations/000031_seed_token_manage_permission.*.sql   -- 新权限码 token:manage（红线：建码必建 seed）
-server/internal/config/config.go  -- 新增 ONEAPI_BASE_URL / ONEAPI_INTERNAL_KEY
+server/migrations/000031_create_token_channels_and_routing.*.sql
+server/migrations/000032_seed_token_manage_permission.*.sql   -- 权限码 token:manage（红线：建码必建 seed）
+server/internal/config/config.go  -- 复用 TOKEN_PROVIDER_KEY（渠道 key 加密）
 ```
+> 不再有 oneapi_client / ONEAPI_BASE_URL 等;转发器直接调上游。
 
 ## 5. 接口契约
 
 ### 用户端（需登录或平台 key）
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/token/models` | 列出已上架逻辑模型（读 Molin token_models 目录） |
-| POST | `/api/token/chat/completions` | OpenAI 兼容对话；门面鉴权+门禁+扣费后透传 one-api |
-| GET | `/api/token/usage` | 查本人用量 [扁平分页]（读 Molin token_usage_logs） |
+| GET | `/api/token/models` | 列出已上架逻辑模型 |
+| POST | `/api/token/chat/completions` | OpenAI 兼容对话；门面鉴权+门禁+扣费后转发上游 |
+| GET | `/api/token/usage` | 查本人用量 [扁平分页] |
 
 ### 管理端（需 `token:manage` + 管理员双重认证）
 ```
-GET/POST/PATCH  /api/admin/token/models[/{id}]   -- 对外模型目录（上架/下架/关联商品）
-GET             /api/admin/token/usage            -- 全量用量 [扁平分页]
+GET/POST/PATCH  /api/admin/token/channels[/{id}]  -- 渠道（收 api_key_plaintext，加密存，响应不返回 Key）
+GET/POST/PATCH  /api/admin/token/models[/{id}]     -- 对外模型目录（关联渠道 + 上游模型名 + 商品）
+GET             /api/admin/token/usage             -- 全量用量 [扁平分页]
 ```
-> 供应商/渠道/模型映射/上游 key 等**在 one-api 自己的管理面板配置**，不在 Molin 管理端做。
+> 渠道/模型在 **Molin 自己的管理端配置**（不再有 one-api 面板）。列表统一 **D-95 扁平分页**。
 
 ## 6. 核心调用流程（门面，权威序列）
 
 ```
-1. 鉴权：登录态 Bearer 或 Molin 平台 API Key（见 §决策2 结论）
-2. 模型校验：logical_model_code 是否在 token_models 且 active
-3. 访问门禁：用户是否持有该模型对应 token 商品权益（复用 product_role_access / 角色·会员）
-4. 额度/余额闸：校验 token_quota 额度（预付）或钱包（后付费）——Molin 单一账本
-5. 透传 one-api：oneapi_client 用【内部共享 key】POST one-api 的 /v1/chat/completions
+1. 鉴权：登录态 Bearer 或 Molin 平台 API Key（sk → user_id）
+2. 模型校验：logical_model_code 在 token_models 且 active；在 key 的 model_scope 内
+3. 访问门禁：持有该 token 商品 active 权益（复用 product_role_access / 资产查询）
+4. 余额/额度闸：按量→钱包余额>0；套餐→套餐余额>0
+5. 转发：查 token_models→channel_id+upstream_model→解密渠道 key
+   POST {channel.base_url}/v1/chat/completions（body.model 改为 upstream_model + 渠道 key）
    - 流式：SSE 直接透传上游，不缓冲 response body
-6. 读 usage：从 one-api 响应（OpenAI 格式含 usage）取 input/output/total tokens
-7. 写 token_usage_logs + 上报 ProductUsageEvent 给 finance_consumer 扣费
+6. 读 usage（OpenAI 格式响应含 usage）→ 写 token_usage_logs
+7. 计费：按量→上报 finance_consumer 扣钱包；套餐→调 asset 额度扣减
 8. 返回：非流式回 OpenAI 兼容响应；流式透传，结束后异步落用量与计费
 ```
-> 路由/重试/格式转换/断路器**全部由 one-api 负责，门面不实现**。门面只做：鉴权、门禁、扣费、透传、记账。
+> 三家均 OpenAI 兼容,body 近似原样转发(仅改 `model` 字段为上游模型名)。个别供应商参数/错误差异做少量兼容,**无需完整适配器**。
 
 ## 7. 计费挂接（复用 finance_consumer，零改）
 
-门面读到 usage 后按 input/output 各上报一次（与原方案一致）：
+按量(本期首发)读到 usage 后按 input/output 各上报一次:
 ```go
 ProductUsageEvent{
   EventID: requestID, UserID: userID,
@@ -113,60 +115,71 @@ ProductUsageEvent{
   IdempotencyKey: requestID + ":input_tokens",
 }
 ```
-- 单价/利润在 Molin 的 `product_billing_rules`（售价）配置；**one-api 的计费不启用**，避免双账本。
-- **预付额度**扣 `user_entitlements.quota_used`；**后付费**扣钱包。
+- 单价/利润在 `product_billing_rules`(售价)配置;
+- **按量首发** = 扣钱包(finance_consumer 零改);**套餐(预付)** = 扣 token 额度(后端丙额度扣减接口,后续)。
 
-## 8. 售卖挂接（复用你已建的访问/定价）
+## 8. 售卖挂接（复用现有访问/定价）
 
-- Token 是 `product_type=token` 商品；谁能买/用、什么价，走现有 `product_role_access` + 角色价/会员价（即你做的「组→角色」直接治理 Token 售卖）。
-- 购买 → provision 开通 `token_quota` 额度。
+- Token = `product_type=token` 商品;谁能买/用、什么价,走现有 `product_role_access` + 角色价/会员价;
+- 购买 → provision 开通 token 权益(按量:可用资产;套餐:额度)。
 
-## 9. 关键决策（结合 one-api 方案已收敛）
+## 9. 关键决策（已收敛）
 
 | # | 决策 | 结论 |
 |---|---|---|
-| 1 | 模块归属 | ✅ 后端工程师丁（backend-d） |
-| 2 | 调用鉴权 | ✅ **门面对终端发 Molin 平台 API Key / 登录态**；对 one-api 用**单一内部共享 key**（终端永远拿不到 one-api key） |
-| 3 | 计费模式 | ✅ **Molin finance_consumer 单一账本**，预付额度为主（token 商品→token_quota）；one-api 计费关闭 |
-| 4 | 上游与模型 | 在 **one-api 渠道配置**；Molin `token_models` 目录决定对外**上架**哪些 + 关联商品/计费（首批模型集含最新 Claude 模型，售价/成本由运营定） |
+| 0 | 转发引擎 | ✅ **自写薄转发器**(三家 OpenAI 兼容,不外接 one-api) |
+| 1 | 模块归属 | ✅ 后端工程师丁 |
+| 2 | 调用鉴权 | ✅ 门面对终端发 Molin 平台 API Key / 登录态;sk 映射 user_id |
+| 3 | 计费模式 | ✅ **按量先行**(扣钱包,finance_consumer 零改);套餐(预付)后续 |
+| 4 | 首批供应商/模型 | ✅ OpenAI / DeepSeek / Kimi(全 OpenAI 兼容);对外模型 + 上游模型名在 token_models 配 |
 
 ## 10. 安全与合规
 
-1. **one-api 内部共享 key 与管理面板**：one-api 管理面板**绝不公网暴露**（仅内网/运维访问）；共享 key 经环境变量注入，门面与 one-api 走内网。
-2. **上游 api_key** 由 one-api 持有（其自带加密）；Molin 侧不存上游 key。
-3. **新权限码 `token:manage`** 必须建 seed migration（000031）——历史 P1 红线。
-4. **限流**：门面按用户级限流；对话内容**不落明文日志**（仅记 tokens/状态）。
-5. **许可证**：one-api MIT，可改可闭源商用；当前策略「不改、独立服务」，商用前法务确认 MIT 合规（基本无障碍）。
+1. **渠道 api_key**:AES-256-GCM 加密存 `token_channels.api_key_encrypted`,密钥经 `TOKEN_PROVIDER_KEY`;接口收 `api_key_plaintext`,**响应永不返回 Key**。
+2. **新权限码 `token:manage`** 必须建 seed migration——历史 P1 红线。
+3. **限流**:门面按用户/按 key 级限流。
+4. **对话内容不落明文日志**(仅记 tokens/状态等元数据)。
+5. 转发上游要设**超时 + 失败兜底**,别让上游卡死拖垮门面。
 
 ## 11. 依赖与边界
 
 | 依赖 | 用途 |
 |---|---|
-| one-api（外部 MIT 服务，运维部署） | 多供应商转发/格式转换/路由/重试 |
-| finance_consumer（乙） | 上报用量扣费（零改） |
+| 上游 OpenAI/DeepSeek/Kimi | 模型调用（门面直接 HTTPS，无中间服务） |
+| finance_consumer（乙） | 按量扣钱包（零改） |
 | product / billing_rule（乙） | token 商品、售价规则 |
-| asset / provision（丙） | token_quota 额度开通/扣减 |
-| iam（甲） | `token:manage` 权限码 + 鉴权中间件 |
+| asset / provision（丙） | token 权益开通；(套餐)额度扣减 |
+| iam / auth（甲） | 平台 sk 系统 + 鉴权中间件 + `token:manage` |
+
+> **无外部服务依赖**（已去掉 one-api / 独立库 / 共享 key）。
 
 ## 12. Migration
-- `000030` 建 2 张门面表（token_models 目录 + token_usage_logs）；`000031` seed `token:manage`。
+- `000030`（已建）门面表;`000031` token_channels + token_models 路由列;`000032` seed `token:manage`。
 
 ## 13. 落地步骤
-1. **运维**：部署 one-api 独立实例（自带库/Redis，管理面板内网），配上游渠道 + 模型映射 + 上游 key，生成一个供 Molin 用的内部 key。
-2. **后端丁**：建门面（表/目录/chat 透传/usage/计费对接）+ `oneapi_client`。
-3. **后端乙/丙**：配 `product_type=token` 商品 + 售价规则 + token_quota 开通。
-4. **测试/PM**：端到端（买额度→对话→扣费→用量展示）+ 验收。
+1. **后端丁**:门面表（已 PR #191）→ 渠道表+路由 → 模型目录+渠道 CRUD → chat 转发+SSE → 计费对接。
+2. **后端甲**:平台 sk 系统 + 双模式鉴权中间件 + `token:manage` seed。
+3. **后端乙**:`product_type=token` 商品（按量服务）+ 计费规则。
+4. **后端丙**:TokenProvisioner（按量：开通 token 服务资产）。
+5. **运营**:在 Molin 管理端配渠道（填上游 api_key）+ 对外模型目录。
+6. **测试/PM**:端到端（开通→调用→扣钱包→用量展示）+ 验收。
+
+> 不再需要运维部署 one-api。
 
 ## 14. 工作量与归属
 | 部分 | 归属 |
 |---|---|
-| one-api 部署与渠道/模型/上游 key 配置 | 运维 + 运营 |
-| Molin 门面（鉴权/门禁/扣费/透传/目录/用量）+ one-api 对接 | 后端工程师丁 |
-| `token:manage` 权限码 + 鉴权中间件 | 后端甲 |
-| token 商品/售价规则 / token_quota 开通 | 后端乙 / 后端丙 |
-| 用户端模型市场·对话页、管理端模型目录·用量页 | 前端乙 / 前端甲 |
+| 门面（渠道/目录/转发/SSE/用量/计费编排） | 后端工程师丁 |
+| 平台 sk 系统 + 鉴权中间件 + `token:manage` | 后端甲 |
+| token 商品/计费规则 | 后端乙 |
+| TokenProvisioner（按量开通） | 后端丙 |
+| 用户端模型市场·对话页、管理端渠道·模型·用量页 | 前端乙 / 前端甲 |
 
-## 15. 仍待确认
-1. 首批上架哪些逻辑模型、各自成本价/售价（运营定，作为 one-api 渠道 + Molin 目录的 SSOT）。
-2. 是否对外开放「平台 API Key」给外部程序/agent 调用（决定要不要建 Molin 平台 key 表 + 鉴权中间件；若仅站内对话页用，可先只支持登录态）。
-3. 后付费（直扣钱包）是否作为预付额度之外的可选模式。
+## 15. 扩展点
+- 加更多 OpenAI 兼容供应商（通义/智谱等）：只加一条 `token_channels` 记录 + 模型目录,零代码。
+- 加 Claude/Gemini 原生（非 OpenAI 格式）：渠道 `type=anthropic/gemini` + 写一个请求/响应适配器,主流程不变。
+
+## 16. 仍待确认
+1. 套餐（预付）何时排入（本期按量先行,套餐需后端丙额度扣减立项）。
+2. 是否对外开放平台 API Key 给外部程序/agent（决定 sk 鉴权中间件范围；本期可先支持，见集成文档）。
+3. 门禁用「乙 CanUse」还是「丙 持有资产查询」（推荐后者）。

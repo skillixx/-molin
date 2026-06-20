@@ -1,13 +1,13 @@
 # Token 网关 ↔ 甲/乙/丙 集成对接清单
 
-> 配套：`docs/backend-token-gateway-design.md`（v2 架构：Molin 薄门面 + 外接 one-api）
+> 配套：`docs/backend-token-gateway-design.md`（v3 架构：Molin 门面 + 自写薄转发器，首批 OpenAI/DeepSeek/Kimi 全 OpenAI 兼容，不外接 one-api）
 > 用途：把 token 网关**深度复用**平台已建的用户/财务/应用模块（单账号、单钱包、统一商品），列清每个模块**要新增/暴露的接口**、归属、顺序与整合调用时序。
 > 读者：后端甲/乙/丙/丁、运维、产品经理。
 
 ## 0. 集成原则
 
 - **复用，不另起炉灶**：token 网关用平台**同一套用户(甲)、同一个钱包/商品(乙)、同一套资产/开通(丙)**，不建独立用户/账本。
-- **门面(丁)只编排**：丁的 token_gateway 门面负责「鉴权→门禁→扣费→透传 one-api→记账」，扣费/开通/鉴权的**底层能力由甲/乙/丙各暴露一个接口**，丁通过 service 接口调用，不跨改他人模块。
+- **门面(丁)只编排**：丁的 token_gateway 门面负责「鉴权→门禁→扣费→自写转发器转发上游→记账」，扣费/开通/鉴权的**底层能力由甲/乙/丙各暴露一个接口**，丁通过 service 接口调用，不跨改他人模块。转发引擎为自写（首批三家全 OpenAI 兼容，纯透传），不外接 one-api。
 - **必要的新增**：甲/乙/丙均为「已完成」模块，但集成需要各补一小块接口（见下）。这是集成工作，不是重写。
 
 ## 1. 现成可接 vs 必须补（总览）
@@ -98,7 +98,7 @@ POST /api/internal/entitlement-consume
  2. 模型在 token_models 目录且 active；在 model_scope 内
  3. 门禁：持有 active token 资产/权益(丙 查询 或 乙 CanUse)
  4. 余额闸：postpaid→钱包余额>0(乙)；prepaid→套餐余额>0(丙)
- 5. 透传 one-api（内部共享 key）→ 流式 SSE 不缓冲 → 读响应 usage
+ 5. 自写转发器：查 token_models→渠道+上游模型名→换 base_url/key/模型名→转发上游（流式 SSE 不缓冲）→ 读响应 usage
  6. 算金额(product_billing_rules 售价) 并扣费：
        postpaid → 上报 finance_consumer 扣钱包(乙)
        prepaid  → 调 /api/internal/entitlement-consume 扣套餐(丙)
@@ -106,7 +106,7 @@ POST /api/internal/entitlement-consume
 ```
 
 ### 5.3 流式扣费策略（必须实现）
-- 对 one-api 开 `stream_options.include_usage`，usage 在末尾 chunk；
+- 转发时对上游开 `stream_options.include_usage`，usage 在末尾 chunk；
 - 「先校验余额>0、结束后结算扣费」；防透支：余额低于阈值拒绝新请求，或并发按 sk 串行/预扣估算。
 
 ## 6. 归属与交付顺序
@@ -117,11 +117,11 @@ POST /api/internal/entitlement-consume
 | 甲：sk 系统 + 双模式鉴权 + `token:manage` seed | 后端甲 | 门面 chat 鉴权依赖 |
 | 乙：token 商品 + 计费规则 +（门禁）CanUse | 后端乙 | 套餐购买/计费依赖 |
 | 丙：TokenProvisioner +（预付）额度扣减 +（门禁）持有查询 | 后端丙 | 开通/预付扣费依赖 |
-| 丁：门面（目录/chat 透传/编排/记账）+ oneapi_client | 后端丁 | — |
-| 运维：one-api 实例 + 共享 key | 运维 | 门面 chat 依赖 |
-| 丁：`token-facade-tables` / `token-catalog` | 后端丁 | **不依赖上游，可立即起步** |
+| 丁：门面（渠道/目录/转发器/编排/记账） | 后端丁 | — |
+| 运营：在 Molin 管理端配渠道（上游 api_key）+ 模型目录 | 运营 | 门面 chat 依赖 |
+| 丁：`token-facade-tables` / `token-channels` | 后端丁 | **不依赖上游，可立即起步** |
 
-**并行**：运维(one-api) ∥ 甲(sk) ∥ 乙(商品/规则) ∥ 丙(provisioner/扣减) ∥ 丁(目录/表)；门面的 chat/计费(丁)等甲/乙/丙/运维就位后收口。
+**并行**：甲(sk) ∥ 乙(商品/规则) ∥ 丙(provisioner/扣减) ∥ 丁(渠道/目录/转发器)；门面的 chat/计费(丁)等甲/乙/丙就位后收口。**无需运维部署 one-api**（自写转发器，上游直连）。
 
 ## 7. 与「自包含」方案的取舍（已选集成）
 - 本文档 = **深度集成**：单账号、单钱包、体验统一；代价是甲/乙/丙各补一接口。
