@@ -23,7 +23,12 @@
         │
 ③ 接口契约        sk / 计费 / 聊天工作台 三契约 + 前端 §14；数据模型 + 错误码      ✅ 完成
         │
-④ 评审定稿        PM 两轮 review：错误码冲突修正 + 16 项决策回填 + 排期减压       ✅ 完成（PR #202/#203 合并）
+④ 评审定稿        PM 两轮 review：错误码冲突修正 + 16 项决策回填 + 排期减压       ✅ 完成（PR #202/#203/#204 合并）
+        │
+④.5 风险审查      架构师风险复盘 12 项 + PM 拍板 D1–D6                          ✅（PR #205）
+                 （并发透支/sk编排边界/插件配额/code_exec/entitlement幂等/渠道单点）
+        │
+④.6 契约回写      D1–D6 决议吸收进各契约（billing/sk/chat-workbench/roadmap）+ 调排期   🔜 进行中
         │
 ⑤ 实现           各后端按契约开发（迁移 → model/repo/service → handler → 装配）   🔜 待开始（W5 起）
         │
@@ -34,7 +39,7 @@
 ⑧ 上线           上线检查单（环境变量/迁移序/配置项/回滚）→ PM 验收 → 发布        🔜
 ```
 
-**当前位置**：①–④ 规划与评审闭环已全部完成并合并 main；下一步进入 ⑤ 实现。
+**当前位置**：①–④.5 规划/评审/风险审查闭环已完成（D1–D6 拍板）；进行中 ④.6 契约回写；下一步进入 ⑤ 实现。
 
 ### 1.2 单个接口的开发流程（每位工程师统一遵循）
 
@@ -48,11 +53,13 @@
 
 ```
 请求(sk/登录态) → 鉴权(甲) → 门禁:持有 token 权益?(丙)
- → 计费模式? postpaid→钱包余额闸(乙) / prepaid→套餐额度闸(丙)
+ → 计费模式? postpaid→钱包余额闸 + 预扣保证金(D1,冻结 max_tokens×单价,乙) / prepaid→套餐额度闸(丙)
  → 转发上游(丁,选渠道/换 key/模型名;SSE 不缓冲)
- → 读 usage → 写 token_usage_logs
- → 结算: 按量(input/output tokens) + 按次(calls,一次提问计1) → 钱包(乙) ｜ 套餐额度 → entitlement-consume(丙)
+ → 读 usage(SSE 断开仍读完上游再结算,R5) → 写 token_usage_logs
+ → 结算: 按量(input/output tokens) + 按次(calls,一次提问计1)
+     postpaid → 解冻保证金 + 实扣钱包(乙,多退少补) ｜ prepaid → entitlement-consume(丙,幂等表去重 D5)
 ```
+> 计费模式由 sk 上下文决定；编排端点 `/api/agents/{id}/chat` 仅登录态（D2，sk 不可调）。渠道本期单点（D6，故障转移延后第三阶段）。
 
 ---
 
@@ -95,9 +102,10 @@
 | 12 | 按量计费（input/output tokens → 钱包） | 乙+丁 | ✅（含 seed 000033 + `POST /api/internal/product-usage-events`） | billing §2 |
 | 13 | 按次计费规则 seed（calls/count）+ 门面次数事件 | 乙+丁 | 🔜 S2-乙1/丁4 | billing §3 |
 | 14 | 套餐商品 + plan（quota_json + valid_days） | 乙 | 🔜 S2-乙3 | billing §4.1 |
-| 15 | `POST /api/internal/entitlement-consume`（锁行+幂等+有效期） | 丙 | 🔜 S2-丙2 | billing §4.2 |
+| 15 | `POST /api/internal/entitlement-consume`（锁行+有效期；幂等用 **D5 新表 `entitlement_consume_logs`**） | 丙 | 🔜 S2-丙2 | billing §4.2 |
 | 16 | token_quota entitlement 生成（TokenProvisioner 套餐分支） | 丙 | 🔜 S2-丙1（按量分支✅已有） | billing §4.2 |
-| 17 | 门面计费路由（postpaid/prepaid 互斥 + 余额闸） | 丁 | 🔜 S2-丁5 | billing §4.3 |
+| 17 | 门面计费路由（postpaid/prepaid 互斥 + 余额闸 + **D1 预扣保证金**：postpaid 冻结 max_tokens×单价，结算多退少补，复用钱包 freeze） | 丁 | 🔜 S2-丁5 | billing §4.3 |
+| — | 钱包 `freeze/unfreeze` 内部接口可供门面调用（**D1 前置依赖**，无则补） | 乙 | 🔜 S2-乙0（W5 第一天确认） | billing §4.3 |
 
 ### 2.5 聊天工作台 — Agent/Skill/插件（后端丁，全免费）
 
@@ -105,11 +113,11 @@
 |---|---|---|---|---|
 | 18 | `GET/POST /api/admin/agents` (+ `/{id}/skills`、`/{id}/plugins` 绑定) | 管理(agent:manage) | 🔜 S2-丁8 | §14.10 |
 | 19 | `GET/POST/PATCH/DELETE /api/admin/skills` | 管理(skill:manage) | 🔜 S2-丁8 | §14.10 |
-| 20 | `GET/POST/PATCH/DELETE /api/admin/plugins`（凭证不回） | 管理(plugin:manage) | 🔜 S2-丁8 | §14.10 |
+| 20 | `GET/POST/PATCH/DELETE /api/admin/plugins`（凭证不回；**D3 加 `is_paid`/`daily_limit` 字段**） | 管理(plugin:manage) | 🔜 S2-丁8 | §14.10 |
 | 21 | `GET /api/agents`、`GET /api/agents/{id}` | 登录态 | 🔜 S2-丁9 | §14.9 |
 | 22 | `POST/PATCH/DELETE /api/agents`（自建，越权 40003） | 登录态 | 🔜 S2-丁9 | §14.9 |
 | 23 | `GET /api/skills`、`GET /api/plugins`（供自建绑定） | 登录态 | 🔜 S2-丁9 | §14.9 |
-| 24 | `POST /api/agents/{id}/chat`（tool-use 编排，SSE） | 登录态/sk | 🔜 S2-丁10 | §14.8 / 工作台契约 §4 |
+| 24 | `POST /api/agents/{id}/chat`（tool-use 编排，SSE） | **仅登录态**（D2，sk 不可调） | 🔜 S2-丁10 | §14.8 / 工作台契约 §4 |
 
 ### 2.6 数据库迁移（序号以实际合并顺序为准）
 
@@ -118,8 +126,11 @@
 | 000030–000033 | token_models/usage_logs、channels+路由、token:manage seed、token 商品+按量规则 | ✅ |
 | 000034 | api_keys | 🔜 S2-甲1 |
 | 000035 | 按次计费规则 seed（calls） | 🔜 S2-乙1 |
-| 000036–000038 | agents+绑定表 / skills / plugins | 🔜 S2-丁6（前置 W6） |
+| 000036–000038 | agents+绑定表 / skills（plugins 表含 D3 `is_paid`/`daily_limit`） | 🔜 S2-丁6（前置 W6） |
 | 000039 | 权限码 seed（agent/skill/plugin:manage） | 🔜 S2-甲7 |
+| 0000XX | **`entitlement_consume_logs`（D5 幂等表，idempotency_key 唯一）** | 🔜 S2-丙2（M2，序号紧随套餐相关迁移） |
+
+> **渠道路由（D6）**：本期 `token_models` 仍绑**单一渠道**（`forward_service` 单点，`token_channels.priority` 建而未用）；多渠道故障转移+熔断**延后第三阶段**，已在 roadmap §9 显式登记，验收不当 bug。
 
 ### 2.7 错误码（第二阶段相关）
 
@@ -164,9 +175,22 @@
 - [x] TokenProvisioner（按量分支）+ 资产门禁
 - [x] 前端（Codex）：用户端对话页、管理端 Token 配置页
 
+### 3.2.5 契约回写（④.6，D1–D6 决议吸收）— 🔜 进行中
+
+> 实现开工前由架构师把 D1–D6 写入各契约（见 risk-review §5/§6）。
+
+- [ ] D1 → billing §4.3 + sk §9：预扣保证金方案 + 钱包 freeze 依赖
+- [ ] D2 → chat-workbench §3.3 + §14.8：编排端点改「仅登录态」
+- [ ] D3 → chat-workbench §5：付费插件每日上限 + 限流 + `plugins` 表 `is_paid`/`daily_limit`
+- [ ] D4 → chat-workbench §4/§5：移除 code_exec 示例
+- [ ] D5 → billing §4.2 + 新迁移：`entitlement_consume_logs`
+- [ ] D6 → roadmap §9：新增渠道单点风险行 + 第三阶段任务卡
+- [ ] 据 D1–D6 调整 `backend-stage2-task-schedule.md`
+
 ### 3.3 实现阶段 — 🔜 待开始（按周/工程师，勾选追踪）
 
 **W5 · M1 Token 售卖闭环**
+- [ ] S2-乙0 确认钱包 `freeze/unfreeze` 内部接口可供门面调用（D1 前置，无则补）
 - [ ] S2-甲1 迁移 000034 api_keys + model
 - [ ] S2-甲2 APIKeyService（Issue/Resolve/Revoke/List）
 - [ ] S2-甲3 RequireUserAuth 双模式中间件 + APIKeyIDFromContext
@@ -184,11 +208,11 @@
 **W6 · M2 套餐预付**
 - [ ] S2-乙3 token 套餐 plan（quota_json + valid_days）+ 售价
 - [ ] S2-丙1 套餐分支生成 token_quota entitlement
-- [ ] S2-丙2 `POST /api/internal/entitlement-consume`（锁行+幂等+有效期，不足 60005）
+- [ ] S2-丙2 `POST /api/internal/entitlement-consume`（锁行+有效期，不足 60005；幂等用 D5 新表 `entitlement_consume_logs` + 其迁移）
 - [ ] S2-丙3 内部余额查询（门面前置闸）
 - [ ] S2-甲6 IssueKey 支持 prepaid + source_id
-- [ ] S2-甲8 按 sk 限流
-- [ ] S2-丁5 门面计费路由（postpaid/prepaid 互斥 + 余额闸）
+- [ ] S2-甲8 按 sk 限流（D3：插件调用计入限流维度）
+- [ ] S2-丁5 门面计费路由（postpaid/prepaid 互斥 + 余额闸 + D1 预扣保证金/解冻 + R5 读完上游再结算）
 - [ ] S2-丁6（前置）迁移 000036–000038 agent/skill/plugin 建表
 - [ ] S2-前乙1 sk 管理页 + 用量页（§14.4/14.3）
 - [ ] S2-前乙2 token 套餐购买页
@@ -205,9 +229,9 @@
 - [ ] S2-测3 三模块 CRUD + 自建越权用例
 
 **W8 · M3 工作台（下）tool-use 编排**
-- [ ] S2-丁10（关键路径）`POST /api/agents/{id}/chat` 编排循环
-- [ ] S2-丁11 skill 内置函数注册表（1–2 示例）
-- [ ] S2-甲9（协丁）plugin HTTP 转发器（SSRF/超时/凭证/熔断）
+- [ ] S2-丁10（关键路径）`POST /api/agents/{id}/chat` 编排循环（D2 仅登录态，sk 不可调）
+- [ ] S2-丁11 skill 内置函数注册表（1–2 示例，**D4 不含 code_exec**，用 web_search/doc_read）
+- [ ] S2-甲9（协丁）plugin HTTP 转发器（SSRF/超时/凭证/熔断 + D3 付费插件每用户每日上限计数）
 - [ ] S2-丁13 编排计费接入（每轮 token + 按次计 1）
 - [ ] S2-丁14 bootstrap 总装配收口 + 冒烟
 - [ ] S2-前乙4 聊天对话页（SSE + tool_call/tool_result 事件，§14.8）
@@ -227,7 +251,9 @@
 |---|---|
 | 规划阶段 | 8 / 8 ✅ |
 | 已实现能力（第一砖） | 6 / 6 ✅ |
-| 实现阶段任务（S2-xx） | 0 / 45 🔜 |
+| 风险审查 + D1–D6 决议 | ✅（PR #205） |
+| 契约回写（④.6） | 0 / 7 🔜 |
+| 实现阶段任务（S2-xx） | 0 / 46 🔜（含新增 S2-乙0） |
 | **接口总数** | 已实现 7 项 / 待实现 17 项（共 24） |
 
 ---
