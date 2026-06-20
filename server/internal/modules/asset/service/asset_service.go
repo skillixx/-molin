@@ -139,6 +139,16 @@ func (s *AssetService) GetAsset(ctx context.Context, assetID uint64) (*model.Use
 	return s.assetRepo.FindByID(ctx, assetID)
 }
 
+// assetTypeTokenService 是 token 商品开通后产出的资产类型，与 TokenProvisioner 保持一致。
+const assetTypeTokenService = "token_service"
+
+// HasActiveTokenAsset 判断用户是否持有 status=active 的 token 服务资产（asset_type=token_service）。
+// 供 token 网关门面门禁调用：用户「买了（开通）才能调用 token API」。
+// 资产到期会由定时任务流转为 expired，故此处仅按 active 判定即可。
+func (s *AssetService) HasActiveTokenAsset(ctx context.Context, userID uint64) (bool, error) {
+	return s.assetRepo.ExistsActiveByType(ctx, userID, assetTypeTokenService)
+}
+
 // ListUserAssets 查询用户自己的资产列表。
 func (s *AssetService) ListUserAssets(ctx context.Context, userID uint64, status string) ([]model.UserAsset, error) {
 	return s.assetRepo.FindByUserID(ctx, userID, status)
