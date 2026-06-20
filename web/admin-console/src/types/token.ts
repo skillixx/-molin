@@ -1,9 +1,9 @@
 // Token 网关「渠道 / 模型」管理类型，字段与后端 /api/admin/token/* DTO 保持 snake_case
 
-// 渠道状态：启用 / 停用
-export type TokenChannelStatus = 'active' | 'disabled'
-// 模型状态：启用 / 停用
-export type TokenModelStatus = 'active' | 'disabled'
+// 渠道状态：启用 / 停用，取值与后端 token_gateway 保持一致。
+export type TokenChannelStatus = 'active' | 'inactive'
+// 模型状态：启用 / 停用，取值与后端 token_gateway 保持一致。
+export type TokenModelStatus = 'active' | 'inactive'
 // 模型模态
 export type TokenModelModality = 'chat' | 'image' | 'audio' | 'video'
 
