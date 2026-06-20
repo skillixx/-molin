@@ -1,0 +1,239 @@
+# 第二阶段总控：设计流程 + 需求接口设计 + 任务完成度
+
+> 状态：总控追踪 v1（2026-06-21）
+> 阶段：第二阶段（Week 5–9）= Token 转发售卖 + 多模型聊天工作台
+> 定位：把第二阶段全部规划文档串成一张「流程 + 接口 + 完成度」总控视图，作为开发/验收的单一追踪入口。
+> 文档族：
+> - 纲领：`backend-stage2-architecture-roadmap.md`
+> - 契约：`backend-sk-auth-contract.md`、`backend-token-billing-contract.md`、`backend-chat-workbench-contract.md`
+> - 前端：`frontend-api-reference.md` §14
+> - 排期：`backend-stage2-task-schedule.md`
+> 图例：✅ 已实现并合并 main ｜ 🚧 进行中 ｜ 🔜 待实现（规划就绪，未开发）
+
+---
+
+## 一、设计流程
+
+### 1.1 总流程（需求 → 上线）
+
+```
+① 需求澄清        产品蓝图 + 4 项范围决策（概念分层/多模态/计费/创建权）        ✅ 完成
+        │
+② 架构规划        roadmap v2：两条能力 + 三层免费 + 唯一 token 收费 + 里程碑      ✅ 完成
+        │
+③ 接口契约        sk / 计费 / 聊天工作台 三契约 + 前端 §14；数据模型 + 错误码      ✅ 完成
+        │
+④ 评审定稿        PM 两轮 review：错误码冲突修正 + 16 项决策回填 + 排期减压       ✅ 完成（PR #202/#203 合并）
+        │
+⑤ 实现           各后端按契约开发（迁移 → model/repo/service → handler → 装配）   🔜 待开始（W5 起）
+        │
+⑥ 联调           前端按 §14 对接 + 后端接口就位；字段变更回写契约                🔜
+        │
+⑦ 测试验收        逐 M 用例 + 并发无负余额(硬) + tool-use 多轮 + 端到端           🔜
+        │
+⑧ 上线           上线检查单（环境变量/迁移序/配置项/回滚）→ PM 验收 → 发布        🔜
+```
+
+**当前位置**：①–④ 规划与评审闭环已全部完成并合并 main；下一步进入 ⑤ 实现。
+
+### 1.2 单个接口的开发流程（每位工程师统一遵循）
+
+```
+读契约(§对应章节) → 建迁移(必要时,建权限码必带 seed) → model/repo/service
+ → handler/route → bootstrap 装配 + 冒烟 → 自测 → 同步 frontend-api-reference §14
+ → 提 PR(feature 分支,中文 commit) → CI + 评审 → PM 确认 → merge
+```
+
+### 1.3 计费决策流程（运行时）
+
+```
+请求(sk/登录态) → 鉴权(甲) → 门禁:持有 token 权益?(丙)
+ → 计费模式? postpaid→钱包余额闸(乙) / prepaid→套餐额度闸(丙)
+ → 转发上游(丁,选渠道/换 key/模型名;SSE 不缓冲)
+ → 读 usage → 写 token_usage_logs
+ → 结算: 按量(input/output tokens) + 按次(calls,一次提问计1) → 钱包(乙) ｜ 套餐额度 → entitlement-consume(丙)
+```
+
+---
+
+## 二、需求接口设计（总表）
+
+> 鉴权列：`登录态`=JWT；`sk`=平台 API Key；`管理`=对应权限码 + 管理员双重认证。计费仅发生在模型调用接口。
+
+### 2.1 Token 网关 — 管理端（渠道/模型目录）
+
+| # | 方法 路径 | 鉴权 | 状态 | 契约 |
+|---|---|---|---|---|
+| 1 | `GET/POST /api/admin/token/channels` | 管理(token:manage) | ✅ | §14.5 |
+| 2 | `GET/PATCH/DELETE /api/admin/token/channels/{id}` | 管理 | ✅ | §14.5 |
+| 3 | `GET/POST /api/admin/token/models` | 管理 | ✅ | §14.6 |
+| 4 | `GET/PATCH/DELETE /api/admin/token/models/{id}` | 管理 | ✅ | §14.6 |
+| 5 | `GET /api/admin/token/usage` | 管理 | 🔜 S2-丁2 | §14.7 |
+
+### 2.2 Token 网关 — 用户端 / 开发者
+
+| # | 方法 路径 | 鉴权 | 状态 | 契约 |
+|---|---|---|---|---|
+| 6 | `GET /api/token/models` | 登录态/sk | ✅ | §14.1 |
+| 7 | `POST /api/token/chat/completions`（纯透传，SSE） | 登录态/sk | ✅（sk 路径待 #8 接入） | §14.2 |
+| 8 | `GET /api/token/usage` | 登录态/sk | 🔜 S2-丁1 | §14.3 |
+
+### 2.3 平台 sk 鉴权（后端甲）
+
+| # | 方法 路径 | 鉴权 | 状态 | 契约 |
+|---|---|---|---|---|
+| 9 | `POST /api/keys`（创建，明文只回一次） | 登录态 | 🔜 S2-甲4 | §14.4 / sk 契约 |
+| 10 | `GET /api/keys`（列本人，只回 prefix） | 登录态 | 🔜 S2-甲4 | §14.4 |
+| 11 | `DELETE /api/keys/{id}`（吊销，越权 40003） | 登录态 | 🔜 S2-甲4 | §14.4 |
+| — | `RequireUserAuth` 双模式中间件 + `ResolveKey` 内部 | — | 🔜 S2-甲3 | sk 契约 §5 |
+| — | 按 sk 限流 | — | 🔜 S2-甲8 | roadmap §9 #2 |
+
+### 2.4 计费（后端乙/丙/丁）
+
+| # | 能力 | 归属 | 状态 | 契约 |
+|---|---|---|---|---|
+| 12 | 按量计费（input/output tokens → 钱包） | 乙+丁 | ✅（含 seed 000033 + `POST /api/internal/product-usage-events`） | billing §2 |
+| 13 | 按次计费规则 seed（calls/count）+ 门面次数事件 | 乙+丁 | 🔜 S2-乙1/丁4 | billing §3 |
+| 14 | 套餐商品 + plan（quota_json + valid_days） | 乙 | 🔜 S2-乙3 | billing §4.1 |
+| 15 | `POST /api/internal/entitlement-consume`（锁行+幂等+有效期） | 丙 | 🔜 S2-丙2 | billing §4.2 |
+| 16 | token_quota entitlement 生成（TokenProvisioner 套餐分支） | 丙 | 🔜 S2-丙1（按量分支✅已有） | billing §4.2 |
+| 17 | 门面计费路由（postpaid/prepaid 互斥 + 余额闸） | 丁 | 🔜 S2-丁5 | billing §4.3 |
+
+### 2.5 聊天工作台 — Agent/Skill/插件（后端丁，全免费）
+
+| # | 方法 路径 | 鉴权 | 状态 | 契约 |
+|---|---|---|---|---|
+| 18 | `GET/POST /api/admin/agents` (+ `/{id}/skills`、`/{id}/plugins` 绑定) | 管理(agent:manage) | 🔜 S2-丁8 | §14.10 |
+| 19 | `GET/POST/PATCH/DELETE /api/admin/skills` | 管理(skill:manage) | 🔜 S2-丁8 | §14.10 |
+| 20 | `GET/POST/PATCH/DELETE /api/admin/plugins`（凭证不回） | 管理(plugin:manage) | 🔜 S2-丁8 | §14.10 |
+| 21 | `GET /api/agents`、`GET /api/agents/{id}` | 登录态 | 🔜 S2-丁9 | §14.9 |
+| 22 | `POST/PATCH/DELETE /api/agents`（自建，越权 40003） | 登录态 | 🔜 S2-丁9 | §14.9 |
+| 23 | `GET /api/skills`、`GET /api/plugins`（供自建绑定） | 登录态 | 🔜 S2-丁9 | §14.9 |
+| 24 | `POST /api/agents/{id}/chat`（tool-use 编排，SSE） | 登录态/sk | 🔜 S2-丁10 | §14.8 / 工作台契约 §4 |
+
+### 2.6 数据库迁移（序号以实际合并顺序为准）
+
+| 迁移 | 内容 | 状态 |
+|---|---|---|
+| 000030–000033 | token_models/usage_logs、channels+路由、token:manage seed、token 商品+按量规则 | ✅ |
+| 000034 | api_keys | 🔜 S2-甲1 |
+| 000035 | 按次计费规则 seed（calls） | 🔜 S2-乙1 |
+| 000036–000038 | agents+绑定表 / skills / plugins | 🔜 S2-丁6（前置 W6） |
+| 000039 | 权限码 seed（agent/skill/plugin:manage） | 🔜 S2-甲7 |
+
+### 2.7 错误码（第二阶段相关）
+
+| code | 含义 | 备注 |
+|---|---|---|
+| 40300 | 未开通 token 服务 / 模型越界 | chat 专用 |
+| 50200 / 50300 | 上游失败 / 渠道不可用 | chat 专用 |
+| 60001 | 钱包余额不足 | 既有 |
+| 60005 | 权益额度不足（含套餐额度耗尽） | **复用，禁用 60002（=重复支付）** |
+| 40003 | 无权限（含 sk 越权吊销） | **不用 40004** |
+
+### 2.8 环境变量 / 配置项（运维）
+
+| 项 | 用途 | 状态 |
+|---|---|---|
+| `TOKEN_PROVIDER_KEY` | 渠道 api_key AES-256-GCM | ✅ 已用 |
+| `API_KEY_HMAC_SECRET` | sk 的 HMAC 存储密钥 | 🔜 S2-甲5/运1 |
+| `PLUGIN_SECRET_KEY`（或复用上） | 插件凭证加密 | 🔜 S2-运2 |
+| `MAX_ROUNDS`（默认 5）、插件域名白名单 | tool-use 编排 / SSRF | 🔜 S2-运2 |
+
+---
+
+## 三、任务完成度列表
+
+### 3.1 规划阶段 — ✅ 全部完成（已合并 main）
+
+- [x] 产品蓝图澄清 + 4 项范围决策
+- [x] roadmap v2（含 16 项 PM 决策回填）
+- [x] sk 鉴权对接契约（v1.1，支持 prepaid）
+- [x] 计费对接契约（按量+按次+套餐）
+- [x] 聊天工作台对接契约（Agent/Skill/插件 + tool-use 编排）
+- [x] 前端契约 `frontend-api-reference.md` §14
+- [x] 任务排期（Week 5–9，PM 两轮 review 优化，PR #203 合并）
+- [x] 本总控追踪文档
+
+### 3.2 已实现能力（第一砖，PR #188–#201）— ✅
+
+- [x] token_models / token_usage_logs / token_channels + 路由（000030–000031）
+- [x] 渠道 CRUD + 模型目录 CRUD（管理端，token:manage）
+- [x] `GET /api/token/models`、`POST /api/token/chat/completions`（纯透传 + SSE）
+- [x] 按量计费（000033 seed + product-usage-events 上报 → 扣钱包）
+- [x] TokenProvisioner（按量分支）+ 资产门禁
+- [x] 前端（Codex）：用户端对话页、管理端 Token 配置页
+
+### 3.3 实现阶段 — 🔜 待开始（按周/工程师，勾选追踪）
+
+**W5 · M1 Token 售卖闭环**
+- [ ] S2-甲1 迁移 000034 api_keys + model
+- [ ] S2-甲2 APIKeyService（Issue/Resolve/Revoke/List）
+- [ ] S2-甲3 RequireUserAuth 双模式中间件 + APIKeyIDFromContext
+- [ ] S2-甲4 `/api/keys` 管理路由 + 封禁联动
+- [ ] S2-甲5 config 注入 API_KEY_HMAC_SECRET
+- [ ] S2-乙1 迁移 000035 按次计费规则 seed
+- [ ] S2-乙2 管理端按量/按次互斥强校验
+- [ ] S2-丁1 `GET /api/token/usage`（用户端）
+- [ ] S2-丁2 `GET /api/admin/token/usage`（管理端）
+- [ ] S2-丁3 chat 三接口换 RequireUserAuth + 写 api_key_id
+- [ ] S2-丁4 门面按次事件上报（前置失败不计次）
+- [ ] S2-运1 .env.example 补 API_KEY_HMAC_SECRET + 迁移流程
+- [ ] S2-测1 M1 用例（含并发扣费无负余额）
+
+**W6 · M2 套餐预付**
+- [ ] S2-乙3 token 套餐 plan（quota_json + valid_days）+ 售价
+- [ ] S2-丙1 套餐分支生成 token_quota entitlement
+- [ ] S2-丙2 `POST /api/internal/entitlement-consume`（锁行+幂等+有效期，不足 60005）
+- [ ] S2-丙3 内部余额查询（门面前置闸）
+- [ ] S2-甲6 IssueKey 支持 prepaid + source_id
+- [ ] S2-甲8 按 sk 限流
+- [ ] S2-丁5 门面计费路由（postpaid/prepaid 互斥 + 余额闸）
+- [ ] S2-丁6（前置）迁移 000036–000038 agent/skill/plugin 建表
+- [ ] S2-前乙1 sk 管理页 + 用量页（§14.4/14.3）
+- [ ] S2-前乙2 token 套餐购买页
+- [ ] S2-前甲1 管理端全量用量页（§14.7）
+- [ ] S2-测2 M1 回归 + M2 用例（并发额度无超扣）
+
+**W7 · M3 工作台（上）**
+- [ ] S2-甲7 权限码 seed 000039（agent/skill/plugin:manage）
+- [ ] S2-丁7 三模块 model/repo/service + bootstrap 装配
+- [ ] S2-丁8 管理端 CRUD（agents/skills/plugins + 绑定，凭证不回）
+- [ ] S2-丁9 用户端 Agent 列表/详情/自建/绑定 + skills/plugins 列表
+- [ ] S2-前甲2 管理端 Agent/Skill/插件配置页（§14.10）
+- [ ] S2-前乙3 工作台 Agent 选择 + 自建页（§14.9）
+- [ ] S2-测3 三模块 CRUD + 自建越权用例
+
+**W8 · M3 工作台（下）tool-use 编排**
+- [ ] S2-丁10（关键路径）`POST /api/agents/{id}/chat` 编排循环
+- [ ] S2-丁11 skill 内置函数注册表（1–2 示例）
+- [ ] S2-甲9（协丁）plugin HTTP 转发器（SSRF/超时/凭证/熔断）
+- [ ] S2-丁13 编排计费接入（每轮 token + 按次计 1）
+- [ ] S2-丁14 bootstrap 总装配收口 + 冒烟
+- [ ] S2-前乙4 聊天对话页（SSE + tool_call/tool_result 事件，§14.8）
+- [ ] S2-运2 配置项注入（MAX_ROUNDS / 白名单 / PLUGIN_SECRET_KEY）
+- [ ] S2-测4 编排用例（多轮 / 超限 / SSRF / 计费正确）
+
+**W9 · M4 整合验收**
+- [ ] S2-测5（前半）端到端 + 三计费 + tool-use + 并发无负余额(硬)
+- [ ] S2-测6（前半）缺陷跟踪表 P0–P3
+- [ ] S2-各1（后半）按缺陷修复回归（两轮 QA 闭环）
+- [ ] S2-运3 backend-stage2-go-live-checklist.md
+- [ ] S2-PM1 第二阶段业务验收
+
+### 3.4 完成度统计
+
+| 阶段 | 完成 / 总数 |
+|---|---|
+| 规划阶段 | 8 / 8 ✅ |
+| 已实现能力（第一砖） | 6 / 6 ✅ |
+| 实现阶段任务（S2-xx） | 0 / 43 🔜 |
+| **接口总数** | 已实现 7 项 / 待实现 17 项（共 24） |
+
+---
+
+## 四、维护说明
+
+- 本文是第二阶段单一追踪入口；实现推进时，**勾选 §3.3 复选框**并更新 §2 状态列与 §3.4 统计。
+- 接口字段或错误码变更，先改对应契约 + `frontend-api-reference.md` §14，再回写本表（项目反复出现根因）。
+- 状态语义：🔜→🚧（PR 提出）→✅（合并 main）。
