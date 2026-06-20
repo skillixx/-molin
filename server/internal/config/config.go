@@ -40,6 +40,10 @@ type Config struct {
 
 	// 支付回调报文加密密钥（32 字节，AES-256-GCM），未配置时记录 warn 并降级为明文
 	NotifyBodyKey string
+
+	// Token 网关上游渠道 api_key 加密密钥（32 字节，AES-256-GCM）
+	// 用于 token_channels.api_key_encrypted 加解密；通过 TOKEN_PROVIDER_KEY 注入。
+	TokenProviderKey string
 }
 
 func Load() Config {
@@ -70,6 +74,8 @@ func Load() Config {
 		AdminVerifyExpireHours: getenvInt("ADMIN_VERIFY_EXPIRE_HOURS", 24),
 
 		NotifyBodyKey: getenv("NOTIFY_BODY_KEY", ""),
+
+		TokenProviderKey: getenv("TOKEN_PROVIDER_KEY", ""),
 	}
 }
 
