@@ -88,6 +88,20 @@ func (r *AssetRepository) CountByUserStatus(ctx context.Context, userID uint64) 
 	return result, nil
 }
 
+// ExistsActiveByType 判断用户是否持有指定类型且 status=active 的资产。
+// 用于 token 网关门面门禁（「买了才能用」）：assetType 传 token_service。
+// 注意：仅判定 active；到期资产由定时任务流转为 expired，故无需在此额外校验 expires_at。
+func (r *AssetRepository) ExistsActiveByType(ctx context.Context, userID uint64, assetType string) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&model.UserAsset{}).
+		Where("user_id = ? AND asset_type = ? AND status = 'active'", userID, assetType).
+		Limit(1).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // UpdateStatus 更新资产状态。
 func (r *AssetRepository) UpdateStatus(ctx context.Context, id uint64, status string) error {
 	return r.db.WithContext(ctx).Model(&model.UserAsset{}).

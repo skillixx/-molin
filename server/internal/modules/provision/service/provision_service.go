@@ -32,6 +32,10 @@ type ProvisionResult struct {
 	BusinessInstanceID string
 	// ExpiresAt 由 handler 返回，用于覆盖 plan.DurationDays 计算的到期时间（可选）
 	ExpiresAt *time.Time
+	// AssetType 可选，用于覆盖默认的 product.ProductType 作为资产类型写入 user_assets.asset_type。
+	// 默认（空字符串）时使用商品的 product_type；当某类商品的资产语义与商品类型不一致时由 handler 指定，
+	// 例如 token 商品（product_type=token）开通后产出 asset_type=token_service 的「token 服务」资产。
+	AssetType string
 }
 
 // AssetManager 资产管理接口，在 provision 模块内定义以避免循环导入。
@@ -136,13 +140,19 @@ func (s *ProvisionService) Provision(ctx context.Context, orderID, productID, pl
 
 	// 创建用户资产（所有商品类型统一由此处调用 asset 模块创建）
 	businessInstanceID := ""
+	// 资产类型默认取商品的 product_type；handler 显式返回 AssetType 时以其为准
+	// （如 token 商品 product_type=token，资产语义为 token_service）。
+	assetType := product.ProductType
 	if result != nil {
 		businessInstanceID = result.BusinessInstanceID
+		if result.AssetType != "" {
+			assetType = result.AssetType
+		}
 	}
 
 	_, err = s.assetSvc.CreateAsset(ctx, CreateAssetReq{
 		UserID:             userID,
-		AssetType:          product.ProductType,
+		AssetType:          assetType,
 		ProductID:          productID,
 		PlanID:             planID,
 		OrderID:            orderID,
