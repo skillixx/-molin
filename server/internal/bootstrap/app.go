@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
@@ -29,6 +30,9 @@ import (
 	billingsvc "molin/server/internal/modules/billing/service"
 	contentmod "molin/server/internal/modules/content"
 	financemod "molin/server/internal/modules/finance_consumer"
+	financemodel "molin/server/internal/modules/finance_consumer/model"
+	financerepo "molin/server/internal/modules/finance_consumer/repository"
+	financesvc "molin/server/internal/modules/finance_consumer/service"
 	iammod "molin/server/internal/modules/iam"
 	iamrep "molin/server/internal/modules/iam/repository"
 	iamsvc "molin/server/internal/modules/iam/service"
@@ -44,8 +48,9 @@ import (
 	productservice "molin/server/internal/modules/product/service"
 	provisionmod "molin/server/internal/modules/provision"
 	provisionhandler "molin/server/internal/modules/provision/handler"
-	tokengatewaymod "molin/server/internal/modules/token_gateway"
 	provisionsvc "molin/server/internal/modules/provision/service"
+	tokengatewaymod "molin/server/internal/modules/token_gateway"
+	tokengatewaysvc "molin/server/internal/modules/token_gateway/service"
 	"molin/server/pkg/cache"
 	"molin/server/pkg/db"
 	"molin/server/pkg/response"
@@ -150,6 +155,28 @@ func (a *authAssetSummaryAdapter) GetAssetSummary(ctx context.Context, userID ui
 		Expired:   s.Expired,
 		Cancelled: s.Cancelled,
 	}, nil
+}
+
+// tokenUsageReporterAdapter 将 finance_consumer.ConsumerService 适配为 token_gateway 的 UsageReporter 接口。
+// 把 token 网关的 UsageEvent 映射为 finance_consumer 的 ProductUsageEvent 并调 Handle 扣费。
+// 跨模块只走对方 service 暴露的 Handle，不直接碰其 repository。
+type tokenUsageReporterAdapter struct {
+	svc *financesvc.ConsumerService
+}
+
+func (a *tokenUsageReporterAdapter) Report(ctx context.Context, evt tokengatewaysvc.UsageEvent) error {
+	_, err := a.svc.Handle(ctx, financemodel.ProductUsageEvent{
+		EventID:        evt.RequestID,
+		UserID:         evt.UserID,
+		ProductID:      evt.ProductID,
+		ProductType:    "token",
+		UsageType:      evt.UsageType,
+		UsageAmount:    evt.UsageAmount,
+		UsageUnit:      "tokens",
+		OccurredAt:     time.Now(),
+		IdempotencyKey: evt.IdempotencyKey,
+	})
+	return err
 }
 
 // iamRoleGetterAdapter 将 *iamsvc.IAMService 适配为 contenthandler.IAMRoleGetter 接口。
@@ -367,17 +394,29 @@ func NewApp() (*App, error) {
 	// 注册 app 模块（应用业务详情 + 适配器管理；与 product 模块的商品/套餐解耦）
 	appmod.RegisterRoutes(mux, gormDB, cfg.JWTSecret, authService, iamService)
 
-	// 注册 token 网关门面（管理端：渠道/模型目录）。
+	// 注册 token 网关门面（管理端：渠道/模型目录；用户端：OpenAI 兼容 chat 转发）。
 	// TOKEN_PROVIDER_KEY 未配置或非法（非 32 字节）时跳过装配，仅记日志，不阻断其他模块启动。
 	if cfg.TokenProviderKey != "" {
-		if tokenGatewayModule, tgErr := tokengatewaymod.New(gormDB, cfg.TokenProviderKey); tgErr != nil {
-			log.Printf("[token_gateway] 初始化失败，管理端未启用: %v", tgErr)
+		// 跨模块依赖通过接口注入，避免 import 环：
+		//   - AssetGate：assetService 直接满足 HasActiveTokenAsset(ctx, userID) 签名。
+		//   - UsageReporter：finance_consumer.ConsumerService 适配（按量上报扣钱包）。
+		//     单独构造一个 ConsumerService 实例（复用其公开构造，不改乙模块代码）。
+		tokenConsumptionRepo := financerepo.NewConsumptionRepository(gormDB)
+		tokenBillingRuleRepo := productrep.NewBillingRuleRepository(gormDB)
+		tokenConsumerSvc := financesvc.NewConsumerService(gormDB, tokenConsumptionRepo, tokenBillingRuleRepo, walletService)
+		tokenReporter := &tokenUsageReporterAdapter{svc: tokenConsumerSvc}
+
+		if tokenGatewayModule, tgErr := tokengatewaymod.New(gormDB, cfg.TokenProviderKey, assetService, tokenReporter); tgErr != nil {
+			log.Printf("[token_gateway] 初始化失败，管理端/用户端未启用: %v", tgErr)
 		} else {
+			// 管理端：渠道 / 模型目录（token:manage + 管理员双重认证）。
 			tokengatewaymod.RegisterRoutes(mux, tokenGatewayModule.ChannelService, tokenGatewayModule.CatalogService,
 				cfg.JWTSecret, iamService, authService, authService)
+			// 用户端：OpenAI 兼容 chat 转发（网页登录态）。
+			tokengatewaymod.RegisterUserRoutes(mux, tokenGatewayModule.ForwardService, cfg.JWTSecret, authService)
 		}
 	} else {
-		log.Printf("[token_gateway] TOKEN_PROVIDER_KEY 未配置，token 网关管理端未启用")
+		log.Printf("[token_gateway] TOKEN_PROVIDER_KEY 未配置，token 网关门面未启用")
 	}
 
 	// 启动定时任务：到期资产处理（后台 goroutine，随应用生命周期运行）
