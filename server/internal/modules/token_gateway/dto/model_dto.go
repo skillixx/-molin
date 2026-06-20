@@ -39,3 +39,10 @@ type ModelResp struct {
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }
+
+// PublicModelResp 用户端可见的模型目录精简视图（不含渠道/上游/商品等内部路由字段）。
+type PublicModelResp struct {
+	LogicalModelCode string `json:"logical_model_code"`
+	DisplayName      string `json:"display_name"`
+	Modality         string `json:"modality"`
+}

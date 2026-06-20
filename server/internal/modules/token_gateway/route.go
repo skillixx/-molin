@@ -60,16 +60,20 @@ func RegisterRoutes(
 func RegisterUserRoutes(
 	mux *http.ServeMux,
 	forwardSvc *service.ForwardService,
+	catalogSvc *service.CatalogService,
 	jwtSecret string,
 	banChecker middleware.BanChecker,
 ) {
 	chatH := handler.NewChatHandler(forwardSvc)
+	modelH := handler.NewModelHandler(catalogSvc)
 
 	// 用户端中间件链：仅登录态（含封禁/吊销检查）。
 	user := func(next http.HandlerFunc) http.Handler {
 		return middleware.RequireAuth(jwtSecret, banChecker, http.HandlerFunc(next))
 	}
 
+	// 列出已上架（active）模型，供用户端选择（仅公开精简字段）。
+	mux.Handle("GET /api/token/models", user(modelH.ListPublic))
 	// OpenAI 兼容对话转发（支持非流式 + SSE 流式）。
 	mux.Handle("POST /api/token/chat/completions", user(chatH.ChatCompletions))
 }
