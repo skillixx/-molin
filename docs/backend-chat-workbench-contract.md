@@ -126,7 +126,7 @@ CREATE TABLE plugins (
 | `PATCH/DELETE` | `/api/agents/{id}` | 登录态 | 仅能改/删本人自建（官方只读，越权 40003） |
 | `GET` | `/api/skills`、`/api/plugins` | 登录态 | 列 active 能力（供自建 Agent 绑定，只读精简视图，插件不回 endpoint/凭证） |
 
-> 用户自建 Agent 仅能绑定 status=active 的官方 skill/插件；不能自建 skill/插件（外部接入由运营审核配置）。
+> 用户自建 Agent **可绑定 status=active 的官方 skill + 官方插件**（PM 决策 2026-06-21）；但**不能自建/上传 skill 或插件**（外部接入涉及 SSRF/凭证，必须经运营审核上架）。
 
 ### 3.3 聊天对话（核心，tool-use 编排）
 
@@ -153,7 +153,7 @@ ChatWithAgent(ctx, agentID, userID, billingCtx, messages, stream):
   model  = req.model or agent.default_model_code
   tools  = 汇总 agent 绑定且 enabled 的 skill/plugin 的 tool_schema_json
   msgs   = [system: agent.system_prompt] + messages
-  for round in 1..MAX_ROUNDS(默认5):
+  for round in 1..MAX_ROUNDS:                            # MAX_ROUNDS 可配置，默认 5（见下）
       resp = forward.ChatOnce(model, msgs, tools)        # 复用转发器（选渠道/转发/读usage/计费）
       记 usage（每轮都计 token）
       if resp 无 tool_calls:
@@ -162,22 +162,24 @@ ChatWithAgent(ctx, agentID, userID, billingCtx, messages, stream):
           if call 属 skill:  result = skillDispatch(handler_key, args)      # 内置函数
           if call 属 plugin: result = pluginForward(endpoint_url, args)     # 外部 HTTP（超时/SSRF 防护）
           msgs += [assistant tool_call, tool result(result)]
-  到达 MAX_ROUNDS 仍未收敛 → 终止，返回已有内容 + 提示「工具调用超出上限」
+  到达 MAX_ROUNDS 仍未收敛 → 终止，返回已有内容 + 提示「工具调用已达上限，本次已正常计费」
   整次提问结束：按次计 1（见 billing 契约 §3.2）
 ```
 
 要点：
+- **MAX_ROUNDS 可配置（PM 决策 2026-06-21）**：默认 5，经配置项/环境变量注入，**不硬编码**，便于后续按需调整；超限终止时给用户友好提示并**明确告知本次已正常计费**（已消耗 token 不退）。
 - **复用现有转发器**：每轮上游调用走 `ForwardService` 的选渠道/转发/读 usage/计费，不另写转发逻辑。
 - **skill dispatch**：`handler_key` → 门面内置函数注册表（如 `web_search` / `code_exec` / `doc_read`）；本期先上 1–2 个示例。
 - **plugin forward**：按 `tool_schema_json` 取参 → POST `endpoint_url`（带解密后的 auth、`timeout_ms` 超时）→ 取 JSON 结果回灌。
 - **流式**：中间工具轮可向前端发进度事件（`event: tool_call` / `tool_result`，前端契约定义）；最终答案轮发 `event: message` + `[DONE]`。
 - **失败降级**：单个工具失败 → 作为 tool 错误结果回灌，让模型自行决定，不直接中断整次对话（除非连续失败）。
+- **会话历史（PM 决策 2026-06-21）**：本期**对话历史由前端/客户端自持**（每次请求传完整 `messages`），**后端不落库存储对话内容**——与隐私红线「对话内容不落明文日志」一致。`token_usage_logs` 仅记 tokens/状态等元数据，不含对话正文。多端同步/历史会话查看为后续阶段需求。
 
 ---
 
 ## 5. 安全（重点：插件外部接入）
 
-- **SSRF 防护**：插件 `endpoint_url` 仅允许 https + 域名白名单 / 禁内网网段（10./172.16./192.168./169.254./localhost），运营配置时校验。
+- **SSRF 防护**：插件 `endpoint_url` 仅允许 https + **可配置域名白名单**（配置项/白名单表，新增插件不改代码）/ 禁内网网段（10./172.16./192.168./169.254./localhost），运营配置时校验。
 - **超时与熔断**：`timeout_ms` 强制上限（如 ≤30s），连续失败的插件自动置 `inactive` 告警。
 - **凭证加密**：`auth_config_encrypted` AES-256-GCM（复用 `TOKEN_PROVIDER_KEY` 或新增 `PLUGIN_SECRET_KEY`），任何响应不返回。
 - **越权**：用户只能改/删本人自建 Agent；不能创建/修改 skill/plugin。
@@ -212,8 +214,9 @@ ChatWithAgent(ctx, agentID, userID, billingCtx, messages, stream):
 
 ---
 
-## 8. 待确认（roadmap §9）
+## 8. PM 决策（2026-06-21，已确认）
 
-- 按次循环口径：按提问计 1（建议默认）
-- tool-use 最大轮数：默认 5（建议）
-- 用户自建 Agent 是否允许绑定插件，还是仅 skill（建议：可绑定官方已上架插件）
+- 按次循环口径：**按提问计 1 次**；前置失败（未发起上游）不计次（见 billing 契约 §3.2）。
+- tool-use 最大轮数：**默认 5，可配置**；超限终止提示已计费。
+- 用户自建 Agent：**可绑定官方已上架 skill + 插件**，不能自建/上传 skill/插件。
+- 会话历史：本期**前端自持，后端不存对话内容**（见 §4 要点）。

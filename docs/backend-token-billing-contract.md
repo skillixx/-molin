@@ -23,9 +23,9 @@
 - `postpaid` → 钱包路径（按量 / 按次）
 - `prepaid` → 套餐 entitlement 路径
 
-**计费口径（待 PM 终确认，文档按建议默认）**
+**计费口径（PM 已确认 2026-06-21）**
 - 一次用户提问触发 tool-use 多轮上游调用时：**按量** 累加所有轮 token；**按次** 仅计 **1 次**（按用户提问，不按上游轮数）。
-- 同一商品可同时配「按量」或「按次」规则；**按量与按次二选一**配置在商品上，避免重复收费（运营在管理端控制，门面按存在的规则上报）。
+- 同一商品可同时配「按量」或「按次」规则；**按量与按次二选一**配置在商品上，避免重复收费。**管理端必须做强校验**：保存按次规则时若已存在生效的按量规则（反之亦然）则拦截并提示，不依赖运营自觉；门面按存在的规则上报。
 
 ---
 
@@ -70,6 +70,7 @@ UsageEvent{
 }
 ```
 - **tool-use 编排**下：一次提问只上报 **1 条 calls**（在编排结束、产出最终答案后），不随上游轮数累加。
+- **计次条件（PM 决策 2026-06-21）**：只要**已发起至少一次上游调用并产生有效结果**（含因超 `MAX_ROUNDS` 终止但已出"超上限"提示、已消耗 token 的情况）即计 **1 次**；**纯前置失败不计次**（鉴权失败、`40300` 未开通/模型越界、余额闸拒绝等——尚未发起任何上游调用）。
 - finance_consumer 无 calls 规则时返回「无匹配规则」→ 门面按「未配置按次」静默跳过（不报错、不重复扣量）。
 
 ---
@@ -81,15 +82,16 @@ UsageEvent{
 新增 token 套餐 plan（与现有 `token-api-payg` 并列），`billing_type=usage`、`quota_json` 声明额度，供 `ProvisionService` 生成 entitlement：
 
 ```sql
--- 套餐 plan：例「100万 token 套餐」，quota_json 声明额度总量与单位
+-- 套餐 plan：例「100万 token 套餐」，quota_json 声明额度总量、单位与有效期
 INSERT IGNORE INTO product_plans (product_id, plan_code, name, billing_type, quota_json, status)
 SELECT p.id, 'token-pkg-1m', '100万 Token 套餐', 'usage',
-       JSON_OBJECT('entitlement_type','token_quota','quota_total',1000000,'quota_unit','tokens'),
+       JSON_OBJECT('entitlement_type','token_quota','quota_total',1000000,'quota_unit','tokens','valid_days',365),
        'active'
 FROM products p WHERE p.product_code = 'token-api';
 -- 套餐售价配 product_prices（一次性预付价）；购买走现有 POST /orders + 钱包支付。
 ```
-> 额度单位建议 **token 数**（与计费同维度，余额耗尽即拒）；金额(CNY)为备选，待 PM 确认（roadmap §9 #9）。
+> **额度单位 = token 数**（PM 决策 2026-06-21，与计费同维度、余额耗尽即拒；不用金额，prepaid 不走钱包无需折算汇率）。
+> **套餐有效期（PM 决策）**：`quota_json.valid_days` 声明有效天数，开通时 `user_entitlements.expires_at = started_at + valid_days`；**到期未用完额度清零**（entitlement 置 `expired`，门面前置闸据 `status`/`expires_at` 拒绝）。有效期到期由现有资产过期机制处理，不另起。
 
 ### 4.2 后端丙：套餐生成 + 额度扣减接口
 
@@ -114,9 +116,9 @@ POST /api/internal/entitlement-consume        （内部调用，门面 → 丙�
 { "entitlement_id": 123, "quota_total": "1000000", "quota_used": "5232", "remaining": "994768", "status": "active" }
 ```
 实现要点：
-- 事务内 `FindByIDForUpdate` 锁行 → 校验 `status=active` 且 `quota_used + amount <= quota_total` → `ConsumeQuota`（已有 `SELECT FOR UPDATE`）。
+- 事务内 `FindByIDForUpdate` 锁行 → 校验 `status=active`、未过期（`expires_at`）且 `quota_used + amount <= quota_total` → `ConsumeQuota`（已有 `SELECT FOR UPDATE`）。
 - **幂等**：以 `idempotency_key` 去重（建议新增 `entitlement_consume_logs` 表或复用消费流水），重复请求返回首次结果，不二次扣减。
-- 余额不足：返回业务错误（如 `code=60002 套餐额度不足`），门面据此拒绝/降级。
+- 余额/额度不足：复用现有错误码 **`60005` 权益额度不足**（`full-api-design.md` 已定义；**不新造 60002**——60002 已是「重复支付」），门面据此拒绝/降级。
 - 归属校验：`entitlement.user_id == req.user_id`，否则 40003。
 
 **C. 余额查询**（门面前置闸用，可复用现有 §10.3「我的权益额度」或加内部查询）：返回 `remaining = quota_total - quota_used`。
@@ -131,7 +133,7 @@ POST /api/internal/entitlement-consume        （内部调用，门面 → 丙�
       reporter.Report(input_tokens 事件) / (output_tokens 事件)   // 现状·钱包
       reporter.Report(calls 事件)                                // 若配按次
   if billing_mode == "prepaid":
-      amount = 按 token_models.product 的套餐折算规则计算消耗额度（token 数：input+output 或加权）
+      amount = input_tokens + output_tokens   // PM 决策：1:1 不加权，与 token_quota 单位一致
       POST /api/internal/entitlement-consume(entitlement_id=source_id, amount, key=request_id:quota)
 ```
 - `source_id`（= entitlement_id）来自 sk 的 `ResolveKey` 结果。
@@ -176,4 +178,5 @@ POST /api/internal/entitlement-consume        （内部调用，门面 → 丙�
 - 计费事件必须带幂等键（`request_id:类型`），杜绝重复扣费。
 - prepaid 与 postpaid 互斥结算，严禁同一次调用既扣钱包又扣额度。
 - 额度扣减事务内锁行，余额校验在事务内完成，防并发透支。
-- 新增错误码（建议）：`60002` 套餐额度不足（与 `60001` 钱包余额不足并列）。
+- **错误码复用现有 `60005` 权益额度不足**（套餐额度不足场景）；钱包余额不足仍用 `60001`。**禁止新造 60002**（已占用=重复支付）。
+- **插件外部成本归属**：官方上架插件若调用付费第三方 API，其成本由**平台承担**（运营选型时自行评估），用户侧不额外计费——与「唯一收费点 = 模型 token」自洽。

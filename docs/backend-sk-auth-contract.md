@@ -180,7 +180,7 @@ HTTP 契约见 `docs/frontend-api-reference.md` §14.4，此处补实现要点�
 |---|---|---|---|
 | `POST` | `/api/keys` | `RequireAuth`（登录态 JWT） | 调 `IssueKey`，响应**含 `secret_key` 明文（仅此一次）** |
 | `GET` | `/api/keys` | `RequireAuth` | 调 `ListKeys`，扁平分页 `{items,page,page_size,total}`，只回 prefix |
-| `DELETE` | `/api/keys/{id}` | `RequireAuth` | 调 `RevokeKey`，校验 keyID 属于当前 user（越权防护，否则 40004） |
+| `DELETE` | `/api/keys/{id}` | `RequireAuth` | 调 `RevokeKey`，校验 keyID 属于当前 user（越权防护，否则 **40003 无权限**；不用 40004） |
 
 > sk 管理接口本身用**登录态 JWT**（不能用 sk 自助管理 sk），无需新增权限码。
 
@@ -199,7 +199,7 @@ HTTP 契约见 `docs/frontend-api-reference.md` §14.4，此处补实现要点�
 ## 9. 防透支与限流（按量关键）
 
 - **余额闸**：转发前校验余额 > 阈值——`postpaid`→钱包余额（乙）；`prepaid`→套餐 entitlement 额度（丙）；低于阈值拒绝新请求；结束后按 usage 结算扣费（postpaid 扣钱包 / prepaid 调丙 `entitlement-consume` 扣额度）。
-- **并发防透支**：同一 sk 高并发流式可能在结算前超支 → 本期策略：余额阈值拒绝 + 结束即时结算；如仍不足，可按 sk 维度串行或预扣估算（列为 M1 验收观察项，必要时加固）。
+- **并发防透支（M1 硬验收项，PM 升级 2026-06-21）**：同一 sk/用户高并发流式可能在结算前超支。本期策略：余额阈值拒绝 + 结束即时结算；**并发扣费不得产生负余额**——这是 M1/M4 硬性验收门槛（对齐项目「10 并发扣费无负余额」），不再是"观察项"。如阈值闸不足以保证，必须落地按 sk/用户维度串行结算或预扣估算兜底。
 - **限流**：按 sk（及 user）维度接入现有 `middleware/ratelimit.go`，防单 key 刷量。
 
 ---
