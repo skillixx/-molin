@@ -44,7 +44,8 @@
 | 40900 | 409  | 账号已注册（注册发码时账号已存在） |
 | 42900 | 429  | 请求频率超限 |
 | 50000 | 500  | 服务器内部错误 |
-| 60001 | 400  | 余额不足 |
+| 60001 | 400  | 余额不足（钱包） |
+| 60005 | 400  | 权益额度不足（含预付 token 套餐额度耗尽，第二阶段复用此码；勿用 60002，那是「重复支付」） |
 | 70001 | 400  | 需要先完成实名认证 |
 
 ### 分页参数（列表接口通用）
@@ -1643,6 +1644,181 @@ Wechatpay-Nonce: <随机串>
 
 ---
 
+## 十四、Token 网关模块（第二阶段）
+
+> 模块：`token_gateway`（后端丁），sk 鉴权由后端甲提供。
+> 计费口径（2026-06-21 决策）：**按量（token 数）+ 按次（调用次数）+ 套餐（预付 token 额度）三种并存**；按量/按次为后付扣钱包，套餐为预付扣 entitlement 额度。Agent/Skill/插件均免费，唯一收费点是模型 token 调用。
+> 状态标记：✅ 已实现并合并 main ｜ 🔜 待实现（含归属）。前端按状态决定可对接时间。
+> 站内聊天工作台的 Agent 对话端点（tool-use 编排）契约见 §14.8（待实现）。
+
+### 本模块专用错误码（chat 转发）
+
+| code | HTTP | 含义 |
+|------|------|------|
+| 40300 | 403 | 未开通 token 服务，无法调用（区别于通用 40003 无权限） |
+| 50200 | 502 | 上游服务调用失败 |
+| 50300 | 503 | 上游渠道不可用（未配置可用渠道 / 渠道停用） |
+
+### 鉴权说明（双模式）
+
+- **用户端 chat / models / usage**：支持两种凭证，二选一注入到 `Authorization`：
+  - 登录态 JWT：`Authorization: Bearer <access_token>`（✅ 当前已支持）
+  - 平台 API Key（sk）：`Authorization: Bearer sk-molin-xxxx`（🔜 后端甲 sk 系统上线后支持，外部程序/Agent 用）
+  - 两条路最终都解析出 `user_id`，后续门禁/计费逻辑一致。
+- **管理端**：JWT + `token:manage` 权限 + 管理员双重认证。
+
+---
+
+### 14.1 列出可用模型（用户端）✅
+
+- **GET** `/api/token/models` *(登录态 / sk)*
+- 仅返回已上架（active）模型的公开精简字段，供对话页选择；不含渠道/上游/商品等内部路由字段。
+- 响应 `data`：数组（本接口不分页）
+  ```json
+  [
+    { "logical_model_code": "gpt-4o", "display_name": "GPT-4o", "modality": "chat" },
+    { "logical_model_code": "deepseek-chat", "display_name": "DeepSeek Chat", "modality": "chat" }
+  ]
+  ```
+
+### 14.2 OpenAI 兼容对话转发（用户端）✅
+
+- **POST** `/api/token/chat/completions` *(登录态 / sk)*
+- 请求体 = 标准 OpenAI Chat Completions 报文，门面近似纯透传，**仅 `model` 字段必填**（填 14.1 的 `logical_model_code`）；`stream=true` 时走 SSE。
+  ```json
+  {
+    "model": "deepseek-chat",
+    "messages": [{ "role": "user", "content": "你好" }],
+    "stream": true
+  }
+  ```
+- **非流式**（`stream=false`/缺省）：原样透传上游 OpenAI 响应体（`choices`/`usage` 等），HTTP 200。
+- **流式**（`stream=true`）：`Content-Type: text/event-stream`，逐 chunk SSE 透传，末尾 `data: [DONE]`；门面已对上游开启 `stream_options.include_usage`，usage 在末尾 chunk。
+- **前置错误**（尚未开始透传时）：返回统一 JSON `{code,message,data}`，错误码见上表（40300/50200/50300，及 40000 model 为空 / 40001 未登录）。
+- 计费：调用成功后按 input/output tokens 扣钱包，明细见 14.3；**对话内容不落明文日志**。
+
+### 14.3 我的用量（用户端）🔜（后端丁）
+
+- **GET** `/api/token/usage?model=&start=&end=&page=1&page_size=20` *(登录态 / sk)*
+- 查本人 token 调用流水与消费，**扁平分页** `{ items, page, page_size, total }`。
+- 可选筛选：`model`（logical_model_code）、`start`/`end`（时间范围，RFC3339）。
+- `items[]` 字段：
+  ```json
+  {
+    "request_id": "req_xxx",
+    "logical_model_code": "deepseek-chat",
+    "modality": "chat",
+    "input_tokens": 12,
+    "output_tokens": 220,
+    "total_tokens": 232,
+    "sale_amount": "0.003480",
+    "is_stream": true,
+    "status": "success",
+    "error_code": null,
+    "created_at": "2026-06-20T10:00:00Z"
+  }
+  ```
+- 说明：`api_key_id` 为内部字段，用户端不返回；登录态调用本就无 sk。
+
+### 14.4 平台 API Key（sk）管理（用户端）🔜（后端甲）
+
+> 沿用 Refresh Token「只存 HMAC、明文只回一次」模式。`billing_mode`：`postpaid`（按量/按次扣钱包）/ `prepaid`（套餐预付，绑 entitlement 额度）。一般由「开通按量服务 / 购买套餐」后端自动签发，前端展示与吊销为主。
+
+- **POST** `/api/keys` *(登录态)* — 创建 sk
+  - 请求：`{ "name": "我的脚本", "model_scope": ["deepseek-chat"] }`（`model_scope` 可选，缺省=不限模型；`billing_mode`/`source_id` 由后端按购买上下文决定，前端通常不传）
+  - 响应：**明文 `secret_key` 仅本次返回一次，请前端提示用户立即保存**
+    ```json
+    { "id": 10, "name": "我的脚本", "key_prefix": "sk-molin-AbCd", "secret_key": "sk-molin-AbCd....完整明文", "billing_mode": "postpaid", "status": "active", "created_at": "2026-06-21T10:00:00Z" }
+    ```
+- **GET** `/api/keys` *(登录态)* — 列出本人 sk，**扁平分页**；只回 `key_prefix`，绝不回明文/hash
+  ```json
+  { "id": 10, "name": "我的脚本", "key_prefix": "sk-molin-AbCd", "billing_mode": "postpaid", "model_scope": ["deepseek-chat"], "status": "active", "last_used_at": "2026-06-21T11:00:00Z", "created_at": "2026-06-21T10:00:00Z" }
+  ```
+- **DELETE** `/api/keys/{id}` *(登录态)* — 吊销 sk（`status=revoked`，立即失效）
+- 联动：用户被封禁 → 名下所有 sk 失效。
+
+---
+
+### 14.5 渠道管理（管理端）✅
+
+> 需 `token:manage` + 管理员双重认证。安全红线：请求可传 `api_key_plaintext`，**任何响应绝不返回 key**，用 `has_api_key` 表征是否已配置。
+
+- **GET** `/api/admin/token/channels?page=1&page_size=20` → **扁平分页** `{ items, page, page_size, total }`
+- **POST** `/api/admin/token/channels`
+  ```json
+  { "code": "deepseek", "name": "DeepSeek", "type": "openai_compatible", "base_url": "https://api.deepseek.com", "api_key_plaintext": "上游真实key", "status": "active", "priority": 10 }
+  ```
+  - `type` 缺省 `openai_compatible`；`status` 缺省 `active`。
+- **GET** `/api/admin/token/channels/{id}` → 单条 `ChannelResp`
+- **PATCH** `/api/admin/token/channels/{id}` → 各字段可选；`api_key_plaintext` 非空才重新加密覆盖，缺省/nil 不动已存 key
+- **DELETE** `/api/admin/token/channels/{id}`
+- 响应体 `ChannelResp`（无 key 字段）：
+  ```json
+  { "id": 1, "code": "deepseek", "name": "DeepSeek", "type": "openai_compatible", "base_url": "https://api.deepseek.com", "has_api_key": true, "status": "active", "priority": 10, "created_at": "...", "updated_at": "..." }
+  ```
+
+### 14.6 对外模型目录管理（管理端）✅
+
+> 需 `token:manage` + 管理员双重认证。把对外 `logical_model_code` 路由到渠道 + 上游真实模型名。
+
+- **GET** `/api/admin/token/models?page=1&page_size=20` → **扁平分页** `{ items, page, page_size, total }`
+- **POST** `/api/admin/token/models`
+  ```json
+  { "logical_model_code": "deepseek-chat", "display_name": "DeepSeek Chat", "modality": "chat", "product_id": 8, "channel_id": 1, "upstream_model": "deepseek-chat", "status": "active", "sort_order": 10 }
+  ```
+  - `logical_model_code` 唯一（对外名）；`modality` 缺省 `chat`；`status` 缺省 `active`；`product_id` 关联 token 商品（控门禁），可空。
+- **GET** `/api/admin/token/models/{id}` → 单条 `ModelResp`
+- **PATCH** `/api/admin/token/models/{id}` → 各字段可选（指针，nil 不更新）
+- **DELETE** `/api/admin/token/models/{id}`
+- 响应体 `ModelResp`（含内部路由字段，与 14.1 公开视图区分）：
+  ```json
+  { "id": 5, "logical_model_code": "deepseek-chat", "display_name": "DeepSeek Chat", "modality": "chat", "product_id": 8, "channel_id": 1, "upstream_model": "deepseek-chat", "status": "active", "sort_order": 10, "created_at": "...", "updated_at": "..." }
+  ```
+
+### 14.7 全量用量（管理端）🔜（后端丁）
+
+- **GET** `/api/admin/token/usage?user_id=&api_key_id=&model=&start=&end=&page=1&page_size=20` *(需 `token:manage`)*
+- 全量 token 用量流水，**扁平分页** `{ items, page, page_size, total }`；可按 `user_id`/`api_key_id`/`model`/时间范围筛选。
+- `items[]` 在 14.3 字段基础上额外含 `user_id`、`api_key_id`（可空）。
+
+---
+
+> 以下为多模型聊天工作台（M3，🔜 后端丁）。Agent / Skill / 插件均**免费**，仅模型 token 调用计费。后端契约见 `docs/backend-chat-workbench-contract.md`。
+
+### 14.8 Agent 对话（站内聊天，tool-use 编排）🔜
+
+- **POST** `/api/agents/{id}/chat` *(登录态 / sk)*
+- 请求：
+  ```json
+  { "messages": [{ "role": "user", "content": "查一下今天的新闻并总结" }], "model": "deepseek-chat", "stream": true }
+  ```
+  - `model` 可选，缺省用该 Agent 的默认模型；`stream=true` 走 SSE。
+- 行为：门面注入 Agent 人设 + 绑定的 skill/插件作为工具，自动执行工具调用循环，返回最终答案。**与 §14.2 的区别**：14.2 是纯透传（开发者自理工具），本接口由门面编排工具。
+- 流式 SSE 事件（建议）：`event: tool_call`（调用工具中）/ `event: tool_result` / `event: message`（最终答案增量）/ `data: [DONE]`。
+- 计费：按 token 累加各轮 / 按次计 1（一次提问算 1 次）。错误码同 §14（40300/50200/50300）。
+
+### 14.9 Agent / 角色（用户端）🔜
+
+- **GET** `/api/agents` *(登录态)* → 可用 Agent 列表：官方预设 + 本人自建
+  ```json
+  { "id": 3, "name": "新闻助手", "description": "...", "avatar": "https://...", "owner_type": "official", "default_model_code": "deepseek-chat", "skills": [{"id":1,"name":"联网搜索"}], "plugins": [] }
+  ```
+- **GET** `/api/agents/{id}` *(登录态)* → 详情（绑定的 skill/插件名称；不含插件凭证）
+- **POST** `/api/agents` *(登录态)* — 用户自建 Agent
+  ```json
+  { "name": "我的助手", "system_prompt": "你是…", "default_model_code": "deepseek-chat", "skill_ids": [1], "plugin_ids": [] }
+  ```
+- **PATCH/DELETE** `/api/agents/{id}` *(登录态)* — 仅本人自建可改/删；官方 Agent 只读（越权 40003）
+- **GET** `/api/skills`、`/api/plugins` *(登录态)* — 列 active 能力供自建 Agent 绑定（精简视图，插件不回 endpoint/凭证）
+
+### 14.10 Agent / Skill / 插件管理（管理端）🔜
+
+- **`/api/admin/agents`** CRUD + `/{id}/skills`、`/{id}/plugins` 绑定 *(需 `agent:manage` + 双重认证)*
+- **`/api/admin/skills`** CRUD *(需 `skill:manage` + 双重认证)*
+- **`/api/admin/plugins`** CRUD *(需 `plugin:manage` + 双重认证)*；插件 `auth_config` 仅入参，响应用 `has_auth` 表征，绝不回凭证
+
+---
+
 ## 附录
 
 ### 权限码清单
@@ -1665,6 +1841,10 @@ Wechatpay-Nonce: <随机串>
 | `membership:manage` | 会员等级/权益写操作（后端丙） |
 | `content:manage` | 公告/帮助文档管理（后端丙） |
 | `app:manage` | 应用与适配器管理（后端丙） |
+| `token:manage` | Token 网关渠道/模型目录管理 + 全量用量（后端丁，需管理员双重认证） |
+| `agent:manage` | Agent（官方预设）管理 + skill/插件绑定（后端丁，需管理员双重认证） |
+| `skill:manage` | Skill 内置能力管理（后端丁，需管理员双重认证） |
+| `plugin:manage` | 外部插件管理（后端丁，需管理员双重认证） |
 
 ### 枚举值汇总
 
@@ -1688,3 +1868,14 @@ Wechatpay-Nonce: <随机串>
 | `application.status` | `draft` / `active` / `inactive` / `archived` |
 | `app_adapter.status` | `active` / `inactive` |
 | `provider` | `wechat` / `alipay` |
+| `token_channel.status` | `active` / `inactive` |
+| `token_channel.type` | `openai_compatible`（扩展点：`anthropic` / `gemini`，本期仅 openai_compatible） |
+| `token_model.status` | `active` / `inactive` |
+| `token_model.modality` | `chat` / `image` / `audio` / `video`（本期仅 chat） |
+| `token_usage_log.status` | `success` / `failed` / `timeout` |
+| `api_key.billing_mode` | `postpaid`（按量/按次扣钱包）/ `prepaid`（套餐预付，绑 entitlement 额度） |
+| `api_key.status` | `active` / `revoked` |
+| `billing usage_type`（token） | `input_tokens` / `output_tokens`（按量，unit=tokens）/ `calls`（按次，unit=count） |
+| `agent.owner_type` | `official`（运营预设）/ `user`（用户自建） |
+| `agent.status` / `skill.status` / `plugin.status` | `active` / `inactive` |
+| `entitlement_type`（token 套餐） | `token_quota`（quota_unit=tokens，预付额度） |
