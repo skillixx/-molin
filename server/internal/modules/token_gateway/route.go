@@ -49,3 +49,27 @@ func RegisterRoutes(
 	mux.Handle("PATCH /api/admin/token/models/{id}", admin(mh.UpdateModel))
 	mux.Handle("DELETE /api/admin/token/models/{id}", admin(mh.DeleteModel))
 }
+
+// RegisterUserRoutes 注册 token_gateway 用户端路由（网页登录态）。
+// 本期仅 chat 转发：RequireAuth(jwtSecret, banChecker) 注入 userID，门面内做门禁/额度/转发。
+//   - forwardSvc：核心转发服务（选渠道 + 转发上游 + 读 usage + 计费编排）
+//   - jwtSecret：JWT 校验密钥
+//   - banChecker：封禁/吊销黑名单检查
+//
+// 说明：本期不做平台 sk（外部程序用 API Key）鉴权，待后端甲 sk 系统就绪后再扩展。
+func RegisterUserRoutes(
+	mux *http.ServeMux,
+	forwardSvc *service.ForwardService,
+	jwtSecret string,
+	banChecker middleware.BanChecker,
+) {
+	chatH := handler.NewChatHandler(forwardSvc)
+
+	// 用户端中间件链：仅登录态（含封禁/吊销检查）。
+	user := func(next http.HandlerFunc) http.Handler {
+		return middleware.RequireAuth(jwtSecret, banChecker, http.HandlerFunc(next))
+	}
+
+	// OpenAI 兼容对话转发（支持非流式 + SSE 流式）。
+	mux.Handle("POST /api/token/chat/completions", user(chatH.ChatCompletions))
+}
