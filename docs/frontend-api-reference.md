@@ -1787,7 +1787,7 @@ Wechatpay-Nonce: <随机串>
 
 ### 14.8 Agent 对话（站内聊天，tool-use 编排）🔜
 
-- **POST** `/api/agents/{id}/chat` *(登录态 / sk)*
+- **POST** `/api/agents/{id}/chat` *(**仅登录态**；sk 不可调用本端点——sk 仅用于透传端点 §14.2)*
 - 请求：
   ```json
   { "messages": [{ "role": "user", "content": "查一下今天的新闻并总结" }], "model": "deepseek-chat", "stream": true }

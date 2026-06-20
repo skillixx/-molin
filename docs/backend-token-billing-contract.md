@@ -117,7 +117,19 @@ POST /api/internal/entitlement-consume        （内部调用，门面 → 丙�
 ```
 实现要点：
 - 事务内 `FindByIDForUpdate` 锁行 → 校验 `status=active`、未过期（`expires_at`）且 `quota_used + amount <= quota_total` → `ConsumeQuota`（已有 `SELECT FOR UPDATE`）。
-- **幂等**：以 `idempotency_key` 去重（建议新增 `entitlement_consume_logs` 表或复用消费流水），重复请求返回首次结果，不二次扣减。
+- **幂等（D5 已拍板）**：**必须新建幂等表 `entitlement_consume_logs`**（不复用钱包消费流水，二者域不同），与 postpaid 钱包幂等对称：
+  ```sql
+  CREATE TABLE entitlement_consume_logs (
+    id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    entitlement_id  BIGINT UNSIGNED NOT NULL,
+    user_id         BIGINT UNSIGNED NOT NULL,
+    amount          DECIMAL(18,6) NOT NULL,
+    idempotency_key VARCHAR(128) NOT NULL,          -- request_id:quota
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_entitlement_consume_idem (idempotency_key)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  ```
+  事务内：先 `INSERT` 幂等日志（唯一键冲突 = 重复请求，直接返回首次结果，不二次扣减）→ 再 `ConsumeQuota`。迁移序号紧随套餐相关迁移（M2，丙）。
 - 余额/额度不足：复用现有错误码 **`60005` 权益额度不足**（`full-api-design.md` 已定义；**不新造 60002**——60002 已是「重复支付」），门面据此拒绝/降级。
 - 归属校验：`entitlement.user_id == req.user_id`，否则 40003。
 
@@ -125,21 +137,32 @@ POST /api/internal/entitlement-consume        （内部调用，门面 → 丙�
 
 ### 4.3 后端丁：门面计费路由（postpaid vs prepaid）
 
-`forward_service` 按 `billing_mode`（来自 sk/上下文，见 sk 契约 §5）分流：
+`forward_service` 按 `billing_mode`（来自 sk/上下文，见 sk 契约 §5）分流。**postpaid 引入预扣保证金（D1 已拍板），prepaid 靠 entitlement 锁行防透支**：
 
 ```
-结算阶段（读到 usage 后）：
+转发前（前置闸 + 预扣）：
   if billing_mode == "postpaid":
-      reporter.Report(input_tokens 事件) / (output_tokens 事件)   // 现状·钱包
-      reporter.Report(calls 事件)                                // 若配按次
+      hold = 模型单价 × max_tokens(请求带则用之,否则模型档位默认上限)
+      钱包余额 < hold → 拒绝(60001)；否则 freeze(hold) 冻结保证金   // 复用钱包 freeze/unfreeze
   if billing_mode == "prepaid":
-      amount = input_tokens + output_tokens   // PM 决策：1:1 不加权，与 token_quota 单位一致
+      entitlement remaining < 阈值 → 拒绝(60005)                    // 锁行在结算阶段
+
+转发上游 → 读 usage（SSE 客户端断开仍读完上游再结算，R5）→ 写 token_usage_logs
+
+结算阶段（拿到 usage 后）：
+  if billing_mode == "postpaid":
+      actual = 按 product_billing_rules 计算(input/output tokens [+ calls])
+      unfreeze(hold) 解冻保证金 → 实扣 actual(多退少补)             // 净额 = 实扣，杜绝并发负余额
+  if billing_mode == "prepaid":
+      amount = input_tokens + output_tokens   // 1:1 不加权，与 token_quota 单位一致
       POST /api/internal/entitlement-consume(entitlement_id=source_id, amount, key=request_id:quota)
 ```
+- **预扣保证金（D1）**：postpaid 路径转发前按 `max_tokens × 单价` 冻结钱包，结算时解冻并按实际 usage 扣费（多退少补）。这是「并发扣费无负余额」硬验收的落地方案——预扣保证并发请求各自占住额度，杜绝「都过前置闸、结算时集体透支」。
+- **前置依赖（须 W5 第一天确认，乙）**：底座钱包 `freeze/unfreeze`（`wallet_transaction.type` 已有）须对 token_gateway 门面暴露可调内部接口；若无，乙补一个内部接口。
 - `source_id`（= entitlement_id）来自 sk 的 `ResolveKey` 结果。
-- **前置余额闸**：转发前查 entitlement remaining > 阈值，不足直接拒（防透支，与 sk 契约 §9 一致）。
-- prepaid 模式下**不走钱包**，不上报 product-usage-events。
-- 写 `token_usage_logs` 不变（两种模式都写，`sale_amount` 记本次折算金额/额度）。
+- prepaid 模式下**不走钱包**、不预扣、不上报 product-usage-events。
+- **SSE 断开兜底（R5）**：客户端中断后服务端继续读完上游流拿到 usage 再结算；确无 usage 的成功调用按 `max_tokens` 兜底计费（避免漏计）。
+- 写 `token_usage_logs` 不变（两种模式都写，`sale_amount` 记本次实扣金额/额度）。
 
 ---
 
@@ -149,17 +172,18 @@ POST /api/internal/entitlement-consume        （内部调用，门面 → 丙�
 1. `000035` 按次计费规则 seed（`calls/count`）
 2. token 套餐 plan（`quota_json` 声明 token 额度）+ 套餐售价
 3. 校验 finance_consumer 对 `calls` 事件正常匹配扣费
+4. **（D1 前置，W5 第一天）确认钱包 `freeze/unfreeze` 对门面暴露可调内部接口，无则补**
 
 **后端丙**
-1. `POST /api/internal/entitlement-consume`（锁行 + 余额校验 + 幂等 + 归属）
+1. `POST /api/internal/entitlement-consume`（锁行 + 余额校验 + 归属 + **D5 新建幂等表 `entitlement_consume_logs` 及其迁移**）
 2. 确认 `ProvisionService`/`TokenProvisioner` 套餐分支正常生成 `token_quota` entitlement
 3. （可选）内部余额查询接口供门面前置闸
 
 **后端丁**
 1. 门面上报 `calls` 次数事件（一次提问 1 条，tool-use 不累加）
-2. 计费路由：`postpaid`→钱包上报；`prepaid`→调丙 entitlement-consume
-3. 前置余额闸（钱包/额度）+ 余额不足拒绝
-4. `token_usage_logs.sale_amount` 记本次扣费
+2. 计费路由：`postpaid`→**预扣保证金(freeze)** + 结算解冻实扣(钱包)；`prepaid`→调丙 entitlement-consume
+3. 前置余额闸（钱包/额度）+ 余额不足拒绝；**SSE 断开仍读完上游再结算（R5）**
+4. `token_usage_logs.sale_amount` 记本次实扣
 
 ---
 

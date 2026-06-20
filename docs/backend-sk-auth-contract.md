@@ -199,8 +199,9 @@ HTTP 契约见 `docs/frontend-api-reference.md` §14.4，此处补实现要点�
 ## 9. 防透支与限流（按量关键）
 
 - **余额闸**：转发前校验余额 > 阈值——`postpaid`→钱包余额（乙）；`prepaid`→套餐 entitlement 额度（丙）；低于阈值拒绝新请求；结束后按 usage 结算扣费（postpaid 扣钱包 / prepaid 调丙 `entitlement-consume` 扣额度）。
-- **并发防透支（M1 硬验收项，PM 升级 2026-06-21）**：同一 sk/用户高并发流式可能在结算前超支。本期策略：余额阈值拒绝 + 结束即时结算；**并发扣费不得产生负余额**——这是 M1/M4 硬性验收门槛（对齐项目「10 并发扣费无负余额」），不再是"观察项"。如阈值闸不足以保证，必须落地按 sk/用户维度串行结算或预扣估算兜底。
-- **限流**：按 sk（及 user）维度接入现有 `middleware/ratelimit.go`，防单 key 刷量。
+- **并发防透支 = 预扣保证金（D1 已拍板 2026-06-21，M1/M4 硬验收）**：postpaid 路径转发前按 `模型单价 × max_tokens` **冻结钱包保证金**（复用底座 `wallet freeze/unfreeze`），结算时解冻并按实际 usage 实扣（多退少补）。并发请求各自占住保证金额度，杜绝「都过前置闸、结算时集体透支」→ 数学上保证无负余额。prepaid 侧靠 `entitlement` 的 `SELECT FOR UPDATE` 锁行防透支，无需预扣。计费流程细节见 billing 契约 §4.3。
+  - **前置依赖（W5 第一天，乙确认）**：底座钱包 `freeze/unfreeze` 须对门面暴露可调内部接口，若无则乙补一个。
+- **限流（两层，R9）**：① 鉴权前**按 IP 粗粒度限流**（挡未鉴权洪水，避免无效 sk 打 `ResolveKey`/DB）；② 鉴权后**按 sk/user 维度限流**（接入现有 `middleware/ratelimit.go`，防单 key 刷量；插件调用也计入此维度，D3）。
 
 ---
 
