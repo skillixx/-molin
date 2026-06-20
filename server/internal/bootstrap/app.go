@@ -412,8 +412,9 @@ func NewApp() (*App, error) {
 			// 管理端：渠道 / 模型目录（token:manage + 管理员双重认证）。
 			tokengatewaymod.RegisterRoutes(mux, tokenGatewayModule.ChannelService, tokenGatewayModule.CatalogService,
 				cfg.JWTSecret, iamService, authService, authService)
-			// 用户端：OpenAI 兼容 chat 转发（网页登录态）。
-			tokengatewaymod.RegisterUserRoutes(mux, tokenGatewayModule.ForwardService, cfg.JWTSecret, authService)
+			// 用户端：列模型 + OpenAI 兼容 chat 转发（网页登录态）。
+			tokengatewaymod.RegisterUserRoutes(mux, tokenGatewayModule.ForwardService, tokenGatewayModule.CatalogService,
+				cfg.JWTSecret, authService)
 		}
 	} else {
 		log.Printf("[token_gateway] TOKEN_PROVIDER_KEY 未配置，token 网关门面未启用")
