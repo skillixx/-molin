@@ -169,6 +169,24 @@ const can = (code: string) => auth.hasPermission(code)
 .side-menu {
   height: 100%;
   border-right: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-bottom: 14px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(56, 189, 248, 0.36) transparent;
+}
+
+.side-menu::-webkit-scrollbar {
+  width: 6px;
+}
+
+.side-menu::-webkit-scrollbar-thumb {
+  background: rgba(56, 189, 248, 0.36);
+  border-radius: 999px;
+}
+
+.side-menu::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .brand-area {
