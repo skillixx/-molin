@@ -42,6 +42,13 @@ const router = createRouter({
           meta: { title: '总览 — 墨灵' },
         },
 
+        // AI 对话（Token 网关）
+        {
+          path: 'chat',
+          component: () => import('@/views/chat/ChatView.vue'),
+          meta: { requiresAuth: true, title: 'AI 对话 — 墨灵' },
+        },
+
         // 商品市场
         {
           path: 'marketplace',

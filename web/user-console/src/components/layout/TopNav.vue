@@ -13,6 +13,7 @@ import { ElMessage } from 'element-plus'
 import {
   Bell,
   Box,
+  ChatDotRound,
   Goods,
   HomeFilled,
   List,
@@ -30,6 +31,7 @@ const walletStore = useWalletStore()
 // 顶部主导航入口集中维护，避免页面入口分散在模板中重复书写。
 const navItems = [
   { path: '/overview', label: '总览', icon: HomeFilled },
+  { path: '/chat', label: 'AI 对话', icon: ChatDotRound },
   { path: '/marketplace', label: '商品市场', icon: Goods },
   { path: '/assets', label: '我的资产', icon: Box },
   { path: '/membership', label: '会员中心', icon: Medal },
