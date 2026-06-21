@@ -56,6 +56,7 @@
 | S2-丁2 | 丁 | 用量查询 `GET /api/admin/token/usage`（全量，token:manage） | — | 接口 | 对齐 §14.7 |
 | S2-丁3 | 丁 | chat 用户端三接口换 `RequireUserAuth`，bootstrap 注入 apiKeyResolver；chat handler 取 api_key_id 写日志 | S2-甲3 | 装配改动 | sk 调用落 api_key_id |
 | S2-丁4 | 丁 | 门面上报 `calls` 次数事件（一次提问 1 条；前置失败不计次） | S2-乙1,S2-丁3 | 计费上报 | 按次扣 1；无规则静默跳过 |
+| S2-丁4b | 丁 | **model_scope 越界校验**（sk 契约 §8.4）：sk 带 `model_scope` 且请求 model 不在范围内 → 拒绝 `40300`；门面鉴权后复用 `ResolveKey` 结果校验 | S2-丁3 | 门面校验 | 越界拒 40300；不限 scope 放行 |
 | S2-运1 | 运 | `infra/.env.example` 补 `API_KEY_HMAC_SECRET`；执行 000034 api_keys + 000035 wallet_holds 迁移 | S2-甲5 | env + 迁移流程 | 测试环境可起 |
 | S2-测1 | 测 | M1 用例：sk 签发/明文一次性/调用转发/按量+按次扣费/用量查询/**预扣保证金并发扣费无负余额** | 上列就位 | 测试脚本 | 全过，含并发硬指标 |
 
