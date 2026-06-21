@@ -15,7 +15,7 @@
 | 层 | 含义 | 执行方式 |
 |---|---|---|
 | Agent（=角色/人设） | system_prompt + 默认模型 + 绑定的 skill/插件 | 选定后作为对话上下文 |
-| Skill（平台内置能力） | 联网搜索 / 代码执行 / 读文档… | 门面内置函数（`handler_key` 路由） |
+| Skill（平台内置能力） | 联网搜索 / 读文档…（D4：本期不含代码执行） | 门面内置函数（`handler_key` 路由） |
 | 插件（外部第三方） | 外部 HTTP 工具 | 门面按 schema 转发 `endpoint_url` |
 
 > 「角色」不单独建表，**Agent 即角色**。用户「切角色」= 选不同 Agent。
@@ -26,10 +26,10 @@
 
 ## 2. 数据模型 + 迁移
 
-迁移序号紧随 sk(000034)/计费(000035) 之后，以实际合并顺序为准（下用 000036–000039 示意）。
+迁移序号紧随 sk(000034 api_keys)/wallet_holds(000035)/计费(000036 calls seed) 之后，以实际合并顺序为准（下用 000037–000040 示意；golang-migrate 不留空号、严格按合并顺序递增）。
 
 ```sql
--- 000036 agent
+-- 000037 agent
 CREATE TABLE agents (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   code VARCHAR(64) NULL,                       -- 官方预设唯一编码；用户自建为 NULL
@@ -66,7 +66,7 @@ CREATE TABLE agent_plugin_bindings (
   UNIQUE KEY uk_agent_plugin (agent_id, plugin_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 000037 skill（平台内置能力）
+-- 000038 skill（平台内置能力）
 CREATE TABLE skills (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   code VARCHAR(64) NOT NULL,                   -- 唯一
@@ -81,7 +81,7 @@ CREATE TABLE skills (
   UNIQUE KEY uk_skills_code (code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 000038 plugin（外部第三方）
+-- 000039 plugin（外部第三方）
 CREATE TABLE plugins (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   code VARCHAR(64) NOT NULL,                   -- 唯一
@@ -99,7 +99,7 @@ CREATE TABLE plugins (
   UNIQUE KEY uk_plugins_code (code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 000039 权限码 seed（红线：建码必建 seed）
+-- 000040 权限码 seed（红线：建码必建 seed）
 -- agent:manage / skill:manage / plugin:manage
 ```
 
@@ -197,7 +197,7 @@ ChatWithAgent(ctx, agentID, userID, billingCtx, messages, stream):
 **后端甲**：`agent:manage`/`skill:manage`/`plugin:manage` 权限码 seed。
 
 **后端丁**
-1. 迁移 000036–000038（agent/skill/plugin + 绑定表）
+1. 迁移 000037–000039（agent/skill/plugin + 绑定表）
 2. 三模块 model/repo/service/handler/route + bootstrap 装配
 3. 管理端 CRUD + 绑定接口（3.1）
 4. 用户端列表/自建/绑定接口（3.2）

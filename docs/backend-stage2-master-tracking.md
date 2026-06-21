@@ -124,11 +124,14 @@
 | 迁移 | 内容 | 状态 |
 |---|---|---|
 | 000030–000033 | token_models/usage_logs、channels+路由、token:manage seed、token 商品+按量规则 | ✅ |
-| 000034 | api_keys | 🔜 S2-甲1 |
-| 000035 | 按次计费规则 seed（calls） | 🔜 S2-乙1 |
-| 000036–000038 | agents+绑定表 / skills（plugins 表含 D3 `is_paid`/`daily_limit`） | 🔜 S2-丁6（前置 W6） |
-| 000039 | 权限码 seed（agent/skill/plugin:manage） | 🔜 S2-甲7 |
+| 000034 | api_keys | ✅ S2-甲1（PR #207） |
+| 000035 | wallet_holds（预扣保证金 hold 表，D1） | ✅ S2-乙0（PR #208） |
+| 000036 | 按次计费规则 seed（calls） | 🔜 S2-乙1 |
+| 000037–000039 | agents+绑定表 / skills / plugins（plugins 含 D3 `is_paid`/`daily_limit`） | 🔜 S2-丁6（前置 W6） |
+| 000040 | 权限码 seed（agent/skill/plugin:manage） | 🔜 S2-甲7 |
 | 0000XX | **`entitlement_consume_logs`（D5 幂等表，idempotency_key 唯一）** | 🔜 S2-丙2（M2，序号紧随套餐相关迁移） |
+
+> **迁移序号铁律**：golang-migrate 不支持 out-of-order——序号严格按**合并顺序**递增、**不留空号**（曾因 wallet_holds 预留空号导致 gap，已修正为连续）。上表 000036 起为预估，实际以合并顺序为准。
 
 > **渠道路由（D6）**：本期 `token_models` 仍绑**单一渠道**（`forward_service` 单点，`token_channels.priority` 建而未用）；多渠道故障转移+熔断**延后第三阶段**，已在 roadmap §9 显式登记，验收不当 bug。
 
@@ -196,7 +199,7 @@
 - [ ] S2-甲3 RequireUserAuth 双模式中间件 + APIKeyIDFromContext
 - [ ] S2-甲4 `/api/keys` 管理路由 + 封禁联动
 - [ ] S2-甲5 config 注入 API_KEY_HMAC_SECRET
-- [ ] S2-乙1 迁移 000035 按次计费规则 seed
+- [ ] S2-乙1 迁移 000036 按次计费规则 seed
 - [ ] S2-乙2 管理端按量/按次互斥强校验
 - [ ] S2-丁1 `GET /api/token/usage`（用户端）
 - [ ] S2-丁2 `GET /api/admin/token/usage`（管理端）
@@ -213,7 +216,7 @@
 - [ ] S2-甲6 IssueKey 支持 prepaid + source_id
 - [ ] S2-甲8 按 sk 限流（D3：插件调用计入限流维度）
 - [ ] S2-丁5 门面计费路由（postpaid/prepaid 互斥 + 余额闸 + D1 预扣保证金/解冻 + R5 读完上游再结算）
-- [ ] S2-丁6（前置）迁移 000036–000038 agent/skill/plugin 建表
+- [ ] S2-丁6（前置）迁移 000037–000039 agent/skill/plugin 建表
 - [ ] S2-前乙1 sk 管理页 + 用量页（§14.4/14.3）
 - [ ] S2-前乙2 token 套餐购买页
 - [ ] S2-前甲1 管理端全量用量页（§14.7）

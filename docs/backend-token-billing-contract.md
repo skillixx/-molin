@@ -39,7 +39,7 @@
 
 ### 3.1 后端乙：计费规则 seed
 
-新增计费规则（迁移 `000035_seed_token_call_billing_rule.up.sql`，序号紧随 sk 000034，以实际合并顺序为准），挂在现有 `token-api` 商品上：
+新增计费规则（迁移 `000036_seed_token_call_billing_rule.up.sql`，序号以实际合并顺序为准——000034 api_keys、000035 wallet_holds 已合并，calls seed 顺延 000036），挂在现有 `token-api` 商品上：
 
 ```sql
 -- 按次计费规则：usage_type=calls, usage_unit=count, price_amount=每次售价（占位，运营调整）
@@ -169,7 +169,7 @@ POST /api/internal/entitlement-consume        （内部调用，门面 → 丙�
 ## 5. 任务拆分
 
 **后端乙**
-1. `000035` 按次计费规则 seed（`calls/count`）
+1. `000036` 按次计费规则 seed（`calls/count`）
 2. token 套餐 plan（`quota_json` 声明 token 额度）+ 套餐售价
 3. 校验 finance_consumer 对 `calls` 事件正常匹配扣费
 4. **（D1 前置，W5 第一天）确认钱包 `freeze/unfreeze` 对门面暴露可调内部接口，无则补**

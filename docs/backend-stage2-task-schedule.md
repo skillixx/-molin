@@ -22,7 +22,7 @@
 | 运维 | infra | 环境变量、迁移执行、配置项注入 |
 
 迁移序号（紧随第一阶段 000033，以实际合并顺序最终定序）：
-`000034 api_keys` / `000035 按次计费规则 seed` / `000036 agents+绑定表` / `000037 skills` / `000038 plugins` / `000039 权限码 seed`。
+`000034 api_keys`(已合并) / `000035 wallet_holds`(已合并) / `000036 按次计费规则 seed` / `000037 agents+绑定表` / `000038 skills` / `000039 plugins` / `000040 权限码 seed`。（golang-migrate 不支持 out-of-order，序号严格按合并顺序递增、不留空号）
 
 ---
 
@@ -50,13 +50,13 @@
 | S2-甲4 | 甲 | 用户端 sk 管理路由 `POST/GET/DELETE /api/keys` + 封禁联动（ResolveKey 查 IsUserBlocked） | S2-甲2 | 路由 | 列表只回 prefix；封禁即失效 |
 | S2-甲5 | 甲 | config 注入 `API_KEY_HMAC_SECRET` | — | config | 缺失启动报错 |
 | S2-乙0 | 乙 | **（D1 前置）** 确认钱包 `freeze/unfreeze` 对门面暴露可调内部接口，无则补一个 | — | 内部接口确认/补全 | 门面可冻结/解冻保证金 |
-| S2-乙1 | 乙 | 迁移 `000035` 按次计费规则 seed（`calls/count`，挂 token-api 商品） | — | migration | finance_consumer 能匹配 calls |
+| S2-乙1 | 乙 | 迁移 `000036` 按次计费规则 seed（`calls/count`，挂 token-api 商品） | — | migration | finance_consumer 能匹配 calls |
 | S2-乙2 | 乙 | 管理端「按量/按次互斥」强校验（存按次时若有生效按量则拦截，反之亦然） | S2-乙1 | 校验逻辑 | 同商品不能同时生效两种 |
 | S2-丁1 | 丁 | 用量查询 `GET /api/token/usage`（本人，扁平分页，时间/模型筛选） | — | 接口 | 对齐 §14.3 |
 | S2-丁2 | 丁 | 用量查询 `GET /api/admin/token/usage`（全量，token:manage） | — | 接口 | 对齐 §14.7 |
 | S2-丁3 | 丁 | chat 用户端三接口换 `RequireUserAuth`，bootstrap 注入 apiKeyResolver；chat handler 取 api_key_id 写日志 | S2-甲3 | 装配改动 | sk 调用落 api_key_id |
 | S2-丁4 | 丁 | 门面上报 `calls` 次数事件（一次提问 1 条；前置失败不计次） | S2-乙1,S2-丁3 | 计费上报 | 按次扣 1；无规则静默跳过 |
-| S2-运1 | 运 | `infra/.env.example` 补 `API_KEY_HMAC_SECRET`；准备 000034/000035 迁移执行 | S2-甲5 | env + 迁移流程 | 测试环境可起 |
+| S2-运1 | 运 | `infra/.env.example` 补 `API_KEY_HMAC_SECRET`；执行 000034 api_keys + 000035 wallet_holds 迁移 | S2-甲5 | env + 迁移流程 | 测试环境可起 |
 | S2-测1 | 测 | M1 用例：sk 签发/明文一次性/调用转发/按量+按次扣费/用量查询/**预扣保证金并发扣费无负余额** | 上列就位 | 测试脚本 | 全过，含并发硬指标 |
 
 **W5 验收门槛**：sk 调 `/api/token/chat/completions` → 转发成功 → 钱包按量或按次扣费 → `/api/token/usage` 可见；吊销/封禁即时失效；并发无负余额。
@@ -76,7 +76,7 @@
 | S2-甲6 | 甲 | `IssueKey` 支持 `billing_mode=prepaid` + `source_id=entitlement_id`；购买套餐后签发 prepaid sk | S2-甲2,S2-丙1 | service 扩展 | prepaid sk 绑额度 |
 | S2-甲8 | 甲 | **两层限流（D1/R9）**：鉴权前 IP 粗粒度 + 鉴权后 sk/user 维度（复用 `middleware/ratelimit.go`，插件调用计入） | S2-甲3 | 限流中间件 | 单 sk/IP 超频被限 |
 | S2-丁5 | 丁 | 门面计费路由：postpaid→**预扣保证金(freeze)+结算解冻实扣(D1)**；prepaid→调丙 entitlement-consume；前置余额闸；**SSE 断开读完上游再结算(R5)** | S2-丙2,S2-甲6,S2-乙0 | 编排 | 互斥结算不双扣；并发无负余额 |
-| S2-丁6 | 丁 | **（前置）** 迁移 `000036-000038`：agents+绑定表 / skills / plugins（无前序依赖，提前到 W6 与计费并行，为 W7 减压） | — | migration | 对齐工作台契约 §2 |
+| S2-丁6 | 丁 | **（前置）** 迁移 `000037-000039`：agents+绑定表 / skills / plugins（无前序依赖，提前到 W6 与计费并行，为 W7 减压） | — | migration | 对齐工作台契约 §2 |
 | S2-前乙1 | 前乙 | sk 管理页 + 我的用量页（对接 §14.4/§14.3） | S2-甲4,S2-丁1 | 页面 | 创建/列表/吊销/用量 |
 | S2-前乙2 | 前乙 | token 套餐购买页（对接商品/订单/钱包既有接口 + 套餐商品） | S2-乙3 | 页面 | 购买闭环 |
 | S2-前甲1 | 前甲 | 管理端全量用量页（对接 §14.7） | S2-丁2 | 页面 | 筛选/分页 |
@@ -92,7 +92,7 @@
 
 | ID | 负责人 | 任务 | 依赖 | 产出物 | 验收 |
 |---|---|---|---|---|---|
-| S2-甲7 | 甲 | 权限码 seed `000039`：`agent:manage`/`skill:manage`/`plugin:manage`（建码必建 seed 红线） | — | migration | 三码可分配 |
+| S2-甲7 | 甲 | 权限码 seed `000040`：`agent:manage`/`skill:manage`/`plugin:manage`（建码必建 seed 红线） | — | migration | 三码可分配 |
 | S2-丁7 | 丁 | agent/skill/plugin 三模块 model/repo/service + bootstrap 装配（建表 S2-丁6 已于 W6 前置完成） | S2-丁6(W6) | 模块骨架 | 编译通过 |
 | S2-丁8 | 丁 | 管理端 CRUD：`/api/admin/agents`(+绑定)、`/api/admin/skills`、`/api/admin/plugins`（插件凭证加密、has_auth） | S2-丁7,S2-甲7 | 接口 | 对齐 §14.10；凭证不回 |
 | S2-丁9 | 丁 | 用户端：`GET /api/agents`(官方+自建)、`/api/agents/{id}`、`POST/PATCH/DELETE /api/agents`(自建+越权防护)、`GET /api/skills`、`/api/plugins` | S2-丁7 | 接口 | 对齐 §14.9；自建可绑官方 skill+插件 |
