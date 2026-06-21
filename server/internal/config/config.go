@@ -44,6 +44,11 @@ type Config struct {
 	// Token 网关上游渠道 api_key 加密密钥（32 字节，AES-256-GCM）
 	// 用于 token_channels.api_key_encrypted 加解密；通过 TOKEN_PROVIDER_KEY 注入。
 	TokenProviderKey string
+
+	// 平台 API Key（sk）HMAC 密钥（S2-甲5）。
+	// DB 只存 HMAC-SHA256(sk 明文, APIKeyHMACSecret)，明文只在签发时返回一次。
+	// 通过 API_KEY_HMAC_SECRET 注入；未配置时 sk 系统不装配（bootstrap 灰度降级，不 panic）。
+	APIKeyHMACSecret string
 }
 
 func Load() Config {
@@ -76,6 +81,8 @@ func Load() Config {
 		NotifyBodyKey: getenv("NOTIFY_BODY_KEY", ""),
 
 		TokenProviderKey: getenv("TOKEN_PROVIDER_KEY", ""),
+
+		APIKeyHMACSecret: getenv("API_KEY_HMAC_SECRET", ""),
 	}
 }
 

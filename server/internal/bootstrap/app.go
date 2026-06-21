@@ -308,6 +308,18 @@ func NewApp() (*App, error) {
 	// 注入 GroupJoiner，用于注册时按邀请码/默认组落组
 	authService.SetGroupJoiner(groupService)
 
+	// S2-甲5：平台 API Key（sk）服务装配。
+	// 仅当 API_KEY_HMAC_SECRET 配置时启用（灰度安全降级，未配置则 apiKeyService=nil）：
+	//   - HMAC 密钥从 config 注入（DB 只存 HMAC，明文只签发时返回一次）；
+	//   - banChecker=authService，使封禁用户名下 sk 在 ResolveKey 内立即失效（封禁联动方案 A）。
+	var apiKeyService *authsvc.APIKeyService
+	if cfg.APIKeyHMACSecret != "" {
+		apiKeyRepo := authrep.NewAPIKeyRepository(gormDB)
+		apiKeyService = authsvc.NewAPIKeyService(apiKeyRepo, cfg.APIKeyHMACSecret, authService)
+	} else {
+		log.Printf("[security] API_KEY_HMAC_SECRET 未配置，平台 sk 系统未启用（/api/keys 路由不注册，门面 sk 鉴权退化为纯 JWT）")
+	}
+
 	// ——— Identity 模块 ———
 	// D-04：注入 auditSvc，用于审核操作写全局审计日志
 	identityRepo := identityrep.NewIdentityRepository(gormDB)
@@ -363,7 +375,7 @@ func NewApp() (*App, error) {
 	})
 
 	// 注册各模块路由（authService 实现 BanChecker 接口，用于封禁黑名单检查）
-	authmod.RegisterRoutes(mux, authService, verifySvc, cfg, iamService, scopeService, redisClient)
+	authmod.RegisterRoutes(mux, authService, verifySvc, cfg, iamService, scopeService, redisClient, apiKeyService)
 	iammod.RegisterRoutes(mux, iamService, groupService, cfg.JWTSecret, authService, authService)
 	identitymod.RegisterRoutes(mux, identityService, iamService, cfg.JWTSecret, authService, authService)
 

@@ -15,7 +15,8 @@ import (
 // RegisterRoutes 将 auth 模块路由注册到 mux。
 // iamChecker 用于权限校验；scopeResolver 用于数据范围注入（管理员用户列表/详情接口）；
 // redisClient 用于 D-22 修改绑定信息接口的限流。
-func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc *service.VerificationService, cfg config.Config, iamChecker middleware.IAMChecker, scopeResolver middleware.ScopeResolver, redisClient *redis.Client) {
+// apiKeySvc（S2-甲4）：平台 API Key（sk）管理服务，可为 nil（sk 系统未装配时不注册 /api/keys 路由，灰度安全）。
+func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc *service.VerificationService, cfg config.Config, iamChecker middleware.IAMChecker, scopeResolver middleware.ScopeResolver, redisClient *redis.Client, apiKeySvc *service.APIKeyService) {
 	h := handler.NewAuthHandler(authSvc, verifySvc, cfg)
 
 	// D-51：对验证码发送和密码重置接口按 IP 限流（每 IP 每分钟最多 10 次），防止短信轰炸和暴力枚举 OTP
@@ -46,6 +47,15 @@ func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc 
 	mux.Handle("PATCH /api/me/username", auth(h.UpdateUsername))
 	// A-27：修改个人资料（昵称/头像），PATCH 语义
 	mux.Handle("PATCH /api/me/profile", auth(h.UpdateProfile))
+
+	// S2-甲4：平台 API Key（sk）用户端自助管理（登录态 JWT，不能用 sk 自助管理 sk）。
+	// apiKeySvc 为 nil 时跳过注册（与 bootstrap 灰度装配保持一致）。
+	if apiKeySvc != nil {
+		keyH := handler.NewAPIKeyHandler(apiKeySvc)
+		mux.Handle("POST /api/keys", auth(keyH.IssueKey))
+		mux.Handle("GET /api/keys", auth(keyH.ListKeys))
+		mux.Handle("DELETE /api/keys/{id}", auth(keyH.RevokeKey))
+	}
 
 	// D-22：修改手机号/邮箱接口存在账号枚举风险，在 RequireAuth 之后叠加
 	// 每用户每分钟最多 bindUpdateLimit 次的限流。
