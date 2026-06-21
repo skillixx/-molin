@@ -49,6 +49,7 @@
 | S2-甲3 | 甲 | `middleware.APIKeyResolver` 接口 + `RequireUserAuth`（sk/JWT 双模式）+ `apiKeyIDKey`/`APIKeyIDFromContext` | S2-甲2 | middleware | sk 与 JWT 都注入 user_id |
 | S2-甲4 | 甲 | 用户端 sk 管理路由 `POST/GET/DELETE /api/keys` + 封禁联动（ResolveKey 查 IsUserBlocked） | S2-甲2 | 路由 | 列表只回 prefix；封禁即失效 |
 | S2-甲5 | 甲 | config 注入 `API_KEY_HMAC_SECRET` | — | config | 缺失启动报错 |
+| S2-乙0 | 乙 | **（D1 前置）** 确认钱包 `freeze/unfreeze` 对门面暴露可调内部接口，无则补一个 | — | 内部接口确认/补全 | 门面可冻结/解冻保证金 |
 | S2-乙1 | 乙 | 迁移 `000035` 按次计费规则 seed（`calls/count`，挂 token-api 商品） | — | migration | finance_consumer 能匹配 calls |
 | S2-乙2 | 乙 | 管理端「按量/按次互斥」强校验（存按次时若有生效按量则拦截，反之亦然） | S2-乙1 | 校验逻辑 | 同商品不能同时生效两种 |
 | S2-丁1 | 丁 | 用量查询 `GET /api/token/usage`（本人，扁平分页，时间/模型筛选） | — | 接口 | 对齐 §14.3 |
@@ -56,7 +57,7 @@
 | S2-丁3 | 丁 | chat 用户端三接口换 `RequireUserAuth`，bootstrap 注入 apiKeyResolver；chat handler 取 api_key_id 写日志 | S2-甲3 | 装配改动 | sk 调用落 api_key_id |
 | S2-丁4 | 丁 | 门面上报 `calls` 次数事件（一次提问 1 条；前置失败不计次） | S2-乙1,S2-丁3 | 计费上报 | 按次扣 1；无规则静默跳过 |
 | S2-运1 | 运 | `infra/.env.example` 补 `API_KEY_HMAC_SECRET`；准备 000034/000035 迁移执行 | S2-甲5 | env + 迁移流程 | 测试环境可起 |
-| S2-测1 | 测 | M1 用例：sk 签发/明文一次性/调用转发/按量+按次扣费/用量查询/**并发扣费无负余额** | 上列就位 | 测试脚本 | 全过，含并发硬指标 |
+| S2-测1 | 测 | M1 用例：sk 签发/明文一次性/调用转发/按量+按次扣费/用量查询/**预扣保证金并发扣费无负余额** | 上列就位 | 测试脚本 | 全过，含并发硬指标 |
 
 **W5 验收门槛**：sk 调 `/api/token/chat/completions` → 转发成功 → 钱包按量或按次扣费 → `/api/token/usage` 可见；吊销/封禁即时失效；并发无负余额。
 
@@ -70,11 +71,11 @@
 |---|---|---|---|---|---|
 | S2-乙3 | 乙 | token 套餐 plan（`quota_json`：quota_total/quota_unit=tokens/valid_days）+ 套餐售价 product_prices | — | seed/接口 | 套餐可下单 |
 | S2-丙1 | 丙 | 确认 `ProvisionService`/`TokenProvisioner` 套餐分支按 quota_json 生成 `token_quota` entitlement（含 expires_at） | S2-乙3 | provision 改动 | 购买后生成额度 |
-| S2-丙2 | 丙 | `POST /api/internal/entitlement-consume`（FindByIDForUpdate 锁行 + status/expires_at/余额校验 + 幂等 + 归属；不足回 60005） | — | 内部接口 | 并发无超扣；幂等 |
+| S2-丙2 | 丙 | `POST /api/internal/entitlement-consume`（FindByIDForUpdate 锁行 + status/expires_at/余额校验 + 归属；不足回 60005；**D5 新建幂等表 `entitlement_consume_logs` 及迁移**） | — | 内部接口+迁移 | 并发无超扣；幂等 |
 | S2-丙3 | 丙 | 内部余额查询（门面前置闸用，返回 remaining）或复用 §10.3 | — | 接口 | 门面可查额度 |
 | S2-甲6 | 甲 | `IssueKey` 支持 `billing_mode=prepaid` + `source_id=entitlement_id`；购买套餐后签发 prepaid sk | S2-甲2,S2-丙1 | service 扩展 | prepaid sk 绑额度 |
-| S2-甲8 | 甲 | **按 sk 限流**接入（复用 `middleware/ratelimit.go`，按 sk/user 维度，防单 key 刷量）——roadmap §9 #2 要求 | S2-甲3 | 限流中间件 | 单 sk 超频被限 |
-| S2-丁5 | 丁 | 门面计费路由：postpaid→钱包上报；prepaid→调丙 entitlement-consume；前置余额闸（钱包/额度，低于阈值拒绝） | S2-丙2,S2-甲6 | 编排 | 互斥结算，不双扣 |
+| S2-甲8 | 甲 | **两层限流（D1/R9）**：鉴权前 IP 粗粒度 + 鉴权后 sk/user 维度（复用 `middleware/ratelimit.go`，插件调用计入） | S2-甲3 | 限流中间件 | 单 sk/IP 超频被限 |
+| S2-丁5 | 丁 | 门面计费路由：postpaid→**预扣保证金(freeze)+结算解冻实扣(D1)**；prepaid→调丙 entitlement-consume；前置余额闸；**SSE 断开读完上游再结算(R5)** | S2-丙2,S2-甲6,S2-乙0 | 编排 | 互斥结算不双扣；并发无负余额 |
 | S2-丁6 | 丁 | **（前置）** 迁移 `000036-000038`：agents+绑定表 / skills / plugins（无前序依赖，提前到 W6 与计费并行，为 W7 减压） | — | migration | 对齐工作台契约 §2 |
 | S2-前乙1 | 前乙 | sk 管理页 + 我的用量页（对接 §14.4/§14.3） | S2-甲4,S2-丁1 | 页面 | 创建/列表/吊销/用量 |
 | S2-前乙2 | 前乙 | token 套餐购买页（对接商品/订单/钱包既有接口 + 套餐商品） | S2-乙3 | 页面 | 购买闭环 |
@@ -109,9 +110,9 @@
 
 | ID | 负责人 | 任务 | 依赖 | 产出物 | 验收 |
 |---|---|---|---|---|---|
-| S2-丁10 | 丁 | **（关键路径，不可让渡）** `POST /api/agents/{id}/chat` tool-use 编排循环（注入 tools→收 tool_calls→执行→回灌→直到最终答案；MAX_ROUNDS 可配置默认 5；超限提示已计费） | S2-丁9,S2-丁5 | 核心接口 | 对齐工作台契约 §4 |
-| S2-丁11 | 丁 | skill 内置函数注册表（handler_key 路由，1–2 示例如 web_search） | S2-丁10 | 内置实现 | skill 可被调用 |
-| S2-甲9 | 甲(协丁) | plugin HTTP 转发器（按 schema 取参→转发 endpoint_url→回灌；SSRF 白名单/禁内网/timeout/凭证解密/连续失败熔断）——独立安全模块，由 middleware 负责人甲主理，给丁减压 | S2-丁7 | 转发器 | 安全约束生效 |
+| S2-丁10 | 丁 | **（关键路径，不可让渡）** `POST /api/agents/{id}/chat` tool-use 编排循环（**D2：仅登录态，sk 不可调**；注入 tools→收 tool_calls→执行→回灌→直到最终答案；MAX_ROUNDS 可配置默认 5；超限提示已计费） | S2-丁9,S2-丁5 | 核心接口 | 对齐工作台契约 §4 |
+| S2-丁11 | 丁 | skill 内置函数注册表（handler_key 路由，1–2 示例 **web_search/doc_read；D4：本期不含 code_exec**） | S2-丁10 | 内置实现 | skill 可被调用 |
+| S2-甲9 | 甲(协丁) | plugin HTTP 转发器（按 schema 取参→转发 endpoint_url→回灌；SSRF 白名单/禁内网/timeout/凭证解密/连续失败熔断；**D3：付费插件 daily_limit 每用户每日上限计数**）——独立安全模块，由 middleware 负责人甲主理，给丁减压 | S2-丁7 | 转发器 | 安全约束 + 配额生效 |
 | S2-丁13 | 丁 | 编排计费接入：每轮 token 累加；整次提问按次计 1；prepaid/postpaid 路由复用 S2-丁5；接入 S2-甲9 转发器 | S2-丁10,S2-甲9 | 计费 | 多轮只计 1 次 |
 | S2-丁14 | 丁 | **bootstrap 总装配收口**：sk 中间件、用量、三模块、编排路由统一在 bootstrap 注册，跑装配冒烟（防编译期漏装，参 #199 教训） | S2-丁13 | 装配+冒烟 | main 编译/启动通过 |
 | S2-前乙4 | 前乙 | 聊天对话页：SSE 渲染 + `tool_call`/`tool_result`/`message` 事件（对接 §14.8） | S2-丁10 | 页面 | 流式对话+工具进度 |

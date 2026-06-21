@@ -28,7 +28,7 @@
 ④.5 风险审查      架构师风险复盘 12 项 + PM 拍板 D1–D6                          ✅（PR #205）
                  （并发透支/sk编排边界/插件配额/code_exec/entitlement幂等/渠道单点）
         │
-④.6 契约回写      D1–D6 决议吸收进各契约（billing/sk/chat-workbench/roadmap）+ 调排期   🔜 进行中
+④.6 契约回写      D1–D6 决议吸收进各契约（billing/sk/chat-workbench/roadmap）+ 调排期   ✅（PR #206）
         │
 ⑤ 实现           各后端按契约开发（迁移 → model/repo/service → handler → 装配）   🔜 待开始（W5 起）
         │
@@ -39,7 +39,7 @@
 ⑧ 上线           上线检查单（环境变量/迁移序/配置项/回滚）→ PM 验收 → 发布        🔜
 ```
 
-**当前位置**：①–④.5 规划/评审/风险审查闭环已完成（D1–D6 拍板）；进行中 ④.6 契约回写；下一步进入 ⑤ 实现。
+**当前位置**：①–④.6 规划/评审/风险审查/契约回写全部完成（D1–D6 已吸收进各契约）；下一步进入 ⑤ 实现（W5 起）。
 
 ### 1.2 单个接口的开发流程（每位工程师统一遵循）
 
@@ -175,17 +175,17 @@
 - [x] TokenProvisioner（按量分支）+ 资产门禁
 - [x] 前端（Codex）：用户端对话页、管理端 Token 配置页
 
-### 3.2.5 契约回写（④.6，D1–D6 决议吸收）— 🔜 进行中
+### 3.2.5 契约回写（④.6，D1–D6 决议吸收）— ✅ 完成（PR #206）
 
-> 实现开工前由架构师把 D1–D6 写入各契约（见 risk-review §5/§6）。
+> 架构师已把 D1–D6 写入各契约（见 risk-review §5/§6）。
 
-- [ ] D1 → billing §4.3 + sk §9：预扣保证金方案 + 钱包 freeze 依赖
-- [ ] D2 → chat-workbench §3.3 + §14.8：编排端点改「仅登录态」
-- [ ] D3 → chat-workbench §5：付费插件每日上限 + 限流 + `plugins` 表 `is_paid`/`daily_limit`
-- [ ] D4 → chat-workbench §4/§5：移除 code_exec 示例
-- [ ] D5 → billing §4.2 + 新迁移：`entitlement_consume_logs`
-- [ ] D6 → roadmap §9：新增渠道单点风险行 + 第三阶段任务卡
-- [ ] 据 D1–D6 调整 `backend-stage2-task-schedule.md`
+- [x] D1 → billing §4.3 + sk §9：预扣保证金方案 + 钱包 freeze 依赖
+- [x] D2 → chat-workbench §3.3 + §14.8 + roadmap §6：编排端点改「仅登录态」
+- [x] D3 → chat-workbench §2/§5：付费插件每日上限 + 限流 + `plugins` 表 `is_paid`/`daily_limit`
+- [x] D4 → chat-workbench §4：移除 code_exec 示例（改 web_search/doc_read）
+- [x] D5 → billing §4.2：`entitlement_consume_logs` 建表 SQL + 迁移（丙）
+- [x] D6 → roadmap §9 #17 + §11：渠道单点风险登记 + 第三阶段任务清单
+- [x] 据 D1–D6 调整 `backend-stage2-task-schedule.md`（W5 加 S2-乙0 等）
 
 ### 3.3 实现阶段 — 🔜 待开始（按周/工程师，勾选追踪）
 
@@ -252,7 +252,7 @@
 | 规划阶段 | 8 / 8 ✅ |
 | 已实现能力（第一砖） | 6 / 6 ✅ |
 | 风险审查 + D1–D6 决议 | ✅（PR #205） |
-| 契约回写（④.6） | 0 / 7 🔜 |
+| 契约回写（④.6） | 7 / 7 ✅（PR #206） |
 | 实现阶段任务（S2-xx） | 0 / 46 🔜（含新增 S2-乙0） |
 | **接口总数** | 已实现 7 项 / 待实现 17 项（共 24） |
 

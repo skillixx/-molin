@@ -91,6 +91,8 @@ CREATE TABLE plugins (
   endpoint_url VARCHAR(512) NOT NULL,          -- 外部 HTTP 端点
   auth_config_encrypted VARBINARY(1024) NULL,  -- 如需鉴权，AES-256-GCM 加密；响应不返回
   timeout_ms INT NOT NULL DEFAULT 10000,
+  is_paid TINYINT(1) NOT NULL DEFAULT 0,        -- D3：是否付费第三方插件（成本平台担）
+  daily_limit INT NOT NULL DEFAULT 0,           -- D3：付费插件每用户每日调用上限（0=不限；默认值由运营配，建议保守如 50）
   status VARCHAR(16) NOT NULL DEFAULT 'active',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -130,7 +132,8 @@ CREATE TABLE plugins (
 
 ### 3.3 聊天对话（核心，tool-use 编排）
 
-- **POST** `/api/agents/{id}/chat` *(登录态 / sk)*
+- **POST** `/api/agents/{id}/chat` *(**仅登录态**，D2 已拍板：sk 不可调编排端点)*
+  > **D2 边界（2026-06-21）**：编排端点会触发平台代付的付费插件调用且多轮放大，**只允许站内登录态**（真人会话天然限速）。外部程序/sk 只能用透传端点 `POST /api/token/chat/completions`（工具循环自理、不触发平台代付）。产品边界：外部=纯透传自付，站内=平台编排。
 - 请求：
   ```json
   { "messages": [{ "role": "user", "content": "帮我查一下今天的新闻并总结" }], "stream": true }
@@ -169,7 +172,7 @@ ChatWithAgent(ctx, agentID, userID, billingCtx, messages, stream):
 要点：
 - **MAX_ROUNDS 可配置（PM 决策 2026-06-21）**：默认 5，经配置项/环境变量注入，**不硬编码**，便于后续按需调整；超限终止时给用户友好提示并**明确告知本次已正常计费**（已消耗 token 不退）。
 - **复用现有转发器**：每轮上游调用走 `ForwardService` 的选渠道/转发/读 usage/计费，不另写转发逻辑。
-- **skill dispatch**：`handler_key` → 门面内置函数注册表（如 `web_search` / `code_exec` / `doc_read`）；本期先上 1–2 个示例。
+- **skill dispatch**：`handler_key` → 门面内置函数注册表（如 `web_search` / `doc_read`）；本期先上 1–2 个示例。**D4 已拍板：本期不做 `code_exec`**（服务端执行模型生成代码 = RCE，需独立沙箱，超出本期范围，留待第三阶段 + 安全评审）。
 - **plugin forward**：按 `tool_schema_json` 取参 → POST `endpoint_url`（带解密后的 auth、`timeout_ms` 超时）→ 取 JSON 结果回灌。
 - **流式**：中间工具轮可向前端发进度事件（`event: tool_call` / `tool_result`，前端契约定义）；最终答案轮发 `event: message` + `[DONE]`。
 - **失败降级**：单个工具失败 → 作为 tool 错误结果回灌，让模型自行决定，不直接中断整次对话（除非连续失败）。
@@ -182,6 +185,7 @@ ChatWithAgent(ctx, agentID, userID, billingCtx, messages, stream):
 - **SSRF 防护**：插件 `endpoint_url` 仅允许 https + **可配置域名白名单**（配置项/白名单表，新增插件不改代码）/ 禁内网网段（10./172.16./192.168./169.254./localhost），运营配置时校验。
 - **超时与熔断**：`timeout_ms` 强制上限（如 ≤30s），连续失败的插件自动置 `inactive` 告警。
 - **凭证加密**：`auth_config_encrypted` AES-256-GCM（复用 `TOKEN_PROVIDER_KEY` 或新增 `PLUGIN_SECRET_KEY`），任何响应不返回。
+- **成本与配额（D3 已拍板）**：付费插件外部 API 成本**由平台承担**（既定红线，用户侧不计费）；为防滥用，`is_paid=1` 的插件按 `daily_limit` 做**每用户每日调用上限**（超限当轮工具返回「已达上限」错误结果回灌，不中断对话），且插件调用**计入 sk/user 限流维度**（sk 契约 §9）。仅登录态可调编排端点（D2），进一步收窄滥用面。
 - **越权**：用户只能改/删本人自建 Agent；不能创建/修改 skill/plugin。
 - **权限码必建 seed**：`agent:manage`/`skill:manage`/`plugin:manage`（红线）。
 - **工具参数注入**：skill/plugin 入参来自模型输出，执行前按 `tool_schema_json` 校验类型，内置函数做参数白名单，防命令注入。
