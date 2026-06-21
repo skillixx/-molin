@@ -31,6 +31,13 @@ var (
 	ErrKeyInvalid = errors.New("sk 无效或已失效")
 	// ErrKeyForbidden 吊销时 keyID 不属于当前用户（越权），对应 HTTP 40003。
 	ErrKeyForbidden = errors.New("无权操作该 sk")
+	// ErrInvalidBillingMode billing_mode 取值非法（只允许 postpaid / prepaid），对应 HTTP 40000。
+	ErrInvalidBillingMode = errors.New("billing_mode 非法")
+	// ErrSourceIDRequired prepaid 模式未提供 source_id（entitlement_id），对应 HTTP 40000。
+	ErrSourceIDRequired = errors.New("prepaid 模式必须提供 source_id")
+	// ErrEntitlementNotOwned source_id 指向的套餐权益不属于当前用户 / 不存在 / 非 active / 非 token_quota，
+	// 越权或不可用，对应 HTTP 40003。
+	ErrEntitlementNotOwned = errors.New("套餐权益不存在、已失效或不属于当前用户")
 )
 
 // sk 明文相关常量。
@@ -70,16 +77,30 @@ type APIKeyAuth struct {
 }
 
 // APIKeyView sk 对外视图，绝不含明文、绝不含 KeyHash。
+// SourceID 仅 prepaid 时非空（=绑定的 token_quota entitlement_id），postpaid 为 nil（omitempty 不展示）。
 type APIKeyView struct {
 	ID          uint64     `json:"id"`
 	UserID      uint64     `json:"user_id"`
 	KeyPrefix   string     `json:"key_prefix"`
 	Name        string     `json:"name"`
 	BillingMode string     `json:"billing_mode"`
+	SourceID    *uint64    `json:"source_id,omitempty"`
 	ModelScope  []string   `json:"model_scope"`
 	Status      string     `json:"status"`
 	LastUsedAt  *time.Time `json:"last_used_at"`
 	CreatedAt   time.Time  `json:"created_at"`
+}
+
+// EntitlementChecker 套餐权益归属/可用性只读校验接口。
+// 与 BanChecker / GroupJoiner 同模式：在 auth/service 包内定义，由 asset 模块（丙）适配实现，
+// bootstrap 注入。auth 不直接依赖 asset，避免循环导入与跨模块强耦合。
+//
+// 实现方仅做只读校验（归属 + status=active + entitlement_type=token_quota），
+// **绝不在此扣减额度**（扣减是门面丁5/丙2 的 entitlement-consume 职责）。
+type EntitlementChecker interface {
+	// IsTokenQuotaUsable 校验 entitlementID 是否为 userID 名下、status=active 的 token_quota 权益。
+	// 满足返回 true；不存在 / 越权 / 非 active / 类型不符 / 查询出错均返回 false。
+	IsTokenQuotaUsable(ctx context.Context, userID, entitlementID uint64) bool
 }
 
 // APIKeyService 平台 API Key（sk）服务。
@@ -88,7 +109,8 @@ type APIKeyView struct {
 type APIKeyService struct {
 	repo       apiKeyRepo
 	hmacSecret string
-	banChecker BanChecker // 封禁联动（方案 A）：ResolveKey 内查 IsUserBlocked，用户被封 → sk 失效
+	banChecker BanChecker         // 封禁联动（方案 A）：ResolveKey 内查 IsUserBlocked，用户被封 → sk 失效
+	entChecker EntitlementChecker // 套餐权益只读校验（S2-甲6）：prepaid 签发时校验 source_id 归属/可用
 }
 
 // BanChecker 封禁查询接口，由 auth.AuthService 实现（IsUserBlocked 已存在）。
@@ -108,6 +130,13 @@ func NewAPIKeyService(repo apiKeyRepo, hmacSecret string, banChecker BanChecker)
 	}
 }
 
+// SetEntitlementChecker 注入套餐权益只读校验器（S2-甲6）。
+// 由 bootstrap 在装配完 asset 模块后调用；为 nil 时 prepaid 签发将被拒绝（无法校验归属，安全失败）。
+// 采用 setter 注入而非构造参数，是因为 apiKeyService 在 bootstrap 中先于 assetService 构造。
+func (s *APIKeyService) SetEntitlementChecker(c EntitlementChecker) {
+	s.entChecker = c
+}
+
 // IssueKey 签发新 sk：生成明文 → HMAC 落库 → 返回明文（仅此一次）。
 //   - 明文格式：sk-molin-<base62(32B 随机)>。
 //   - key_prefix = sk-molin- + 明文随机段前 4 位。
@@ -116,12 +145,29 @@ func NewAPIKeyService(repo apiKeyRepo, hmacSecret string, banChecker BanChecker)
 func (s *APIKeyService) IssueKey(ctx context.Context, in IssueKeyInput) (string, APIKeyView, error) {
 	billingMode := in.BillingMode
 	if billingMode == "" {
-		billingMode = billingModePostpaid
+		billingMode = billingModePostpaid // 不传默认 postpaid（兼容 M1 行为）
 	}
-	// 规范化 source_id：postpaid 强制为 nil，prepaid 保留传入的 entitlement_id。
+
+	// 0. 校验 billing_mode + source_id（S2-甲6）。
+	//    - 只允许 postpaid / prepaid，其余拒绝（参数错误）。
+	//    - postpaid：强制 source_id=nil（忽略传入值，避免脏数据）。
+	//    - prepaid：source_id 必填，且必须是当前用户名下 status=active 的 token_quota entitlement。
 	var sourceID *uint64
-	if billingMode == billingModePrepaid {
+	switch billingMode {
+	case billingModePostpaid:
+		// 强制丢弃 source_id，postpaid 走钱包，不绑定权益。
+		sourceID = nil
+	case billingModePrepaid:
+		if in.SourceID == nil || *in.SourceID == 0 {
+			return "", APIKeyView{}, ErrSourceIDRequired
+		}
+		// 校验归属与可用性：缺少校验器（未装配 asset）则安全失败，不放行无法核验的 prepaid sk。
+		if s.entChecker == nil || !s.entChecker.IsTokenQuotaUsable(ctx, in.UserID, *in.SourceID) {
+			return "", APIKeyView{}, ErrEntitlementNotOwned
+		}
 		sourceID = in.SourceID
+	default:
+		return "", APIKeyView{}, ErrInvalidBillingMode
 	}
 
 	// 1. 生成随机段并拼出明文 sk。
@@ -281,6 +327,7 @@ func toAPIKeyView(k *model.APIKey) APIKeyView {
 		KeyPrefix:   k.KeyPrefix,
 		Name:        k.Name,
 		BillingMode: k.BillingMode,
+		SourceID:    k.SourceID, // prepaid=entitlement_id；postpaid=nil（omitempty 不展示）
 		ModelScope:  splitModelScope(k.ModelScope),
 		Status:      k.Status,
 		LastUsedAt:  k.LastUsedAt,
