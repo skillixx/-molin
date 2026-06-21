@@ -126,7 +126,7 @@
 | 000030–000033 | token_models/usage_logs、channels+路由、token:manage seed、token 商品+按量规则 | ✅ |
 | 000034 | api_keys | ✅ S2-甲1（PR #207） |
 | 000035 | wallet_holds（预扣保证金 hold 表，D1） | ✅ S2-乙0（PR #208） |
-| 000036 | 按次计费规则 seed（calls） | 🔜 S2-乙1 |
+| 000036 | 按次计费规则 seed（calls） | ✅ S2-乙1（PR #210） |
 | 000037–000039 | agents+绑定表 / skills / plugins（plugins 含 D3 `is_paid`/`daily_limit`） | 🔜 S2-丁6（前置 W6） |
 | 000040 | 权限码 seed（agent/skill/plugin:manage） | 🔜 S2-甲7 |
 | 0000XX | **`entitlement_consume_logs`（D5 幂等表，idempotency_key 唯一）** | 🔜 S2-丙2（M2，序号紧随套餐相关迁移） |
@@ -190,7 +190,7 @@
 - [x] D6 → roadmap §9 #17 + §11：渠道单点风险登记 + 第三阶段任务清单
 - [x] 据 D1–D6 调整 `backend-stage2-task-schedule.md`（W5 加 S2-乙0 等）
 
-### 3.3 实现阶段 — 🔜 待开始（按周/工程师，勾选追踪）
+### 3.3 实现阶段 — 🚧 进行中（M1✅完成；M2/M3 待开。按周/工程师，勾选追踪）
 
 **W5 · M1 Token 售卖闭环 — ✅ 全部完成并验收通过（2026-06-21）**
 - [x] S2-乙0 确认钱包 `freeze/unfreeze` 内部接口可供门面调用（补 WalletHoldService，PR #208）
