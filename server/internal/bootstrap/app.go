@@ -157,6 +157,29 @@ func (a *authAssetSummaryAdapter) GetAssetSummary(ctx context.Context, userID ui
 	}, nil
 }
 
+// entitlementCheckerAdapter 将 *assetsvc.AssetService 适配为 authsvc.EntitlementChecker 接口（S2-甲6）。
+// 供 sk 签发 prepaid 时只读校验 source_id（entitlement_id）的归属与可用性，绝不扣减额度。
+// 复用 asset 模块已有的只读查询 ListUserEntitlements（按 user_id 查），天然保证归属：
+//   - 只有该 user 名下的权益才会被返回，越权的 entitlement_id 不在结果中 → 校验失败；
+//   - 再过滤 status=active + entitlement_type=token_quota，确保是可用的 token 套餐额度。
+type entitlementCheckerAdapter struct {
+	svc *assetsvc.AssetService
+}
+
+func (a *entitlementCheckerAdapter) IsTokenQuotaUsable(ctx context.Context, userID, entitlementID uint64) bool {
+	ents, err := a.svc.ListUserEntitlements(ctx, userID)
+	if err != nil {
+		return false
+	}
+	for i := range ents {
+		e := &ents[i]
+		if e.ID == entitlementID && e.Status == "active" && e.EntitlementType == "token_quota" {
+			return true
+		}
+	}
+	return false
+}
+
 // apiKeyResolverAdapter 将 auth.APIKeyService 适配为 middleware.APIKeyResolver 接口。
 // *APIKeyService 仅暴露 ResolveKeyForAuth(ctx, rawSK)(userID, apiKeyID, ok)，
 // 与中间件接口方法名 ResolveKey 不同，故包一层。
@@ -382,6 +405,11 @@ func NewApp() (*App, error) {
 	assetAdapt := &assetProvisionAdapter{svc: assetService}
 	// D-86：注入资产摘要查询器，使管理端 GET /api/admin/users/:id 返回 asset_summary
 	authService.SetAssetSummaryFetcher(&authAssetSummaryAdapter{svc: assetService})
+	// S2-甲6：注入套餐权益只读校验器，使 sk 签发 prepaid 时校验 source_id 归属/可用（不扣减额度）。
+	// apiKeyService 可能为 nil（API_KEY_HMAC_SECRET 未配置时灰度关闭），此时无需注入。
+	if apiKeyService != nil {
+		apiKeyService.SetEntitlementChecker(&entitlementCheckerAdapter{svc: assetService})
+	}
 
 	// ——— Provision 模块 ———
 	provisionService := provisionmod.NewProvisionService(productRepo, planRepo, assetAdapt)

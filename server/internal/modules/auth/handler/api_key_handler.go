@@ -24,21 +24,27 @@ func NewAPIKeyHandler(svc *service.APIKeyService) *APIKeyHandler {
 }
 
 // issueKeyReq POST /api/keys 请求体。
-// billing_mode / source_id 由后端按购买上下文决定，前端通常不传，故 handler 不接收，
-// 一律走 IssueKey 默认（postpaid）。本接口只暴露 name 与 model_scope 给前端自助创建。
+// S2-甲6：新增可选 billing_mode / source_id，支持签发绑定套餐权益的 prepaid sk。
+//   - billing_mode 缺省/空 = postpaid（兼容 M1，不传则行为不变）。
+//   - billing_mode=prepaid 时 source_id 必填（=当前用户名下 active 的 token_quota entitlement_id）。
+//   - billing_mode=postpaid 时 source_id 被忽略（service 强制置 nil）。
 type issueKeyReq struct {
-	Name       string   `json:"name"`
-	ModelScope []string `json:"model_scope"`
+	Name        string   `json:"name"`
+	ModelScope  []string `json:"model_scope"`
+	BillingMode string   `json:"billing_mode"`
+	SourceID    *uint64  `json:"source_id"`
 }
 
 // issueKeyResp POST /api/keys 响应：明文 secret_key 仅本次返回一次。
 // 对齐 docs/frontend-api-reference.md §14.4。
+// S2-甲6：prepaid sk 回显 source_id（绑定的 entitlement_id）；postpaid 为 nil（omitempty 不展示）。
 type issueKeyResp struct {
 	ID          uint64   `json:"id"`
 	Name        string   `json:"name"`
 	KeyPrefix   string   `json:"key_prefix"`
 	SecretKey   string   `json:"secret_key"` // 明文，仅签发时返回一次
 	BillingMode string   `json:"billing_mode"`
+	SourceID    *uint64  `json:"source_id,omitempty"`
 	ModelScope  []string `json:"model_scope"`
 	Status      string   `json:"status"`
 	CreatedAt   string   `json:"created_at"`
@@ -57,13 +63,24 @@ func (h *APIKeyHandler) IssueKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	plaintext, view, err := h.svc.IssueKey(r.Context(), service.IssueKeyInput{
-		UserID:     userID,
-		Name:       req.Name,
-		ModelScope: req.ModelScope,
-		// billing_mode 缺省=postpaid（service 内默认），source_id=nil。
+		UserID:      userID,
+		Name:        req.Name,
+		ModelScope:  req.ModelScope,
+		BillingMode: req.BillingMode, // 空=postpaid（service 内默认）
+		SourceID:    req.SourceID,    // prepaid 时为 entitlement_id；postpaid 被 service 强制忽略
 	})
 	if err != nil {
-		response.Error(w, http.StatusInternalServerError, 50000, "创建 sk 失败")
+		switch {
+		case errors.Is(err, service.ErrInvalidBillingMode):
+			response.Error(w, http.StatusBadRequest, 40000, "billing_mode 非法（仅支持 postpaid/prepaid）")
+		case errors.Is(err, service.ErrSourceIDRequired):
+			response.Error(w, http.StatusBadRequest, 40000, "prepaid 模式必须提供 source_id")
+		case errors.Is(err, service.ErrEntitlementNotOwned):
+			// 套餐权益不存在/已失效/不属于当前用户 → 越权，按 40003 处理。
+			response.Error(w, http.StatusForbidden, 40003, "套餐权益不存在、已失效或不属于当前用户")
+		default:
+			response.Error(w, http.StatusInternalServerError, 50000, "创建 sk 失败")
+		}
 		return
 	}
 	response.JSON(w, http.StatusCreated, issueKeyResp{
@@ -72,6 +89,7 @@ func (h *APIKeyHandler) IssueKey(w http.ResponseWriter, r *http.Request) {
 		KeyPrefix:   view.KeyPrefix,
 		SecretKey:   plaintext,
 		BillingMode: view.BillingMode,
+		SourceID:    view.SourceID,
 		ModelScope:  view.ModelScope,
 		Status:      view.Status,
 		CreatedAt:   view.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),

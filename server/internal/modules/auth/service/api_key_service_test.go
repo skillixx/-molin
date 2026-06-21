@@ -107,6 +107,17 @@ func (s *stubBanChecker) IsUserBlocked(_ context.Context, userID uint64) bool {
 	return s.blocked[userID]
 }
 
+// stubEntitlementChecker 可控的套餐权益只读校验桩（S2-甲6）。
+// usable[userID] 是该用户名下可用（active + token_quota）的 entitlement_id 集合。
+type stubEntitlementChecker struct {
+	usable map[uint64]map[uint64]bool
+}
+
+func (s *stubEntitlementChecker) IsTokenQuotaUsable(_ context.Context, userID, entitlementID uint64) bool {
+	set, ok := s.usable[userID]
+	return ok && set[entitlementID]
+}
+
 const testSecret = "test-api-key-hmac-secret"
 
 // TestIssueKey_PlaintextFormatAndPrefix 验证明文 sk 格式、key_prefix 派生、HMAC 落库、明文不入库。
@@ -153,12 +164,15 @@ func TestIssueKey_PlaintextFormatAndPrefix(t *testing.T) {
 	}
 }
 
-// TestIssueKey_PrepaidKeepsSourceID 验证 prepaid 模式保留 entitlement_id。
+// TestIssueKey_PrepaidKeepsSourceID 验证 prepaid 模式：校验通过后保留 entitlement_id 并回显 source_id。
 func TestIssueKey_PrepaidKeepsSourceID(t *testing.T) {
 	repo := newFakeAPIKeyRepo()
-	svc := NewAPIKeyService(repo, testSecret, nil)
-
 	ent := uint64(99)
+	// 用户 7 名下 entitlement 99 可用。
+	checker := &stubEntitlementChecker{usable: map[uint64]map[uint64]bool{7: {99: true}}}
+	svc := NewAPIKeyService(repo, testSecret, nil)
+	svc.SetEntitlementChecker(checker)
+
 	_, view, err := svc.IssueKey(context.Background(), IssueKeyInput{
 		UserID:      7,
 		BillingMode: billingModePrepaid,
@@ -172,11 +186,180 @@ func TestIssueKey_PrepaidKeepsSourceID(t *testing.T) {
 	if stored.SourceID == nil || *stored.SourceID != ent {
 		t.Fatalf("prepaid 的 source_id 应为 %d", ent)
 	}
+	// 视图也应回显 source_id（前端创建后展示绑定的权益）。
+	if view.SourceID == nil || *view.SourceID != ent {
+		t.Fatalf("prepaid 视图 source_id 应回显 %d", ent)
+	}
+	if view.BillingMode != billingModePrepaid {
+		t.Fatalf("视图 billing_mode 应为 prepaid，实际 %q", view.BillingMode)
+	}
 	if stored.ModelScope != "gpt-4o,claude-3" {
 		t.Fatalf("model_scope 应逗号分隔存储，实际 %q", stored.ModelScope)
 	}
 	if len(view.ModelScope) != 2 {
 		t.Fatalf("视图 model_scope 应转回切片")
+	}
+}
+
+// TestIssueKey_PostpaidForcesNilSourceID 验证 postpaid 强制忽略传入的 source_id（防脏数据）。
+func TestIssueKey_PostpaidForcesNilSourceID(t *testing.T) {
+	repo := newFakeAPIKeyRepo()
+	svc := NewAPIKeyService(repo, testSecret, nil)
+
+	ent := uint64(99)
+	_, view, err := svc.IssueKey(context.Background(), IssueKeyInput{
+		UserID:      7,
+		BillingMode: billingModePostpaid,
+		SourceID:    &ent, // 即使传入也应被强制丢弃
+	})
+	if err != nil {
+		t.Fatalf("IssueKey 出错: %v", err)
+	}
+	if repo.rows[view.ID].SourceID != nil {
+		t.Fatalf("postpaid 应强制 source_id=nil，实际 %v", *repo.rows[view.ID].SourceID)
+	}
+	if view.SourceID != nil {
+		t.Fatalf("postpaid 视图 source_id 应为 nil")
+	}
+}
+
+// TestIssueKey_DefaultPostpaid 验证不传 billing_mode 时默认 postpaid（M1 兼容）。
+func TestIssueKey_DefaultPostpaid(t *testing.T) {
+	repo := newFakeAPIKeyRepo()
+	svc := NewAPIKeyService(repo, testSecret, nil)
+
+	_, view, err := svc.IssueKey(context.Background(), IssueKeyInput{UserID: 7})
+	if err != nil {
+		t.Fatalf("IssueKey 出错: %v", err)
+	}
+	if view.BillingMode != billingModePostpaid {
+		t.Fatalf("不传 billing_mode 应默认 postpaid，实际 %q", view.BillingMode)
+	}
+	if repo.rows[view.ID].SourceID != nil {
+		t.Fatalf("默认 postpaid 的 source_id 应为 nil")
+	}
+}
+
+// TestIssueKey_InvalidBillingMode 验证非法 billing_mode 被拒绝。
+func TestIssueKey_InvalidBillingMode(t *testing.T) {
+	repo := newFakeAPIKeyRepo()
+	svc := NewAPIKeyService(repo, testSecret, nil)
+
+	_, _, err := svc.IssueKey(context.Background(), IssueKeyInput{
+		UserID:      7,
+		BillingMode: "free", // 非法
+	})
+	if err != ErrInvalidBillingMode {
+		t.Fatalf("非法 billing_mode 应返回 ErrInvalidBillingMode，实际 %v", err)
+	}
+	if len(repo.rows) != 0 {
+		t.Fatalf("非法入参不应落库任何 sk")
+	}
+}
+
+// TestIssueKey_PrepaidSourceIDRequired 验证 prepaid 缺 source_id（nil 或 0）被拒绝。
+func TestIssueKey_PrepaidSourceIDRequired(t *testing.T) {
+	repo := newFakeAPIKeyRepo()
+	checker := &stubEntitlementChecker{usable: map[uint64]map[uint64]bool{7: {99: true}}}
+	svc := NewAPIKeyService(repo, testSecret, nil)
+	svc.SetEntitlementChecker(checker)
+
+	// source_id = nil。
+	if _, _, err := svc.IssueKey(context.Background(), IssueKeyInput{
+		UserID:      7,
+		BillingMode: billingModePrepaid,
+	}); err != ErrSourceIDRequired {
+		t.Fatalf("prepaid 缺 source_id 应返回 ErrSourceIDRequired，实际 %v", err)
+	}
+	// source_id = 0（也视为未提供）。
+	zero := uint64(0)
+	if _, _, err := svc.IssueKey(context.Background(), IssueKeyInput{
+		UserID:      7,
+		BillingMode: billingModePrepaid,
+		SourceID:    &zero,
+	}); err != ErrSourceIDRequired {
+		t.Fatalf("prepaid source_id=0 应返回 ErrSourceIDRequired，实际 %v", err)
+	}
+	if len(repo.rows) != 0 {
+		t.Fatalf("校验失败不应落库")
+	}
+}
+
+// TestIssueKey_PrepaidEntitlementNotOwned 验证 prepaid 绑定他人/不存在/不可用权益被拒绝（越权）。
+func TestIssueKey_PrepaidEntitlementNotOwned(t *testing.T) {
+	repo := newFakeAPIKeyRepo()
+	// 用户 7 名下只有 entitlement 99 可用；用户 8 名下有 200。
+	checker := &stubEntitlementChecker{usable: map[uint64]map[uint64]bool{
+		7: {99: true},
+		8: {200: true},
+	}}
+	svc := NewAPIKeyService(repo, testSecret, nil)
+	svc.SetEntitlementChecker(checker)
+
+	// 用户 7 试图绑定用户 8 的 entitlement 200 → 越权拒绝。
+	other := uint64(200)
+	if _, _, err := svc.IssueKey(context.Background(), IssueKeyInput{
+		UserID:      7,
+		BillingMode: billingModePrepaid,
+		SourceID:    &other,
+	}); err != ErrEntitlementNotOwned {
+		t.Fatalf("绑定他人权益应返回 ErrEntitlementNotOwned，实际 %v", err)
+	}
+
+	// 绑定不存在的 entitlement → 拒绝。
+	ghost := uint64(99999)
+	if _, _, err := svc.IssueKey(context.Background(), IssueKeyInput{
+		UserID:      7,
+		BillingMode: billingModePrepaid,
+		SourceID:    &ghost,
+	}); err != ErrEntitlementNotOwned {
+		t.Fatalf("绑定不存在权益应返回 ErrEntitlementNotOwned，实际 %v", err)
+	}
+	if len(repo.rows) != 0 {
+		t.Fatalf("校验失败不应落库")
+	}
+}
+
+// TestIssueKey_PrepaidWithoutCheckerRejected 验证未注入校验器时 prepaid 安全失败（不放行无法核验的 sk）。
+func TestIssueKey_PrepaidWithoutCheckerRejected(t *testing.T) {
+	repo := newFakeAPIKeyRepo()
+	svc := NewAPIKeyService(repo, testSecret, nil) // 未 SetEntitlementChecker
+
+	ent := uint64(99)
+	if _, _, err := svc.IssueKey(context.Background(), IssueKeyInput{
+		UserID:      7,
+		BillingMode: billingModePrepaid,
+		SourceID:    &ent,
+	}); err != ErrEntitlementNotOwned {
+		t.Fatalf("无校验器时 prepaid 应安全失败返回 ErrEntitlementNotOwned，实际 %v", err)
+	}
+}
+
+// TestResolveKey_CarriesBillingModeAndSourceID 验证 ResolveKey 结果带出 billing_mode 和 source_id（门面丁5 用）。
+func TestResolveKey_CarriesBillingModeAndSourceID(t *testing.T) {
+	repo := newFakeAPIKeyRepo()
+	ent := uint64(99)
+	checker := &stubEntitlementChecker{usable: map[uint64]map[uint64]bool{7: {99: true}}}
+	svc := NewAPIKeyService(repo, testSecret, nil)
+	svc.SetEntitlementChecker(checker)
+
+	plaintext, _, err := svc.IssueKey(context.Background(), IssueKeyInput{
+		UserID:      7,
+		BillingMode: billingModePrepaid,
+		SourceID:    &ent,
+	})
+	if err != nil {
+		t.Fatalf("IssueKey 出错: %v", err)
+	}
+	auth, err := svc.ResolveKey(context.Background(), plaintext)
+	if err != nil {
+		t.Fatalf("ResolveKey 应命中: %v", err)
+	}
+	if auth.BillingMode != billingModePrepaid {
+		t.Fatalf("ResolveKey 应带出 billing_mode=prepaid，实际 %q", auth.BillingMode)
+	}
+	if auth.SourceID == nil || *auth.SourceID != ent {
+		t.Fatalf("ResolveKey 应带出 source_id=%d，实际 %v", ent, auth.SourceID)
 	}
 }
 
