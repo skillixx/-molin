@@ -45,6 +45,21 @@ type UsageReporter interface {
 	Report(ctx context.Context, event UsageEvent) error
 }
 
+// WalletHolder postpaid 预扣保证金接口（D1）。由 billing 适配实现，bootstrap 注入。
+//
+// 门面 postpaid 路径在转发上游前调 FreezeHold 按 max_tokens×单价冻结保证金（占住额度、杜绝并发透支），
+// 拿到实际 usage 后调 SettleHold 解冻并按实扣金额结算（多退少补）；异常路径调 ReleaseHold 全额释放。
+// 由后端丁 S2-丁5 在 forward_service 中编排调用，本接口仅定义契约（与 UsageReporter 同款解耦风格）。
+type WalletHolder interface {
+	// FreezeHold 冻结一笔预扣保证金，返回 holdID。amount 不足返回余额不足错误。
+	// idempotencyKey 幂等：同一 key 重复调用返回首次创建的 holdID，不重复冻结。
+	FreezeHold(ctx context.Context, userID uint64, amount decimal.Decimal, idempotencyKey, remark string) (uint64, error)
+	// SettleHold 解冻该 hold 全额保证金并按 actual 实扣（多退少补）。hold 已结算时幂等返回 nil。
+	SettleHold(ctx context.Context, holdID uint64, actual decimal.Decimal, idempotencyKey string) error
+	// ReleaseHold 全额释放预扣保证金（actual=0），用于异常路径。
+	ReleaseHold(ctx context.Context, holdID uint64, idempotencyKey string) error
+}
+
 // ——— 服务层错误 ———
 
 var (
