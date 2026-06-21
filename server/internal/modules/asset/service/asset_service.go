@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -29,10 +30,17 @@ import (
 //	{"entitlement_type": "api_calls", "quota_total": 1000, "quota_unit": "次"}
 //
 // quota_total 为空或缺省时表示该权益不限量（quota_total 存为 NULL，消耗时不做额度校验）。
+//
+// valid_days（M2 套餐预付，S2-丙1）：声明该权益自开通起的有效天数。
+//   - 套餐 plan（如 token-pkg-1m）通常无 product_plans.duration_days，资产到期时间为 NULL，
+//     此时按 quota_json.valid_days 单独计算权益 expires_at = started_at + valid_days，满足契约
+//     §4.1「到期未用完额度清零」（到期由资产/权益过期机制据 status/expires_at 处理）。
+//   - valid_days 缺省或 <=0 时，权益沿用资产的 expires_at（可能为 NULL，表示不限期）。
 type quotaConfigItem struct {
 	EntitlementType string           `json:"entitlement_type"`
 	QuotaTotal      *decimal.Decimal `json:"quota_total"`
 	QuotaUnit       *string          `json:"quota_unit"`
+	ValidDays       *int             `json:"valid_days"`
 }
 
 // AssetService 资产服务，处理资产创建、状态变更、权益消耗等核心业务。
@@ -41,6 +49,7 @@ type AssetService struct {
 	assetRepo       *repository.AssetRepository
 	entitlementRepo *repository.EntitlementRepository
 	eventRepo       *repository.EventRepository
+	consumeLogRepo  *repository.EntitlementConsumeLogRepository
 }
 
 // NewAssetService 创建资产服务实例。
@@ -50,8 +59,21 @@ func NewAssetService(db *gorm.DB) *AssetService {
 		assetRepo:       repository.NewAssetRepository(db),
 		entitlementRepo: repository.NewEntitlementRepository(db),
 		eventRepo:       repository.NewEventRepository(db),
+		consumeLogRepo:  repository.NewEntitlementConsumeLogRepository(db),
 	}
 }
+
+// 权益扣减相关业务错误（供 handler 映射为对外错误码）。
+var (
+	// ErrEntitlementNotFound 权益记录不存在。
+	ErrEntitlementNotFound = errors.New("权益记录不存在")
+	// ErrEntitlementNotOwned 权益不属于该用户（归属校验失败）。
+	ErrEntitlementNotOwned = errors.New("权益不属于该用户")
+	// ErrEntitlementInactive 权益状态非 active（已暂停/过期/取消）或已过期。
+	ErrEntitlementInactive = errors.New("权益不可用")
+	// ErrQuotaExceeded 权益额度不足（剩余额度 < 本次请求扣减量）。
+	ErrQuotaExceeded = errors.New("权益额度不足")
+)
 
 // CreateAsset 创建用户资产，写入初始事件日志。
 // 由 provision 模块在商品开通成功后调用。
@@ -107,6 +129,14 @@ func (s *AssetService) CreateAsset(ctx context.Context, req dto.CreateAssetReq) 
 				if item.EntitlementType == "" {
 					continue
 				}
+				// 权益到期时间：默认沿用资产 expires_at；当 quota_json 声明 valid_days>0 时，
+				// 按 started_at + valid_days 单独计算（套餐预付场景，plan 无 duration_days，
+				// 资产到期为 NULL 但权益按 valid_days 到期，满足契约 §4.1）。
+				entExpiresAt := req.ExpiresAt
+				if item.ValidDays != nil && *item.ValidDays > 0 {
+					t := now.AddDate(0, 0, *item.ValidDays)
+					entExpiresAt = &t
+				}
 				entitlement := &model.UserEntitlement{
 					UserID:          req.UserID,
 					AssetID:         asset.ID,
@@ -117,7 +147,7 @@ func (s *AssetService) CreateAsset(ctx context.Context, req dto.CreateAssetReq) 
 					QuotaUnit:       item.QuotaUnit,
 					Status:          "active",
 					StartedAt:       &now,
-					ExpiresAt:       req.ExpiresAt,
+					ExpiresAt:       entExpiresAt,
 				}
 				if err := tx.Create(entitlement).Error; err != nil {
 					return fmt.Errorf("初始化用户权益失败: %w", err)
@@ -402,6 +432,132 @@ func (s *AssetService) ConsumeEntitlement(ctx context.Context, entitlementID uin
 		// 扣减配额
 		return s.entitlementRepo.ConsumeQuota(ctx, tx, entitlementID, amount)
 	})
+}
+
+// ConsumeEntitlementIdempotent 幂等地扣减权益额度（M2 套餐预付，S2-丙2）。
+//
+// 供内部接口 POST /api/internal/entitlement-consume 调用（门面 prepaid 模式下结算时调用）。
+// 事务内严格按以下顺序执行（红线：锁行 + 事务内校验 + 先幂等后扣减）：
+//  1. 先 INSERT entitlement_consume_logs（唯一键 idempotency_key 冲突 = 重复请求）。
+//     冲突时取回首次记录、读取当前权益状态并返回，绝不二次扣减。
+//  2. FindByIDForUpdate 锁定权益行（SELECT FOR UPDATE，防并发透支）。
+//  3. 归属校验：entitlement.user_id == req.userID，否则 ErrEntitlementNotOwned（对外 40003）。
+//  4. 状态校验：status=active 且未过期（expires_at 为空或晚于当前时间），否则 ErrEntitlementInactive。
+//  5. 额度校验：quota_used + amount <= quota_total（有限额时），否则 ErrQuotaExceeded（对外 60005）。
+//  6. ConsumeQuota 扣减。
+//
+// amount 必须为正数（由 handler 前置校验）。返回扣减后的权益快照（含 remaining）。
+func (s *AssetService) ConsumeEntitlementIdempotent(
+	ctx context.Context, entitlementID, userID uint64, amount decimal.Decimal, idempotencyKey string,
+) (*dto.ConsumeEntitlementResult, error) {
+	var result *dto.ConsumeEntitlementResult
+
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 1. 先写幂等日志：唯一键冲突即视为重复请求，取回首次结果（不二次扣减）。
+		logRow := &model.EntitlementConsumeLog{
+			EntitlementID:  entitlementID,
+			UserID:         userID,
+			Amount:         amount,
+			IdempotencyKey: idempotencyKey,
+		}
+		insertErr := s.consumeLogRepo.Create(ctx, tx, logRow)
+		if insertErr != nil {
+			if errors.Is(insertErr, repository.ErrDuplicateConsumeLog) {
+				// 重复请求：读取当前权益快照并直接返回（幂等，不再扣减）。
+				snap, err := s.snapshotEntitlement(ctx, tx, entitlementID)
+				if err != nil {
+					return err
+				}
+				result = snap
+				return nil
+			}
+			return insertErr
+		}
+
+		// 2. 锁定权益行
+		e, err := s.entitlementRepo.FindByIDForUpdate(ctx, tx, entitlementID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrEntitlementNotFound
+			}
+			return err
+		}
+
+		// 3~5. 归属/状态/有效期/额度校验（抽为纯函数，便于单测覆盖 40003/60005/越界）
+		if err := checkEntitlementConsumable(e, userID, amount, time.Now()); err != nil {
+			return err
+		}
+
+		// 6. 扣减
+		if err := s.entitlementRepo.ConsumeQuota(ctx, tx, entitlementID, amount); err != nil {
+			return err
+		}
+
+		// 组装返回快照（扣减后）
+		newUsed := e.QuotaUsed.Add(amount)
+		result = buildConsumeResult(e, newUsed)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// snapshotEntitlement 读取权益当前快照（重复请求时返回首次扣减后的状态）。
+func (s *AssetService) snapshotEntitlement(ctx context.Context, tx *gorm.DB, entitlementID uint64) (*dto.ConsumeEntitlementResult, error) {
+	var e model.UserEntitlement
+	if err := tx.WithContext(ctx).First(&e, entitlementID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrEntitlementNotFound
+		}
+		return nil, err
+	}
+	return buildConsumeResult(&e, e.QuotaUsed), nil
+}
+
+// checkEntitlementConsumable 校验权益是否可被指定用户扣减指定额度（纯函数，便于单测）。
+// 校验顺序与对外错误码（红线）：
+//   - 归属不符  → ErrEntitlementNotOwned（40003）
+//   - 状态非 active 或已过期（expires_at 不晚于 now）→ ErrEntitlementInactive（60005）
+//   - 有限额且 quota_used + amount > quota_total → ErrQuotaExceeded（60005）
+//
+// now 由调用方传入（事务内为 time.Now()），便于测试构造过期/未过期场景。
+// 调用方须保证 amount 为正数（handler 已前置校验）。
+func checkEntitlementConsumable(e *model.UserEntitlement, userID uint64, amount decimal.Decimal, now time.Time) error {
+	if e.UserID != userID {
+		return ErrEntitlementNotOwned
+	}
+	if e.Status != "active" {
+		return ErrEntitlementInactive
+	}
+	if e.ExpiresAt != nil && !e.ExpiresAt.After(now) {
+		return ErrEntitlementInactive
+	}
+	if e.QuotaTotal != nil {
+		remaining := e.QuotaTotal.Sub(e.QuotaUsed)
+		if amount.GreaterThan(remaining) {
+			return ErrQuotaExceeded
+		}
+	}
+	return nil
+}
+
+// buildConsumeResult 据权益记录与「目标已用额度」组装扣减响应。
+// usedAfter 为扣减后的 quota_used（重复请求时即为当前 quota_used）。
+func buildConsumeResult(e *model.UserEntitlement, usedAfter decimal.Decimal) *dto.ConsumeEntitlementResult {
+	res := &dto.ConsumeEntitlementResult{
+		EntitlementID: e.ID,
+		QuotaTotal:    e.QuotaTotal,
+		QuotaUsed:     usedAfter,
+		Status:        e.Status,
+	}
+	// remaining：有限额时为 quota_total - quota_used，不限量（quota_total 为 NULL）时为 nil。
+	if e.QuotaTotal != nil {
+		rem := e.QuotaTotal.Sub(usedAfter)
+		res.Remaining = &rem
+	}
+	return res
 }
 
 // parseQuotaConfig 解析 product_plans.quota_json 原始内容为权益配置列表。

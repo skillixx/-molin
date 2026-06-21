@@ -72,3 +72,22 @@ type AssetSummary struct {
 	Expired   int64 `json:"expired"`
 	Cancelled int64 `json:"cancelled"`
 }
+
+// ConsumeEntitlementReq 权益额度扣减内部接口请求（M2 套餐预付，S2-丙2）。
+// 由门面 prepaid 模式结算时调用 POST /api/internal/entitlement-consume。
+type ConsumeEntitlementReq struct {
+	EntitlementID  uint64          `json:"entitlement_id"`  // 目标权益 ID（= sk 解析出的 source_id）
+	Amount         decimal.Decimal `json:"amount"`          // 本次消耗额度（token 数，必须为正）
+	IdempotencyKey string          `json:"idempotency_key"` // 幂等键，约定 request_id:quota
+	UserID         uint64          `json:"user_id"`         // 归属校验：必须等于权益所属用户
+}
+
+// ConsumeEntitlementResult 权益额度扣减响应（扣减后的权益快照）。
+// remaining = quota_total - quota_used；quota_total 为 NULL（不限量）时 remaining 亦为 NULL。
+type ConsumeEntitlementResult struct {
+	EntitlementID uint64           `json:"entitlement_id"`
+	QuotaTotal    *decimal.Decimal `json:"quota_total,omitempty"`
+	QuotaUsed     decimal.Decimal  `json:"quota_used"`
+	Remaining     *decimal.Decimal `json:"remaining,omitempty"`
+	Status        string           `json:"status"`
+}
