@@ -111,7 +111,8 @@ func NewForwardService(
 // ForwardInput chat 转发入参。Body 为终端原始 OpenAI 格式 JSON（已解析的 map，便于改写 model 字段）。
 type ForwardInput struct {
 	RequestID string                 // 请求唯一标识（由 handler 生成，幂等 / 日志基准）
-	UserID    uint64                 // 已鉴权用户 ID（登录态）
+	UserID    uint64                 // 已鉴权用户 ID（登录态或 sk 绑定）
+	APIKeyID  uint64                 // 平台 sk 调用的 api_key_id；登录态 JWT 调用为 0（落库时视为 nil）
 	Model     string                 // 逻辑模型名（body.model）
 	Stream    bool                   // 是否流式
 	Body      map[string]interface{} // 原始请求体（透传，仅改写 model / stream_options）
@@ -275,9 +276,16 @@ func (s *ForwardService) forwardStream(ctx context.Context, w http.ResponseWrite
 
 // logUsage 写一条 token_usage_logs（仅 tokens/状态元数据，绝不落对话内容明文）。best-effort。
 func (s *ForwardService) logUsage(ctx context.Context, requestID string, in ForwardInput, tm *model.TokenModel, inputTok, outputTok int64, status string, errCode *string) {
+	// api_key_id：sk 调用落对应 id；登录态调用为 0，存 nil（便于按 sk 维度聚合用量）。
+	var apiKeyID *uint64
+	if in.APIKeyID != 0 {
+		id := in.APIKeyID
+		apiKeyID = &id
+	}
 	logEntry := &model.TokenUsageLog{
 		RequestID:        requestID,
 		UserID:           in.UserID,
+		APIKeyID:         apiKeyID,
 		LogicalModelCode: in.Model,
 		Modality:         tm.Modality,
 		InputTokens:      inputTok,
@@ -309,6 +317,10 @@ func (s *ForwardService) reportBilling(ctx context.Context, requestID string, us
 	if outputTok > 0 {
 		s.reportOne(ctx, requestID, userID, productID, "output_tokens", outputTok)
 	}
+	// 按次计费（S2-丁4）：已发起上游并成功结算，本次透传请求记 1 次 calls。
+	// 前置失败（鉴权/门禁/余额闸/未发起上游）不会走到这里，故不会误计次。
+	// finance_consumer 无 calls 规则时返回「无匹配规则」→ reportOne 静默记日志跳过，不影响主流程。
+	s.reportOne(ctx, requestID, userID, productID, "calls", 1)
 }
 
 // reportOne 上报单条用量事件，失败仅记日志。
