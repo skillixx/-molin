@@ -8,11 +8,15 @@
 import http from './http'
 import type { PageResult } from '@/types/api'
 import type {
+  ApiKeyItem,
   ChatCompletionChunk,
+  CreatedApiKey,
+  CreateApiKeyReq,
   ChatStreamError,
   ChatStreamOptions,
   ChatUsage,
   TokenModel,
+  TokenUsageRecord,
 } from '@/types/token'
 
 /**
@@ -23,6 +27,28 @@ export function listModels() {
   return http.get<unknown, PageResult<TokenModel>>('/token/models', {
     params: { page: 1, page_size: 50 },
   })
+}
+
+export function listApiKeys(params: { page?: number; page_size?: number } = {}) {
+  return http.get<unknown, PageResult<ApiKeyItem>>('/keys', { params })
+}
+
+export function createApiKey(data: CreateApiKeyReq) {
+  return http.post<unknown, CreatedApiKey>('/keys', data)
+}
+
+export function revokeApiKey(id: number) {
+  return http.delete<unknown, null>(`/keys/${id}`)
+}
+
+export function listMyTokenUsage(params: {
+  model?: string
+  start?: string
+  end?: string
+  page?: number
+  page_size?: number
+} = {}) {
+  return http.get<unknown, PageResult<TokenUsageRecord>>('/token/usage', { params })
 }
 
 /**

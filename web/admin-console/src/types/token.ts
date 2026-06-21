@@ -6,6 +6,7 @@ export type TokenChannelStatus = 'active' | 'disabled'
 export type TokenModelStatus = 'active' | 'disabled'
 // 模型模态
 export type TokenModelModality = 'chat' | 'image' | 'audio' | 'video'
+export type TokenUsageStatus = 'success' | 'failed' | 'timeout'
 
 /** 渠道（上游供应商）—— 响应永远不返回 api_key 明文，只有 has_api_key 布尔 */
 export interface TokenChannel {
@@ -79,4 +80,21 @@ export interface UpdateTokenModelReq {
   product_id?: number | null
   status?: TokenModelStatus
   sort_order?: number
+}
+
+// 管理端全量 Token 用量流水，字段与 §14.7 保持 snake_case。
+export interface AdminTokenUsageRecord {
+  request_id: string
+  user_id: number
+  api_key_id: number | null
+  logical_model_code: string
+  modality: string
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  sale_amount: string
+  is_stream: boolean
+  status: TokenUsageStatus
+  error_code: string | null
+  created_at: string
 }

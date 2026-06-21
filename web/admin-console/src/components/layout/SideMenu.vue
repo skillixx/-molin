@@ -131,6 +131,10 @@
         <el-icon><MagicStick /></el-icon>
         <template #title>模型目录</template>
       </el-menu-item>
+      <el-menu-item index="/token/usage">
+        <el-icon><Tickets /></el-icon>
+        <template #title>用量统计</template>
+      </el-menu-item>
     </el-sub-menu>
 
     <el-sub-menu v-if="can('content:manage')" index="content">

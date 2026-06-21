@@ -4,6 +4,7 @@ import type { PageResponse } from '@/types/api'
 import type {
   CreateTokenChannelReq,
   CreateTokenModelReq,
+  AdminTokenUsageRecord,
   TokenChannel,
   TokenModel,
   TokenModelModality,
@@ -63,4 +64,16 @@ export function updateTokenModel(id: number, data: UpdateTokenModelReq) {
 
 export function deleteTokenModel(id: number) {
   return http.delete<unknown, null>(`/admin/token/models/${id}`)
+}
+
+export function listAdminTokenUsage(params: {
+  user_id?: number
+  api_key_id?: number
+  model?: string
+  start?: string
+  end?: string
+  page?: number
+  page_size?: number
+} = {}) {
+  return http.get<unknown, PageResponse<AdminTokenUsageRecord>>('/admin/token/usage', { params })
 }

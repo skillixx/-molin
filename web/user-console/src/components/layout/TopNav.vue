@@ -16,6 +16,7 @@ import {
   ChatDotRound,
   Goods,
   HomeFilled,
+  Key,
   List,
   Medal,
   QuestionFilled,
@@ -32,6 +33,8 @@ const walletStore = useWalletStore()
 const navItems = [
   { path: '/overview', label: '总览', icon: HomeFilled },
   { path: '/chat', label: 'AI 对话', icon: ChatDotRound },
+  { path: '/api-keys', label: 'API 密钥', icon: Key },
+  { path: '/token/usage', label: '我的用量', icon: List },
   { path: '/marketplace', label: '商品市场', icon: Goods },
   { path: '/assets', label: '我的资产', icon: Box },
   { path: '/membership', label: '会员中心', icon: Medal },
@@ -62,6 +65,8 @@ function handleCommand(cmd: string) {
   else if (cmd === 'orders') router.push('/orders')
   else if (cmd === 'wallet') router.push('/wallet')
   else if (cmd === 'consumption') router.push('/consumption')
+  else if (cmd === 'api-keys') router.push('/api-keys')
+  else if (cmd === 'token-usage') router.push('/token/usage')
   else if (cmd === 'logout') handleLogout()
 }
 
@@ -147,6 +152,14 @@ onMounted(() => {
               <el-dropdown-item command="wallet">
                 <el-icon><wallet /></el-icon>
                 钱包
+              </el-dropdown-item>
+              <el-dropdown-item command="api-keys">
+                <el-icon><key /></el-icon>
+                API 密钥
+              </el-dropdown-item>
+              <el-dropdown-item command="token-usage">
+                <el-icon><list /></el-icon>
+                我的用量
               </el-dropdown-item>
               <el-dropdown-item command="consumption">
                 <el-icon><list /></el-icon>

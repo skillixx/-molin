@@ -48,6 +48,16 @@ const router = createRouter({
           component: () => import('@/views/chat/ChatView.vue'),
           meta: { requiresAuth: true, title: 'AI 对话 — 墨灵' },
         },
+        {
+          path: 'api-keys',
+          component: () => import('@/views/token/ApiKeyView.vue'),
+          meta: { requiresAuth: true, title: 'API 密钥 — 墨灵' },
+        },
+        {
+          path: 'token/usage',
+          component: () => import('@/views/token/TokenUsageView.vue'),
+          meta: { requiresAuth: true, title: '我的用量 — 墨灵' },
+        },
 
         // 商品市场
         {

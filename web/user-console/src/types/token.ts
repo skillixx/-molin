@@ -11,6 +11,49 @@ export interface TokenModel {
   modality: 'chat' | string
 }
 
+export type ApiKeyStatus = 'active' | 'revoked'
+export type ApiKeyBillingMode = 'postpaid' | 'prepaid'
+
+// 用户端 API Key 列表项；列表只返回 key_prefix，不返回完整密钥。
+export interface ApiKeyItem {
+  id: number
+  name: string
+  key_prefix: string
+  billing_mode: ApiKeyBillingMode
+  model_scope: string[]
+  status: ApiKeyStatus
+  last_used_at: string | null
+  created_at: string
+}
+
+// 创建 API Key 的请求体；model_scope 为空或不传表示不限模型。
+export interface CreateApiKeyReq {
+  name: string
+  model_scope?: string[]
+}
+
+// 创建 API Key 的响应会额外返回完整明文 secret_key，且只返回一次。
+export interface CreatedApiKey extends ApiKeyItem {
+  secret_key: string
+}
+
+export type TokenUsageStatus = 'success' | 'failed' | 'timeout'
+
+// Token 用量流水，用户端不包含 user_id / api_key_id。
+export interface TokenUsageRecord {
+  request_id: string
+  logical_model_code: string
+  modality: string
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  sale_amount: string
+  is_stream: boolean
+  status: TokenUsageStatus
+  error_code: string | null
+  created_at: string
+}
+
 // OpenAI 兼容消息角色
 export type ChatRole = 'system' | 'user' | 'assistant'
 
