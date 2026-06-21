@@ -45,6 +45,22 @@ func (r *BillingRuleRepository) FindByProductID(ctx context.Context, productID u
 	return rules, err
 }
 
+// CountActiveByUsageTypes 统计某商品下 usage_type 属于指定集合、且 status=active 的计费规则数量。
+// excludeID 用于编辑场景排除规则自身（传 0 表示不排除）。
+// 用于「按量/按次互斥」强校验：判断某一类（按量 / 按次）是否已存在生效规则。
+func (r *BillingRuleRepository) CountActiveByUsageTypes(ctx context.Context, productID uint64, usageTypes []string, excludeID uint64) (int64, error) {
+	query := r.db.WithContext(ctx).Model(&model.ProductBillingRule{}).
+		Where("product_id = ? AND status = ? AND usage_type IN ?", productID, "active", usageTypes)
+	if excludeID != 0 {
+		query = query.Where("id <> ?", excludeID)
+	}
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 // BillingRuleFilter 计费规则列表过滤条件（管理端 P15）。
 type BillingRuleFilter struct {
 	ProductID *uint64 // 可选，按商品过滤

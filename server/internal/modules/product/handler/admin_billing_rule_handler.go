@@ -171,7 +171,10 @@ func writeBillingRuleErr(w http.ResponseWriter, err error) {
 		// 与 admin_product_handler「商品不存在」保持一致：404 / 40004（资源不存在）
 		response.Error(w, http.StatusNotFound, 40004, "关联商品不存在")
 	case errors.Is(err, service.ErrInvalidPriceAmount),
-		errors.Is(err, service.ErrMissingBillingField):
+		errors.Is(err, service.ErrMissingBillingField),
+		errors.Is(err, service.ErrMeteredRuleExists),
+		errors.Is(err, service.ErrCallRuleExists):
+		// 按量/按次互斥冲突与参数校验统一返回 40000 + 明确中文提示
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 	default:
 		response.Error(w, http.StatusInternalServerError, 50000, "操作失败")
