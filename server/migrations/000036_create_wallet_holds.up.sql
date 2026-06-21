@@ -1,4 +1,4 @@
--- 000034 钱包预扣保证金（hold）表
+-- 000036 钱包预扣保证金（hold）表
 -- S2-乙0：为 D1「token 网关 postpaid 预扣保证金」提供 billing 侧追踪能力。
 -- 门面转发前按 max_tokens×单价 冻结保证金（FreezeHold→holding），结算时解冻并按实际 usage 实扣（SettleHold，多退少补）。
 -- 通过 idempotency_key 唯一索引保证「同一请求重复冻结」幂等，避免并发/重试场景下重复占用余额。
