@@ -13,6 +13,7 @@ type Module struct {
 	ChannelService *service.ChannelService
 	CatalogService *service.CatalogService
 	ForwardService *service.ForwardService
+	UsageService   *service.UsageService
 }
 
 // New 构造 token_gateway 模块依赖。
@@ -36,5 +37,6 @@ func New(db *gorm.DB, tokenProviderKey string, assetGate service.AssetGate, repo
 		ChannelService: service.NewChannelService(channelRepo, cipher),
 		CatalogService: service.NewCatalogService(modelRepo),
 		ForwardService: service.NewForwardService(modelRepo, channelRepo, usageRepo, cipher, assetGate, reporter),
+		UsageService:   service.NewUsageService(usageRepo),
 	}, nil
 }

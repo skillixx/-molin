@@ -423,12 +423,12 @@ func NewApp() (*App, error) {
 		if tokenGatewayModule, tgErr := tokengatewaymod.New(gormDB, cfg.TokenProviderKey, assetService, tokenReporter); tgErr != nil {
 			log.Printf("[token_gateway] 初始化失败，管理端/用户端未启用: %v", tgErr)
 		} else {
-			// 管理端：渠道 / 模型目录（token:manage + 管理员双重认证）。
+			// 管理端：渠道 / 模型目录 / 全量用量（token:manage + 管理员双重认证）。
 			tokengatewaymod.RegisterRoutes(mux, tokenGatewayModule.ChannelService, tokenGatewayModule.CatalogService,
-				cfg.JWTSecret, iamService, authService, authService)
-			// 用户端：列模型 + OpenAI 兼容 chat 转发（网页登录态）。
+				tokenGatewayModule.UsageService, cfg.JWTSecret, iamService, authService, authService)
+			// 用户端：列模型 + OpenAI 兼容 chat 转发 + 我的用量（网页登录态）。
 			tokengatewaymod.RegisterUserRoutes(mux, tokenGatewayModule.ForwardService, tokenGatewayModule.CatalogService,
-				cfg.JWTSecret, authService)
+				tokenGatewayModule.UsageService, cfg.JWTSecret, authService)
 		}
 	} else {
 		log.Printf("[token_gateway] TOKEN_PROVIDER_KEY 未配置，token 网关门面未启用")

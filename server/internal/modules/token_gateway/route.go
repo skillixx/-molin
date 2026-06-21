@@ -20,6 +20,7 @@ func RegisterRoutes(
 	mux *http.ServeMux,
 	channelSvc *service.ChannelService,
 	catalogSvc *service.CatalogService,
+	usageSvc *service.UsageService,
 	jwtSecret string,
 	iamChecker middleware.IAMChecker,
 	banChecker middleware.BanChecker,
@@ -27,6 +28,7 @@ func RegisterRoutes(
 ) {
 	ch := handler.NewChannelHandler(channelSvc)
 	mh := handler.NewModelHandler(catalogSvc)
+	uh := handler.NewUsageHandler(usageSvc)
 
 	// 管理端中间件链：登录 + token:manage + 管理员双重认证
 	admin := func(next http.HandlerFunc) http.Handler {
@@ -48,6 +50,9 @@ func RegisterRoutes(
 	mux.Handle("GET /api/admin/token/models/{id}", admin(mh.GetModel))
 	mux.Handle("PATCH /api/admin/token/models/{id}", admin(mh.UpdateModel))
 	mux.Handle("DELETE /api/admin/token/models/{id}", admin(mh.DeleteModel))
+
+	// 全量用量流水（S2-丁2，§14.7）：可按 user_id/api_key_id/model/start/end 筛选。
+	mux.Handle("GET /api/admin/token/usage", admin(uh.ListAll))
 }
 
 // RegisterUserRoutes 注册 token_gateway 用户端路由（网页登录态）。
@@ -61,11 +66,13 @@ func RegisterUserRoutes(
 	mux *http.ServeMux,
 	forwardSvc *service.ForwardService,
 	catalogSvc *service.CatalogService,
+	usageSvc *service.UsageService,
 	jwtSecret string,
 	banChecker middleware.BanChecker,
 ) {
 	chatH := handler.NewChatHandler(forwardSvc)
 	modelH := handler.NewModelHandler(catalogSvc)
+	usageH := handler.NewUsageHandler(usageSvc)
 
 	// 用户端中间件链：仅登录态（含封禁/吊销检查）。
 	user := func(next http.HandlerFunc) http.Handler {
@@ -76,4 +83,7 @@ func RegisterUserRoutes(
 	mux.Handle("GET /api/token/models", user(modelH.ListPublic))
 	// OpenAI 兼容对话转发（支持非流式 + SSE 流式）。
 	mux.Handle("POST /api/token/chat/completions", user(chatH.ChatCompletions))
+	// 我的用量流水（S2-丁1，§14.3）：仅查本人，可选筛选 model/start/end。
+	// 注：sk 双模式鉴权（S2-甲3）就绪前仅支持登录态；sk 路径接入后需按 sk 绑定身份过滤。
+	mux.Handle("GET /api/token/usage", user(usageH.ListMine))
 }
