@@ -30,7 +30,7 @@
         │
 ④.6 契约回写      D1–D6 决议吸收进各契约（billing/sk/chat-workbench/roadmap）+ 调排期   ✅（PR #206）
         │
-⑤ 实现           各后端按契约开发（迁移 → model/repo/service → handler → 装配）   🔜 待开始（W5 起）
+⑤ 实现           各后端按契约开发（迁移 → model/repo/service → handler → 装配）   🚧 进行中：M1(W5)✅验收通过，M2/M3 待开
         │
 ⑥ 联调           前端按 §14 对接 + 后端接口就位；字段变更回写契约                🔜
         │
@@ -39,7 +39,7 @@
 ⑧ 上线           上线检查单（环境变量/迁移序/配置项/回滚）→ PM 验收 → 发布        🔜
 ```
 
-**当前位置**：①–④.6 规划/评审/风险审查/契约回写全部完成（D1–D6 已吸收进各契约）；下一步进入 ⑤ 实现（W5 起）。
+**当前位置**：①–④.6 规划全部完成；⑤ 实现进行中——**M1（W5）15/15 ✅ 真实上游端到端验收通过**；下一步 M2（套餐预付，W6）。
 
 ### 1.2 单个接口的开发流程（每位工程师统一遵循）
 
@@ -75,37 +75,37 @@
 | 2 | `GET/PATCH/DELETE /api/admin/token/channels/{id}` | 管理 | ✅ | §14.5 |
 | 3 | `GET/POST /api/admin/token/models` | 管理 | ✅ | §14.6 |
 | 4 | `GET/PATCH/DELETE /api/admin/token/models/{id}` | 管理 | ✅ | §14.6 |
-| 5 | `GET /api/admin/token/usage` | 管理 | 🔜 S2-丁2 | §14.7 |
+| 5 | `GET /api/admin/token/usage` | 管理 | ✅ S2-丁2（PR #212） | §14.7 |
 
 ### 2.2 Token 网关 — 用户端 / 开发者
 
 | # | 方法 路径 | 鉴权 | 状态 | 契约 |
 |---|---|---|---|---|
 | 6 | `GET /api/token/models` | 登录态/sk | ✅ | §14.1 |
-| 7 | `POST /api/token/chat/completions`（纯透传，SSE） | 登录态/sk | ✅（sk 路径待 S2-甲3/甲4 + S2-丁3 接入） | §14.2 |
-| 8 | `GET /api/token/usage` | 登录态/sk | 🔜 S2-丁1 | §14.3 |
+| 7 | `POST /api/token/chat/completions`（纯透传，SSE） | 登录态/sk | ✅（sk 路径已接入 PR #214/#215） | §14.2 |
+| 8 | `GET /api/token/usage` | 登录态/sk | ✅ S2-丁1（PR #212） | §14.3 |
 
 ### 2.3 平台 sk 鉴权（后端甲）
 
 | # | 方法 路径 | 鉴权 | 状态 | 契约 |
 |---|---|---|---|---|
-| 9 | `POST /api/keys`（创建，明文只回一次） | 登录态 | 🔜 S2-甲4 | §14.4 / sk 契约 |
-| 10 | `GET /api/keys`（列本人，只回 prefix） | 登录态 | 🔜 S2-甲4 | §14.4 |
-| 11 | `DELETE /api/keys/{id}`（吊销，越权 40003） | 登录态 | 🔜 S2-甲4 | §14.4 |
-| — | `RequireUserAuth` 双模式中间件 + `ResolveKey` 内部 | — | 🔜 S2-甲3 | sk 契约 §5 |
-| — | 按 sk 限流 | — | 🔜 S2-甲8 | roadmap §9 #2 |
+| 9 | `POST /api/keys`（创建，明文只回一次） | 登录态 | ✅ S2-甲4（PR #214） | §14.4 / sk 契约 |
+| 10 | `GET /api/keys`（列本人，只回 prefix） | 登录态 | ✅ S2-甲4（PR #214） | §14.4 |
+| 11 | `DELETE /api/keys/{id}`（吊销，越权 40003） | 登录态 | ✅ S2-甲4（PR #214） | §14.4 |
+| — | `RequireUserAuth` 双模式中间件 + `ResolveKey` 内部 | — | ✅ S2-甲3（PR #214） | sk 契约 §5 |
+| — | 按 sk 限流 | — | 🔜 S2-甲8（M2） | roadmap §9 #2 |
 
 ### 2.4 计费（后端乙/丙/丁）
 
 | # | 能力 | 归属 | 状态 | 契约 |
 |---|---|---|---|---|
 | 12 | 按量计费（input/output tokens → 钱包） | 乙+丁 | ✅（含 seed 000033 + `POST /api/internal/product-usage-events`） | billing §2 |
-| 13 | 按次计费规则 seed（calls/count）+ 门面次数事件 | 乙+丁 | 🔜 S2-乙1/丁4 | billing §3 |
+| 13 | 按次计费规则 seed（calls/count）+ 门面次数事件 | 乙+丁 | ✅ S2-乙1/丁4（PR #210/#215） | billing §3 |
 | 14 | 套餐商品 + plan（quota_json + valid_days） | 乙 | 🔜 S2-乙3 | billing §4.1 |
 | 15 | `POST /api/internal/entitlement-consume`（锁行+有效期；幂等用 **D5 新表 `entitlement_consume_logs`**） | 丙 | 🔜 S2-丙2 | billing §4.2 |
 | 16 | token_quota entitlement 生成（TokenProvisioner 套餐分支） | 丙 | 🔜 S2-丙1（按量分支✅已有） | billing §4.2 |
 | 17 | 门面计费路由（postpaid/prepaid 互斥 + 余额闸 + **D1 预扣保证金**：postpaid 冻结 max_tokens×单价，结算多退少补，复用钱包 freeze） | 丁 | 🔜 S2-丁5 | billing §4.3 |
-| — | 钱包 `freeze/unfreeze` 内部接口可供门面调用（**D1 前置依赖**，无则补） | 乙 | 🔜 S2-乙0（W5 第一天确认） | billing §4.3 |
+| — | 钱包 `freeze/unfreeze` + `WalletHoldService`（**D1 前置**，预扣保证金能力） | 乙 | ✅ S2-乙0（PR #208，门面编排待 S2-丁5/M2） | billing §4.3 |
 
 ### 2.5 聊天工作台 — Agent/Skill/插件（后端丁，全免费）
 
@@ -150,7 +150,7 @@
 | 项 | 用途 | 状态 |
 |---|---|---|
 | `TOKEN_PROVIDER_KEY` | 渠道 api_key AES-256-GCM | ✅ 已用 |
-| `API_KEY_HMAC_SECRET` | sk 的 HMAC 存储密钥 | 🔜 S2-甲5/运1 |
+| `API_KEY_HMAC_SECRET` | sk 的 HMAC 存储密钥 | ✅ S2-甲5/运1（.env.example PR #218；测试环境已设） |
 | `PLUGIN_SECRET_KEY`（或复用上） | 插件凭证加密 | 🔜 S2-运2 |
 | `MAX_ROUNDS`（默认 5）、插件域名白名单 | tool-use 编排 / SSRF | 🔜 S2-运2 |
 
@@ -192,22 +192,22 @@
 
 ### 3.3 实现阶段 — 🔜 待开始（按周/工程师，勾选追踪）
 
-**W5 · M1 Token 售卖闭环**
-- [ ] S2-乙0 确认钱包 `freeze/unfreeze` 内部接口可供门面调用（D1 前置，无则补）
-- [ ] S2-甲1 迁移 000034 api_keys + model
-- [ ] S2-甲2 APIKeyService（Issue/Resolve/Revoke/List）
-- [ ] S2-甲3 RequireUserAuth 双模式中间件 + APIKeyIDFromContext
-- [ ] S2-甲4 `/api/keys` 管理路由 + 封禁联动
-- [ ] S2-甲5 config 注入 API_KEY_HMAC_SECRET
-- [ ] S2-乙1 迁移 000036 按次计费规则 seed
-- [ ] S2-乙2 管理端按量/按次互斥强校验
-- [ ] S2-丁1 `GET /api/token/usage`（用户端）
-- [ ] S2-丁2 `GET /api/admin/token/usage`（管理端）
-- [ ] S2-丁3 chat 三接口换 RequireUserAuth + 写 api_key_id
-- [ ] S2-丁4 门面按次事件上报（前置失败不计次）
-- [ ] S2-丁4b model_scope 越界校验（sk 带 scope 且 model 越界→40300，sk 契约 §8.4）
-- [ ] S2-运1 .env.example 补 API_KEY_HMAC_SECRET + 迁移流程
-- [ ] S2-测1 M1 用例（含并发扣费无负余额）
+**W5 · M1 Token 售卖闭环 — ✅ 全部完成并验收通过（2026-06-21）**
+- [x] S2-乙0 确认钱包 `freeze/unfreeze` 内部接口可供门面调用（补 WalletHoldService，PR #208）
+- [x] S2-甲1 迁移 000034 api_keys + model（PR #207）
+- [x] S2-甲2 APIKeyService（Issue/Resolve/Revoke/List，PR #211）
+- [x] S2-甲3 RequireUserAuth 双模式中间件 + APIKeyIDFromContext（PR #214）
+- [x] S2-甲4 `/api/keys` 管理路由 + 封禁联动（PR #214）
+- [x] S2-甲5 config 注入 API_KEY_HMAC_SECRET（PR #214）
+- [x] S2-乙1 迁移 000036 按次计费规则 seed（PR #210）
+- [x] S2-乙2 管理端按量/按次互斥强校验（PR #213）
+- [x] S2-丁1 `GET /api/token/usage`（用户端，PR #212）
+- [x] S2-丁2 `GET /api/admin/token/usage`（管理端，PR #212）
+- [x] S2-丁3 chat 三接口换 RequireUserAuth + 写 api_key_id（PR #215）
+- [x] S2-丁4 门面按次事件上报（前置失败不计次，PR #215）
+- [x] S2-丁4b model_scope 越界校验（→40300，PR #217）
+- [x] S2-运1 .env.example 补 API_KEY_HMAC_SECRET（PR #218）+ 测试库迁移到 000036 + 部署最新二进制
+- [x] S2-测1 M1 端到端验收（PR #219，真实上游 44/44 全过；P3 sale_amount 见下）
 
 **W6 · M2 套餐预付**
 - [ ] S2-乙3 token 套餐 plan（quota_json + valid_days）+ 售价
@@ -257,8 +257,14 @@
 | 已实现能力（第一砖） | 6 / 6 ✅ |
 | 风险审查 + D1–D6 决议 | ✅（PR #205） |
 | 契约回写（④.6） | 7 / 7 ✅（PR #206） |
-| 实现阶段任务（S2-xx） | 0 / 47 🔜（含 S2-乙0、新增 S2-丁4b model_scope 校验；完成度 checkbox 在 M1 收尾统一回填） |
-| **接口总数** | 已实现 7 项 / 待实现 17 项（共 24） |
+| **M1 Token 售卖闭环（W5）** | **15 / 15 ✅ 验收通过（真实上游 44/44，PR #207–219）** |
+| 实现阶段任务（S2-xx 总） | 15 / 47（M1 全完成；余 M2/M3 待开） |
+| **接口总数** | 已实现 13 项 / 待实现 11 项（共 24） |
+
+### 3.5 已知跟进项（M2 顺手修 / 后续）
+
+- **[P3] `token_usage_logs.sale_amount` 恒为 0**（S2-测1 发现）：实扣金额正确落在 `product_consumption_records`、钱包账实相符，仅用量日志的金额展示字段未回填。建议 M2 在 S2-丁5 计费编排时顺手在结算后回填 `sale_amount`。不影响账目。
+- **§14.1 `GET /api/token/models` 契约措辞**：已据实测校准为扁平分页（本 PR 修），前端按 `{items,...}` 处理。
 
 ---
 
