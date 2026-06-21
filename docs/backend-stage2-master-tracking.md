@@ -205,6 +205,7 @@
 - [ ] S2-丁2 `GET /api/admin/token/usage`（管理端）
 - [ ] S2-丁3 chat 三接口换 RequireUserAuth + 写 api_key_id
 - [ ] S2-丁4 门面按次事件上报（前置失败不计次）
+- [ ] S2-丁4b model_scope 越界校验（sk 带 scope 且 model 越界→40300，sk 契约 §8.4）
 - [ ] S2-运1 .env.example 补 API_KEY_HMAC_SECRET + 迁移流程
 - [ ] S2-测1 M1 用例（含并发扣费无负余额）
 
@@ -256,7 +257,7 @@
 | 已实现能力（第一砖） | 6 / 6 ✅ |
 | 风险审查 + D1–D6 决议 | ✅（PR #205） |
 | 契约回写（④.6） | 7 / 7 ✅（PR #206） |
-| 实现阶段任务（S2-xx） | 0 / 46 🔜（含新增 S2-乙0） |
+| 实现阶段任务（S2-xx） | 0 / 47 🔜（含 S2-乙0、新增 S2-丁4b model_scope 校验；完成度 checkbox 在 M1 收尾统一回填） |
 | **接口总数** | 已实现 7 项 / 待实现 17 项（共 24） |
 
 ---
