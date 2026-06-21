@@ -23,7 +23,9 @@ type Module struct {
 // 跨模块依赖通过接口注入，避免 import 环：
 //   - assetGate：访问门禁（asset.AssetService.HasActiveTokenAsset 适配）
 //   - reporter：按量计费上报（finance_consumer 适配，可为 nil → 本期跳过扣费）
-func New(db *gorm.DB, tokenProviderKey string, assetGate service.AssetGate, reporter service.UsageReporter) (*Module, error) {
+//   - scopeResolver：sk model_scope 越界校验（auth.APIKeyService.ModelScopeByID 适配，
+//     可为 nil → sk 系统未就绪时退化为不校验，仅登录态/不限模型场景）（S2-丁4b）
+func New(db *gorm.DB, tokenProviderKey string, assetGate service.AssetGate, reporter service.UsageReporter, scopeResolver service.ModelScopeResolver) (*Module, error) {
 	cipher, err := crypto.New([]byte(tokenProviderKey))
 	if err != nil {
 		return nil, err
@@ -36,7 +38,7 @@ func New(db *gorm.DB, tokenProviderKey string, assetGate service.AssetGate, repo
 	return &Module{
 		ChannelService: service.NewChannelService(channelRepo, cipher),
 		CatalogService: service.NewCatalogService(modelRepo),
-		ForwardService: service.NewForwardService(modelRepo, channelRepo, usageRepo, cipher, assetGate, reporter),
+		ForwardService: service.NewForwardService(modelRepo, channelRepo, usageRepo, cipher, assetGate, reporter, scopeResolver),
 		UsageService:   service.NewUsageService(usageRepo),
 	}, nil
 }

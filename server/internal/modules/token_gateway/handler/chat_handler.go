@@ -70,6 +70,9 @@ func writeForwardError(w http.ResponseWriter, err error) {
 		response.Error(w, http.StatusBadRequest, 40000, "模型不可用或未配置")
 	case errors.Is(err, service.ErrAccessDenied):
 		response.Error(w, http.StatusForbidden, 40300, "未开通 token 服务，无法调用")
+	case errors.Is(err, service.ErrModelNotInScope):
+		// S2-丁4b：sk 的 model_scope 越界（请求的 model 不在该 API Key 授权范围内）。
+		response.Error(w, http.StatusForbidden, 40300, "该 API Key 未授权调用此模型")
 	case errors.Is(err, service.ErrChannelUnavailable):
 		response.Error(w, http.StatusServiceUnavailable, 50300, "上游渠道不可用")
 	case errors.Is(err, service.ErrUpstream):

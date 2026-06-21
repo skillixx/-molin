@@ -216,6 +216,28 @@ func (s *APIKeyService) ResolveKeyForAuth(ctx context.Context, rawSK string) (us
 	return auth.UserID, auth.APIKeyID, true
 }
 
+// ModelScopeByID 按 api_key_id 查询该 sk 的 model_scope（只读、轻量）。
+// 供 token_gateway 门面在 chat 转发前做模型越界校验（S2-丁4b，sk 契约 §8 第4条）：
+//   - 中间件 RequireUserAuth 已校验过该 sk 有效并注入 api_key_id，此处不再重复全量 ResolveKey；
+//   - 命中且 active 时返回 splitModelScope(key.ModelScope)，空切片=不限模型；
+//   - ok=false 表示 key 不存在 / 已吊销（按未授权处理，门面拒绝调用）。
+//
+// 与 ResolveKey 区别：不更新 last_used_at、不做封禁联动（鉴权阶段已处理），仅一次主键只读查询。
+func (s *APIKeyService) ModelScopeByID(ctx context.Context, apiKeyID uint64) (scope []string, ok bool) {
+	if apiKeyID == 0 {
+		return nil, false
+	}
+	key, err := s.repo.FindByID(ctx, apiKeyID)
+	if err != nil {
+		return nil, false
+	}
+	// sk 已吊销 → 视为未授权（与 ResolveKey 一致的失效语义）。
+	if key.Status != "active" {
+		return nil, false
+	}
+	return splitModelScope(key.ModelScope), true
+}
+
 // RevokeKey 吊销本人某 sk（status=revoked），立即失效。
 //   - keyID 不存在 → ErrKeyInvalid
 //   - keyID 不属于 userID → ErrKeyForbidden（越权，HTTP 40003）
