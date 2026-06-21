@@ -103,3 +103,12 @@ func NewWalletService(db *gorm.DB) *service.WalletService {
 	txRepo := repository.NewTransactionRepository(db)
 	return service.NewWalletService(db, walletRepo, txRepo)
 }
+
+// NewWalletHoldService 供 token_gateway 门面（后端丁）注入的预扣保证金服务（S2-乙0 / D1）。
+// 提供 FreezeHold / SettleHold / ReleaseHold，全程事务 + FOR UPDATE + 乐观锁，幂等防重复冻结。
+func NewWalletHoldService(db *gorm.DB) *service.WalletHoldService {
+	walletRepo := repository.NewWalletRepository(db)
+	txRepo := repository.NewTransactionRepository(db)
+	holdRepo := repository.NewWalletHoldRepository(db)
+	return service.NewWalletHoldService(db, walletRepo, txRepo, holdRepo)
+}

@@ -164,6 +164,10 @@ type tokenUsageReporterAdapter struct {
 	svc *financesvc.ConsumerService
 }
 
+// 编译期断言：billing 的 *WalletHoldService 满足 token_gateway 的 WalletHolder 接口（S2-乙0 / D1）。
+// 门面 postpaid 预扣保证金的实际编排（FreezeHold/SettleHold）由后端丁 S2-丁5 接入 ForwardService。
+var _ tokengatewaysvc.WalletHolder = (*billingsvc.WalletHoldService)(nil)
+
 func (a *tokenUsageReporterAdapter) Report(ctx context.Context, evt tokengatewaysvc.UsageEvent) error {
 	_, err := a.svc.Handle(ctx, financemodel.ProductUsageEvent{
 		EventID:        evt.RequestID,
@@ -314,6 +318,11 @@ func NewApp() (*App, error) {
 	txRepo := billingrepo.NewTransactionRepository(gormDB)
 	walletService := billingsvc.NewWalletService(gormDB, walletRepo, txRepo)
 
+	// 预扣保证金服务（S2-乙0 / D1）：供 token_gateway 门面 postpaid 路径冻结/结算保证金。
+	// *WalletHoldService 的方法签名直接满足 token_gateway 的 WalletHolder 接口（仅 decimal/primitive），无需额外适配。
+	walletHoldRepo := billingrepo.NewWalletHoldRepository(gormDB)
+	walletHoldService := billingsvc.NewWalletHoldService(gormDB, walletRepo, txRepo, walletHoldRepo)
+
 	// ——— Product 模块（用户信息适配器，用于实名校验）———
 	userRepoAdapter := productrep.NewUserRepoAdapter(gormDB)
 	productRepo := productrep.NewProductRepository(gormDB)
@@ -405,6 +414,11 @@ func NewApp() (*App, error) {
 		tokenBillingRuleRepo := productrep.NewBillingRuleRepository(gormDB)
 		tokenConsumerSvc := financesvc.NewConsumerService(gormDB, tokenConsumptionRepo, tokenBillingRuleRepo, walletService)
 		tokenReporter := &tokenUsageReporterAdapter{svc: tokenConsumerSvc}
+
+		//   - WalletHolder（S2-乙0 / D1）：billing.WalletHoldService，供 postpaid 预扣保证金（FreezeHold/SettleHold）。
+		//     billing 侧能力已就绪；门面侧编排调用由后端丁 S2-丁5 接入 ForwardService 后启用。
+		var tokenWalletHolder tokengatewaysvc.WalletHolder = walletHoldService
+		_ = tokenWalletHolder
 
 		if tokenGatewayModule, tgErr := tokengatewaymod.New(gormDB, cfg.TokenProviderKey, assetService, tokenReporter); tgErr != nil {
 			log.Printf("[token_gateway] 初始化失败，管理端/用户端未启用: %v", tgErr)
