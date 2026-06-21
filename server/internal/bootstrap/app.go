@@ -170,6 +170,18 @@ func (a *apiKeyResolverAdapter) ResolveKey(ctx context.Context, rawSK string) (u
 	return a.svc.ResolveKeyForAuth(ctx, rawSK)
 }
 
+// modelScopeResolverAdapter 将 auth.APIKeyService 适配为 token_gateway.ModelScopeResolver 接口（S2-丁4b）。
+// 供 chat 门面在转发上游前做 sk 的 model_scope 越界校验（仅 sk 调用时）。
+// 同 apiKeyResolverAdapter：仅在 apiKeyService != nil 时构造，否则给门面传字面 nil 接口，
+// 使 ForwardService.scopeResolver==nil 判断生效、对 sk 调用安全退化为「不校验」而非 panic。
+type modelScopeResolverAdapter struct {
+	svc *authsvc.APIKeyService
+}
+
+func (a *modelScopeResolverAdapter) ModelScopeByID(ctx context.Context, apiKeyID uint64) (scope []string, ok bool) {
+	return a.svc.ModelScopeByID(ctx, apiKeyID)
+}
+
 // tokenUsageReporterAdapter 将 finance_consumer.ConsumerService 适配为 token_gateway 的 UsageReporter 接口。
 // 把 token 网关的 UsageEvent 映射为 finance_consumer 的 ProductUsageEvent 并调 Handle 扣费。
 // 跨模块只走对方 service 暴露的 Handle，不直接碰其 repository。
@@ -451,7 +463,15 @@ func NewApp() (*App, error) {
 		var tokenWalletHolder tokengatewaysvc.WalletHolder = walletHoldService
 		_ = tokenWalletHolder
 
-		if tokenGatewayModule, tgErr := tokengatewaymod.New(gormDB, cfg.TokenProviderKey, assetService, tokenReporter); tgErr != nil {
+		//   - ModelScopeResolver（S2-丁4b）：auth.APIKeyService 适配，供 chat 门面做 sk model_scope 越界校验。
+		//     nil 接口陷阱：仅在 apiKeyService 非 nil 时构造适配器；否则传字面 nil 接口，
+		//     使 ForwardService.scopeResolver==nil 判断生效、对 sk 调用安全退化为不校验而非 panic。
+		var tokenScopeResolver tokengatewaysvc.ModelScopeResolver
+		if apiKeyService != nil {
+			tokenScopeResolver = &modelScopeResolverAdapter{svc: apiKeyService}
+		}
+
+		if tokenGatewayModule, tgErr := tokengatewaymod.New(gormDB, cfg.TokenProviderKey, assetService, tokenReporter, tokenScopeResolver); tgErr != nil {
 			log.Printf("[token_gateway] 初始化失败，管理端/用户端未启用: %v", tgErr)
 		} else {
 			// 管理端：渠道 / 模型目录 / 全量用量（token:manage + 管理员双重认证）。

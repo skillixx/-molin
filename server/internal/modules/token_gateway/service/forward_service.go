@@ -45,6 +45,17 @@ type UsageReporter interface {
 	Report(ctx context.Context, event UsageEvent) error
 }
 
+// ModelScopeResolver sk 模型白名单解析接口（S2-丁4b，sk 契约 §8 第4条 / §10）。
+// 由 auth.APIKeyService.ModelScopeByID 适配实现，bootstrap 注入；可为 nil（退化为不校验）。
+//
+// 仅在 sk 调用（apiKeyID != 0）时使用：门面鉴权后据此校验请求 model 是否在该 sk 的 model_scope 范围内。
+// 登录态调用（apiKeyID == 0）跳过，不调用本接口。
+type ModelScopeResolver interface {
+	// ModelScopeByID 返回该 api_key 的 model_scope（空切片=不限模型）；
+	// ok=false 表示 key 无效 / 已吊销（按未授权处理）。
+	ModelScopeByID(ctx context.Context, apiKeyID uint64) (scope []string, ok bool)
+}
+
 // WalletHolder postpaid 预扣保证金接口（D1）。由 billing 适配实现，bootstrap 注入。
 //
 // 门面 postpaid 路径在转发上游前调 FreezeHold 按 max_tokens×单价冻结保证金（占住额度、杜绝并发透支），
@@ -69,6 +80,9 @@ var (
 	ErrChannelUnavailable = errors.New("渠道不可用")
 	// ErrAccessDenied 未持有 token 服务资产，门禁拒绝。
 	ErrAccessDenied = errors.New("未开通 token 服务，无法调用")
+	// ErrModelNotInScope sk 调用时请求的 model 不在该 sk 的 model_scope 白名单内（S2-丁4b）。
+	// 转发上游前的前置拒绝（不计费、不发起上游），由 handler 映射为 40300。
+	ErrModelNotInScope = errors.New("该 API Key 未授权调用此模型")
 	// ErrUpstream 上游调用失败 / 超时。
 	ErrUpstream = errors.New("上游服务调用失败")
 )
@@ -79,16 +93,18 @@ const defaultUpstreamTimeout = 120 * time.Second
 // ForwardService Token 网关核心转发器：鉴权后的门禁 + 选渠道 + 转发上游 + 读 usage + 写日志 + 计费编排。
 // 自写薄转发器（v3）：三家上游均 OpenAI 兼容，近似纯透传，仅改 body.model 为上游模型名 + 换渠道 key。
 type ForwardService struct {
-	modelRepo   *repository.TokenModelRepository
-	channelRepo *repository.ChannelRepository
-	usageRepo   *repository.UsageLogRepository
-	cipher      *crypto.AESGCM
-	assetGate   AssetGate
-	reporter    UsageReporter
-	httpClient  *http.Client
+	modelRepo     *repository.TokenModelRepository
+	channelRepo   *repository.ChannelRepository
+	usageRepo     *repository.UsageLogRepository
+	cipher        *crypto.AESGCM
+	assetGate     AssetGate
+	reporter      UsageReporter
+	scopeResolver ModelScopeResolver // sk model_scope 越界校验（S2-丁4b）；可为 nil → 不校验
+	httpClient    *http.Client
 }
 
-// NewForwardService 构造转发服务。assetGate/reporter 由 bootstrap 注入具体适配器。
+// NewForwardService 构造转发服务。assetGate/reporter/scopeResolver 由 bootstrap 注入具体适配器。
+// scopeResolver 可为 nil（sk 系统未就绪时退化为不做 model_scope 越界校验）。
 func NewForwardService(
 	modelRepo *repository.TokenModelRepository,
 	channelRepo *repository.ChannelRepository,
@@ -96,15 +112,17 @@ func NewForwardService(
 	cipher *crypto.AESGCM,
 	assetGate AssetGate,
 	reporter UsageReporter,
+	scopeResolver ModelScopeResolver,
 ) *ForwardService {
 	return &ForwardService{
-		modelRepo:   modelRepo,
-		channelRepo: channelRepo,
-		usageRepo:   usageRepo,
-		cipher:      cipher,
-		assetGate:   assetGate,
-		reporter:    reporter,
-		httpClient:  &http.Client{Timeout: defaultUpstreamTimeout},
+		modelRepo:     modelRepo,
+		channelRepo:   channelRepo,
+		usageRepo:     usageRepo,
+		cipher:        cipher,
+		assetGate:     assetGate,
+		reporter:      reporter,
+		scopeResolver: scopeResolver,
+		httpClient:    &http.Client{Timeout: defaultUpstreamTimeout},
 	}
 }
 
@@ -139,6 +157,13 @@ func (s *ForwardService) Forward(ctx context.Context, w http.ResponseWriter, in 
 	}
 	if tm.Status != "active" || tm.ChannelID == nil || tm.UpstreamModel == nil || *tm.UpstreamModel == "" {
 		return ErrModelNotConfigured
+	}
+
+	// ①.5 sk model_scope 越界校验（S2-丁4b，sk 契约 §8 第4条 / §10）。
+	// 仅 sk 调用（APIKeyID != 0）才校验；登录态调用（APIKeyID == 0）不限模型，直接放行。
+	// 转发上游前的前置拒绝：越界 → ErrModelNotInScope（handler 映射 40300），不计费、不发起上游。
+	if err := s.checkModelScope(ctx, in.APIKeyID, in.Model); err != nil {
+		return err
 	}
 
 	// ② 访问门禁：必须持有 active 的 token 服务资产。
@@ -207,6 +232,34 @@ func (s *ForwardService) Forward(ctx context.Context, w http.ResponseWriter, in 
 		return s.forwardStream(ctx, w, resp, in, tm, requestID)
 	}
 	return s.forwardJSON(ctx, w, resp, in, tm, requestID)
+}
+
+// checkModelScope 校验 sk 调用是否被授权调用该 model（S2-丁4b）。
+//   - apiKeyID == 0（登录态）：不限模型，直接放行（返回 nil），不查 scope。
+//   - scopeResolver == nil（sk 系统未就绪 / 灰度退化）：跳过校验，放行。
+//   - key 失效（ok=false）：按未授权处理 → ErrModelNotInScope。
+//   - scope 为空：不限模型，放行。
+//   - scope 非空且 model 不在其中：越界 → ErrModelNotInScope。
+//
+// 轻量只读：中间件已验证过 sk 有效，这里只按 id 查一次 scope，不重复全量 ResolveKey。
+func (s *ForwardService) checkModelScope(ctx context.Context, apiKeyID uint64, model string) error {
+	if apiKeyID == 0 || s.scopeResolver == nil {
+		return nil
+	}
+	scope, ok := s.scopeResolver.ModelScopeByID(ctx, apiKeyID)
+	if !ok {
+		// key 不存在 / 已吊销：按未授权处理（中间件刚验过有效，正常不会到这；防御性拒绝）。
+		return ErrModelNotInScope
+	}
+	if len(scope) == 0 {
+		return nil // 空=不限模型
+	}
+	for _, m := range scope {
+		if m == model {
+			return nil
+		}
+	}
+	return ErrModelNotInScope
 }
 
 // forwardJSON 非流式：读取完整响应回写，解析 usage 落库 + 计费。
