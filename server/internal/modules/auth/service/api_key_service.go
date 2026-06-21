@@ -203,6 +203,19 @@ func (s *APIKeyService) ResolveKey(ctx context.Context, rawSK string) (APIKeyAut
 	}, nil
 }
 
+// ResolveKeyForAuth 是 ResolveKey 的中间件适配方法，满足 middleware.APIKeyResolver 接口。
+// 将 (APIKeyAuth, error) 收敛为 (userID, apiKeyID, ok)：
+//   - 任意错误（sk 无效 / 吊销 / 用户被封 / DB 异常）均返回 ok=false，由中间件统一回 401，
+//     不向调用方泄露具体失败原因。
+//   - ok=true 时返回 sk 所属 userID 与 apiKeyID，供中间件注入 context。
+func (s *APIKeyService) ResolveKeyForAuth(ctx context.Context, rawSK string) (userID, apiKeyID uint64, ok bool) {
+	auth, err := s.ResolveKey(ctx, rawSK)
+	if err != nil {
+		return 0, 0, false
+	}
+	return auth.UserID, auth.APIKeyID, true
+}
+
 // RevokeKey 吊销本人某 sk（status=revoked），立即失效。
 //   - keyID 不存在 → ErrKeyInvalid
 //   - keyID 不属于 userID → ErrKeyForbidden（越权，HTTP 40003）
