@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,7 +14,10 @@ import (
 )
 
 // fakeAPIKeyRepo 内存实现，用于 service 单测，无需真实 DB。
+// 加 mu 保护 rows：ResolveKey 命中后会异步 TouchLastUsed（独立 goroutine），
+// 与测试主协程的 Revoke/FindByID 并发访问同一 map，必须加锁，否则 go test -race 报数据竞争。
 type fakeAPIKeyRepo struct {
+	mu     sync.Mutex
 	rows   map[uint64]*model.APIKey
 	nextID uint64
 }
@@ -23,6 +27,8 @@ func newFakeAPIKeyRepo() *fakeAPIKeyRepo {
 }
 
 func (f *fakeAPIKeyRepo) Create(_ context.Context, key *model.APIKey) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	key.ID = f.nextID
 	f.nextID++
 	key.CreatedAt = time.Now()
@@ -32,6 +38,8 @@ func (f *fakeAPIKeyRepo) Create(_ context.Context, key *model.APIKey) error {
 }
 
 func (f *fakeAPIKeyRepo) FindByHash(_ context.Context, hash string) (*model.APIKey, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	for _, k := range f.rows {
 		if k.KeyHash == hash {
 			cp := *k
@@ -42,6 +50,8 @@ func (f *fakeAPIKeyRepo) FindByHash(_ context.Context, hash string) (*model.APIK
 }
 
 func (f *fakeAPIKeyRepo) FindByID(_ context.Context, id uint64) (*model.APIKey, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	k, ok := f.rows[id]
 	if !ok {
 		return nil, gorm.ErrRecordNotFound
@@ -51,6 +61,8 @@ func (f *fakeAPIKeyRepo) FindByID(_ context.Context, id uint64) (*model.APIKey, 
 }
 
 func (f *fakeAPIKeyRepo) Revoke(_ context.Context, userID, keyID uint64) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	k, ok := f.rows[keyID]
 	if !ok || k.UserID != userID || k.Status != "active" {
 		return 0, nil
@@ -60,6 +72,8 @@ func (f *fakeAPIKeyRepo) Revoke(_ context.Context, userID, keyID uint64) (int64,
 }
 
 func (f *fakeAPIKeyRepo) TouchLastUsed(_ context.Context, keyID uint64, t time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if k, ok := f.rows[keyID]; ok && k.Status == "active" {
 		k.LastUsedAt = &t
 	}
@@ -67,6 +81,8 @@ func (f *fakeAPIKeyRepo) TouchLastUsed(_ context.Context, keyID uint64, t time.T
 }
 
 func (f *fakeAPIKeyRepo) ListByUser(_ context.Context, userID uint64, offset, limit int) ([]model.APIKey, int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	var all []model.APIKey
 	for _, k := range f.rows {
 		if k.UserID == userID {
