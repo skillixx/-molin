@@ -73,6 +73,15 @@ func writeForwardError(w http.ResponseWriter, err error) {
 	case errors.Is(err, service.ErrModelNotInScope):
 		// S2-丁4b：sk 的 model_scope 越界（请求的 model 不在该 API Key 授权范围内）。
 		response.Error(w, http.StatusForbidden, 40300, "该 API Key 未授权调用此模型")
+	case errors.Is(err, service.ErrWalletInsufficient):
+		// S2-丁5 / D1：postpaid 钱包余额不足以冻结预扣保证金（前置闸拒绝，未发起上游、不计费、无冻结）。
+		response.Error(w, http.StatusPaymentRequired, 60001, "钱包余额不足")
+	case errors.Is(err, service.ErrQuotaExhausted):
+		// S2-丁5：prepaid 套餐额度不足（复用 60005，禁止新造 60002）。
+		response.Error(w, http.StatusPaymentRequired, 60005, "套餐额度不足")
+	case errors.Is(err, service.ErrEntitlementDenied):
+		// S2-丁5：prepaid 套餐归属不符。
+		response.Error(w, http.StatusForbidden, 40003, "套餐额度归属不符")
 	case errors.Is(err, service.ErrChannelUnavailable):
 		response.Error(w, http.StatusServiceUnavailable, 50300, "上游渠道不可用")
 	case errors.Is(err, service.ErrUpstream):

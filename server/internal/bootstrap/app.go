@@ -50,6 +50,7 @@ import (
 	provisionhandler "molin/server/internal/modules/provision/handler"
 	provisionsvc "molin/server/internal/modules/provision/service"
 	tokengatewaymod "molin/server/internal/modules/token_gateway"
+	tokenclient "molin/server/internal/modules/token_gateway/client"
 	tokengatewaysvc "molin/server/internal/modules/token_gateway/service"
 	"molin/server/pkg/cache"
 	"molin/server/pkg/db"
@@ -212,18 +213,14 @@ type tokenUsageReporterAdapter struct {
 	svc *financesvc.ConsumerService
 }
 
-// 编译期断言：billing 的 *WalletHoldService 满足 token_gateway 的 WalletHolder 接口（S2-乙0 / D1）。
-// 门面 postpaid 预扣保证金的实际编排（FreezeHold/SettleHold）由后端丁 S2-丁5 接入 ForwardService。
-var _ tokengatewaysvc.WalletHolder = (*billingsvc.WalletHoldService)(nil)
-
-func (a *tokenUsageReporterAdapter) Report(ctx context.Context, evt tokengatewaysvc.UsageEvent) error {
+func (a *tokenUsageReporterAdapter) Report(ctx context.Context, evt tokengatewaysvc.UsageEvent) (decimal.Decimal, error) {
 	// usage_unit 仅作消费记录留痕（finance_consumer.FindRule 只按 usage_type 匹配规则，不参与匹配）：
 	// calls 按次记 count，token 类记 tokens，与 product_billing_rules 的 usage_unit 保持一致。
 	usageUnit := "tokens"
 	if evt.UsageType == "calls" {
 		usageUnit = "count"
 	}
-	_, err := a.svc.Handle(ctx, financemodel.ProductUsageEvent{
+	res, err := a.svc.Handle(ctx, financemodel.ProductUsageEvent{
 		EventID:        evt.RequestID,
 		UserID:         evt.UserID,
 		ProductID:      evt.ProductID,
@@ -234,8 +231,62 @@ func (a *tokenUsageReporterAdapter) Report(ctx context.Context, evt tokengateway
 		OccurredAt:     time.Now(),
 		IdempotencyKey: evt.IdempotencyKey,
 	})
-	return err
+	if err != nil || res == nil {
+		// S2-丁5：无匹配规则 / 上报失败时返回 0（门面 best-effort，sale_amount 不累计本条）。
+		return decimal.Zero, err
+	}
+	// res.Amount 为本条事件 finance_consumer 实扣金额，供门面 postpaid 累加回填 sale_amount。
+	return res.Amount, nil
 }
+
+// walletHolderAdapter 将 billing.WalletHoldService 适配为 token_gateway.WalletHolder 接口（S2-丁5 / D1）。
+// 仅做一件额外事：把 billing 的 ErrInsufficientBalance 归一化为 token_gateway 的 ErrWalletInsufficient，
+// 使门面前置闸能据此返回对外 60001（避免 token_gateway 直接 import billing 的错误变量）。
+type walletHolderAdapter struct {
+	svc *billingsvc.WalletHoldService
+}
+
+func (a *walletHolderAdapter) FreezeHold(ctx context.Context, userID uint64, amount decimal.Decimal, idempotencyKey, remark string) (uint64, error) {
+	holdID, err := a.svc.FreezeHold(ctx, userID, amount, idempotencyKey, remark)
+	if errors.Is(err, billingsvc.ErrInsufficientBalance) {
+		return 0, tokengatewaysvc.ErrWalletInsufficient
+	}
+	return holdID, err
+}
+
+func (a *walletHolderAdapter) SettleHold(ctx context.Context, holdID uint64, actual decimal.Decimal, idempotencyKey string) error {
+	return a.svc.SettleHold(ctx, holdID, actual, idempotencyKey)
+}
+
+func (a *walletHolderAdapter) ReleaseHold(ctx context.Context, holdID uint64, idempotencyKey string) error {
+	return a.svc.ReleaseHold(ctx, holdID, idempotencyKey)
+}
+
+// 编译期断言：适配器满足 token_gateway 的 WalletHolder 接口（S2-乙0 / D1 / 丁5）。
+var _ tokengatewaysvc.WalletHolder = (*walletHolderAdapter)(nil)
+
+// entConsumerAdapter 将 token_gateway/client.EntitlementClient 适配为 token_gateway.EntitlementConsumer（S2-丁5）。
+// 收敛 (*ConsumeResult, error) 为 error，并把客户端错误归一化为门面 service 层 sentinel（供 handler 映射 60005/40003）。
+type entConsumerAdapter struct {
+	cli *tokenclient.EntitlementClient
+}
+
+func (a *entConsumerAdapter) Consume(ctx context.Context, entitlementID, userID uint64, amount decimal.Decimal, idempotencyKey string) error {
+	_, err := a.cli.Consume(ctx, entitlementID, userID, amount, idempotencyKey)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, tokenclient.ErrQuotaExceeded):
+		return tokengatewaysvc.ErrQuotaExhausted
+	case errors.Is(err, tokenclient.ErrEntitlementForbidden):
+		return tokengatewaysvc.ErrEntitlementDenied
+	default:
+		return err
+	}
+}
+
+// 编译期断言：适配器满足 token_gateway 的 EntitlementConsumer 接口（S2-丁5）。
+var _ tokengatewaysvc.EntitlementConsumer = (*entConsumerAdapter)(nil)
 
 // iamRoleGetterAdapter 将 *iamsvc.IAMService 适配为 contenthandler.IAMRoleGetter 接口。
 // IAMService 提供 GetUserRoles 返回 []Role（含 Code 字段），此 adapter 提取 code 列表。
@@ -486,10 +537,20 @@ func NewApp() (*App, error) {
 		tokenConsumerSvc := financesvc.NewConsumerService(gormDB, tokenConsumptionRepo, tokenBillingRuleRepo, walletService)
 		tokenReporter := &tokenUsageReporterAdapter{svc: tokenConsumerSvc}
 
-		//   - WalletHolder（S2-乙0 / D1）：billing.WalletHoldService，供 postpaid 预扣保证金（FreezeHold/SettleHold）。
-		//     billing 侧能力已就绪；门面侧编排调用由后端丁 S2-丁5 接入 ForwardService 后启用。
-		var tokenWalletHolder tokengatewaysvc.WalletHolder = walletHoldService
-		_ = tokenWalletHolder
+		//   - WalletHolder（S2-乙0 / D1 / 丁5）：billing.WalletHoldService 经 walletHolderAdapter 适配，
+		//     供 postpaid 预扣保证金（FreezeHold 前置占额 → ReleaseHold 结算解冻；实扣走 product-usage-events）。
+		//     适配器把 billing 的 ErrInsufficientBalance 归一化为门面 ErrWalletInsufficient（对外 60001）。
+		tokenWalletHolder := &walletHolderAdapter{svc: walletHoldService}
+
+		//   - EntitlementConsumer（S2-丁5 / 丙2）：prepaid 结算调 asset 内部接口 entitlement-consume 扣套餐额度。
+		//     X-Internal-Token 从配置注入（INTERNAL_API_TOKEN），未配置时客户端 fail-closed（prepaid 扣额度跳过并告警）。
+		tokenEntConsumer := &entConsumerAdapter{cli: tokenclient.NewEntitlementClient(cfg.AssetInternalBaseURL, cfg.InternalAPIToken)}
+
+		//   - BillingResolver（S2-丁5）：按 api_key_id 解析 billing_mode/source_id 分流 postpaid/prepaid。
+		//     依赖 auth.APIKeyService 暴露 BillingByID（与 ModelScopeByID 同款只读访问器）；
+		//     该访问器属甲（auth）职责，本任务红线禁止改 auth/，故当前传 nil → 门面一律按 postpaid。
+		//     ⚠️ prepaid 激活待甲补 BillingByID 后，在此构造 billingResolverAdapter 注入即可（其余链路已就绪）。
+		var tokenBillingResolver tokengatewaysvc.BillingResolver
 
 		//   - ModelScopeResolver（S2-丁4b）：auth.APIKeyService 适配，供 chat 门面做 sk model_scope 越界校验。
 		//     nil 接口陷阱：仅在 apiKeyService 非 nil 时构造适配器；否则传字面 nil 接口，
@@ -502,6 +563,21 @@ func NewApp() (*App, error) {
 		if tokenGatewayModule, tgErr := tokengatewaymod.New(gormDB, cfg.TokenProviderKey, assetService, tokenReporter, tokenScopeResolver); tgErr != nil {
 			log.Printf("[token_gateway] 初始化失败，管理端/用户端未启用: %v", tgErr)
 		} else {
+			// S2-丁5：注入计费路由依赖（postpaid 预扣保证金 / prepaid 扣套餐额度）。
+			// 兜底单价非法时退化为 0（门面据此跳过预扣，仅按 product-usage-events 实扣，不阻断调用）。
+			holdUnitPrice, perr := decimal.NewFromString(cfg.TokenHoldUnitPrice)
+			if perr != nil {
+				log.Printf("[token_gateway] TOKEN_HOLD_UNIT_PRICE=%q 非法，预扣保证金退化为不冻结: %v", cfg.TokenHoldUnitPrice, perr)
+				holdUnitPrice = decimal.Zero
+			}
+			tokenGatewayModule.ForwardService.SetBillingDeps(tokengatewaysvc.BillingDeps{
+				BillingResolver: tokenBillingResolver, // 当前 nil（待甲补 BillingByID 后激活 prepaid）
+				WalletHolder:    tokenWalletHolder,
+				EntConsumer:     tokenEntConsumer,
+				HoldUnitPrice:   holdUnitPrice,
+				HoldMaxTokens:   int64(cfg.TokenHoldDefaultMaxTokens),
+			})
+
 			// 管理端：渠道 / 模型目录 / 全量用量（token:manage + 管理员双重认证）。
 			tokengatewaymod.RegisterRoutes(mux, tokenGatewayModule.ChannelService, tokenGatewayModule.CatalogService,
 				tokenGatewayModule.UsageService, cfg.JWTSecret, iamService, authService, authService)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
 	"molin/server/internal/modules/token_gateway/model"
@@ -32,6 +33,15 @@ func NewUsageLogRepository(db *gorm.DB) *UsageLogRepository {
 // Create 写入一条用量日志（request_id 唯一键兜底幂等）。
 func (r *UsageLogRepository) Create(ctx context.Context, log *model.TokenUsageLog) error {
 	return r.db.WithContext(ctx).Create(log).Error
+}
+
+// UpdateSaleAmountByRequestID 按 request_id 回填本次实扣金额/额度到 sale_amount（S2-丁5，修 M1 P3）。
+// 结算阶段（postpaid 钱包实扣 / prepaid 扣套餐额度）确定金额后调用；best-effort，失败由上层记日志。
+func (r *UsageLogRepository) UpdateSaleAmountByRequestID(ctx context.Context, requestID string, saleAmount decimal.Decimal) error {
+	return r.db.WithContext(ctx).
+		Model(&model.TokenUsageLog{}).
+		Where("request_id = ?", requestID).
+		Update("sale_amount", saleAmount).Error
 }
 
 // ListPagedByUser 分页查询某用户的用量日志，支持 logicalModelCode、status 过滤（空字符串不过滤）。
