@@ -24,13 +24,15 @@ func NewChatHandler(svc *service.ForwardService) *ChatHandler {
 }
 
 // ChatCompletions POST /api/token/chat/completions
-// 鉴权（RequireAuth 注入 userID）→ 门面校验/门禁/转发上游 → 透传响应（含 SSE 流式）。
+// 鉴权（RequireUserAuth 注入 userID，sk 调用另注入 api_key_id）→ 门面校验/门禁/转发上游 → 透传响应（含 SSE 流式）。
 func (h *ChatHandler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	if userID == 0 {
 		response.Error(w, http.StatusUnauthorized, 40001, "未登录")
 		return
 	}
+	// sk 调用返回非 0 的 api_key_id；登录态 JWT 调用为 0（用量归因到 sk 维度）。
+	apiKeyID := middleware.APIKeyIDFromContext(r.Context())
 
 	// 以 map 原样解析请求体（薄转发器，近似纯透传，仅改写 model / stream_options）。
 	var body map[string]interface{}
@@ -49,6 +51,7 @@ func (h *ChatHandler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	in := service.ForwardInput{
 		RequestID: idgen.NewRequestID(),
 		UserID:    userID,
+		APIKeyID:  apiKeyID,
 		Model:     modelCode,
 		Stream:    stream,
 		Body:      body,

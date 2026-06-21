@@ -55,13 +55,15 @@ func RegisterRoutes(
 	mux.Handle("GET /api/admin/token/usage", admin(uh.ListAll))
 }
 
-// RegisterUserRoutes 注册 token_gateway 用户端路由（网页登录态）。
-// 本期仅 chat 转发：RequireAuth(jwtSecret, banChecker) 注入 userID，门面内做门禁/额度/转发。
+// RegisterUserRoutes 注册 token_gateway 用户端路由（双模式鉴权：平台 sk + 网页登录态）。
+// 中间件统一用 RequireUserAuth：sk- 前缀走 apiKeyResolver 注入 userID+api_key_id，
+// 否则走 JWT（含封禁/吊销检查）仅注入 userID；门面内做门禁/额度/转发。
 //   - forwardSvc：核心转发服务（选渠道 + 转发上游 + 读 usage + 计费编排）
 //   - jwtSecret：JWT 校验密钥
 //   - banChecker：封禁/吊销黑名单检查
-//
-// 说明：本期不做平台 sk（外部程序用 API Key）鉴权，待后端甲 sk 系统就绪后再扩展。
+//   - apiKeyResolver：平台 sk 解析器（S2-甲3）；可为 nil（sk 系统未就绪时退化为纯 JWT）。
+//     bootstrap 须仅在 apiKeyService 非 nil 时传入具体适配器，否则传字面 nil 接口，
+//     避免「非 nil 接口包 nil 指针」导致中间件 nil 判断失效。
 func RegisterUserRoutes(
 	mux *http.ServeMux,
 	forwardSvc *service.ForwardService,
@@ -69,14 +71,15 @@ func RegisterUserRoutes(
 	usageSvc *service.UsageService,
 	jwtSecret string,
 	banChecker middleware.BanChecker,
+	apiKeyResolver middleware.APIKeyResolver,
 ) {
 	chatH := handler.NewChatHandler(forwardSvc)
 	modelH := handler.NewModelHandler(catalogSvc)
 	usageH := handler.NewUsageHandler(usageSvc)
 
-	// 用户端中间件链：仅登录态（含封禁/吊销检查）。
+	// 用户端中间件链：双模式鉴权（sk 或登录态 JWT，JWT 路径含封禁/吊销检查）。
 	user := func(next http.HandlerFunc) http.Handler {
-		return middleware.RequireAuth(jwtSecret, banChecker, http.HandlerFunc(next))
+		return middleware.RequireUserAuth(jwtSecret, banChecker, apiKeyResolver, http.HandlerFunc(next))
 	}
 
 	// 列出已上架（active）模型，供用户端选择（仅公开精简字段）。
@@ -84,6 +87,6 @@ func RegisterUserRoutes(
 	// OpenAI 兼容对话转发（支持非流式 + SSE 流式）。
 	mux.Handle("POST /api/token/chat/completions", user(chatH.ChatCompletions))
 	// 我的用量流水（S2-丁1，§14.3）：仅查本人，可选筛选 model/start/end。
-	// 注：sk 双模式鉴权（S2-甲3）就绪前仅支持登录态；sk 路径接入后需按 sk 绑定身份过滤。
+	// 双模式：sk 调用按 sk 绑定的 user_id 过滤（与登录态一致只查本人）。
 	mux.Handle("GET /api/token/usage", user(usageH.ListMine))
 }

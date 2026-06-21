@@ -157,6 +157,19 @@ func (a *authAssetSummaryAdapter) GetAssetSummary(ctx context.Context, userID ui
 	}, nil
 }
 
+// apiKeyResolverAdapter 将 auth.APIKeyService 适配为 middleware.APIKeyResolver 接口。
+// *APIKeyService 仅暴露 ResolveKeyForAuth(ctx, rawSK)(userID, apiKeyID, ok)，
+// 与中间件接口方法名 ResolveKey 不同，故包一层。
+// 仅在 apiKeyService != nil 时构造该适配器，否则给中间件传字面 nil 接口，
+// 避免「非 nil 接口包 nil 指针」导致中间件 == nil 判断失效、sk 调用 panic。
+type apiKeyResolverAdapter struct {
+	svc *authsvc.APIKeyService
+}
+
+func (a *apiKeyResolverAdapter) ResolveKey(ctx context.Context, rawSK string) (userID, apiKeyID uint64, ok bool) {
+	return a.svc.ResolveKeyForAuth(ctx, rawSK)
+}
+
 // tokenUsageReporterAdapter 将 finance_consumer.ConsumerService 适配为 token_gateway 的 UsageReporter 接口。
 // 把 token 网关的 UsageEvent 映射为 finance_consumer 的 ProductUsageEvent 并调 Handle 扣费。
 // 跨模块只走对方 service 暴露的 Handle，不直接碰其 repository。
@@ -169,6 +182,12 @@ type tokenUsageReporterAdapter struct {
 var _ tokengatewaysvc.WalletHolder = (*billingsvc.WalletHoldService)(nil)
 
 func (a *tokenUsageReporterAdapter) Report(ctx context.Context, evt tokengatewaysvc.UsageEvent) error {
+	// usage_unit 仅作消费记录留痕（finance_consumer.FindRule 只按 usage_type 匹配规则，不参与匹配）：
+	// calls 按次记 count，token 类记 tokens，与 product_billing_rules 的 usage_unit 保持一致。
+	usageUnit := "tokens"
+	if evt.UsageType == "calls" {
+		usageUnit = "count"
+	}
 	_, err := a.svc.Handle(ctx, financemodel.ProductUsageEvent{
 		EventID:        evt.RequestID,
 		UserID:         evt.UserID,
@@ -176,7 +195,7 @@ func (a *tokenUsageReporterAdapter) Report(ctx context.Context, evt tokengateway
 		ProductType:    "token",
 		UsageType:      evt.UsageType,
 		UsageAmount:    evt.UsageAmount,
-		UsageUnit:      "tokens",
+		UsageUnit:      usageUnit,
 		OccurredAt:     time.Now(),
 		IdempotencyKey: evt.IdempotencyKey,
 	})
@@ -438,9 +457,15 @@ func NewApp() (*App, error) {
 			// 管理端：渠道 / 模型目录 / 全量用量（token:manage + 管理员双重认证）。
 			tokengatewaymod.RegisterRoutes(mux, tokenGatewayModule.ChannelService, tokenGatewayModule.CatalogService,
 				tokenGatewayModule.UsageService, cfg.JWTSecret, iamService, authService, authService)
-			// 用户端：列模型 + OpenAI 兼容 chat 转发 + 我的用量（网页登录态）。
+			// 用户端：列模型 + OpenAI 兼容 chat 转发 + 我的用量（双模式鉴权：sk + 登录态）。
+			// nil 接口陷阱：仅在 apiKeyService 非 nil 时构造适配器并传入；否则传字面 nil 接口，
+			// 使中间件 apiKeyResolver==nil 判断生效、对 sk 调用安全退化为「sk 鉴权未启用」而非 panic。
+			var tokenAPIKeyResolver middleware.APIKeyResolver
+			if apiKeyService != nil {
+				tokenAPIKeyResolver = &apiKeyResolverAdapter{svc: apiKeyService}
+			}
 			tokengatewaymod.RegisterUserRoutes(mux, tokenGatewayModule.ForwardService, tokenGatewayModule.CatalogService,
-				tokenGatewayModule.UsageService, cfg.JWTSecret, authService)
+				tokenGatewayModule.UsageService, cfg.JWTSecret, authService, tokenAPIKeyResolver)
 		}
 	} else {
 		log.Printf("[token_gateway] TOKEN_PROVIDER_KEY 未配置，token 网关门面未启用")

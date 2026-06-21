@@ -25,10 +25,10 @@ func NewUsageHandler(svc *service.UsageService) *UsageHandler {
 	return &UsageHandler{svc: svc}
 }
 
-// ListMine GET /api/token/usage（用户端，登录态）
+// ListMine GET /api/token/usage（用户端，sk/JWT 双模式）
 // 查本人 token 调用流水与消费，扁平分页；可选筛选 model / start / end（RFC3339）。
-// 说明：sk 双模式鉴权为 S2-甲3 任务，本期仅 RequireAuth 注入 userID；
-// sk 路径接入后此处需改为「优先取 sk 绑定的 user_id / api_key_id」过滤。
+// 说明：路由已接 RequireUserAuth（S2-丁3）；UserIDFromContext 在 sk 路径返回
+// sk 绑定的 user_id、JWT 路径返回登录用户 id，两者均按本人 user_id 过滤。
 func (h *UsageHandler) ListMine(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	if userID == 0 {
