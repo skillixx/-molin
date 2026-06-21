@@ -1671,14 +1671,18 @@ Wechatpay-Nonce: <随机串>
 
 ### 14.1 列出可用模型（用户端）✅
 
-- **GET** `/api/token/models` *(登录态 / sk)*
+- **GET** `/api/token/models?modality=&page=1&page_size=20` *(登录态 / sk)*
 - 仅返回已上架（active）模型的公开精简字段，供对话页选择；不含渠道/上游/商品等内部路由字段。
-- 响应 `data`：数组（本接口不分页）
+- 可选筛选：`modality`（chat/image/audio/video，本期仅 chat）。
+- 响应 `data`：**扁平分页** `{ items, page, page_size, total }`（与实现一致，S2-测1 实测校准；前端按分页处理）
   ```json
-  [
-    { "logical_model_code": "gpt-4o", "display_name": "GPT-4o", "modality": "chat" },
-    { "logical_model_code": "deepseek-chat", "display_name": "DeepSeek Chat", "modality": "chat" }
-  ]
+  {
+    "items": [
+      { "logical_model_code": "gpt-4o", "display_name": "GPT-4o", "modality": "chat" },
+      { "logical_model_code": "deepseek-chat", "display_name": "DeepSeek Chat", "modality": "chat" }
+    ],
+    "page": 1, "page_size": 20, "total": 2
+  }
   ```
 
 ### 14.2 OpenAI 兼容对话转发（用户端）✅
