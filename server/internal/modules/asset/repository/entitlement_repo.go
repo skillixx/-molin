@@ -43,6 +43,16 @@ func (r *EntitlementRepository) FindByUserID(ctx context.Context, userID uint64)
 	return list, nil
 }
 
+// FindByID 普通读取权益记录（无行锁）。
+// 供只读场景使用（如 S2-丙3 余额前置闸粗筛），不参与扣减、不需要 FOR UPDATE。
+func (r *EntitlementRepository) FindByID(ctx context.Context, id uint64) (*model.UserEntitlement, error) {
+	var e model.UserEntitlement
+	if err := r.db.WithContext(ctx).First(&e, id).Error; err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
 // FindByIDForUpdate 使用 SELECT FOR UPDATE 锁定权益记录（并发安全）。
 // 必须在事务中调用。
 func (r *EntitlementRepository) FindByIDForUpdate(ctx context.Context, tx *gorm.DB, id uint64) (*model.UserEntitlement, error) {

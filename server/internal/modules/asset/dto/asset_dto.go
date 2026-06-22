@@ -91,3 +91,22 @@ type ConsumeEntitlementResult struct {
 	Remaining     *decimal.Decimal `json:"remaining,omitempty"`
 	Status        string           `json:"status"`
 }
+
+// EntitlementBalanceResult 权益余额查询响应（S2-丙3，供门面 prepaid 前置闸）。
+//
+// 纯只读快照，不参与扣减、不改状态。门面在 prepaid 转发前查询本接口，据 usable 做前置拒绝
+// （usable=false → 直接拒 60005），据 remaining 可做阈值判断；真正的防透支由结算阶段的
+// ConsumeEntitlementIdempotent（FOR UPDATE 行锁 + 幂等）兜底。
+//
+// usable 计算口径：status=active 且未过期（expires_at 为空或晚于当前时间）且 remaining>0 → true；
+// 否则 false。不限量（quota_total 为 NULL）时 remaining 为 NULL，此时只要 status=active 且未过期即 usable=true。
+type EntitlementBalanceResult struct {
+	EntitlementID uint64           `json:"entitlement_id"`
+	UserID        uint64           `json:"user_id"`
+	QuotaTotal    *decimal.Decimal `json:"quota_total,omitempty"`
+	QuotaUsed     decimal.Decimal  `json:"quota_used"`
+	Remaining     *decimal.Decimal `json:"remaining,omitempty"`
+	Status        string           `json:"status"`
+	ExpiresAt     *time.Time       `json:"expires_at,omitempty"`
+	Usable        bool             `json:"usable"`
+}

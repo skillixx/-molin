@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/shopspring/decimal"
@@ -94,6 +95,56 @@ func (h *InternalAssetHandler) ConsumeEntitlement(w http.ResponseWriter, r *http
 			response.Error(w, http.StatusBadRequest, 60005, "权益不可用（已过期或被暂停）")
 		default:
 			response.Error(w, http.StatusInternalServerError, 50000, "扣减权益额度失败")
+		}
+		return
+	}
+
+	response.JSON(w, http.StatusOK, result)
+}
+
+// GetEntitlementBalance 查询权益余额（S2-丙3，供门面 prepaid 前置闸，修 D-M2-01）。
+// GET /api/internal/entitlement-balance?entitlement_id={id}&user_id={uid}
+//
+// 纯只读：不加行锁、不扣减、不改状态。门面在 prepaid 转发前查询，据 usable=false 直接拒 60005，
+// 据 remaining 可做阈值判断。
+//
+// 响应 data：{entitlement_id, user_id, quota_total, quota_used, remaining, status, expires_at, usable}
+// 错误码：40003 鉴权失败/归属不符；40000 参数错误；40400 权益不存在。
+func (h *InternalAssetHandler) GetEntitlementBalance(w http.ResponseWriter, r *http.Request) {
+	// 主闸：内部共享密钥（fail-closed，与 ConsumeEntitlement 完全一致）
+	if h.internalToken == "" {
+		log.Printf("[asset] 拒绝内部余额查询：INTERNAL_API_TOKEN 未配置，已 fail-closed 全拒")
+		response.Error(w, http.StatusForbidden, 40003, "内部接口鉴权失败")
+		return
+	}
+	reqToken := r.Header.Get("X-Internal-Token")
+	if subtle.ConstantTimeCompare([]byte(reqToken), []byte(h.internalToken)) != 1 {
+		response.Error(w, http.StatusForbidden, 40003, "内部接口鉴权失败")
+		return
+	}
+	// 辅助防线：IP 白名单
+	if !h.isAllowedIP(r) {
+		response.Error(w, http.StatusForbidden, 40003, "访问被拒绝：IP 未在白名单中")
+		return
+	}
+
+	// 解析查询参数
+	entitlementID, err1 := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("entitlement_id")), 10, 64)
+	userID, err2 := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("user_id")), 10, 64)
+	if err1 != nil || err2 != nil || entitlementID == 0 || userID == 0 {
+		response.Error(w, http.StatusBadRequest, 40000, "entitlement_id / user_id 为必填项且必须为正整数")
+		return
+	}
+
+	result, err := h.svc.GetEntitlementBalance(r.Context(), entitlementID, userID)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrEntitlementNotOwned):
+			response.Error(w, http.StatusForbidden, 40003, "权益不属于该用户")
+		case errors.Is(err, service.ErrEntitlementNotFound):
+			response.Error(w, http.StatusNotFound, 40400, "权益不存在")
+		default:
+			response.Error(w, http.StatusInternalServerError, 50000, "查询权益余额失败")
 		}
 		return
 	}
