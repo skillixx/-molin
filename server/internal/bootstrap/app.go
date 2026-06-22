@@ -206,6 +206,25 @@ func (a *modelScopeResolverAdapter) ModelScopeByID(ctx context.Context, apiKeyID
 	return a.svc.ModelScopeByID(ctx, apiKeyID)
 }
 
+// billingResolverAdapter 将 auth.APIKeyService 适配为 token_gateway.BillingResolver 接口（S2-甲6b）。
+// 供 chat 门面在转发上游前按 api_key_id 解析 billing_mode/source_id，分流 postpaid（钱包）/ prepaid（套餐额度）。
+// 同 modelScopeResolverAdapter：仅在 apiKeyService != nil 时构造，否则给门面传字面 nil 接口，
+// 使 ForwardService.billingResolver==nil 判断生效、对 sk 调用安全退化为「一律 postpaid」而非 panic。
+type billingResolverAdapter struct {
+	svc *authsvc.APIKeyService
+}
+
+func (a *billingResolverAdapter) BillingByID(ctx context.Context, apiKeyID uint64) (mode string, sourceID uint64, ok bool) {
+	// 二次判空兜底：装配阶段已保证 svc 非 nil，此处防御性判空，nil → 门面安全降级 postpaid 而非 panic。
+	if a.svc == nil {
+		return "", 0, false
+	}
+	return a.svc.BillingByID(ctx, apiKeyID)
+}
+
+// 编译期断言：billingResolverAdapter 必须实现 token_gateway 的 BillingResolver 接口（签名漂移时立即报错）。
+var _ tokengatewaysvc.BillingResolver = (*billingResolverAdapter)(nil)
+
 // tokenUsageReporterAdapter 将 finance_consumer.ConsumerService 适配为 token_gateway 的 UsageReporter 接口。
 // 把 token 网关的 UsageEvent 映射为 finance_consumer 的 ProductUsageEvent 并调 Handle 扣费。
 // 跨模块只走对方 service 暴露的 Handle，不直接碰其 repository。
@@ -546,11 +565,14 @@ func NewApp() (*App, error) {
 		//     X-Internal-Token 从配置注入（INTERNAL_API_TOKEN），未配置时客户端 fail-closed（prepaid 扣额度跳过并告警）。
 		tokenEntConsumer := &entConsumerAdapter{cli: tokenclient.NewEntitlementClient(cfg.AssetInternalBaseURL, cfg.InternalAPIToken)}
 
-		//   - BillingResolver（S2-丁5）：按 api_key_id 解析 billing_mode/source_id 分流 postpaid/prepaid。
-		//     依赖 auth.APIKeyService 暴露 BillingByID（与 ModelScopeByID 同款只读访问器）；
-		//     该访问器属甲（auth）职责，本任务红线禁止改 auth/，故当前传 nil → 门面一律按 postpaid。
-		//     ⚠️ prepaid 激活待甲补 BillingByID 后，在此构造 billingResolverAdapter 注入即可（其余链路已就绪）。
+		//   - BillingResolver（S2-丁5 / 甲6b）：按 api_key_id 解析 billing_mode/source_id 分流 postpaid/prepaid。
+		//     由 auth.APIKeyService.BillingByID（与 ModelScopeByID 同款只读访问器，甲6b 已补）适配实现。
+		//     nil 接口陷阱：仅在 apiKeyService != nil 时构造适配器；否则传字面 nil 接口，
+		//     使 ForwardService.billingResolver==nil 判断生效、对 sk 调用安全退化为「一律 postpaid」而非 panic。
 		var tokenBillingResolver tokengatewaysvc.BillingResolver
+		if apiKeyService != nil {
+			tokenBillingResolver = &billingResolverAdapter{svc: apiKeyService}
+		}
 
 		//   - ModelScopeResolver（S2-丁4b）：auth.APIKeyService 适配，供 chat 门面做 sk model_scope 越界校验。
 		//     nil 接口陷阱：仅在 apiKeyService 非 nil 时构造适配器；否则传字面 nil 接口，
@@ -571,7 +593,7 @@ func NewApp() (*App, error) {
 				holdUnitPrice = decimal.Zero
 			}
 			tokenGatewayModule.ForwardService.SetBillingDeps(tokengatewaysvc.BillingDeps{
-				BillingResolver: tokenBillingResolver, // 当前 nil（待甲补 BillingByID 后激活 prepaid）
+				BillingResolver: tokenBillingResolver, // 甲6b：apiKeyService 非 nil 时激活 prepaid，否则 nil → 门面降级 postpaid
 				WalletHolder:    tokenWalletHolder,
 				EntConsumer:     tokenEntConsumer,
 				HoldUnitPrice:   holdUnitPrice,
