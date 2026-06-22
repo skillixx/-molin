@@ -82,6 +82,11 @@ func writeForwardError(w http.ResponseWriter, err error) {
 	case errors.Is(err, service.ErrEntitlementDenied):
 		// S2-丁5：prepaid 套餐归属不符。
 		response.Error(w, http.StatusForbidden, 40003, "套餐额度归属不符")
+	case errors.Is(err, service.ErrSystemBusy):
+		// D-M2-02：postpaid 预扣保证金乐观锁冲突重试耗尽（可重试），区别于真余额不足（60001）。
+		// 全局错误码表无专用「系统繁忙/可重试」码，故沿用 token_gateway 5030x 服务不可用族新增 50301
+		// （HTTP 503，客户端可稍后重试），与 50300「上游渠道不可用」区分，绝不映射为 60001。
+		response.Error(w, http.StatusServiceUnavailable, 50301, "系统繁忙，请稍后重试")
 	case errors.Is(err, service.ErrChannelUnavailable):
 		response.Error(w, http.StatusServiceUnavailable, 50300, "上游渠道不可用")
 	case errors.Is(err, service.ErrUpstream):
