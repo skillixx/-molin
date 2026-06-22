@@ -144,7 +144,7 @@ var (
 	ErrEntitlementDenied = errors.New("套餐额度归属不符")
 	// ErrSystemBusy 系统繁忙/可重试错误（D-M2-02）。
 	// 典型来源：postpaid 预扣保证金时钱包乐观锁冲突重试耗尽（billing.ErrConcurrentUpdate）。
-	// 由 handler 映射为 HTTP 503 + 业务码 50300（服务暂不可用，客户端可重试），
+	// 由 handler 映射为 HTTP 503 + 业务码 50301（服务暂不可用，客户端可重试），
 	// 严禁与「真余额不足」（ErrWalletInsufficient/60001）混淆——这是 D-M2-02 的核心。
 	ErrSystemBusy = errors.New("系统繁忙，请稍后重试")
 )
