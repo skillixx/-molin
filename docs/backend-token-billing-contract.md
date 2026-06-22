@@ -137,31 +137,44 @@ POST /api/internal/entitlement-consume        （内部调用，门面 → 丙�
 
 ### 4.3 后端丁：门面计费路由（postpaid vs prepaid）
 
-`forward_service` 按 `billing_mode`（来自 sk/上下文，见 sk 契约 §5）分流。**postpaid 引入预扣保证金（D1 已拍板），prepaid 靠 entitlement 锁行防透支**：
+`forward_service` 按 `billing_mode`（来自 sk/上下文，见 sk 契约 §5）分流。**postpaid 引入预扣保证金（D1），prepaid 引入预占额度（方案 B，PR #232/#233），两者结构对称**：
 
 ```
-转发前（前置闸 + 预扣）：
+转发前（预扣 / 预占）：
   if billing_mode == "postpaid":
-      hold = 模型单价 × max_tokens(请求带则用之,否则模型档位默认上限)
-      钱包余额 < hold → 拒绝(60001)；否则 freeze(hold) 冻结保证金   // 复用钱包 freeze/unfreeze
+      hold = 模型单价 × max_tokens(请求带则用之，否则模型档位默认上限)
+      freeze(hold) 冻结保证金；余额不足 → 拒绝(60001)；
+      乐观锁冲突 → 503/50301（可重试，非 60001）
   if billing_mode == "prepaid":
-      entitlement remaining < 阈值 → 拒绝(60005)                    // 锁行在结算阶段
+      reserve_amount = max_tokens（与单次预估消耗同量纲）
+      POST /api/internal/entitlements/reserve(entitlement_id, amount=reserve_amount, idempotency_key)
+      available = quota_total - quota_used - quota_reserved < reserve_amount → 拒绝(60005)
+      // reserve 成功后 quota_reserved += reserve_amount，不变量 used+reserved ≤ total 全程成立
 
-转发上游 → 读 usage（SSE 客户端断开仍读完上游再结算，R5）→ 写 token_usage_logs
+转发上游 → 读 usage（SSE 断开仍读完再结算，R5）→ 写 token_usage_logs
 
 结算阶段（拿到 usage 后）：
   if billing_mode == "postpaid":
       actual = 按 product_billing_rules 计算(input/output tokens [+ calls])
-      unfreeze(hold) 解冻保证金 → 实扣 actual(多退少补)             // 净额 = 实扣，杜绝并发负余额
+      unfreeze(hold) 解冻保证金 → 实扣 actual(多退少补)     // 净额 = 实扣，杜绝并发负余额
   if billing_mode == "prepaid":
-      amount = input_tokens + output_tokens   // 1:1 不加权，与 token_quota 单位一致
-      POST /api/internal/entitlement-consume(entitlement_id=source_id, amount, key=request_id:quota)
+      actual_tokens = input_tokens + output_tokens
+      POST /api/internal/entitlements/{hold_id}/settle(actual_amount=min(actual_tokens, reserve_amount))
+      // settle: quota_used += settled, quota_reserved -= reserve_amount（多退少补，不超收）
+
+转发失败（上游 5xx / 超时）：
+  if billing_mode == "postpaid":
+      unfreeze(hold) 归还保证金（defer 在 panic/error 路径也执行）
+  if billing_mode == "prepaid":
+      POST /api/internal/entitlements/{hold_id}/release
+      // release: quota_reserved -= reserve_amount（quota_used 不增），hold.status=released
 ```
-- **预扣保证金（D1）**：postpaid 路径转发前按 `max_tokens × 单价` 冻结钱包，结算时解冻并按实际 usage 扣费（多退少补）。这是「并发扣费无负余额」硬验收的落地方案——预扣保证并发请求各自占住额度，杜绝「都过前置闸、结算时集体透支」。
-- **前置依赖（须 W5 第一天确认，乙）**：底座钱包 `freeze/unfreeze`（`wallet_transaction.type` 已有）须对 token_gateway 门面暴露可调内部接口；若无，乙补一个内部接口。
+
+- **预扣保证金（D1）postpaid**：并发请求各自占住钱包额度，结算时解冻按实际 usage 实扣（多退少补）；乐观锁冲突 → ErrSystemBusy → 503/50301，不误报 60001。
+- **预占额度（方案 B）prepaid**：与 postpaid freeze/settle/release 结构对称，DB 层 `entitlement_holds` 表 + `quota_reserved` 列；FOR UPDATE 行锁保证 reserve 原子性，`available = total - used - reserved` 不变量全程成立。根治了「0 < remaining < 单次消耗」区间的串行/并发白嫖漏洞（D-M2-01 已验收闭环）。
 - `source_id`（= entitlement_id）来自 sk 的 `ResolveKey` 结果。
 - prepaid 模式下**不走钱包**、不预扣、不上报 product-usage-events。
-- **SSE 断开兜底（R5）**：客户端中断后服务端继续读完上游流拿到 usage 再结算；确无 usage 的成功调用按 `max_tokens` 兜底计费（避免漏计）。
+- **SSE 断开兜底（R5）**：客户端中断后服务端继续读完上游流拿到 usage 再结算；确无 usage 的成功调用按 `max_tokens` 兜底（settle 封顶于 reserve_amount，避免漏计）。
 - 写 `token_usage_logs` 不变（两种模式都写，`sale_amount` 记本次实扣金额/额度）。
 
 ---
