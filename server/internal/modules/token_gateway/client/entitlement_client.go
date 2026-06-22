@@ -26,6 +26,7 @@ var ErrInternalAuth = errors.New("内部接口鉴权失败")
 
 // ErrEntitlementNotFound 权益不存在（asset 余额查询返回 40400）。
 // prepaid 前置闸据此按「sk 绑定权益失效」拒绝转发（fail-safe）。
+// 预占场景（reserve）返回 40400 同样归此（权益不存在 → 转发前拒绝）。
 var ErrEntitlementNotFound = errors.New("权益不存在")
 
 // EntitlementClient 调用 asset 模块内部接口 POST /api/internal/entitlement-consume。
@@ -203,4 +204,182 @@ func (c *EntitlementClient) GetBalance(ctx context.Context, entitlementID, userI
 		}
 		return nil, fmt.Errorf("entitlement-balance 返回错误 code=%d message=%s", env.Code, env.Message)
 	}
+}
+
+// ——— S2-丁 D-M2-01 方案 B：预占额度 reserve → 结算 settle / 释放 release（对接丙4）———
+
+// reserveReq 与 asset.dto.ReserveEntitlementReq 对齐（解耦：不直接 import asset 包）。
+type reserveReq struct {
+	EntitlementID  uint64          `json:"entitlement_id"`
+	UserID         uint64          `json:"user_id"`
+	Amount         decimal.Decimal `json:"amount"`
+	IdempotencyKey string          `json:"idempotency_key"` // 门面约定 request_id:quota_reserve
+}
+
+// ReserveResult 与 asset.dto.ReserveEntitlementResult 对齐（预占后的 hold 快照）。
+type ReserveResult struct {
+	HoldID    uint64           `json:"hold_id"`
+	Reserved  decimal.Decimal  `json:"reserved"`
+	Available *decimal.Decimal `json:"available,omitempty"`
+	Status    string           `json:"status"`
+}
+
+// settleReq 与 asset.dto.SettleEntitlementReq 对齐。hold_id 优先，否则用 idempotency_key 关联同一 hold。
+type settleReq struct {
+	HoldID         uint64          `json:"hold_id"`
+	IdempotencyKey string          `json:"idempotency_key"`
+	ActualAmount   decimal.Decimal `json:"actual_amount"`
+}
+
+// releaseReq 与 asset.dto.ReleaseEntitlementReq 对齐。hold_id 优先，否则用 idempotency_key 关联同一 hold。
+type releaseReq struct {
+	HoldID         uint64 `json:"hold_id"`
+	IdempotencyKey string `json:"idempotency_key"`
+}
+
+// SettleResult 与 asset.dto.SettleEntitlementResult 对齐（结算/释放后的 hold + 权益快照）。
+type SettleResult struct {
+	HoldID        uint64           `json:"hold_id"`
+	Status        string           `json:"status"` // settled / released
+	SettledAmount decimal.Decimal  `json:"settled_amount"`
+	QuotaUsed     decimal.Decimal  `json:"quota_used"`
+	QuotaReserved decimal.Decimal  `json:"quota_reserved"`
+	Available     *decimal.Decimal `json:"available,omitempty"`
+}
+
+// Reserve 调用 entitlement-reserve 预占额度（D-M2-01 方案 B，转发上游前调用）。
+//   - 成功返回预占快照（含 hold_id，供 settle/release 关联）。
+//   - asset 返回 60005 → ErrQuotaExceeded（额度不足 / 权益不可用，门面据此拒 60005，不转发）。
+//   - asset 返回 40003 → ErrEntitlementForbidden（归属不符）。
+//   - asset 返回 40400 → ErrEntitlementNotFound（权益不存在，sk 绑定权益失效）。
+//   - 鉴权未配置 / 401/403 → ErrInternalAuth。
+//   - 其他失败（网络/解析/5xx/50000）→ 透传 error，门面 fail-safe 拒绝转发（绝不放行白嫖）。
+func (c *EntitlementClient) Reserve(ctx context.Context, entitlementID, userID uint64, amount decimal.Decimal, idempotencyKey string) (*ReserveResult, error) {
+	// fail-closed：未配置内部密钥时不发请求（绝不放行白嫖）。
+	if c.internalToken == "" {
+		return nil, ErrInternalAuth
+	}
+
+	payload, err := json.Marshal(reserveReq{
+		EntitlementID:  entitlementID,
+		UserID:         userID,
+		Amount:         amount,
+		IdempotencyKey: idempotencyKey,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("构造 entitlement-reserve 请求体失败: %w", err)
+	}
+
+	env, statusCode, err := c.doInternal(ctx, "/api/internal/entitlement-reserve", payload)
+	if err != nil {
+		return nil, err
+	}
+
+	switch env.Code {
+	case 0, http.StatusOK:
+		var result ReserveResult
+		if err := json.Unmarshal(env.Data, &result); err != nil {
+			return nil, fmt.Errorf("解析 entitlement-reserve data 失败: %w", err)
+		}
+		return &result, nil
+	case 60005:
+		return nil, ErrQuotaExceeded
+	case 40003:
+		return nil, ErrEntitlementForbidden
+	case 40400:
+		return nil, ErrEntitlementNotFound
+	default:
+		if statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden {
+			return nil, ErrInternalAuth
+		}
+		// 50000 / 其他系统错误：透传 error，门面 fail-safe 拒绝转发并归为系统繁忙。
+		return nil, fmt.Errorf("entitlement-reserve 返回错误 code=%d message=%s", env.Code, env.Message)
+	}
+}
+
+// Settle 调用 entitlement-settle 结算预占（多退少补，asset 侧封顶到预占额）。
+// holdID>0 优先，否则用 idempotencyKey 关联同一 hold。actualAmount = input+output（1:1）。
+//   - 成功返回结算后快照（SettledAmount = 实际计入 quota_used 的净额）。
+//   - 40400（hold 不存在）：透传 ErrEntitlementNotFound（结算阶段，best-effort 记日志即可）。
+//   - 其他失败 → 透传 error。
+func (c *EntitlementClient) Settle(ctx context.Context, holdID uint64, idempotencyKey string, actualAmount decimal.Decimal) (*SettleResult, error) {
+	if c.internalToken == "" {
+		return nil, ErrInternalAuth
+	}
+	payload, err := json.Marshal(settleReq{
+		HoldID:         holdID,
+		IdempotencyKey: idempotencyKey,
+		ActualAmount:   actualAmount,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("构造 entitlement-settle 请求体失败: %w", err)
+	}
+	return c.settleOrRelease(ctx, "/api/internal/entitlement-settle", payload)
+}
+
+// Release 调用 entitlement-release 释放预占（失败/异常路径，不计 used）。
+// holdID>0 优先，否则用 idempotencyKey 关联同一 hold。
+//   - 成功返回释放后快照（SettledAmount=0）。
+//   - 40400（hold 不存在 / 已结算）：透传 ErrEntitlementNotFound（best-effort）。
+//   - 其他失败 → 透传 error。
+func (c *EntitlementClient) Release(ctx context.Context, holdID uint64, idempotencyKey string) (*SettleResult, error) {
+	if c.internalToken == "" {
+		return nil, ErrInternalAuth
+	}
+	payload, err := json.Marshal(releaseReq{
+		HoldID:         holdID,
+		IdempotencyKey: idempotencyKey,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("构造 entitlement-release 请求体失败: %w", err)
+	}
+	return c.settleOrRelease(ctx, "/api/internal/entitlement-release", payload)
+}
+
+// settleOrRelease settle/release 共用的请求 + 解码逻辑（两者响应体同款 SettleResult）。
+func (c *EntitlementClient) settleOrRelease(ctx context.Context, path string, payload []byte) (*SettleResult, error) {
+	env, statusCode, err := c.doInternal(ctx, path, payload)
+	if err != nil {
+		return nil, err
+	}
+	switch env.Code {
+	case 0, http.StatusOK:
+		var result SettleResult
+		if err := json.Unmarshal(env.Data, &result); err != nil {
+			return nil, fmt.Errorf("解析 %s data 失败: %w", path, err)
+		}
+		return &result, nil
+	case 40400:
+		return nil, ErrEntitlementNotFound
+	case 40003:
+		return nil, ErrEntitlementForbidden
+	default:
+		if statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden {
+			return nil, ErrInternalAuth
+		}
+		return nil, fmt.Errorf("%s 返回错误 code=%d message=%s", path, env.Code, env.Message)
+	}
+}
+
+// doInternal 统一发起 asset 内部 POST 接口（携带 X-Internal-Token），返回响应信封与 HTTP 状态码。
+func (c *EntitlementClient) doInternal(ctx context.Context, path string, payload []byte) (apiEnvelope, int, error) {
+	url := c.baseURL + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return apiEnvelope{}, 0, fmt.Errorf("构造 %s 请求失败: %w", path, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Internal-Token", c.internalToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return apiEnvelope{}, 0, fmt.Errorf("调用 %s 失败: %w", path, err)
+	}
+	defer resp.Body.Close()
+
+	var env apiEnvelope
+	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
+		return apiEnvelope{}, resp.StatusCode, fmt.Errorf("解析 %s 响应失败: %w", path, err)
+	}
+	return env, resp.StatusCode, nil
 }
