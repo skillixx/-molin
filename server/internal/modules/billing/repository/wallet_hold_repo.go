@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"molin/server/internal/modules/billing/model"
 )
@@ -28,10 +29,13 @@ func (r *WalletHoldRepository) FindByIdempotencyKey(ctx context.Context, key str
 	return &hold, nil
 }
 
-// FindByIDForUpdate 在事务内加行锁查询 hold（SELECT FOR UPDATE）。
+// FindByIDForUpdate 在事务内加行锁查询 hold（SELECT ... FOR UPDATE）。
+//
+// D-M2-03 根因修复：同 wallet_repo.GetForUpdate，原 GORM v1 写法在 v2 下失效不锁行，
+// 改用 clause.Locking 真正下发 FOR UPDATE，保证结算阶段对同一 hold 的并发处理串行化。
 func (r *WalletHoldRepository) FindByIDForUpdate(tx *gorm.DB, id uint64) (*model.WalletHold, error) {
 	var hold model.WalletHold
-	if err := tx.Set("gorm:query_option", "FOR UPDATE").
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ?", id).First(&hold).Error; err != nil {
 		return nil, err
 	}

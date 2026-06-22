@@ -80,57 +80,71 @@ func (s *ConsumerService) Handle(ctx context.Context, event consumermodel.Produc
 	// 4. 事务：扣费（仅当 amount>0）+ 写消费记录（原子性保证）。
 	// B-03/F2：当全部用量都在免费额度内（billable<=0 → amount=0）时不调用 DeductTx，
 	// 但仍在事务内写一条 amount=0 的消费记录，保留幂等键与用量留痕。
+	//
+	// [P1] D-M2-03 修复（核心）：DeductTx 在乐观锁冲突时返回 billingsvc.ErrConcurrentUpdate，
+	// 此前本事务无重试，并发上报时成片被丢弃 → 8 次成功调用只扣到约 1/4 的钱（漏收费）。
+	// 现用 billing 统一的 RetryOnVersionConflict 包裹整笔事务：每次重试都重新开事务、
+	// DeductTx 内部重新 FOR UPDATE 读最新 version 再扣，重试到成功；仅对版本冲突重试，
+	// 余额不足（ErrInsufficientBalance）等真实业务失败立即返回不重试。
+	//
+	// 幂等安全：重试发生在「同一笔扣费的乐观锁更新」层面，event/idempotency_key 不变；前一次
+	// 冲突的事务已整体回滚（消费记录未落库），重试不会重复扣费；product_consumption_records
+	// 的 idempotency_key 唯一索引仍作最终兜底，杜绝并发双发重复入账。
+	// 无负余额：扣费判定全程在 DeductTx 的 FOR UPDATE 行锁 + WHERE version=? + 余额校验内完成，
+	// 重试只决定丢不丢这笔，绝不放宽校验。
 	var result *consumermodel.ConsumptionResult
-	err = s.db.Transaction(func(tx *gorm.DB) error {
-		// 仅当存在应计费金额时才扣款；amount=0 时跳过扣费，wallet_transaction_id 保持 0。
-		var walletTxID uint64
-		if amount.GreaterThan(decimal.Zero) {
-			// 调用 billing.WalletService.DeductTx（在外部事务内执行，不再嵌套事务）
-			// C-5：DeductTx 返回钱包流水 ID，用于填充消费上报响应 wallet_transaction_id。
-			txID, err := s.walletSvc.DeductTx(tx, event.UserID, amount, 0, "消费扣费: "+event.UsageType)
-			if err != nil {
-				return err
+	err = billingsvc.RetryOnVersionConflict(func() error {
+		return s.db.Transaction(func(tx *gorm.DB) error {
+			// 仅当存在应计费金额时才扣款；amount=0 时跳过扣费，wallet_transaction_id 保持 0。
+			var walletTxID uint64
+			if amount.GreaterThan(decimal.Zero) {
+				// 调用 billing.WalletService.DeductTx（在外部事务内执行，不再嵌套事务）
+				// C-5：DeductTx 返回钱包流水 ID，用于填充消费上报响应 wallet_transaction_id。
+				txID, derr := s.walletSvc.DeductTx(tx, event.UserID, amount, 0, "消费扣费: "+event.UsageType)
+				if derr != nil {
+					return derr
+				}
+				walletTxID = txID
 			}
-			walletTxID = txID
-		}
 
-		var planID *uint64
-		if event.ProductPlanID > 0 {
-			id := event.ProductPlanID
-			planID = &id
-		}
-		var instanceID *uint64
-		if event.InstanceID > 0 {
-			id := event.InstanceID
-			instanceID = &id
-		}
+			var planID *uint64
+			if event.ProductPlanID > 0 {
+				id := event.ProductPlanID
+				planID = &id
+			}
+			var instanceID *uint64
+			if event.InstanceID > 0 {
+				id := event.InstanceID
+				instanceID = &id
+			}
 
-		// B-03：将本次扣费产生的钱包流水 ID 持久化到消费记录，
-		// 使幂等重发时 ToResult() 能返回相同的真实 txid；免费额度内（walletTxID=0）则存 NULL。
-		var walletTxIDPtr *uint64
-		if walletTxID > 0 {
-			walletTxIDPtr = &walletTxID
-		}
+			// B-03：将本次扣费产生的钱包流水 ID 持久化到消费记录，
+			// 使幂等重发时 ToResult() 能返回相同的真实 txid；免费额度内（walletTxID=0）则存 NULL。
+			var walletTxIDPtr *uint64
+			if walletTxID > 0 {
+				walletTxIDPtr = &walletTxID
+			}
 
-		record := &consumermodel.ProductConsumptionRecord{
-			EventID:             event.EventID,
-			UserID:              event.UserID,
-			ProductID:           event.ProductID,
-			ProductPlanID:       planID,
-			InstanceID:          instanceID,
-			UsageType:           event.UsageType,
-			UsageAmount:         event.UsageAmount,
-			UsageUnit:           event.UsageUnit,
-			Amount:              amount,
-			IdempotencyKey:      event.IdempotencyKey,
-			WalletTransactionID: walletTxIDPtr,
-		}
-		if err := s.consumptionRepo.Create(tx, record); err != nil {
-			return err
-		}
-		// ToResult 会自动带出持久化后的 wallet_transaction_id（免费额度内为 0）。
-		result = record.ToResult()
-		return nil
+			record := &consumermodel.ProductConsumptionRecord{
+				EventID:             event.EventID,
+				UserID:              event.UserID,
+				ProductID:           event.ProductID,
+				ProductPlanID:       planID,
+				InstanceID:          instanceID,
+				UsageType:           event.UsageType,
+				UsageAmount:         event.UsageAmount,
+				UsageUnit:           event.UsageUnit,
+				Amount:              amount,
+				IdempotencyKey:      event.IdempotencyKey,
+				WalletTransactionID: walletTxIDPtr,
+			}
+			if cerr := s.consumptionRepo.Create(tx, record); cerr != nil {
+				return cerr
+			}
+			// ToResult 会自动带出持久化后的 wallet_transaction_id（免费额度内为 0）。
+			result = record.ToResult()
+			return nil
+		})
 	})
 	return result, err
 }
