@@ -276,6 +276,11 @@ type billDecision struct {
 	maxTokens int64  // 本次预估上限（postpaid 预扣 / prepaid 预占 / R5 兜底计费用）
 	holdID    uint64 // postpaid 已冻结的保证金 holdID / prepaid 已预占额度的 holdID（方案 B）；0=未冻结/未预占
 	settled   bool   // 结算阶段已接管该 hold（已 settle/release）；用于 Forward 的 defer 兜底释放判定
+
+	// skipCallBilling 结算时是否跳过「按次计 1」（postpaid calls 规则）。
+	// 零值 false=正常计次（纯透传 Forward 一次调用即一次提问，保持 M1/M2 行为不变）。
+	// W8 编排端点：一次提问含多轮上游调用，仅首轮计次（CountCall=true），其余轮置 true 跳过，避免重复计次。
+	skipCallBilling bool
 }
 
 // resolveBilling 解析本次调用计费模式与 prepaid 套餐来源。
@@ -699,7 +704,10 @@ func (s *ForwardService) settlePostpaid(ctx context.Context, requestID string, u
 	}
 	// 按次计费（S2-丁4）：已发起上游并成功结算，本次透传记 1 次 calls。
 	// 前置失败（鉴权/门禁/余额闸）不会走到这里，故不误计次。无 calls 规则时上报返回 0、静默跳过。
-	total = total.Add(s.reportOne(ctx, requestID, userID, productID, "calls", 1))
+	// W8 编排：一次提问多轮，仅首轮计次；非首轮 bill.skipCallBilling=true，跳过避免重复计次。
+	if !bill.skipCallBilling {
+		total = total.Add(s.reportOne(ctx, requestID, userID, productID, "calls", 1))
+	}
 
 	// 回填 sale_amount（修 M1 P3）：本次钱包实扣总额。
 	s.backfillSaleAmount(ctx, requestID, total)

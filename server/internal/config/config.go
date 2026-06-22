@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Config 汇聚所有运行时配置，通过环境变量注入，无默认密钥。
@@ -71,6 +72,14 @@ type Config struct {
 	// 工作台插件凭证（plugins.auth_config_encrypted）加密密钥（32 字节，AES-256-GCM，S2-丁7 / 契约 §5）。
 	// 通过 PLUGIN_SECRET_KEY 注入；未配置时回退复用 TOKEN_PROVIDER_KEY（契约允许复用）。
 	PluginSecretKey string
+
+	// tool-use 编排最大轮数（S2-丁10 / 契约 §4，默认 5，不硬编码）。通过 MAX_ROUNDS 注入。
+	MaxRounds int
+
+	// 工作台外呼（插件转发 / skill 联网）域名白名单（S2-运2 / 契约 §5）。
+	// 通过 PLUGIN_DOMAIN_WHITELIST 注入（逗号分隔，如 "api.weather.com,docs.example.com"）；
+	// 空=不启用白名单（仅按 SSRF 网段规则拦内网/回环）。
+	PluginDomainWhitelist []string
 }
 
 func Load() Config {
@@ -114,7 +123,25 @@ func Load() Config {
 
 		// 插件凭证密钥：优先 PLUGIN_SECRET_KEY，未配置时回退复用 TOKEN_PROVIDER_KEY（契约 §5 允许）。
 		PluginSecretKey: getenv("PLUGIN_SECRET_KEY", getenv("TOKEN_PROVIDER_KEY", "")),
+
+		MaxRounds:             getenvInt("MAX_ROUNDS", 5),
+		PluginDomainWhitelist: splitCSV(getenv("PLUGIN_DOMAIN_WHITELIST", "")),
 	}
+}
+
+// splitCSV 解析逗号分隔配置为去空白的非空切片（空输入返回 nil）。
+func splitCSV(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if v := strings.TrimSpace(p); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 func getenv(key string, fallback string) string {

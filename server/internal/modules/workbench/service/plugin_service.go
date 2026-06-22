@@ -3,14 +3,13 @@ package service
 import (
 	"context"
 	"errors"
-	"net"
-	"net/url"
 	"strings"
 
 	"molin/server/internal/modules/token_gateway/crypto"
 	"molin/server/internal/modules/workbench/dto"
 	"molin/server/internal/modules/workbench/model"
 	"molin/server/internal/modules/workbench/repository"
+	"molin/server/internal/modules/workbench/security"
 )
 
 // ErrPluginCodeExists Plugin code 已存在（唯一冲突，非校验类）。
@@ -216,32 +215,11 @@ func (s *PluginService) encryptAuth(plain string) (*string, error) {
 	return &enc, nil
 }
 
-// validateEndpointURL 配置时 SSRF 前置校验：仅 https + 拒绝内网/回环/链路本地 IP 字面量与 localhost。
-// 运行时转发器（W8）再做 DNS 解析后二次校验 + 域名白名单（S2-运2 注入）。
+// validateEndpointURL 配置时 SSRF 前置校验：复用 security.ValidateOutboundURL（不解析 DNS，
+// 域名是否生效在运行时转发前二次校验 + 域名白名单 S2-运2 注入）。
 func validateEndpointURL(raw string) error {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return newValidation("endpoint_url 不能为空")
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return newValidation("endpoint_url 不是合法 URL")
-	}
-	if !strings.EqualFold(u.Scheme, "https") {
-		return newValidation("endpoint_url 必须为 https")
-	}
-	host := u.Hostname()
-	if host == "" {
-		return newValidation("endpoint_url 缺少主机名")
-	}
-	lower := strings.ToLower(host)
-	if lower == "localhost" || strings.HasSuffix(lower, ".local") || strings.HasSuffix(lower, ".internal") {
-		return newValidation("endpoint_url 不允许指向内网/本机")
-	}
-	if ip := net.ParseIP(host); ip != nil {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
-			return newValidation("endpoint_url 不允许指向内网/回环地址")
-		}
+	if err := security.ValidateOutboundURL(raw, nil, false); err != nil {
+		return newValidation("endpoint_url " + err.Error())
 	}
 	return nil
 }

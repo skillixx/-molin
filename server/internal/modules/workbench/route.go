@@ -86,3 +86,16 @@ func RegisterUserRoutes(
 	mux.Handle("GET /api/skills", user(sh.ListPublic))
 	mux.Handle("GET /api/plugins", user(ph.ListPublic))
 }
+
+// RegisterChatRoute 注册 tool-use 编排对话端点（S2-丁10，D2 仅登录态，sk 不可调）。
+// chatSvc 为 nil（token 网关未启用 → 无上游）时本函数不应被调用，由 bootstrap 判空。
+func RegisterChatRoute(
+	mux *http.ServeMux,
+	chatSvc *service.ChatService,
+	jwtSecret string,
+	banChecker middleware.BanChecker,
+) {
+	ch := handler.NewChatHandler(chatSvc)
+	mux.Handle("POST /api/agents/{id}/chat",
+		middleware.RequireAuth(jwtSecret, banChecker, http.HandlerFunc(ch.Chat)))
+}

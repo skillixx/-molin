@@ -625,6 +625,9 @@ func NewApp() (*App, error) {
 
 	// 注册 token 网关门面（管理端：渠道/模型目录；用户端：OpenAI 兼容 chat 转发）。
 	// TOKEN_PROVIDER_KEY 未配置或非法（非 32 字节）时跳过装配，仅记日志，不阻断其他模块启动。
+	// tokenForwardSvc 在 token 网关成功装配时被赋值，供下方 workbench 编排端点复用单轮转发（ChatOnce）；
+	// token 网关未启用时保持 nil → 编排 chat 端点不注册。
+	var tokenForwardSvc *tokengatewaysvc.ForwardService
 	if cfg.TokenProviderKey != "" {
 		// 跨模块依赖通过接口注入，避免 import 环：
 		//   - AssetGate：assetService 直接满足 HasActiveTokenAsset(ctx, userID) 签名。
@@ -701,15 +704,17 @@ func NewApp() (*App, error) {
 			}
 			tokengatewaymod.RegisterUserRoutes(mux, tokenGatewayModule.ForwardService, tokenGatewayModule.CatalogService,
 				tokenGatewayModule.UsageService, cfg.JWTSecret, authService, tokenAPIKeyResolver)
+			// 供 workbench 编排端点复用单轮转发（ChatOnce 含门禁/选渠道/计费）。
+			tokenForwardSvc = tokenGatewayModule.ForwardService
 		}
 	} else {
 		log.Printf("[token_gateway] TOKEN_PROVIDER_KEY 未配置，token 网关门面未启用")
 	}
 
-	// 聊天工作台（S2-丁7）：Agent/Skill/Plugin 管理端 + 用户端（自建/选用）。
+	// 聊天工作台（S2-丁7/8/9/10）：Agent/Skill/Plugin 管理端 + 用户端（自建/选用）+ tool-use 编排对话。
 	// 插件凭证加密需 32 字节密钥（PluginSecretKey，回退复用 TOKEN_PROVIDER_KEY）；未配置则跳过装配，灰度降级不 panic。
 	if cfg.PluginSecretKey != "" {
-		if workbenchModule, wbErr := workbenchmod.New(gormDB, cfg.PluginSecretKey); wbErr != nil {
+		if workbenchModule, wbErr := workbenchmod.New(gormDB, cfg.PluginSecretKey, cfg.PluginDomainWhitelist); wbErr != nil {
 			log.Printf("[workbench] 初始化失败，工作台管理端/用户端未启用: %v", wbErr)
 		} else {
 			// 管理端：Agent/Skill/Plugin CRUD + 绑定（agent/skill/plugin:manage + 管理员双重认证）。
@@ -718,6 +723,13 @@ func NewApp() (*App, error) {
 			// 用户端：选用/自建 Agent + 可绑定 skill/plugin 列表（仅登录态）。
 			workbenchmod.RegisterUserRoutes(mux, workbenchModule.AgentService, workbenchModule.SkillService,
 				workbenchModule.PluginService, cfg.JWTSecret, authService)
+			// 编排对话端点（S2-丁10，D2 仅登录态）：复用 token 网关 ForwardService 做每轮上游调用。
+			// token 网关未启用（tokenForwardSvc==nil）时不注册——编排依赖上游转发。
+			if chatSvc := workbenchModule.BuildChatService(tokenForwardSvc, cfg.MaxRounds); chatSvc != nil {
+				workbenchmod.RegisterChatRoute(mux, chatSvc, cfg.JWTSecret, authService)
+			} else {
+				log.Printf("[workbench] token 网关未启用，编排 chat 端点 /api/agents/{id}/chat 未注册")
+			}
 		}
 	} else {
 		log.Printf("[workbench] PLUGIN_SECRET_KEY/TOKEN_PROVIDER_KEY 未配置，工作台未启用")

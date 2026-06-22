@@ -7,16 +7,16 @@ import "time"
 // 用户「切角色」= 选不同 Agent；选定后 system_prompt + 默认模型 + 绑定 skill/插件作为对话上下文。
 type Agent struct {
 	ID               uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
-	Code             *string   `gorm:"size:64;uniqueIndex:uk_agents_code" json:"code,omitempty"`       // 官方预设唯一编码；用户自建为 NULL
-	Name             string    `gorm:"size:128;not null" json:"name"`                                 // Agent 名称
-	Description      string    `gorm:"size:512;not null;default:''" json:"description"`               // 描述
-	Avatar           string    `gorm:"size:512;not null;default:''" json:"avatar"`                    // 头像 URL
-	OwnerType        string    `gorm:"size:16;not null;default:official" json:"owner_type"`           // official 官方 / user 用户自建
-	OwnerUserID      *uint64   `gorm:"column:owner_user_id" json:"owner_user_id,omitempty"`           // user 自建时非空
-	SystemPrompt     string    `gorm:"type:text;not null" json:"system_prompt"`                       // 系统提示词（人设）
-	DefaultModelCode string    `gorm:"size:128;not null" json:"default_model_code"`                   // 指向 token_models.logical_model_code
-	Status           string    `gorm:"size:16;not null;default:active" json:"status"`                 // active 启用 / inactive 停用
-	SortOrder        int       `gorm:"not null;default:0" json:"sort_order"`                          // 排序权重，越小越靠前
+	Code             *string   `gorm:"size:64;uniqueIndex:uk_agents_code" json:"code,omitempty"` // 官方预设唯一编码；用户自建为 NULL
+	Name             string    `gorm:"size:128;not null" json:"name"`                            // Agent 名称
+	Description      string    `gorm:"size:512;not null;default:''" json:"description"`          // 描述
+	Avatar           string    `gorm:"size:512;not null;default:''" json:"avatar"`               // 头像 URL
+	OwnerType        string    `gorm:"size:16;not null;default:official" json:"owner_type"`      // official 官方 / user 用户自建
+	OwnerUserID      *uint64   `gorm:"column:owner_user_id" json:"owner_user_id,omitempty"`      // user 自建时非空
+	SystemPrompt     string    `gorm:"type:text;not null" json:"system_prompt"`                  // 系统提示词（人设）
+	DefaultModelCode string    `gorm:"size:128;not null" json:"default_model_code"`              // 指向 token_models.logical_model_code
+	Status           string    `gorm:"size:16;not null;default:active" json:"status"`            // active 启用 / inactive 停用
+	SortOrder        int       `gorm:"not null;default:0" json:"sort_order"`                     // 排序权重，越小越靠前
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }
