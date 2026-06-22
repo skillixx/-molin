@@ -71,8 +71,31 @@ func (s *WalletService) GetByUserID(ctx context.Context, userID uint64) (*model.
 // （无双扣、无负余额）由「FOR UPDATE 行锁 + 乐观锁 version 守卫」保证，本方法仅
 // 通过增大重试次数与退避来提升「最终拿到确定结果」的概率，绝不放宽余额校验或乐观锁。
 func (s *WalletService) Deduct(ctx context.Context, userID uint64, amount decimal.Decimal, orderID uint64, remark string) error {
+	return RetryOnVersionConflict(func() error {
+		return s.deductOnce(ctx, userID, amount, orderID, remark)
+	})
+}
+
+// RetryOnVersionConflict 是钱包乐观锁冲突的统一重试封装（D-M2-03 修复）。
+//
+// 设计目标：把「乐观锁冲突 -> 退避 -> 重新执行一次完整 read-modify-write」这套策略收敛到一处，
+// 避免在 Deduct / FreezeHold / SettleHold / 异步 finance 扣费等多处各写一份、参数与语义漂移。
+//
+// 约定：
+//   - fn 必须是一个「自包含的完整事务尝试」：内部重新开事务、重新 FOR UPDATE 读取最新 version，
+//     再做乐观锁更新（不能跨重试复用旧 version，否则是死重试）。
+//   - 仅当 fn 返回的 error 命中 ErrConcurrentUpdate（is 链）时才重试；其余错误（余额不足等真实业务
+//     失败、或上下文取消）立即返回，绝不重试，杜绝把「余额不足」误判为可重试或反之。
+//   - 每次重试前指数退避 + 随机抖动，打散并发请求的重试时刻，避免惊群再次集体撞版本号。
+//   - 重试 deductMaxRetries 次仍冲突，返回最后一次的 ErrConcurrentUpdate（由调用方/handler 映射为
+//     409/系统繁忙，绝不能伪装成 60001 余额不足）。
+//
+// 安全性：本封装只控制「何时重新尝试」，绝不放宽余额校验或乐观锁守卫——无负余额由 fn 内部的
+// `FOR UPDATE + WHERE version=? + 余额校验` 保证，重试只决定丢不丢这笔扣费/解冻。
+func RetryOnVersionConflict(fn func() error) error {
+	var err error
 	for i := 0; i < deductMaxRetries; i++ {
-		err := s.deductOnce(ctx, userID, amount, orderID, remark)
+		err = fn()
 		if err == nil {
 			return nil
 		}
@@ -86,7 +109,7 @@ func (s *WalletService) Deduct(ctx context.Context, userID uint64, amount decima
 		}
 	}
 	// 重试耗尽仍冲突：返回 ErrConcurrentUpdate，由 handler 映射为 409「系统繁忙，请重试」。
-	return ErrConcurrentUpdate
+	return err
 }
 
 // backoffWithJitter 计算第 attempt 次重试（从 0 开始）的退避时长：

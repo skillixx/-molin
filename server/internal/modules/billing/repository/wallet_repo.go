@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"molin/server/internal/modules/billing/model"
 )
@@ -55,11 +56,17 @@ func (r *WalletRepository) GetByUserID(ctx context.Context, userID uint64) (*mod
 	return &wallet, nil
 }
 
-// GetForUpdate 在事务内加行锁查询钱包（SELECT FOR UPDATE）。
+// GetForUpdate 在事务内加行锁查询钱包（SELECT ... FOR UPDATE）。
 // 必须在事务内调用，tx 参数即为事务 DB 实例。
+//
+// D-M2-03 根因修复：原实现使用 GORM v1 遗留写法 `tx.Set("gorm:query_option","FOR UPDATE")`，
+// 该写法在 GORM v2 下完全失效（不会拼出 FOR UPDATE 子句），导致并发扣费/解冻无任何行锁串行化，
+// 多个事务读到同一 version 后在乐观锁更新阶段相互踩版本号，重试被打满、扣费成片丢失、保证金泄漏。
+// 改用 GORM v2 标准的 clause.Locking{Strength:"UPDATE"} 真正下发行锁，使同一钱包的并发写串行执行，
+// 乐观锁退化为兜底（理论上不再触发冲突），从根上消除漏扣与泄漏。
 func (r *WalletRepository) GetForUpdate(tx *gorm.DB, userID uint64) (*model.Wallet, error) {
 	var wallet model.Wallet
-	if err := tx.Set("gorm:query_option", "FOR UPDATE").
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("user_id = ?", userID).First(&wallet).Error; err != nil {
 		return nil, err
 	}

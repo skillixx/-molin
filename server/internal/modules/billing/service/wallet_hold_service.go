@@ -68,26 +68,31 @@ func (s *WalletHoldService) FreezeHold(ctx context.Context, userID uint64, amoun
 		}
 	}
 
+	// D-M2-02 / D-M2-03 修复：复用统一的乐观锁冲突重试封装。
+	//   - 乐观锁冲突（ErrConcurrentUpdate）：退避后重读 version 重试，重试耗尽返回 ErrConcurrentUpdate
+	//     （可重试/系统繁忙），而非伪装成 ErrInsufficientBalance（60001）——这是 D-M2-02 错误语义的关键。
+	//   - 真正余额不足（ErrInsufficientBalance）：fn 内立即返回，不重试，由门面映射 60001。
+	//   - 唯一键冲突（并发同 key 冻结）：在 fn 内直接收敛为已有 holdID，幂等返回，不再走重试。
 	var holdID uint64
-	for i := 0; i < deductMaxRetries; i++ {
-		id, err := s.freezeHoldOnce(ctx, userID, amount, idempotencyKey, remark)
-		if err == nil {
-			return id, nil
+	err := RetryOnVersionConflict(func() error {
+		id, ferr := s.freezeHoldOnce(ctx, userID, amount, idempotencyKey, remark)
+		if ferr == nil {
+			holdID = id
+			return nil
 		}
-		// 唯一键冲突（并发同 key 冻结）：再查一次返回已有 holdID，幂等收敛。
-		if isDuplicateKey(err) && idempotencyKey != "" {
-			if existing, ferr := s.holdRepo.FindByIdempotencyKey(ctx, idempotencyKey); ferr == nil {
-				return existing.ID, nil
+		// 唯一键冲突（并发同 key 冻结）：再查一次返回已有 holdID，幂等收敛（视为成功，不重试）。
+		if isDuplicateKey(ferr) && idempotencyKey != "" {
+			if existing, qerr := s.holdRepo.FindByIdempotencyKey(ctx, idempotencyKey); qerr == nil {
+				holdID = existing.ID
+				return nil
 			}
 		}
-		if !errors.Is(err, ErrConcurrentUpdate) {
-			return 0, err
-		}
-		if i < deductMaxRetries-1 {
-			time.Sleep(backoffWithJitter(i))
-		}
+		return ferr
+	})
+	if err != nil {
+		return 0, err
 	}
-	return holdID, ErrConcurrentUpdate
+	return holdID, nil
 }
 
 // freezeHoldOnce 单次冻结尝试（事务内）。
@@ -160,19 +165,12 @@ func (s *WalletHoldService) SettleHold(ctx context.Context, holdID uint64, actua
 	if actual.LessThan(decimal.Zero) {
 		return ErrInvalidAmount
 	}
-	for i := 0; i < deductMaxRetries; i++ {
-		err := s.settleHoldOnce(ctx, holdID, actual, idempotencyKey)
-		if err == nil {
-			return nil
-		}
-		if !errors.Is(err, ErrConcurrentUpdate) {
-			return err
-		}
-		if i < deductMaxRetries-1 {
-			time.Sleep(backoffWithJitter(i))
-		}
-	}
-	return ErrConcurrentUpdate
+	// D-M2-03 修复：复用统一的乐观锁冲突重试封装。每次重试都重新开事务、重新 FOR UPDATE
+	// 读取 hold 与钱包的最新 version 再更新，确保结算解冻在并发下重试到成功，不再把
+	// hold 永久卡在 holding 导致 frozen 泄漏。重试耗尽才返回 ErrConcurrentUpdate（可重试）。
+	return RetryOnVersionConflict(func() error {
+		return s.settleHoldOnce(ctx, holdID, actual, idempotencyKey)
+	})
 }
 
 // settleHoldOnce 单次结算尝试（事务内）。
