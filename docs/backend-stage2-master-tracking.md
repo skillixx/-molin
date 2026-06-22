@@ -30,7 +30,7 @@
         │
 ④.6 契约回写      D1–D6 决议吸收进各契约（billing/sk/chat-workbench/roadmap）+ 调排期   ✅（PR #206）
         │
-⑤ 实现           各后端按契约开发（迁移 → model/repo/service → handler → 装配）   🚧 进行中：M1(W5)✅验收通过，M2/M3 待开
+⑤ 实现           各后端按契约开发（迁移 → model/repo/service → handler → 装配）   🚧 进行中：M1✅验收通过，M2✅验收通过，M3✅后端全完成（待前端+测试验收）
         │
 ⑥ 联调           前端按 §14 对接 + 后端接口就位；字段变更回写契约                🔜
         │
@@ -39,7 +39,7 @@
 ⑧ 上线           上线检查单（环境变量/迁移序/配置项/回滚）→ PM 验收 → 发布        🔜
 ```
 
-**当前位置**：①–④.6 规划全部完成；⑤ 实现进行中——**M1（W5）15/15 ✅ 真实上游端到端验收通过**；下一步 M2（套餐预付，W6）。
+**当前位置**：①–④.6 规划全部完成；⑤ 实现进行中——**M1 验收通过（真实上游 44/44）、M2 验收通过（75/75，方案 B 根治白嫖）、M3 后端全完成**（Agent/Skill/Plugin CRUD + tool-use 编排 + skill/plugin 执行 + 编排计费，附 DB 集成测试）。下一步：M3 前端页面（Codex）+ 运维注入 MAX_ROUNDS/白名单 + 测试工程师 M3 端到端验收。
 
 ### 1.2 单个接口的开发流程（每位工程师统一遵循）
 
@@ -118,7 +118,7 @@
 | 21 | `GET /api/agents`、`GET /api/agents/{id}` | 登录态 | ✅ S2-丁9 | §14.9 |
 | 22 | `POST/PATCH/DELETE /api/agents`（自建，越权 40003） | 登录态 | ✅ S2-丁9 | §14.9 |
 | 23 | `GET /api/skills`、`GET /api/plugins`（供自建绑定） | 登录态 | ✅ S2-丁9 | §14.9 |
-| 24 | `POST /api/agents/{id}/chat`（tool-use 编排，SSE） | **仅登录态**（D2，sk 不可调） | 🔜 S2-丁10 | §14.8 / 工作台契约 §4 |
+| 24 | `POST /api/agents/{id}/chat`（tool-use 编排，SSE） | **仅登录态**（D2，sk 不可调） | ✅ S2-丁10（commit 52c4d25） | §14.8 / 工作台契约 §4 |
 
 ### 2.6 数据库迁移（序号以实际合并顺序为准）
 
@@ -132,6 +132,7 @@
 | 000038–000040 | agents+绑定表 / skills / plugins（plugins 含 D3 `is_paid`/`daily_limit`） | ✅ S2-丁6（PR #224） |
 | 000041 | entitlement_consume_logs（D5 幂等表，idempotency_key 唯一） | ✅ S2-丙2（PR #226） |
 | 000043 | 权限码 seed（agent/skill/plugin:manage，绑定 admin 角色） | ✅ S2-甲7（M3，commit 097cbbd） |
+| 000044 | plugin_daily_call_logs（付费插件每用户每日调用计数，D3 限流） | ✅ S2-甲9（commit 52c4d25） |
 | 0000XX | **`entitlement_consume_logs`（D5 幂等表，idempotency_key 唯一）** | 🔜 S2-丙2（M2，序号紧随套餐相关迁移） |
 
 > **迁移序号铁律**：golang-migrate 不支持 out-of-order——序号严格按**合并顺序**递增、**不留空号**（曾因 wallet_holds 预留空号导致 gap，已修正为连续）。上表 000036 起为预估，实际以合并顺序为准。
@@ -155,7 +156,8 @@
 | `TOKEN_PROVIDER_KEY` | 渠道 api_key AES-256-GCM | ✅ 已用 |
 | `API_KEY_HMAC_SECRET` | sk 的 HMAC 存储密钥 | ✅ S2-甲5/运1（.env.example PR #218；测试环境已设） |
 | `PLUGIN_SECRET_KEY`（或复用 `TOKEN_PROVIDER_KEY`） | 插件凭证 AES-256-GCM 加密 | ✅ 代码就绪 S2-丁7（config 已读取，未配置时回退复用 `TOKEN_PROVIDER_KEY`；32 字节，未配则工作台不装配）；运维注入待 S2-运2 |
-| `MAX_ROUNDS`（默认 5）、插件域名白名单 | tool-use 编排 / SSRF | 🔜 S2-运2 |
+| `MAX_ROUNDS`（默认 5） | tool-use 编排最大轮数 | ✅ 代码就绪 S2-丁10（config 已读取，默认 5）；运维注入待 S2-运2 |
+| `PLUGIN_DOMAIN_WHITELIST`（逗号分隔，可空） | 插件/skill 外呼域名白名单（SSRF） | ✅ 代码就绪 S2-甲9（空=仅按网段拦内网）；运维注入待 S2-运2 |
 
 ---
 
@@ -237,14 +239,14 @@
 - [ ] S2-测3 三模块 CRUD + 自建越权用例（后端已附 3 项 DB 集成测试 `workbench_db_test.go`，待测试工程师端到端回归）
 
 **W8 · M3 工作台（下）tool-use 编排**
-- [ ] S2-丁10（关键路径）`POST /api/agents/{id}/chat` 编排循环（D2 仅登录态，sk 不可调）
-- [ ] S2-丁11 skill 内置函数注册表（1–2 示例，**D4 不含 code_exec**，用 web_search/doc_read）
-- [ ] S2-甲9（协丁）plugin HTTP 转发器（SSRF/超时/凭证/熔断 + D3 付费插件每用户每日上限计数）
-- [ ] S2-丁13 编排计费接入（每轮 token + 按次计 1）
-- [ ] S2-丁14 bootstrap 总装配收口 + 冒烟
-- [ ] S2-前乙4 聊天对话页（SSE + tool_call/tool_result 事件，§14.8）
-- [ ] S2-运2 配置项注入（MAX_ROUNDS / 白名单 / PLUGIN_SECRET_KEY）
-- [ ] S2-测4 编排用例（多轮 / 超限 / SSRF / 计费正确）
+- [x] S2-丁10（关键路径）`POST /api/agents/{id}/chat` 编排循环（D2 仅登录态）✅（commit 52c4d25；ForwardService.ChatOnce 复用转发器，SSE tool_call/tool_result/message/[DONE]）
+- [x] S2-丁11 skill 内置函数注册表 ✅（doc_read 真实抓取+SSRF / web_search 占位降级；**D4 不含 code_exec**）
+- [x] S2-甲9（协丁）plugin HTTP 转发器 ✅（运行时 SSRF 解析 DNS+白名单 / 超时 / 凭证解密注入 / 连续失败熔断 / D3 付费日上限原子计数，迁移 000044）
+- [x] S2-丁13 编排计费接入 ✅（每轮实计 token；calls 仅首轮，整次提问计 1，skipCallBilling 零回归既有 Forward）
+- [x] S2-丁14 bootstrap 总装配收口 + 冒烟 ✅（编排端点装配；token 网关未启用则不注册；路由 401 鉴权闸验证）
+- [ ] S2-前乙4 聊天对话页（SSE + tool_call/tool_result 事件，§14.8）— 待 Codex
+- [~] S2-运2 配置项注入（MAX_ROUNDS / 白名单 / PLUGIN_SECRET_KEY）— **代码就绪**（config 已读取 MAX_ROUNDS/PLUGIN_DOMAIN_WHITELIST/PLUGIN_SECRET_KEY），运维注入 .env 待办
+- [ ] S2-测4 编排用例（多轮 / 超限 / SSRF / 计费正确）— 后端已附 DB 集成测试（编排首/次轮、MAX_ROUNDS、付费日上限）+ SSRF 单测，待测试工程师端到端回归
 
 **W9 · M4 整合验收**
 - [ ] S2-测5（前半）端到端 + 三计费 + tool-use + 并发无负余额(硬)
@@ -262,8 +264,8 @@
 | 风险审查 + D1–D6 决议 | ✅（PR #205） |
 | 契约回写（④.6） | 7 / 7 ✅（PR #206） |
 | **M1 Token 售卖闭环（W5）** | **15 / 15 ✅ 验收通过（真实上游 44/44，PR #207–219）** |
-| 实现阶段任务（S2-xx 总） | 19 / 47（M1 全完成；M2 验收通过；M3 上半后端 甲7+丁7/8/9 完成，余编排 W8 + 前端 + 测试） |
-| **接口总数** | 已实现 19 项 / 待实现 5 项（共 24；余编排 chat §14.8 + 前端页面 + 测试） |
+| 实现阶段任务（S2-xx 总） | 25 / 47（M1 全完成；M2 验收通过；M3 后端全完成：甲7/9 + 丁7~14；余前端页面 + 运维注入 + 测试验收） |
+| **接口总数** | 已实现 20 项 / 待实现 4 项（共 24；全部后端接口就绪，余前端页面 + 测试） |
 
 ### 3.4.5 S2-测2 验收（2026-06-22）— M2 套餐 + 并发，发现 3 缺陷（2 P1）
 

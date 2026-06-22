@@ -1793,17 +1793,27 @@ Wechatpay-Nonce: <随机串>
 
 > 以下为多模型聊天工作台（M3，🔜 后端丁）。Agent / Skill / 插件均**免费**，仅模型 token 调用计费。后端契约见 `docs/backend-chat-workbench-contract.md`。
 
-### 14.8 Agent 对话（站内聊天，tool-use 编排）🔜
+### 14.8 Agent 对话（站内聊天，tool-use 编排）✅ 后端就绪（S2-丁10）
 
 - **POST** `/api/agents/{id}/chat` *(**仅登录态**；sk 不可调用本端点——sk 仅用于透传端点 §14.2)*
 - 请求：
   ```json
   { "messages": [{ "role": "user", "content": "查一下今天的新闻并总结" }], "model": "deepseek-chat", "stream": true }
   ```
-  - `model` 可选，缺省用该 Agent 的默认模型；`stream=true` 走 SSE。
-- 行为：门面注入 Agent 人设 + 绑定的 skill/插件作为工具，自动执行工具调用循环，返回最终答案。**与 §14.2 的区别**：14.2 是纯透传（开发者自理工具），本接口由门面编排工具。
-- 流式 SSE 事件（建议）：`event: tool_call`（调用工具中）/ `event: tool_result` / `event: message`（最终答案增量）/ `data: [DONE]`。
-- 计费：按 token 累加各轮 / 按次计 1（一次提问算 1 次）。错误码同 §14（40300/50200/50300）。
+  - `messages` 必填（客户端自持完整对话历史，后端不落库存储对话内容）；`model` 可选，缺省用该 Agent 的 `default_model_code`；`stream=true` 走 SSE。
+  - 可见性：仅官方 active 或本人自建 Agent 可调，否则 `40003`；Agent 不存在 `40404`。
+- 行为：门面注入 Agent 人设（system）+ 绑定且 enabled 的 active skill/插件作为 `tools`，自动执行工具调用循环（默认上限 `MAX_ROUNDS=5`），返回最终答案。**与 §14.2 的区别**：14.2 是纯透传（开发者自理工具），本接口由门面编排工具。
+- **流式（`stream:true`）SSE 事件**（`event: <type>\ndata: <json>\n\n`）：
+  - `event: tool_call` → `{ "name": "web_search", "arguments": "{…}" }`（开始调用某工具）
+  - `event: tool_result` → `{ "name": "web_search", "content": "…" }`（该工具返回；失败时 content 为「工具执行失败: …」，模型自行降级，不中断对话）
+  - `event: message` → `{ "content": "最终答案文本", "finish_reason": "stop" | "max_rounds" }`（最终答案）
+  - `event: error` → `{ "message": "…" }`（编排中途出错，已开始流式无法回退 HTTP 码时）
+  - 末尾固定 `data: [DONE]`
+  - 超 `MAX_ROUNDS` 仍未收敛：发 `message`（`finish_reason:"max_rounds"`，文案含「已达上限，已正常计费」）后 `[DONE]`。
+- **非流式（`stream:false`）**：返回单条 JSON `{ "choices":[{ "message":{"role":"assistant","content":"…"}, "finish_reason":"stop" }] }`（中间工具事件不下发）。
+- 计费：按 token 累加各轮 / 按次计 1（**一次提问算 1 次**，仅首轮计次）。Agent/skill/插件本身免费。
+- 错误码（未开始流式时走 HTTP 码）：`40300`（无可用模型/未开通 token 服务）、`60001`（钱包余额不足）、`60005`（套餐额度不足）、`40003`（越权/套餐归属不符）、`50200`（上游失败）、`50300`（渠道不可用）、`50301`（系统繁忙可重试）。
+- 内置 skill：`doc_read`（抓取 https 文档，SSRF 防护）已可用；`web_search` 占位（未配置服务商时返回工具错误，模型降级）。付费插件按 `daily_limit` 限每用户每日调用次数（超限当轮工具返回「已达上限」，不中断对话）。
 
 ### 14.9 Agent / 角色（用户端）✅ 后端就绪（S2-丁9）
 
