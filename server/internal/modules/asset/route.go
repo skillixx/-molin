@@ -45,10 +45,12 @@ func RegisterRoutes(
 
 	// 内部接口（不对外公开，沿用 /api/internal/* 机制：X-Internal-Token 主闸 + IP 白名单辅助防线）。
 	// S2-丙2：套餐预付额度扣减，由 token 网关门面在 prepaid 模式结算时调用。
+	// S2-丙3：权益余额只读查询，供门面 prepaid 转发前置闸（修 D-M2-01）。
 	allowedIPs := parseAllowedIPs(os.Getenv("INTERNAL_ALLOWED_IPS"))
 	internalToken := strings.TrimSpace(os.Getenv("INTERNAL_API_TOKEN"))
 	ih := handler.NewInternalAssetHandler(svc, allowedIPs, internalToken)
 	mux.HandleFunc("POST /api/internal/entitlement-consume", ih.ConsumeEntitlement)
+	mux.HandleFunc("GET /api/internal/entitlement-balance", ih.GetEntitlementBalance)
 }
 
 // parseAllowedIPs 解析逗号分隔的 IP 白名单字符串（与 finance_consumer 一致）。

@@ -560,6 +560,68 @@ func buildConsumeResult(e *model.UserEntitlement, usedAfter decimal.Decimal) *dt
 	return res
 }
 
+// GetEntitlementBalance 查询权益余额快照（S2-丙3，供门面 prepaid 前置闸）。
+//
+// 纯只读：普通读（不加 FOR UPDATE 行锁），不参与扣减、不改状态。前置闸只是粗筛，
+// 真正防透支由结算阶段 ConsumeEntitlementIdempotent 的行锁兜底。
+//
+// 校验顺序与对外错误码（与丙2 扣减接口保持一致）：
+//   - 权益不存在 → ErrEntitlementNotFound（对外 40400）。
+//   - 归属不符（entitlement.user_id != 入参 userID）→ ErrEntitlementNotOwned（对外 40003）。
+//
+// 类型非 token_quota 不拒绝：照常返回 remaining/usable（门面仅在 prepaid sk 场景使用，
+// source_id 必为 token_quota 权益）。
+func (s *AssetService) GetEntitlementBalance(
+	ctx context.Context, entitlementID, userID uint64,
+) (*dto.EntitlementBalanceResult, error) {
+	e, err := s.entitlementRepo.FindByID(ctx, entitlementID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrEntitlementNotFound
+		}
+		return nil, err
+	}
+	// 归属校验：必须等于权益所属用户
+	if e.UserID != userID {
+		return nil, ErrEntitlementNotOwned
+	}
+	return buildBalanceResult(e, time.Now()), nil
+}
+
+// buildBalanceResult 据权益记录组装余额快照（纯函数，便于单测）。
+//
+// usable 计算口径（关键，给门面前置闸用）：
+//   - status=active 且未过期（expires_at 为空或晚于 now）且 remaining>0 → true；
+//   - 不限量（quota_total 为 NULL）时 remaining 为 NULL，此时只要 status=active 且未过期即 usable=true。
+//
+// now 由调用方传入，便于测试构造过期/未过期场景。
+func buildBalanceResult(e *model.UserEntitlement, now time.Time) *dto.EntitlementBalanceResult {
+	res := &dto.EntitlementBalanceResult{
+		EntitlementID: e.ID,
+		UserID:        e.UserID,
+		QuotaTotal:    e.QuotaTotal,
+		QuotaUsed:     e.QuotaUsed,
+		Status:        e.Status,
+		ExpiresAt:     e.ExpiresAt,
+	}
+
+	// remaining：有限额时为 quota_total - quota_used，不限量时为 nil。
+	var hasRemaining bool
+	if e.QuotaTotal != nil {
+		rem := e.QuotaTotal.Sub(e.QuotaUsed)
+		res.Remaining = &rem
+		hasRemaining = rem.GreaterThan(decimal.Zero)
+	} else {
+		// 不限量：视为额度充足
+		hasRemaining = true
+	}
+
+	// usable：active + 未过期 + 有剩余额度
+	notExpired := e.ExpiresAt == nil || e.ExpiresAt.After(now)
+	res.Usable = e.Status == "active" && notExpired && hasRemaining
+	return res
+}
+
 // parseQuotaConfig 解析 product_plans.quota_json 原始内容为权益配置列表。
 //
 // 支持以下入参形式（兼容 provision 模块直接透传 *string 或 string）：
