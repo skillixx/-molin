@@ -52,6 +52,7 @@ import (
 	tokengatewaymod "molin/server/internal/modules/token_gateway"
 	tokenclient "molin/server/internal/modules/token_gateway/client"
 	tokengatewaysvc "molin/server/internal/modules/token_gateway/service"
+	workbenchmod "molin/server/internal/modules/workbench"
 	"molin/server/pkg/cache"
 	"molin/server/pkg/db"
 	"molin/server/pkg/response"
@@ -703,6 +704,23 @@ func NewApp() (*App, error) {
 		}
 	} else {
 		log.Printf("[token_gateway] TOKEN_PROVIDER_KEY 未配置，token 网关门面未启用")
+	}
+
+	// 聊天工作台（S2-丁7）：Agent/Skill/Plugin 管理端 + 用户端（自建/选用）。
+	// 插件凭证加密需 32 字节密钥（PluginSecretKey，回退复用 TOKEN_PROVIDER_KEY）；未配置则跳过装配，灰度降级不 panic。
+	if cfg.PluginSecretKey != "" {
+		if workbenchModule, wbErr := workbenchmod.New(gormDB, cfg.PluginSecretKey); wbErr != nil {
+			log.Printf("[workbench] 初始化失败，工作台管理端/用户端未启用: %v", wbErr)
+		} else {
+			// 管理端：Agent/Skill/Plugin CRUD + 绑定（agent/skill/plugin:manage + 管理员双重认证）。
+			workbenchmod.RegisterRoutes(mux, workbenchModule.AgentService, workbenchModule.SkillService,
+				workbenchModule.PluginService, cfg.JWTSecret, iamService, authService, authService)
+			// 用户端：选用/自建 Agent + 可绑定 skill/plugin 列表（仅登录态）。
+			workbenchmod.RegisterUserRoutes(mux, workbenchModule.AgentService, workbenchModule.SkillService,
+				workbenchModule.PluginService, cfg.JWTSecret, authService)
+		}
+	} else {
+		log.Printf("[workbench] PLUGIN_SECRET_KEY/TOKEN_PROVIDER_KEY 未配置，工作台未启用")
 	}
 
 	// 启动定时任务：到期资产处理（后台 goroutine，随应用生命周期运行）

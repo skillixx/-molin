@@ -67,6 +67,10 @@ type Config struct {
 	// postpaid 预扣保证金兜底 max_tokens（S2-丁5）。
 	// 请求未带 max_tokens 时按此上限冻结；通过 TOKEN_HOLD_DEFAULT_MAX_TOKENS 注入。
 	TokenHoldDefaultMaxTokens int
+
+	// 工作台插件凭证（plugins.auth_config_encrypted）加密密钥（32 字节，AES-256-GCM，S2-丁7 / 契约 §5）。
+	// 通过 PLUGIN_SECRET_KEY 注入；未配置时回退复用 TOKEN_PROVIDER_KEY（契约允许复用）。
+	PluginSecretKey string
 }
 
 func Load() Config {
@@ -107,6 +111,9 @@ func Load() Config {
 		// 兜底单价默认 0.00002 CNY/token（约 ¥0.02/千 token，保守上限；运营按真实档位下调）。
 		TokenHoldUnitPrice:        getenv("TOKEN_HOLD_UNIT_PRICE", "0.00002"),
 		TokenHoldDefaultMaxTokens: getenvInt("TOKEN_HOLD_DEFAULT_MAX_TOKENS", 4096),
+
+		// 插件凭证密钥：优先 PLUGIN_SECRET_KEY，未配置时回退复用 TOKEN_PROVIDER_KEY（契约 §5 允许）。
+		PluginSecretKey: getenv("PLUGIN_SECRET_KEY", getenv("TOKEN_PROVIDER_KEY", "")),
 	}
 }
 
