@@ -24,6 +24,10 @@ var ErrEntitlementForbidden = errors.New("权益不属于该用户")
 // ErrInternalAuth 内部接口鉴权失败 / 未配置 INTERNAL_API_TOKEN（fail-closed）。
 var ErrInternalAuth = errors.New("内部接口鉴权失败")
 
+// ErrEntitlementNotFound 权益不存在（asset 余额查询返回 40400）。
+// prepaid 前置闸据此按「sk 绑定权益失效」拒绝转发（fail-safe）。
+var ErrEntitlementNotFound = errors.New("权益不存在")
+
 // EntitlementClient 调用 asset 模块内部接口 POST /api/internal/entitlement-consume。
 //
 // 安全约定（与 asset/finance_consumer 内部机制对称）：
@@ -62,6 +66,20 @@ type ConsumeResult struct {
 	QuotaUsed     decimal.Decimal  `json:"quota_used"`
 	Remaining     *decimal.Decimal `json:"remaining,omitempty"`
 	Status        string           `json:"status"`
+}
+
+// BalanceResult 与 asset.dto.EntitlementBalanceResult 对齐（权益余额只读快照，S2-丙3）。
+//
+// usable 由 asset 侧统一计算：status=active 且未过期且 remaining>0（不限量则只看 active+未过期）。
+// 门面 prepaid 前置闸据 usable=false 直接拒 60005，不转发上游。
+type BalanceResult struct {
+	EntitlementID uint64           `json:"entitlement_id"`
+	UserID        uint64           `json:"user_id"`
+	QuotaTotal    *decimal.Decimal `json:"quota_total,omitempty"`
+	QuotaUsed     decimal.Decimal  `json:"quota_used"`
+	Remaining     *decimal.Decimal `json:"remaining,omitempty"`
+	Status        string           `json:"status"`
+	Usable        bool             `json:"usable"`
 }
 
 // apiEnvelope 复用项目统一响应体 {code,message,data}（response.JSON/Error）。
@@ -130,5 +148,59 @@ func (c *EntitlementClient) Consume(ctx context.Context, entitlementID, userID u
 			return nil, ErrInternalAuth
 		}
 		return nil, fmt.Errorf("entitlement-consume 返回错误 code=%d message=%s", env.Code, env.Message)
+	}
+}
+
+// GetBalance 查询权益余额（只读，S2-丙3，供门面 prepaid 转发前置闸，修 D-M2-01）。
+// GET /api/internal/entitlement-balance?entitlement_id={id}&user_id={uid}，带 X-Internal-Token。
+//
+//   - 成功返回权益只读快照（含 usable）。
+//   - asset 返回 40003（归属不符）→ ErrEntitlementForbidden。
+//   - asset 返回 40400（权益不存在）→ ErrEntitlementNotFound。
+//   - 鉴权未配置 / 401/403 → ErrInternalAuth。
+//   - 其他失败（网络/解析/5xx）→ 透传 error。
+//
+// 调用方（门面前置闸）必须 fail-safe：任何 error 一律拒绝转发，绝不因查询失败放行白嫖。
+func (c *EntitlementClient) GetBalance(ctx context.Context, entitlementID, userID uint64) (*BalanceResult, error) {
+	// fail-closed：未配置内部密钥时不发请求。
+	if c.internalToken == "" {
+		return nil, ErrInternalAuth
+	}
+
+	url := fmt.Sprintf("%s/api/internal/entitlement-balance?entitlement_id=%d&user_id=%d",
+		c.baseURL, entitlementID, userID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("构造 entitlement-balance 请求失败: %w", err)
+	}
+	req.Header.Set("X-Internal-Token", c.internalToken)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("调用 entitlement-balance 失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var env apiEnvelope
+	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
+		return nil, fmt.Errorf("解析 entitlement-balance 响应失败: %w", err)
+	}
+
+	switch env.Code {
+	case 0, http.StatusOK: // 统一响应成功 code 约定为 0；兼容 200
+		var result BalanceResult
+		if err := json.Unmarshal(env.Data, &result); err != nil {
+			return nil, fmt.Errorf("解析 entitlement-balance data 失败: %w", err)
+		}
+		return &result, nil
+	case 40400:
+		return nil, ErrEntitlementNotFound
+	case 40003:
+		return nil, ErrEntitlementForbidden
+	default:
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return nil, ErrInternalAuth
+		}
+		return nil, fmt.Errorf("entitlement-balance 返回错误 code=%d message=%s", env.Code, env.Message)
 	}
 }

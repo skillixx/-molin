@@ -259,26 +259,39 @@ func (a *tokenUsageReporterAdapter) Report(ctx context.Context, evt tokengateway
 }
 
 // walletHolderAdapter 将 billing.WalletHoldService 适配为 token_gateway.WalletHolder 接口（S2-丁5 / D1）。
-// 仅做一件额外事：把 billing 的 ErrInsufficientBalance 归一化为 token_gateway 的 ErrWalletInsufficient，
-// 使门面前置闸能据此返回对外 60001（避免 token_gateway 直接 import billing 的错误变量）。
+// 把 billing 的业务错误归一化为 token_gateway 门面 sentinel（避免 token_gateway 直接 import billing 错误变量）：
+//   - ErrInsufficientBalance（真余额不足）→ ErrWalletInsufficient（对外 60001）。
+//   - ErrConcurrentUpdate（乐观锁冲突重试耗尽，可重试）→ ErrSystemBusy（对外 503）——D-M2-02 关键：
+//     绝不把乐观锁冲突伪装成余额不足 60001。
 type walletHolderAdapter struct {
 	svc *billingsvc.WalletHoldService
 }
 
 func (a *walletHolderAdapter) FreezeHold(ctx context.Context, userID uint64, amount decimal.Decimal, idempotencyKey, remark string) (uint64, error) {
 	holdID, err := a.svc.FreezeHold(ctx, userID, amount, idempotencyKey, remark)
-	if errors.Is(err, billingsvc.ErrInsufficientBalance) {
+	switch {
+	case errors.Is(err, billingsvc.ErrInsufficientBalance):
 		return 0, tokengatewaysvc.ErrWalletInsufficient
+	case errors.Is(err, billingsvc.ErrConcurrentUpdate):
+		return 0, tokengatewaysvc.ErrSystemBusy
 	}
 	return holdID, err
 }
 
 func (a *walletHolderAdapter) SettleHold(ctx context.Context, holdID uint64, actual decimal.Decimal, idempotencyKey string) error {
-	return a.svc.SettleHold(ctx, holdID, actual, idempotencyKey)
+	err := a.svc.SettleHold(ctx, holdID, actual, idempotencyKey)
+	if errors.Is(err, billingsvc.ErrConcurrentUpdate) {
+		return tokengatewaysvc.ErrSystemBusy
+	}
+	return err
 }
 
 func (a *walletHolderAdapter) ReleaseHold(ctx context.Context, holdID uint64, idempotencyKey string) error {
-	return a.svc.ReleaseHold(ctx, holdID, idempotencyKey)
+	err := a.svc.ReleaseHold(ctx, holdID, idempotencyKey)
+	if errors.Is(err, billingsvc.ErrConcurrentUpdate) {
+		return tokengatewaysvc.ErrSystemBusy
+	}
+	return err
 }
 
 // 编译期断言：适配器满足 token_gateway 的 WalletHolder 接口（S2-乙0 / D1 / 丁5）。
@@ -306,6 +319,29 @@ func (a *entConsumerAdapter) Consume(ctx context.Context, entitlementID, userID 
 
 // 编译期断言：适配器满足 token_gateway 的 EntitlementConsumer 接口（S2-丁5）。
 var _ tokengatewaysvc.EntitlementConsumer = (*entConsumerAdapter)(nil)
+
+// balanceCheckerAdapter 将 token_gateway/client.EntitlementClient 适配为 token_gateway.EntitlementBalanceChecker（D-M2-01）。
+// 收敛 (*BalanceResult, error) 为 (EntitlementBalance, error)，并把客户端错误归一化为门面 sentinel：
+//   - 归属不符 / 权益不存在 → ErrEntitlementDenied（门面前置闸据此拒绝转发）。
+//   - 其它错误透传（门面前置闸 fail-safe：任何 error 一律拒绝转发，绝不放行白嫖）。
+type balanceCheckerAdapter struct {
+	cli *tokenclient.EntitlementClient
+}
+
+func (a *balanceCheckerAdapter) GetBalance(ctx context.Context, entitlementID, userID uint64) (tokengatewaysvc.EntitlementBalance, error) {
+	res, err := a.cli.GetBalance(ctx, entitlementID, userID)
+	switch {
+	case err == nil:
+		return tokengatewaysvc.EntitlementBalance{Usable: res.Usable, Status: res.Status}, nil
+	case errors.Is(err, tokenclient.ErrEntitlementForbidden), errors.Is(err, tokenclient.ErrEntitlementNotFound):
+		return tokengatewaysvc.EntitlementBalance{}, tokengatewaysvc.ErrEntitlementDenied
+	default:
+		return tokengatewaysvc.EntitlementBalance{}, err
+	}
+}
+
+// 编译期断言：适配器满足 token_gateway 的 EntitlementBalanceChecker 接口（D-M2-01）。
+var _ tokengatewaysvc.EntitlementBalanceChecker = (*balanceCheckerAdapter)(nil)
 
 // iamRoleGetterAdapter 将 *iamsvc.IAMService 适配为 contenthandler.IAMRoleGetter 接口。
 // IAMService 提供 GetUserRoles 返回 []Role（含 Code 字段），此 adapter 提取 code 列表。
@@ -562,8 +598,13 @@ func NewApp() (*App, error) {
 		tokenWalletHolder := &walletHolderAdapter{svc: walletHoldService}
 
 		//   - EntitlementConsumer（S2-丁5 / 丙2）：prepaid 结算调 asset 内部接口 entitlement-consume 扣套餐额度。
-		//     X-Internal-Token 从配置注入（INTERNAL_API_TOKEN），未配置时客户端 fail-closed（prepaid 扣额度跳过并告警）。
-		tokenEntConsumer := &entConsumerAdapter{cli: tokenclient.NewEntitlementClient(cfg.AssetInternalBaseURL, cfg.InternalAPIToken)}
+		//   - EntitlementBalanceChecker（D-M2-01 / 丙3）：prepaid 转发前置闸调 entitlement-balance 查余额。
+		//     共用同一个 EntitlementClient 实例（同款 base_url + X-Internal-Token）。
+		//     X-Internal-Token 从配置注入（INTERNAL_API_TOKEN），未配置时客户端 fail-closed
+		//     （prepaid 扣额度跳过并告警；前置闸 GetBalance 返回 ErrInternalAuth → fail-safe 拒绝转发）。
+		tokenEntClient := tokenclient.NewEntitlementClient(cfg.AssetInternalBaseURL, cfg.InternalAPIToken)
+		tokenEntConsumer := &entConsumerAdapter{cli: tokenEntClient}
+		tokenBalanceChecker := &balanceCheckerAdapter{cli: tokenEntClient}
 
 		//   - BillingResolver（S2-丁5 / 甲6b）：按 api_key_id 解析 billing_mode/source_id 分流 postpaid/prepaid。
 		//     由 auth.APIKeyService.BillingByID（与 ModelScopeByID 同款只读访问器，甲6b 已补）适配实现。
@@ -596,6 +637,7 @@ func NewApp() (*App, error) {
 				BillingResolver: tokenBillingResolver, // 甲6b：apiKeyService 非 nil 时激活 prepaid，否则 nil → 门面降级 postpaid
 				WalletHolder:    tokenWalletHolder,
 				EntConsumer:     tokenEntConsumer,
+				BalanceChecker:  tokenBalanceChecker, // D-M2-01：prepaid 转发前置余额闸（usable=false 拒 60005，查询失败 fail-safe 拒）
 				HoldUnitPrice:   holdUnitPrice,
 				HoldMaxTokens:   int64(cfg.TokenHoldDefaultMaxTokens),
 			})
