@@ -93,6 +93,7 @@
 | 10 | `GET /api/keys`（列本人，只回 prefix） | 登录态 | ✅ S2-甲4（PR #214） | §14.4 |
 | 11 | `DELETE /api/keys/{id}`（吊销，越权 40003） | 登录态 | ✅ S2-甲4（PR #214） | §14.4 |
 | — | `RequireUserAuth` 双模式中间件 + `ResolveKey` 内部 | — | ✅ S2-甲3（PR #214） | sk 契约 §5 |
+| — | IssueKey 支持 prepaid + source_id（绑套餐 entitlement） | — | ✅ S2-甲6（PR #225，ResolveKey 带出 billing_mode/source_id） | sk 契约 §5 |
 | — | 按 sk 限流 | — | 🔜 S2-甲8（M2） | roadmap §9 #2 |
 
 ### 2.4 计费（后端乙/丙/丁）
@@ -101,10 +102,10 @@
 |---|---|---|---|---|
 | 12 | 按量计费（input/output tokens → 钱包） | 乙+丁 | ✅（含 seed 000033 + `POST /api/internal/product-usage-events`） | billing §2 |
 | 13 | 按次计费规则 seed（calls/count）+ 门面次数事件 | 乙+丁 | ✅ S2-乙1/丁4（PR #210/#215） | billing §3 |
-| 14 | 套餐商品 + plan（quota_json + valid_days） | 乙 | 🔜 S2-乙3 | billing §4.1 |
-| 15 | `POST /api/internal/entitlement-consume`（锁行+有效期；幂等用 **D5 新表 `entitlement_consume_logs`**） | 丙 | 🔜 S2-丙2 | billing §4.2 |
-| 16 | token_quota entitlement 生成（TokenProvisioner 套餐分支） | 丙 | 🔜 S2-丙1（按量分支✅已有） | billing §4.2 |
-| 17 | 门面计费路由（postpaid/prepaid 互斥 + 余额闸 + **D1 预扣保证金**：postpaid 冻结 max_tokens×单价，结算多退少补，复用钱包 freeze） | 丁 | 🔜 S2-丁5 | billing §4.3 |
+| 14 | 套餐商品 + plan（quota_json + valid_days） | 乙 | ✅ S2-乙3（PR #223，000037 token-pkg-1m） | billing §4.1 |
+| 15 | `POST /api/internal/entitlement-consume`（锁行+有效期；幂等用 **D5 新表 `entitlement_consume_logs`**） | 丙 | ✅ S2-丙2（PR #226，60005/40003，100并发无超扣） | billing §4.2 |
+| 16 | token_quota entitlement 生成（TokenProvisioner 套餐分支） | 丙 | ✅ S2-丙1（PR #226，含 valid_days→expires_at） | billing §4.2 |
+| 17 | 门面计费路由（postpaid/prepaid 互斥 + 余额闸 + **D1 预扣保证金**：postpaid 冻结 max_tokens×单价，结算多退少补，复用钱包 freeze） | 丁 | ✅ S2-丁5（PR #227，三红线通过；prepaid 休眠待甲6b 激活） | billing §4.3 |
 | — | 钱包 `freeze/unfreeze` + `WalletHoldService`（**D1 前置**，预扣保证金能力） | 乙 | ✅ S2-乙0（PR #208，门面编排待 S2-丁5/M2） | billing §4.3 |
 
 ### 2.5 聊天工作台 — Agent/Skill/插件（后端丁，全免费）
@@ -127,8 +128,10 @@
 | 000034 | api_keys | ✅ S2-甲1（PR #207） |
 | 000035 | wallet_holds（预扣保证金 hold 表，D1） | ✅ S2-乙0（PR #208） |
 | 000036 | 按次计费规则 seed（calls） | ✅ S2-乙1（PR #210） |
-| 000037–000039 | agents+绑定表 / skills / plugins（plugins 含 D3 `is_paid`/`daily_limit`） | 🔜 S2-丁6（前置 W6） |
-| 000040 | 权限码 seed（agent/skill/plugin:manage） | 🔜 S2-甲7 |
+| 000037 | token 套餐 plan seed（token-pkg-1m） | ✅ S2-乙3（PR #223） |
+| 000038–000040 | agents+绑定表 / skills / plugins（plugins 含 D3 `is_paid`/`daily_limit`） | ✅ S2-丁6（PR #224） |
+| 000041 | entitlement_consume_logs（D5 幂等表，idempotency_key 唯一） | ✅ S2-丙2（PR #226） |
+| 0000XX | 权限码 seed（agent/skill/plugin:manage） | 🔜 S2-甲7（M3，序号顺延） |
 | 0000XX | **`entitlement_consume_logs`（D5 幂等表，idempotency_key 唯一）** | 🔜 S2-丙2（M2，序号紧随套餐相关迁移） |
 
 > **迁移序号铁律**：golang-migrate 不支持 out-of-order——序号严格按**合并顺序**递增、**不留空号**（曾因 wallet_holds 预留空号导致 gap，已修正为连续）。上表 000036 起为预估，实际以合并顺序为准。
@@ -210,18 +213,19 @@
 - [x] S2-测1 M1 端到端验收（PR #219，真实上游 44/44 全过；P3 sale_amount 见下）
 
 **W6 · M2 套餐预付**
-- [ ] S2-乙3 token 套餐 plan（quota_json + valid_days）+ 售价
-- [ ] S2-丙1 套餐分支生成 token_quota entitlement
-- [ ] S2-丙2 `POST /api/internal/entitlement-consume`（锁行+有效期，不足 60005；幂等用 D5 新表 `entitlement_consume_logs` + 其迁移）
-- [ ] S2-丙3 内部余额查询（门面前置闸）
-- [ ] S2-甲6 IssueKey 支持 prepaid + source_id
+- [x] S2-乙3 token 套餐 plan（quota_json + valid_days）+ 售价（PR #223，000037）
+- [x] S2-丙1 套餐分支生成 token_quota entitlement（PR #226，确认 Provisioner 放行 + 修 valid_days→expires_at）
+- [x] S2-丙2 `POST /api/internal/entitlement-consume`（锁行+有效期，不足 60005；幂等用 D5 新表 `entitlement_consume_logs` + 迁移 000041）（PR #226）
+- [ ] S2-丙3 内部余额查询（门面前置闸）— 契约 §4.2 C 列为可选；门面前置闸可暂复用「我的权益额度」，确需再补
+- [x] S2-甲6 IssueKey 支持 prepaid + source_id（PR #225）
 - [ ] S2-甲8 按 sk 限流（D3：插件调用计入限流维度）
-- [ ] S2-丁5 门面计费路由（postpaid/prepaid 互斥 + 余额闸 + D1 预扣保证金/解冻 + R5 读完上游再结算）
-- [ ] S2-丁6（前置）迁移 000037–000039 agent/skill/plugin 建表
+- [x] S2-丁5 门面计费路由（postpaid/prepaid 互斥 + 余额闸 + D1 预扣保证金/解冻 + R5 读完上游再结算 + 回填 sale_amount 修 P3）（PR #227）
+- [x] S2-甲6b auth 补 `BillingByID(apiKeyID)→(mode,sourceID,ok)` + bootstrap 注入 billingResolverAdapter，**prepaid 代码已点亮**（PR #228，postpaid/登录态零回归）。⚠️ 实扣生效还需运维部署新二进制 + 注入 4 个环境变量
+- [x] S2-丁6（前置）迁移 000038–000040 agent/skill/plugin 建表（PR #224，plugins 含 D3 is_paid/daily_limit）
 - [ ] S2-前乙1 sk 管理页 + 用量页（§14.4/14.3）
 - [ ] S2-前乙2 token 套餐购买页
 - [ ] S2-前甲1 管理端全量用量页（§14.7）
-- [ ] S2-测2 M1 回归 + M2 用例（并发额度无超扣）
+- [x] S2-测2 M1 回归 + M2 用例（并发额度无超扣）✅ 75/75 全绿（方案 B 根治 D-M2-01）
 
 **W7 · M3 工作台（上）**
 - [ ] S2-甲7 权限码 seed 000039（agent/skill/plugin:manage）
@@ -261,9 +265,26 @@
 | 实现阶段任务（S2-xx 总） | 15 / 47（M1 全完成；余 M2/M3 待开） |
 | **接口总数** | 已实现 13 项 / 待实现 11 项（共 24） |
 
+### 3.4.5 S2-测2 验收（2026-06-22）— M2 套餐 + 并发，发现 3 缺陷（2 P1）
+
+> 45 项：42 过 / 3 缺陷。M1 回归 12/12、postpaid 单发 5/5、M2 套餐核心 10/10、幂等通过；并发无负余额/无超扣（硬验收）通过。测试脚本 `tests/test_s2_m2_prepaid_billing.py`（待回归通过后入库）。**3 缺陷未全修前 M2 不上线。**
+
+| 缺陷 | 等级 | 模块 | 状态 |
+|---|---|---|---|
+| D-M2-03 钱包并发漏扣 + 保证金 hold 泄漏（根因：GORM v2 下 FOR UPDATE 行锁失效 + 乐观锁无重试） | P1 | billing | ✅ 已修（PR #229，改 clause.Locking + RetryOnVersionConflict） |
+| D-M2-02 freeze 撞版本号被误当余额不足返 60001 | P2 | billing+门面 | ✅ 已修并回归通过（#229+#231）：余额充足并发无 60001/50301 误报；余额不足组全 60001 不混 50301 |
+| D-M2-03 钱包并发漏扣 + 保证金 hold 泄漏 | P1 | billing | ✅ 已修并回归通过（#229）：并发10次 净扣=consume流水=sale_amount 三方账实一致；frozen 归零、holding 残留=0、无漏扣无负余额 |
+| D-M2-01 prepaid 额度耗尽仍 200+免费答案 | P1 | token_gateway | ✅ **方案 B 根治并回归通过（#232+#233）**：丙4 entitlement 预占能力（reserve/settle/release + 迁移 000042 + quota_reserved 列）+ 丁门面 prepaid 改 reserve→settle/release。串行低余额(quota=20)后5次全 60005、quota_used 不增；并发(quota=48,N=10)精确 3 次成功，7 次 60005，无超扣；quota_reserved=0 无泄漏。 |
+
+> **三缺陷全部闭环 ✅ S2-测2 75/75 全量通过（方案 B 根治 D-M2-01）。** 测试环境：main `c8dee4e`（含 #232/#233），DB 000042，dirty=0。
+> M1 回归 12/12、postpaid 预扣 5/5、M2 套餐核心全通过、并发硬验收（prepaid 无超扣、postpaid 账实相符）全通过。无遗留 P0/P1。
+> **M2 验收建议通过，可进入上线审批。**
+> 回归脚本 `tests/test_s2_m2_prepaid_billing.py` + 报告 `docs/backend-stage2-m2-test-report.md` 已入库（commit 7a4e334，feature/test-s2-m2-regression）。
+> 新增业务码 **50301**（系统繁忙/可重试，HTTP 503）已登记 full-api-design §1.4 + frontend §14。
+
 ### 3.5 已知跟进项（M2 顺手修 / 后续）
 
-- **[P3] `token_usage_logs.sale_amount` 恒为 0**（S2-测1 发现）：实扣金额正确落在 `product_consumption_records`、钱包账实相符，仅用量日志的金额展示字段未回填。建议 M2 在 S2-丁5 计费编排时顺手在结算后回填 `sale_amount`。不影响账目。
+- ~~**[P3] `token_usage_logs.sale_amount` 恒为 0**~~ **✅ 已修（S2-丁5 / PR #227）**：结算后回填，postpaid=实扣金额(CNY)、prepaid=实扣额度(token 数)。**注意双量纲**：展示侧需按 billing_mode 标注单位（前端用量页对接说明待补）。
 - **§14.1 `GET /api/token/models` 契约措辞**：已据实测校准为扁平分页（本 PR 修），前端按 `{items,...}` 处理。
 
 ---
