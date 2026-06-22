@@ -343,6 +343,48 @@ func (a *balanceCheckerAdapter) GetBalance(ctx context.Context, entitlementID, u
 // 编译期断言：适配器满足 token_gateway 的 EntitlementBalanceChecker 接口（D-M2-01）。
 var _ tokengatewaysvc.EntitlementBalanceChecker = (*balanceCheckerAdapter)(nil)
 
+// entReserverAdapter 将 token_gateway/client.EntitlementClient 适配为 token_gateway.EntitlementReserver
+// （D-M2-01 方案 B：prepaid 转发前预占额度 reserve → 结算 settle / 释放 release，对称 postpaid 保证金）。
+// 把客户端错误归一化为门面 service 层 sentinel（供前置闸/结算分流）：
+//   - 额度不足 / 权益不可用（ErrQuotaExceeded）→ ErrQuotaExhausted（对外 60005，转发前拒，根治白嫖）。
+//   - 归属不符 / 权益不存在（ErrEntitlementForbidden/ErrEntitlementNotFound）→ ErrEntitlementDenied（40003）。
+//   - 系统错误（asset 不可达 / 5xx / 鉴权失败 / 可重试冲突）→ ErrSystemBusy（对外 503），
+//     fail-safe 拒转发，绝不与「真额度不足 60005」混淆（避免把繁忙当额度耗尽）。
+type entReserverAdapter struct {
+	cli *tokenclient.EntitlementClient
+}
+
+func (a *entReserverAdapter) Reserve(ctx context.Context, entitlementID, userID uint64, amount decimal.Decimal, idempotencyKey string) (uint64, error) {
+	res, err := a.cli.Reserve(ctx, entitlementID, userID, amount, idempotencyKey)
+	switch {
+	case err == nil:
+		return res.HoldID, nil
+	case errors.Is(err, tokenclient.ErrQuotaExceeded):
+		return 0, tokengatewaysvc.ErrQuotaExhausted
+	case errors.Is(err, tokenclient.ErrEntitlementForbidden), errors.Is(err, tokenclient.ErrEntitlementNotFound):
+		return 0, tokengatewaysvc.ErrEntitlementDenied
+	default:
+		// 鉴权失败 / asset 不可达 / 5xx：归为系统繁忙（fail-safe 拒转发，503，不混淆为额度不足）。
+		return 0, tokengatewaysvc.ErrSystemBusy
+	}
+}
+
+func (a *entReserverAdapter) Settle(ctx context.Context, holdID uint64, idempotencyKey string, actual decimal.Decimal) (decimal.Decimal, error) {
+	res, err := a.cli.Settle(ctx, holdID, idempotencyKey, actual)
+	if err != nil {
+		return decimal.Zero, err
+	}
+	return res.SettledAmount, nil
+}
+
+func (a *entReserverAdapter) Release(ctx context.Context, holdID uint64, idempotencyKey string) error {
+	_, err := a.cli.Release(ctx, holdID, idempotencyKey)
+	return err
+}
+
+// 编译期断言：适配器满足 token_gateway 的 EntitlementReserver 接口（D-M2-01 方案 B）。
+var _ tokengatewaysvc.EntitlementReserver = (*entReserverAdapter)(nil)
+
 // iamRoleGetterAdapter 将 *iamsvc.IAMService 适配为 contenthandler.IAMRoleGetter 接口。
 // IAMService 提供 GetUserRoles 返回 []Role（含 Code 字段），此 adapter 提取 code 列表。
 type iamRoleGetterAdapter struct {
@@ -598,13 +640,16 @@ func NewApp() (*App, error) {
 		tokenWalletHolder := &walletHolderAdapter{svc: walletHoldService}
 
 		//   - EntitlementConsumer（S2-丁5 / 丙2）：prepaid 结算调 asset 内部接口 entitlement-consume 扣套餐额度。
-		//   - EntitlementBalanceChecker（D-M2-01 / 丙3）：prepaid 转发前置闸调 entitlement-balance 查余额。
-		//     共用同一个 EntitlementClient 实例（同款 base_url + X-Internal-Token）。
+		//   - EntitlementReserver（D-M2-01 方案 B / 丙4）：prepaid 转发前预占额度（reserve→settle/release），
+		//     根治串行/并发白嫖；调 entitlement-reserve/settle/release 内部接口。
+		//   - EntitlementBalanceChecker（丙3）：prepaid 权益余额只读查询（展示），主计费路径已不依赖（方案 A 已移除）。
+		//     三者共用同一个 EntitlementClient 实例（同款 base_url + X-Internal-Token）。
 		//     X-Internal-Token 从配置注入（INTERNAL_API_TOKEN），未配置时客户端 fail-closed
-		//     （prepaid 扣额度跳过并告警；前置闸 GetBalance 返回 ErrInternalAuth → fail-safe 拒绝转发）。
+		//     （reserve 返回 ErrInternalAuth → 适配器归 ErrSystemBusy → 门面 fail-safe 拒绝转发，绝不放行白嫖）。
 		tokenEntClient := tokenclient.NewEntitlementClient(cfg.AssetInternalBaseURL, cfg.InternalAPIToken)
 		tokenEntConsumer := &entConsumerAdapter{cli: tokenEntClient}
 		tokenBalanceChecker := &balanceCheckerAdapter{cli: tokenEntClient}
+		tokenEntReserver := &entReserverAdapter{cli: tokenEntClient}
 
 		//   - BillingResolver（S2-丁5 / 甲6b）：按 api_key_id 解析 billing_mode/source_id 分流 postpaid/prepaid。
 		//     由 auth.APIKeyService.BillingByID（与 ModelScopeByID 同款只读访问器，甲6b 已补）适配实现。
@@ -636,8 +681,9 @@ func NewApp() (*App, error) {
 			tokenGatewayModule.ForwardService.SetBillingDeps(tokengatewaysvc.BillingDeps{
 				BillingResolver: tokenBillingResolver, // 甲6b：apiKeyService 非 nil 时激活 prepaid，否则 nil → 门面降级 postpaid
 				WalletHolder:    tokenWalletHolder,
-				EntConsumer:     tokenEntConsumer,
-				BalanceChecker:  tokenBalanceChecker, // D-M2-01：prepaid 转发前置余额闸（usable=false 拒 60005，查询失败 fail-safe 拒）
+				EntConsumer:     tokenEntConsumer,    // 退化路径：未预占时旧直扣 entitlement-consume（向后兼容）
+				BalanceChecker:  tokenBalanceChecker, // 仅展示/可观测用；prepaid 主路径已不依赖（方案 A 已移除）
+				EntReserver:     tokenEntReserver,    // D-M2-01 方案 B：prepaid 转发前预占额度（reserve 占不到拒 60005，调用失败 fail-safe 503）
 				HoldUnitPrice:   holdUnitPrice,
 				HoldMaxTokens:   int64(cfg.TokenHoldDefaultMaxTokens),
 			})

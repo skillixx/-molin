@@ -76,23 +76,45 @@ type EntitlementConsumer interface {
 	Consume(ctx context.Context, entitlementID, userID uint64, amount decimal.Decimal, idempotencyKey string) error
 }
 
-// EntitlementBalance prepaid 转发前置闸所需的权益余额快照（D-M2-01）。
-// usable=false 表示权益不可用（非 active / 已过期 / 额度耗尽），门面据此前置拒绝转发。
+// EntitlementBalance prepaid 权益余额快照（展示等只读场景用）。
+// usable=false 表示权益不可用（非 active / 已过期 / 额度耗尽）。
+//
+// D-M2-01 方案 B 后，prepaid 主计费路径不再依赖 usable 判断（改用 reserve 预占结果），
+// 该类型仅供 GetBalance（展示等只读场景）继续使用。
 type EntitlementBalance struct {
 	Usable bool   // 可用：active + 未过期 + remaining>0（不限量则 active+未过期即可）
 	Status string // 权益状态（仅用于日志/告警，不落对话内容）
 }
 
-// EntitlementBalanceChecker prepaid 转发前置闸：转发上游前查询权益是否可用（D-M2-01 修复，方案 A）。
+// EntitlementBalanceChecker prepaid 权益余额只读查询（展示等场景）。
 // 由 token_gateway/client.EntitlementClient.GetBalance 适配实现，bootstrap 注入；可为 nil。
 //
-// 语义约定（fail-safe）：
-//   - 权益可用 → 返回 (balance{Usable:true}, nil)，门面放行转发。
-//   - 权益不可用（额度耗尽/失效）→ 返回 (balance{Usable:false}, nil)，门面拒绝并返回 60005。
-//   - 归属不符 → ErrEntitlementDenied；权益不存在 → ErrEntitlementDenied（sk 绑定权益已失效，按越权拒绝）。
-//   - 查询自身失败（网络/鉴权/解析等）→ 返回非 nil error，门面 fail-safe 拒绝转发（绝不放行白嫖）。
+// 注意：D-M2-01 方案 B 后，prepaid 转发前置闸不再用本接口（旧方案 A 的 usable 粗筛有白嫖洞，已移除），
+// 改为转发前调 EntitlementReserver.Reserve 预占额度。本接口保留仅供展示/可观测等只读用途。
 type EntitlementBalanceChecker interface {
 	GetBalance(ctx context.Context, entitlementID, userID uint64) (EntitlementBalance, error)
+}
+
+// EntitlementReserver prepaid 转发前预占额度（D-M2-01 方案 B，与 postpaid FreezeHold 对称）。
+// 由 token_gateway/client.EntitlementClient 适配实现（Reserve/Settle/Release），bootstrap 注入；可为 nil。
+//
+// 时序（对称 postpaid 保证金）：
+//   - 转发上游前（任何 WriteHeader 之前）调 Reserve 预占预估消耗（max_tokens）：占不到 → 拒 60005，不转发；
+//   - 拿到 usage 后调 Settle 按实际消耗结算（多退少补，asset 侧封顶到预占额）；
+//   - 失败/异常路径调 Release 全额释放预占（不计 used）。
+//
+// 预占已杜绝串行/并发白嫖：串行低余额（remaining<单次）在转发前被 Reserve 拒，
+// 并发请求各自占额、不足者被 asset 侧 FOR UPDATE 串行挡住，无任何免费放行窗口。
+type EntitlementReserver interface {
+	// Reserve 预占一笔额度，返回 holdID（供 Settle/Release 关联）。
+	// amount 不足 / 权益不可用 → ErrQuotaExhausted（对外 60005）；归属不符 / 权益不存在 → ErrEntitlementDenied（40003）；
+	// 系统错误（asset 不可达 / 5xx / 鉴权失败 / 可重试冲突）→ ErrSystemBusy（对外 503），fail-safe 拒转发。
+	Reserve(ctx context.Context, entitlementID, userID uint64, amount decimal.Decimal, idempotencyKey string) (holdID uint64, err error)
+	// Settle 按实际消耗结算预占（多退少补）。holdID>0 优先，否则用 idempotencyKey 关联同一 hold。
+	// 返回 settled 为实际计入 quota_used 的净额（用于 sale_amount 回填）。hold 已结算时幂等。
+	Settle(ctx context.Context, holdID uint64, idempotencyKey string, actual decimal.Decimal) (settled decimal.Decimal, err error)
+	// Release 全额释放预占（不计 used），用于失败/异常路径。holdID>0 优先，否则用 idempotencyKey 关联。
+	Release(ctx context.Context, holdID uint64, idempotencyKey string) error
 }
 
 // ModelScopeResolver sk 模型白名单解析接口（S2-丁4b，sk 契约 §8 第4条 / §10）。
@@ -172,8 +194,9 @@ type ForwardService struct {
 	// ——— S2-丁5：计费路由依赖（均可为 nil，nil 时安全退化）———
 	billingResolver BillingResolver           // 按 apiKeyID 解析 billing_mode/source_id；nil → 一律 postpaid
 	walletHolder    WalletHolder              // postpaid 预扣保证金（D1）；nil → 不预扣（退化为 M1 纯上报）
-	entConsumer     EntitlementConsumer       // prepaid 套餐额度扣减；nil → prepaid 结算跳过（仅记日志）
-	balanceChecker  EntitlementBalanceChecker // prepaid 转发前置闸（D-M2-01）；nil → 退化为不查（前置不拦截）
+	entConsumer     EntitlementConsumer       // prepaid 套餐额度扣减（旧直扣，保留兜底）；nil → 跳过
+	balanceChecker  EntitlementBalanceChecker // prepaid 权益余额只读查询（展示）；prepaid 主路径已不依赖；可为 nil
+	entReserver     EntitlementReserver       // prepaid 转发前预占额度（D-M2-01 方案 B）；nil → 退化为不预占（前置不拦截、结算走旧直扣）
 	holdUnitPrice   decimal.Decimal           // postpaid 预扣兜底单价（每 token）
 	holdMaxTokens   int64                     // postpaid 预扣兜底 max_tokens
 	saleWriter      saleAmountWriter          // sale_amount 回填（默认 = usageRepo；单测可注入内存桩）
@@ -187,7 +210,8 @@ type BillingDeps struct {
 	BillingResolver BillingResolver
 	WalletHolder    WalletHolder
 	EntConsumer     EntitlementConsumer
-	BalanceChecker  EntitlementBalanceChecker // prepaid 转发前置闸（D-M2-01）
+	BalanceChecker  EntitlementBalanceChecker // prepaid 权益余额只读查询（展示）；主路径已不依赖
+	EntReserver     EntitlementReserver       // prepaid 转发前预占额度（D-M2-01 方案 B）
 	HoldUnitPrice   decimal.Decimal
 	HoldMaxTokens   int64
 }
@@ -223,6 +247,7 @@ func (s *ForwardService) SetBillingDeps(d BillingDeps) {
 	s.walletHolder = d.WalletHolder
 	s.entConsumer = d.EntConsumer
 	s.balanceChecker = d.BalanceChecker
+	s.entReserver = d.EntReserver
 	s.holdUnitPrice = d.HoldUnitPrice
 	s.holdMaxTokens = d.HoldMaxTokens
 }
@@ -248,8 +273,8 @@ type upstreamUsage struct {
 type billDecision struct {
 	mode      string // postpaid / prepaid
 	sourceID  uint64 // prepaid=entitlement_id；postpaid=0
-	maxTokens int64  // 本次预估上限（postpaid 预扣 / R5 兜底计费用）
-	holdID    uint64 // postpaid 已冻结的保证金 holdID；0=未冻结
+	maxTokens int64  // 本次预估上限（postpaid 预扣 / prepaid 预占 / R5 兜底计费用）
+	holdID    uint64 // postpaid 已冻结的保证金 holdID / prepaid 已预占额度的 holdID（方案 B）；0=未冻结/未预占
 	settled   bool   // 结算阶段已接管该 hold（已 settle/release）；用于 Forward 的 defer 兜底释放判定
 }
 
@@ -320,10 +345,13 @@ func (s *ForwardService) Forward(ctx context.Context, w http.ResponseWriter, in 
 		return ErrAccessDenied
 	}
 
-	// ②.5 计费路由前置闸（S2-丁5）：解析 billing_mode，postpaid 预扣保证金（D1）/ prepaid 查余额（D-M2-01）。
-	//   - postpaid：hold = max_tokens × 单价，钱包余额不足 → ErrWalletInsufficient（60001），不发起上游、不留冻结。
-	//   - prepaid：转发前查 entitlement 余额（丙3 接口），usable=false → ErrQuotaExhausted（60005），不转发。
-	// 注意：此闸必须在发起上游之前（即任何 WriteHeader 之前）完成，确保「额度耗尽不再放行白嫖」。
+	// ②.5 计费路由前置闸（S2-丁5 / D-M2-01 方案 B）：解析 billing_mode，转发上游前预占额度。
+	//   - postpaid：hold = max_tokens × 单价，冻结钱包保证金；余额不足 → ErrWalletInsufficient（60001），不发起上游。
+	//   - prepaid：reserve = max_tokens（token 数，不乘单价），预占 entitlement 额度；
+	//     占不到 → ErrQuotaExhausted（60005），不转发、不写回答案；归属不符 → ErrEntitlementDenied（40003）。
+	// 注意：此闸必须在发起上游之前（即任何 WriteHeader 之前）完成。
+	// D-M2-01 方案 B：reserve 预占已根治串行/并发白嫖——串行低余额（remaining<单次）在转发前被 reserve 拒，
+	// 并发请求各自占额、不足者被 asset 侧 FOR UPDATE 串行挡住，无任何「额度耗尽继续免费放行」窗口。
 	bill := s.resolveBilling(ctx, in)
 	if bill.mode == billingModePostpaid && s.walletHolder != nil {
 		holdAmount := s.holdUnitPrice.Mul(decimal.NewFromInt(bill.maxTokens))
@@ -336,15 +364,26 @@ func (s *ForwardService) Forward(ctx context.Context, w http.ResponseWriter, in 
 			bill.holdID = holdID
 		}
 	}
-
-	// ②.6 prepaid 转发前置余额闸（D-M2-01 修复，方案 A）。必须在任何 WriteHeader 之前执行。
-	if err := s.checkPrepaidPreGate(ctx, in, bill); err != nil {
+	if err := s.reservePrepaid(ctx, in, &bill); err != nil {
 		return err
 	}
-	// 兜底释放保证金：凡冻结后任一路径未走到结算（前置失败、上游失败、序列化失败、panic），
-	// defer 统一全额释放，杜绝把用户保证金锁死。结算阶段会先把 bill.settled 置 true，避免重复释放。
+
+	// 兜底释放保证金/预占额度：凡占额后任一路径未走到结算（上游失败、序列化失败、流式错、panic、客户端断开无 usage），
+	// defer 统一全额释放，杜绝把用户保证金/额度锁死。结算阶段会先把 bill.settled 置 true，避免重复释放。
+	// postpaid 释放钱包保证金（ReleaseHold）；prepaid 释放预占额度（entReserver.Release）——两者对称。
 	defer func() {
-		if bill.holdID != 0 && !bill.settled && s.walletHolder != nil {
+		if bill.holdID == 0 || bill.settled {
+			return
+		}
+		if bill.mode == billingModePrepaid {
+			if s.entReserver != nil {
+				if rerr := s.entReserver.Release(context.Background(), bill.holdID, in.RequestID+":quota_reserve"); rerr != nil {
+					log.Printf("[token_gateway] 释放 prepaid 预占额度失败 request_id=%s hold_id=%d: %v", in.RequestID, bill.holdID, rerr)
+				}
+			}
+			return
+		}
+		if s.walletHolder != nil {
 			if rerr := s.walletHolder.ReleaseHold(context.Background(), bill.holdID, in.RequestID+":release"); rerr != nil {
 				log.Printf("[token_gateway] 释放预扣保证金失败 request_id=%s hold_id=%d: %v", in.RequestID, bill.holdID, rerr)
 			}
@@ -438,25 +477,6 @@ func (s *ForwardService) checkModelScope(ctx context.Context, apiKeyID uint64, m
 	return ErrModelNotInScope
 }
 
-// checkPrepaidPreGate prepaid 转发前置余额闸（D-M2-01 修复，方案 A）。必须在任何 WriteHeader 之前调用。
-//
-// 背景缺陷：prepaid 的额度扣减在 settle() 阶段执行，但上游响应在 forwardJSON/forwardStream
-// 中已先 WriteHeader(200)+写回客户端（早于 settle），导致额度耗尽后的后续请求仍能拿到免费答案、不扣额度。
-// 本前置闸在「转发上游之前」粗筛 usable，止血「额度耗尽继续免费放行」。
-//
-// 分流：
-//   - 非 prepaid / 未注入 balanceChecker / source_id==0：跳过（不拦截）。
-//   - usable==true：放行（返回 nil），结算阶段仍走 entitlement-consume 实扣。
-//   - usable==false：返回 ErrQuotaExhausted（对外 60005），不转发、不写回答案。
-//   - 归属不符 / 权益不存在（sk 绑定权益失效）：返回 ErrEntitlementDenied（对外 40003）。
-//   - 查询自身失败（网络/鉴权/解析异常）：fail-safe 返回 ErrQuotaExhausted，绝不因查询失败放行白嫖。
-//
-// source_id 必为 token_quota 权益（甲6 签发 prepaid sk 时已校验），前置闸以此为不变量。
-//
-// 【方案 A 残留窗口（已知可接受，非新 bug）】：前置闸仅粗筛 remaining、不预占额度，
-// 并发下多请求可能都过闸 → 结算阶段只扣到额度耗尽、其余请求白嫖。
-// 根治需 prepaid 预扣额度（方案 B，与 postpaid FreezeHold 对称）；本期接受此残留，
-// 最终防透支仍由结算阶段 ConsumeEntitlementIdempotent（丙2 FOR UPDATE 行锁 + 幂等）兜底。
 // classifyFreezeError postpaid 预扣保证金失败的错误分流（D-M2-02 修复）。
 // 不再把所有非余额不足错误一律当 60001：
 //   - 真余额不足（ErrWalletInsufficient，由 adapter 从 billing.ErrInsufficientBalance 归一化）→ 60001。
@@ -476,27 +496,50 @@ func classifyFreezeError(requestID string, ferr error) error {
 	}
 }
 
-func (s *ForwardService) checkPrepaidPreGate(ctx context.Context, in ForwardInput, bill billDecision) error {
-	if bill.mode != billingModePrepaid || s.balanceChecker == nil || bill.sourceID == 0 {
+// reservePrepaid prepaid 转发前预占额度（D-M2-01 方案 B，与 postpaid FreezeHold 对称）。
+// 必须在任何 WriteHeader 之前调用。成功后把预占 holdID 写入 bill.holdID，供结算 settle / 失败 release 关联。
+//
+// reserve_amount 口径：与 postpaid 冻结口径对齐 = max_tokens（请求带则用之，否则 TOKEN_HOLD_DEFAULT_MAX_TOKENS）。
+// prepaid 单位是 token 数（token_quota 1:1），故 reserve_amount 即 token 数，不乘单价。
+//
+// 分流（fail-safe）：
+//   - 非 prepaid / 未注入 entReserver / source_id==0：跳过（不预占；entReserver==nil 时退化为不拦截，结算走旧直扣）。
+//   - 预占成功：bill.holdID = holdID，放行转发。
+//   - 额度不足 / 权益不可用（ErrQuotaExhausted）：拒 60005，不转发、不写回答案——根治串行/并发白嫖。
+//   - 归属不符 / 权益不存在（ErrEntitlementDenied）：拒 40003。
+//   - reserve 调用自身失败（ErrSystemBusy：asset 不可达 / 5xx / 鉴权失败 / 可重试冲突）：
+//     fail-safe 拒转发，归为系统繁忙（503），绝不放行白嫖；且不与「真额度不足 60005」混淆（避免把繁忙当额度耗尽）。
+//
+// source_id 必为 token_quota 权益（甲6 签发 prepaid sk 时已校验），前置以此为不变量。
+func (s *ForwardService) reservePrepaid(ctx context.Context, in ForwardInput, bill *billDecision) error {
+	if bill.mode != billingModePrepaid || s.entReserver == nil || bill.sourceID == 0 {
 		return nil
 	}
-	bal, berr := s.balanceChecker.GetBalance(ctx, bill.sourceID, in.UserID)
+	reserveAmount := decimal.NewFromInt(bill.maxTokens)
+	if reserveAmount.LessThanOrEqual(decimal.Zero) {
+		// 预占额度非正（理论上 resolveMaxTokens 已有下界保护）：fail-safe 拒，不放行白嫖。
+		log.Printf("[token_gateway] prepaid 预占额度非正，拒绝转发 request_id=%s entitlement_id=%d amount=%s",
+			in.RequestID, bill.sourceID, reserveAmount)
+		return ErrSystemBusy
+	}
+	holdID, rerr := s.entReserver.Reserve(ctx, bill.sourceID, in.UserID, reserveAmount, in.RequestID+":quota_reserve")
 	switch {
-	case berr == nil && bal.Usable:
-		return nil // 可用：放行转发。
-	case berr == nil && !bal.Usable:
-		// 额度耗尽 / 权益失效：前置拒绝，不转发、不写回答案。
-		log.Printf("[token_gateway] prepaid 前置闸拒绝（不可用）request_id=%s entitlement_id=%d status=%s",
-			in.RequestID, bill.sourceID, bal.Status)
+	case rerr == nil:
+		bill.holdID = holdID // 预占成功：记 holdID，供 settle/release 关联
+		return nil
+	case errors.Is(rerr, ErrQuotaExhausted):
+		// 额度不足 / 权益不可用：转发前拒绝，不转发、不写回答案（根治白嫖）。
+		log.Printf("[token_gateway] prepaid 预占额度不足，拒绝转发 request_id=%s entitlement_id=%d", in.RequestID, bill.sourceID)
 		return ErrQuotaExhausted
-	case errors.Is(berr, ErrEntitlementDenied):
+	case errors.Is(rerr, ErrEntitlementDenied):
 		// 归属不符 / 权益不存在（sk 绑定权益失效）：按越权拒绝。
 		return ErrEntitlementDenied
 	default:
-		// fail-safe：查询失败一律拒绝转发，不放行白嫖。
-		log.Printf("[token_gateway] prepaid 前置闸查询失败，fail-safe 拒绝 request_id=%s entitlement_id=%d: %v",
-			in.RequestID, bill.sourceID, berr)
-		return ErrQuotaExhausted
+		// fail-safe：reserve 调用失败（系统繁忙/asset 不可达/鉴权失败）一律拒转发，不放行白嫖。
+		// 归为 ErrSystemBusy（503），不混淆为额度不足 60005。
+		log.Printf("[token_gateway] prepaid 预占调用失败，fail-safe 拒绝 request_id=%s entitlement_id=%d: %v",
+			in.RequestID, bill.sourceID, rerr)
+		return ErrSystemBusy
 	}
 }
 
@@ -614,8 +657,8 @@ func (s *ForwardService) logUsage(ctx context.Context, requestID string, in Forw
 //   - postpaid：按量 input/output（+calls）上报 finance_consumer 实扣钱包；
 //     再解冻预扣保证金（ReleaseHold——保证金仅占额防并发透支，实扣已由上报完成，全额释放即可）；
 //     sale_amount = 各事件 finance_consumer 实扣金额之和。
-//   - prepaid：不走钱包、不上报 product-usage-events；调 entitlement-consume 扣套餐额度（1:1）；
-//     sale_amount = 扣减的额度（token 数）。
+//   - prepaid：不走钱包、不上报 product-usage-events；调 entitlement-settle 按实际消耗结算预占（多退少补，1:1）；
+//     sale_amount = 实际计入 quota_used 的净额（settle 返回值）。
 func (s *ForwardService) settle(ctx context.Context, requestID string, in ForwardInput, tm *model.TokenModel, inputTok, outputTok int64, bill *billDecision) {
 	// R5：成功调用却无 usage → 按 max_tokens 兜底（计入 output，保守宁多勿漏）。
 	if inputTok == 0 && outputTok == 0 && bill.maxTokens > 0 {
@@ -662,26 +705,52 @@ func (s *ForwardService) settlePostpaid(ctx context.Context, requestID string, u
 	s.backfillSaleAmount(ctx, requestID, total)
 }
 
-// settlePrepaid 套餐额度路径结算：调 entitlement-consume 扣额度（不走钱包、不上报 product-usage-events）。
+// settlePrepaid 套餐额度路径结算（D-M2-01 方案 B，对称 postpaid 解冻）。
+// 转发前已 reserve 预占 → 此处调 entitlement-settle 按实际消耗结算（多退少补，asset 侧封顶到预占额）。
+// 不走钱包、不上报 product-usage-events；sale_amount = 实际计入 quota_used 的净额（settle 返回值）。
+//
+// 接管 hold 所有权：settle 成功/失败都置 bill.settled=true，令 Forward 的 defer 不再重复 release
+// （settle 已是终态结算，失败也不应再释放——已扣额度由 asset 侧幂等保证）。
+//
+// 退化路径（entReserver==nil 或转发前未预占 holdID==0，仅在灰度/未注入时出现）：
+// 回落旧的 entitlement-consume 直扣（不预占，单价 1:1），保持向后兼容、不阻断调用。
 func (s *ForwardService) settlePrepaid(ctx context.Context, requestID string, userID uint64, bill *billDecision, inputTok, outputTok int64) {
-	bill.settled = true // prepaid 不冻结钱包；置位仅为对称、令 defer 不动作
+	// amount = input + output（1:1，与 token_quota 单位一致）。
+	amount := decimal.NewFromInt(inputTok + outputTok)
+
+	// 主路径：转发前已预占（holdID != 0）→ settle 多退少补。
+	if bill.holdID != 0 && s.entReserver != nil {
+		bill.settled = true // 接管 hold，defer 不再 release
+		actual := amount
+		if actual.LessThan(decimal.Zero) {
+			actual = decimal.Zero
+		}
+		settled, err := s.entReserver.Settle(ctx, bill.holdID, requestID+":quota_reserve", actual)
+		if err != nil {
+			// 结算失败（用户已拿到结果）：仅记日志告警，不回滚结果。
+			// asset 侧 settle 幂等；hold 仍处 holding 时下游对账可重放，不会把额度锁死成永久占用。
+			log.Printf("[token_gateway] prepaid 结算预占失败 request_id=%s hold_id=%d: %v", requestID, bill.holdID, err)
+			return
+		}
+		// 回填 sale_amount（修 M1 P3）：prepaid 记实际计入 quota_used 的净额（settle 返回值）。
+		s.backfillSaleAmount(ctx, requestID, settled)
+		return
+	}
+
+	// 退化路径：未预占（灰度/未注入 entReserver）→ 旧直扣 entitlement-consume。
+	bill.settled = true
 	if s.entConsumer == nil || bill.sourceID == 0 {
 		log.Printf("[token_gateway] prepaid 结算跳过（未注入扣额度客户端或缺 source_id）request_id=%s", requestID)
 		return
 	}
-	// amount = input + output（1:1，与 token_quota 单位一致）。
-	amount := decimal.NewFromInt(inputTok + outputTok)
 	if amount.LessThanOrEqual(decimal.Zero) {
 		return
 	}
 	idem := requestID + ":quota"
 	if err := s.entConsumer.Consume(ctx, bill.sourceID, userID, amount, idem); err != nil {
-		// 额度不足 / 归属不符：调用已发生（用户已拿到结果），仅记日志告警，不回滚结果。
-		// 客户端下次调用会在前置 / 结算阶段被额度锁行拒绝。
 		log.Printf("[token_gateway] prepaid 扣套餐额度失败 request_id=%s entitlement_id=%d: %v", requestID, bill.sourceID, err)
 		return
 	}
-	// 回填 sale_amount（修 M1 P3）：prepaid 记实扣额度（token 数）。
 	s.backfillSaleAmount(ctx, requestID, amount)
 }
 
