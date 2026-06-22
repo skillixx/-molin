@@ -112,12 +112,12 @@
 
 | # | 方法 路径 | 鉴权 | 状态 | 契约 |
 |---|---|---|---|---|
-| 18 | `GET/POST /api/admin/agents` (+ `/{id}/skills`、`/{id}/plugins` 绑定) | 管理(agent:manage) | 🔜 S2-丁8 | §14.10 |
-| 19 | `GET/POST/PATCH/DELETE /api/admin/skills` | 管理(skill:manage) | 🔜 S2-丁8 | §14.10 |
-| 20 | `GET/POST/PATCH/DELETE /api/admin/plugins`（凭证不回；**D3 加 `is_paid`/`daily_limit` 字段**） | 管理(plugin:manage) | 🔜 S2-丁8 | §14.10 |
-| 21 | `GET /api/agents`、`GET /api/agents/{id}` | 登录态 | 🔜 S2-丁9 | §14.9 |
-| 22 | `POST/PATCH/DELETE /api/agents`（自建，越权 40003） | 登录态 | 🔜 S2-丁9 | §14.9 |
-| 23 | `GET /api/skills`、`GET /api/plugins`（供自建绑定） | 登录态 | 🔜 S2-丁9 | §14.9 |
+| 18 | `GET/POST /api/admin/agents` (+ `/{id}/skills`、`/{id}/plugins` 绑定) | 管理(agent:manage) | ✅ S2-丁8（PR 待提） | §14.10 |
+| 19 | `GET/POST/PATCH/DELETE /api/admin/skills` | 管理(skill:manage) | ✅ S2-丁8 | §14.10 |
+| 20 | `GET/POST/PATCH/DELETE /api/admin/plugins`（凭证不回；**D3 加 `is_paid`/`daily_limit` 字段**） | 管理(plugin:manage) | ✅ S2-丁8（has_auth + SSRF 前置校验） | §14.10 |
+| 21 | `GET /api/agents`、`GET /api/agents/{id}` | 登录态 | ✅ S2-丁9 | §14.9 |
+| 22 | `POST/PATCH/DELETE /api/agents`（自建，越权 40003） | 登录态 | ✅ S2-丁9 | §14.9 |
+| 23 | `GET /api/skills`、`GET /api/plugins`（供自建绑定） | 登录态 | ✅ S2-丁9 | §14.9 |
 | 24 | `POST /api/agents/{id}/chat`（tool-use 编排，SSE） | **仅登录态**（D2，sk 不可调） | 🔜 S2-丁10 | §14.8 / 工作台契约 §4 |
 
 ### 2.6 数据库迁移（序号以实际合并顺序为准）
@@ -131,7 +131,7 @@
 | 000037 | token 套餐 plan seed（token-pkg-1m） | ✅ S2-乙3（PR #223） |
 | 000038–000040 | agents+绑定表 / skills / plugins（plugins 含 D3 `is_paid`/`daily_limit`） | ✅ S2-丁6（PR #224） |
 | 000041 | entitlement_consume_logs（D5 幂等表，idempotency_key 唯一） | ✅ S2-丙2（PR #226） |
-| 0000XX | 权限码 seed（agent/skill/plugin:manage） | 🔜 S2-甲7（M3，序号顺延） |
+| 000043 | 权限码 seed（agent/skill/plugin:manage，绑定 admin 角色） | ✅ S2-甲7（M3，commit 097cbbd） |
 | 0000XX | **`entitlement_consume_logs`（D5 幂等表，idempotency_key 唯一）** | 🔜 S2-丙2（M2，序号紧随套餐相关迁移） |
 
 > **迁移序号铁律**：golang-migrate 不支持 out-of-order——序号严格按**合并顺序**递增、**不留空号**（曾因 wallet_holds 预留空号导致 gap，已修正为连续）。上表 000036 起为预估，实际以合并顺序为准。
@@ -154,7 +154,7 @@
 |---|---|---|
 | `TOKEN_PROVIDER_KEY` | 渠道 api_key AES-256-GCM | ✅ 已用 |
 | `API_KEY_HMAC_SECRET` | sk 的 HMAC 存储密钥 | ✅ S2-甲5/运1（.env.example PR #218；测试环境已设） |
-| `PLUGIN_SECRET_KEY`（或复用上） | 插件凭证加密 | 🔜 S2-运2 |
+| `PLUGIN_SECRET_KEY`（或复用 `TOKEN_PROVIDER_KEY`） | 插件凭证 AES-256-GCM 加密 | ✅ 代码就绪 S2-丁7（config 已读取，未配置时回退复用 `TOKEN_PROVIDER_KEY`；32 字节，未配则工作台不装配）；运维注入待 S2-运2 |
 | `MAX_ROUNDS`（默认 5）、插件域名白名单 | tool-use 编排 / SSRF | 🔜 S2-运2 |
 
 ---
@@ -228,13 +228,13 @@
 - [x] S2-测2 M1 回归 + M2 用例（并发额度无超扣）✅ 75/75 全绿（方案 B 根治 D-M2-01）
 
 **W7 · M3 工作台（上）**
-- [ ] S2-甲7 权限码 seed 000039（agent/skill/plugin:manage）
-- [ ] S2-丁7 三模块 model/repo/service + bootstrap 装配
-- [ ] S2-丁8 管理端 CRUD（agents/skills/plugins + 绑定，凭证不回）
-- [ ] S2-丁9 用户端 Agent 列表/详情/自建/绑定 + skills/plugins 列表
-- [ ] S2-前甲2 管理端 Agent/Skill/插件配置页（§14.10）
-- [ ] S2-前乙3 工作台 Agent 选择 + 自建页（§14.9）
-- [ ] S2-测3 三模块 CRUD + 自建越权用例
+- [x] S2-甲7 权限码 seed **000043**（agent/skill/plugin:manage）✅ 本地 up/down/重 up 幂等验证（commit 097cbbd）
+- [x] S2-丁7 三模块 model/repo/service + bootstrap 装配 ✅（新建 `workbench` 模块，commit 66a2df7）
+- [x] S2-丁8 管理端 CRUD（agents/skills/plugins + 绑定，凭证不回）✅（绑定覆盖语义 `{ids}`；插件凭证 AES-GCM 加密、响应仅 `has_auth`；endpoint SSRF 前置校验）
+- [x] S2-丁9 用户端 Agent 列表/详情/自建/绑定 + skills/plugins 列表 ✅（自建仅可绑 active 官方资源；越权 40003；§14.9/14.10 已回写）
+- [ ] S2-前甲2 管理端 Agent/Skill/插件配置页（§14.10）— 待 Codex
+- [ ] S2-前乙3 工作台 Agent 选择 + 自建页（§14.9）— 待 Codex
+- [ ] S2-测3 三模块 CRUD + 自建越权用例（后端已附 3 项 DB 集成测试 `workbench_db_test.go`，待测试工程师端到端回归）
 
 **W8 · M3 工作台（下）tool-use 编排**
 - [ ] S2-丁10（关键路径）`POST /api/agents/{id}/chat` 编排循环（D2 仅登录态，sk 不可调）
@@ -262,8 +262,8 @@
 | 风险审查 + D1–D6 决议 | ✅（PR #205） |
 | 契约回写（④.6） | 7 / 7 ✅（PR #206） |
 | **M1 Token 售卖闭环（W5）** | **15 / 15 ✅ 验收通过（真实上游 44/44，PR #207–219）** |
-| 实现阶段任务（S2-xx 总） | 15 / 47（M1 全完成；余 M2/M3 待开） |
-| **接口总数** | 已实现 13 项 / 待实现 11 项（共 24） |
+| 实现阶段任务（S2-xx 总） | 19 / 47（M1 全完成；M2 验收通过；M3 上半后端 甲7+丁7/8/9 完成，余编排 W8 + 前端 + 测试） |
+| **接口总数** | 已实现 19 项 / 待实现 5 项（共 24；余编排 chat §14.8 + 前端页面 + 测试） |
 
 ### 3.4.5 S2-测2 验收（2026-06-22）— M2 套餐 + 并发，发现 3 缺陷（2 P1）
 

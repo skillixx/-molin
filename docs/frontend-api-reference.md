@@ -1805,25 +1805,53 @@ Wechatpay-Nonce: <随机串>
 - 流式 SSE 事件（建议）：`event: tool_call`（调用工具中）/ `event: tool_result` / `event: message`（最终答案增量）/ `data: [DONE]`。
 - 计费：按 token 累加各轮 / 按次计 1（一次提问算 1 次）。错误码同 §14（40300/50200/50300）。
 
-### 14.9 Agent / 角色（用户端）🔜
+### 14.9 Agent / 角色（用户端）✅ 后端就绪（S2-丁9）
 
-- **GET** `/api/agents` *(登录态)* → 可用 Agent 列表：官方预设 + 本人自建
+> 列表均为扁平分页 `{items,page,page_size,total}`（顶层 `data`），支持 `?page=&page_size=`。
+
+- **GET** `/api/agents` *(登录态)* → 可用 Agent 列表：官方（official+active）+ 本人自建（全状态）。`items` 元素结构同详情。
+- **GET** `/api/agents/{id}` *(登录态)* → 详情。仅官方 active 或本人自建可见，否则 `40003`。
   ```json
-  { "id": 3, "name": "新闻助手", "description": "...", "avatar": "https://...", "owner_type": "official", "default_model_code": "deepseek-chat", "skills": [{"id":1,"name":"联网搜索"}], "plugins": [] }
+  {
+    "id": 3, "code": null, "name": "新闻助手", "description": "...", "avatar": "https://...",
+    "owner_type": "official", "owner_user_id": null,
+    "system_prompt": "你是新闻助手", "default_model_code": "deepseek-chat",
+    "status": "active", "sort_order": 0,
+    "skills":  [{ "id": 1, "code": "web_search", "name": "联网搜索" }],
+    "plugins": [{ "id": 2, "code": "weather", "name": "天气查询" }],
+    "created_at": "...", "updated_at": "..."
+  }
   ```
-- **GET** `/api/agents/{id}` *(登录态)* → 详情（绑定的 skill/插件名称；不含插件凭证）
-- **POST** `/api/agents` *(登录态)* — 用户自建 Agent
+- **POST** `/api/agents` *(登录态)* — 用户自建 Agent（`owner_type` 强制 `user`，不可传 `code`）
   ```json
-  { "name": "我的助手", "system_prompt": "你是…", "default_model_code": "deepseek-chat", "skill_ids": [1], "plugin_ids": [] }
+  { "name": "我的助手", "description": "", "avatar": "", "system_prompt": "你是…", "default_model_code": "deepseek-chat", "skill_ids": [1], "plugin_ids": [] }
   ```
-- **PATCH/DELETE** `/api/agents/{id}` *(登录态)* — 仅本人自建可改/删；官方 Agent 只读（越权 40003）
-- **GET** `/api/skills`、`/api/plugins` *(登录态)* — 列 active 能力供自建 Agent 绑定（精简视图，插件不回 endpoint/凭证）
+  - `name` / `system_prompt` / `default_model_code` 必填（缺失 `40000`）；`skill_ids`/`plugin_ids` 仅可填 **active 官方** skill/插件，否则 `40000`。返回创建后的 Agent 详情（HTTP 201）。
+- **PATCH** `/api/agents/{id}` *(登录态)* — 仅本人自建可改（官方/他人 `40003`）。标量字段缺省不改；`skill_ids`/`plugin_ids` 传则**覆盖**对应绑定（传 `[]` = 清空，不传 = 保留）。
+- **DELETE** `/api/agents/{id}` *(登录态)* — 仅本人自建可删（越权 `40003`），返回 `{"deleted":true}`。
+- **GET** `/api/skills` *(登录态)* — 列 active skill 供自建绑定：`{ "id", "code", "name", "description", "category" }`（不回 `handler_key`）。
+- **GET** `/api/plugins` *(登录态)* — 列 active 插件供自建绑定：`{ "id", "code", "name", "description", "is_paid" }`（**不回** endpoint/凭证/配额）。
 
-### 14.10 Agent / Skill / 插件管理（管理端）🔜
+### 14.10 Agent / Skill / 插件管理（管理端）✅ 后端就绪（S2-丁8）
 
-- **`/api/admin/agents`** CRUD + `/{id}/skills`、`/{id}/plugins` 绑定 *(需 `agent:manage` + 双重认证)*
-- **`/api/admin/skills`** CRUD *(需 `skill:manage` + 双重认证)*
-- **`/api/admin/plugins`** CRUD *(需 `plugin:manage` + 双重认证)*；插件 `auth_config` 仅入参，响应用 `has_auth` 表征，绝不回凭证
+> 列表均为扁平分页 `{items,page,page_size,total}`。错误码：`40000` 参数校验 / `40900` code 已存在 / `40400` 不存在 / `40003` 越权。
+
+**Agent**（需 `agent:manage` + 双重认证）
+- **GET** `/api/admin/agents`（`?owner_type=`，默认 official；`?status=`） / **GET** `/api/admin/agents/{id}` → 同 §14.9 详情结构。
+- **POST** `/api/admin/agents`（含 `code`、`skill_ids`、`plugin_ids`）/ **PATCH** `/api/admin/agents/{id}`（标量指针 + `skill_ids`/`plugin_ids` 覆盖语义）/ **DELETE** `/api/admin/agents/{id}`。
+- **POST** `/api/admin/agents/{id}/skills`、**POST** `/api/admin/agents/{id}/plugins` — 绑定/解绑，**覆盖语义**，body `{ "ids": [1,2] }`（`[]` = 全部解绑），返回更新后的 Agent 详情。
+
+**Skill**（需 `skill:manage` + 双重认证）
+- **GET** `/api/admin/skills`（`?status=&category=`） / **GET** `/api/admin/skills/{id}`
+- **POST** `/api/admin/skills`：`{ "code", "name", "description", "category", "tool_schema_json": {…}, "handler_key", "status" }`（`code`/`name`/`handler_key`/`tool_schema_json` 必填，`tool_schema_json` 须合法 JSON）
+- **PATCH/DELETE** `/api/admin/skills/{id}`。响应含 `tool_schema_json`、`handler_key` 等完整字段。
+
+**插件**（需 `plugin:manage` + 双重认证）
+- **GET** `/api/admin/plugins`（`?status=`） / **GET** `/api/admin/plugins/{id}`
+- **POST** `/api/admin/plugins`：`{ "code", "name", "description", "tool_schema_json": {…}, "endpoint_url", "auth_config", "timeout_ms", "is_paid", "daily_limit", "status" }`
+  - `endpoint_url` 必须 **https** 且非内网/回环（否则 `40000`）；`timeout_ms` ≤ 30000；`auth_config` 为**明文鉴权配置**，加密落库后丢弃。
+- **PATCH/DELETE** `/api/admin/plugins/{id}`：`auth_config` 传则重设（传 `""` 清空凭证）。
+- 响应**绝不回凭证**，以 `has_auth`（bool）表征是否已配置：`{ "id","code","name","description","tool_schema_json","endpoint_url","has_auth","timeout_ms","is_paid","daily_limit","status",... }`。
 
 ---
 
