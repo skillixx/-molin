@@ -51,6 +51,10 @@ func RegisterRoutes(
 	ih := handler.NewInternalAssetHandler(svc, allowedIPs, internalToken)
 	mux.HandleFunc("POST /api/internal/entitlement-consume", ih.ConsumeEntitlement)
 	mux.HandleFunc("GET /api/internal/entitlement-balance", ih.GetEntitlementBalance)
+	// S2-丙4：prepaid 额度预占/结算/释放（方案 B 根治 D-M2-01）。门面转发前 reserve，结算时 settle（多退少补），异常时 release。
+	mux.HandleFunc("POST /api/internal/entitlement-reserve", ih.ReserveEntitlement)
+	mux.HandleFunc("POST /api/internal/entitlement-settle", ih.SettleEntitlement)
+	mux.HandleFunc("POST /api/internal/entitlement-release", ih.ReleaseEntitlement)
 }
 
 // parseAllowedIPs 解析逗号分隔的 IP 白名单字符串（与 finance_consumer 一致）。

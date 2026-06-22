@@ -35,6 +35,9 @@ type UserEntitlement struct {
 	ProductID        uint64          `gorm:"not null" json:"product_id"`
 	QuotaTotal       *decimal.Decimal `gorm:"type:decimal(18,6)" json:"quota_total,omitempty"`
 	QuotaUsed        decimal.Decimal  `gorm:"type:decimal(18,6);not null;default:0" json:"quota_used"`
+	// QuotaReserved 已预占未结算额度（对齐钱包 frozen，S2-丙4）。
+	// available = quota_total - quota_used - quota_reserved；reserve 占用、settle/release 释放。
+	QuotaReserved    decimal.Decimal  `gorm:"type:decimal(18,6);not null;default:0" json:"quota_reserved"`
 	QuotaUnit        *string          `gorm:"size:32" json:"quota_unit,omitempty"`
 	Status           string           `gorm:"size:32;not null;default:active" json:"status"` // active/suspended/expired
 	StartedAt        *time.Time       `json:"started_at,omitempty"`

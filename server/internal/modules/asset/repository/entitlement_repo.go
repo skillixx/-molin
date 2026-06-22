@@ -71,6 +71,33 @@ func (r *EntitlementRepository) ConsumeQuota(ctx context.Context, db *gorm.DB, i
 		Update("quota_used", gorm.Expr("quota_used + ?", amount)).Error
 }
 
+// ReserveQuota 在事务内预占额度：quota_reserved += amount（S2-丙4）。
+// 调用方须已在同一事务内 FOR UPDATE 锁行并完成 available 校验，本方法仅做原子加。
+func (r *EntitlementRepository) ReserveQuota(ctx context.Context, db *gorm.DB, id uint64, amount decimal.Decimal) error {
+	return db.WithContext(ctx).Model(&model.UserEntitlement{}).
+		Where("id = ?", id).
+		Update("quota_reserved", gorm.Expr("quota_reserved + ?", amount)).Error
+}
+
+// SettleQuota 在事务内结算预占：quota_reserved -= reserved（释放预占），quota_used += used（计入已用）。
+// 多退少补由 service 计算 used（封顶到预占额）后传入。调用方须已 FOR UPDATE 锁行。
+func (r *EntitlementRepository) SettleQuota(ctx context.Context, db *gorm.DB, id uint64, reserved, used decimal.Decimal) error {
+	return db.WithContext(ctx).Model(&model.UserEntitlement{}).
+		Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"quota_reserved": gorm.Expr("quota_reserved - ?", reserved),
+			"quota_used":     gorm.Expr("quota_used + ?", used),
+		}).Error
+}
+
+// ReleaseQuota 在事务内释放预占：quota_reserved -= reserved（不计 used，失败/异常路径）。
+// 调用方须已 FOR UPDATE 锁行。
+func (r *EntitlementRepository) ReleaseQuota(ctx context.Context, db *gorm.DB, id uint64, reserved decimal.Decimal) error {
+	return db.WithContext(ctx).Model(&model.UserEntitlement{}).
+		Where("id = ?", id).
+		Update("quota_reserved", gorm.Expr("quota_reserved - ?", reserved)).Error
+}
+
 // UpdateStatus 批量更新某资产下所有权益状态。
 func (r *EntitlementRepository) UpdateStatusByAssetID(ctx context.Context, assetID uint64, status string) error {
 	return r.db.WithContext(ctx).Model(&model.UserEntitlement{}).

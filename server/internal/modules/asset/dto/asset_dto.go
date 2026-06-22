@@ -100,13 +100,64 @@ type ConsumeEntitlementResult struct {
 //
 // usable 计算口径：status=active 且未过期（expires_at 为空或晚于当前时间）且 remaining>0 → true；
 // 否则 false。不限量（quota_total 为 NULL）时 remaining 为 NULL，此时只要 status=active 且未过期即 usable=true。
+//
+// S2-丙4：remaining 口径纳入 quota_reserved（available = quota_total - quota_used - quota_reserved），
+// 避免门面看到的 remaining 不含已预占而误判可用——这与预占根治 D-M2-01 的不变量一致。
+// quota_reserved 单独透出，门面可观测当前已预占额度。
 type EntitlementBalanceResult struct {
 	EntitlementID uint64           `json:"entitlement_id"`
 	UserID        uint64           `json:"user_id"`
 	QuotaTotal    *decimal.Decimal `json:"quota_total,omitempty"`
 	QuotaUsed     decimal.Decimal  `json:"quota_used"`
+	QuotaReserved decimal.Decimal  `json:"quota_reserved"`
 	Remaining     *decimal.Decimal `json:"remaining,omitempty"`
 	Status        string           `json:"status"`
 	ExpiresAt     *time.Time       `json:"expires_at,omitempty"`
 	Usable        bool             `json:"usable"`
+}
+
+// ReserveEntitlementReq 权益额度预占请求（S2-丙4，方案 B 根治 D-M2-01）。
+// 由门面 prepaid 转发前调用 POST /api/internal/entitlement-reserve。
+type ReserveEntitlementReq struct {
+	EntitlementID  uint64          `json:"entitlement_id"`  // 目标权益 ID（= sk 解析出的 source_id）
+	UserID         uint64          `json:"user_id"`         // 归属校验：必须等于权益所属用户
+	Amount         decimal.Decimal `json:"amount"`          // 本次预占额度（预估消耗，如 max_tokens，必须为正）
+	IdempotencyKey string          `json:"idempotency_key"` // 幂等键，门面约定 request_id:quota_reserve
+}
+
+// ReserveEntitlementResult 预占响应。
+//   - HoldID：本次预占记录 ID，settle/release 可据此关联（也可用同一 idempotency_key 关联）。
+//   - Reserved：本次实际预占额度。
+//   - Available：预占后的剩余可用额度（quota_total-quota_used-quota_reserved），不限量时为 nil。
+//   - Status：hold 状态（holding）。
+type ReserveEntitlementResult struct {
+	HoldID    uint64           `json:"hold_id"`
+	Reserved  decimal.Decimal  `json:"reserved"`
+	Available *decimal.Decimal `json:"available,omitempty"`
+	Status    string           `json:"status"`
+}
+
+// SettleEntitlementReq 预占结算请求（S2-丙4）。
+// idempotency_key 与 hold_id 二选一（优先 hold_id），actual_amount 为实际消耗（多退少补，封顶到预占额）。
+type SettleEntitlementReq struct {
+	HoldID         uint64          `json:"hold_id"`
+	IdempotencyKey string          `json:"idempotency_key"`
+	ActualAmount   decimal.Decimal `json:"actual_amount"`
+}
+
+// ReleaseEntitlementReq 预占释放请求（S2-丙4，失败/异常路径，不计 used）。
+// idempotency_key 与 hold_id 二选一（优先 hold_id）。
+type ReleaseEntitlementReq struct {
+	HoldID         uint64 `json:"hold_id"`
+	IdempotencyKey string `json:"idempotency_key"`
+}
+
+// SettleEntitlementResult 结算/释放响应（结算后的 hold + 权益快照）。
+type SettleEntitlementResult struct {
+	HoldID        uint64           `json:"hold_id"`
+	Status        string           `json:"status"`                   // settled / released
+	SettledAmount decimal.Decimal  `json:"settled_amount"`           // 实际计入 quota_used 的净额（release 时为 0）
+	QuotaUsed     decimal.Decimal  `json:"quota_used"`               // 结算后已用额度
+	QuotaReserved decimal.Decimal  `json:"quota_reserved"`           // 结算后已预占额度
+	Available     *decimal.Decimal `json:"available,omitempty"`      // 结算后可用额度，不限量时为 nil
 }

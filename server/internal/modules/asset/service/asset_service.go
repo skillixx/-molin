@@ -50,6 +50,7 @@ type AssetService struct {
 	entitlementRepo *repository.EntitlementRepository
 	eventRepo       *repository.EventRepository
 	consumeLogRepo  *repository.EntitlementConsumeLogRepository
+	holdRepo        *repository.EntitlementHoldRepository
 }
 
 // NewAssetService 创建资产服务实例。
@@ -60,6 +61,7 @@ func NewAssetService(db *gorm.DB) *AssetService {
 		entitlementRepo: repository.NewEntitlementRepository(db),
 		eventRepo:       repository.NewEventRepository(db),
 		consumeLogRepo:  repository.NewEntitlementConsumeLogRepository(db),
+		holdRepo:        repository.NewEntitlementHoldRepository(db),
 	}
 }
 
@@ -594,6 +596,9 @@ func (s *AssetService) GetEntitlementBalance(
 //   - status=active 且未过期（expires_at 为空或晚于 now）且 remaining>0 → true；
 //   - 不限量（quota_total 为 NULL）时 remaining 为 NULL，此时只要 status=active 且未过期即 usable=true。
 //
+// S2-丙4：remaining 纳入 quota_reserved（remaining = quota_total - quota_used - quota_reserved），
+// 与预占不变量一致，避免门面看到的 remaining 不含已预占而误判可用。quota_reserved 单独透出。
+//
 // now 由调用方传入，便于测试构造过期/未过期场景。
 func buildBalanceResult(e *model.UserEntitlement, now time.Time) *dto.EntitlementBalanceResult {
 	res := &dto.EntitlementBalanceResult{
@@ -601,14 +606,15 @@ func buildBalanceResult(e *model.UserEntitlement, now time.Time) *dto.Entitlemen
 		UserID:        e.UserID,
 		QuotaTotal:    e.QuotaTotal,
 		QuotaUsed:     e.QuotaUsed,
+		QuotaReserved: e.QuotaReserved,
 		Status:        e.Status,
 		ExpiresAt:     e.ExpiresAt,
 	}
 
-	// remaining：有限额时为 quota_total - quota_used，不限量时为 nil。
+	// remaining：有限额时为 quota_total - quota_used - quota_reserved（available 口径），不限量时为 nil。
 	var hasRemaining bool
 	if e.QuotaTotal != nil {
-		rem := e.QuotaTotal.Sub(e.QuotaUsed)
+		rem := e.QuotaTotal.Sub(e.QuotaUsed).Sub(e.QuotaReserved)
 		res.Remaining = &rem
 		hasRemaining = rem.GreaterThan(decimal.Zero)
 	} else {
