@@ -16,6 +16,12 @@ import (
 // ErrSkillHandlerNotFound 内置 skill handler_key 未注册（运营配了 skill 但门面无对应实现）。
 var ErrSkillHandlerNotFound = errors.New("skill handler 未实现")
 
+// noRedirect 禁止外呼跟随 3xx 重定向：防止上游 302 跳内网绕过 SSRF 前置校验
+// （已校验的公网域名重定向到内网地址）。任何重定向直接判失败。
+func noRedirect(req *http.Request, via []*http.Request) error {
+	return errors.New("拒绝跟随重定向")
+}
+
 // skillFunc 内置 skill 执行函数：入参为模型给出的 arguments（JSON），返回回灌给模型的结果文本。
 type skillFunc func(ctx context.Context, args json.RawMessage) (string, error)
 
@@ -31,7 +37,7 @@ type SkillRegistry struct {
 func NewSkillRegistry(allowedDomains []string) *SkillRegistry {
 	r := &SkillRegistry{
 		funcs:          map[string]skillFunc{},
-		httpClient:     &http.Client{Timeout: 15 * time.Second},
+		httpClient:     &http.Client{Timeout: 15 * time.Second, CheckRedirect: noRedirect},
 		allowedDomains: allowedDomains,
 	}
 	r.funcs["web_search"] = r.webSearch

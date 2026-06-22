@@ -92,7 +92,9 @@ func (f *PluginForwarder) Forward(ctx context.Context, p *model.Plugin, userID u
 		req.Header.Set(header, value)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	// 专用 client 禁止跟随重定向（防 302 跳内网绕过 SSRF 校验）；超时由上面的 reqCtx 控制。
+	client := &http.Client{CheckRedirect: noRedirect}
+	resp, err := client.Do(req)
 	if err != nil {
 		f.recordFailure(ctx, p)
 		return "", fmt.Errorf("插件外呼失败: %v", err)
