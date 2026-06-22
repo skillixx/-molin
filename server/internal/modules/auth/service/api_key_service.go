@@ -284,6 +284,35 @@ func (s *APIKeyService) ModelScopeByID(ctx context.Context, apiKeyID uint64) (sc
 	return splitModelScope(key.ModelScope), true
 }
 
+// BillingByID 按 api_key_id 查询该 sk 的计费模式与套餐来源（只读、轻量，S2-甲6b）。
+// 供 token_gateway 门面在 chat 转发前分流计费 postpaid（钱包）/ prepaid（套餐额度），
+// 实现 token_gateway/service.BillingResolver 接口（签名须完全一致）。
+//   - 命中且 active：返回 (billing_mode, source_id, true)；
+//     postpaid 的 source_id 本就是 NULL/0，正常返回 0 即可，门面据 mode 走钱包路径；
+//     prepaid 的 source_id 为 entitlement_id。
+//   - ok=false 表示 key 不存在 / 已吊销 → 门面降级按 postpaid 处理（安全，不透支套餐额度）。
+//
+// 与 ResolveKey 区别：不更新 last_used_at、不做封禁联动（鉴权阶段已处理），仅一次主键只读查询；纯只读不改状态。
+func (s *APIKeyService) BillingByID(ctx context.Context, apiKeyID uint64) (mode string, sourceID uint64, ok bool) {
+	if apiKeyID == 0 {
+		return "", 0, false
+	}
+	key, err := s.repo.FindByID(ctx, apiKeyID)
+	if err != nil {
+		return "", 0, false
+	}
+	// sk 已吊销 → 视为未授权（与 ResolveKey/ModelScopeByID 一致的失效语义），门面兜底 postpaid。
+	if key.Status != "active" {
+		return "", 0, false
+	}
+	// SourceID 为 *uint64：postpaid 下为 NULL，归一化为 0。
+	var src uint64
+	if key.SourceID != nil {
+		src = *key.SourceID
+	}
+	return key.BillingMode, src, true
+}
+
 // RevokeKey 吊销本人某 sk（status=revoked），立即失效。
 //   - keyID 不存在 → ErrKeyInvalid
 //   - keyID 不属于 userID → ErrKeyForbidden（越权，HTTP 40003）

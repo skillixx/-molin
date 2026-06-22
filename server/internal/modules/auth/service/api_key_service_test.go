@@ -465,3 +465,42 @@ func TestListKeys_NoSecretLeak(t *testing.T) {
 		}
 	}
 }
+
+// TestBillingByID 覆盖只读访问器在四种场景下的返回（S2-甲6b）：
+// prepaid 带 source_id / postpaid（source_id=0）/ 已吊销（ok=false）/ apiKeyID=0（ok=false）。
+func TestBillingByID(t *testing.T) {
+	repo := newFakeAPIKeyRepo()
+	svc := NewAPIKeyService(repo, testSecret, nil)
+	ctx := context.Background()
+
+	src := uint64(77)
+	// prepaid + active，source_id=77。
+	repo.rows[10] = &model.APIKey{ID: 10, UserID: 7, Status: "active", BillingMode: "prepaid", SourceID: &src}
+	// postpaid + active，source_id=NULL。
+	repo.rows[20] = &model.APIKey{ID: 20, UserID: 7, Status: "active", BillingMode: "postpaid", SourceID: nil}
+	// prepaid 但已吊销 → 视为失效。
+	repo.rows[30] = &model.APIKey{ID: 30, UserID: 7, Status: "revoked", BillingMode: "prepaid", SourceID: &src}
+
+	cases := []struct {
+		name     string
+		id       uint64
+		wantMode string
+		wantSrc  uint64
+		wantOK   bool
+	}{
+		{"prepaid 命中带 source_id", 10, "prepaid", 77, true},
+		{"postpaid 命中 source_id=0", 20, "postpaid", 0, true},
+		{"已吊销 ok=false", 30, "", 0, false},
+		{"不存在 ok=false", 999, "", 0, false},
+		{"apiKeyID=0 ok=false", 0, "", 0, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			mode, srcID, ok := svc.BillingByID(ctx, c.id)
+			if ok != c.wantOK || mode != c.wantMode || srcID != c.wantSrc {
+				t.Fatalf("BillingByID(%d) = (%q,%d,%v)，期望 (%q,%d,%v)",
+					c.id, mode, srcID, ok, c.wantMode, c.wantSrc, c.wantOK)
+			}
+		})
+	}
+}
