@@ -49,6 +49,24 @@ type Config struct {
 	// DB 只存 HMAC-SHA256(sk 明文, APIKeyHMACSecret)，明文只在签发时返回一次。
 	// 通过 API_KEY_HMAC_SECRET 注入；未配置时 sk 系统不装配（bootstrap 灰度降级，不 panic）。
 	APIKeyHMACSecret string
+
+	// 内部接口共享密钥（S2-丁5）。门面 prepaid 结算时调用 asset 的
+	// POST /api/internal/entitlement-consume 须带 X-Internal-Token=该值；
+	// 通过 INTERNAL_API_TOKEN 注入；与 asset/finance_consumer 校验侧同源。未配置时 prepaid 内部调用 fail-closed。
+	InternalAPIToken string
+
+	// asset 模块内部接口基址（S2-丁5），门面 prepaid 结算调用 entitlement-consume 用。
+	// 通过 ASSET_INTERNAL_BASE_URL 注入；默认本机回环（同进程部署时门面 → 本机 API 端口）。
+	AssetInternalBaseURL string
+
+	// postpaid 预扣保证金兜底单价（每 token，单位 CNY，S2-丁5 / D1）。
+	// hold = max_tokens × 该单价（仅用于前置冻结占额防并发透支；实扣仍由 product_billing_rules 计算，结算时多退少补）。
+	// 通过 TOKEN_HOLD_UNIT_PRICE 注入；取保守值，宁高勿低（高估只多冻结、结算时退回，绝不透支）。
+	TokenHoldUnitPrice string
+
+	// postpaid 预扣保证金兜底 max_tokens（S2-丁5）。
+	// 请求未带 max_tokens 时按此上限冻结；通过 TOKEN_HOLD_DEFAULT_MAX_TOKENS 注入。
+	TokenHoldDefaultMaxTokens int
 }
 
 func Load() Config {
@@ -83,6 +101,12 @@ func Load() Config {
 		TokenProviderKey: getenv("TOKEN_PROVIDER_KEY", ""),
 
 		APIKeyHMACSecret: getenv("API_KEY_HMAC_SECRET", ""),
+
+		InternalAPIToken:     getenv("INTERNAL_API_TOKEN", ""),
+		AssetInternalBaseURL: getenv("ASSET_INTERNAL_BASE_URL", "http://127.0.0.1:8080"),
+		// 兜底单价默认 0.00002 CNY/token（约 ¥0.02/千 token，保守上限；运营按真实档位下调）。
+		TokenHoldUnitPrice:        getenv("TOKEN_HOLD_UNIT_PRICE", "0.00002"),
+		TokenHoldDefaultMaxTokens: getenvInt("TOKEN_HOLD_DEFAULT_MAX_TOKENS", 4096),
 	}
 }
 
