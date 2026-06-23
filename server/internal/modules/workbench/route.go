@@ -17,6 +17,7 @@ func RegisterRoutes(
 	categorySvc *service.AgentCategoryService,
 	skillSvc *service.SkillService,
 	pluginSvc *service.PluginService,
+	mcpSvc *service.MCPService,
 	jwtSecret string,
 	iamChecker middleware.IAMChecker,
 	banChecker middleware.BanChecker,
@@ -26,6 +27,7 @@ func RegisterRoutes(
 	ach := handler.NewAgentCategoryHandler(categorySvc)
 	sh := handler.NewSkillHandler(skillSvc)
 	ph := handler.NewPluginHandler(pluginSvc)
+	mh := handler.NewMCPHandler(mcpSvc)
 
 	// 管理端中间件链工厂：登录 + 指定权限码 + 管理员双重认证。
 	admin := func(perm string, next http.HandlerFunc) http.Handler {
@@ -60,6 +62,18 @@ func RegisterRoutes(
 	mux.Handle("GET /api/admin/plugins/{id}", admin("plugin:manage", ph.Get))
 	mux.Handle("PATCH /api/admin/plugins/{id}", admin("plugin:manage", ph.Update))
 	mux.Handle("DELETE /api/admin/plugins/{id}", admin("plugin:manage", ph.Delete))
+
+	// MCP server 管理（复用 plugin:manage，不新增权限码 —— MCP 契约 §11 定稿）
+	mux.Handle("GET /api/admin/mcp-servers", admin("plugin:manage", mh.List))
+	mux.Handle("POST /api/admin/mcp-servers", admin("plugin:manage", mh.Create))
+	mux.Handle("GET /api/admin/mcp-servers/{id}", admin("plugin:manage", mh.Get))
+	mux.Handle("PATCH /api/admin/mcp-servers/{id}", admin("plugin:manage", mh.Update))
+	mux.Handle("DELETE /api/admin/mcp-servers/{id}", admin("plugin:manage", mh.Delete))
+	mux.Handle("POST /api/admin/mcp-servers/{id}/discover", admin("plugin:manage", mh.Discover))
+	mux.Handle("GET /api/admin/mcp-servers/{id}/tools", admin("plugin:manage", mh.ListTools))
+	mux.Handle("PATCH /api/admin/mcp-servers/{id}/tools/{toolId}", admin("plugin:manage", mh.UpdateTool))
+	// Agent 绑定 MCP server（覆盖语义，同 skills/plugins 绑定；v1 仅官方 Agent 可绑）
+	mux.Handle("POST /api/admin/agents/{id}/mcp-servers", admin("plugin:manage", mh.BindAgentServers))
 }
 
 // RegisterUserRoutes 注册聊天工作台用户端路由（仅登录态 JWT）。
@@ -70,6 +84,7 @@ func RegisterUserRoutes(
 	categorySvc *service.AgentCategoryService,
 	skillSvc *service.SkillService,
 	pluginSvc *service.PluginService,
+	mcpSvc *service.MCPService,
 	jwtSecret string,
 	banChecker middleware.BanChecker,
 ) {
@@ -77,6 +92,7 @@ func RegisterUserRoutes(
 	ach := handler.NewAgentCategoryHandler(categorySvc)
 	sh := handler.NewSkillHandler(skillSvc)
 	ph := handler.NewPluginHandler(pluginSvc)
+	mh := handler.NewMCPHandler(mcpSvc)
 
 	// 用户端中间件链：仅登录态 JWT（含封禁/吊销检查）。
 	user := func(next http.HandlerFunc) http.Handler {
@@ -96,6 +112,8 @@ func RegisterUserRoutes(
 	// 可绑定能力只读列表（供自建 Agent 选择）
 	mux.Handle("GET /api/skills", user(sh.ListPublic))
 	mux.Handle("GET /api/plugins", user(ph.ListPublic))
+	// MCP server 用户端只读精简视图（不回 endpoint/凭证；v1 仅官方 Agent 可绑，此列表供前端展示）
+	mux.Handle("GET /api/mcp-servers", user(mh.ListPublic))
 }
 
 // RegisterChatRoute 注册 tool-use 编排对话端点（S2-丁10，D2 仅登录态，sk 不可调）。

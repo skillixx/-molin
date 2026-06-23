@@ -155,6 +155,7 @@ ChatWithAgent(ctx, agentID, userID, billingCtx, messages, stream):
   agent  = load(agentID); 校验可见性（official 或 owner==userID）
   model  = req.model or agent.default_model_code
   tools  = 汇总 agent 绑定且 enabled 的 skill/plugin 的 tool_schema_json
+           + 绑定 active MCP server 的 enabled 工具（第二种工具源，第三阶段接入；命名空间 mcp__{server_code}__{tool_name}）
   msgs   = [system: agent.system_prompt] + messages
   for round in 1..MAX_ROUNDS:                            # MAX_ROUNDS 可配置，默认 5（见下）
       resp = forward.ChatOnce(model, msgs, tools)        # 复用转发器（选渠道/转发/读usage/计费）
@@ -164,6 +165,7 @@ ChatWithAgent(ctx, agentID, userID, billingCtx, messages, stream):
       for call in resp.tool_calls:
           if call 属 skill:  result = skillDispatch(handler_key, args)      # 内置函数
           if call 属 plugin: result = pluginForward(endpoint_url, args)     # 外部 HTTP（超时/SSRF 防护）
+          if call 属 mcp:    result = mcpClient.callTool(server, name, args) # MCP tools/call（超时/SSRF/禁重定向，失败同插件降级）
           msgs += [assistant tool_call, tool result(result)]
   到达 MAX_ROUNDS 仍未收敛 → 终止，返回已有内容 + 提示「工具调用已达上限，本次已正常计费」
   整次提问结束：按次计 1（见 billing 契约 §3.2）
@@ -182,7 +184,9 @@ ChatWithAgent(ctx, agentID, userID, billingCtx, messages, stream):
 
 ## 5. 安全（重点：插件外部接入）
 
-- **SSRF 防护**：插件 `endpoint_url` 仅允许 https + **可配置域名白名单**（配置项/白名单表，新增插件不改代码）/ 禁内网网段（10./172.16./192.168./169.254./localhost），运营配置时校验。
+> 第二种工具源 **MCP server**（第三阶段接入，见 `docs/backend-stage3-mcp-integration-contract.md`）共用本节安全机制：SSRF（配置时校验 + 运行时 DNS 解析 + 禁重定向）、凭证 AES-256-GCM、超时熔断、付费 server 用通用 `tool_daily_call_logs` 限流（`tool_type='mcp'`）。额外加强：工具定义经 `mcp_server_tools` 快照 + 运营审核（`enabled`）才暴露，`schema_hash` 变更自动置未启用待重审（挡 tool poisoning / rug-pull）；MCP 工具结果截断 ≤6KB；v1 仅官方 Agent 可绑 MCP。
+
+- **SSRF 防护**：插件 / MCP `endpoint_url` 仅允许 https + **可配置域名白名单**（配置项/白名单表，新增插件不改代码）/ 禁内网网段（10./172.16./192.168./169.254./localhost），运营配置时校验。
 - **超时与熔断**：`timeout_ms` 强制上限（如 ≤30s），连续失败的插件自动置 `inactive` 告警。
 - **凭证加密**：`auth_config_encrypted` AES-256-GCM（复用 `TOKEN_PROVIDER_KEY` 或新增 `PLUGIN_SECRET_KEY`），任何响应不返回。
 - **成本与配额（D3 已拍板）**：付费插件外部 API 成本**由平台承担**（既定红线，用户侧不计费）；为防滥用，`is_paid=1` 的插件按 `daily_limit` 做**每用户每日调用上限**（超限当轮工具返回「已达上限」错误结果回灌，不中断对话），且插件调用**计入 sk/user 限流维度**（sk 契约 §9）。仅登录态可调编排端点（D2），进一步收窄滥用面。

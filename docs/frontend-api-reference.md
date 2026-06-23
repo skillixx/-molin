@@ -1890,6 +1890,37 @@ Wechatpay-Nonce: <随机串>
 - **PATCH/DELETE** `/api/admin/plugins/{id}`：`auth_config` 传则重设（传 `""` 清空凭证）。
 - 响应**绝不回凭证**，以 `has_auth`（bool）表征是否已配置：`{ "id","code","name","description","tool_schema_json","endpoint_url","has_auth","timeout_ms","is_paid","daily_limit","status",... }`。
 
+### 14.11 MCP server 管理（第二种工具源）✅ 后端就绪（第三阶段·阶段三）
+
+> MCP（Model Context Protocol）server 是「插件」之外的第二种工具源：接一个 server 即自动暴露它的一批工具到 Agent。与插件并存，互不替换。
+> v1 范围：Streamable HTTP transport + tools 原语 + 静态鉴权（Bearer/header）。**权限码复用 `plugin:manage`**（不新增），管理端需双重认证。
+> 列表扁平分页 `{items,page,page_size,total}`。错误码：`40000` 参数/SSRF（endpoint 非 https 或内网）/ `40900` code 已存在 / `40400` server/工具不存在 / `40003` 越权（绑非官方 Agent）/ `502`(`50200`) discover 连接/握手失败（不改 server 状态）。
+
+**MCP server CRUD**（需 `plugin:manage` + 双重认证）
+- **GET** `/api/admin/mcp-servers`（`?status=` 过滤）/ **GET** `/api/admin/mcp-servers/{id}`
+- **POST** `/api/admin/mcp-servers`：`{ "code","name","description","endpoint_url","auth_config","timeout_ms","is_paid","daily_limit","status" }`
+  - `code` 唯一，作工具命名空间前缀；`endpoint_url` 必须 **https** 且非内网/回环（否则 `40000`）；`timeout_ms` ≤ 30000（空默认 15000）；`auth_config` 为**明文鉴权配置**（如 `{"header":"Authorization","value":"Bearer xxx"}`），加密落库后丢弃。
+  - `status` 空默认 **inactive**（新建后须 discover + 审核工具，再置 active 才会被编排使用）。
+- **PATCH/DELETE** `/api/admin/mcp-servers/{id}`：`auth_config` 传则重设（传 `""` 清空凭证）。删除级联清工具快照。
+- 响应**绝不回凭证**，以 `has_auth`（bool）表征：`{ "id","code","name","description","endpoint_url","has_auth","protocol_version","timeout_ms","is_paid","daily_limit","status","last_discovered_at","created_at","updated_at" }`。`protocol_version` / `last_discovered_at` 在 discover 后回填。
+
+**工具发现与审核**（需 `plugin:manage` + 双重认证）
+- **POST** `/api/admin/mcp-servers/{id}/discover` — 触发 `initialize` + `tools/list`，把发现的工具 upsert 到工具快照，回填 `protocol_version` / `last_discovered_at`。
+  - 响应：`{ "protocol_version","discovered"(本次发现工具数),"changed"(新增或定义变更需重审的数),"tools":[<工具快照>] }`。
+  - 定义变化（`schema_hash` 变）的工具会被**自动置未启用待重审**（挡 tool poisoning / rug-pull）。
+  - 连接/握手失败 → `502`，**不改 server 状态**。
+- **GET** `/api/admin/mcp-servers/{id}/tools` — 列该 server 全部工具快照（含未启用）：`{ "items":[ { "id","server_id","tool_name","description","input_schema_json","enabled","schema_hash","created_at","updated_at" } ] }`。
+- **PATCH** `/api/admin/mcp-servers/{id}/tools/{toolId}` — 审核启用/停用单工具：body `{ "enabled": true|false }`，返回更新后的工具快照。**仅 `enabled=true` 的工具会暴露给编排**。
+
+**Agent 绑定 MCP server**（需 `plugin:manage` + 双重认证）
+- **POST** `/api/admin/agents/{id}/mcp-servers` — 覆盖式绑定（同 skills/plugins 风格），body `{ "ids": [1,2] }`（`[]` = 全部解绑），返回 `{ "bound": true }`。
+  - **v1 仅官方 Agent 可绑 MCP**；绑用户自建 Agent 返回 `40003`。绑定后该 server 下所有 `enabled` 工具进入 Agent 工具集，编排时以 `mcp__{server_code}__{tool_name}` 命名暴露给模型（防与 skill/plugin 撞名）。
+
+**用户端只读**（仅登录态）
+- **GET** `/api/mcp-servers` — 仅 active server 精简视图（**不回 endpoint/凭证/配额**）：`{ "items":[ { "id","code","name","description","is_paid" } ], page,page_size,total }`。
+
+> 计费：MCP 工具调用对用户**免费**（唯一收费=模型 token）；`is_paid=1` 的 server 仅按 `daily_limit` 做每用户每日防滥用限流（与插件共用通用计数表）。
+
 ---
 
 ## 附录
@@ -1917,7 +1948,7 @@ Wechatpay-Nonce: <随机串>
 | `token:manage` | Token 网关渠道/模型目录管理 + 全量用量（后端丁，需管理员双重认证） |
 | `agent:manage` | Agent（官方预设）管理 + skill/插件绑定（后端丁，需管理员双重认证） |
 | `skill:manage` | Skill 内置能力管理（后端丁，需管理员双重认证） |
-| `plugin:manage` | 外部插件管理（后端丁，需管理员双重认证） |
+| `plugin:manage` | 外部插件管理 + **MCP server 管理**（第二种工具源，复用同权限码，后端丁，需管理员双重认证） |
 
 ### 枚举值汇总
 
@@ -1951,5 +1982,7 @@ Wechatpay-Nonce: <随机串>
 | `api_key.status` | `active` / `revoked` |
 | `billing usage_type`（token） | `input_tokens` / `output_tokens`（按量，unit=tokens）/ `calls`（按次，unit=count） |
 | `agent.owner_type` | `official`（运营预设）/ `user`（用户自建） |
-| `agent.status` / `skill.status` / `plugin.status` | `active` / `inactive` |
+| `agent.status` / `skill.status` / `plugin.status` / `mcp_server.status` | `active` / `inactive`（mcp_server 新建默认 `inactive`） |
+| `mcp_server_tool.enabled` | `true`（审核通过，暴露给编排）/ `false`（待审/停用，定义变更自动置 false） |
+| `tool_daily_call_logs.tool_type` | `plugin` / `mcp`（通用工具每用户每日限流维度，收口替代 plugin_daily_call_logs） |
 | `entitlement_type`（token 套餐） | `token_quota`（quota_unit=tokens，预付额度） |
