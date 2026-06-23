@@ -32,8 +32,9 @@ func (h *AgentHandler) AdminList(w http.ResponseWriter, r *http.Request) {
 	}
 	status := r.URL.Query().Get("status")
 	category := r.URL.Query().Get("category")
+	visibleScope := r.URL.Query().Get("visible_scope")
 	p := pagination.Parse(r)
-	items, total, err := h.svc.AdminList(r.Context(), ownerType, status, category, p.Offset(), p.PageSize)
+	items, total, err := h.svc.AdminList(r.Context(), ownerType, status, category, visibleScope, p.Offset(), p.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return
@@ -155,6 +156,26 @@ func (h *AgentHandler) BindPlugins(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.svc.BindPlugins(r.Context(), id, req.IDs)
 	if err != nil {
 		h.writeMutationErr(w, err, "绑定失败")
+		return
+	}
+	response.JSON(w, http.StatusOK, resp)
+}
+
+// SetVisibility PUT /api/admin/agents/{id}/visibility：覆盖式设置定向可见性。
+func (h *AgentHandler) SetVisibility(w http.ResponseWriter, r *http.Request) {
+	id, err := pathUint64(r, "id")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "无效 ID")
+		return
+	}
+	var req dto.SetVisibilityReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	resp, err := h.svc.SetVisibility(r.Context(), id, req)
+	if err != nil {
+		h.writeMutationErr(w, err, "设置可见性失败")
 		return
 	}
 	response.JSON(w, http.StatusOK, resp)

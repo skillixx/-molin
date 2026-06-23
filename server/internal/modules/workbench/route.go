@@ -42,6 +42,7 @@ func RegisterRoutes(
 	mux.Handle("DELETE /api/admin/agents/{id}", admin("agent:manage", ah.AdminDelete))
 	mux.Handle("POST /api/admin/agents/{id}/skills", admin("agent:manage", ah.BindSkills))
 	mux.Handle("POST /api/admin/agents/{id}/plugins", admin("agent:manage", ah.BindPlugins))
+	mux.Handle("PUT /api/admin/agents/{id}/visibility", admin("agent:manage", ah.SetVisibility))
 
 	// Agent 分类字典（管理端全量，含 inactive；复用 agent:manage，不新增权限码）
 	mux.Handle("GET /api/admin/agent-categories", admin("agent:manage", ach.AdminList))

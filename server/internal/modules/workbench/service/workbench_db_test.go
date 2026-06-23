@@ -362,7 +362,7 @@ func TestAgentCategory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建 study 分类 Agent 失败: %v", err)
 	}
-	officeList, _, err := agentSvc.AdminList(ctx, "official", "", "office", 0, 500)
+	officeList, _, err := agentSvc.AdminList(ctx, "official", "", "office", "", 0, 500)
 	if err != nil {
 		t.Fatalf("按 office 过滤失败: %v", err)
 	}

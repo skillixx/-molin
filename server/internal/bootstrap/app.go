@@ -404,6 +404,73 @@ func (a *iamRoleGetterAdapter) GetUserRoleCodes(ctx context.Context, userID uint
 	return codes, nil
 }
 
+// roleResolverAdapter 适配 workbench 的 RoleResolver：复用 iam 的 GetUserRoleCodes，
+// 并用 roles 表校验角色 code 存在性（Agent 定向可见性写入侧校验）。
+type roleResolverAdapter struct {
+	getter *iamRoleGetterAdapter
+	db     *gorm.DB
+}
+
+func (a *roleResolverAdapter) GetUserRoleCodes(ctx context.Context, userID uint64) ([]string, error) {
+	return a.getter.GetUserRoleCodes(ctx, userID)
+}
+
+func (a *roleResolverAdapter) ExistingRoleCodes(ctx context.Context, codes []string) (map[string]struct{}, error) {
+	out := make(map[string]struct{}, len(codes))
+	if len(codes) == 0 {
+		return out, nil
+	}
+	var found []string
+	if err := a.db.WithContext(ctx).Table("roles").Where("code IN ?", codes).Pluck("code", &found).Error; err != nil {
+		return nil, err
+	}
+	for _, c := range found {
+		out[c] = struct{}{}
+	}
+	return out, nil
+}
+
+// groupResolverAdapter 适配 workbench 的 GroupResolver：查 user_group_members 取用户分组归属，
+// 查 user_groups 校验分组存在性（Agent 定向可见性按分组/组内角色判定）。
+type groupResolverAdapter struct {
+	db *gorm.DB
+}
+
+func (a *groupResolverAdapter) UserGroupRoles(ctx context.Context, userID uint64) (map[uint64]string, error) {
+	type row struct {
+		GroupID   uint64
+		GroupRole string
+	}
+	var rows []row
+	if err := a.db.WithContext(ctx).
+		Table("user_group_members").
+		Select("group_id, group_role").
+		Where("user_id = ?", userID).
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[uint64]string, len(rows))
+	for _, r := range rows {
+		out[r.GroupID] = r.GroupRole
+	}
+	return out, nil
+}
+
+func (a *groupResolverAdapter) ExistingGroupIDs(ctx context.Context, groupIDs []uint64) (map[uint64]struct{}, error) {
+	out := make(map[uint64]struct{}, len(groupIDs))
+	if len(groupIDs) == 0 {
+		return out, nil
+	}
+	var found []uint64
+	if err := a.db.WithContext(ctx).Table("user_groups").Where("id IN ?", groupIDs).Pluck("id", &found).Error; err != nil {
+		return nil, err
+	}
+	for _, id := range found {
+		out[id] = struct{}{}
+	}
+	return out, nil
+}
+
 // membershipCheckerAdapter 将 *membershipsvc.MembershipService 适配为 contenthandler.MembershipChecker 接口。
 type membershipCheckerAdapter struct {
 	svc *membershipsvc.MembershipService
@@ -717,6 +784,11 @@ func NewApp() (*App, error) {
 		if workbenchModule, wbErr := workbenchmod.New(gormDB, cfg.PluginSecretKey, cfg.PluginDomainWhitelist); wbErr != nil {
 			log.Printf("[workbench] 初始化失败，工作台管理端/用户端未启用: %v", wbErr)
 		} else {
+			// 注入 Agent 定向可见性解析器：分组归属（user_group_members）+ 全局角色（复用 iam 同款 getter）。
+			// 任一为 nil/出错时对应 scope=groups/roles 的 Agent 一律不可见（fail-safe），不泄漏定向 Agent。
+			visGroupResolver := &groupResolverAdapter{db: gormDB}
+			visRoleResolver := &roleResolverAdapter{getter: iamRoleGetter, db: gormDB}
+			workbenchModule.AgentService.WithResolvers(visGroupResolver, visRoleResolver)
 			// 管理端：Agent/Skill/Plugin CRUD + 绑定（agent/skill/plugin:manage + 管理员双重认证）。
 			workbenchmod.RegisterRoutes(mux, workbenchModule.AgentService, workbenchModule.AgentCategoryService,
 				workbenchModule.SkillService, workbenchModule.PluginService, cfg.JWTSecret, iamService, authService, authService)
@@ -726,6 +798,8 @@ func NewApp() (*App, error) {
 			// 编排对话端点（S2-丁10，D2 仅登录态）：复用 token 网关 ForwardService 做每轮上游调用。
 			// token 网关未启用（tokenForwardSvc==nil）时不注册——编排依赖上游转发。
 			if chatSvc := workbenchModule.BuildChatService(tokenForwardSvc, cfg.MaxRounds); chatSvc != nil {
+				// 编排端点访问控制必须接入定向可见性（安全红线：列表过滤≠访问控制）。
+				chatSvc.WithResolvers(visGroupResolver, visRoleResolver)
 				workbenchmod.RegisterChatRoute(mux, chatSvc, cfg.JWTSecret, authService)
 			} else {
 				log.Printf("[workbench] token 网关未启用，编排 chat 端点 /api/agents/{id}/chat 未注册")

@@ -1823,22 +1823,27 @@ Wechatpay-Nonce: <随机串>
   ```json
   { "items": [ { "code": "office", "name": "办公", "icon": "", "sort_order": 1, "status": "active" }, … ] }
   ```
-- **GET** `/api/agents` *(登录态)* → 可用 Agent 列表：官方（official+active）+ 本人自建（全状态）。`items` 元素结构同详情。
+- **GET** `/api/agents` *(登录态)* → 可用 Agent 列表：官方（official+active 且**按定向可见性命中当前用户**）+ 本人自建（全状态）。`items` 元素结构同详情。
   - 新增可选筛选 **`?category=office`** 按分类过滤（不传=不过滤；展示维度，不影响可见性/计费）。
-- **GET** `/api/agents/{id}` *(登录态)* → 详情。仅官方 active 或本人自建可见，否则 `40003`。
+  - **定向可见性**：官方 Agent 可被运营定向到指定分组/全局角色（见 `visible_scope`）。列表只返回对当前用户可见的官方 Agent；非目标受众看不到、也不能直连详情/对话。
+- **GET** `/api/agents/{id}` *(登录态)* → 详情。仅本人自建、或对当前用户可见的官方 active 可见，否则 `40003`（定向不命中视同越权）。
   ```json
   {
     "id": 3, "code": null, "name": "新闻助手", "description": "...", "avatar": "https://...",
     "owner_type": "official", "owner_user_id": null,
     "system_prompt": "你是新闻助手", "default_model_code": "deepseek-chat",
     "category_code": "office", "category_name": "办公",
-    "status": "active", "sort_order": 0,
+    "status": "active",
+    "visible_scope": "all", "target_audience": null,
+    "sort_order": 0,
     "skills":  [{ "id": 1, "code": "web_search", "name": "联网搜索" }],
     "plugins": [{ "id": 2, "code": "weather", "name": "天气查询" }],
     "created_at": "...", "updated_at": "..."
   }
   ```
   - `category_code`：所属分类编码，`null` = 未分类；`category_name`：联字典带出的分类名称（未分类/字典缺失为空串，前端可直接显示分类标签）。
+  - `visible_scope`：`all`（全员可见，默认）/`groups`（指定分组，可再按组内角色）/`roles`（指定全局角色）。
+  - `target_audience`：按 `visible_scope` 解释，`all` 时为 `null`；`groups` 时形如 `{"group_ids":[10,12],"group_roles":["admin"]}`（`group_roles` 缺省=组内任意角色）；`roles` 时形如 `{"role_codes":["vip","merchant"]}`。用户端一般只读官方 Agent 时用于展示，普通用户无需关注。
 - **POST** `/api/agents` *(登录态)* — 用户自建 Agent（`owner_type` 强制 `user`，不可传 `code`）
   ```json
   { "name": "我的助手", "description": "", "avatar": "", "system_prompt": "你是…", "default_model_code": "deepseek-chat", "category_code": "office", "skill_ids": [1], "plugin_ids": [] }
@@ -1855,9 +1860,19 @@ Wechatpay-Nonce: <随机串>
 > 列表均为扁平分页 `{items,page,page_size,total}`。错误码：`40000` 参数校验 / `40900` code 已存在 / `40400` 不存在 / `40003` 越权。
 
 **Agent**（需 `agent:manage` + 双重认证）
-- **GET** `/api/admin/agents`（`?owner_type=`，默认 official；`?status=`；`?category=` 按分类过滤） / **GET** `/api/admin/agents/{id}` → 同 §14.9 详情结构（含 `category_code` / `category_name`）。
-- **POST** `/api/admin/agents`（含 `code`、`category_code`、`skill_ids`、`plugin_ids`）/ **PATCH** `/api/admin/agents/{id}`（标量指针 + `category_code` + `skill_ids`/`plugin_ids` 覆盖语义）/ **DELETE** `/api/admin/agents/{id}`。
+- **GET** `/api/admin/agents`（`?owner_type=`，默认 official；`?status=`；`?category=` 按分类过滤；`?visible_scope=all|groups|roles` 按定向范围过滤，便于运营核对） / **GET** `/api/admin/agents/{id}` → 同 §14.9 详情结构（含 `category_code` / `category_name` / `visible_scope` / `target_audience`）。管理端 list/get **不做**可见性过滤（运营看全量）。
+- **POST** `/api/admin/agents`（含 `code`、`category_code`、`skill_ids`、`plugin_ids`，以及可选定向字段）/ **PATCH** `/api/admin/agents/{id}`（标量指针 + `category_code` + `skill_ids`/`plugin_ids` 覆盖语义 + 可选定向字段）/ **DELETE** `/api/admin/agents/{id}`。
   - `category_code` 可选：空/不传 = 未分类；非空须存在于分类字典，否则 `40000`。PATCH 传 `""` = 清为未分类。
+  - **定向可见性字段（可选）**：`visible_scope`（`all`/`groups`/`roles`）+ `group_ids`（`[]uint64`）+ `group_roles`（`["admin"|"member"]`）+ `role_codes`（`["vip",...]`）。后端按 `visible_scope` 组装为 `target_audience` 落库。
+    - POST：`visible_scope` 不传/为空 = `all`（全员可见，向后兼容）。
+    - PATCH：`visible_scope` 不传 = 保留原定向；传则**整体覆盖**（连同 group/role 字段一起重设，覆盖语义）。
+    - 校验（均 `40000`）：`visible_scope` 非 `all`/`groups`/`roles`（`members`/`users` 为预留，暂拒绝）；`groups` 但 `group_ids` 为空；`group_roles` 含非 `admin`/`member`；`roles` 但 `role_codes` 为空；`group_ids` 含不存在分组 / `role_codes` 含不存在角色。
+- **PUT** `/api/admin/agents/{id}/visibility` — **独立设置定向可见性**（覆盖语义，与 skills/plugins 绑定风格一致，便于前端单独改定向）。body：
+  ```json
+  { "visible_scope": "groups", "group_ids": [10], "group_roles": ["admin"] }
+  ```
+  - 仅对官方 Agent 生效（对自建/他人返回校验错误）；校验规则同上；返回更新后的 Agent 详情（含 `visible_scope` / `target_audience`）。
+  - 例：`{"visible_scope":"roles","role_codes":["vip","merchant"]}`（按全局角色）；`{"visible_scope":"all"}`（恢复全员可见，`target_audience` 置 `null`）。
 - **POST** `/api/admin/agents/{id}/skills`、**POST** `/api/admin/agents/{id}/plugins` — 绑定/解绑，**覆盖语义**，body `{ "ids": [1,2] }`（`[]` = 全部解绑），返回更新后的 Agent 详情。
 
 **Agent 分类**（需 `agent:manage` + 双重认证）
@@ -1921,6 +1936,7 @@ Wechatpay-Nonce: <随机串>
 | `user_membership.status` | `active` / `expired` / `cancelled` |
 | `membership_level.status` | `active` / `inactive` |
 | `announcement.visible_scope` | `all` / `roles` / `members` / `admins` |
+| `agent.visible_scope` | `all` / `groups` / `roles`（`members` / `users` 预留未启用） |
 | `announcement.status` | `draft` / `published` / `offline` |
 | `help_article.status` / `help_category.status` | `draft` / `published`（分类：`active` / `inactive`） |
 | `application.status` | `draft` / `active` / `inactive` / `archived` |
