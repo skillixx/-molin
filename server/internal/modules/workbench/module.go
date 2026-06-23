@@ -10,9 +10,10 @@ import (
 
 // Module 聚合聊天工作台（Agent/Skill/Plugin + tool-use 编排）对外暴露的服务，便于 bootstrap 统一装配。
 type Module struct {
-	AgentService  *service.AgentService
-	SkillService  *service.SkillService
-	PluginService *service.PluginService
+	AgentService         *service.AgentService
+	AgentCategoryService *service.AgentCategoryService
+	SkillService         *service.SkillService
+	PluginService        *service.PluginService
 
 	// 编排依赖（W8）：skill 内置注册表 + plugin 转发器 + 各 repo，供 BuildChatService 组装编排服务。
 	registry   *service.SkillRegistry
@@ -32,14 +33,16 @@ func New(db *gorm.DB, pluginSecretKey string, allowedDomains []string) (*Module,
 	}
 
 	agentRepo := repository.NewAgentRepository(db)
+	categoryRepo := repository.NewAgentCategoryRepository(db)
 	skillRepo := repository.NewSkillRepository(db)
 	pluginRepo := repository.NewPluginRepository(db)
 	callRepo := repository.NewPluginCallRepository(db)
 
 	return &Module{
-		AgentService:  service.NewAgentService(agentRepo, skillRepo, pluginRepo),
-		SkillService:  service.NewSkillService(skillRepo),
-		PluginService: service.NewPluginService(pluginRepo, cipher),
+		AgentService:         service.NewAgentService(agentRepo, skillRepo, pluginRepo, categoryRepo),
+		AgentCategoryService: service.NewAgentCategoryService(categoryRepo),
+		SkillService:         service.NewSkillService(skillRepo),
+		PluginService:        service.NewPluginService(pluginRepo, cipher),
 
 		registry:   service.NewSkillRegistry(allowedDomains),
 		forwarder:  service.NewPluginForwarder(cipher, callRepo, pluginRepo, allowedDomains),

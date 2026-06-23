@@ -14,6 +14,7 @@ import (
 func RegisterRoutes(
 	mux *http.ServeMux,
 	agentSvc *service.AgentService,
+	categorySvc *service.AgentCategoryService,
 	skillSvc *service.SkillService,
 	pluginSvc *service.PluginService,
 	jwtSecret string,
@@ -22,6 +23,7 @@ func RegisterRoutes(
 	adminChecker middleware.AdminVerifiedChecker,
 ) {
 	ah := handler.NewAgentHandler(agentSvc)
+	ach := handler.NewAgentCategoryHandler(categorySvc)
 	sh := handler.NewSkillHandler(skillSvc)
 	ph := handler.NewPluginHandler(pluginSvc)
 
@@ -40,6 +42,9 @@ func RegisterRoutes(
 	mux.Handle("DELETE /api/admin/agents/{id}", admin("agent:manage", ah.AdminDelete))
 	mux.Handle("POST /api/admin/agents/{id}/skills", admin("agent:manage", ah.BindSkills))
 	mux.Handle("POST /api/admin/agents/{id}/plugins", admin("agent:manage", ah.BindPlugins))
+
+	// Agent 分类字典（管理端全量，含 inactive；复用 agent:manage，不新增权限码）
+	mux.Handle("GET /api/admin/agent-categories", admin("agent:manage", ach.AdminList))
 
 	// Skill 管理（skill:manage）
 	mux.Handle("GET /api/admin/skills", admin("skill:manage", sh.List))
@@ -61,12 +66,14 @@ func RegisterRoutes(
 func RegisterUserRoutes(
 	mux *http.ServeMux,
 	agentSvc *service.AgentService,
+	categorySvc *service.AgentCategoryService,
 	skillSvc *service.SkillService,
 	pluginSvc *service.PluginService,
 	jwtSecret string,
 	banChecker middleware.BanChecker,
 ) {
 	ah := handler.NewAgentHandler(agentSvc)
+	ach := handler.NewAgentCategoryHandler(categorySvc)
 	sh := handler.NewSkillHandler(skillSvc)
 	ph := handler.NewPluginHandler(pluginSvc)
 
@@ -81,6 +88,9 @@ func RegisterUserRoutes(
 	mux.Handle("GET /api/agents/{id}", user(ah.UserGet))
 	mux.Handle("PATCH /api/agents/{id}", user(ah.UserUpdate))
 	mux.Handle("DELETE /api/agents/{id}", user(ah.UserDelete))
+
+	// Agent 分类列表（前端分类导航，仅 active）
+	mux.Handle("GET /api/agent-categories", user(ach.UserList))
 
 	// 可绑定能力只读列表（供自建 Agent 选择）
 	mux.Handle("GET /api/skills", user(sh.ListPublic))

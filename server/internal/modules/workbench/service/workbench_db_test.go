@@ -38,7 +38,7 @@ func envOrWB(k, def string) string {
 }
 
 // setupWBTest 连本地 molin 开发库（迁移已建好 agents/skills/plugins）。仅 RUN_DB_TESTS=1 时运行。
-func setupWBTest(t *testing.T) (*AgentService, *SkillService, *PluginService, func()) {
+func setupWBTest(t *testing.T) (*AgentService, *AgentCategoryService, *SkillService, *PluginService, func()) {
 	t.Helper()
 	if os.Getenv("RUN_DB_TESTS") != "1" {
 		t.Skip("跳过 DB 集成测试（设置 RUN_DB_TESTS=1 且本地 MySQL 13306 可用时运行）")
@@ -64,8 +64,10 @@ func setupWBTest(t *testing.T) (*AgentService, *SkillService, *PluginService, fu
 	agentRepo := repository.NewAgentRepository(gdb)
 	skillRepo := repository.NewSkillRepository(gdb)
 	pluginRepo := repository.NewPluginRepository(gdb)
+	categoryRepo := repository.NewAgentCategoryRepository(gdb)
 
-	agentSvc := NewAgentService(agentRepo, skillRepo, pluginRepo)
+	agentSvc := NewAgentService(agentRepo, skillRepo, pluginRepo, categoryRepo)
+	categorySvc := NewAgentCategoryService(categoryRepo)
 	skillSvc := NewSkillService(skillRepo)
 	pluginSvc := NewPluginService(pluginRepo, cipher)
 
@@ -77,14 +79,14 @@ func setupWBTest(t *testing.T) (*AgentService, *SkillService, *PluginService, fu
 		gdb.Where("code LIKE ?", wbTestCodePrefix+"%").Delete(&model.Plugin{})
 	}
 	clean()
-	return agentSvc, skillSvc, pluginSvc, clean
+	return agentSvc, categorySvc, skillSvc, pluginSvc, clean
 }
 
 var wbToolSchema = json.RawMessage(`{"type":"function","function":{"name":"demo","parameters":{"type":"object"}}}`)
 
 // TestSkillCRUD 校验 Skill 创建/唯一冲突/校验/列表（仅 active）。
 func TestSkillCRUD(t *testing.T) {
-	_, skillSvc, _, clean := setupWBTest(t)
+	_, _, skillSvc, _, clean := setupWBTest(t)
 	defer clean()
 	ctx := context.Background()
 
@@ -137,7 +139,7 @@ func TestSkillCRUD(t *testing.T) {
 
 // TestPluginEncryptionAndSSRF 校验插件凭证加密(has_auth 不回明文) + 配置时 SSRF 拦截。
 func TestPluginEncryptionAndSSRF(t *testing.T) {
-	_, _, pluginSvc, clean := setupWBTest(t)
+	_, _, _, pluginSvc, clean := setupWBTest(t)
 	defer clean()
 	ctx := context.Background()
 
@@ -186,7 +188,7 @@ func TestPluginEncryptionAndSSRF(t *testing.T) {
 
 // TestAgentBindingsAndOwnership 校验 Agent 绑定回填名称 + 自建越权 + 仅可绑 active 官方资源。
 func TestAgentBindingsAndOwnership(t *testing.T) {
-	agentSvc, skillSvc, pluginSvc, clean := setupWBTest(t)
+	agentSvc, _, skillSvc, pluginSvc, clean := setupWBTest(t)
 	defer clean()
 	ctx := context.Background()
 
@@ -253,7 +255,7 @@ func TestAgentBindingsAndOwnership(t *testing.T) {
 	}
 
 	// 用户 A 可见官方 active + 本人自建
-	list, _, err := agentSvc.UserList(ctx, wbTestUserA, 0, 200)
+	list, _, err := agentSvc.UserList(ctx, wbTestUserA, "", 0, 200)
 	if err != nil {
 		t.Fatalf("UserList 失败: %v", err)
 	}
@@ -277,3 +279,131 @@ func TestAgentBindingsAndOwnership(t *testing.T) {
 }
 
 func strptr(s string) *string { return &s }
+
+// TestAgentCategory 校验分类字典列表（仅 active 且按 sort_order）+ agent 带分类校验/过滤/回显。
+// 依赖迁移 000045 已 seed 4 类（office/study/business/entertainment）。
+func TestAgentCategory(t *testing.T) {
+	agentSvc, categorySvc, _, _, clean := setupWBTest(t)
+	defer clean()
+	ctx := context.Background()
+
+	// 1) 用户端分类列表：仅 active，按 sort_order 升序。
+	cats, err := categorySvc.ListActive(ctx)
+	if err != nil {
+		t.Fatalf("ListActive 失败: %v", err)
+	}
+	if len(cats) < 4 {
+		t.Fatalf("分类应至少 4 个（seed），实际 %d", len(cats))
+	}
+	for i := 1; i < len(cats); i++ {
+		if cats[i].SortOrder < cats[i-1].SortOrder {
+			t.Errorf("分类未按 sort_order 升序：%+v", cats)
+		}
+		if cats[i].Status != "active" {
+			t.Errorf("用户端列表应仅含 active，实际 %q", cats[i].Status)
+		}
+	}
+	// seed 头部应为 office=办公。
+	if cats[0].Code != "office" || cats[0].Name != "办公" {
+		t.Errorf("首个分类应为 office/办公，实际 %+v", cats[0])
+	}
+
+	// 2) 管理端全量列表（本期无 inactive，至少含 4 个 seed）。
+	all, err := categorySvc.ListAll(ctx)
+	if err != nil {
+		t.Fatalf("ListAll 失败: %v", err)
+	}
+	if len(all) < len(cats) {
+		t.Errorf("管理端全量应 >= active 数量，实际 all=%d active=%d", len(all), len(cats))
+	}
+
+	// 3) 建带合法 category_code 的 Agent → 回显 category_code + category_name。
+	a1, err := agentSvc.AdminCreate(ctx, dto.AdminCreateAgentReq{
+		Code: wbTestCodePrefix + "cat1", Name: "周报助手", SystemPrompt: "x", DefaultModelCode: "gpt-4o",
+		CategoryCode: "office",
+	})
+	if err != nil {
+		t.Fatalf("建带合法分类 Agent 失败: %v", err)
+	}
+	if a1.CategoryCode == nil || *a1.CategoryCode != "office" {
+		t.Errorf("应回显 category_code=office，实际 %+v", a1.CategoryCode)
+	}
+	if a1.CategoryName != "办公" {
+		t.Errorf("应联字典回显 category_name=办公，实际 %q", a1.CategoryName)
+	}
+
+	// 4) 建带非法 category_code 的 Agent → 校验错误（40000）。
+	if _, err := agentSvc.AdminCreate(ctx, dto.AdminCreateAgentReq{
+		Code: wbTestCodePrefix + "cat2", Name: "x", SystemPrompt: "x", DefaultModelCode: "gpt-4o",
+		CategoryCode: "not_exist_cat",
+	}); !IsValidation(err) {
+		t.Errorf("非法 category_code 应为校验错误，实际 %v", err)
+	}
+
+	// 5) 空 category_code 允许（未分类）→ category_code=nil。
+	a3, err := agentSvc.AdminCreate(ctx, dto.AdminCreateAgentReq{
+		Code: wbTestCodePrefix + "cat3", Name: "未分类助手", SystemPrompt: "x", DefaultModelCode: "gpt-4o",
+	})
+	if err != nil {
+		t.Fatalf("建未分类 Agent 失败: %v", err)
+	}
+	if a3.CategoryCode != nil {
+		t.Errorf("未分类 Agent category_code 应为 nil，实际 %v", *a3.CategoryCode)
+	}
+	if a3.CategoryName != "" {
+		t.Errorf("未分类 Agent category_name 应为空串，实际 %q", a3.CategoryName)
+	}
+
+	// 6) 另建 study 分类 Agent，按 category 过滤只回对应类。
+	a4, err := agentSvc.AdminCreate(ctx, dto.AdminCreateAgentReq{
+		Code: wbTestCodePrefix + "cat4", Name: "学习助手", SystemPrompt: "x", DefaultModelCode: "gpt-4o",
+		CategoryCode: "study",
+	})
+	if err != nil {
+		t.Fatalf("建 study 分类 Agent 失败: %v", err)
+	}
+	officeList, _, err := agentSvc.AdminList(ctx, "official", "", "office", 0, 500)
+	if err != nil {
+		t.Fatalf("按 office 过滤失败: %v", err)
+	}
+	var sawCat1, sawCat4 bool
+	for _, a := range officeList {
+		if a.ID == a1.ID {
+			sawCat1 = true
+		}
+		if a.ID == a4.ID {
+			sawCat4 = true
+		}
+	}
+	if !sawCat1 {
+		t.Errorf("office 过滤应含 office 类 Agent")
+	}
+	if sawCat4 {
+		t.Errorf("office 过滤不应含 study 类 Agent")
+	}
+
+	// 7) 更新：清空分类（category_code=""）→ 置为未分类。
+	upd, err := agentSvc.AdminUpdate(ctx, a1.ID, dto.AdminUpdateAgentReq{CategoryCode: strptr("")})
+	if err != nil {
+		t.Fatalf("更新清空分类失败: %v", err)
+	}
+	if upd.CategoryCode != nil {
+		t.Errorf("清空后 category_code 应为 nil，实际 %v", *upd.CategoryCode)
+	}
+
+	// 8) 更新：改为非法分类 → 校验错误。
+	if _, err := agentSvc.AdminUpdate(ctx, a4.ID, dto.AdminUpdateAgentReq{CategoryCode: strptr("bad_cat")}); !IsValidation(err) {
+		t.Errorf("更新为非法分类应校验错误，实际 %v", err)
+	}
+
+	// 9) 用户自建允许选分类（契约 §5）。
+	mine, err := agentSvc.UserCreate(ctx, wbTestUserA, dto.UserCreateAgentReq{
+		Name: "我的办公助手", SystemPrompt: "x", DefaultModelCode: "gpt-4o", CategoryCode: "business",
+	})
+	if err != nil {
+		t.Fatalf("自建带分类 Agent 失败: %v", err)
+	}
+	if mine.CategoryCode == nil || *mine.CategoryCode != "business" || mine.CategoryName != "商务" {
+		t.Errorf("自建应回显 business/商务，实际 code=%v name=%q", mine.CategoryCode, mine.CategoryName)
+	}
+}

@@ -83,9 +83,11 @@
 - `PATCH/DELETE /api/agents/{id}`（仅本人自建可改删）
 - `GET /api/skills`、`GET /api/plugins`（可绑定能力**只读**列表，供自建勾选）
 - 模型下拉用 `GET /api/token/models`（§14.1）
+- **分类（M3，第三阶段）**：`GET /api/agent-categories` 拿分类导航（办公/学习/商务/娱乐，仅 active 按 sort_order）；列表支持 `GET /api/agents?category=office` 按分类过滤；Agent 详情/列表项含 `category_code` + `category_name`（可显示分类标签）；自建表单可选填 `category_code`（空=未分类）。
 
 **页面要素**：
-- Agent 卡片列表（区分"官方"/"我的"徽标）；点卡片 → 进对话页（§3.3）。
+- 顶部分类 Tab（含"全部"）：`GET /api/agent-categories` 渲染；选中某类 → `GET /api/agents?category=<code>`。
+- Agent 卡片列表（区分"官方"/"我的"徽标，可加 `category_name` 分类标签）；点卡片 → 进对话页（§3.3）。
 - 自建表单：名称、人设(system_prompt)、默认模型(从可用模型选)、勾选 skill / 插件（从 `GET /api/skills`、`/api/plugins` 来）。
 - "我的"Agent 有编辑/删除入口；官方 Agent 只读（无编辑入口）。
 

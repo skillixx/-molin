@@ -10,6 +10,7 @@ type AdminCreateAgentReq struct {
 	Avatar           string   `json:"avatar"`             // 头像 URL
 	SystemPrompt     string   `json:"system_prompt"`      // 系统提示词
 	DefaultModelCode string   `json:"default_model_code"` // 默认逻辑模型
+	CategoryCode     string   `json:"category_code"`      // 所属分类编码，空=未分类；非空须存在于字典
 	Status           string   `json:"status"`             // 空则默认 active
 	SortOrder        int      `json:"sort_order"`         // 排序权重
 	SkillIDs         []uint64 `json:"skill_ids"`          // 绑定 skill（可空）
@@ -24,6 +25,7 @@ type AdminUpdateAgentReq struct {
 	Avatar           *string  `json:"avatar"`
 	SystemPrompt     *string  `json:"system_prompt"`
 	DefaultModelCode *string  `json:"default_model_code"`
+	CategoryCode     *string  `json:"category_code"` // nil=不更新；""=清空(未分类)；非空须存在于字典
 	Status           *string  `json:"status"`
 	SortOrder        *int     `json:"sort_order"`
 	SkillIDs         []uint64 `json:"skill_ids"`
@@ -37,6 +39,7 @@ type UserCreateAgentReq struct {
 	Avatar           string   `json:"avatar"`
 	SystemPrompt     string   `json:"system_prompt"`
 	DefaultModelCode string   `json:"default_model_code"` // 可空则后端不强制；须为该用户可用模型
+	CategoryCode     string   `json:"category_code"`      // 所属分类编码，空=未分类；非空须存在于字典（契约 §5 允许自建选分类）
 	SkillIDs         []uint64 `json:"skill_ids"`          // 仅可绑 active 官方 skill
 	PluginIDs        []uint64 `json:"plugin_ids"`         // 仅可绑 active 官方 plugin
 }
@@ -48,6 +51,7 @@ type UserUpdateAgentReq struct {
 	Avatar           *string  `json:"avatar"`
 	SystemPrompt     *string  `json:"system_prompt"`
 	DefaultModelCode *string  `json:"default_model_code"`
+	CategoryCode     *string  `json:"category_code"` // nil=不更新；""=清空(未分类)；非空须存在于字典
 	Status           *string  `json:"status"`
 	SkillIDs         []uint64 `json:"skill_ids"`
 	PluginIDs        []uint64 `json:"plugin_ids"`
@@ -76,10 +80,21 @@ type AgentResp struct {
 	OwnerUserID      *uint64         `json:"owner_user_id,omitempty"`
 	SystemPrompt     string          `json:"system_prompt"`
 	DefaultModelCode string          `json:"default_model_code"`
+	CategoryCode     *string         `json:"category_code"` // 所属分类编码，null=未分类
+	CategoryName     string          `json:"category_name"` // 联字典带出的分类名称，未分类/字典缺失为空串
 	Status           string          `json:"status"`
 	SortOrder        int             `json:"sort_order"`
 	Skills           []BoundResource `json:"skills"`
 	Plugins          []BoundResource `json:"plugins"`
 	CreatedAt        time.Time       `json:"created_at"`
 	UpdatedAt        time.Time       `json:"updated_at"`
+}
+
+// AgentCategoryResp 分类列表项（前端分类导航元数据）。
+type AgentCategoryResp struct {
+	Code      string `json:"code"`
+	Name      string `json:"name"`
+	Icon      string `json:"icon"`
+	SortOrder int    `json:"sort_order"`
+	Status    string `json:"status"` // 管理端全量列表区分 active/inactive；用户端仅 active
 }

@@ -1819,25 +1819,33 @@ Wechatpay-Nonce: <随机串>
 
 > 列表均为扁平分页 `{items,page,page_size,total}`（顶层 `data`），支持 `?page=&page_size=`。
 
+- **GET** `/api/agent-categories` *(登录态)* → Agent 分类列表（前端分类导航 Tab：办公/学习/商务/娱乐），仅 active，按 `sort_order` 升序。量小不分页，仍包 `{items}`：
+  ```json
+  { "items": [ { "code": "office", "name": "办公", "icon": "", "sort_order": 1, "status": "active" }, … ] }
+  ```
 - **GET** `/api/agents` *(登录态)* → 可用 Agent 列表：官方（official+active）+ 本人自建（全状态）。`items` 元素结构同详情。
+  - 新增可选筛选 **`?category=office`** 按分类过滤（不传=不过滤；展示维度，不影响可见性/计费）。
 - **GET** `/api/agents/{id}` *(登录态)* → 详情。仅官方 active 或本人自建可见，否则 `40003`。
   ```json
   {
     "id": 3, "code": null, "name": "新闻助手", "description": "...", "avatar": "https://...",
     "owner_type": "official", "owner_user_id": null,
     "system_prompt": "你是新闻助手", "default_model_code": "deepseek-chat",
+    "category_code": "office", "category_name": "办公",
     "status": "active", "sort_order": 0,
     "skills":  [{ "id": 1, "code": "web_search", "name": "联网搜索" }],
     "plugins": [{ "id": 2, "code": "weather", "name": "天气查询" }],
     "created_at": "...", "updated_at": "..."
   }
   ```
+  - `category_code`：所属分类编码，`null` = 未分类；`category_name`：联字典带出的分类名称（未分类/字典缺失为空串，前端可直接显示分类标签）。
 - **POST** `/api/agents` *(登录态)* — 用户自建 Agent（`owner_type` 强制 `user`，不可传 `code`）
   ```json
-  { "name": "我的助手", "description": "", "avatar": "", "system_prompt": "你是…", "default_model_code": "deepseek-chat", "skill_ids": [1], "plugin_ids": [] }
+  { "name": "我的助手", "description": "", "avatar": "", "system_prompt": "你是…", "default_model_code": "deepseek-chat", "category_code": "office", "skill_ids": [1], "plugin_ids": [] }
   ```
-  - `name` / `system_prompt` / `default_model_code` 必填（缺失 `40000`）；`skill_ids`/`plugin_ids` 仅可填 **active 官方** skill/插件，否则 `40000`。返回创建后的 Agent 详情（HTTP 201）。
-- **PATCH** `/api/agents/{id}` *(登录态)* — 仅本人自建可改（官方/他人 `40003`）。标量字段缺省不改；`skill_ids`/`plugin_ids` 传则**覆盖**对应绑定（传 `[]` = 清空，不传 = 保留）。
+  - `name` / `system_prompt` / `default_model_code` 必填（缺失 `40000`）；`skill_ids`/`plugin_ids` 仅可填 **active 官方** skill/插件，否则 `40000`。
+  - `category_code` 可选：空/不传 = 未分类；非空须存在于分类字典（`GET /api/agent-categories` 的 `code`），否则 `40000`。返回创建后的 Agent 详情（HTTP 201）。
+- **PATCH** `/api/agents/{id}` *(登录态)* — 仅本人自建可改（官方/他人 `40003`）。标量字段缺省不改；`skill_ids`/`plugin_ids` 传则**覆盖**对应绑定（传 `[]` = 清空，不传 = 保留）。`category_code` 传 `""` = 清为未分类，传非法 code = `40000`，不传 = 保留。
 - **DELETE** `/api/agents/{id}` *(登录态)* — 仅本人自建可删（越权 `40003`），返回 `{"deleted":true}`。
 - **GET** `/api/skills` *(登录态)* — 列 active skill 供自建绑定：`{ "id", "code", "name", "description", "category" }`（不回 `handler_key`）。
 - **GET** `/api/plugins` *(登录态)* — 列 active 插件供自建绑定：`{ "id", "code", "name", "description", "is_paid" }`（**不回** endpoint/凭证/配额）。
@@ -1847,9 +1855,13 @@ Wechatpay-Nonce: <随机串>
 > 列表均为扁平分页 `{items,page,page_size,total}`。错误码：`40000` 参数校验 / `40900` code 已存在 / `40400` 不存在 / `40003` 越权。
 
 **Agent**（需 `agent:manage` + 双重认证）
-- **GET** `/api/admin/agents`（`?owner_type=`，默认 official；`?status=`） / **GET** `/api/admin/agents/{id}` → 同 §14.9 详情结构。
-- **POST** `/api/admin/agents`（含 `code`、`skill_ids`、`plugin_ids`）/ **PATCH** `/api/admin/agents/{id}`（标量指针 + `skill_ids`/`plugin_ids` 覆盖语义）/ **DELETE** `/api/admin/agents/{id}`。
+- **GET** `/api/admin/agents`（`?owner_type=`，默认 official；`?status=`；`?category=` 按分类过滤） / **GET** `/api/admin/agents/{id}` → 同 §14.9 详情结构（含 `category_code` / `category_name`）。
+- **POST** `/api/admin/agents`（含 `code`、`category_code`、`skill_ids`、`plugin_ids`）/ **PATCH** `/api/admin/agents/{id}`（标量指针 + `category_code` + `skill_ids`/`plugin_ids` 覆盖语义）/ **DELETE** `/api/admin/agents/{id}`。
+  - `category_code` 可选：空/不传 = 未分类；非空须存在于分类字典，否则 `40000`。PATCH 传 `""` = 清为未分类。
 - **POST** `/api/admin/agents/{id}/skills`、**POST** `/api/admin/agents/{id}/plugins` — 绑定/解绑，**覆盖语义**，body `{ "ids": [1,2] }`（`[]` = 全部解绑），返回更新后的 Agent 详情。
+
+**Agent 分类**（需 `agent:manage` + 双重认证）
+- **GET** `/api/admin/agent-categories` → 全量分类（含 inactive），按 `sort_order` 升序：`{ "items": [ { "code","name","icon","sort_order","status" } ] }`。本期固定 4 类（办公/学习/商务/娱乐），暂不提供分类 CRUD。
 
 **Skill**（需 `skill:manage` + 双重认证）
 - **GET** `/api/admin/skills`（`?status=&category=`） / **GET** `/api/admin/skills/{id}`
