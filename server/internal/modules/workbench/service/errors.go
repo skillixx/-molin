@@ -16,7 +16,9 @@ func isNotFound(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound) ||
 		errors.Is(err, repository.ErrAgentNotFound) ||
 		errors.Is(err, repository.ErrSkillNotFound) ||
-		errors.Is(err, repository.ErrPluginNotFound)
+		errors.Is(err, repository.ErrPluginNotFound) ||
+		errors.Is(err, repository.ErrMCPServerNotFound) ||
+		errors.Is(err, repository.ErrMCPToolNotFound)
 }
 
 // IsNotFound 导出版本，供 handler 判断是否回 404。

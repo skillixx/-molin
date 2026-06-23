@@ -791,10 +791,10 @@ func NewApp() (*App, error) {
 			workbenchModule.AgentService.WithResolvers(visGroupResolver, visRoleResolver)
 			// 管理端：Agent/Skill/Plugin CRUD + 绑定（agent/skill/plugin:manage + 管理员双重认证）。
 			workbenchmod.RegisterRoutes(mux, workbenchModule.AgentService, workbenchModule.AgentCategoryService,
-				workbenchModule.SkillService, workbenchModule.PluginService, cfg.JWTSecret, iamService, authService, authService)
-			// 用户端：选用/自建 Agent + 分类导航 + 可绑定 skill/plugin 列表（仅登录态）。
+				workbenchModule.SkillService, workbenchModule.PluginService, workbenchModule.MCPService, cfg.JWTSecret, iamService, authService, authService)
+			// 用户端：选用/自建 Agent + 分类导航 + 可绑定 skill/plugin/mcp 列表（仅登录态）。
 			workbenchmod.RegisterUserRoutes(mux, workbenchModule.AgentService, workbenchModule.AgentCategoryService,
-				workbenchModule.SkillService, workbenchModule.PluginService, cfg.JWTSecret, authService)
+				workbenchModule.SkillService, workbenchModule.PluginService, workbenchModule.MCPService, cfg.JWTSecret, authService)
 			// 编排对话端点（S2-丁10，D2 仅登录态）：复用 token 网关 ForwardService 做每轮上游调用。
 			// token 网关未启用（tokenForwardSvc==nil）时不注册——编排依赖上游转发。
 			if chatSvc := workbenchModule.BuildChatService(tokenForwardSvc, cfg.MaxRounds); chatSvc != nil {

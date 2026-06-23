@@ -28,7 +28,7 @@ const pluginBreakerThreshold = 5
 // 职责：付费插件日上限计数 → SSRF 校验（解析 DNS + 白名单）→ 解密注入凭证 → 带超时转发 → 截断回灌 + 熔断。
 type PluginForwarder struct {
 	cipher         *crypto.AESGCM
-	callRepo       *repository.PluginCallRepository
+	callRepo       *repository.ToolCallRepository
 	pluginRepo     *repository.PluginRepository
 	allowedDomains []string
 
@@ -37,7 +37,7 @@ type PluginForwarder struct {
 }
 
 // NewPluginForwarder 构造插件转发器。allowedDomains 为外呼白名单（可空）。
-func NewPluginForwarder(cipher *crypto.AESGCM, callRepo *repository.PluginCallRepository, pluginRepo *repository.PluginRepository, allowedDomains []string) *PluginForwarder {
+func NewPluginForwarder(cipher *crypto.AESGCM, callRepo *repository.ToolCallRepository, pluginRepo *repository.PluginRepository, allowedDomains []string) *PluginForwarder {
 	return &PluginForwarder{
 		cipher:         cipher,
 		callRepo:       callRepo,
@@ -52,7 +52,7 @@ func NewPluginForwarder(cipher *crypto.AESGCM, callRepo *repository.PluginCallRe
 func (f *PluginForwarder) Forward(ctx context.Context, p *model.Plugin, userID uint64, args json.RawMessage) (string, error) {
 	// ① 付费插件每用户每日上限（D3）。
 	if p.IsPaid && p.DailyLimit > 0 {
-		allowed, err := f.callRepo.IncrementIfUnderLimit(ctx, p.ID, userID, p.DailyLimit)
+		allowed, err := f.callRepo.IncrementIfUnderLimit(ctx, "plugin", p.ID, userID, p.DailyLimit)
 		if err != nil {
 			return "", fmt.Errorf("日限额校验失败: %v", err)
 		}

@@ -60,7 +60,7 @@ func setupChatTest(t *testing.T) (*gorm.DB, *AgentService, *SkillService, func()
 		gdb.Where("owner_user_id IN ?", []uint64{wbTestUserA, wbTestUserB}).Delete(&model.Agent{})
 		gdb.Where("code LIKE ?", wbTestCodePrefix+"%").Delete(&model.Agent{})
 		gdb.Where("code LIKE ?", wbTestCodePrefix+"%").Delete(&model.Skill{})
-		gdb.Exec("DELETE FROM plugin_daily_call_logs WHERE user_id IN (?, ?)", wbTestUserA, wbTestUserB)
+		gdb.Exec("DELETE FROM tool_daily_call_logs WHERE user_id IN (?, ?)", wbTestUserA, wbTestUserB)
 	}
 	clean()
 	return gdb, agentSvc, skillSvc, clean
@@ -72,7 +72,7 @@ func buildChatService(gdb *gorm.DB, up UpstreamChat, maxRounds int) *ChatService
 	skillRepo := repository.NewSkillRepository(gdb)
 	pluginRepo := repository.NewPluginRepository(gdb)
 	cipher, _ := crypto.New([]byte(wbTestCipherKey))
-	callRepo := repository.NewPluginCallRepository(gdb)
+	callRepo := repository.NewToolCallRepository(gdb)
 	registry := NewSkillRegistry(nil)
 	forwarder := NewPluginForwarder(cipher, callRepo, pluginRepo, nil)
 	return NewChatService(agentRepo, skillRepo, pluginRepo, registry, forwarder, up, maxRounds)
@@ -180,13 +180,13 @@ func TestPluginDailyLimit(t *testing.T) {
 	gdb, _, _, clean := setupChatTest(t)
 	defer clean()
 	ctx := context.Background()
-	callRepo := repository.NewPluginCallRepository(gdb)
+	callRepo := repository.NewToolCallRepository(gdb)
 
 	const pluginID = 9_900_900_001
 	limit := 3
 	got := 0
 	for i := 0; i < 5; i++ {
-		allowed, err := callRepo.IncrementIfUnderLimit(ctx, pluginID, wbTestUserA, limit)
+		allowed, err := callRepo.IncrementIfUnderLimit(ctx, "plugin", pluginID, wbTestUserA, limit)
 		if err != nil {
 			t.Fatalf("计数失败: %v", err)
 		}
@@ -198,5 +198,5 @@ func TestPluginDailyLimit(t *testing.T) {
 		t.Errorf("limit=%d 应放行 %d 次，实际 %d", limit, limit, got)
 	}
 	// 清理本测试计数行。
-	gdb.Exec("DELETE FROM plugin_daily_call_logs WHERE plugin_id = ?", pluginID)
+	gdb.Exec("DELETE FROM tool_daily_call_logs WHERE tool_type = 'plugin' AND tool_id = ?", pluginID)
 }

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"molin/server/internal/modules/token_gateway/crypto"
 	tokengatewaysvc "molin/server/internal/modules/token_gateway/service"
 	"molin/server/internal/modules/workbench/model"
 	"molin/server/internal/modules/workbench/repository"
@@ -42,6 +43,23 @@ type ChatService struct {
 	maxRounds     int
 	groupResolver GroupResolver // 定向可见性判定（nil → groups 定向不可见，fail-safe）
 	roleResolver  RoleResolver  // 定向可见性判定（nil → roles 定向不可见，fail-safe）
+
+	// MCP 工具源（第二种工具源；nil 时不汇总 MCP 工具，编排其余行为不变）。
+	mcpRepo        *repository.MCPRepository
+	mcpClient      *MCPClient
+	mcpCipher      *crypto.AESGCM
+	toolCallRepo   *repository.ToolCallRepository
+	allowedDomains []string
+}
+
+// WithMCP 注入 MCP 工具源依赖（bootstrap 在 MCP 模块装配成功时调用）。
+func (s *ChatService) WithMCP(repo *repository.MCPRepository, client *MCPClient, cipher *crypto.AESGCM, callRepo *repository.ToolCallRepository, allowedDomains []string) *ChatService {
+	s.mcpRepo = repo
+	s.mcpClient = client
+	s.mcpCipher = cipher
+	s.toolCallRepo = callRepo
+	s.allowedDomains = allowedDomains
+	return s
 }
 
 // WithResolvers 注入定向可见性解析器（编排端点访问控制，安全红线）。
@@ -75,11 +93,23 @@ func NewChatService(
 	}
 }
 
+// toolKind 工具来源类型。
+type toolKind int
+
+const (
+	toolKindSkill toolKind = iota
+	toolKindPlugin
+	toolKindMCP
+)
+
 // toolEntry 工具名 → 后端实现的映射项。
 type toolEntry struct {
-	isPlugin bool
-	skill    *model.Skill
-	plugin   *model.Plugin
+	kind   toolKind
+	skill  *model.Skill
+	plugin *model.Plugin
+	// MCP 路由信息（kind=toolKindMCP）。
+	mcpServerID     uint64
+	mcpOriginalName string // 去前缀的 MCP 原始工具名
 }
 
 // ChatWithAgent 执行一次带 Agent 的 tool-use 编排对话。
@@ -199,15 +229,64 @@ func (s *ChatService) runTool(ctx context.Context, userID uint64, toolIndex map[
 		result string
 		err    error
 	)
-	if entry.isPlugin {
+	switch entry.kind {
+	case toolKindPlugin:
 		result, err = s.forwarder.Forward(ctx, entry.plugin, userID, args)
-	} else {
+	case toolKindMCP:
+		result, err = s.runMCPTool(ctx, userID, entry, args)
+	default:
 		result, err = s.registry.Dispatch(ctx, entry.skill.HandlerKey, args)
 	}
 	if err != nil {
 		return "工具执行失败: " + err.Error()
 	}
 	return result
+}
+
+// runMCPTool 执行一次 MCP 工具调用（付费 server 日限流 → 解密凭证组装 spec → tools/call → 截断）。
+// 失败以 error 返回，由 runTool 转为 tool 错误结果回灌，不中断对话（同插件降级）。
+func (s *ChatService) runMCPTool(ctx context.Context, userID uint64, entry toolEntry, args json.RawMessage) (string, error) {
+	if s.mcpRepo == nil || s.mcpClient == nil {
+		return "", fmt.Errorf("MCP 工具源未启用")
+	}
+	srv, err := s.mcpRepo.FindServerByID(ctx, entry.mcpServerID)
+	if err != nil {
+		return "", fmt.Errorf("MCP server 不存在")
+	}
+	if srv.Status != "active" {
+		return "", fmt.Errorf("MCP server 已停用")
+	}
+	// 付费 server 每用户每日上限（通用 tool_daily_call_logs，toolType="mcp"）。
+	if srv.IsPaid && srv.DailyLimit > 0 && s.toolCallRepo != nil {
+		allowed, lerr := s.toolCallRepo.IncrementIfUnderLimit(ctx, "mcp", srv.ID, userID, srv.DailyLimit)
+		if lerr != nil {
+			return "", fmt.Errorf("日限额校验失败: %v", lerr)
+		}
+		if !allowed {
+			return "", fmt.Errorf("该 MCP server 今日调用次数已达上限")
+		}
+	}
+	// 解密凭证组装调用参数（含运行时 SSRF 白名单）。
+	header, value, aerr := resolveMCPAuth(s.mcpCipher, srv)
+	if aerr != nil {
+		return "", aerr
+	}
+	spec := MCPCallSpec{
+		EndpointURL:    srv.EndpointURL,
+		AuthHeader:     header,
+		AuthValue:      value,
+		TimeoutMs:      srv.TimeoutMs,
+		AllowedDomains: s.allowedDomains,
+	}
+	text, cerr := s.mcpClient.CallTool(ctx, spec, entry.mcpOriginalName, args)
+	if cerr != nil {
+		return "", cerr
+	}
+	// 工具结果截断（≤6KB，同插件，防 prompt 注入塞爆上下文）。
+	if len(text) > 6000 {
+		text = text[:6000] + "\n…（内容已截断）"
+	}
+	return text, nil
 }
 
 // assembleTools 汇总 Agent 绑定且 enabled 的 active skill/plugin 的 tool_schema_json，构建 tools 列表 + 名称索引。
@@ -235,7 +314,7 @@ func (s *ChatService) assembleTools(ctx context.Context, agentID uint64) ([]json
 			}
 			tools = append(tools, skills[i].ToolSchemaJSON)
 			sk := skills[i]
-			index[name] = toolEntry{skill: &sk}
+			index[name] = toolEntry{kind: toolKindSkill, skill: &sk}
 		}
 	}
 
@@ -258,10 +337,87 @@ func (s *ChatService) assembleTools(ctx context.Context, agentID uint64) ([]json
 			}
 			tools = append(tools, plugins[i].ToolSchemaJSON)
 			pl := plugins[i]
-			index[name] = toolEntry{isPlugin: true, plugin: &pl}
+			index[name] = toolEntry{kind: toolKindPlugin, plugin: &pl}
 		}
 	}
+
+	// 汇总 Agent 绑定 MCP server 的 enabled 工具（第二种工具源）。
+	if err := s.appendMCPTools(ctx, agentID, &tools, index); err != nil {
+		return nil, nil, err
+	}
 	return tools, index, nil
+}
+
+// appendMCPTools 把 Agent 绑定的 active MCP server 下 enabled 工具加入工具集。
+// 命名空间 mcp__{server_code}__{tool_name} 防撞；MCP inputSchema → OpenAI tool。
+// MCP 依赖未注入（mcpRepo==nil）时静默跳过，不影响其它工具源。
+func (s *ChatService) appendMCPTools(ctx context.Context, agentID uint64, tools *[]json.RawMessage, index map[string]toolEntry) error {
+	if s.mcpRepo == nil {
+		return nil
+	}
+	serverIDs, err := s.mcpRepo.ListServerIDsByAgent(ctx, agentID)
+	if err != nil {
+		return err
+	}
+	if len(serverIDs) == 0 {
+		return nil
+	}
+	servers, err := s.mcpRepo.FindServersByIDs(ctx, serverIDs)
+	if err != nil {
+		return err
+	}
+	// 仅 active server 暴露；建 id→code 映射。
+	codeByID := map[uint64]string{}
+	activeIDs := make([]uint64, 0, len(servers))
+	for i := range servers {
+		if servers[i].Status != "active" {
+			continue
+		}
+		codeByID[servers[i].ID] = servers[i].Code
+		activeIDs = append(activeIDs, servers[i].ID)
+	}
+	if len(activeIDs) == 0 {
+		return nil
+	}
+	mcpTools, err := s.mcpRepo.ListEnabledToolsByServerIDs(ctx, activeIDs)
+	if err != nil {
+		return err
+	}
+	for i := range mcpTools {
+		code, ok := codeByID[mcpTools[i].ServerID]
+		if !ok {
+			continue
+		}
+		prefixed := mcpToolName(code, mcpTools[i].ToolName)
+		schema := mcpTools[i].InputSchemaJSON
+		if len(schema) == 0 {
+			schema = json.RawMessage(`{"type":"object"}`)
+		}
+		def := map[string]interface{}{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        prefixed,
+				"description": mcpTools[i].Description,
+				"parameters":  json.RawMessage(schema),
+			},
+		}
+		raw, merr := json.Marshal(def)
+		if merr != nil {
+			continue
+		}
+		*tools = append(*tools, raw)
+		index[prefixed] = toolEntry{
+			kind:            toolKindMCP,
+			mcpServerID:     mcpTools[i].ServerID,
+			mcpOriginalName: mcpTools[i].ToolName,
+		}
+	}
+	return nil
+}
+
+// mcpToolName 给 MCP 工具加命名空间前缀，防与 skill/plugin/其它 server 工具撞名。
+func mcpToolName(serverCode, toolName string) string {
+	return "mcp__" + serverCode + "__" + toolName
 }
 
 // writeFinal 输出最终答案：stream → SSE message + [DONE]；非 stream → 单条 JSON。

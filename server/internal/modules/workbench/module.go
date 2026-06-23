@@ -14,6 +14,7 @@ type Module struct {
 	AgentCategoryService *service.AgentCategoryService
 	SkillService         *service.SkillService
 	PluginService        *service.PluginService
+	MCPService           *service.MCPService
 
 	// 编排依赖（W8）：skill 内置注册表 + plugin 转发器 + 各 repo，供 BuildChatService 组装编排服务。
 	registry   *service.SkillRegistry
@@ -21,6 +22,13 @@ type Module struct {
 	agentRepo  *repository.AgentRepository
 	skillRepo  *repository.SkillRepository
 	pluginRepo *repository.PluginRepository
+
+	// MCP 工具源依赖（第三阶段）：repo + client + cipher + 通用计数器 + 白名单，供编排注入。
+	mcpRepo        *repository.MCPRepository
+	mcpClient      *service.MCPClient
+	cipher         *crypto.AESGCM
+	toolCallRepo   *repository.ToolCallRepository
+	allowedDomains []string
 }
 
 // New 构造 workbench 模块依赖。
@@ -36,19 +44,28 @@ func New(db *gorm.DB, pluginSecretKey string, allowedDomains []string) (*Module,
 	categoryRepo := repository.NewAgentCategoryRepository(db)
 	skillRepo := repository.NewSkillRepository(db)
 	pluginRepo := repository.NewPluginRepository(db)
-	callRepo := repository.NewPluginCallRepository(db)
+	callRepo := repository.NewToolCallRepository(db)
+	mcpRepo := repository.NewMCPRepository(db)
+	mcpClient := service.NewMCPClient()
 
 	return &Module{
 		AgentService:         service.NewAgentService(agentRepo, skillRepo, pluginRepo, categoryRepo),
 		AgentCategoryService: service.NewAgentCategoryService(categoryRepo),
 		SkillService:         service.NewSkillService(skillRepo),
 		PluginService:        service.NewPluginService(pluginRepo, cipher),
+		MCPService:           service.NewMCPService(mcpRepo, agentRepo, cipher, mcpClient, allowedDomains),
 
 		registry:   service.NewSkillRegistry(allowedDomains),
 		forwarder:  service.NewPluginForwarder(cipher, callRepo, pluginRepo, allowedDomains),
 		agentRepo:  agentRepo,
 		skillRepo:  skillRepo,
 		pluginRepo: pluginRepo,
+
+		mcpRepo:        mcpRepo,
+		mcpClient:      mcpClient,
+		cipher:         cipher,
+		toolCallRepo:   callRepo,
+		allowedDomains: allowedDomains,
 	}, nil
 }
 
@@ -58,5 +75,8 @@ func (m *Module) BuildChatService(upstream service.UpstreamChat, maxRounds int) 
 	if upstream == nil {
 		return nil
 	}
-	return service.NewChatService(m.agentRepo, m.skillRepo, m.pluginRepo, m.registry, m.forwarder, upstream, maxRounds)
+	cs := service.NewChatService(m.agentRepo, m.skillRepo, m.pluginRepo, m.registry, m.forwarder, upstream, maxRounds)
+	// 注入 MCP 工具源（第二种工具源），编排 assembleTools/runTool 据此汇总并路由 MCP 工具。
+	cs.WithMCP(m.mcpRepo, m.mcpClient, m.cipher, m.toolCallRepo, m.allowedDomains)
+	return cs
 }
