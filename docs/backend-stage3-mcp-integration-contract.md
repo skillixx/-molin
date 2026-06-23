@@ -136,7 +136,7 @@ callTool(server, toolName, args):        # 编排某轮命中 MCP 工具时
 
 ## 6. 接口契约
 
-### 6.1 管理端（`plugin:manage` 复用，或新增 `mcp:manage`；建议复用 plugin:manage 不新增权限码 + 双重认证）
+### 6.1 管理端（✅ 定稿：复用 `plugin:manage` + 双重认证，不新增权限码）
 - `GET/POST /api/admin/mcp-servers`、`GET/PATCH/DELETE /api/admin/mcp-servers/{id}` —— CRUD；凭证只入不出（`has_auth` 表征，同插件红线）。
 - `POST /api/admin/mcp-servers/{id}/discover` —— 触发 `initialize`+`tools/list`，回写 `mcp_server_tools`，返回发现的工具列表（含变更/待审标记）。
 - `GET /api/admin/mcp-servers/{id}/tools` —— 列已发现工具；`PATCH .../tools/{toolId}` 改 `enabled`（审核启用/停用单个工具）。
@@ -144,7 +144,7 @@ callTool(server, toolName, args):        # 编排某轮命中 MCP 工具时
 
 ### 6.2 用户端（只读，供自建 Agent 绑定——若开放）
 - `GET /api/mcp-servers` —— active server 精简视图（`id,code,name,description,is_paid`，**不回 endpoint/凭证**）。
-- 自建 Agent 是否可绑 MCP：**默认仅官方 Agent 可绑 MCP**（外部接入风险高，比 skill/插件更需审核）；用户自建可绑 MCP 留待 PM 决策。
+- 自建 Agent 是否可绑 MCP：✅ **定稿 v1 仅官方 Agent 可绑 MCP**（外部接入风险高，比 skill/插件更需审核）；用户自建放开后续再议。
 
 ### 6.3 错误码
 | 情形 | 码 |
@@ -163,7 +163,7 @@ callTool(server, toolName, args):        # 编排某轮命中 MCP 工具时
 - **tool poisoning / rug-pull**：工具定义经 `mcp_server_tools` 快照 + 运营审核（enabled）才暴露；`schema_hash` 变化自动置未启用待重审——server 事后篡改工具描述/参数无法静默生效。
 - **prompt 注入**：MCP 工具的 **description 和返回 content 都是外部不可信文本**，会进模型上下文。需：工具结果**截断**（如 ≤6KB）、明确标注为工具输出、不把 MCP 文本当系统指令；高风险 server 仅限官方 Agent。
 - **超时 / 熔断**：`timeout_ms` 强制上限（≤30s）；连续失败自动置 server `inactive` 告警（同插件熔断）。
-- **配额防滥用**：`is_paid=1` 的 server 按 `daily_limit` 每用户每日限流（复用插件 `plugin_daily_call_logs` 同款机制，或并表为通用 `tool_daily_call_logs`）。
+- **配额防滥用**：`is_paid=1` 的 server 按 `daily_limit` 每用户每日限流（✅ 定稿：用**通用表 `tool_daily_call_logs`**，与插件共用同款机制）。
 - **权限/越权**：MCP 配置仅管理端；用户不能自建 MCP server。
 
 ---
@@ -177,7 +177,7 @@ callTool(server, toolName, args):        # 编排某轮命中 MCP 工具时
 
 ## 9. 任务拆分（后端丁）
 
-1. 迁移：`mcp_servers` + `mcp_server_tools` + `agent_mcp_bindings`（+ 若并表则 `tool_daily_call_logs`）。
+1. 迁移：`mcp_servers` + `mcp_server_tools` + `agent_mcp_bindings` + 通用 `tool_daily_call_logs`（收口替代 `plugin_daily_call_logs`）。
 2. MCP client：JSON-RPC over Streamable HTTP，实现 `initialize`/`tools/list`(分页)/`tools/call` + 会话头 + 超时 + 错误归一。
 3. model/repo/service：server CRUD（凭证加密、SSRF 校验）、discover（写快照 + schema_hash + 待审）、tool enable 审核、agent-mcp 绑定。
 4. 编排集成：`assembleTools` 汇总 MCP enabled 工具（命名空间 + schema 转换 + toolIndex 路由）；`runTool` 增 mcp 分支调 client。
@@ -196,9 +196,10 @@ callTool(server, toolName, args):        # 编排某轮命中 MCP 工具时
 - 默认仅官方 Agent 可绑 MCP；用户自建可绑待定。
 - 渠道/上游单点等既有限制不变。
 
-## 11. 待确认（开发前）
-- 权限码：复用 `plugin:manage` 还是新增 `mcp:manage`？（建议复用）
-- 限流计数：新建 `tool_daily_call_logs` 通用表，还是各自表？（建议通用表，插件/MCP 共用）
-- 用户自建 Agent 是否可绑 MCP server？（建议 v1 仅官方）
-- 工具快照刷新：仅手动 discover，还是加定时/TTL 自动刷新？（建议先手动，避免后台联网外部）
-- 迁移序号：第三阶段起点，与可见性/分类契约同批按合并顺序排。
+## 11. 已定稿决策（2026-06-23，PM 确认）
+- **权限码**：✅ **复用 `plugin:manage`**（不新增 mcp:manage）。
+- **限流计数**：✅ **新建通用表 `tool_daily_call_logs`**（插件 / MCP / 未来工具源共用按用户每日计数），收口替代插件专用 `plugin_daily_call_logs`（迁移时一并迁移）。
+- **用户自建 Agent 绑 MCP**：✅ **v1 仅官方 Agent 可绑**（后续视情况放开）。
+- **工具快照刷新**：✅ **仅手动 discover**（不做后台定时联网外部）。
+- **实现优先级**：✅ MCP 为第三阶段**最后实现**（最重最高危）；顺序 分类 → 定向可见性 → MCP，且均待第二阶段前端落地 + 上线后再进实现。
+- 迁移序号：第三阶段起点，按合并顺序排（实现时定）。
