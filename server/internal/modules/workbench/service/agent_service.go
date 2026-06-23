@@ -16,14 +16,45 @@ var ErrAgentCodeExists = errors.New("agent code 已存在")
 // AgentService Agent 管理服务：管理端官方 Agent CRUD + 绑定，用户端自建 Agent + 只读列表。
 // 依赖 skill/plugin 仓库做绑定合法性校验与详情名称回填。
 type AgentService struct {
-	repo       *repository.AgentRepository
-	skillRepo  *repository.SkillRepository
-	pluginRepo *repository.PluginRepository
+	repo         *repository.AgentRepository
+	skillRepo    *repository.SkillRepository
+	pluginRepo   *repository.PluginRepository
+	categoryRepo *repository.AgentCategoryRepository
 }
 
 // NewAgentService 创建 Agent 服务实例。
-func NewAgentService(repo *repository.AgentRepository, skillRepo *repository.SkillRepository, pluginRepo *repository.PluginRepository) *AgentService {
-	return &AgentService{repo: repo, skillRepo: skillRepo, pluginRepo: pluginRepo}
+func NewAgentService(repo *repository.AgentRepository, skillRepo *repository.SkillRepository, pluginRepo *repository.PluginRepository, categoryRepo *repository.AgentCategoryRepository) *AgentService {
+	return &AgentService{repo: repo, skillRepo: skillRepo, pluginRepo: pluginRepo, categoryRepo: categoryRepo}
+}
+
+// validateCategory 校验 category_code：空=未分类(允许，返回 nil 指针)；非空须存在于字典(否则校验错误)。
+// 返回归一化后的 *string，供写库（NULL 或具体 code）。
+func (s *AgentService) validateCategory(ctx context.Context, code string) (*string, error) {
+	c := strings.TrimSpace(code)
+	if c == "" {
+		return nil, nil
+	}
+	exists, err := s.categoryRepo.Exists(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, newValidation("category_code 不存在于分类字典")
+	}
+	return &c, nil
+}
+
+// applyCategoryUpdate 把 category_code 更新写入 updates map（nil=不更新；""=置 NULL 未分类；非空须存在）。
+func (s *AgentService) applyCategoryUpdate(ctx context.Context, updates map[string]interface{}, code *string) error {
+	if code == nil {
+		return nil
+	}
+	category, err := s.validateCategory(ctx, *code)
+	if err != nil {
+		return err
+	}
+	updates["category_code"] = category // *string，nil 写 NULL
+	return nil
 }
 
 // ——— 管理端（官方 Agent） ———
@@ -63,6 +94,12 @@ func (s *AgentService) AdminCreate(ctx context.Context, req dto.AdminCreateAgent
 		return nil, err
 	}
 
+	// 分类校验：空=未分类；非空须存在于字典。
+	category, err := s.validateCategory(ctx, req.CategoryCode)
+	if err != nil {
+		return nil, err
+	}
+
 	a := &model.Agent{
 		Code:             code,
 		Name:             strings.TrimSpace(req.Name),
@@ -71,6 +108,7 @@ func (s *AgentService) AdminCreate(ctx context.Context, req dto.AdminCreateAgent
 		OwnerType:        "official",
 		SystemPrompt:     req.SystemPrompt,
 		DefaultModelCode: strings.TrimSpace(req.DefaultModelCode),
+		CategoryCode:     category,
 		Status:           status,
 		SortOrder:        req.SortOrder,
 	}
@@ -94,6 +132,9 @@ func (s *AgentService) AdminUpdate(ctx context.Context, id uint64, req dto.Admin
 	if err != nil {
 		return nil, err
 	}
+	if err := s.applyCategoryUpdate(ctx, updates, req.CategoryCode); err != nil {
+		return nil, err
+	}
 	if err := s.validateBindables(ctx, req.SkillIDs, req.PluginIDs, false); err != nil {
 		return nil, err
 	}
@@ -104,9 +145,9 @@ func (s *AgentService) AdminUpdate(ctx context.Context, id uint64, req dto.Admin
 	return s.Get(ctx, id)
 }
 
-// AdminList 管理端分页列出 Agent（默认 owner_type=official，可传空查全部）。
-func (s *AgentService) AdminList(ctx context.Context, ownerType, status string, offset, limit int) ([]dto.AgentResp, int64, error) {
-	items, total, err := s.repo.ListAdminPaged(ctx, ownerType, status, offset, limit)
+// AdminList 管理端分页列出 Agent（默认 owner_type=official，可传空查全部）；category 非空按分类过滤。
+func (s *AgentService) AdminList(ctx context.Context, ownerType, status, category string, offset, limit int) ([]dto.AgentResp, int64, error) {
+	items, total, err := s.repo.ListAdminPaged(ctx, ownerType, status, category, offset, limit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -170,6 +211,11 @@ func (s *AgentService) UserCreate(ctx context.Context, userID uint64, req dto.Us
 	if err := s.validateBindables(ctx, req.SkillIDs, req.PluginIDs, true); err != nil {
 		return nil, err
 	}
+	// 分类校验：契约 §5 允许自建选分类；空=未分类。
+	category, err := s.validateCategory(ctx, req.CategoryCode)
+	if err != nil {
+		return nil, err
+	}
 
 	uid := userID
 	a := &model.Agent{
@@ -180,6 +226,7 @@ func (s *AgentService) UserCreate(ctx context.Context, userID uint64, req dto.Us
 		OwnerUserID:      &uid,
 		SystemPrompt:     req.SystemPrompt,
 		DefaultModelCode: strings.TrimSpace(req.DefaultModelCode),
+		CategoryCode:     category,
 		Status:           "active",
 	}
 	if err := s.repo.CreateWithBindings(ctx, a, req.SkillIDs, req.PluginIDs); err != nil {
@@ -200,6 +247,9 @@ func (s *AgentService) UserUpdate(ctx context.Context, userID, id uint64, req dt
 
 	updates, err := buildAgentScalarUpdates(req.Name, req.Description, req.Avatar, req.SystemPrompt, req.DefaultModelCode, req.Status, nil)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.applyCategoryUpdate(ctx, updates, req.CategoryCode); err != nil {
 		return nil, err
 	}
 	if err := s.validateBindables(ctx, req.SkillIDs, req.PluginIDs, true); err != nil {
@@ -223,9 +273,9 @@ func (s *AgentService) UserDelete(ctx context.Context, userID, id uint64) error 
 	return s.repo.Delete(ctx, id)
 }
 
-// UserList 用户端列出可见 Agent：官方 active + 本人自建。
-func (s *AgentService) UserList(ctx context.Context, userID uint64, offset, limit int) ([]dto.AgentResp, int64, error) {
-	items, total, err := s.repo.ListVisiblePaged(ctx, userID, offset, limit)
+// UserList 用户端列出可见 Agent：官方 active + 本人自建；category 非空按分类过滤。
+func (s *AgentService) UserList(ctx context.Context, userID uint64, category string, offset, limit int) ([]dto.AgentResp, int64, error) {
+	items, total, err := s.repo.ListVisiblePaged(ctx, userID, category, offset, limit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -285,8 +335,21 @@ func (s *AgentService) validateBindables(ctx context.Context, skillIDs, pluginID
 	return nil
 }
 
-// buildResp 把 Agent 实体组装为含绑定名称的响应 DTO。
+// buildResp 把 Agent 实体组装为含绑定名称的响应 DTO（单个，自行联字典取分类名称）。
 func (s *AgentService) buildResp(ctx context.Context, a *model.Agent) (*dto.AgentResp, error) {
+	categoryName := ""
+	if a.CategoryCode != nil && *a.CategoryCode != "" {
+		if c, err := s.categoryRepo.FindByCode(ctx, *a.CategoryCode); err == nil {
+			categoryName = c.Name
+		} else if !isNotFound(err) {
+			return nil, err
+		}
+	}
+	return s.buildRespWithCategoryName(ctx, a, categoryName)
+}
+
+// buildRespWithCategoryName 组装响应 DTO，分类名称由调用方提供（列表批量回填用，避免 N+1）。
+func (s *AgentService) buildRespWithCategoryName(ctx context.Context, a *model.Agent, categoryName string) (*dto.AgentResp, error) {
 	skillIDs, err := s.repo.ListSkillIDs(ctx, a.ID)
 	if err != nil {
 		return nil, err
@@ -327,6 +390,8 @@ func (s *AgentService) buildResp(ctx context.Context, a *model.Agent) (*dto.Agen
 		OwnerUserID:      a.OwnerUserID,
 		SystemPrompt:     a.SystemPrompt,
 		DefaultModelCode: a.DefaultModelCode,
+		CategoryCode:     a.CategoryCode,
+		CategoryName:     categoryName,
 		Status:           a.Status,
 		SortOrder:        a.SortOrder,
 		Skills:           skills,
@@ -336,11 +401,31 @@ func (s *AgentService) buildResp(ctx context.Context, a *model.Agent) (*dto.Agen
 	}, nil
 }
 
-// buildRespList 批量组装响应（逐个回填绑定）。
+// buildRespList 批量组装响应（逐个回填绑定）；分类名称用一次批量字典查询回填，避免 N+1。
 func (s *AgentService) buildRespList(ctx context.Context, items []model.Agent, total int64) ([]dto.AgentResp, int64, error) {
+	// 收集出现的分类 code，批量取名称。
+	codeSet := make(map[string]struct{}, len(items))
+	for i := range items {
+		if items[i].CategoryCode != nil && *items[i].CategoryCode != "" {
+			codeSet[*items[i].CategoryCode] = struct{}{}
+		}
+	}
+	codes := make([]string, 0, len(codeSet))
+	for c := range codeSet {
+		codes = append(codes, c)
+	}
+	nameByCode, err := s.categoryRepo.MapByCodes(ctx, codes)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	resp := make([]dto.AgentResp, 0, len(items))
 	for i := range items {
-		r, err := s.buildResp(ctx, &items[i])
+		name := ""
+		if items[i].CategoryCode != nil {
+			name = nameByCode[*items[i].CategoryCode]
+		}
+		r, err := s.buildRespWithCategoryName(ctx, &items[i], name)
 		if err != nil {
 			return nil, 0, err
 		}

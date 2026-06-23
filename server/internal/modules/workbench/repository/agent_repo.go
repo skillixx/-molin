@@ -52,10 +52,14 @@ func (r *AgentRepository) FindByCode(ctx context.Context, code string) (*model.A
 }
 
 // ListVisiblePaged 分页列出对某用户可见的 Agent：官方（official, active）+ 本人自建（全部状态）。
-func (r *AgentRepository) ListVisiblePaged(ctx context.Context, userID uint64, offset, limit int) ([]model.Agent, int64, error) {
+// category 非空时按分类过滤（展示维度，不影响可见性判定）。
+func (r *AgentRepository) ListVisiblePaged(ctx context.Context, userID uint64, category string, offset, limit int) ([]model.Agent, int64, error) {
 	cond := r.db.WithContext(ctx).Model(&model.Agent{}).
 		Where("(owner_type = ? AND status = ?) OR (owner_type = ? AND owner_user_id = ?)",
 			"official", "active", "user", userID)
+	if category != "" {
+		cond = cond.Where("category_code = ?", category)
+	}
 
 	var total int64
 	if err := cond.Count(&total).Error; err != nil {
@@ -68,14 +72,17 @@ func (r *AgentRepository) ListVisiblePaged(ctx context.Context, userID uint64, o
 	return items, total, nil
 }
 
-// ListAdminPaged 管理端分页列出官方 Agent，支持 status 过滤（空不过滤）。
-func (r *AgentRepository) ListAdminPaged(ctx context.Context, ownerType, status string, offset, limit int) ([]model.Agent, int64, error) {
+// ListAdminPaged 管理端分页列出官方 Agent，支持 status/category 过滤（空不过滤）。
+func (r *AgentRepository) ListAdminPaged(ctx context.Context, ownerType, status, category string, offset, limit int) ([]model.Agent, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.Agent{})
 	if ownerType != "" {
 		query = query.Where("owner_type = ?", ownerType)
 	}
 	if status != "" {
 		query = query.Where("status = ?", status)
+	}
+	if category != "" {
+		query = query.Where("category_code = ?", category)
 	}
 
 	var total int64

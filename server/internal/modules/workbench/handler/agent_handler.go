@@ -31,8 +31,9 @@ func (h *AgentHandler) AdminList(w http.ResponseWriter, r *http.Request) {
 		ownerType = "official"
 	}
 	status := r.URL.Query().Get("status")
+	category := r.URL.Query().Get("category")
 	p := pagination.Parse(r)
-	items, total, err := h.svc.AdminList(r.Context(), ownerType, status, p.Offset(), p.PageSize)
+	items, total, err := h.svc.AdminList(r.Context(), ownerType, status, category, p.Offset(), p.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return
@@ -164,8 +165,9 @@ func (h *AgentHandler) BindPlugins(w http.ResponseWriter, r *http.Request) {
 // UserList GET /api/agents：官方 active + 本人自建。
 func (h *AgentHandler) UserList(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
+	category := r.URL.Query().Get("category")
 	p := pagination.Parse(r)
-	items, total, err := h.svc.UserList(r.Context(), userID, p.Offset(), p.PageSize)
+	items, total, err := h.svc.UserList(r.Context(), userID, category, p.Offset(), p.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return
