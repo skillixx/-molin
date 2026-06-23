@@ -1,5 +1,31 @@
 # 前端任务总单：第三阶段（给 Codex）
 
+> ## 📌 给 Codex 的一句话指令（可直接粘贴）
+>
+> **任务：实现 Molin 第三阶段前端（工作台增强）**
+>
+> 按本文（`docs/frontend-task-stage3.md`）实现第三阶段前端。开工前先通读 **§0（角色边界与全局约定）** 和 `docs/frontend-api-reference.md` **§14.9 / §14.10 / §14.11**。
+>
+> **边界**：只写前端页面（`web/admin-console` / `web/user-console`），后端接口已全部就绪并部署测试环境（8.130.9.163:8080），**只按 §14 契约调用，不碰后端**；缺接口只列出来。
+>
+> **要做 4 项**（详见下文）：
+> 1. 用户端工作台：Agent **分类导航 + 筛选**（`GET /api/agent-categories` 渲染 Tab + `?category=` 过滤）
+> 2. 管理端 Agent 配置页：加**分类选择**（下拉 `category_code`）
+> 3. 管理端 Agent 配置页：加**定向可见性配置**（`visible_scope` all/groups/roles + 分组/组内角色/全局角色多选；或 `PUT /api/admin/agents/{id}/visibility`）
+> 4. 管理端**新建 MCP server 管理页**（CRUD + discover + 工具逐个审核启用 + 绑定官方 Agent）
+>
+> **务必注意的坑**（§5 有全列）：
+> - **凭证只入不出**：MCP `auth_config` 只在创建/编辑时填，响应只回 `has_auth`，**绝不回显**，用"重设凭证"入口。
+> - **覆盖语义**：绑定（MCP server / 可见性目标）都提交完整集合，不做增量。
+> - **MCP 工具要先 discover 再逐个审核启用**才会生效；未启用不暴露。
+> - 可见性 groups 可再按组内角色（admin/member），留空=组内任意。
+> - 列表都是扁平分页 `{items,page,page_size,total}`；管理端需双重认证。
+> - 用户端**对话页不用改**（MCP 工具走同一套 SSE 事件）。
+>
+> 联调对照 `docs/backend-stage3-test-report.md` 的预期行为；可用 `docs/stage3-manual-test-apipost.md` 自测接口。
+>
+> ---
+
 > 阶段：第三阶段 = 工作台增强（Agent 分类 / 定向可见性 / MCP 工具源）。**后端已全部实现 + 验收通过**（80/80 + 全回归零缺陷）并部署测试环境（DB version=50）。
 > 定位：第三阶段前端的单一入口。续 `frontend-task-stage2.md`（第二阶段页面）。
 > 唯一事实来源（开工前通读）：
