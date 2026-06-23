@@ -137,6 +137,17 @@
       </el-menu-item>
     </el-sub-menu>
 
+    <el-sub-menu v-if="can('agent:manage') || can('skill:manage') || can('plugin:manage')" index="workbench">
+      <template #title>
+        <el-icon><MagicStick /></el-icon>
+        <span>Agent 工作台</span>
+      </template>
+      <el-menu-item index="/workbench/config">
+        <el-icon><Collection /></el-icon>
+        <template #title>配置管理</template>
+      </el-menu-item>
+    </el-sub-menu>
+
     <el-sub-menu v-if="can('content:manage')" index="content">
       <template #title>
         <el-icon><Bell /></el-icon>

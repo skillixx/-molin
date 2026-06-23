@@ -9,6 +9,8 @@ declare module 'vue-router' {
     requiresAdminVerify?: boolean
     /** 需要的权限码（用于权限检查） */
     permission?: string
+    /** 需要任一权限码即可访问的页面，用于同页承载多类管理能力 */
+    permissionsAny?: string[]
     /** 页面标题 */
     title?: string
   }

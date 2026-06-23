@@ -58,6 +58,21 @@ const router = createRouter({
           component: () => import('@/views/token/TokenUsageView.vue'),
           meta: { requiresAuth: true, title: '我的用量 — 墨灵' },
         },
+        {
+          path: 'token/packages',
+          component: () => import('@/views/token/TokenPackageView.vue'),
+          meta: { requiresAuth: true, title: 'Token 套餐 — 墨灵' },
+        },
+        {
+          path: 'agents',
+          component: () => import('@/views/agent/AgentWorkbenchView.vue'),
+          meta: { requiresAuth: true, title: 'Agent 工作台 — 墨灵' },
+        },
+        {
+          path: 'agents/:id/chat',
+          component: () => import('@/views/agent/AgentChatView.vue'),
+          meta: { requiresAuth: true, title: 'Agent 对话 — 墨灵' },
+        },
 
         // 商品市场
         {

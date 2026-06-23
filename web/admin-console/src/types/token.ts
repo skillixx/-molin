@@ -7,6 +7,8 @@ export type TokenModelStatus = 'active' | 'disabled'
 // 模型模态
 export type TokenModelModality = 'chat' | 'image' | 'audio' | 'video'
 export type TokenUsageStatus = 'success' | 'failed' | 'timeout'
+export type AdminAgentOwnerType = 'official' | 'user'
+export type AdminWorkbenchStatus = 'active' | 'inactive'
 
 /** 渠道（上游供应商）—— 响应永远不返回 api_key 明文，只有 has_api_key 布尔 */
 export interface TokenChannel {
@@ -98,3 +100,102 @@ export interface AdminTokenUsageRecord {
   error_code: string | null
   created_at: string
 }
+
+export interface AdminAgentAbilityBrief {
+  id: number
+  code: string
+  name: string
+  description?: string
+  category?: string
+  is_paid?: boolean
+}
+
+// 管理端 Agent 详情包含绑定的 skill / 插件摘要，绑定保存采用全量覆盖语义。
+export interface AdminAgent {
+  id: number
+  code: string | null
+  name: string
+  description: string
+  avatar: string
+  owner_type: AdminAgentOwnerType
+  owner_user_id: number | null
+  system_prompt: string
+  default_model_code: string
+  status: AdminWorkbenchStatus
+  sort_order: number
+  skills: AdminAgentAbilityBrief[]
+  plugins: AdminAgentAbilityBrief[]
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateAdminAgentReq {
+  code: string
+  name: string
+  description?: string
+  avatar?: string
+  system_prompt: string
+  default_model_code: string
+  status?: AdminWorkbenchStatus
+  sort_order?: number
+  skill_ids?: number[]
+  plugin_ids?: number[]
+}
+
+export type UpdateAdminAgentReq = Partial<CreateAdminAgentReq>
+
+export interface AdminSkill {
+  id: number
+  code: string
+  name: string
+  description: string
+  category: string
+  tool_schema_json: Record<string, unknown>
+  handler_key: string
+  status: AdminWorkbenchStatus
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateAdminSkillReq {
+  code: string
+  name: string
+  description?: string
+  category?: string
+  tool_schema_json: Record<string, unknown>
+  handler_key: string
+  status?: AdminWorkbenchStatus
+}
+
+export type UpdateAdminSkillReq = Partial<CreateAdminSkillReq>
+
+export interface AdminPlugin {
+  id: number
+  code: string
+  name: string
+  description: string
+  tool_schema_json: Record<string, unknown>
+  endpoint_url: string
+  has_auth: boolean
+  timeout_ms: number
+  is_paid: boolean
+  daily_limit: number | null
+  status: AdminWorkbenchStatus
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateAdminPluginReq {
+  code: string
+  name: string
+  description?: string
+  tool_schema_json: Record<string, unknown>
+  endpoint_url: string
+  auth_config?: string
+  timeout_ms?: number
+  is_paid?: boolean
+  daily_limit?: number | null
+  status?: AdminWorkbenchStatus
+}
+
+export type UpdateAdminPluginReq = Partial<CreateAdminPluginReq>

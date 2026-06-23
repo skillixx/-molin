@@ -142,6 +142,17 @@ const router = createRouter({
           meta: { requiresAuth: true, requiresAdminVerify: true, title: 'Token 用量统计', permission: 'token:manage' },
         },
         {
+          path: 'workbench/config',
+          name: 'WorkbenchConfig',
+          component: () => import('@/views/token/WorkbenchConfigView.vue'),
+          meta: {
+            requiresAuth: true,
+            requiresAdminVerify: true,
+            title: 'Agent 工作台配置',
+            permissionsAny: ['agent:manage', 'skill:manage', 'plugin:manage'],
+          },
+        },
+        {
           path: 'announcements',
           name: 'AnnouncementList',
           component: () => import('@/views/content/AnnouncementListView.vue'),
@@ -217,7 +228,8 @@ router.beforeEach(async (to, _, next) => {
 
   // 权限检查（meta.permission 存在时，无权限跳 403，不跳登录页）
   const requiredPermission = to.meta.permission as string | undefined
-  if (requiredPermission && auth.permissionCodes.length === 0) {
+  const requiredAnyPermissions = to.meta.permissionsAny as string[] | undefined
+  if ((requiredPermission || requiredAnyPermissions?.length) && auth.permissionCodes.length === 0) {
     try {
       await auth.fetchPermissions()
     } catch {
@@ -226,6 +238,10 @@ router.beforeEach(async (to, _, next) => {
     }
   }
   if (requiredPermission && !auth.hasPermission(requiredPermission)) {
+    next('/403')
+    return
+  }
+  if (requiredAnyPermissions?.length && !requiredAnyPermissions.some((code) => auth.hasPermission(code))) {
     next('/403')
     return
   }

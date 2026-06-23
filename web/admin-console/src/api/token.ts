@@ -2,6 +2,13 @@
 import http from './http'
 import type { PageResponse } from '@/types/api'
 import type {
+  AdminAgent,
+  AdminSkill,
+  AdminPlugin,
+  AdminWorkbenchStatus,
+  CreateAdminAgentReq,
+  CreateAdminSkillReq,
+  CreateAdminPluginReq,
   CreateTokenChannelReq,
   CreateTokenModelReq,
   AdminTokenUsageRecord,
@@ -9,6 +16,9 @@ import type {
   TokenModel,
   TokenModelModality,
   TokenModelStatus,
+  UpdateAdminAgentReq,
+  UpdateAdminSkillReq,
+  UpdateAdminPluginReq,
   UpdateTokenChannelReq,
   UpdateTokenModelReq,
 } from '@/types/token'
@@ -76,4 +86,76 @@ export function listAdminTokenUsage(params: {
   page_size?: number
 } = {}) {
   return http.get<unknown, PageResponse<AdminTokenUsageRecord>>('/admin/token/usage', { params })
+}
+
+// ===== Agent / Skill / 插件配置 /api/admin/* =====
+
+export function listAdminAgents(params: {
+  page?: number
+  page_size?: number
+  owner_type?: string
+  status?: AdminWorkbenchStatus
+} = {}) {
+  return http.get<unknown, PageResponse<AdminAgent>>('/admin/agents', { params })
+}
+
+export function createAdminAgent(data: CreateAdminAgentReq) {
+  return http.post<unknown, AdminAgent>('/admin/agents', data)
+}
+
+export function updateAdminAgent(id: number, data: UpdateAdminAgentReq) {
+  return http.patch<unknown, AdminAgent>(`/admin/agents/${id}`, data)
+}
+
+export function deleteAdminAgent(id: number) {
+  return http.delete<unknown, null>(`/admin/agents/${id}`)
+}
+
+export function bindAdminAgentSkills(id: number, ids: number[]) {
+  return http.post<unknown, AdminAgent>(`/admin/agents/${id}/skills`, { ids })
+}
+
+export function bindAdminAgentPlugins(id: number, ids: number[]) {
+  return http.post<unknown, AdminAgent>(`/admin/agents/${id}/plugins`, { ids })
+}
+
+export function listAdminSkills(params: {
+  page?: number
+  page_size?: number
+  status?: AdminWorkbenchStatus
+  category?: string
+} = {}) {
+  return http.get<unknown, PageResponse<AdminSkill>>('/admin/skills', { params })
+}
+
+export function createAdminSkill(data: CreateAdminSkillReq) {
+  return http.post<unknown, AdminSkill>('/admin/skills', data)
+}
+
+export function updateAdminSkill(id: number, data: UpdateAdminSkillReq) {
+  return http.patch<unknown, AdminSkill>(`/admin/skills/${id}`, data)
+}
+
+export function deleteAdminSkill(id: number) {
+  return http.delete<unknown, null>(`/admin/skills/${id}`)
+}
+
+export function listAdminPlugins(params: {
+  page?: number
+  page_size?: number
+  status?: AdminWorkbenchStatus
+} = {}) {
+  return http.get<unknown, PageResponse<AdminPlugin>>('/admin/plugins', { params })
+}
+
+export function createAdminPlugin(data: CreateAdminPluginReq) {
+  return http.post<unknown, AdminPlugin>('/admin/plugins', data)
+}
+
+export function updateAdminPlugin(id: number, data: UpdateAdminPluginReq) {
+  return http.patch<unknown, AdminPlugin>(`/admin/plugins/${id}`, data)
+}
+
+export function deleteAdminPlugin(id: number) {
+  return http.delete<unknown, null>(`/admin/plugins/${id}`)
 }

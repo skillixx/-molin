@@ -18,6 +18,7 @@ import {
   HomeFilled,
   Key,
   List,
+  MagicStick,
   Medal,
   QuestionFilled,
   Tickets,
@@ -32,7 +33,9 @@ const walletStore = useWalletStore()
 // 顶部主导航入口集中维护，避免页面入口分散在模板中重复书写。
 const navItems = [
   { path: '/overview', label: '总览', icon: HomeFilled },
-  { path: '/chat', label: 'AI 对话', icon: ChatDotRound },
+  { path: '/agents', label: 'Agent 工作台', icon: MagicStick },
+  { path: '/chat', label: '透传对话', icon: ChatDotRound },
+  { path: '/token/packages', label: 'Token 套餐', icon: Tickets },
   { path: '/api-keys', label: 'API 密钥', icon: Key },
   { path: '/token/usage', label: '我的用量', icon: List },
   { path: '/marketplace', label: '商品市场', icon: Goods },
@@ -66,6 +69,8 @@ function handleCommand(cmd: string) {
   else if (cmd === 'wallet') router.push('/wallet')
   else if (cmd === 'consumption') router.push('/consumption')
   else if (cmd === 'api-keys') router.push('/api-keys')
+  else if (cmd === 'agents') router.push('/agents')
+  else if (cmd === 'token-packages') router.push('/token/packages')
   else if (cmd === 'token-usage') router.push('/token/usage')
   else if (cmd === 'logout') handleLogout()
 }
@@ -156,6 +161,14 @@ onMounted(() => {
               <el-dropdown-item command="api-keys">
                 <el-icon><key /></el-icon>
                 API 密钥
+              </el-dropdown-item>
+              <el-dropdown-item command="agents">
+                <el-icon><magic-stick /></el-icon>
+                Agent 工作台
+              </el-dropdown-item>
+              <el-dropdown-item command="token-packages">
+                <el-icon><tickets /></el-icon>
+                Token 套餐
               </el-dropdown-item>
               <el-dropdown-item command="token-usage">
                 <el-icon><list /></el-icon>

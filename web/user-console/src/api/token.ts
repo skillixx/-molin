@@ -8,15 +8,21 @@
 import http from './http'
 import type { PageResult } from '@/types/api'
 import type {
+  AgentChatStreamOptions,
+  AgentItem,
   ApiKeyItem,
   ChatCompletionChunk,
   CreatedApiKey,
+  CreateAgentReq,
   CreateApiKeyReq,
   ChatStreamError,
   ChatStreamOptions,
   ChatUsage,
+  PluginItem,
+  SkillItem,
   TokenModel,
   TokenUsageRecord,
+  UpdateAgentReq,
 } from '@/types/token'
 
 /**
@@ -49,6 +55,34 @@ export function listMyTokenUsage(params: {
   page_size?: number
 } = {}) {
   return http.get<unknown, PageResult<TokenUsageRecord>>('/token/usage', { params })
+}
+
+export function listAgents(params: { page?: number; page_size?: number } = {}) {
+  return http.get<unknown, PageResult<AgentItem>>('/agents', { params })
+}
+
+export function getAgent(id: number) {
+  return http.get<unknown, AgentItem>(`/agents/${id}`)
+}
+
+export function createAgent(data: CreateAgentReq) {
+  return http.post<unknown, AgentItem>('/agents', data)
+}
+
+export function updateAgent(id: number, data: UpdateAgentReq) {
+  return http.patch<unknown, AgentItem>(`/agents/${id}`, data)
+}
+
+export function deleteAgent(id: number) {
+  return http.delete<unknown, { deleted: boolean }>(`/agents/${id}`)
+}
+
+export function listSkills(params: { page?: number; page_size?: number } = {}) {
+  return http.get<unknown, PageResult<SkillItem>>('/skills', { params })
+}
+
+export function listPlugins(params: { page?: number; page_size?: number } = {}) {
+  return http.get<unknown, PageResult<PluginItem>>('/plugins', { params })
 }
 
 /**
@@ -141,6 +175,98 @@ export async function chatCompletionsStream(options: ChatStreamOptions): Promise
 
     // 未显式收到 [DONE] 但流自然结束，也视为完成
     onDone(lastUsage)
+  } catch (e) {
+    onError(toStreamError(e))
+  } finally {
+    reader.releaseLock()
+  }
+}
+
+export async function agentChatStream(options: AgentChatStreamOptions): Promise<void> {
+  const {
+    agent_id,
+    messages,
+    model,
+    onToolCall,
+    onToolResult,
+    onMessage,
+    onDone,
+    onError,
+    signal,
+  } = options
+
+  let response: Response
+  try {
+    response = await fetch(`/api/agents/${agent_id}/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // 编排聊天只允许登录态调用，不能使用平台 sk。
+        Authorization: `Bearer ${localStorage.getItem('access_token') ?? ''}`,
+      },
+      body: JSON.stringify({ messages, model: model || undefined, stream: true }),
+      signal,
+    })
+  } catch (e) {
+    onError(toStreamError(e))
+    return
+  }
+
+  if (!response.ok) {
+    onError(await parseHttpError(response))
+    return
+  }
+
+  const reader = response.body?.getReader()
+  if (!reader) {
+    onError({ message: '响应不支持流式读取' })
+    return
+  }
+
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+  let currentEvent = 'message'
+
+  try {
+    // 编排 SSE 使用 event/data 双行格式，按空行结束一个事件帧。
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      const frames = buffer.split('\n\n')
+      buffer = frames.pop() ?? ''
+
+      for (const frame of frames) {
+        const lines = frame.split('\n').map((line) => line.trim()).filter(Boolean)
+        let dataPayload = ''
+
+        for (const line of lines) {
+          if (line.startsWith('event:')) currentEvent = line.slice(6).trim()
+          if (line.startsWith('data:')) dataPayload += line.slice(5).trim()
+        }
+
+        if (!dataPayload) continue
+        if (dataPayload === '[DONE]') {
+          onDone()
+          return
+        }
+
+        try {
+          const data = JSON.parse(dataPayload)
+          if (currentEvent === 'tool_call') onToolCall(data)
+          else if (currentEvent === 'tool_result') onToolResult(data)
+          else if (currentEvent === 'error') onError({ message: data?.message || '编排对话异常' })
+          else onMessage(data)
+        } catch {
+          // 非 JSON 帧视为无效帧，忽略后继续读取后续事件。
+        } finally {
+          currentEvent = 'message'
+        }
+      }
+    }
+
+    onDone()
   } catch (e) {
     onError(toStreamError(e))
   } finally {

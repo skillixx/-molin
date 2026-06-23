@@ -11,6 +11,66 @@ export interface TokenModel {
   modality: 'chat' | string
 }
 
+export type AgentOwnerType = 'official' | 'user'
+export type AgentStatus = 'active' | 'inactive'
+
+// Agent 绑定能力摘要，用户端只展示公开字段，不展示内部处理器或凭证。
+export interface AgentAbilityBrief {
+  id: number
+  code: string
+  name: string
+  description?: string
+  category?: string
+  is_paid?: boolean
+}
+
+// 用户端 Agent 详情，字段保持后端 snake_case，避免契约转换造成偏差。
+export interface AgentItem {
+  id: number
+  code: string | null
+  name: string
+  description: string
+  avatar: string
+  owner_type: AgentOwnerType
+  owner_user_id: number | null
+  system_prompt: string
+  default_model_code: string
+  status: AgentStatus
+  sort_order: number
+  skills: AgentAbilityBrief[]
+  plugins: AgentAbilityBrief[]
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateAgentReq {
+  name: string
+  description?: string
+  avatar?: string
+  system_prompt: string
+  default_model_code: string
+  skill_ids?: number[]
+  plugin_ids?: number[]
+}
+
+export type UpdateAgentReq = Partial<CreateAgentReq>
+
+export interface SkillItem {
+  id: number
+  code: string
+  name: string
+  description: string
+  category: string
+}
+
+export interface PluginItem {
+  id: number
+  code: string
+  name: string
+  description: string
+  is_paid: boolean
+}
+
 export type ApiKeyStatus = 'active' | 'revoked'
 export type ApiKeyBillingMode = 'postpaid' | 'prepaid'
 
@@ -90,6 +150,40 @@ export interface ChatStreamOptions {
   // 出错时回调（网络异常 / 非 2xx 起始响应 / 流内错误）
   onError: (err: ChatStreamError) => void
   // 用于「停止」按钮中断流式
+  signal?: AbortSignal
+}
+
+export type AgentChatEventType = 'tool_call' | 'tool_result' | 'message' | 'error'
+
+export interface AgentChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface AgentChatToolCall {
+  name: string
+  arguments: string
+}
+
+export interface AgentChatToolResult {
+  name: string
+  content: string
+}
+
+export interface AgentChatAnswer {
+  content: string
+  finish_reason?: 'stop' | 'max_rounds' | string
+}
+
+export interface AgentChatStreamOptions {
+  agent_id: number
+  messages: AgentChatMessage[]
+  model?: string
+  onToolCall: (data: AgentChatToolCall) => void
+  onToolResult: (data: AgentChatToolResult) => void
+  onMessage: (data: AgentChatAnswer) => void
+  onDone: () => void
+  onError: (err: ChatStreamError) => void
   signal?: AbortSignal
 }
 
