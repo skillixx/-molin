@@ -16,15 +16,25 @@ var ErrAgentCodeExists = errors.New("agent code 已存在")
 // AgentService Agent 管理服务：管理端官方 Agent CRUD + 绑定，用户端自建 Agent + 只读列表。
 // 依赖 skill/plugin 仓库做绑定合法性校验与详情名称回填。
 type AgentService struct {
-	repo         *repository.AgentRepository
-	skillRepo    *repository.SkillRepository
-	pluginRepo   *repository.PluginRepository
-	categoryRepo *repository.AgentCategoryRepository
+	repo          *repository.AgentRepository
+	skillRepo     *repository.SkillRepository
+	pluginRepo    *repository.PluginRepository
+	categoryRepo  *repository.AgentCategoryRepository
+	groupResolver GroupResolver // 定向可见性：分组归属解析（nil → groups 定向不可见，fail-safe）
+	roleResolver  RoleResolver  // 定向可见性：全局角色解析（nil → roles 定向不可见，fail-safe）
 }
 
 // NewAgentService 创建 Agent 服务实例。
 func NewAgentService(repo *repository.AgentRepository, skillRepo *repository.SkillRepository, pluginRepo *repository.PluginRepository, categoryRepo *repository.AgentCategoryRepository) *AgentService {
 	return &AgentService{repo: repo, skillRepo: skillRepo, pluginRepo: pluginRepo, categoryRepo: categoryRepo}
+}
+
+// WithResolvers 注入定向可见性所需的分组/角色解析器（bootstrap 装配时调用）。
+// 任一为 nil 时对应 scope=groups/roles 的 Agent 一律判为不可见（fail-safe），仅 scope=all 正常返回。
+func (s *AgentService) WithResolvers(gr GroupResolver, rr RoleResolver) *AgentService {
+	s.groupResolver = gr
+	s.roleResolver = rr
+	return s
 }
 
 // validateCategory 校验 category_code：空=未分类(允许，返回 nil 指针)；非空须存在于字典(否则校验错误)。
@@ -100,6 +110,18 @@ func (s *AgentService) AdminCreate(ctx context.Context, req dto.AdminCreateAgent
 		return nil, err
 	}
 
+	// 定向可见性：空 scope 默认 all（兼容现状）。
+	scope := strings.TrimSpace(req.VisibleScope)
+	if scope == "" {
+		scope = scopeAll
+	}
+	visScope, audience, err := buildVisibility(ctx, visibilityInput{
+		Scope: scope, GroupIDs: req.GroupIDs, GroupRoles: req.GroupRoles, RoleCodes: req.RoleCodes,
+	}, s.groupResolver, s.roleResolver)
+	if err != nil {
+		return nil, err
+	}
+
 	a := &model.Agent{
 		Code:             code,
 		Name:             strings.TrimSpace(req.Name),
@@ -110,6 +132,8 @@ func (s *AgentService) AdminCreate(ctx context.Context, req dto.AdminCreateAgent
 		DefaultModelCode: strings.TrimSpace(req.DefaultModelCode),
 		CategoryCode:     category,
 		Status:           status,
+		VisibleScope:     visScope,
+		TargetAudience:   audience,
 		SortOrder:        req.SortOrder,
 	}
 	if err := s.repo.CreateWithBindings(ctx, a, req.SkillIDs, req.PluginIDs); err != nil {
@@ -135,6 +159,17 @@ func (s *AgentService) AdminUpdate(ctx context.Context, id uint64, req dto.Admin
 	if err := s.applyCategoryUpdate(ctx, updates, req.CategoryCode); err != nil {
 		return nil, err
 	}
+	// 定向可见性：visible_scope 非 nil 时整体覆盖（连同 group_ids/group_roles/role_codes）。
+	if req.VisibleScope != nil {
+		visScope, audience, vErr := buildVisibility(ctx, visibilityInput{
+			Scope: *req.VisibleScope, GroupIDs: req.GroupIDs, GroupRoles: req.GroupRoles, RoleCodes: req.RoleCodes,
+		}, s.groupResolver, s.roleResolver)
+		if vErr != nil {
+			return nil, vErr
+		}
+		updates["visible_scope"] = visScope
+		updates["target_audience_json"] = audience // *string，scope=all 时 nil 写 NULL
+	}
 	if err := s.validateBindables(ctx, req.SkillIDs, req.PluginIDs, false); err != nil {
 		return nil, err
 	}
@@ -145,9 +180,34 @@ func (s *AgentService) AdminUpdate(ctx context.Context, id uint64, req dto.Admin
 	return s.Get(ctx, id)
 }
 
-// AdminList 管理端分页列出 Agent（默认 owner_type=official，可传空查全部）；category 非空按分类过滤。
-func (s *AgentService) AdminList(ctx context.Context, ownerType, status, category string, offset, limit int) ([]dto.AgentResp, int64, error) {
-	items, total, err := s.repo.ListAdminPaged(ctx, ownerType, status, category, offset, limit)
+// SetVisibility 独立设置官方 Agent 的定向可见性（PUT /api/admin/agents/{id}/visibility，覆盖语义）。
+func (s *AgentService) SetVisibility(ctx context.Context, id uint64, req dto.SetVisibilityReq) (*dto.AgentResp, error) {
+	a, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if a.OwnerType != "official" {
+		return nil, newValidation("仅可对官方 Agent 设置定向可见性")
+	}
+	visScope, audience, err := buildVisibility(ctx, visibilityInput{
+		Scope: req.VisibleScope, GroupIDs: req.GroupIDs, GroupRoles: req.GroupRoles, RoleCodes: req.RoleCodes,
+	}, s.groupResolver, s.roleResolver)
+	if err != nil {
+		return nil, err
+	}
+	updates := map[string]interface{}{
+		"visible_scope":        visScope,
+		"target_audience_json": audience,
+	}
+	if err := s.repo.Update(ctx, id, updates); err != nil {
+		return nil, err
+	}
+	return s.Get(ctx, id)
+}
+
+// AdminList 管理端分页列出 Agent（默认 owner_type=official，可传空查全部）；category/visibleScope 非空按对应维度过滤。
+func (s *AgentService) AdminList(ctx context.Context, ownerType, status, category, visibleScope string, offset, limit int) ([]dto.AgentResp, int64, error) {
+	items, total, err := s.repo.ListAdminPaged(ctx, ownerType, status, category, visibleScope, offset, limit)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -273,26 +333,54 @@ func (s *AgentService) UserDelete(ctx context.Context, userID, id uint64) error 
 	return s.repo.Delete(ctx, id)
 }
 
-// UserList 用户端列出可见 Agent：官方 active + 本人自建；category 非空按分类过滤。
+// UserList 用户端列出可见 Agent：官方 active（按定向可见性过滤）+ 本人自建；category 非空按分类过滤。
+// 官方 Agent 数量少，全量加载候选后在应用层做可见性过滤，再分页（保证分页 total 准确）。
 func (s *AgentService) UserList(ctx context.Context, userID uint64, category string, offset, limit int) ([]dto.AgentResp, int64, error) {
-	items, total, err := s.repo.ListVisiblePaged(ctx, userID, category, offset, limit)
+	candidates, err := s.repo.ListVisibleCandidates(ctx, userID, category)
 	if err != nil {
 		return nil, 0, err
 	}
-	return s.buildRespList(ctx, items, total)
+	visible := make([]model.Agent, 0, len(candidates))
+	for i := range candidates {
+		if s.visibleToUser(ctx, &candidates[i], userID) {
+			visible = append(visible, candidates[i])
+		}
+	}
+	total := int64(len(visible))
+	// 应用层分页（candidates 已按 sort_order ASC, id ASC 排序）。
+	start := offset
+	if start > len(visible) {
+		start = len(visible)
+	}
+	end := start + limit
+	if limit <= 0 || end > len(visible) {
+		end = len(visible)
+	}
+	return s.buildRespList(ctx, visible[start:end], total)
 }
 
-// UserGet 用户端查看 Agent 详情：官方 active 或本人自建，否则越权/不存在。
+// UserGet 用户端查看 Agent 详情：本人自建或对其可见的官方 active，否则越权/不存在。
 func (s *AgentService) UserGet(ctx context.Context, userID, id uint64) (*dto.AgentResp, error) {
 	a, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	visible := s.ownedBy(a, userID) || (a.OwnerType == "official" && a.Status == "active")
-	if !visible {
+	if !s.visibleToUser(ctx, a, userID) {
 		return nil, ErrForbidden
 	}
 	return s.buildResp(ctx, a)
+}
+
+// visibleToUser 统一可见性判定：本人自建恒可见；官方须 active 且通过定向 scope 判定。
+// 供 UserList / UserGet 复用；与 ChatService 中编排端点判定语义一致。
+func (s *AgentService) visibleToUser(ctx context.Context, a *model.Agent, userID uint64) bool {
+	if s.ownedBy(a, userID) {
+		return true
+	}
+	if a.OwnerType != "official" || a.Status != "active" {
+		return false
+	}
+	return agentVisibleTo(ctx, a, userID, s.groupResolver, s.roleResolver)
 }
 
 // ——— 公共 ———
@@ -380,6 +468,19 @@ func (s *AgentService) buildRespWithCategoryName(ctx context.Context, a *model.A
 		}
 	}
 
+	scope := a.VisibleScope
+	if scope == "" {
+		scope = scopeAll
+	}
+	var audience *dto.TargetAudienceResp
+	if ta := audienceForResp(scope, a.TargetAudience); ta != nil {
+		audience = &dto.TargetAudienceResp{
+			GroupIDs:   ta.GroupIDs,
+			GroupRoles: ta.GroupRoles,
+			RoleCodes:  ta.RoleCodes,
+		}
+	}
+
 	return &dto.AgentResp{
 		ID:               a.ID,
 		Code:             a.Code,
@@ -393,6 +494,8 @@ func (s *AgentService) buildRespWithCategoryName(ctx context.Context, a *model.A
 		CategoryCode:     a.CategoryCode,
 		CategoryName:     categoryName,
 		Status:           a.Status,
+		VisibleScope:     scope,
+		TargetAudience:   audience,
 		SortOrder:        a.SortOrder,
 		Skills:           skills,
 		Plugins:          plugins,

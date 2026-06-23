@@ -33,13 +33,22 @@ type ChatRequest struct {
 
 // ChatService 站内聊天工作台 tool-use 编排服务（D2 仅登录态）。
 type ChatService struct {
-	agentRepo  *repository.AgentRepository
-	skillRepo  *repository.SkillRepository
-	pluginRepo *repository.PluginRepository
-	registry   *SkillRegistry
-	forwarder  *PluginForwarder
-	upstream   UpstreamChat
-	maxRounds  int
+	agentRepo     *repository.AgentRepository
+	skillRepo     *repository.SkillRepository
+	pluginRepo    *repository.PluginRepository
+	registry      *SkillRegistry
+	forwarder     *PluginForwarder
+	upstream      UpstreamChat
+	maxRounds     int
+	groupResolver GroupResolver // 定向可见性判定（nil → groups 定向不可见，fail-safe）
+	roleResolver  RoleResolver  // 定向可见性判定（nil → roles 定向不可见，fail-safe）
+}
+
+// WithResolvers 注入定向可见性解析器（编排端点访问控制，安全红线）。
+func (s *ChatService) WithResolvers(gr GroupResolver, rr RoleResolver) *ChatService {
+	s.groupResolver = gr
+	s.roleResolver = rr
+	return s
 }
 
 // NewChatService 构造编排服务。maxRounds<=0 时取默认 5。
@@ -87,8 +96,12 @@ func (s *ChatService) ChatWithAgent(ctx context.Context, w http.ResponseWriter, 
 	if err != nil {
 		return err // handler 映射 404
 	}
-	visible := (agent.OwnerType == "user" && agent.OwnerUserID != nil && *agent.OwnerUserID == req.UserID) ||
-		(agent.OwnerType == "official" && agent.Status == "active")
+	// 编排端点访问控制（安全红线，与列表/详情同一套定向判定）：
+	// 本人自建恒可见；官方须 active 且通过定向 scope 判定（fail-safe：resolver 异常时定向 Agent 不放行）。
+	owned := agent.OwnerType == "user" && agent.OwnerUserID != nil && *agent.OwnerUserID == req.UserID
+	visible := owned ||
+		(agent.OwnerType == "official" && agent.Status == "active" &&
+			agentVisibleTo(ctx, agent, req.UserID, s.groupResolver, s.roleResolver))
 	if !visible {
 		return ErrForbidden
 	}

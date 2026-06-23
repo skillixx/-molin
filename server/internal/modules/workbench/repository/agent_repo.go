@@ -51,29 +51,25 @@ func (r *AgentRepository) FindByCode(ctx context.Context, code string) (*model.A
 	return &a, nil
 }
 
-// ListVisiblePaged 分页列出对某用户可见的 Agent：官方（official, active）+ 本人自建（全部状态）。
-// category 非空时按分类过滤（展示维度，不影响可见性判定）。
-func (r *AgentRepository) ListVisiblePaged(ctx context.Context, userID uint64, category string, offset, limit int) ([]model.Agent, int64, error) {
+// ListVisibleCandidates 取对某用户的全部候选 Agent（官方 active + 本人自建），不分页。
+// 可见性按 visible_scope 在 service 层应用过滤后再分页（官方 Agent 数量少，全量加载可接受）。
+// category 非空时按分类过滤（展示维度）。结果按 sort_order ASC, id ASC 排序。
+func (r *AgentRepository) ListVisibleCandidates(ctx context.Context, userID uint64, category string) ([]model.Agent, error) {
 	cond := r.db.WithContext(ctx).Model(&model.Agent{}).
 		Where("(owner_type = ? AND status = ?) OR (owner_type = ? AND owner_user_id = ?)",
 			"official", "active", "user", userID)
 	if category != "" {
 		cond = cond.Where("category_code = ?", category)
 	}
-
-	var total int64
-	if err := cond.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
 	var items []model.Agent
-	if err := cond.Order("sort_order ASC, id ASC").Offset(offset).Limit(limit).Find(&items).Error; err != nil {
-		return nil, 0, err
+	if err := cond.Order("sort_order ASC, id ASC").Find(&items).Error; err != nil {
+		return nil, err
 	}
-	return items, total, nil
+	return items, nil
 }
 
-// ListAdminPaged 管理端分页列出官方 Agent，支持 status/category 过滤（空不过滤）。
-func (r *AgentRepository) ListAdminPaged(ctx context.Context, ownerType, status, category string, offset, limit int) ([]model.Agent, int64, error) {
+// ListAdminPaged 管理端分页列出官方 Agent，支持 status/category/visibleScope 过滤（空不过滤）。
+func (r *AgentRepository) ListAdminPaged(ctx context.Context, ownerType, status, category, visibleScope string, offset, limit int) ([]model.Agent, int64, error) {
 	query := r.db.WithContext(ctx).Model(&model.Agent{})
 	if ownerType != "" {
 		query = query.Where("owner_type = ?", ownerType)
@@ -83,6 +79,9 @@ func (r *AgentRepository) ListAdminPaged(ctx context.Context, ownerType, status,
 	}
 	if category != "" {
 		query = query.Where("category_code = ?", category)
+	}
+	if visibleScope != "" {
+		query = query.Where("visible_scope = ?", visibleScope)
 	}
 
 	var total int64

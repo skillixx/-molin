@@ -15,6 +15,12 @@ type AdminCreateAgentReq struct {
 	SortOrder        int      `json:"sort_order"`         // 排序权重
 	SkillIDs         []uint64 `json:"skill_ids"`          // 绑定 skill（可空）
 	PluginIDs        []uint64 `json:"plugin_ids"`         // 绑定 plugin（可空）
+
+	// 定向可见性（可选）：空 visible_scope 时默认 all（全员可见）。
+	VisibleScope string   `json:"visible_scope"` // all/groups/roles
+	GroupIDs     []uint64 `json:"group_ids"`     // scope=groups 必填非空
+	GroupRoles   []string `json:"group_roles"`   // scope=groups 可选，admin/member，空=组内任意
+	RoleCodes    []string `json:"role_codes"`    // scope=roles 必填非空
 }
 
 // AdminUpdateAgentReq 管理端更新官方 Agent 请求体，标量字段指针 nil 不更新。
@@ -30,6 +36,27 @@ type AdminUpdateAgentReq struct {
 	SortOrder        *int     `json:"sort_order"`
 	SkillIDs         []uint64 `json:"skill_ids"`
 	PluginIDs        []uint64 `json:"plugin_ids"`
+
+	// 定向可见性（可选，覆盖语义）：visible_scope 非 nil 时整体重设定向（与 group_ids/group_roles/role_codes 一起组装）。
+	VisibleScope *string  `json:"visible_scope"` // nil=不更新；all/groups/roles
+	GroupIDs     []uint64 `json:"group_ids"`
+	GroupRoles   []string `json:"group_roles"`
+	RoleCodes    []string `json:"role_codes"`
+}
+
+// SetVisibilityReq 独立设置 Agent 定向可见性请求体（PUT /api/admin/agents/{id}/visibility，覆盖语义）。
+type SetVisibilityReq struct {
+	VisibleScope string   `json:"visible_scope"` // all/groups/roles，必填
+	GroupIDs     []uint64 `json:"group_ids"`     // scope=groups 必填非空
+	GroupRoles   []string `json:"group_roles"`   // scope=groups 可选，admin/member
+	RoleCodes    []string `json:"role_codes"`    // scope=roles 必填非空
+}
+
+// TargetAudienceResp 定向目标响应结构（按 visible_scope 解释；scope=all 时为 null）。
+type TargetAudienceResp struct {
+	GroupIDs   []uint64 `json:"group_ids,omitempty"`
+	GroupRoles []string `json:"group_roles,omitempty"`
+	RoleCodes  []string `json:"role_codes,omitempty"`
 }
 
 // UserCreateAgentReq 用户端自建 Agent 请求体（owner_type 强制 user，不可传 code）。
@@ -71,23 +98,25 @@ type BoundResource struct {
 
 // AgentResp Agent 响应体（含绑定的 skill/plugin 名称，不含插件凭证）。
 type AgentResp struct {
-	ID               uint64          `json:"id"`
-	Code             *string         `json:"code,omitempty"`
-	Name             string          `json:"name"`
-	Description      string          `json:"description"`
-	Avatar           string          `json:"avatar"`
-	OwnerType        string          `json:"owner_type"`
-	OwnerUserID      *uint64         `json:"owner_user_id,omitempty"`
-	SystemPrompt     string          `json:"system_prompt"`
-	DefaultModelCode string          `json:"default_model_code"`
-	CategoryCode     *string         `json:"category_code"` // 所属分类编码，null=未分类
-	CategoryName     string          `json:"category_name"` // 联字典带出的分类名称，未分类/字典缺失为空串
-	Status           string          `json:"status"`
-	SortOrder        int             `json:"sort_order"`
-	Skills           []BoundResource `json:"skills"`
-	Plugins          []BoundResource `json:"plugins"`
-	CreatedAt        time.Time       `json:"created_at"`
-	UpdatedAt        time.Time       `json:"updated_at"`
+	ID               uint64              `json:"id"`
+	Code             *string             `json:"code,omitempty"`
+	Name             string              `json:"name"`
+	Description      string              `json:"description"`
+	Avatar           string              `json:"avatar"`
+	OwnerType        string              `json:"owner_type"`
+	OwnerUserID      *uint64             `json:"owner_user_id,omitempty"`
+	SystemPrompt     string              `json:"system_prompt"`
+	DefaultModelCode string              `json:"default_model_code"`
+	CategoryCode     *string             `json:"category_code"` // 所属分类编码，null=未分类
+	CategoryName     string              `json:"category_name"` // 联字典带出的分类名称，未分类/字典缺失为空串
+	Status           string              `json:"status"`
+	VisibleScope     string              `json:"visible_scope"`   // all/groups/roles
+	TargetAudience   *TargetAudienceResp `json:"target_audience"` // 定向目标，scope=all 时为 null
+	SortOrder        int                 `json:"sort_order"`
+	Skills           []BoundResource     `json:"skills"`
+	Plugins          []BoundResource     `json:"plugins"`
+	CreatedAt        time.Time           `json:"created_at"`
+	UpdatedAt        time.Time           `json:"updated_at"`
 }
 
 // AgentCategoryResp 分类列表项（前端分类导航元数据）。
