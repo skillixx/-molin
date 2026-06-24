@@ -80,6 +80,14 @@ type Config struct {
 	// 通过 PLUGIN_DOMAIN_WHITELIST 注入（逗号分隔，如 "api.weather.com,docs.example.com"）；
 	// 空=不启用白名单（仅按 SSRF 网段规则拦内网/回环）。
 	PluginDomainWhitelist []string
+
+	// presenton 应用接入（D1 打开入口）。
+	// PresentonAppCode：presenton 应用在 applications 表的 code，用于 entitlement 闸门解析。
+	PresentonAppCode string
+	// PresentonGatewayBaseURL：墨灵 D2 反代基址，拼接前端嵌入 URL（如 https://molin.example.com）。
+	PresentonGatewayBaseURL string
+	// PresentonTicketTTLSeconds：SSO 票据有效期（秒）。
+	PresentonTicketTTLSeconds int
 }
 
 func Load() Config {
@@ -126,6 +134,10 @@ func Load() Config {
 
 		MaxRounds:             getenvInt("MAX_ROUNDS", 5),
 		PluginDomainWhitelist: splitCSV(getenv("PLUGIN_DOMAIN_WHITELIST", "")),
+
+		PresentonAppCode:          getenv("PRESENTON_APP_CODE", "presenton-ppt"),
+		PresentonGatewayBaseURL:   getenv("PRESENTON_GATEWAY_BASE_URL", ""),
+		PresentonTicketTTLSeconds: getenvInt("PRESENTON_TICKET_TTL_SECONDS", 300),
 	}
 }
 
