@@ -814,13 +814,30 @@ func NewApp() (*App, error) {
 	// 落短期 SSO 票据 → 返回带票据的嵌入 URL。依赖平台 sk 签发能力（apiKeyService），
 	// 未启用则跳过（灰度降级，不 panic）。
 	if apiKeyService != nil {
-		presentonModule := presentonmod.New(gormDB, redisClient, apiKeyService, presentonmod.Config{
+		presentonModule, pErr := presentonmod.New(gormDB, redisClient, apiKeyService, presentonmod.Config{
 			AppCode:        cfg.PresentonAppCode,
 			GatewayBaseURL: cfg.PresentonGatewayBaseURL,
 			KeyName:        "presenton",
 			TicketTTL:      time.Duration(cfg.PresentonTicketTTLSeconds) * time.Second,
+
+			InternalBaseURL: cfg.PresentonInternalBaseURL,
+			PathPrefix:      cfg.PresentonPathPrefix,
+			LLMBaseURL:      cfg.PresentonLLMBaseURL,
+			TrustSecret:     cfg.MolinTrustSecret,
+			SessionTTL:      time.Duration(cfg.PresentonSessionTTLSeconds) * time.Second,
+			CookieSecure:    cfg.AppEnv != "local",
 		})
-		presentonmod.RegisterRoutes(mux, presentonModule.OpenService, cfg.JWTSecret, authService)
+		if pErr != nil {
+			log.Printf("[presenton] 初始化失败，打开入口/反代未启用: %v", pErr)
+		} else {
+			presentonmod.RegisterRoutes(mux, presentonModule.OpenService, cfg.JWTSecret, authService)
+			// D2 反代：仅在配置了内网 presenton 地址（Gateway 非空）时注册。
+			if presentonModule.Gateway != nil {
+				presentonmod.RegisterProxyRoutes(mux, presentonModule.Gateway, presentonModule.PathPrefix)
+			} else {
+				log.Printf("[presenton] PRESENTON_INTERNAL_BASE_URL 未配置，D2 反代未启用（仅 D1 打开入口可用）")
+			}
+		}
 	} else {
 		log.Printf("[presenton] API_KEY_HMAC_SECRET 未配置，presenton 打开入口（D1）未启用")
 	}

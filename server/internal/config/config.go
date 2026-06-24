@@ -88,6 +88,18 @@ type Config struct {
 	PresentonGatewayBaseURL string
 	// PresentonTicketTTLSeconds：SSO 票据有效期（秒）。
 	PresentonTicketTTLSeconds int
+
+	// —— presenton D2 反向代理 ——
+	// PresentonInternalBaseURL：内网 presenton 基址（如 http://127.0.0.1:5000）；空则不启用反代。
+	PresentonInternalBaseURL string
+	// PresentonPathPrefix：反代公开挂载前缀（默认 /app/presenton），须与嵌入 URL 路径一致。
+	PresentonPathPrefix string
+	// PresentonLLMBaseURL：可选，注入 X-Molin-LLM-Base-Url（空则 presenton 用其 CUSTOM_LLM_URL）。
+	PresentonLLMBaseURL string
+	// MolinTrustSecret：BFF↔presenton 共享密钥，注入 X-Molin-Auth-Secret，须与 fork 端 MOLIN_TRUST_SECRET 一致。
+	MolinTrustSecret string
+	// PresentonSessionTTLSeconds：反代会话（cookie）有效期（秒）。
+	PresentonSessionTTLSeconds int
 }
 
 func Load() Config {
@@ -138,6 +150,12 @@ func Load() Config {
 		PresentonAppCode:          getenv("PRESENTON_APP_CODE", "presenton-ppt"),
 		PresentonGatewayBaseURL:   getenv("PRESENTON_GATEWAY_BASE_URL", ""),
 		PresentonTicketTTLSeconds: getenvInt("PRESENTON_TICKET_TTL_SECONDS", 300),
+
+		PresentonInternalBaseURL:   getenv("PRESENTON_INTERNAL_BASE_URL", ""),
+		PresentonPathPrefix:        getenv("PRESENTON_PATH_PREFIX", "/app/presenton"),
+		PresentonLLMBaseURL:        getenv("PRESENTON_LLM_BASE_URL", ""),
+		MolinTrustSecret:           getenv("MOLIN_TRUST_SECRET", ""),
+		PresentonSessionTTLSeconds: getenvInt("PRESENTON_SESSION_TTL_SECONDS", 7200),
 	}
 }
 

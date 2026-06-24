@@ -52,3 +52,19 @@ func (s *RedisTicketStore) Load(ctx context.Context, ticket string) (*TicketPayl
 	}
 	return &p, nil
 }
+
+// Consume 一次性取回并删除票据（GETDEL，防重放）；不存在/过期返回 ErrTicketNotFound。
+func (s *RedisTicketStore) Consume(ctx context.Context, ticket string) (*TicketPayload, error) {
+	data, err := s.rdb.GetDel(ctx, ticketKey(ticket)).Bytes()
+	if errors.Is(err, redis.Nil) {
+		return nil, ErrTicketNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	var p TicketPayload
+	if err := json.Unmarshal(data, &p); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
