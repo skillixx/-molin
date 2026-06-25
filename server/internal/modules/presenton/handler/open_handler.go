@@ -4,6 +4,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"molin/server/internal/middleware"
 	"molin/server/internal/modules/presenton/service"
@@ -29,7 +30,10 @@ func (h *OpenHandler) Open(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.svc.Open(r.Context(), userID)
+	// 用户所选模型（F-D，墨灵 logical_model_code）；前端从 token_gateway 模型目录取，可选。
+	model := strings.TrimSpace(r.URL.Query().Get("model"))
+
+	result, err := h.svc.Open(r.Context(), userID, model)
 	if err != nil {
 		if errors.Is(err, service.ErrNoAccess) {
 			response.Error(w, http.StatusForbidden, 40300, "未开通 PPT 生成器，请先购买")

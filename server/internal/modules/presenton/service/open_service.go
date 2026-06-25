@@ -32,7 +32,8 @@ type KeyIssuer interface {
 // TicketPayload SSO 票据承载的身份与凭证（仅存 Redis，绝不下发浏览器）。
 type TicketPayload struct {
 	UserID uint64 `json:"user_id"`
-	APIKey string `json:"api_key"` // 用户的 token_gateway 个人 key（明文）
+	APIKey string `json:"api_key"`         // 用户的 token_gateway 个人 key（明文）
+	Model  string `json:"model,omitempty"` // 用户所选模型（墨灵 logical_model_code，F-D；空则 presenton 用其 CUSTOM_MODEL）
 }
 
 // TicketStore 短期 SSO 票据存储（Redis 实现），D2 反代据票据取回 payload。
@@ -78,7 +79,8 @@ func NewOpenService(
 }
 
 // Open 执行打开入口：闸门 → 签发 key → 落票据 → 返回入口 URL。
-func (s *OpenService) Open(ctx context.Context, userID uint64) (*OpenResult, error) {
+// model 为用户所选模型（墨灵 logical_model_code，F-D）；空字符串表示不指定（presenton 用其 CUSTOM_MODEL）。
+func (s *OpenService) Open(ctx context.Context, userID uint64, model string) (*OpenResult, error) {
 	// ① entitlement 闸门：无有效开通直接拒绝（403）。
 	ok, err := s.access.HasActiveAccess(ctx, userID)
 	if err != nil {
@@ -99,7 +101,7 @@ func (s *OpenService) Open(ctx context.Context, userID uint64) (*OpenResult, err
 	if err != nil {
 		return nil, fmt.Errorf("生成票据失败: %w", err)
 	}
-	if err := s.ticketStore.Save(ctx, ticket, TicketPayload{UserID: userID, APIKey: apiKey}, s.ticketTTL); err != nil {
+	if err := s.ticketStore.Save(ctx, ticket, TicketPayload{UserID: userID, APIKey: apiKey, Model: model}, s.ticketTTL); err != nil {
 		return nil, fmt.Errorf("保存票据失败: %w", err)
 	}
 

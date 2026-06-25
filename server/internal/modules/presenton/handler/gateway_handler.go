@@ -23,6 +23,7 @@ const (
 	hdrUser    = "X-Molin-User-Id"
 	hdrKey     = "X-Molin-LLM-Key"
 	hdrBaseURL = "X-Molin-LLM-Base-Url"
+	hdrModel   = "X-Molin-LLM-Model"
 	hdrSecret  = "X-Molin-Auth-Secret"
 )
 
@@ -150,12 +151,17 @@ func (h *GatewayHandler) Proxy(w http.ResponseWriter, r *http.Request) {
 	r.Header.Del(hdrUser)
 	r.Header.Del(hdrKey)
 	r.Header.Del(hdrBaseURL)
+	r.Header.Del(hdrModel)
 	r.Header.Del(hdrSecret)
 
 	r.Header.Set(hdrUser, strconv.FormatUint(payload.UserID, 10))
 	r.Header.Set(hdrKey, payload.APIKey)
 	if h.llmBaseURL != "" {
 		r.Header.Set(hdrBaseURL, h.llmBaseURL)
+	}
+	// 用户所选模型（F-D）：会话有则注入，presenton 据此用对应模型；无则 presenton 回退 CUSTOM_MODEL。
+	if payload.Model != "" {
+		r.Header.Set(hdrModel, payload.Model)
 	}
 	if h.trustSecret != "" {
 		r.Header.Set(hdrSecret, h.trustSecret)
