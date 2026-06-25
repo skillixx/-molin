@@ -55,7 +55,7 @@ func TestOpen_Success(t *testing.T) {
 	store := &fakeTicketStore{}
 	svc := NewOpenService(access, keyIssuer, store, "https://molin.example.com/", 5*time.Minute)
 
-	res, err := svc.Open(context.Background(), 42)
+	res, err := svc.Open(context.Background(), 42, "DeepSeek")
 	if err != nil {
 		t.Fatalf("期望成功，得到错误: %v", err)
 	}
@@ -69,6 +69,10 @@ func TestOpen_Success(t *testing.T) {
 	}
 	if store.payload.UserID != 42 || store.payload.APIKey != "sk-user-123" {
 		t.Fatalf("票据 payload 错误: %+v", store.payload)
+	}
+	// F-D：用户所选模型应随票据落库，供 D2 注入
+	if store.payload.Model != "DeepSeek" {
+		t.Fatalf("票据未携带所选模型: %+v", store.payload)
 	}
 	if store.ttl != 5*time.Minute {
 		t.Fatalf("TTL 错误: %v", store.ttl)
@@ -91,7 +95,7 @@ func TestOpen_NoAccess(t *testing.T) {
 	store := &fakeTicketStore{}
 	svc := NewOpenService(access, keyIssuer, store, "https://molin.example.com", 0)
 
-	_, err := svc.Open(context.Background(), 7)
+	_, err := svc.Open(context.Background(), 7, "")
 	if !errors.Is(err, ErrNoAccess) {
 		t.Fatalf("期望 ErrNoAccess，得到: %v", err)
 	}
@@ -108,7 +112,7 @@ func TestOpen_AccessError(t *testing.T) {
 	access := &fakeAccess{err: errors.New("db down")}
 	svc := NewOpenService(access, &fakeKeyIssuer{}, &fakeTicketStore{}, "https://molin.example.com", 0)
 
-	if _, err := svc.Open(context.Background(), 1); err == nil {
+	if _, err := svc.Open(context.Background(), 1, ""); err == nil {
 		t.Fatal("闸门出错时应返回错误")
 	}
 }
@@ -117,7 +121,7 @@ func TestOpen_DefaultTTL(t *testing.T) {
 	// ttl<=0 时取默认 5 分钟
 	store := &fakeTicketStore{}
 	svc := NewOpenService(&fakeAccess{ok: true}, &fakeKeyIssuer{key: "k"}, store, "https://x", 0)
-	res, err := svc.Open(context.Background(), 1)
+	res, err := svc.Open(context.Background(), 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}

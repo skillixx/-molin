@@ -120,7 +120,7 @@ func TestProxy_InjectsTrustedHeadersAndStripsSpoof(t *testing.T) {
 	defer upstream.Close()
 
 	sessions := newFakeSessions()
-	_ = sessions.Save(context.Background(), "sid1", service.TicketPayload{UserID: 7, APIKey: "sk-real"}, time.Hour)
+	_ = sessions.Save(context.Background(), "sid1", service.TicketPayload{UserID: 7, APIKey: "sk-real", Model: "DeepSeek"}, time.Hour)
 	gw := newGW(t, &fakeTickets{}, sessions, upstream.URL)
 
 	req := httptest.NewRequest(http.MethodGet, "/app/presenton/api/v1/ppt/presentation/all", nil)
@@ -148,6 +148,10 @@ func TestProxy_InjectsTrustedHeadersAndStripsSpoof(t *testing.T) {
 	}
 	if gotHeaders.Get(hdrSecret) != "shared-secret" {
 		t.Fatalf("X-Molin-Auth-Secret 应注入共享密钥，得到 %q", gotHeaders.Get(hdrSecret))
+	}
+	// F-D：会话所选模型应注入 X-Molin-LLM-Model
+	if gotHeaders.Get(hdrModel) != "DeepSeek" {
+		t.Fatalf("X-Molin-LLM-Model 应为 DeepSeek（会话值），得到 %q", gotHeaders.Get(hdrModel))
 	}
 }
 
