@@ -20,6 +20,9 @@ func RegisterRoutes(
 	// 打开入口：校验开通 → 返回带票据的嵌入 URL。
 	mux.Handle("GET /api/app/presenton/open",
 		middleware.RequireAuth(jwtSecret, banChecker, http.HandlerFunc(oh.Open)))
+	// 可用模型白名单：供前端「打开」时的模型下拉。
+	mux.Handle("GET /api/app/presenton/models",
+		middleware.RequireAuth(jwtSecret, banChecker, http.HandlerFunc(oh.Models)))
 }
 
 // RegisterProxyRoutes 注册 D2 反代路由（浏览器面向，鉴权靠一次性票据 + 会话 cookie，
