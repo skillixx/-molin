@@ -21,6 +21,7 @@ type Config struct {
 	GatewayBaseURL string        // 墨灵 D2 反代基址，用于拼接前端嵌入 URL
 	KeyName        string        // 签发给用户的 sk 备注名
 	TicketTTL      time.Duration // SSO 票据有效期
+	AllowedModels  []string      // presenton 可用模型白名单（logical_model_code）；空=不限制
 
 	// —— D2 反向代理 ——
 	InternalBaseURL string        // 内网 presenton 基址（如 http://127.0.0.1:5000）；空则不启用反代
@@ -47,7 +48,7 @@ func New(db *gorm.DB, rdb *redis.Client, keySvc *authsvc.APIKeyService, cfg Conf
 	keyIssuer := service.NewSessionKeyIssuer(keySvc, cfg.KeyName)
 	ticketStore := service.NewRedisTicketStore(rdb)
 	openSvc := service.NewOpenService(
-		access, keyIssuer, ticketStore, cfg.GatewayBaseURL, cfg.TicketTTL,
+		access, keyIssuer, ticketStore, cfg.GatewayBaseURL, cfg.TicketTTL, cfg.AllowedModels,
 	)
 
 	prefix := cfg.PathPrefix

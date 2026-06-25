@@ -100,6 +100,10 @@ type Config struct {
 	MolinTrustSecret string
 	// PresentonSessionTTLSeconds：反代会话（cookie）有效期（秒）。
 	PresentonSessionTTLSeconds int
+	// PresentonAllowedModels：presenton 可用模型白名单（墨灵 logical_model_code）。
+	// 只放支持 json_schema 结构化输出的模型（如 GPT-4o）；用户/前端只能选其中的。
+	// 通过 PRESENTON_ALLOWED_MODELS 注入（逗号分隔）；空=不限制（任意模型，向后兼容）。
+	PresentonAllowedModels []string
 }
 
 func Load() Config {
@@ -156,6 +160,7 @@ func Load() Config {
 		PresentonLLMBaseURL:        getenv("PRESENTON_LLM_BASE_URL", ""),
 		MolinTrustSecret:           getenv("MOLIN_TRUST_SECRET", ""),
 		PresentonSessionTTLSeconds: getenvInt("PRESENTON_SESSION_TTL_SECONDS", 7200),
+		PresentonAllowedModels:     splitCSV(getenv("PRESENTON_ALLOWED_MODELS", "")),
 	}
 }
 

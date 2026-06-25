@@ -35,12 +35,37 @@ func (h *OpenHandler) Open(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.svc.Open(r.Context(), userID, model)
 	if err != nil {
-		if errors.Is(err, service.ErrNoAccess) {
+		switch {
+		case errors.Is(err, service.ErrNoAccess):
 			response.Error(w, http.StatusForbidden, 40300, "未开通 PPT 生成器，请先购买")
-			return
+		case errors.Is(err, service.ErrModelNotAllowed):
+			response.Error(w, http.StatusBadRequest, 40000, "所选模型不可用")
+		default:
+			response.Error(w, http.StatusInternalServerError, 50000, "打开应用失败")
 		}
-		response.Error(w, http.StatusInternalServerError, 50000, "打开应用失败")
 		return
 	}
 	response.JSON(w, http.StatusOK, result)
+}
+
+// presentonModel /models 返回的单个模型项。
+type presentonModel struct {
+	Code string `json:"code"`
+	Name string `json:"name"`
+}
+
+// Models GET /api/app/presenton/models（仅登录态）
+// 返回 presenton 可用模型白名单，供前端「打开」时的模型下拉。
+func (h *OpenHandler) Models(w http.ResponseWriter, r *http.Request) {
+	if middleware.UserIDFromContext(r.Context()) == 0 {
+		response.Error(w, http.StatusUnauthorized, 40001, "未登录")
+		return
+	}
+	codes := h.svc.AllowedModels()
+	items := make([]presentonModel, 0, len(codes))
+	for _, c := range codes {
+		// v1 用 code 作为展示名；后续需要友好名称可从 token_models 富化。
+		items = append(items, presentonModel{Code: c, Name: c})
+	}
+	response.JSON(w, http.StatusOK, map[string]interface{}{"items": items})
 }

@@ -819,6 +819,7 @@ func NewApp() (*App, error) {
 			GatewayBaseURL: cfg.PresentonGatewayBaseURL,
 			KeyName:        "presenton",
 			TicketTTL:      time.Duration(cfg.PresentonTicketTTLSeconds) * time.Second,
+			AllowedModels:  cfg.PresentonAllowedModels,
 
 			InternalBaseURL: cfg.PresentonInternalBaseURL,
 			PathPrefix:      cfg.PresentonPathPrefix,

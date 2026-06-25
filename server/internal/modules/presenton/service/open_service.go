@@ -19,6 +19,9 @@ import (
 // ErrNoAccess 用户未开通 presenton 应用 / 已过期 / 已封禁，handler 映射 403。
 var ErrNoAccess = errors.New("presenton: 用户无有效开通")
 
+// ErrModelNotAllowed 所选模型不在 presenton 可用白名单内，handler 映射 400。
+var ErrModelNotAllowed = errors.New("presenton: 模型不在可用列表内")
+
 // AccessChecker entitlement 闸门：判定用户是否对 presenton 应用有有效开通。
 type AccessChecker interface {
 	HasActiveAccess(ctx context.Context, userID uint64) (bool, error)
@@ -56,18 +59,29 @@ type OpenService struct {
 	ticketStore TicketStore
 	gatewayBase string        // 墨灵 D2 反代基址（拼 EmbedURL 用）
 	ticketTTL   time.Duration // 票据有效期
+
+	// presenton 可用模型白名单（保序供 /models 返回 + set 供 O(1) 校验）。
+	// 空 = 不限制（任意模型，向后兼容）。
+	allowedList []string
+	allowedSet  map[string]struct{}
 }
 
 // NewOpenService 构造打开入口服务。ttl<=0 时取默认 5 分钟。
+// allowedModels 为 presenton 可用模型白名单（logical_model_code）；空切片表示不限制。
 func NewOpenService(
 	access AccessChecker,
 	keyIssuer KeyIssuer,
 	ticketStore TicketStore,
 	gatewayBase string,
 	ttl time.Duration,
+	allowedModels []string,
 ) *OpenService {
 	if ttl <= 0 {
 		ttl = 5 * time.Minute
+	}
+	set := make(map[string]struct{}, len(allowedModels))
+	for _, m := range allowedModels {
+		set[m] = struct{}{}
 	}
 	return &OpenService{
 		access:      access,
@@ -75,7 +89,14 @@ func NewOpenService(
 		ticketStore: ticketStore,
 		gatewayBase: strings.TrimRight(gatewayBase, "/"),
 		ticketTTL:   ttl,
+		allowedList: allowedModels,
+		allowedSet:  set,
 	}
+}
+
+// AllowedModels 返回 presenton 可用模型白名单（供 /models 接口给前端下拉）。
+func (s *OpenService) AllowedModels() []string {
+	return s.allowedList
 }
 
 // Open 执行打开入口：闸门 → 签发 key → 落票据 → 返回入口 URL。
@@ -88,6 +109,14 @@ func (s *OpenService) Open(ctx context.Context, userID uint64, model string) (*O
 	}
 	if !ok {
 		return nil, ErrNoAccess
+	}
+
+	// 模型白名单校验（F-D 收口）：指定了模型且配置了白名单时，必须命中白名单。
+	// 白名单为空表示不限制；model 为空表示用默认（presenton 的 CUSTOM_MODEL）。
+	if model != "" && len(s.allowedSet) > 0 {
+		if _, allowed := s.allowedSet[model]; !allowed {
+			return nil, ErrModelNotAllowed
+		}
 	}
 
 	// ② 为用户签发 token_gateway 个人 key（本次会话用，按本人计费）。
