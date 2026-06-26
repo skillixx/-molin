@@ -68,6 +68,20 @@ func (r *TokenModelRepository) ListPaged(ctx context.Context, status, modality s
 	return items, total, nil
 }
 
+// ListActiveCandidates 返回全部 active 模型（可选 modality 过滤），按展示顺序排序。
+// 供用户端定向可见性过滤：模型目录规模小，全量加载候选后在应用层判可见性再分页（保证分页 total 准确）。
+func (r *TokenModelRepository) ListActiveCandidates(ctx context.Context, modality string) ([]model.TokenModel, error) {
+	query := r.db.WithContext(ctx).Model(&model.TokenModel{}).Where("status = ?", "active")
+	if modality != "" {
+		query = query.Where("modality = ?", modality)
+	}
+	var items []model.TokenModel
+	if err := query.Order("sort_order ASC, id ASC").Find(&items).Error; err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 // Update 更新模型字段（map 方式支持零值更新）。
 func (r *TokenModelRepository) Update(ctx context.Context, id uint64, updates map[string]interface{}) error {
 	result := r.db.WithContext(ctx).Model(&model.TokenModel{}).Where("id = ?", id).Updates(updates)

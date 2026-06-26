@@ -28,14 +28,25 @@ var (
 	validModelStatus = map[string]bool{"active": true, "inactive": true}
 )
 
-// CatalogService 对外模型目录 CRUD 服务（含 channel_id/upstream_model 路由设置）。
+// CatalogService 对外模型目录 CRUD 服务（含 channel_id/upstream_model 路由设置 + 定向可见性）。
 type CatalogService struct {
 	repo *repository.TokenModelRepository
+	// 定向可见性解析器（bootstrap 注入）：nil 时 groups/roles 定向写入被拒、读取一律不可见（fail-safe）。
+	groupResolver GroupResolver
+	roleResolver  RoleResolver
 }
 
 // NewCatalogService 创建模型目录服务实例。
 func NewCatalogService(repo *repository.TokenModelRepository) *CatalogService {
 	return &CatalogService{repo: repo}
+}
+
+// WithResolvers 注入定向可见性所需的分组/角色解析器（bootstrap 装配时调用）。
+// 与 workbench AgentService.WithResolvers 复用同款适配器，保证模型与 Agent 可见性语义一致。
+func (s *CatalogService) WithResolvers(gr GroupResolver, rr RoleResolver) *CatalogService {
+	s.groupResolver = gr
+	s.roleResolver = rr
+	return s
 }
 
 // Create 创建模型目录记录：校验 + 唯一性。
@@ -63,6 +74,17 @@ func (s *CatalogService) Create(ctx context.Context, req dto.CreateModelReq) (*d
 		return nil, newValidation("status 只能为 active/inactive")
 	}
 
+	// 定向可见性：visible_scope 空则默认 all，groups/roles 走校验并组装 target_audience_json。
+	scope, audience, err := buildVisibility(ctx, visibilityInput{
+		Scope:      req.VisibleScope,
+		GroupIDs:   req.GroupIDs,
+		GroupRoles: req.GroupRoles,
+		RoleCodes:  req.RoleCodes,
+	}, s.groupResolver, s.roleResolver)
+	if err != nil {
+		return nil, err
+	}
+
 	if _, err := s.repo.FindByCode(ctx, code); err == nil {
 		return nil, ErrModelCodeExists
 	} else if !isNotFound(err) {
@@ -77,6 +99,8 @@ func (s *CatalogService) Create(ctx context.Context, req dto.CreateModelReq) (*d
 		ChannelID:        req.ChannelID,
 		UpstreamModel:    req.UpstreamModel,
 		Status:           status,
+		VisibleScope:     scope,
+		TargetAudience:   audience,
 		SortOrder:        req.SortOrder,
 	}
 	if err := s.repo.Create(ctx, m); err != nil {
@@ -105,6 +129,50 @@ func (s *CatalogService) ListPaged(ctx context.Context, status, modality string,
 		resp[i] = *modelToResp(&items[i])
 	}
 	return resp, total, nil
+}
+
+// ListVisible 用户端列出对该用户可见的 active 模型（按定向可见性过滤后在应用层分页，total 准确）。
+// 候选集已按 sort_order ASC, id ASC 排序；offset/limit<=0 时返回全部可见项。
+func (s *CatalogService) ListVisible(ctx context.Context, userID uint64, modality string, offset, limit int) ([]dto.ModelResp, int64, error) {
+	candidates, err := s.repo.ListActiveCandidates(ctx, modality)
+	if err != nil {
+		return nil, 0, err
+	}
+	visible := make([]model.TokenModel, 0, len(candidates))
+	for i := range candidates {
+		if modelVisibleTo(ctx, &candidates[i], userID, s.groupResolver, s.roleResolver) {
+			visible = append(visible, candidates[i])
+		}
+	}
+	total := int64(len(visible))
+
+	start := offset
+	if start < 0 || start > len(visible) {
+		start = len(visible)
+	}
+	end := start + limit
+	if limit <= 0 || end > len(visible) {
+		end = len(visible)
+	}
+	page := visible[start:end]
+	resp := make([]dto.ModelResp, len(page))
+	for i := range page {
+		resp[i] = *modelToResp(&page[i])
+	}
+	return resp, total, nil
+}
+
+// VisibleToUser 判定逻辑模型 code 对用户是否可见（供转发前置闸调用）。
+// 模型不存在 → 返回 false（由调用方按 ErrModelNotConfigured 处理）。
+func (s *CatalogService) VisibleToUser(ctx context.Context, userID uint64, code string) (bool, error) {
+	m, err := s.repo.FindByCode(ctx, code)
+	if err != nil {
+		if isNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return modelVisibleTo(ctx, m, userID, s.groupResolver, s.roleResolver), nil
 }
 
 // Update 更新模型字段。指针字段 nil 表示不更新。
@@ -140,6 +208,20 @@ func (s *CatalogService) Update(ctx context.Context, id uint64, req dto.UpdateMo
 	if req.SortOrder != nil {
 		updates["sort_order"] = *req.SortOrder
 	}
+	// 定向可见性：visible_scope 非 nil 时整体覆盖（连同 target_audience_json）。
+	if req.VisibleScope != nil {
+		scope, audience, err := buildVisibility(ctx, visibilityInput{
+			Scope:      *req.VisibleScope,
+			GroupIDs:   req.GroupIDs,
+			GroupRoles: req.GroupRoles,
+			RoleCodes:  req.RoleCodes,
+		}, s.groupResolver, s.roleResolver)
+		if err != nil {
+			return nil, err
+		}
+		updates["visible_scope"] = scope
+		updates["target_audience_json"] = audience // scope=all → nil，清空旧定向
+	}
 
 	if len(updates) == 0 {
 		return s.Get(ctx, id)
@@ -157,6 +239,10 @@ func (s *CatalogService) Delete(ctx context.Context, id uint64) error {
 
 // modelToResp 模型实体 → 响应 DTO。
 func modelToResp(m *model.TokenModel) *dto.ModelResp {
+	scope := m.VisibleScope
+	if scope == "" {
+		scope = scopeAll
+	}
 	return &dto.ModelResp{
 		ID:               m.ID,
 		LogicalModelCode: m.LogicalModelCode,
@@ -166,8 +252,23 @@ func modelToResp(m *model.TokenModel) *dto.ModelResp {
 		ChannelID:        m.ChannelID,
 		UpstreamModel:    m.UpstreamModel,
 		Status:           m.Status,
+		VisibleScope:     scope,
+		TargetAudience:   audienceToDTO(scope, m.TargetAudience),
 		SortOrder:        m.SortOrder,
 		CreatedAt:        m.CreatedAt,
 		UpdatedAt:        m.UpdatedAt,
+	}
+}
+
+// audienceToDTO 把 target_audience_json 原文解析为响应 DTO（scope=all → nil）。
+func audienceToDTO(scope string, raw *string) *dto.ModelAudience {
+	ta := audienceForResp(scope, raw)
+	if ta == nil {
+		return nil
+	}
+	return &dto.ModelAudience{
+		GroupIDs:   ta.GroupIDs,
+		GroupRoles: ta.GroupRoles,
+		RoleCodes:  ta.RoleCodes,
 	}
 }

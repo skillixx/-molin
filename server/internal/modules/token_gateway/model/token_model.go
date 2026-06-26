@@ -13,7 +13,11 @@ type TokenModel struct {
 	ChannelID        *uint64   `gorm:"column:channel_id" json:"channel_id,omitempty"`                                // 路由到的渠道 ID（token_channels.id），可空
 	UpstreamModel    *string   `gorm:"column:upstream_model;size:128" json:"upstream_model,omitempty"`               // 上游真实模型名，如 deepseek-chat / gpt-4o
 	Status           string    `gorm:"size:32;not null;default:active" json:"status"`                                // active 上架 / inactive 下架
-	SortOrder        int       `gorm:"not null;default:0" json:"sort_order"`                                         // 排序权重，越小越靠前
+	// 定向可见性（对齐 Agent visible_scope）：all 所有登录用户可见 / groups 按分组 / roles 按全局角色。
+	VisibleScope string `gorm:"size:32;not null;default:all" json:"visible_scope"`
+	// 定向目标 JSON 原文：scope=groups 时 {group_ids,group_roles}；scope=roles 时 {role_codes}；scope=all 为 nil。
+	TargetAudience *string   `gorm:"column:target_audience_json;type:json" json:"target_audience_json,omitempty"`
+	SortOrder      int       `gorm:"not null;default:0" json:"sort_order"` // 排序权重，越小越靠前
 	CreatedAt        time.Time `json:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at"`
 }

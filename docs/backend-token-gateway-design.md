@@ -51,6 +51,13 @@ token_channels     -- 上游供应商渠道
   priority, created_at, updated_at
 -- token_models 增列（路由到渠道）：
   + channel_id(BIGINT, 指向 token_channels), upstream_model(VARCHAR, 上游真实模型名,如 deepseek-chat)
+
+-- 000052（定向可见性, 对齐 Agent visible_scope 模式）：
+-- token_models 增列（按角色/分组显示指定模型）：
+  + visible_scope(VARCHAR,默认 all; all 所有登录用户 / groups 按分组 / roles 按全局角色)
+  + target_audience_json(JSON, NULL; groups→{group_ids,group_roles} / roles→{role_codes})
+  -- 用户端 GET /api/token/models 按当前用户分组/角色过滤; chat 转发同样做可见性前置闸(防绕过列表)
+  -- 复用 workbench Agent 同款 GroupResolver/RoleResolver, fail-safe: resolver 缺失则 groups/roles 一律不可见
 ```
 > `api_key_encrypted`:AES-256-GCM,密钥经环境变量 `TOKEN_PROVIDER_KEY` 注入(已是仓库安全红线);**任何接口响应绝不返回 Key**。
 
