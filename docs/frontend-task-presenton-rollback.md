@@ -6,7 +6,7 @@
 
 ## 一、背景
 
-应需求，presenton 应用市场深度二开集成已**全面回退下线**。`main` 已更新到最新（`ffbdfa5`），涉及三个已合并 PR：
+应需求，presenton 应用市场深度二开集成已**全面回退下线**。`main` 已更新到最新（以 `origin/main` 最新提交为准），涉及以下已合并 PR：
 
 | PR | 内容 | 对前端的影响 |
 |---|---|---|
@@ -24,7 +24,7 @@
 
 ```bash
 git fetch origin
-git checkout main && git pull --ff-only origin main   # 应到 ffbdfa5
+git checkout main && git pull --ff-only origin main   # 同步到 origin/main 最新提交
 ```
 
 ### 步骤 2：删除 presenton（应用市场）新增文件
