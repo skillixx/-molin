@@ -29,6 +29,7 @@ import (
 	billingrepo "molin/server/internal/modules/billing/repository"
 	billingsvc "molin/server/internal/modules/billing/service"
 	contentmod "molin/server/internal/modules/content"
+	conversationmod "molin/server/internal/modules/conversation"
 	financemod "molin/server/internal/modules/finance_consumer"
 	financemodel "molin/server/internal/modules/finance_consumer/model"
 	financerepo "molin/server/internal/modules/finance_consumer/repository"
@@ -809,8 +810,13 @@ func NewApp() (*App, error) {
 				// 编排端点访问控制必须接入定向可见性（安全红线：列表过滤≠访问控制）。
 				chatSvc.WithResolvers(visGroupResolver, visRoleResolver)
 				workbenchmod.RegisterChatRoute(mux, chatSvc, cfg.JWTSecret, authService)
+
+				// 有状态会话（ChatGPT 式记忆/上下文连贯/滚动压缩/用户隔离）：
+				// 复用编排引擎 chatSvc（模型路由/工具/计费/可见性）+ tokenForwardSvc 做上下文压缩。
+				conversationModule := conversationmod.New(gormDB, chatSvc, tokenForwardSvc)
+				conversationmod.RegisterRoutes(mux, conversationModule.Service, cfg.JWTSecret, authService)
 			} else {
-				log.Printf("[workbench] token 网关未启用，编排 chat 端点 /api/agents/{id}/chat 未注册")
+				log.Printf("[workbench] token 网关未启用，编排 chat 端点 /api/agents/{id}/chat 与会话持久化未注册")
 			}
 		}
 	} else {
