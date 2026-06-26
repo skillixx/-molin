@@ -80,30 +80,6 @@ type Config struct {
 	// 通过 PLUGIN_DOMAIN_WHITELIST 注入（逗号分隔，如 "api.weather.com,docs.example.com"）；
 	// 空=不启用白名单（仅按 SSRF 网段规则拦内网/回环）。
 	PluginDomainWhitelist []string
-
-	// presenton 应用接入（D1 打开入口）。
-	// PresentonAppCode：presenton 应用在 applications 表的 code，用于 entitlement 闸门解析。
-	PresentonAppCode string
-	// PresentonGatewayBaseURL：墨灵 D2 反代基址，拼接前端嵌入 URL（如 https://molin.example.com）。
-	PresentonGatewayBaseURL string
-	// PresentonTicketTTLSeconds：SSO 票据有效期（秒）。
-	PresentonTicketTTLSeconds int
-
-	// —— presenton D2 反向代理 ——
-	// PresentonInternalBaseURL：内网 presenton 基址（如 http://127.0.0.1:5000）；空则不启用反代。
-	PresentonInternalBaseURL string
-	// PresentonPathPrefix：反代公开挂载前缀（默认 /app/presenton），须与嵌入 URL 路径一致。
-	PresentonPathPrefix string
-	// PresentonLLMBaseURL：可选，注入 X-Molin-LLM-Base-Url（空则 presenton 用其 CUSTOM_LLM_URL）。
-	PresentonLLMBaseURL string
-	// MolinTrustSecret：BFF↔presenton 共享密钥，注入 X-Molin-Auth-Secret，须与 fork 端 MOLIN_TRUST_SECRET 一致。
-	MolinTrustSecret string
-	// PresentonSessionTTLSeconds：反代会话（cookie）有效期（秒）。
-	PresentonSessionTTLSeconds int
-	// PresentonAllowedModels：presenton 可用模型白名单（墨灵 logical_model_code）。
-	// 只放支持 json_schema 结构化输出的模型（如 GPT-4o）；用户/前端只能选其中的。
-	// 通过 PRESENTON_ALLOWED_MODELS 注入（逗号分隔）；空=不限制（任意模型，向后兼容）。
-	PresentonAllowedModels []string
 }
 
 func Load() Config {
@@ -150,17 +126,6 @@ func Load() Config {
 
 		MaxRounds:             getenvInt("MAX_ROUNDS", 5),
 		PluginDomainWhitelist: splitCSV(getenv("PLUGIN_DOMAIN_WHITELIST", "")),
-
-		PresentonAppCode:          getenv("PRESENTON_APP_CODE", "presenton-ppt"),
-		PresentonGatewayBaseURL:   getenv("PRESENTON_GATEWAY_BASE_URL", ""),
-		PresentonTicketTTLSeconds: getenvInt("PRESENTON_TICKET_TTL_SECONDS", 300),
-
-		PresentonInternalBaseURL:   getenv("PRESENTON_INTERNAL_BASE_URL", ""),
-		PresentonPathPrefix:        getenv("PRESENTON_PATH_PREFIX", "/app/presenton"),
-		PresentonLLMBaseURL:        getenv("PRESENTON_LLM_BASE_URL", ""),
-		MolinTrustSecret:           getenv("MOLIN_TRUST_SECRET", ""),
-		PresentonSessionTTLSeconds: getenvInt("PRESENTON_SESSION_TTL_SECONDS", 7200),
-		PresentonAllowedModels:     splitCSV(getenv("PRESENTON_ALLOWED_MODELS", "")),
 	}
 }
 
