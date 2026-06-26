@@ -201,6 +201,8 @@ scripts/                    建表、Migration、测试数据初始化脚本
 >
 > **presenton 集成整体回退（2026-06-26）**：应用市场 presenton 深度二开集成（原 PR #256~#263）已按需求全面下线——代码侧经 **PR #265**（commit `1c6d937`）从 main 移除（presenton 后端模块、迁移 000052、子模块 `services/presenton`、config/bootstrap 注册、相关文档，共 -1768 行，不影响 MCP/Agent 等第三阶段工作）；测试服侧同步完成容器下线、用户资产清理、迁移回退（version 51）、`.env` 清理、目录缓冲、镜像删除并重建部署干净二进制（`/app/presenton/` 已 404）。presenton 从代码、运行态到分支已彻底清零。
 
+> **商品访问规则/价格回显 GET 接口（2026-06-26）**：管理后台「商品管理 → 访问与价格 / 配置访问规则」打开后不显示已配置项，根因为后端 `access`/`prices` 只有 PATCH 写入接口、缺对应 GET 回显（Service 层 `GetAccess`/`GetPrices` 早已存在但未挂路由）。**PR #270**（commit `a921280`）补齐两个只读接口 `GET /api/admin/products/{id}/access`、`GET /api/admin/products/{id}/prices`（权限码 `product:view`，响应键名 `items` 与 PATCH 写入 body 对称，非分页返回全量），前端对接任务单见 **PR #271**。已部署测试服回归并通过：**25 PASS / 0 FAIL，无缺陷**（含 P2 修复点验证：默认价 `role_id`/`membership_level_id` 输出为 `null` 键而非缺失键）。两条非缺陷观察已同步至 `docs/frontend-api-reference.md` §5.3「前端注意」：① `price_amount` 字符串经 decimal 序列化去尾随零（如 `"50.000000"`→`"50"`），前端按数值解析、勿依赖固定小数位；② 不存在的商品 id 返回 HTTP 200 + `items: []`（不做存在性校验，符合现有约定）。
+
 ### 后端 A（auth / iam / identity / audit）
 
 > Week 1 已完成，全部通过验收（2026-06-05）。33 个接口（auth 17 + iam 11 + identity 5），4 个 P1 安全问题已修复并复审通过。
