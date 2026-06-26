@@ -282,6 +282,46 @@ func (h *AdminProductHandler) UpdatePlan(w http.ResponseWriter, r *http.Request)
 	response.JSON(w, http.StatusOK, map[string]string{"message": "套餐更新成功"})
 }
 
+// GetAccess 查询商品已配置的角色访问规则（用于管理端回显）。
+// GET /api/admin/products/:id/access
+func (h *AdminProductHandler) GetAccess(w http.ResponseWriter, r *http.Request) {
+	productID, err := parseIDFromPath(r, "id")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "无效的商品 ID")
+		return
+	}
+	accesses, err := h.productSvc.GetAccess(r.Context(), productID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "查询访问规则失败")
+		return
+	}
+	// 空集合返回 [] 而非 null；键名与 PATCH 写入 body 对称，均为 items
+	if accesses == nil {
+		accesses = []model.ProductRoleAccess{}
+	}
+	response.JSON(w, http.StatusOK, map[string]interface{}{"items": accesses})
+}
+
+// GetPrices 查询商品下所有套餐已配置的价格（跨套餐，用于管理端回显）。
+// GET /api/admin/products/:id/prices
+func (h *AdminProductHandler) GetPrices(w http.ResponseWriter, r *http.Request) {
+	productID, err := parseIDFromPath(r, "id")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "无效的商品 ID")
+		return
+	}
+	prices, err := h.productSvc.GetPricesByProduct(r.Context(), productID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "查询价格配置失败")
+		return
+	}
+	// 空集合返回 [] 而非 null；键名与 PATCH 写入 body 对称，均为 items
+	if prices == nil {
+		prices = []model.ProductPrice{}
+	}
+	response.JSON(w, http.StatusOK, map[string]interface{}{"items": prices})
+}
+
 // ReplaceAccess 批量配置商品角色访问权限（覆盖写入）。
 // PATCH /api/admin/products/:id/access
 func (h *AdminProductHandler) ReplaceAccess(w http.ResponseWriter, r *http.Request) {

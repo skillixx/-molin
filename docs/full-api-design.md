@@ -1302,10 +1302,13 @@ Body 参数：plan_code、name、billing_type、duration_days、quota_json、sta
 ### 4.10 商品访问规则
 
 ```text
-PATCH /api/admin/products/:id/access
+GET   /api/admin/products/:id/access   -- [product:view] 回显已配置访问规则
+PATCH /api/admin/products/:id/access   -- [product:edit] 覆盖写入
 ```
 
-Body 参数：
+GET 返回 data：`{"items": [...]}`（与 PATCH 写入 body 键名对称），无配置时 `items` 为 `[]`。单条字段：id、product_id、role_id、can_view、can_buy、can_use、created_at、updated_at。
+
+PATCH Body 参数：
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
@@ -1320,10 +1323,13 @@ items 字段：role_id、can_view、can_buy、can_use。
 ### 4.11 商品价格
 
 ```text
-PATCH /api/admin/products/:id/prices
+GET   /api/admin/products/:id/prices   -- [product:view] 回显商品所有套餐已配置价格（跨套餐）
+PATCH /api/admin/products/:id/prices   -- [product:edit] 覆盖写入
 ```
 
-Body 参数：items（批量覆盖写入）。
+GET 返回 data：`{"items": [...]}`，跨该商品所有套餐的扁平价格列表，用 `product_plan_id` 区分归属，无配置时 `items` 为 `[]`。单条字段：id、product_plan_id、role_id、membership_level_id、price_amount、currency、created_at、updated_at。
+
+PATCH Body 参数：items（批量覆盖写入）。
 
 items 字段：product_plan_id、role_id（可空=非角色价）、membership_level_id（可空=非会员价）、price_amount、currency。
 

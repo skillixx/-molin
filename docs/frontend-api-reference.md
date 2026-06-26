@@ -1032,6 +1032,32 @@ Query 参数：
 { "name": "新套餐名", "status": "inactive" }
 ```
 
+**GET** `/api/admin/products/{id}/access` *(需 `product:view` 权限)*
+
+回显该商品**已配置**的角色访问规则，用于打开"配置访问规则"对话框时勾选回显。`data` 为 `{ items: [...] }`（与 PATCH 写入 body 键名对称），无配置时 `items` 为 `[]`：
+```json
+{
+  "items": [
+    { "id": 10, "product_id": 1, "role_id": 1, "can_view": true, "can_buy": true, "can_use": true, "created_at": "2026-06-26T10:00:00Z", "updated_at": "2026-06-26T10:00:00Z" },
+    { "id": 11, "product_id": 1, "role_id": 2, "can_view": true, "can_buy": false, "can_use": false, "created_at": "2026-06-26T10:00:00Z", "updated_at": "2026-06-26T10:00:00Z" }
+  ]
+}
+```
+
+**GET** `/api/admin/products/{id}/prices` *(需 `product:view` 权限)*
+
+回显该商品**所有套餐**已配置的价格（跨套餐扁平列表，用 `product_plan_id` 区分归属），用于"访问与价格"页回显。`data` 为 `{ items: [...] }`，无配置时 `items` 为 `[]`：
+```json
+{
+  "items": [
+    { "id": 20, "product_plan_id": 1, "role_id": null, "membership_level_id": null, "price_amount": "10.000000", "currency": "CNY", "created_at": "2026-06-26T10:00:00Z", "updated_at": "2026-06-26T10:00:00Z" },
+    { "id": 21, "product_plan_id": 1, "role_id": 2, "membership_level_id": null, "price_amount": "8.000000", "currency": "CNY", "created_at": "2026-06-26T10:00:00Z", "updated_at": "2026-06-26T10:00:00Z" }
+  ]
+}
+```
+
+> 说明：`access`/`prices` 的 GET 回显与 PATCH 覆盖写入键名对称（均为 `items`），前端"加载已配置项 → 勾选/填值 → 全量提交"即可闭环；该回显接口非分页，直接返回全量 `items`。
+
 **PATCH** `/api/admin/products/{id}/prices` *(需 `product:edit` 权限)*
 
 覆盖写入（全量替换该套餐的价格）。**批量写入键名统一为 `items`**：

@@ -21,7 +21,8 @@ func NewAccessRepository(db *gorm.DB) *AccessRepository {
 // FindByProductID 查询商品所有角色访问规则。
 func (r *AccessRepository) FindByProductID(ctx context.Context, productID uint64) ([]model.ProductRoleAccess, error) {
 	var accesses []model.ProductRoleAccess
-	err := r.db.WithContext(ctx).Where("product_id = ?", productID).Find(&accesses).Error
+	err := r.db.WithContext(ctx).Where("product_id = ?", productID).
+		Order("role_id").Find(&accesses).Error
 	return accesses, err
 }
 

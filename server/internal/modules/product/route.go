@@ -94,7 +94,10 @@ func RegisterRoutes(
 	mux.Handle("GET /api/admin/products/{id}/plans", adminAuth("product:view", adminHandler.ListPlans))
 	mux.Handle("POST /api/admin/products/{id}/plans", adminAuth("product:create", adminHandler.CreatePlan))
 	mux.Handle("PATCH /api/admin/products/{id}/plans/{plan_id}", adminAuth("product:edit", adminHandler.UpdatePlan))
+	// 访问规则 / 价格回显（只读，用 product:view）：补齐缺失的 GET，使管理端"访问与价格"页能加载已配置项
+	mux.Handle("GET /api/admin/products/{id}/access", adminAuth("product:view", adminHandler.GetAccess))
 	mux.Handle("PATCH /api/admin/products/{id}/access", adminAuth("product:edit", adminHandler.ReplaceAccess))
+	mux.Handle("GET /api/admin/products/{id}/prices", adminAuth("product:view", adminHandler.GetPrices))
 	mux.Handle("PATCH /api/admin/products/{id}/prices", adminAuth("product:edit", adminHandler.ReplacePrices))
 
 	// 计费规则管理路由（C-6 / P15-P17）
