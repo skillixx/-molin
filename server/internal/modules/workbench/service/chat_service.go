@@ -122,18 +122,9 @@ func (s *ChatService) ChatWithAgent(ctx context.Context, w http.ResponseWriter, 
 	}
 
 	// ① 加载 Agent + 可见性校验（官方 active 或本人自建）。
-	agent, err := s.agentRepo.FindByID(ctx, req.AgentID)
+	agent, err := s.loadVisibleAgent(ctx, req.AgentID, req.UserID)
 	if err != nil {
-		return err // handler 映射 404
-	}
-	// 编排端点访问控制（安全红线，与列表/详情同一套定向判定）：
-	// 本人自建恒可见；官方须 active 且通过定向 scope 判定（fail-safe：resolver 异常时定向 Agent 不放行）。
-	owned := agent.OwnerType == "user" && agent.OwnerUserID != nil && *agent.OwnerUserID == req.UserID
-	visible := owned ||
-		(agent.OwnerType == "official" && agent.Status == "active" &&
-			agentVisibleTo(ctx, agent, req.UserID, s.groupResolver, s.roleResolver))
-	if !visible {
-		return ErrForbidden
+		return err // handler 映射 404 / 403
 	}
 
 	model := strings.TrimSpace(req.Model)
@@ -147,16 +138,88 @@ func (s *ChatService) ChatWithAgent(ctx context.Context, w http.ResponseWriter, 
 		return fmt.Errorf("装配工具失败: %w", err)
 	}
 
-	// ③ 组装消息：system(人设) + 客户端历史。
+	// ③ 组装消息：system(人设) + 客户端历史（无状态：完整历史由客户端透传）。
 	msgs := make([]interface{}, 0, len(req.Messages)+1)
 	msgs = append(msgs, map[string]interface{}{"role": "system", "content": agent.SystemPrompt})
 	for _, m := range req.Messages {
 		msgs = append(msgs, m)
 	}
 
+	// ④ tool-use 编排循环。
+	_, err = s.runLoop(ctx, w, msgs, tools, toolIndex, model, req.UserID, req.RequestID, req.Stream)
+	return err
+}
+
+// RunContextInput 有状态会话编排入参（由 conversation 模块构建后传入）。
+type RunContextInput struct {
+	AgentID         uint64        // 0 = 普通聊天（无 Agent：不注入人设/工具）；非空 = Agent 会话
+	UserID          uint64        // 已鉴权用户 ID
+	RequestID       string        // 请求唯一标识
+	Model           string        // 逻辑模型名；空且为 Agent 会话时取 Agent 默认模型
+	Stream          bool          // true → SSE
+	ContextMessages []interface{} // 由会话层重建好的上下文消息（摘要 system + 近期原文，含本轮用户消息）
+}
+
+// EnsureAgentVisible 校验 Agent 对用户可见（新建 Agent 会话前置校验）。
+func (s *ChatService) EnsureAgentVisible(ctx context.Context, agentID, userID uint64) error {
+	_, err := s.loadVisibleAgent(ctx, agentID, userID)
+	return err
+}
+
+// RunWithContext 用会话层重建好的上下文执行一次（可带工具）编排对话，返回最终 assistant 文本。
+// AgentID==0 即普通聊天：不注入人设、不汇总工具，等价于裸模型对话。
+// 返回 error 表示尚未写出（handler 映射 HTTP 错误码）；一旦写出（SSE/JSON）即返回 nil。
+func (s *ChatService) RunWithContext(ctx context.Context, w http.ResponseWriter, in RunContextInput) (string, error) {
+	model := strings.TrimSpace(in.Model)
+	var (
+		tools     []json.RawMessage
+		toolIndex map[string]toolEntry
+	)
+	msgs := make([]interface{}, 0, len(in.ContextMessages)+1)
+
+	if in.AgentID != 0 {
+		agent, err := s.loadVisibleAgent(ctx, in.AgentID, in.UserID)
+		if err != nil {
+			return "", err
+		}
+		if model == "" {
+			model = agent.DefaultModelCode
+		}
+		t, idx, terr := s.assembleTools(ctx, agent.ID)
+		if terr != nil {
+			return "", fmt.Errorf("装配工具失败: %w", terr)
+		}
+		tools, toolIndex = t, idx
+		msgs = append(msgs, map[string]interface{}{"role": "system", "content": agent.SystemPrompt})
+	}
+	msgs = append(msgs, in.ContextMessages...)
+
+	return s.runLoop(ctx, w, msgs, tools, toolIndex, model, in.UserID, in.RequestID, in.Stream)
+}
+
+// loadVisibleAgent 加载 Agent 并做编排访问控制（安全红线，与列表/详情同一套定向判定）：
+// 本人自建恒可见；官方须 active 且通过定向 scope 判定（fail-safe：resolver 异常时定向 Agent 不放行）。
+func (s *ChatService) loadVisibleAgent(ctx context.Context, agentID, userID uint64) (*model.Agent, error) {
+	agent, err := s.agentRepo.FindByID(ctx, agentID)
+	if err != nil {
+		return nil, err
+	}
+	owned := agent.OwnerType == "user" && agent.OwnerUserID != nil && *agent.OwnerUserID == userID
+	visible := owned ||
+		(agent.OwnerType == "official" && agent.Status == "active" &&
+			agentVisibleTo(ctx, agent, userID, s.groupResolver, s.roleResolver))
+	if !visible {
+		return nil, ErrForbidden
+	}
+	return agent, nil
+}
+
+// runLoop 执行 tool-use 编排循环，返回最终 assistant 文本。
+// 返回 (content, nil) 为最终答案；(_, cerr) 仅在「尚未写出任何响应」时返回上游错误，供 handler 映射 HTTP；
+// 一旦已开始写出（SSE/JSON）则错误以事件形式写出并返回 (\"\", nil)。
+func (s *ChatService) runLoop(ctx context.Context, w http.ResponseWriter, msgs []interface{}, tools []json.RawMessage, toolIndex map[string]toolEntry, model string, userID uint64, requestID string, stream bool) (string, error) {
 	sse := newSSEWriter(w) // 延迟到首次写出才落 header
 
-	// ④ tool-use 编排循环。
 	for round := 1; round <= s.maxRounds; round++ {
 		body := map[string]interface{}{"model": model, "messages": msgs}
 		if len(tools) > 0 {
@@ -164,44 +227,44 @@ func (s *ChatService) ChatWithAgent(ctx context.Context, w http.ResponseWriter, 
 			body["tool_choice"] = "auto"
 		}
 		res, cerr := s.upstream.ChatOnce(ctx, tokengatewaysvc.ChatOnceInput{
-			RequestID: fmt.Sprintf("%s:r%d", req.RequestID, round),
-			UserID:    req.UserID,
+			RequestID: fmt.Sprintf("%s:r%d", requestID, round),
+			UserID:    userID,
 			APIKeyID:  0, // 编排端点仅登录态
 			Model:     model,
 			Body:      body,
 			CountCall: round == 1, // 整次提问按次计 1（仅首轮）
 		})
 		if cerr != nil {
-			if !sse.started && !req.Stream {
-				return cerr // 未写出 → handler 映射 HTTP 错误码
+			if !sse.started && !stream {
+				return "", cerr // 未写出 → handler 映射 HTTP 错误码
 			}
 			if !sse.started {
 				sse.start()
 			}
 			sse.event("error", map[string]interface{}{"message": cerr.Error()})
 			sse.done()
-			return nil
+			return "", nil
 		}
 
 		// 无 tool_calls → 最终答案。
 		if len(res.ToolCalls) == 0 {
-			s.writeFinal(w, sse, req.Stream, res.Content, "stop")
-			return nil
+			s.writeFinal(w, sse, stream, res.Content, "stop")
+			return res.Content, nil
 		}
 
 		// 有 tool_calls：回灌 assistant 消息 + 逐个执行工具。
-		if req.Stream && !sse.started {
+		if stream && !sse.started {
 			sse.start()
 		}
 		if len(res.AssistantRaw) > 0 {
 			msgs = append(msgs, res.AssistantRaw)
 		}
 		for _, tc := range res.ToolCalls {
-			if req.Stream {
+			if stream {
 				sse.event("tool_call", map[string]interface{}{"name": tc.Name, "arguments": tc.Arguments})
 			}
-			content := s.runTool(ctx, req.UserID, toolIndex, tc)
-			if req.Stream {
+			content := s.runTool(ctx, userID, toolIndex, tc)
+			if stream {
 				sse.event("tool_result", map[string]interface{}{"name": tc.Name, "content": content})
 			}
 			msgs = append(msgs, map[string]interface{}{
@@ -212,10 +275,10 @@ func (s *ChatService) ChatWithAgent(ctx context.Context, w http.ResponseWriter, 
 		}
 	}
 
-	// ⑤ 超过 MAX_ROUNDS 仍未收敛：安全终止，明确告知已正常计费。
-	s.writeFinal(w, sse, req.Stream,
-		"工具调用已达上限，本次对话已终止；已消耗的 token 已正常计费。", "max_rounds")
-	return nil
+	// 超过 MAX_ROUNDS 仍未收敛：安全终止，明确告知已正常计费。
+	const maxMsg = "工具调用已达上限，本次对话已终止；已消耗的 token 已正常计费。"
+	s.writeFinal(w, sse, stream, maxMsg, "max_rounds")
+	return maxMsg, nil
 }
 
 // runTool 执行单个工具调用，返回回灌给模型的结果文本（失败转为错误说明文本，不中断对话）。
