@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	convcache "molin/server/internal/modules/conversation/cache"
 	"molin/server/internal/modules/conversation/model"
 	"molin/server/internal/modules/conversation/repository"
 	tokengatewaysvc "molin/server/internal/modules/token_gateway/service"
@@ -48,11 +49,14 @@ type ConversationService struct {
 	repo       *repository.ConversationRepository
 	orch       Orchestrator
 	summarizer Summarizer
+	cache      *convcache.ConversationCache // Redis 热缓存；nil 安全空转（纯 DB，fail-open）
 }
 
-// NewConversationService 构造会话服务。summarizer 为 nil 时不做上下文压缩（仅原文窗口）。
-func NewConversationService(repo *repository.ConversationRepository, orch Orchestrator, summarizer Summarizer) *ConversationService {
-	return &ConversationService{repo: repo, orch: orch, summarizer: summarizer}
+// NewConversationService 构造会话服务。
+//   - summarizer 为 nil 时不做上下文压缩（仅原文窗口）。
+//   - cache 为 nil（或其内部 redis 为 nil）时退化为纯 MySQL 读写，行为不变。
+func NewConversationService(repo *repository.ConversationRepository, orch Orchestrator, summarizer Summarizer, cache *convcache.ConversationCache) *ConversationService {
+	return &ConversationService{repo: repo, orch: orch, summarizer: summarizer, cache: cache}
 }
 
 // validationError 参数校验错误（handler 回 400）。
@@ -132,9 +136,13 @@ func (s *ConversationService) Rename(ctx context.Context, id, userID uint64, tit
 	return s.repo.UpdateTitle(ctx, id, userID, title)
 }
 
-// Delete 删除会话及其消息。
+// Delete 删除会话及其消息，并清掉热缓存。
 func (s *ConversationService) Delete(ctx context.Context, id, userID uint64) error {
-	return s.repo.Delete(ctx, id, userID)
+	if err := s.repo.Delete(ctx, id, userID); err != nil {
+		return err
+	}
+	s.cache.Invalidate(ctx, id)
+	return nil
 }
 
 // Chat 在会话内发一条消息并取得有记忆的回复（SSE 或 JSON）。
@@ -150,12 +158,14 @@ func (s *ConversationService) Chat(ctx context.Context, w http.ResponseWriter, i
 		return err
 	}
 	// 落库用户消息（即使后续模型调用失败也保留，符合 ChatGPT 体验，可重试）。
-	if err := s.repo.AppendMessage(ctx, &model.Message{
+	userMsg := &model.Message{
 		ConversationID: conv.ID, UserID: userID, Role: "user",
 		Content: content, TokenEst: estTokens(content),
-	}); err != nil {
+	}
+	if err := s.repo.AppendMessage(ctx, userMsg); err != nil {
 		return fmt.Errorf("保存消息失败: %w", err)
 	}
+	s.cache.Append(ctx, conv.ID, *userMsg) // 写穿热缓存（快照不存在则空转，下次读重建）
 	// 首条消息自动命名标题。
 	if strings.TrimSpace(conv.Title) == "" {
 		_ = s.repo.UpdateTitle(ctx, conv.ID, userID, truncateTitle(content))
@@ -182,11 +192,14 @@ func (s *ConversationService) Chat(ctx context.Context, w http.ResponseWriter, i
 	}
 	// 落库 assistant 回复（流式中途出错时 final 为空，跳过）。
 	if strings.TrimSpace(final) != "" {
-		if aerr := s.repo.AppendMessage(ctx, &model.Message{
+		assistantMsg := &model.Message{
 			ConversationID: conv.ID, UserID: userID, Role: "assistant",
 			Content: final, TokenEst: estTokens(final),
-		}); aerr != nil {
+		}
+		if aerr := s.repo.AppendMessage(ctx, assistantMsg); aerr != nil {
 			log.Printf("[conversation] 保存 assistant 消息失败 conv=%d: %v", conv.ID, aerr)
+		} else {
+			s.cache.Append(ctx, conv.ID, *assistantMsg) // 写穿热缓存
 		}
 	}
 	// 异步压缩，避免阻塞 SSE 连接关闭。
@@ -197,15 +210,29 @@ func (s *ConversationService) Chat(ctx context.Context, w http.ResponseWriter, i
 // buildContext 组装喂给模型的上下文消息：摘要(若有) + 水位线之后的近期原文(带 token 预算裁剪)。
 // 不含 Agent 的 system 人设——那由编排引擎按 agent_id 注入。
 func (s *ConversationService) buildContext(ctx context.Context, conv *model.Conversation) ([]interface{}, error) {
-	msgs, err := s.repo.ListAfter(ctx, conv.ID, conv.SummarizedUntilID)
-	if err != nil {
-		return nil, err
+	var (
+		summary string
+		msgs    []model.Message
+	)
+	// 先读热缓存；命中即免查库。未命中则查库并回填缓存（warm-up）。
+	if snap, ok := s.cache.Get(ctx, conv.ID); ok {
+		summary, msgs = snap.Summary, snap.Messages
+	} else {
+		var err error
+		msgs, err = s.repo.ListAfter(ctx, conv.ID, conv.SummarizedUntilID)
+		if err != nil {
+			return nil, err
+		}
+		summary = conv.Summary
+		s.cache.Set(ctx, conv.ID, &convcache.ContextSnapshot{
+			Summary: summary, SummarizedUntilID: conv.SummarizedUntilID, Messages: msgs,
+		})
 	}
 	out := make([]interface{}, 0, len(msgs)+1)
-	if strings.TrimSpace(conv.Summary) != "" {
+	if strings.TrimSpace(summary) != "" {
 		out = append(out, map[string]interface{}{
 			"role":    "system",
-			"content": "以下是本次会话早前内容的摘要记忆，请据此保持上下文连贯：\n" + conv.Summary,
+			"content": "以下是本次会话早前内容的摘要记忆，请据此保持上下文连贯：\n" + summary,
 		})
 	}
 	// 预算裁剪：从最新往回累加 token，超预算则丢弃更早的原文（安全网；至少保留最后一条）。
@@ -282,7 +309,15 @@ func (s *ConversationService) compress(ctx context.Context, convID, userID uint6
 		return nil
 	}
 	until := toSummarize[len(toSummarize)-1].ID
-	return s.repo.UpdateSummary(ctx, conv.ID, newSummary, until)
+	if err := s.repo.UpdateSummary(ctx, conv.ID, newSummary, until); err != nil {
+		return err
+	}
+	// 压缩后刷新热缓存：丢弃已被摘要覆盖的消息，仅留水位线之后的近期原文 + 新摘要，保持缓存温热。
+	kept := msgs[len(msgs)-keepRecentMessages:]
+	s.cache.Set(ctx, conv.ID, &convcache.ContextSnapshot{
+		Summary: newSummary, SummarizedUntilID: until, Messages: kept,
+	})
+	return nil
 }
 
 // summarize 调模型把（已有摘要 + 新增对话）融合为更新后的摘要。

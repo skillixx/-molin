@@ -812,8 +812,9 @@ func NewApp() (*App, error) {
 				workbenchmod.RegisterChatRoute(mux, chatSvc, cfg.JWTSecret, authService)
 
 				// 有状态会话（ChatGPT 式记忆/上下文连贯/滚动压缩/用户隔离）：
-				// 复用编排引擎 chatSvc（模型路由/工具/计费/可见性）+ tokenForwardSvc 做上下文压缩。
-				conversationModule := conversationmod.New(gormDB, chatSvc, tokenForwardSvc)
+				// 复用编排引擎 chatSvc（模型路由/工具/计费/可见性）+ tokenForwardSvc 做上下文压缩；
+				// MySQL 为真相源，redisClient 作上下文热缓存（fail-open）。
+				conversationModule := conversationmod.New(gormDB, chatSvc, tokenForwardSvc, redisClient)
 				conversationmod.RegisterRoutes(mux, conversationModule.Service, cfg.JWTSecret, authService)
 			} else {
 				log.Printf("[workbench] token 网关未启用，编排 chat 端点 /api/agents/{id}/chat 与会话持久化未注册")
