@@ -326,6 +326,53 @@ type ProvisionHandler interface {
 
 ---
 
+## 6.5 后端 D：Token 网关 + Agent + Skill（第二阶段 AI 业务）
+
+**负责人：后端工程师丁**
+
+**Git 分支前缀：`feature/backend-d-{描述}`**（与 A/B/C 平级，禁止直接 push `main`）
+
+**负责模块：**
+
+```text
+server/internal/modules/token_gateway/   -- Token 上游聚合网关、模型路由转发、OpenAI 兼容对话、用量计费
+server/internal/modules/workbench/       -- Agent 定制市场、Skills 技能市场、多模型聊天工作台
+```
+
+### 6.5.1 Token 网关（token_gateway）
+
+| 任务 | 代码位置 |
+|---|---|
+| 上游渠道管理（AES-256-GCM 加密 API Key） | `modules/token_gateway/service/channel_service.go` |
+| 对外模型目录（logical_model_code + 定向可见性） | `modules/token_gateway/service/catalog_service.go` |
+| 对话转发门面（选渠道 + 透传上游 + 计费编排，含 SSE） | `modules/token_gateway/service/forward_service.go` |
+| 用量流水记录与查询 | `modules/token_gateway/service/usage_service.go` |
+| 管理端 / 用户端路由注册 | `modules/token_gateway/route.go` |
+
+**对外开放接口（凭平台 sk 密钥，OpenAI 兼容）：**
+
+- `POST /api/token/chat/completions`、`GET /api/token/models`、`GET /api/token/usage`（平台原生路径）
+- `POST /v1/chat/completions`、`GET /v1/models`（OpenAI 兼容别名，供 Cline / Cherry Studio 等客户端直接接入，详见 `docs/token-gateway-openai-compat.md`）
+
+**鉴权与安全约定：**
+
+- 双模式鉴权统一走 `middleware.RequireUserAuth`：`Authorization: Bearer sk-...` 走 API Key 解析，否则走登录态 JWT。
+- 平台 API Key（sk）由 `auth` 模块签发与管理（`POST /api/keys`），DB 只存 `HMAC-SHA256`，明文仅签发时返回一次。
+- 上游渠道 API Key 必须 AES-256-GCM 加密存储（`TOKEN_PROVIDER_KEY`），响应禁止返回。
+
+### 6.5.2 AI 工作台（workbench：Agent / Skill / Chat）
+
+| 任务 | 代码位置 |
+|---|---|
+| Agent 定制市场（含分类、定向可见性） | `modules/workbench/service/agent_service.go` |
+| Skills 技能市场 | `modules/workbench/service/`（skill 相关） |
+| 多模型聊天编排 | `modules/workbench/service/chat_service.go` |
+| workbench 路由注册 | `modules/workbench/route.go` |
+
+> 计费红线：Agent / Skill / 插件全部免费，唯一收费项为模型 token 消耗，计费一律经 token_gateway 门面统一编排。
+
+---
+
 ## 7. 前端 A：管理后台
 
 **负责人：前端 A**

@@ -89,4 +89,13 @@ func RegisterUserRoutes(
 	// 我的用量流水（S2-丁1，§14.3）：仅查本人，可选筛选 model/start/end。
 	// 双模式：sk 调用按 sk 绑定的 user_id 过滤（与登录态一致只查本人）。
 	mux.Handle("GET /api/token/usage", user(usageH.ListMine))
+
+	// ---- OpenAI 兼容别名层（/v1/*）----
+	// 让 Cline / Cherry Studio 等「OpenAI 兼容」客户端把 Base URL 填为 https://<域名>/v1，
+	// 凭平台 sk 直接接入；复用同一套 RequireUserAuth 中间件，sk 鉴权 / model_scope 越界校验 /
+	// 计费分流（postpaid/prepaid）与 /api/token/* 完全一致。现有 /api/token/* 路由保留不变。
+	// POST /v1/chat/completions：纯别名，复用现有 ChatCompletions handler（含 SSE 流式透传）。
+	mux.Handle("POST /v1/chat/completions", user(chatH.ChatCompletions))
+	// GET /v1/models：返回 OpenAI 标准格式，供客户端自动拉取模型下拉列表。
+	mux.Handle("GET /v1/models", user(modelH.ListOpenAIModels))
 }
