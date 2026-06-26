@@ -13,6 +13,15 @@ export interface TokenModel {
 
 export type AgentOwnerType = 'official' | 'user'
 export type AgentStatus = 'active' | 'inactive'
+export type AgentVisibleScope = 'all' | 'groups' | 'roles'
+
+export interface AgentCategory {
+  code: string
+  name: string
+  icon: string
+  sort_order: number
+  status: AgentStatus
+}
 
 // Agent 绑定能力摘要，用户端只展示公开字段，不展示内部处理器或凭证。
 export interface AgentAbilityBrief {
@@ -35,7 +44,15 @@ export interface AgentItem {
   owner_user_id: number | null
   system_prompt: string
   default_model_code: string
+  category_code: string | null
+  category_name: string
   status: AgentStatus
+  visible_scope?: AgentVisibleScope
+  target_audience?: {
+    group_ids?: number[]
+    group_roles?: Array<'admin' | 'member'>
+    role_codes?: string[]
+  } | null
   sort_order: number
   skills: AgentAbilityBrief[]
   plugins: AgentAbilityBrief[]
@@ -49,6 +66,7 @@ export interface CreateAgentReq {
   avatar?: string
   system_prompt: string
   default_model_code: string
+  category_code?: string
   skill_ids?: number[]
   plugin_ids?: number[]
 }

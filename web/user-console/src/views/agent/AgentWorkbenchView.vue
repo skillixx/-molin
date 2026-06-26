@@ -7,6 +7,7 @@ import { ChatDotRound, Edit, Plus, Refresh } from '@element-plus/icons-vue'
 import {
   createAgent,
   deleteAgent,
+  listAgentCategories,
   listAgents,
   listModels,
   listPlugins,
@@ -15,6 +16,7 @@ import {
 } from '@/api/token'
 import type {
   AgentItem,
+  AgentCategory,
   CreateAgentReq,
   PluginItem,
   SkillItem,
@@ -26,6 +28,8 @@ const router = useRouter()
 
 const loading = ref(false)
 const agents = ref<AgentItem[]>([])
+const categories = ref<AgentCategory[]>([])
+const activeCategory = ref('')
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
@@ -46,6 +50,7 @@ const form = reactive({
   avatar: '',
   system_prompt: '',
   default_model_code: '',
+  category_code: '',
   skill_ids: [] as number[],
   plugin_ids: [] as number[],
 })
@@ -60,14 +65,24 @@ const officialAgents = computed(() => agents.value.filter((item) => item.owner_t
 const myAgents = computed(() => agents.value.filter((item) => item.owner_type === 'user'))
 
 onMounted(() => {
+  fetchCategories()
   fetchAgents()
   fetchAbilities()
 })
 
+async function fetchCategories() {
+  const res = await listAgentCategories()
+  categories.value = res.items
+}
+
 async function fetchAgents() {
   loading.value = true
   try {
-    const res = await listAgents({ page: page.value, page_size: pageSize.value })
+    const res = await listAgents({
+      page: page.value,
+      page_size: pageSize.value,
+      category: activeCategory.value || undefined,
+    })
     agents.value = res.items
     page.value = res.page
     pageSize.value = res.page_size
@@ -110,6 +125,7 @@ function openEdit(agent: AgentItem) {
   form.avatar = agent.avatar || ''
   form.system_prompt = agent.system_prompt
   form.default_model_code = agent.default_model_code
+  form.category_code = agent.category_code || ''
   form.skill_ids = agent.skills.map((item) => item.id)
   form.plugin_ids = agent.plugins.map((item) => item.id)
   dialogVisible.value = true
@@ -121,6 +137,7 @@ function resetForm() {
   form.avatar = ''
   form.system_prompt = ''
   form.default_model_code = ''
+  form.category_code = ''
   form.skill_ids = []
   form.plugin_ids = []
   formRef.value?.clearValidate()
@@ -137,6 +154,7 @@ async function handleSave() {
       avatar: form.avatar,
       system_prompt: form.system_prompt,
       default_model_code: form.default_model_code,
+      category_code: form.category_code,
       // skill_ids / plugin_ids 是覆盖语义，传空数组表示清空绑定。
       skill_ids: form.skill_ids,
       plugin_ids: form.plugin_ids,
@@ -181,6 +199,12 @@ function handlePageSizeChange(nextSize: number) {
   pageSize.value = nextSize
   fetchAgents()
 }
+
+function handleCategoryChange(code: string) {
+  activeCategory.value = code
+  page.value = 1
+  fetchAgents()
+}
 </script>
 
 <template>
@@ -200,13 +224,38 @@ function handlePageSizeChange(nextSize: number) {
         </div>
       </section>
 
+      <section class="category-tabs glass-card">
+        <button
+          class="category-tab"
+          :class="{ active: activeCategory === '' }"
+          type="button"
+          @click="handleCategoryChange('')"
+        >
+          全部
+        </button>
+        <button
+          v-for="category in categories"
+          :key="category.code"
+          class="category-tab"
+          :class="{ active: activeCategory === category.code }"
+          type="button"
+          @click="handleCategoryChange(category.code)"
+        >
+          <span v-if="category.icon">{{ category.icon }}</span>
+          {{ category.name }}
+        </button>
+      </section>
+
       <section v-loading="loading" class="agent-sections">
         <div class="section-title">官方 Agent</div>
         <div class="agent-grid">
           <article v-for="agent in officialAgents" :key="agent.id" class="agent-card glass-card">
             <div class="agent-card-head">
               <div class="agent-avatar">{{ agent.name.slice(0, 1) }}</div>
-              <el-tag type="success">官方</el-tag>
+              <div class="tag-row">
+                <el-tag v-if="agent.category_name" type="info">{{ agent.category_name }}</el-tag>
+                <el-tag type="success">官方</el-tag>
+              </div>
             </div>
             <h3>{{ agent.name }}</h3>
             <p>{{ agent.description || '暂无描述' }}</p>
@@ -224,7 +273,10 @@ function handlePageSizeChange(nextSize: number) {
           <article v-for="agent in myAgents" :key="agent.id" class="agent-card glass-card">
             <div class="agent-card-head">
               <div class="agent-avatar mine">{{ agent.name.slice(0, 1) }}</div>
-              <el-tag>我的</el-tag>
+              <div class="tag-row">
+                <el-tag v-if="agent.category_name" type="info">{{ agent.category_name }}</el-tag>
+                <el-tag>我的</el-tag>
+              </div>
             </div>
             <h3>{{ agent.name }}</h3>
             <p>{{ agent.description || '暂无描述' }}</p>
@@ -284,6 +336,16 @@ function handlePageSizeChange(nextSize: number) {
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="分类">
+          <el-select v-model="form.category_code" clearable filterable style="width: 100%" placeholder="未分类">
+            <el-option
+              v-for="category in categories"
+              :key="category.code"
+              :label="category.name"
+              :value="category.code"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="人设" prop="system_prompt">
           <el-input
             v-model="form.system_prompt"
@@ -340,6 +402,29 @@ function handlePageSizeChange(nextSize: number) {
 .empty-card { color: var(--color-text-muted); }
 .header-actions,
 .card-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.category-tabs {
+  margin-top: 16px;
+  padding: 10px;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+}
+.category-tab {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.5);
+  color: var(--color-text-muted);
+  padding: 8px 14px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+.category-tab:hover,
+.category-tab.active {
+  color: var(--color-text);
+  border-color: rgba(34, 211, 238, 0.62);
+  background: rgba(34, 211, 238, 0.12);
+}
 .agent-sections { margin-top: 20px; min-height: 240px; }
 .section-title { margin: 22px 0 12px; font-weight: 800; font-size: 17px; }
 .agent-grid {
@@ -349,6 +434,7 @@ function handlePageSizeChange(nextSize: number) {
 }
 .agent-card { padding: 20px; }
 .agent-card-head { display: flex; justify-content: space-between; align-items: center; }
+.tag-row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .agent-avatar {
   width: 42px;
   height: 42px;
