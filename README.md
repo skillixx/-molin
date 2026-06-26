@@ -190,12 +190,16 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 ## 开发进度
 
-> 最后更新：2026-06-19
+> 最后更新：2026-06-26
 > 当前阶段：**Week 1 已验收（2026-06-05），Week 2 已验收（2026-06-06），Week 3 已验收（2026-06-07），Week 4 已验收（2026-06-07），第一阶段（Week 1-4）已于 2026-06-07 正式验收通过，并于 2026-06-08 完成最终收尾确认，正式画上句号 ✅（端到端验收 37/37 全部通过，详见 `tests/audit-stage1-final.md`；收尾确认 6/6 全部通过，详见 `tests/audit-stage1-closing-confirm.md`）**
 >
 > **前端进度更新（2026-06-19）**：管理后台（前端 A）与用户控制台（前端 B）的全部业务页面代码已完成并合并到 main（提交 `94b8466 前端甲对接后端丙管理页面`、`f6d85b6 前端乙对接后端丙用户页面` 等）。两端覆盖商品/订单/钱包/资产/会员/内容/应用/消费等模块的页面与 API 封装；后端丙对接任务 FA-06/07/09/10、FB-07/08/09 均已落地（详见各端进度表）。
 >
 > **前端验收（2026-06-19）**：QA 技术验收 L1（构建）+ L2（前端 API↔后端契约一致性）**通过**（详见 `tests/report-frontend-acceptance-backend-c.md`）；产品经理业务验收**通过**（详见 `docs/frontend-acceptance-stage1-pm-review.md`）。验收发现的 3 项 P3（适配器分页/grant 返回类型/service_name 必填性）已由 **PR #180** 修复并合并 main（`fcf58ab`）；另有 3 项 P4 体验级优化（公告 roles 强校验等）列为后续随手项，不阻断。L3 真浏览器 E2E 因环境无 playwright 未执行，建议上线前条件允许时补冒烟。**至此第一阶段前端（代码 + QA + PM）验收闭环，仅余「生产部署 checklist」上线动作。**
+>
+> **第三阶段工具生态前端（2026-06-26）**：MCP server 管理（admin-console：列表页/类型/API/路由/菜单 + 工作台 Agent 绑定 MCP server）与 Agent 分类（user-console：分类列表/筛选/表单 + 定向可见性类型）前端对接已完成并合并 main（**PR #266**，commit `17b24cb`）；对接的后端为 #248/#249（Agent 分类与定向可见性）、#250/#255（MCP server）。PM 审查通过（接口路径/字段/分页/鉴权码逐项与后端契约对齐）。
+>
+> **presenton 集成整体回退（2026-06-26）**：应用市场 presenton 深度二开集成（原 PR #256~#263）已按需求全面下线——代码侧经 **PR #265**（commit `1c6d937`）从 main 移除（presenton 后端模块、迁移 000052、子模块 `services/presenton`、config/bootstrap 注册、相关文档，共 -1768 行，不影响 MCP/Agent 等第三阶段工作）；测试服侧同步完成容器下线、用户资产清理、迁移回退（version 51）、`.env` 清理、目录缓冲、镜像删除并重建部署干净二进制（`/app/presenton/` 已 404）。presenton 从代码、运行态到分支已彻底清零。
 
 ### 后端 A（auth / iam / identity / audit）
 
