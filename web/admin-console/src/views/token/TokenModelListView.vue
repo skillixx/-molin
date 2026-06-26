@@ -40,6 +40,9 @@
         <el-table-column label="关联商品" width="100">
           <template #default="{ row }">{{ row.product_id ?? '--' }}</template>
         </el-table-column>
+        <el-table-column label="可见范围" width="150">
+          <template #default="{ row }">{{ visibleScopeLabel(row) }}</template>
+        </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small">
@@ -132,6 +135,59 @@
         <el-form-item label="排序" prop="sort_order">
           <el-input-number v-model="form.sort_order" :min="0" :step="1" controls-position="right" />
         </el-form-item>
+        <el-form-item label="可见范围" prop="visible_scope">
+          <el-radio-group v-model="form.visible_scope">
+            <el-radio-button label="all">全部用户</el-radio-button>
+            <el-radio-button label="groups">指定分组</el-radio-button>
+            <el-radio-button label="roles">指定角色</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="form.visible_scope === 'groups'" label="可见分组">
+          <el-select
+            v-model="form.group_ids"
+            multiple
+            filterable
+            style="width: 100%"
+            placeholder="选择分组"
+            :loading="loadingGroups"
+            :disabled="groupsUnavailable"
+          >
+            <el-option
+              v-for="group in groups"
+              :key="group.id"
+              :label="`${group.name}（${group.code}）`"
+              :value="group.id"
+            />
+          </el-select>
+          <div class="form-tip">
+            {{ groupsUnavailable ? '无分组读取权限，请联系管理员授予 group:manage' : '指定分组必选；组内角色留空表示该组任意成员可见。' }}
+          </div>
+        </el-form-item>
+        <el-form-item v-if="form.visible_scope === 'groups'" label="组内角色">
+          <el-checkbox-group v-model="form.group_roles">
+            <el-checkbox label="admin">组管理员</el-checkbox>
+            <el-checkbox label="member">普通成员</el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+        <el-form-item v-if="form.visible_scope === 'roles'" label="全局角色">
+          <el-select
+            v-model="form.role_codes"
+            multiple
+            filterable
+            style="width: 100%"
+            placeholder="选择角色"
+            :loading="loadingRoles"
+            :disabled="rolesUnavailable"
+          >
+            <el-option
+              v-for="role in roles"
+              :key="role.code"
+              :label="`${role.name}（${role.code}）`"
+              :value="role.code"
+            />
+          </el-select>
+          <div v-if="rolesUnavailable" class="form-tip">无角色读取权限，请联系管理员授予 role:manage</div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -150,17 +206,24 @@ import SearchForm from '@/components/common/SearchForm.vue'
 import {
   createTokenModel,
   deleteTokenModel,
+  getTokenModel,
   listTokenChannels,
   listTokenModels,
   updateTokenModel,
 } from '@/api/token'
+import { listGroups } from '@/api/group'
+import { listRoles } from '@/api/role'
 import type { Pagination } from '@/types/api'
+import type { UserGroup } from '@/types/group'
+import type { Role } from '@/types/user'
 import type {
   CreateTokenModelReq,
   TokenChannel,
+  TokenModelGroupRole,
   TokenModel,
   TokenModelModality,
   TokenModelStatus,
+  TokenModelVisibleScope,
   UpdateTokenModelReq,
 } from '@/types/token'
 
@@ -175,6 +238,12 @@ const pagination = reactive<Pagination>({ page: 1, page_size: 20, total: 0 })
 // 渠道下拉数据来源
 const channels = ref<TokenChannel[]>([])
 const loadingChannels = ref(false)
+const groups = ref<UserGroup[]>([])
+const roles = ref<Role[]>([])
+const loadingGroups = ref(false)
+const loadingRoles = ref(false)
+const groupsUnavailable = ref(false)
+const rolesUnavailable = ref(false)
 
 const dialogVisible = ref(false)
 const dialogMode = ref<'create' | 'edit'>('create')
@@ -190,6 +259,10 @@ const form = reactive<{
   product_id: number | undefined
   status: TokenModelStatus
   sort_order: number
+  visible_scope: TokenModelVisibleScope
+  group_ids: number[]
+  group_roles: TokenModelGroupRole[]
+  role_codes: string[]
 }>({
   logical_model_code: '',
   display_name: '',
@@ -199,6 +272,10 @@ const form = reactive<{
   product_id: undefined,
   status: 'active',
   sort_order: 0,
+  visible_scope: 'all',
+  group_ids: [],
+  group_roles: [],
+  role_codes: [],
 })
 const rules: FormRules = {
   logical_model_code: [{ required: true, message: '请输入对外模型代码', trigger: 'blur' }],
@@ -210,6 +287,7 @@ const rules: FormRules = {
 
 onMounted(() => {
   fetchChannels()
+  fetchAudienceOptions()
   fetchModels()
 })
 
@@ -222,6 +300,36 @@ async function fetchChannels() {
   } finally {
     loadingChannels.value = false
   }
+}
+
+async function fetchAudienceOptions() {
+  loadingGroups.value = true
+  loadingRoles.value = true
+  const [groupResult, roleResult] = await Promise.allSettled([
+    listGroups({ page: 1, page_size: 200 }),
+    listRoles({ page: 1, page_size: 200 }),
+  ])
+
+  if (groupResult.status === 'fulfilled') {
+    groups.value = groupResult.value.items
+    groupsUnavailable.value = false
+  } else {
+    groups.value = []
+    groupsUnavailable.value = true
+    ElMessage.warning('无分组读取权限，请联系管理员授予 group:manage')
+  }
+
+  if (roleResult.status === 'fulfilled') {
+    roles.value = roleResult.value.items
+    rolesUnavailable.value = false
+  } else {
+    roles.value = []
+    rolesUnavailable.value = true
+    ElMessage.warning('无角色读取权限，请联系管理员授予 role:manage')
+  }
+
+  loadingGroups.value = false
+  loadingRoles.value = false
 }
 
 async function fetchModels() {
@@ -276,26 +384,65 @@ function openCreate() {
   form.product_id = undefined
   form.status = 'active'
   form.sort_order = 0
+  form.visible_scope = 'all'
+  form.group_ids = []
+  form.group_roles = []
+  form.role_codes = []
   dialogVisible.value = true
 }
 
-function openEdit(row: TokenModel) {
+async function openEdit(row: TokenModel) {
   dialogMode.value = 'edit'
   editingId.value = row.id
-  form.logical_model_code = row.logical_model_code
-  form.display_name = row.display_name
-  form.modality = row.modality
-  form.channel_id = row.channel_id
-  form.upstream_model = row.upstream_model
-  form.product_id = row.product_id ?? undefined
-  form.status = row.status
-  form.sort_order = row.sort_order
+  fillFormFromModel(row)
   dialogVisible.value = true
+  const detail = await getTokenModel(row.id)
+  fillFormFromModel(detail)
+}
+
+function fillFormFromModel(model: TokenModel) {
+  form.logical_model_code = model.logical_model_code
+  form.display_name = model.display_name
+  form.modality = model.modality
+  form.channel_id = model.channel_id
+  form.upstream_model = model.upstream_model
+  form.product_id = model.product_id ?? undefined
+  form.status = model.status
+  form.sort_order = model.sort_order
+  form.visible_scope = model.visible_scope || 'all'
+  form.group_ids = model.visible_scope === 'groups' ? [...(model.target_audience?.group_ids || [])] : []
+  form.group_roles = model.visible_scope === 'groups' ? [...(model.target_audience?.group_roles || [])] : []
+  form.role_codes = model.visible_scope === 'roles' ? [...(model.target_audience?.role_codes || [])] : []
+}
+
+function buildVisibilityPayload() {
+  if (form.visible_scope === 'groups') {
+    return {
+      visible_scope: form.visible_scope,
+      group_ids: form.group_ids,
+      group_roles: form.group_roles,
+    }
+  }
+  if (form.visible_scope === 'roles') {
+    return {
+      visible_scope: form.visible_scope,
+      role_codes: form.role_codes,
+    }
+  }
+  return { visible_scope: form.visible_scope }
 }
 
 async function handleSave() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
+  if (form.visible_scope === 'groups' && form.group_ids.length === 0) {
+    ElMessage.error('指定分组可见时必须选择至少一个分组')
+    return
+  }
+  if (form.visible_scope === 'roles' && form.role_codes.length === 0) {
+    ElMessage.error('指定角色可见时必须选择至少一个角色')
+    return
+  }
   saving.value = true
   try {
     if (dialogMode.value === 'create') {
@@ -308,6 +455,7 @@ async function handleSave() {
         status: form.status,
         sort_order: form.sort_order,
         product_id: form.product_id ?? null,
+        ...buildVisibilityPayload(),
       }
       await createTokenModel(payload)
       ElMessage.success('模型创建成功')
@@ -321,6 +469,7 @@ async function handleSave() {
         status: form.status,
         sort_order: form.sort_order,
         product_id: form.product_id ?? null,
+        ...buildVisibilityPayload(),
       }
       await updateTokenModel(editingId.value, payload)
       ElMessage.success('模型更新成功')
@@ -355,6 +504,18 @@ function channelLabel(channelId: number) {
 function modalityLabel(modality: string) {
   const map: Record<string, string> = { chat: '对话', image: '图像', audio: '音频', video: '视频' }
   return map[modality] ?? modality
+}
+
+function visibleScopeLabel(row: TokenModel) {
+  if (row.visible_scope === 'groups') {
+    const count = row.target_audience?.group_ids?.length ?? 0
+    return `定向：${count} 个分组`
+  }
+  if (row.visible_scope === 'roles') {
+    const count = row.target_audience?.role_codes?.length ?? 0
+    return `定向：${count} 个角色`
+  }
+  return '全部'
 }
 </script>
 
