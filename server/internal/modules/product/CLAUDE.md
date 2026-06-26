@@ -203,7 +203,9 @@ PATCH  /api/admin/products/:id/status             -- [product:edit] 上下架
 GET    /api/admin/products/:id/plans              -- [product:view]（原误用 product:create，需改正）
 POST   /api/admin/products/:id/plans              -- [product:create]
 PATCH  /api/admin/products/:id/plans/:plan_id     -- [product:edit]
+GET    /api/admin/products/:id/access             -- [product:view] 回显已配置访问规则 {items:[...]}
 PATCH  /api/admin/products/:id/access             -- [product:edit] body {items:[{role_id,can_view,can_buy,can_use}]}
+GET    /api/admin/products/:id/prices             -- [product:view] 回显商品所有套餐已配置价格 {items:[...]}
 PATCH  /api/admin/products/:id/prices             -- [product:edit] body {items:[{product_plan_id,role_id?,membership_level_id?,price_amount,currency}]}
 GET    /api/admin/product-billing-rules           -- [product:view] 计费规则列表（待新增）[扁平分页]
 POST   /api/admin/product-billing-rules           -- [product:create] 新增计费规则（待新增）

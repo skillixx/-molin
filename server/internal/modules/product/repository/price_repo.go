@@ -25,6 +25,17 @@ func (r *PriceRepository) FindByPlanID(ctx context.Context, planID uint64) ([]mo
 	return prices, err
 }
 
+// FindByProductID 查询商品下所有套餐的全部价格配置（跨套餐，含会员价、角色价、默认价）。
+// 用于管理端"访问与价格"页一次性回显商品所有套餐已配置的价格。
+func (r *PriceRepository) FindByProductID(ctx context.Context, productID uint64) ([]model.ProductPrice, error) {
+	var prices []model.ProductPrice
+	err := r.db.WithContext(ctx).
+		Where("product_plan_id IN (?)",
+			r.db.Model(&model.ProductPlan{}).Select("id").Where("product_id = ?", productID)).
+		Find(&prices).Error
+	return prices, err
+}
+
 // FindMembershipPrice 查询套餐的会员专属价（membership_level_id IS NOT NULL AND role_id IS NULL）。
 func (r *PriceRepository) FindMembershipPrice(ctx context.Context, planID, membershipLevelID uint64) (*model.ProductPrice, error) {
 	var price model.ProductPrice

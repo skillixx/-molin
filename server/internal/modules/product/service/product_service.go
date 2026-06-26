@@ -195,6 +195,12 @@ func (s *ProductService) GetPrices(ctx context.Context, planID uint64) ([]model.
 	return s.priceRepo.FindByPlanID(ctx, planID)
 }
 
+// GetPricesByProduct 查询商品下所有套餐的全部价格配置（跨套餐）。
+// 用于管理端"访问与价格"页一次性回显已配置价格。
+func (s *ProductService) GetPricesByProduct(ctx context.Context, productID uint64) ([]model.ProductPrice, error) {
+	return s.priceRepo.FindByProductID(ctx, productID)
+}
+
 // ReplaceMultiPlanPrices 在单一事务内原子覆盖写入多套餐价格。
 // BUG-D 修复：原 handler 对多个 product_plan_id 分组后循环调用 ReplacePrices()，
 // 各自提交事务，第 N 组失败后前 N-1 组已写入无法回滚，导致价格不一致。
