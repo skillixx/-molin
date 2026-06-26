@@ -81,8 +81,8 @@
 
 | # | 方法 路径 | 鉴权 | 状态 | 契约 |
 |---|---|---|---|---|
-| 6 | `GET /api/token/models` | 登录态/sk | ✅ | §14.1 |
-| 7 | `POST /api/token/chat/completions`（纯透传，SSE） | 登录态/sk | ✅（sk 路径已接入 PR #214/#215） | §14.2 |
+| 6 | `GET /api/token/models` | 登录态/sk | ✅（定向可见性 PR #273：按 `visible_scope` all/groups/roles 过滤列表，migration 000052） | §14.1 |
+| 7 | `POST /api/token/chat/completions`（纯透传，SSE） | 登录态/sk | ✅（sk 路径已接入 PR #214/#215；不可见模型转发前置闸 PR #273，按「模型不可用」拒绝不泄漏存在性） | §14.2 |
 | 8 | `GET /api/token/usage` | 登录态/sk | ✅ S2-丁1（PR #212） | §14.3 |
 
 ### 2.3 平台 sk 鉴权（后端甲）
