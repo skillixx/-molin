@@ -1,6 +1,6 @@
 import http from './http'
 import type { AccessItem, AdminPlan, AdminProduct, PriceItem } from '@/types/product-admin'
-import type { PageResult } from '@/types/api'
+import type { ItemsResult, PageResult } from '@/types/api'
 
 export function listAdminProducts(params: {
   keyword?: string
@@ -70,8 +70,16 @@ export function updatePlan(
   return http.patch<unknown, { message: string }>(`/admin/products/${productId}/plans/${planId}`, data)
 }
 
+export function getAccess(productId: number) {
+  return http.get<unknown, ItemsResult<AccessItem>>(`/admin/products/${productId}/access`)
+}
+
 export function replaceAccess(productId: number, items: AccessItem[]) {
   return http.patch<unknown, { message: string }>(`/admin/products/${productId}/access`, { items })
+}
+
+export function getPrices(productId: number) {
+  return http.get<unknown, ItemsResult<PriceItem>>(`/admin/products/${productId}/prices`)
 }
 
 export function replacePrices(productId: number, items: PriceItem[]) {
