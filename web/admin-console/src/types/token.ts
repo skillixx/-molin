@@ -6,6 +6,8 @@ export type TokenChannelStatus = 'active' | 'disabled'
 export type TokenModelStatus = 'active' | 'disabled'
 // 模型模态
 export type TokenModelModality = 'chat' | 'image' | 'audio' | 'video'
+export type TokenModelVisibleScope = 'all' | 'groups' | 'roles'
+export type TokenModelGroupRole = 'admin' | 'member'
 export type TokenUsageStatus = 'success' | 'failed' | 'timeout'
 export type AdminAgentOwnerType = 'official' | 'user'
 export type AdminWorkbenchStatus = 'active' | 'inactive'
@@ -57,6 +59,12 @@ export interface TokenModel {
   upstream_model: string
   status: TokenModelStatus
   sort_order: number
+  visible_scope: TokenModelVisibleScope
+  target_audience?: {
+    group_ids?: number[]
+    group_roles?: TokenModelGroupRole[]
+    role_codes?: string[]
+  } | null
   created_at: string
   updated_at: string
 }
@@ -71,6 +79,10 @@ export interface CreateTokenModelReq {
   product_id?: number | null
   status?: TokenModelStatus
   sort_order?: number
+  visible_scope?: TokenModelVisibleScope
+  group_ids?: number[]
+  group_roles?: TokenModelGroupRole[]
+  role_codes?: string[]
 }
 
 /** 更新模型请求体（PATCH，字段可选，只传要改的） */
@@ -83,6 +95,10 @@ export interface UpdateTokenModelReq {
   product_id?: number | null
   status?: TokenModelStatus
   sort_order?: number
+  visible_scope?: TokenModelVisibleScope
+  group_ids?: number[]
+  group_roles?: TokenModelGroupRole[]
+  role_codes?: string[]
 }
 
 // 管理端全量 Token 用量流水，字段与 §14.7 保持 snake_case。
