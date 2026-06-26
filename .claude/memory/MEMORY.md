@@ -16,3 +16,5 @@
 - [Round 7 Audit Status](project-round7-audit-status.md) — D-93~D-96 闭环；后端乙重设计 R1~R6(PR#106~#112) + base-roles seed(000024)/admin bootstrap CLI(#113/#115) + 缺陷修复 F1~F6/P3(#120~#126,两轮QA回归全闭环,migrate→000025) 全部合并 main；上线检查单 docs/backend-b-go-live-checklist.md；并发多actor用 worktree 隔离（2026-06-15）
 - [Backend-Only Scope Feedback](feedback-backend-only-scope.md) — 原则：Claude 只负责后端+对接文档，不写前端页面代码，每次输出前先确认是否属后端范围（2026-06-15）
 - [Codex Frontend Scope Feedback](feedback-codex-frontend-scope.md) — 原则：Codex 只负责前端页面，不写后端业务代码（与 Claude 后端分工互斥）；两条已写入仓库 CLAUDE.md/AGENTS.md（2026-06-15）
+- [Stage 2 Scope](project-stage2-scope.md) — 第二阶段蓝图：Token 售卖+多模型聊天工作台；Agent/Skill/插件全免费、唯一收费=模型token；三层/三计费/仅chat/tool-use编排（2026-06-21）
+- [Migration Sequential Numbering](feedback-migration-sequential-numbering.md) — 迁移序号必须按合并顺序连续递增、禁预留空号（golang-migrate 不支持 out-of-order）；并发开发合并前查全序列无重号无空号（2026-06-21）
