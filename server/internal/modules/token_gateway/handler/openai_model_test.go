@@ -1,12 +1,79 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
 
 	"molin/server/internal/modules/token_gateway/dto"
 )
+
+// fakeVisibleLister 忠实模拟 CatalogService.ListVisible 的 modality 过滤契约：
+// modality 非空时只返回该模态的模型，空则返回全部。用于验证 /v1/models 固定传 "chat"。
+type fakeVisibleLister struct {
+	all         []dto.ModelResp
+	gotModality string // 记录 handler 实际传入的 modality
+	gotUserID   uint64
+}
+
+func (f *fakeVisibleLister) ListVisible(_ context.Context, userID uint64, modality string, _, _ int) ([]dto.ModelResp, int64, error) {
+	f.gotModality = modality
+	f.gotUserID = userID
+	out := make([]dto.ModelResp, 0, len(f.all))
+	for _, m := range f.all {
+		if modality == "" || m.Modality == modality {
+			out = append(out, m)
+		}
+	}
+	return out, int64(len(out)), nil
+}
+
+// TestFetchOpenAIChatModels_OnlyChat 验证 /v1/models 固定按 modality="chat" 过滤，
+// 非 chat（image/audio/video）模型不出现在输出里。
+func TestFetchOpenAIChatModels_OnlyChat(t *testing.T) {
+	lister := &fakeVisibleLister{
+		all: []dto.ModelResp{
+			{LogicalModelCode: "gpt-4o", Modality: "chat"},
+			{LogicalModelCode: "dall-e-3", Modality: "image"},
+			{LogicalModelCode: "claude-3-5-sonnet", Modality: "chat"},
+			{LogicalModelCode: "whisper-1", Modality: "audio"},
+			{LogicalModelCode: "sora", Modality: "video"},
+		},
+	}
+
+	got, err := fetchOpenAIChatModels(context.Background(), lister, 42)
+	if err != nil {
+		t.Fatalf("未预期错误：%v", err)
+	}
+
+	// 确认 handler 确实以 "chat" 调用底层可见性查询。
+	if lister.gotModality != "chat" {
+		t.Fatalf("ListVisible modality 期望 chat，实际 %q", lister.gotModality)
+	}
+	if lister.gotUserID != 42 {
+		t.Fatalf("ListVisible userID 期望 42，实际 %d", lister.gotUserID)
+	}
+
+	// 输出只应包含 chat 模型。
+	wantIDs := map[string]bool{"gpt-4o": true, "claude-3-5-sonnet": true}
+	if len(got.Data) != len(wantIDs) {
+		t.Fatalf("输出模型数期望 %d，实际 %d", len(wantIDs), len(got.Data))
+	}
+	for _, m := range got.Data {
+		if !wantIDs[m.ID] {
+			t.Errorf("非 chat 模型 %q 不应出现在 /v1/models 输出里", m.ID)
+		}
+	}
+	// 显式确认非 chat 的几个 code 一个都没漏进来。
+	for _, banned := range []string{"dall-e-3", "whisper-1", "sora"} {
+		for _, m := range got.Data {
+			if m.ID == banned {
+				t.Errorf("非 chat 模型 %q 出现在输出里", banned)
+			}
+		}
+	}
+}
 
 // TestBuildOpenAIModelList 验证 GET /v1/models 的 OpenAI 标准格式转换：
 // 顶层 object=list，每项 id=logical_model_code、object=model、created=Unix 秒、owned_by=molin。

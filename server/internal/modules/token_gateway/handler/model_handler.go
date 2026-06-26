@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -81,8 +82,7 @@ func (h *ModelHandler) ListOpenAIModels(w http.ResponseWriter, r *http.Request) 
 		response.Error(w, http.StatusUnauthorized, 40001, "未登录")
 		return
 	}
-	// offset=0, limit=0 → ListVisible 返回全部可见 active 模型（不分页截断）。
-	items, _, err := h.svc.ListVisible(r.Context(), userID, "", 0, 0)
+	list, err := fetchOpenAIChatModels(r.Context(), h.svc, userID)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return
@@ -90,7 +90,25 @@ func (h *ModelHandler) ListOpenAIModels(w http.ResponseWriter, r *http.Request) 
 	// 直接写裸 OpenAI 结构（绕过 response.JSON 包络），保证客户端解析兼容。
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(buildOpenAIModelList(items))
+	_ = json.NewEncoder(w).Encode(list)
+}
+
+// visibleModelLister 是 ListOpenAIModels 依赖的最小可见性查询接口，*service.CatalogService 实现之。
+// 抽出窄接口便于单测注入桩，验证 /v1/models 固定按 modality="chat" 过滤。
+type visibleModelLister interface {
+	ListVisible(ctx context.Context, userID uint64, modality string, offset, limit int) ([]dto.ModelResp, int64, error)
+}
+
+// fetchOpenAIChatModels 取该用户全部可见的 active chat 模型并转成 OpenAI /v1/models 结构。
+// 固定按 modality="chat" 过滤：/v1/chat/completions 只能用 chat 模型，
+// 若把 image/audio/video 等非 chat 模型也列进客户端模型下拉，用户选中后必然调用失败。
+// offset=0, limit=0 → ListVisible 返回全部可见 active 模型（不分页截断）。
+func fetchOpenAIChatModels(ctx context.Context, lister visibleModelLister, userID uint64) (dto.OpenAIModelList, error) {
+	items, _, err := lister.ListVisible(ctx, userID, "chat", 0, 0)
+	if err != nil {
+		return dto.OpenAIModelList{}, err
+	}
+	return buildOpenAIModelList(items), nil
 }
 
 // buildOpenAIModelList 将内部模型目录视图转换为 OpenAI /v1/models 标准结构。

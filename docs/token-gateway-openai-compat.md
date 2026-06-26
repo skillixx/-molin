@@ -109,6 +109,7 @@ curl 'https://<域名>/v1/models' \
 ```
 
 - 无分页参数：一次返回全部对你可见的 active 模型。
+- **只返回 chat（对话）模型**：`/v1/chat/completions` 仅支持 chat 模型，故 image/audio/video 等非 chat 模型不会出现在此列表，避免在客户端被误选后调用失败。
 - 无可见模型时返回 `{"object":"list","data":[]}`（空数组，非 null）。
 
 ### 4.2 POST /v1/chat/completions（非流式）
