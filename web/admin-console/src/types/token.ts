@@ -9,6 +9,7 @@ export type TokenModelModality = 'chat' | 'image' | 'audio' | 'video'
 export type TokenUsageStatus = 'success' | 'failed' | 'timeout'
 export type AdminAgentOwnerType = 'official' | 'user'
 export type AdminWorkbenchStatus = 'active' | 'inactive'
+export type AdminAgentVisibleScope = 'all' | 'groups' | 'roles'
 
 /** 渠道（上游供应商）—— 响应永远不返回 api_key 明文，只有 has_api_key 布尔 */
 export interface TokenChannel {
@@ -110,6 +111,20 @@ export interface AdminAgentAbilityBrief {
   is_paid?: boolean
 }
 
+export interface AdminAgentCategory {
+  code: string
+  name: string
+  icon: string
+  sort_order: number
+  status: AdminWorkbenchStatus
+}
+
+export interface AdminAgentTargetAudience {
+  group_ids?: number[]
+  group_roles?: Array<'admin' | 'member'>
+  role_codes?: string[]
+}
+
 // 管理端 Agent 详情包含绑定的 skill / 插件摘要，绑定保存采用全量覆盖语义。
 export interface AdminAgent {
   id: number
@@ -121,6 +136,10 @@ export interface AdminAgent {
   owner_user_id: number | null
   system_prompt: string
   default_model_code: string
+  category_code: string | null
+  category_name: string
+  visible_scope: AdminAgentVisibleScope
+  target_audience: AdminAgentTargetAudience | null
   status: AdminWorkbenchStatus
   sort_order: number
   skills: AdminAgentAbilityBrief[]
@@ -136,6 +155,11 @@ export interface CreateAdminAgentReq {
   avatar?: string
   system_prompt: string
   default_model_code: string
+  category_code?: string
+  visible_scope?: AdminAgentVisibleScope
+  group_ids?: number[]
+  group_roles?: Array<'admin' | 'member'>
+  role_codes?: string[]
   status?: AdminWorkbenchStatus
   sort_order?: number
   skill_ids?: number[]
@@ -199,3 +223,53 @@ export interface CreateAdminPluginReq {
 }
 
 export type UpdateAdminPluginReq = Partial<CreateAdminPluginReq>
+
+export interface AdminMcpServer {
+  id: number
+  code: string
+  name: string
+  description: string
+  endpoint_url: string
+  has_auth: boolean
+  protocol_version: string | null
+  timeout_ms: number
+  is_paid: boolean
+  daily_limit: number | null
+  status: AdminWorkbenchStatus
+  last_discovered_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateAdminMcpServerReq {
+  code: string
+  name: string
+  description?: string
+  endpoint_url: string
+  auth_config?: string
+  timeout_ms?: number
+  is_paid?: boolean
+  daily_limit?: number | null
+  status?: AdminWorkbenchStatus
+}
+
+export type UpdateAdminMcpServerReq = Partial<CreateAdminMcpServerReq>
+
+export interface AdminMcpTool {
+  id: number
+  server_id: number
+  tool_name: string
+  description: string
+  input_schema_json: Record<string, unknown>
+  enabled: boolean
+  schema_hash: string
+  created_at: string
+  updated_at: string
+}
+
+export interface AdminMcpDiscoverResult {
+  protocol_version: string
+  discovered: number
+  changed: number
+  tools: AdminMcpTool[]
+}
