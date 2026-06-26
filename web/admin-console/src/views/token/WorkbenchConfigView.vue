@@ -10,6 +10,14 @@
     <el-tabs v-model="activeTab" class="config-tabs">
       <el-tab-pane label="Agent" name="agents">
         <div class="toolbar">
+          <el-select v-model="agentQuery.category" clearable placeholder="分类" style="width: 140px" @change="fetchAgents">
+            <el-option v-for="category in agentCategories" :key="category.code" :label="category.name" :value="category.code" />
+          </el-select>
+          <el-select v-model="agentQuery.visible_scope" clearable placeholder="可见范围" style="width: 150px" @change="fetchAgents">
+            <el-option label="全体可见" value="all" />
+            <el-option label="指定分组" value="groups" />
+            <el-option label="指定角色" value="roles" />
+          </el-select>
           <el-select v-model="agentQuery.status" clearable placeholder="状态" style="width: 140px" @change="fetchAgents">
             <el-option label="启用" value="active" />
             <el-option label="停用" value="inactive" />
@@ -20,7 +28,13 @@
         <el-table :data="agents" v-loading="agentLoading" border>
           <el-table-column prop="code" label="代码" min-width="140" />
           <el-table-column prop="name" label="名称" min-width="140" />
+          <el-table-column label="分类" width="110">
+            <template #default="{ row }">{{ row.category_name || '未分类' }}</template>
+          </el-table-column>
           <el-table-column prop="default_model_code" label="默认模型" min-width="150" />
+          <el-table-column label="可见范围" width="120">
+            <template #default="{ row }">{{ visibleScopeLabel(row.visible_scope) }}</template>
+          </el-table-column>
           <el-table-column label="绑定" min-width="180">
             <template #default="{ row }">{{ row.skills.length }} 个 Skill / {{ row.plugins.length }} 个插件</template>
           </el-table-column>
@@ -127,8 +141,37 @@
             <el-option v-for="model in models" :key="model.id" :label="model.display_name" :value="model.logical_model_code" />
           </el-select>
         </el-form-item>
+        <el-form-item label="分类">
+          <el-select v-model="agentForm.category_code" clearable filterable style="width: 100%" placeholder="未分类">
+            <el-option v-for="category in agentCategories" :key="category.code" :label="category.name" :value="category.code" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="人设" prop="system_prompt">
           <el-input v-model="agentForm.system_prompt" type="textarea" :rows="5" />
+        </el-form-item>
+        <el-form-item label="可见范围" prop="visible_scope">
+          <el-radio-group v-model="agentForm.visible_scope">
+            <el-radio-button label="all">全体可见</el-radio-button>
+            <el-radio-button label="groups">指定分组</el-radio-button>
+            <el-radio-button label="roles">指定角色</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="agentForm.visible_scope === 'groups'" label="可见分组">
+          <el-select v-model="agentForm.group_ids" multiple filterable style="width: 100%" placeholder="选择分组">
+            <el-option v-for="group in groups" :key="group.id" :label="`${group.name}（${group.code}）`" :value="group.id" />
+          </el-select>
+          <div class="form-tip">指定分组必选；组内角色留空表示该组任意成员可见。</div>
+        </el-form-item>
+        <el-form-item v-if="agentForm.visible_scope === 'groups'" label="组内角色">
+          <el-checkbox-group v-model="agentForm.group_roles">
+            <el-checkbox label="admin">组管理员</el-checkbox>
+            <el-checkbox label="member">普通成员</el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+        <el-form-item v-if="agentForm.visible_scope === 'roles'" label="全局角色">
+          <el-select v-model="agentForm.role_codes" multiple filterable style="width: 100%" placeholder="选择角色">
+            <el-option v-for="role in roles" :key="role.code" :label="`${role.name}（${role.code}）`" :value="role.code" />
+          </el-select>
         </el-form-item>
         <el-form-item label="Skill">
           <el-select v-model="agentForm.skill_ids" multiple filterable style="width: 100%">
@@ -139,6 +182,22 @@
           <el-select v-model="agentForm.plugin_ids" multiple filterable style="width: 100%">
             <el-option v-for="plugin in plugins" :key="plugin.id" :label="`${plugin.name}（${plugin.code}）`" :value="plugin.id" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="MCP server">
+          <el-checkbox v-model="agentForm.update_mcp_binding">
+            本次覆盖 MCP server 绑定
+          </el-checkbox>
+          <el-select
+            v-model="agentForm.mcp_server_ids"
+            multiple
+            filterable
+            style="width: 100%; margin-top: 8px"
+            placeholder="选择 MCP server"
+            :disabled="!agentForm.update_mcp_binding"
+          >
+            <el-option v-for="server in mcpServers" :key="server.id" :label="`${server.name}（${server.code}）`" :value="server.id" />
+          </el-select>
+          <div class="form-tip">MCP 绑定为覆盖语义；勾选后保存会提交当前完整集合，空数组表示全部解绑。</div>
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="agentForm.status" style="width: 100%">
@@ -226,6 +285,7 @@ import { ElMessage, ElMessageBox, ElPagination } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import {
+  bindAdminAgentMcpServers,
   bindAdminAgentPlugins,
   bindAdminAgentSkills,
   createAdminAgent,
@@ -234,7 +294,9 @@ import {
   deleteAdminAgent,
   deleteAdminPlugin,
   deleteAdminSkill,
+  listAdminAgentCategories,
   listAdminAgents,
+  listAdminMcpServers,
   listAdminPlugins,
   listAdminSkills,
   listTokenModels,
@@ -242,9 +304,15 @@ import {
   updateAdminPlugin,
   updateAdminSkill,
 } from '@/api/token'
+import { listGroups } from '@/api/group'
+import { listRoles } from '@/api/role'
 import type { Pagination } from '@/types/api'
+import type { UserGroup } from '@/types/group'
 import type {
   AdminAgent,
+  AdminAgentCategory,
+  AdminAgentVisibleScope,
+  AdminMcpServer,
   AdminPlugin,
   AdminSkill,
   AdminWorkbenchStatus,
@@ -256,6 +324,7 @@ import type {
   UpdateAdminPluginReq,
   UpdateAdminSkillReq,
 } from '@/types/token'
+import type { Role } from '@/types/user'
 
 const PaginationBar = defineComponent({
   props: { pagination: { type: Object, required: true } },
@@ -283,6 +352,10 @@ const PaginationBar = defineComponent({
 const activeTab = ref('agents')
 const saving = ref(false)
 const models = ref<TokenModel[]>([])
+const agentCategories = ref<AdminAgentCategory[]>([])
+const groups = ref<UserGroup[]>([])
+const roles = ref<Role[]>([])
+const mcpServers = ref<AdminMcpServer[]>([])
 
 const agents = ref<AdminAgent[]>([])
 const skills = ref<AdminSkill[]>([])
@@ -290,7 +363,11 @@ const plugins = ref<AdminPlugin[]>([])
 const agentLoading = ref(false)
 const skillLoading = ref(false)
 const pluginLoading = ref(false)
-const agentQuery = reactive<{ status: AdminWorkbenchStatus | '' }>({ status: '' })
+const agentQuery = reactive<{
+  status: AdminWorkbenchStatus | ''
+  category: string
+  visible_scope: AdminAgentVisibleScope | ''
+}>({ status: '', category: '', visible_scope: '' })
 const skillQuery = reactive<{ status: AdminWorkbenchStatus | ''; category: string }>({ status: '', category: '' })
 const pluginQuery = reactive<{ status: AdminWorkbenchStatus | '' }>({ status: '' })
 const agentPagination = reactive<Pagination>({ page: 1, page_size: 20, total: 0 })
@@ -317,10 +394,17 @@ const agentForm = reactive({
   avatar: '',
   system_prompt: '',
   default_model_code: '',
+  category_code: '',
+  visible_scope: 'all' as AdminAgentVisibleScope,
+  group_ids: [] as number[],
+  group_roles: [] as Array<'admin' | 'member'>,
+  role_codes: [] as string[],
   status: 'active' as AdminWorkbenchStatus,
   sort_order: 0,
   skill_ids: [] as number[],
   plugin_ids: [] as number[],
+  update_mcp_binding: false,
+  mcp_server_ids: [] as number[],
 })
 const skillForm = reactive({
   code: '',
@@ -366,6 +450,9 @@ const pluginRules: FormRules = {
 
 onMounted(() => {
   fetchModels()
+  fetchAgentCategories()
+  fetchAudienceOptions()
+  fetchMcpServers()
   fetchAgents()
   fetchSkills()
   fetchPlugins()
@@ -376,6 +463,25 @@ async function fetchModels() {
   models.value = res.items
 }
 
+async function fetchAgentCategories() {
+  const res = await listAdminAgentCategories()
+  agentCategories.value = res.items
+}
+
+async function fetchAudienceOptions() {
+  const [groupRes, roleRes] = await Promise.all([
+    listGroups({ page: 1, page_size: 100 }),
+    listRoles({ page: 1, page_size: 100 }),
+  ])
+  groups.value = groupRes.items
+  roles.value = roleRes.items
+}
+
+async function fetchMcpServers() {
+  const res = await listAdminMcpServers({ page: 1, page_size: 100 })
+  mcpServers.value = res.items
+}
+
 async function fetchAgents() {
   agentLoading.value = true
   try {
@@ -384,6 +490,8 @@ async function fetchAgents() {
       page_size: agentPagination.page_size,
       owner_type: 'official',
       status: agentQuery.status || undefined,
+      category: agentQuery.category || undefined,
+      visible_scope: agentQuery.visible_scope || undefined,
     })
     agents.value = res.items
     Object.assign(agentPagination, { page: res.page, page_size: res.page_size, total: res.total })
@@ -442,10 +550,17 @@ function openAgentCreate() {
     avatar: '',
     system_prompt: '',
     default_model_code: models.value[0]?.logical_model_code || '',
+    category_code: '',
+    visible_scope: 'all',
+    group_ids: [],
+    group_roles: [],
+    role_codes: [],
     status: 'active',
     sort_order: 0,
     skill_ids: [],
     plugin_ids: [],
+    update_mcp_binding: false,
+    mcp_server_ids: [],
   })
   agentDialog.value = true
 }
@@ -460,10 +575,17 @@ function openAgentEdit(row: AdminAgent) {
     avatar: row.avatar || '',
     system_prompt: row.system_prompt,
     default_model_code: row.default_model_code,
+    category_code: row.category_code || '',
+    visible_scope: row.visible_scope || 'all',
+    group_ids: row.target_audience?.group_ids || [],
+    group_roles: row.target_audience?.group_roles || [],
+    role_codes: row.target_audience?.role_codes || [],
     status: row.status,
     sort_order: row.sort_order,
     skill_ids: row.skills.map((item) => item.id),
     plugin_ids: row.plugins.map((item) => item.id),
+    update_mcp_binding: false,
+    mcp_server_ids: [],
   })
   agentDialog.value = true
 }
@@ -471,21 +593,54 @@ function openAgentEdit(row: AdminAgent) {
 async function saveAgent() {
   const valid = await agentFormRef.value?.validate().catch(() => false)
   if (!valid) return
+  if (agentForm.visible_scope === 'groups' && agentForm.group_ids.length === 0) {
+    ElMessage.error('指定分组可见时必须选择至少一个分组')
+    return
+  }
+  if (agentForm.visible_scope === 'roles' && agentForm.role_codes.length === 0) {
+    ElMessage.error('指定角色可见时必须选择至少一个角色')
+    return
+  }
   saving.value = true
   try {
-    const payload: CreateAdminAgentReq | UpdateAdminAgentReq = { ...agentForm }
+    const payload: CreateAdminAgentReq | UpdateAdminAgentReq = {
+      code: agentForm.code,
+      name: agentForm.name,
+      description: agentForm.description,
+      avatar: agentForm.avatar,
+      system_prompt: agentForm.system_prompt,
+      default_model_code: agentForm.default_model_code,
+      category_code: agentForm.category_code,
+      visible_scope: agentForm.visible_scope,
+      group_ids: agentForm.visible_scope === 'groups' ? agentForm.group_ids : [],
+      group_roles: agentForm.visible_scope === 'groups' ? agentForm.group_roles : [],
+      role_codes: agentForm.visible_scope === 'roles' ? agentForm.role_codes : [],
+      status: agentForm.status,
+      sort_order: agentForm.sort_order,
+      skill_ids: agentForm.skill_ids,
+      plugin_ids: agentForm.plugin_ids,
+    }
     let saved: AdminAgent
     if (agentMode.value === 'create') saved = await createAdminAgent(payload as CreateAdminAgentReq)
     else saved = await updateAdminAgent(editingAgentId.value, payload)
     // 绑定接口是覆盖语义，保存时提交当前完整勾选集，空数组表示全部解绑。
     await bindAdminAgentSkills(saved.id, agentForm.skill_ids)
     await bindAdminAgentPlugins(saved.id, agentForm.plugin_ids)
+    if (agentForm.update_mcp_binding) {
+      await bindAdminAgentMcpServers(saved.id, agentForm.mcp_server_ids)
+    }
     ElMessage.success('Agent 保存成功')
     agentDialog.value = false
     fetchAgents()
   } finally {
     saving.value = false
   }
+}
+
+function visibleScopeLabel(scope: AdminAgentVisibleScope) {
+  if (scope === 'groups') return '指定分组'
+  if (scope === 'roles') return '指定角色'
+  return '全体可见'
 }
 
 function openSkillCreate() {

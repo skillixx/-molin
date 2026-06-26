@@ -146,6 +146,10 @@
         <el-icon><Collection /></el-icon>
         <template #title>配置管理</template>
       </el-menu-item>
+      <el-menu-item v-if="can('plugin:manage')" index="/workbench/mcp-servers">
+        <el-icon><Connection /></el-icon>
+        <template #title>MCP server</template>
+      </el-menu-item>
     </el-sub-menu>
 
     <el-sub-menu v-if="can('content:manage')" index="content">

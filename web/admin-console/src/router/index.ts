@@ -153,6 +153,17 @@ const router = createRouter({
           },
         },
         {
+          path: 'workbench/mcp-servers',
+          name: 'McpServerList',
+          component: () => import('@/views/token/McpServerListView.vue'),
+          meta: {
+            requiresAuth: true,
+            requiresAdminVerify: true,
+            title: 'MCP server 管理',
+            permission: 'plugin:manage',
+          },
+        },
+        {
           path: 'announcements',
           name: 'AnnouncementList',
           component: () => import('@/views/content/AnnouncementListView.vue'),

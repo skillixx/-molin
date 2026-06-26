@@ -70,6 +70,19 @@ Agent 文件：
 - `server/internal/modules/asset/CLAUDE.md` — 含并发权益消耗模板
 - `server/internal/modules/provision/CLAUDE.md` — ProvisionHandler 接口定义
 
+## 后端 D — Token 网关 + Agent + Skills（第二阶段，Week 5–9，2026-06-19 新设）
+
+负责模块（第二阶段 AI 业务，目录待建）：
+- `server/internal/modules/token_gateway/` — Token 上游聚合网关、模型路由、OpenAI 兼容 chat、用量计费（优先）
+- `server/internal/modules/agent/` — Agent 定制市场
+- `server/internal/modules/skill/` — Skills 技能市场
+
+Agent 文件：`.claude/agents/后端工程师丁.md`（标识 backend-d，分支前缀 `feature/backend-d-*`）
+权威设计：`docs/backend-token-gateway-design.md`（落地方案）。migration 从 000030 起。
+
+**Why:** 阶段规划调整（PR #188）后 Token 网关提前到第二阶段，用户决定为其新设专职负责人后端丁（而非后端乙兼）。
+**How to apply:** token_gateway/agent/skill 任务派给后端工程师丁；计费走 finance_consumer（乙）、额度走 asset/provision（丙）、鉴权权限码挂接走 iam（甲），不跨改他人模块。
+
 ## 前端 A — 管理后台（web/admin-console）
 
 Agent 文件：`web/admin-console/CLAUDE.md`（含完整代码模板）

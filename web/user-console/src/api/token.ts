@@ -9,6 +9,7 @@ import http from './http'
 import type { PageResult } from '@/types/api'
 import type {
   AgentChatStreamOptions,
+  AgentCategory,
   AgentItem,
   ApiKeyItem,
   ChatCompletionChunk,
@@ -57,7 +58,11 @@ export function listMyTokenUsage(params: {
   return http.get<unknown, PageResult<TokenUsageRecord>>('/token/usage', { params })
 }
 
-export function listAgents(params: { page?: number; page_size?: number } = {}) {
+export function listAgentCategories() {
+  return http.get<unknown, { items: AgentCategory[] }>('/agent-categories')
+}
+
+export function listAgents(params: { page?: number; page_size?: number; category?: string } = {}) {
   return http.get<unknown, PageResult<AgentItem>>('/agents', { params })
 }
 

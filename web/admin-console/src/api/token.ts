@@ -3,10 +3,16 @@ import http from './http'
 import type { PageResponse } from '@/types/api'
 import type {
   AdminAgent,
+  AdminAgentCategory,
+  AdminAgentVisibleScope,
+  AdminMcpDiscoverResult,
+  AdminMcpServer,
+  AdminMcpTool,
   AdminSkill,
   AdminPlugin,
   AdminWorkbenchStatus,
   CreateAdminAgentReq,
+  CreateAdminMcpServerReq,
   CreateAdminSkillReq,
   CreateAdminPluginReq,
   CreateTokenChannelReq,
@@ -17,6 +23,7 @@ import type {
   TokenModelModality,
   TokenModelStatus,
   UpdateAdminAgentReq,
+  UpdateAdminMcpServerReq,
   UpdateAdminSkillReq,
   UpdateAdminPluginReq,
   UpdateTokenChannelReq,
@@ -95,8 +102,14 @@ export function listAdminAgents(params: {
   page_size?: number
   owner_type?: string
   status?: AdminWorkbenchStatus
+  category?: string
+  visible_scope?: AdminAgentVisibleScope
 } = {}) {
   return http.get<unknown, PageResponse<AdminAgent>>('/admin/agents', { params })
+}
+
+export function listAdminAgentCategories() {
+  return http.get<unknown, { items: AdminAgentCategory[] }>('/admin/agent-categories')
 }
 
 export function createAdminAgent(data: CreateAdminAgentReq) {
@@ -117,6 +130,10 @@ export function bindAdminAgentSkills(id: number, ids: number[]) {
 
 export function bindAdminAgentPlugins(id: number, ids: number[]) {
   return http.post<unknown, AdminAgent>(`/admin/agents/${id}/plugins`, { ids })
+}
+
+export function bindAdminAgentMcpServers(id: number, ids: number[]) {
+  return http.post<unknown, { bound: boolean }>(`/admin/agents/${id}/mcp-servers`, { ids })
 }
 
 export function listAdminSkills(params: {
@@ -158,4 +175,38 @@ export function updateAdminPlugin(id: number, data: UpdateAdminPluginReq) {
 
 export function deleteAdminPlugin(id: number) {
   return http.delete<unknown, null>(`/admin/plugins/${id}`)
+}
+
+// ===== MCP server 管理 /api/admin/mcp-servers =====
+
+export function listAdminMcpServers(params: {
+  page?: number
+  page_size?: number
+  status?: AdminWorkbenchStatus
+} = {}) {
+  return http.get<unknown, PageResponse<AdminMcpServer>>('/admin/mcp-servers', { params })
+}
+
+export function createAdminMcpServer(data: CreateAdminMcpServerReq) {
+  return http.post<unknown, AdminMcpServer>('/admin/mcp-servers', data)
+}
+
+export function updateAdminMcpServer(id: number, data: UpdateAdminMcpServerReq) {
+  return http.patch<unknown, AdminMcpServer>(`/admin/mcp-servers/${id}`, data)
+}
+
+export function deleteAdminMcpServer(id: number) {
+  return http.delete<unknown, null>(`/admin/mcp-servers/${id}`)
+}
+
+export function discoverAdminMcpServer(id: number) {
+  return http.post<unknown, AdminMcpDiscoverResult>(`/admin/mcp-servers/${id}/discover`)
+}
+
+export function listAdminMcpTools(id: number) {
+  return http.get<unknown, { items: AdminMcpTool[] }>(`/admin/mcp-servers/${id}/tools`)
+}
+
+export function updateAdminMcpTool(id: number, toolId: number, enabled: boolean) {
+  return http.patch<unknown, AdminMcpTool>(`/admin/mcp-servers/${id}/tools/${toolId}`, { enabled })
 }
