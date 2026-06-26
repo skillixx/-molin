@@ -759,6 +759,14 @@ func NewApp() (*App, error) {
 				HoldMaxTokens:   int64(cfg.TokenHoldDefaultMaxTokens),
 			})
 
+			// 模型目录定向可见性：复用与 Agent 同款分组/角色解析器，保证模型与 Agent 可见性语义一致。
+			// 任一为 nil/出错时 scope=groups/roles 的模型一律不可见（fail-safe），不泄漏定向模型。
+			// CatalogService 用于用户端列表过滤；ForwardService 用于转发前置闸（防绕过列表直接报模型名调用）。
+			modelGroupResolver := &groupResolverAdapter{db: gormDB}
+			modelRoleResolver := &roleResolverAdapter{getter: iamRoleGetter, db: gormDB}
+			tokenGatewayModule.CatalogService.WithResolvers(modelGroupResolver, modelRoleResolver)
+			tokenGatewayModule.ForwardService.WithResolvers(modelGroupResolver, modelRoleResolver)
+
 			// 管理端：渠道 / 模型目录 / 全量用量（token:manage + 管理员双重认证）。
 			tokengatewaymod.RegisterRoutes(mux, tokenGatewayModule.ChannelService, tokenGatewayModule.CatalogService,
 				tokenGatewayModule.UsageService, cfg.JWTSecret, iamService, authService, authService)

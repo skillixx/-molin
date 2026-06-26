@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"molin/server/internal/middleware"
 	"molin/server/internal/modules/token_gateway/dto"
 	"molin/server/internal/modules/token_gateway/service"
 	"molin/server/pkg/pagination"
@@ -42,9 +43,15 @@ func (h *ModelHandler) ListModels(w http.ResponseWriter, r *http.Request) {
 // 只返回 status=active 的模型，且仅暴露精简公开字段（不含渠道/上游/商品等内部路由信息）。
 // 支持 ?modality= 过滤 + 分页。
 func (h *ModelHandler) ListPublic(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	if userID == 0 {
+		response.Error(w, http.StatusUnauthorized, 40001, "未登录")
+		return
+	}
 	modality := r.URL.Query().Get("modality")
 	p := pagination.Parse(r)
-	items, total, err := h.svc.ListPaged(r.Context(), "active", modality, p.Offset(), p.PageSize)
+	// 按定向可见性过滤：仅返回对该用户可见的 active 模型。
+	items, total, err := h.svc.ListVisible(r.Context(), userID, modality, p.Offset(), p.PageSize)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return

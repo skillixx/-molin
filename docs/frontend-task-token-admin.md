@@ -45,9 +45,24 @@
 ```json
 { "id":1, "logical_model_code":"gpt-4o", "display_name":"GPT-4o", "modality":"chat",
   "product_id":5, "channel_id":1, "upstream_model":"gpt-4o",
-  "status":"active", "sort_order":0, "created_at":"...", "updated_at":"..." }
+  "status":"active", "sort_order":0,
+  "visible_scope":"groups",
+  "target_audience": { "group_ids":[10,11], "group_roles":["admin"] },
+  "created_at":"...", "updated_at":"..." }
 ```
-**新建/更新请求体字段**：`logical_model_code`（对外名，唯一）、`display_name`、`modality`（chat/image/audio/video，空默认 chat）、`channel_id`（路由到哪个渠道）、`upstream_model`（上游真实模型名）、`product_id`（关联 token 商品，计费用）、`status`、`sort_order`。
+- `visible_scope`：`all`（默认，所有登录用户可见）/ `groups`（按分组可见）/ `roles`（按全局角色可见）。
+- `target_audience`：`scope=all` 时不返回（省略）；`scope=groups` 时返回 `{group_ids, group_roles?}`（`group_roles` 为空表示组内全部成员，非空仅 `admin`/`member` 命中者）；`scope=roles` 时返回 `{role_codes}`。供编辑表单回填。
+
+**新建/更新请求体字段**：`logical_model_code`（对外名，唯一）、`display_name`、`modality`（chat/image/audio/video，空默认 chat）、`channel_id`（路由到哪个渠道）、`upstream_model`（上游真实模型名）、`product_id`（关联 token 商品，计费用）、`status`、`sort_order`，以及**定向可见性**：
+- `visible_scope`：`all`/`groups`/`roles`，**新建不传默认 `all`**。
+- `group_ids`（`number[]`）+ `group_roles`（`string[]`，可选，仅 `admin`/`member`）：`scope=groups` 时必填 `group_ids`。
+- `role_codes`（`string[]`）：`scope=roles` 时必填。
+- **更新语义（整体覆盖）**：`visible_scope` 传了就连同定向目标整体覆盖；不传则不动可见性。改回 `all` 会清空旧定向。
+- 校验失败返回 `400`：如 `group_ids 含不存在的分组` / `role_codes 含不存在的角色` / `group_roles 仅支持 admin/member`，按 message 提示。
+
+> 表单建议：`visible_scope` 单选；选 `groups` 时显示分组多选（数据来自分组列表接口 `/api/admin/groups`）+ 可选「仅管理员/仅成员」；选 `roles` 时显示角色多选（数据来自角色列表接口）。选 `all` 时隐藏定向控件。
+>
+> 用户端 `GET /api/token/models` 会按当前登录用户的分组/角色自动过滤，仅返回对其可见的 active 模型；不可见模型即使前端拿到 code 也无法对话（转发接口同样做了可见性校验）。
 
 ## 三、要做的页面（web/admin-console）
 

@@ -201,7 +201,19 @@ type ForwardService struct {
 	holdMaxTokens   int64                     // postpaid 预扣兜底 max_tokens
 	saleWriter      saleAmountWriter          // sale_amount 回填（默认 = usageRepo；单测可注入内存桩）
 
+	// 定向可见性解析器（bootstrap 注入）：用于转发前置闸，防止用户绕过列表直接报不可见模型名调用。
+	// nil 时 groups/roles 定向模型一律不可见（fail-safe）；scope=all 模型不受影响。
+	groupResolver GroupResolver
+	roleResolver  RoleResolver
+
 	httpClient *http.Client
+}
+
+// WithResolvers 注入定向可见性解析器（bootstrap 装配时调用），供转发前置闸判定模型可见性。
+func (s *ForwardService) WithResolvers(gr GroupResolver, rr RoleResolver) *ForwardService {
+	s.groupResolver = gr
+	s.roleResolver = rr
+	return s
 }
 
 // BillingDeps 计费路由依赖（S2-丁5），由 bootstrap 装配后通过 SetBillingDeps 注入。
@@ -331,6 +343,12 @@ func (s *ForwardService) Forward(ctx context.Context, w http.ResponseWriter, in 
 		return ErrModelNotConfigured
 	}
 	if tm.Status != "active" || tm.ChannelID == nil || tm.UpstreamModel == nil || *tm.UpstreamModel == "" {
+		return ErrModelNotConfigured
+	}
+
+	// ①.2 定向可见性前置闸：模型对该用户不可见 → 按「模型不可用」拒绝（不泄漏隐藏模型存在性）。
+	// 防止用户绕过 GET /api/token/models 列表、直接报模型名调用不可见模型。scope=all 模型恒放行。
+	if !modelVisibleTo(ctx, tm, in.UserID, s.groupResolver, s.roleResolver) {
 		return ErrModelNotConfigured
 	}
 
