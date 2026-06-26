@@ -26,10 +26,13 @@ export interface AdminPlan {
 
 export interface PriceItem {
   product_plan_id: number
-  role_id?: number
-  membership_level_id?: number
+  role_id?: number | null
+  membership_level_id?: number | null
   price_amount: string
   currency?: string
+  id?: number
+  created_at?: string
+  updated_at?: string
 }
 
 export interface AccessItem {
@@ -37,4 +40,8 @@ export interface AccessItem {
   can_view: boolean
   can_buy: boolean
   can_use: boolean
+  id?: number
+  product_id?: number
+  created_at?: string
+  updated_at?: string
 }

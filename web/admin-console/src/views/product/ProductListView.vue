@@ -6,6 +6,8 @@ import { Edit, Plus, Refresh, Setting } from '@element-plus/icons-vue'
 import {
   createPlan,
   createProduct,
+  getAccess,
+  getPrices,
   listAdminProducts,
   listPlans,
   replaceAccess,
@@ -73,10 +75,12 @@ const planForm = reactive({
 
 const accessDialogVisible = ref(false)
 const savingAccess = ref(false)
+const loadingAccess = ref(false)
 const accessRows = ref<Array<AccessItem & { role_name?: string }>>([])
 
 const priceDialogVisible = ref(false)
 const savingPrices = ref(false)
+const loadingPrices = ref(false)
 const priceRows = ref<Array<PriceItem & { price_type: 'default' | 'role' | 'membership' }>>([])
 
 const ruleDialogVisible = ref(false)
@@ -275,19 +279,30 @@ async function savePlan() {
   }
 }
 
-function openAccessDialog() {
+async function openAccessDialog() {
+  if (!selectedProduct.value) return
   if (roles.value.length === 0) {
     ElMessage.warning('暂无可配置角色，请先维护角色后再配置访问规则')
     return
   }
-  accessRows.value = roles.value.map(role => ({
-    role_id: role.id,
-    role_name: role.name,
-    can_view: false,
-    can_buy: false,
-    can_use: false,
-  }))
   accessDialogVisible.value = true
+  loadingAccess.value = true
+  try {
+    const res = await getAccess(selectedProduct.value.id)
+    const accessMap = new Map(res.items.map(item => [item.role_id, item]))
+    accessRows.value = roles.value.map(role => {
+      const configured = accessMap.get(role.id)
+      return {
+        role_id: role.id,
+        role_name: role.name,
+        can_view: Boolean(configured?.can_view),
+        can_buy: Boolean(configured?.can_buy),
+        can_use: Boolean(configured?.can_use),
+      }
+    })
+  } finally {
+    loadingAccess.value = false
+  }
 }
 
 function handleAccessBuyChange(row: AccessItem) {
@@ -324,14 +339,41 @@ async function saveAccess() {
   }
 }
 
-function openPriceDialog() {
-  priceRows.value = plans.value.map(plan => ({
-    product_plan_id: plan.id,
-    price_type: 'default',
-    price_amount: '',
-    currency: 'CNY',
-  }))
+function resolvePriceType(item: PriceItem): 'default' | 'role' | 'membership' {
+  if (item.role_id !== null && item.role_id !== undefined) return 'role'
+  if (item.membership_level_id !== null && item.membership_level_id !== undefined) return 'membership'
+  return 'default'
+}
+
+async function openPriceDialog() {
+  if (!selectedProduct.value) return
+  if (plans.value.length === 0) {
+    ElMessage.warning('暂无可配置套餐，请先创建套餐后再配置价格')
+    return
+  }
   priceDialogVisible.value = true
+  loadingPrices.value = true
+  try {
+    const res = await getPrices(selectedProduct.value.id)
+    priceRows.value = res.items.map(item => ({
+      product_plan_id: item.product_plan_id,
+      price_type: resolvePriceType(item),
+      role_id: item.role_id ?? undefined,
+      membership_level_id: item.membership_level_id ?? undefined,
+      price_amount: item.price_amount,
+      currency: item.currency || 'CNY',
+    }))
+    if (priceRows.value.length === 0) {
+      priceRows.value = plans.value.map(plan => ({
+        product_plan_id: plan.id,
+        price_type: 'default',
+        price_amount: '',
+        currency: 'CNY',
+      }))
+    }
+  } finally {
+    loadingPrices.value = false
+  }
 }
 
 function addPriceRow() {
@@ -637,7 +679,7 @@ async function saveRule() {
     </el-dialog>
 
     <el-dialog v-model="accessDialogVisible" title="配置访问规则" width="720px">
-      <el-table :data="accessRows" border max-height="420">
+      <el-table :data="accessRows" v-loading="loadingAccess" border max-height="420">
         <el-table-column prop="role_name" label="角色" min-width="160" />
         <el-table-column label="可见" width="100"><template #default="{ row }"><el-checkbox v-model="row.can_view" /></template></el-table-column>
         <el-table-column label="可买" width="100">
@@ -654,13 +696,13 @@ async function saveRule() {
       <p class="dialog-tip">访问规则按角色全量覆盖保存；勾选可买或可用时会自动包含可见权限。</p>
       <template #footer>
         <el-button @click="accessDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="savingAccess" @click="saveAccess">保存</el-button>
+        <el-button type="primary" :loading="savingAccess" :disabled="loadingAccess" @click="saveAccess">保存</el-button>
       </template>
     </el-dialog>
 
     <el-dialog v-model="priceDialogVisible" title="配置价格" width="860px">
       <div class="tab-toolbar"><el-button :icon="Plus" @click="addPriceRow">添加价格项</el-button></div>
-      <el-table :data="priceRows" border max-height="420">
+      <el-table :data="priceRows" v-loading="loadingPrices" border max-height="420">
         <el-table-column label="套餐" min-width="160">
           <template #default="{ row }">
             <el-select v-model="row.product_plan_id" style="width: 100%">
