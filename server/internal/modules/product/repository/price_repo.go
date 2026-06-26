@@ -32,6 +32,7 @@ func (r *PriceRepository) FindByProductID(ctx context.Context, productID uint64)
 	err := r.db.WithContext(ctx).
 		Where("product_plan_id IN (?)",
 			r.db.Model(&model.ProductPlan{}).Select("id").Where("product_id = ?", productID)).
+		Order("product_plan_id, id").
 		Find(&prices).Error
 	return prices, err
 }
