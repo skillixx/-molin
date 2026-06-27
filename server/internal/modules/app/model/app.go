@@ -22,6 +22,7 @@ type Application struct {
 	Type              string    `gorm:"size:64;not null" json:"type"`
 	Description       *string   `gorm:"size:1024" json:"description,omitempty"`
 	IconURL           *string   `gorm:"size:512" json:"icon_url,omitempty"`
+	AccessURL         *string   `gorm:"size:512" json:"access_url,omitempty"` // 用户访问入口地址（用户端「进入应用」跳转目标，面向用户）
 	CallbackURL       *string   `gorm:"size:512" json:"callback_url,omitempty"`
 	AdapterConfigJSON *string   `gorm:"type:json" json:"adapter_config_json,omitempty"`
 	Status            string    `gorm:"size:32;not null;default:draft;index:idx_applications_status" json:"status"` // draft/active/inactive/archived

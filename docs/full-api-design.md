@@ -1579,7 +1579,8 @@ POST  /api/admin/application-adapters
 PATCH /api/admin/application-adapters/:id
 ```
 
-应用 Body 参数：code、name、type、description、status。
+应用 Body 参数：code、name、type、description、icon_url、access_url、callback_url、adapter_config_json、status。
+（`access_url` 为用户访问入口，面向用户、进用户端白名单返回；写入须 https、禁危险 scheme、≤512。`callback_url`/`adapter_config_json` 为内部字段，用户端剔除。）
 
 应用适配器 Body 参数：app_code、app_name、app_type、adapter_type、service_name、callback_url、supported_actions_json、usage_event_types_json、status。
 
