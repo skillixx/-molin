@@ -65,17 +65,18 @@
 
 ## 5. 用户身份打通（SSO 方案）
 
-> 用户带平台身份访问开发者应用，开发者据此确认是哪个 user_id。**平台方明确下面方案**：
+> 用户带平台身份访问开发者应用，开发者据此确认是哪个 user_id。**统一走 SSO 一次性票据方案**（阶段二已上线，`launch`/`verify`）：
 
 | 项 | 值 | 说明 |
 |---|---|---|
-| 身份载体 | `______` | 平台 JWT（Bearer Token）等 |
-| 传递方式 | `______` | 如前端跳转携带 token / Header 透传 |
-| 校验方式 | `______` | 本地用平台公钥/密钥验签 / 调平台校验接口 |
-| 🔒 验签密钥或校验接口 | `已通过______渠道发送` | JWT secret 或验证 endpoint |
-| user_id 取法 | `______` | 从 JWT claim 哪个字段取 |
+| 身份载体 | 一次性票据 `lt_xxx` | 用户点「进入应用」时由平台签发，60s 有效、一次性、防重放 |
+| 传递方式 | URL query `?ticket=lt_xxx` | 前端跳转 `{access_url}?ticket={launch_ticket}`；票据注意日志脱敏，**不在 URL 放平台长期 JWT** |
+| 校验方式 | 调平台内部接口 | 开发者后端 `POST /api/internal/app-launch/verify`（带 `X-Internal-Token` + IP 白名单），平台校验并消费票据 |
+| 🔒 凭证 | `INTERNAL_API_TOKEN` 已通过 `______` 渠道发送 | 仅下发内部接口共享密钥；**禁止下发平台 JWT 验签密钥给开发者**（把签名密钥交第三方属高危） |
+| user_id 取法 | verify 返回 `data.user_id` | 同时返回 `app_id`、`product_id`，据此建立你自有会话 |
 
-> 若平台暂无标准 SSO，平台方在此写明过渡方案（如：用户请求带 JWT，开发者调 `GET /api/my/assets` 间接验证身份+权限）。
+> 票据无效/过期/已用 → verify 返回 `40003`，按「重新从平台进入」处理，不要重试同一张票据。
+> 备选：若开发者已有自有账号体系，可改用 `GET /api/my/assets`（用户 JWT）自行核对身份+使用权；但需可信免登交接时一律走票据。
 
 ---
 
@@ -127,14 +128,14 @@
 □ 商品建好、套餐/价格/can_view 配好并 active（product_id/plan_id 已填）
 □ 计费规则/额度套餐配好（§3 已填）
 □ INTERNAL_API_TOKEN 已安全下发、开发者 IP 已加白名单
-□ 身份方案已明确并下发密钥/接口
+□ 身份方案=SSO 票据已明确（开发者收 ticket → 调 verify 换 user_id），未下发平台 JWT 密钥
 □ 测试账号已备好并下发
 
 开发者已确认：
 □ 能 ping 通 API、能用测试账号在市场看到该应用
 □ 已理解计费模型与 usage_type 约定
 □ 内部接口能调通（X-Internal-Token + IP 白名单生效）
-□ 身份校验方案可落地
+□ 身份校验方案可落地（票据 verify 联调通过，能换出 user_id）
 ```
 
 ---

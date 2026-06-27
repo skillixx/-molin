@@ -21,7 +21,7 @@
 | 确认环境 | 测试环境 API 可用（测试服 `8.130.9.163:8080`），开发者能调通 | — |
 | 准备内部接口凭证 | 若涉及"使用扣费/额度消费"，需 `INTERNAL_API_TOKEN`（共享密钥）；用 `openssl rand -hex 32` 生成，配进平台 env | 自己配 |
 | 配 IP 白名单 | 把开发者应用服务器的出口 IP 加进 `INTERNAL_ALLOWED_IPS`，否则其调 `/api/internal/*` 全被拒 | 自己配 |
-| 身份打通方案 | 决定用户身份怎么传到开发者应用（平台 JWT + 校验方式 / 共享密钥），把方案给开发者 | 商定 |
+| 身份打通方案 | 统一走 **SSO 一次性票据**：用户点「进入应用」带 `?ticket=lt_xxx` 跳转，开发者后端调 `POST /api/internal/app-launch/verify`（带 `X-Internal-Token`）换 `user_id`，完成免登。**禁止把平台 JWT 验签密钥下发给开发者**。开发者若已有自有账号体系，可改用 `GET /api/my/assets`（用户 JWT）自行核对，但需可信免登交接时一律走票据 | 商定 |
 
 > 纯买断式应用（不按量计费）：内部凭证和 IP 白名单可暂不准备。
 
@@ -71,7 +71,7 @@
 | **标识 ID** | `app_id`、`product_id`、`plan_id`（积分制还要说明 entitlement 怎么取） |
 | **内部密钥** | `INTERNAL_API_TOKEN`（若做使用扣费/额度），并告知已加其 IP 到白名单 |
 | **计费约定** | 用哪种模型；usage_type 命名（如 `storage_overage`/`ppt_generate`）；单价；积分单位 |
-| **身份方案** | 平台 JWT 怎么传、怎么校验（SSO 细节） |
+| **身份方案** | SSO 一次性票据：`POST /api/internal/app-launch/verify` 用 `ticket` 换 `user_id`（细节见对接指南 §4①）；不下发平台 JWT 密钥 |
 | **接口文档** | 指给 `./billing-integration-spec.md`（字段级）、本目录 [开发者对接指南](./developer-integration-guide.md) |
 | **测试账号** | 一个普通用户账号 + 一些钱包余额/测试积分，供开发者联调 |
 
@@ -111,6 +111,6 @@
 > 1. 阅读 `./developer-integration-guide.md` 与 `./billing-integration-spec.md`。
 > 2. 我已为你配好：应用 `app_id=__`、商品 `product_id=__`、套餐 `plan_id=__`；计费模型=__；usage_type=__；单价=__。
 > 3. 内部密钥 `INTERNAL_API_TOKEN` 见安全渠道，你的服务器 IP（__）已加白名单。
-> 4. 你需要实现：① 接平台 JWT 校验身份；② 用前查 `/api/my/assets`（或额度）校验；③ 用时调计费接口（postpaid `product-usage-events` / prepaid `entitlement-*`），带 `X-Internal-Token` + 唯一幂等键。
+> 4. 你需要实现：① 用 SSO 票据认人（收到 `?ticket=` → 调 `POST /api/internal/app-launch/verify` 换 `user_id`）；② 用前查 `/api/my/assets`（或额度）校验；③ 用时调计费接口（postpaid `product-usage-events` / prepaid `entitlement-*`），带 `X-Internal-Token` + 唯一幂等键。
 > 5. 完成后联调，过第 5 节验收清单。
 </content>

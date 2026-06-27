@@ -43,7 +43,7 @@
 □ 标识：app_id、product_id、plan_id（积分制还需知道 entitlement 怎么取）
 □ 计费约定：用哪种模型(postpaid/prepaid)、usage_type 命名、单价、积分单位
 □ 内部密钥：INTERNAL_API_TOKEN（做使用扣费/额度才需要），且你的服务器 IP 已加白名单
-□ 身份方案：用户的平台 JWT 怎么传到你的应用、怎么校验
+□ 身份方案：SSO 一次性票据（推荐，收 `?ticket=` → 调 verify 换 user_id）；自有账号体系可用 `/api/my/assets` 兜底
 □ 测试账号：一个带余额/积分的普通用户账号，供你联调
 ```
 
