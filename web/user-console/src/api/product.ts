@@ -15,6 +15,10 @@ export function getProduct(id: number) {
   return http.get<unknown, { product: Product; plans: ProductPlan[] }>(`/products/${id}`)
 }
 
+export function getProductDetail(id: number) {
+  return getProduct(id)
+}
+
 export function getProductPlans(id: number, params: { page?: number; page_size?: number } = {}) {
   return http.get<unknown, PageResult<ProductPlan>>(`/products/${id}/plans`, { params })
 }

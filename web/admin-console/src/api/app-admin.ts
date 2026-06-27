@@ -12,6 +12,10 @@ export function listAdminApps(params: {
   return http.get<unknown, PageResult<AdminApp>>('/admin/apps', { params })
 }
 
+export function getAdminApp(id: number) {
+  return http.get<unknown, AdminApp>(`/admin/apps/${id}`)
+}
+
 export function createAdminApp(data: {
   code: string
   name: string

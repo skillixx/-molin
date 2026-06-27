@@ -16,6 +16,7 @@ import {
   updateProduct,
   updateProductStatus,
 } from '@/api/product-admin'
+import { getAdminApp, updateAdminApp } from '@/api/app-admin'
 import { createBillingRule, listBillingRules, updateBillingRule } from '@/api/billing-rule'
 import { listRoles } from '@/api/role'
 import type { AccessItem, AdminPlan, AdminProduct, PriceItem } from '@/types/product-admin'
@@ -40,6 +41,7 @@ const productDialogVisible = ref(false)
 const productFormRef = ref<FormInstance>()
 const editingProduct = ref<AdminProduct | null>(null)
 const savingProduct = ref(false)
+const loadingProductApp = ref(false)
 const productForm = reactive({
   product_type: '',
   product_code: '',
@@ -47,6 +49,7 @@ const productForm = reactive({
   description: '',
   status: 'draft',
   business_ref_id: undefined as number | undefined,
+  access_url: '',
 })
 const productRules: FormRules = {
   product_type: [{ required: true, message: '请输入商品类型', trigger: 'blur' }],
@@ -144,10 +147,11 @@ function openCreateProduct() {
   productForm.description = ''
   productForm.status = 'draft'
   productForm.business_ref_id = undefined
+  productForm.access_url = ''
   productDialogVisible.value = true
 }
 
-function openEditProduct(product: AdminProduct) {
+async function openEditProduct(product: AdminProduct) {
   editingProduct.value = product
   productForm.product_type = product.product_type
   productForm.product_code = product.product_code
@@ -155,12 +159,61 @@ function openEditProduct(product: AdminProduct) {
   productForm.description = product.description || ''
   productForm.status = product.status
   productForm.business_ref_id = product.business_ref_id ?? undefined
+  productForm.access_url = ''
   productDialogVisible.value = true
+  if (product.product_type === 'application' && product.business_ref_id) {
+    await loadProductAppAccess(product.business_ref_id)
+  }
+}
+
+async function loadProductAppAccess(appId: number) {
+  loadingProductApp.value = true
+  try {
+    const app = await getAdminApp(appId)
+    productForm.access_url = app.access_url || ''
+  } catch {
+    ElMessage.warning('关联应用信息加载失败，请确认业务引用 ID 是否为有效应用 ID')
+  } finally {
+    loadingProductApp.value = false
+  }
+}
+
+function normalizeAccessUrl() {
+  const accessUrl = productForm.access_url.trim()
+  if (!accessUrl) return ''
+  if (!productForm.business_ref_id) {
+    ElMessage.warning('请先填写业务引用 ID，再配置应用访问入口')
+    return undefined
+  }
+  if (!accessUrl.startsWith('https://')) {
+    ElMessage.warning('访问地址必须以 https:// 开头')
+    return undefined
+  }
+  if (accessUrl.length > 512) {
+    ElMessage.warning('访问地址长度不能超过 512 个字符')
+    return undefined
+  }
+  return accessUrl
+}
+
+function handleBusinessRefChange(value: number | undefined) {
+  if (productForm.product_type === 'application' && value) {
+    loadProductAppAccess(value)
+  } else {
+    productForm.access_url = ''
+  }
+}
+
+function openSelectedProductAppEntry() {
+  if (!selectedProduct.value) return
+  openEditProduct(selectedProduct.value)
 }
 
 async function saveProduct() {
   const valid = await productFormRef.value?.validate().catch(() => false)
   if (!valid) return
+  const accessUrl = productForm.product_type === 'application' ? normalizeAccessUrl() : ''
+  if (accessUrl === undefined) return
   savingProduct.value = true
   try {
     if (editingProduct.value) {
@@ -169,6 +222,9 @@ async function saveProduct() {
         description: productForm.description || null,
         business_ref_id: productForm.business_ref_id ?? null,
       })
+      if (productForm.product_type === 'application' && productForm.business_ref_id) {
+        await updateAdminApp(productForm.business_ref_id, { access_url: accessUrl })
+      }
       ElMessage.success('商品已更新')
     } else {
       await createProduct({
@@ -179,6 +235,9 @@ async function saveProduct() {
         status: productForm.status,
         business_ref_id: productForm.business_ref_id ?? undefined,
       })
+      if (productForm.product_type === 'application' && productForm.business_ref_id) {
+        await updateAdminApp(productForm.business_ref_id, { access_url: accessUrl })
+      }
       ElMessage.success('商品已创建')
     }
     productDialogVisible.value = false
@@ -561,7 +620,24 @@ async function saveRule() {
           <el-input v-model="productForm.name" />
         </el-form-item>
         <el-form-item label="业务引用 ID">
-          <el-input-number v-model="productForm.business_ref_id" :min="1" style="width: 100%" />
+          <el-input-number
+            v-model="productForm.business_ref_id"
+            :min="1"
+            style="width: 100%"
+            @change="handleBusinessRefChange"
+          />
+        </el-form-item>
+        <el-form-item v-if="productForm.product_type === 'application'" label="应用访问入口">
+          <el-input
+            v-model="productForm.access_url"
+            :disabled="loadingProductApp"
+            maxlength="512"
+            show-word-limit
+            placeholder="https://your-app.com"
+          />
+          <div class="form-tip">
+            保存时会同步写入业务引用 ID 指向的应用，未填写则清空该应用访问入口。
+          </div>
         </el-form-item>
         <el-form-item v-if="!editingProduct" label="初始状态">
           <el-select v-model="productForm.status" style="width: 100%">
@@ -613,6 +689,11 @@ async function saveRule() {
               <h4>价格配置</h4>
               <p>每个价格项必须包含 product_plan_id；价格 items 不可为空。</p>
               <el-button type="primary" @click="openPriceDialog">配置价格</el-button>
+            </div>
+            <div v-if="selectedProduct?.product_type === 'application'" class="config-card app-entry-card">
+              <h4>应用访问入口</h4>
+              <p>应用入口保存在 business_ref_id 指向的应用上，可在商品编辑里快速配置。</p>
+              <el-button type="primary" @click="openSelectedProductAppEntry">配置应用入口</el-button>
             </div>
           </div>
         </el-tab-pane>
@@ -820,6 +901,7 @@ async function saveRule() {
 }
 .config-card {
   flex: 1;
+  min-width: 220px;
   min-height: 150px;
   padding: 18px;
   border: 1px solid var(--mc-border-soft);
@@ -832,6 +914,12 @@ async function saveRule() {
 }
 .config-card p,
 .dialog-tip {
+  color: var(--mc-text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.form-tip {
+  margin-top: 6px;
   color: var(--mc-text-muted);
   font-size: 12px;
   line-height: 1.6;

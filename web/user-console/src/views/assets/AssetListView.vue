@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { Box, Refresh, Search, Tickets } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { Box, Link, Refresh, Search, Tickets } from '@element-plus/icons-vue'
 import { getMyAsset, listMyAssets, listMyEntitlements } from '@/api/asset'
+import { getMarketplaceApp } from '@/api/app'
+import { getProductDetail } from '@/api/product'
 import type { UserAsset, UserEntitlement } from '@/types/asset'
+import type { MarketplaceApp } from '@/types/app'
 import { formatDateTime } from '@/utils/display'
 
 const loadingAssets = ref(false)
@@ -11,7 +15,10 @@ const detailLoading = ref(false)
 const assets = ref<UserAsset[]>([])
 const entitlements = ref<UserEntitlement[]>([])
 const selectedAsset = ref<UserAsset | null>(null)
+const selectedApp = ref<MarketplaceApp | null>(null)
 const detailVisible = ref(false)
+const launchLoadingAssetId = ref<number | null>(null)
+const applicationAssetTypes = new Set(['application', 'app_access'])
 
 const query = reactive({
   status: '',
@@ -88,10 +95,50 @@ async function openDetail(row: unknown) {
   const asset = row as UserAsset
   detailVisible.value = true
   detailLoading.value = true
+  selectedApp.value = null
   try {
-    selectedAsset.value = await getMyAsset(asset.id)
+    const detail = await getMyAsset(asset.id)
+    selectedAsset.value = detail
+    if (isApplicationAsset(detail)) {
+      selectedApp.value = await loadApplication(detail)
+    }
   } finally {
     detailLoading.value = false
+  }
+}
+
+function isApplicationAsset(row: Pick<UserAsset, 'asset_type'>) {
+  return applicationAssetTypes.has(row.asset_type)
+}
+
+function canLaunchApp(row: unknown) {
+  const asset = row as UserAsset
+  return isApplicationAsset(asset) && asset.status === 'active'
+}
+
+async function loadApplication(row: UserAsset) {
+  const { product } = await getProductDetail(row.product_id)
+  if (!product.business_ref_id) return null
+  return getMarketplaceApp(product.business_ref_id)
+}
+
+async function launchApp(row: unknown) {
+  const asset = row as UserAsset
+  launchLoadingAssetId.value = asset.id
+  try {
+    const { product } = await getProductDetail(asset.product_id)
+    if (!product.business_ref_id) {
+      ElMessage.warning('该应用未配置访问地址')
+      return
+    }
+    const app = await getMarketplaceApp(product.business_ref_id)
+    if (!app.access_url) {
+      ElMessage.warning('该应用暂未开放访问入口')
+      return
+    }
+    window.open(app.access_url, '_blank', 'noopener,noreferrer')
+  } finally {
+    launchLoadingAssetId.value = null
   }
 }
 
@@ -218,9 +265,19 @@ function formatQuota(row: unknown) {
             <el-table-column label="创建时间" min-width="170">
               <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="110" fixed="right">
+            <el-table-column label="操作" width="190" fixed="right">
               <template #default="{ row }">
                 <el-button type="primary" text @click="openDetail(row)">详情</el-button>
+                <el-button
+                  v-if="canLaunchApp(row)"
+                  type="success"
+                  text
+                  :icon="Link"
+                  :loading="launchLoadingAssetId === row.id"
+                  @click="launchApp(row)"
+                >
+                  进入应用
+                </el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -300,6 +357,31 @@ function formatQuota(row: unknown) {
             <div><dt>到期时间</dt><dd>{{ formatDateTime(selectedAsset.expires_at) }}</dd></div>
             <div><dt>创建时间</dt><dd>{{ formatDateTime(selectedAsset.created_at) }}</dd></div>
           </dl>
+
+          <section v-if="isApplicationAsset(selectedAsset)" class="app-access-card">
+            <div v-if="selectedApp" class="app-access-main">
+              <img v-if="selectedApp.icon_url" class="app-access-icon" :src="selectedApp.icon_url" :alt="selectedApp.name" />
+              <div v-else class="app-access-icon placeholder">{{ selectedApp.name.slice(0, 1) }}</div>
+              <div>
+                <span>关联应用</span>
+                <strong>{{ selectedApp.name }}</strong>
+                <small>{{ selectedApp.code }}</small>
+              </div>
+            </div>
+            <div v-else class="app-access-empty">
+              <span>关联应用</span>
+              <strong>暂无应用信息</strong>
+            </div>
+            <el-button
+              type="primary"
+              :icon="Link"
+              :loading="launchLoadingAssetId === selectedAsset.id"
+              :disabled="selectedAsset.status !== 'active'"
+              @click="launchApp(selectedAsset)"
+            >
+              进入应用
+            </el-button>
+          </section>
         </template>
       </div>
     </el-drawer>
@@ -502,6 +584,69 @@ function formatQuota(row: unknown) {
   color: var(--color-text);
   font-size: 14px;
   word-break: break-all;
+}
+
+.app-access-card {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  border-radius: 8px;
+  background: rgba(34, 211, 238, 0.08);
+}
+
+.app-access-main {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.app-access-icon {
+  width: 48px;
+  height: 48px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  object-fit: cover;
+}
+
+.app-access-icon.placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--color-accent);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.app-access-main span,
+.app-access-empty span {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.app-access-main strong,
+.app-access-empty strong {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-access-main small {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-text-disabled);
+  font-size: 12px;
+}
+
+.app-access-card .el-button {
+  justify-self: flex-start;
 }
 
 @media (max-width: 900px) {
