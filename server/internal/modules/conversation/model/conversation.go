@@ -9,13 +9,13 @@ import "time"
 type Conversation struct {
 	ID                uint64     `gorm:"primaryKey;autoIncrement" json:"id"`
 	UserID            uint64     `gorm:"column:user_id;not null" json:"user_id"`                                   // 所属用户（隔离维度）
-	AgentID           *uint64    `gorm:"column:agent_id" json:"agent_id,omitempty"`                                // NULL=普通聊天；非空=Agent 会话
+	AgentID           *uint64    `gorm:"column:agent_id" json:"agent_id"`                                          // NULL=普通聊天；非空=Agent 会话（空值渲染为 null，对齐契约）
 	Title             string     `gorm:"size:255;not null;default:''" json:"title"`                                // 会话标题
 	ModelCode         string     `gorm:"column:model_code;size:128;not null;default:''" json:"model_code"`         // 逻辑模型名
 	Summary           string     `gorm:"type:mediumtext" json:"summary"`                                           // 滚动压缩历史摘要
 	SummarizedUntilID uint64     `gorm:"column:summarized_until_id;not null;default:0" json:"summarized_until_id"` // 摘要水位线
 	MessageCount      int        `gorm:"column:message_count;not null;default:0" json:"message_count"`             // 消息总数
-	LastMessageAt     *time.Time `gorm:"column:last_message_at" json:"last_message_at,omitempty"`                  // 最后消息时间
+	LastMessageAt     *time.Time `gorm:"column:last_message_at" json:"last_message_at"`                            // 最后消息时间（空值渲染为 null，对齐契约）
 	CreatedAt         time.Time  `json:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at"`
 }
