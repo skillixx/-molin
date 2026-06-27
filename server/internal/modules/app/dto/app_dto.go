@@ -44,6 +44,31 @@ func MapMarketplaceApp(a *model.Application) MarketplaceAppResponse {
 	}
 }
 
+// LaunchTicketResult 用户「进入应用」签发一次性票据的响应 data（阶段二 SSO）。
+//
+// 前端拿到后跳转 {access_url}?ticket={launch_ticket}；应用后端再用该票据
+// 调内部接口 POST /api/internal/app-launch/verify 换取用户身份。
+type LaunchTicketResult struct {
+	AccessURL    string `json:"access_url"`    // 应用访问入口（已确保非空、https）
+	LaunchTicket string `json:"launch_ticket"` // 一次性票据，形如 lt_xxx
+	ExpiresIn    int    `json:"expires_in"`    // 票据有效期（秒）
+}
+
+// VerifyLaunchReq 应用后端校验/消费 launch 票据的请求体（内部接口）。
+type VerifyLaunchReq struct {
+	LaunchTicket string `json:"launch_ticket"`
+}
+
+// LaunchClaims launch 票据所绑定的身份信息，校验+消费后返回给应用后端。
+//
+// 只返回最小必要字段：应用据 user_id 建立自有会话、据 product_id 区分套餐来源；
+// 不返回用户敏感资料。
+type LaunchClaims struct {
+	UserID    uint64 `json:"user_id"`
+	AppID     uint64 `json:"app_id"`
+	ProductID uint64 `json:"product_id"`
+}
+
 // CreateAppReq 创建应用请求（管理端）。
 type CreateAppReq struct {
 	Code              string  `json:"code"`

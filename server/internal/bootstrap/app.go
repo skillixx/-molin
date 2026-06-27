@@ -689,7 +689,7 @@ func NewApp() (*App, error) {
 	contentmod.RegisterRoutes(mux, gormDB, cfg.JWTSecret, authService, iamService, iamRoleGetter, membershipChecker)
 
 	// 注册 app 模块（应用业务详情 + 适配器管理；与 product 模块的商品/套餐解耦）
-	appmod.RegisterRoutes(mux, gormDB, cfg.JWTSecret, authService, iamService)
+	appmod.RegisterRoutes(mux, gormDB, cfg.JWTSecret, authService, iamService, redisClient)
 
 	// 注册 token 网关门面（管理端：渠道/模型目录；用户端：OpenAI 兼容 chat 转发）。
 	// TOKEN_PROVIDER_KEY 未配置或非法（非 32 字节）时跳过装配，仅记日志，不阻断其他模块启动。

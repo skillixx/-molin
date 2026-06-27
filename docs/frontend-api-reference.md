@@ -1654,6 +1654,24 @@ Wechatpay-Nonce: <随机串>
 > **`access_url`**：用户「进入应用」跳转目标（面向用户，已配置才返回，未配为 null）。前端可据此在已购/有权应用上渲染「进入应用」按钮；为空则不显示入口。
 > **不含 `callback_url` / `adapter_config_json`（仅管理端 AP2/AP3 `GET /api/admin/apps`、`GET /api/admin/apps/{id}` 返回），亦不含 `updated_at`。** 这两个字段属内部回调地址与非交易配置（可能含集成参数/内网地址/密钥），用户端禁止下发。
 
+### 13.1.1 进入应用（阶段二 SSO 一次性票据）
+
+**POST** `/api/apps/{id}/launch` *(需登录)* — 用户「进入应用」时由前端调用，校验使用权后签发一次性票据。
+
+请求体：无（应用 ID 走路径）。响应 `data`：
+```json
+{ "access_url": "https://app.example.com", "launch_ticket": "lt_xxxxxxxx", "expires_in": 60 }
+```
+
+前端流程（取代「直接打开 access_url」的阶段一做法，用于需可信身份的应用）：
+1. 点击「进入应用」→ 调 `POST /api/apps/{id}/launch`；
+2. 拿到 `{access_url, launch_ticket}` → 浏览器跳转 `{access_url}?ticket={launch_ticket}`（票据 60s 有效、一次性，注意日志脱敏）；
+3. 应用方后端用 `ticket` 调内部接口换身份，完成免登。
+
+错误码：`40400` 应用不存在/未开放入口（不显示按钮或提示未开放）；`40003` 无使用权（提示先购买/开通）。
+
+> `POST /api/internal/app-launch/verify` 是**应用后端**用的内部接口（`X-Internal-Token` + IP 白名单），**前端不调用**，详见 `full-api-design.md` §5.3.1。
+
 ### 13.2 管理端应用 CRUD
 
 - **GET** `/api/admin/apps?status=&type=&page=1&page_size=20` *(需 `app:manage`)* → 扁平分页 `{ items, page, page_size, total }`

@@ -52,7 +52,13 @@
 ## 4. 你需要实现的三件事（核心工作量）
 
 ### ① 身份：确认"是哪个用户"
-用户带着平台 JWT 访问你的应用，你校验 JWT 得到 `user_id`。（具体校验方式由平台方给的身份方案定。）
+**推荐（SSO 一次性票据）**：用户从平台点「进入应用」时，会带 `?ticket=lt_xxx` 跳到你的入口地址。你的后端收到票据后调
+`POST /api/internal/app-launch/verify`（带 `X-Internal-Token`，body `{"launch_ticket":"lt_xxx"}`）→ 平台**校验并消费**票据（一次性、60s 过期、防重放），返回 `{user_id, app_id, product_id}`。据此为该用户建立你自己的会话，完成免登。
+
+- 票据无效/过期/已用 → 返回 `40003`，按"重新从平台进入"处理，**不要重试同一张票据**。
+- 票据只走 URL query，**不在 URL 里放平台长期 JWT**；拿到 `user_id` 后用你自己的会话机制维持登录态。
+
+> 备选：若你的应用已有自有账号体系，也可用 `GET /api/my/assets`（带用户 JWT）自行核对身份与使用权；但需可信免登交接时，一律走上面的票据方案。
 
 ### ② 用前校验：确认"用户有没有权用 / 额度够不够"
 - 通用：`GET /api/my/assets`（带用户 JWT）→ 有 `product_id=你的商品` 且 `status=active` 的资产才放行。
@@ -73,6 +79,7 @@
 
 | 用途 | 接口 | 鉴权 |
 |---|---|---|
+| 票据换身份（免登 SSO） | `POST /api/internal/app-launch/verify` | X-Internal-Token |
 | 查用户资产（用前校验） | `GET /api/my/assets` | 用户 JWT |
 | 查用户额度（给用户看） | `GET /api/my/entitlements` | 用户 JWT（无 remaining，自己算 total−used） |
 | 查额度余量（服务端判断） | `GET /api/internal/entitlement-balance` | X-Internal-Token |
