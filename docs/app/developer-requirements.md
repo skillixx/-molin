@@ -1,7 +1,7 @@
 # 应用开发需求与注意事项 —— 开发规范 + 开发案例
 
-> 📚 本文属于 [业务与计费总览](./business-billing-overview.md) 文档体系；面向**应用开发者**，规定开发一个计费应用的硬性需求、设计要点（商品单价设计、会员设计）、易错注意事项与完整开发案例。
-> 配套：[接入对接规范（字段级）](./app-billing-integration-spec.md)、[扣费集成设计](./app-billing-integration-design.md)、[商品计费](./product-and-billing-guide.md)、[会员管理](./membership-management-guide.md)。
+> 📚 本文属于 [业务与计费总览](../business-billing-overview.md) 文档体系；面向**应用开发者**，规定开发一个计费应用的硬性需求、设计要点（商品单价设计、会员设计）、易错注意事项与完整开发案例。
+> 配套：[接入对接规范（字段级）](./billing-integration-spec.md)、[扣费集成设计](./billing-integration-design.md)、[商品计费](../product-and-billing-guide.md)、[会员管理](../membership-management-guide.md)。
 > 统一信封 `{code,message,data}`；金额一律字符串 decimal。
 
 ---
@@ -100,7 +100,7 @@ status = active AND (expires_at IS NULL OR expires_at > NOW())
 
 **E. 续期是叠加不是覆盖**：同一 `(用户, 等级)` 再次开通，在原有效期上叠加天数，不新增记录；`duration_days=null` = 永久会员。
 
-**F. ⚠️ 现状**：会员"购买商品自动开通"链路**尚未接线**（provision 未注册 membership 处理器）。现阶段会员开通以**管理端手动开通**为准（`POST /api/admin/user-memberships`）。详见 [会员文档·现状必读](./membership-management-guide.md)。
+**F. ⚠️ 现状**：会员"购买商品自动开通"链路**尚未接线**（provision 未注册 membership 处理器）。现阶段会员开通以**管理端手动开通**为准（`POST /api/admin/user-memberships`）。详见 [会员文档·现状必读](../membership-management-guide.md)。
 
 ### 2.3 计费模式 `billing_mode`（固定枚举 + 静默坑）
 

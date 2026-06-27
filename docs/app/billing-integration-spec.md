@@ -1,7 +1,7 @@
 # 应用接入会员/商品计费 —— 开发对接规范（字段级）
 
-> 📚 本文属于 [业务与计费总览](./business-billing-overview.md) 文档体系；面向**应用开发者**，规定开发一个应用时如何对接会员计费、商品计费与计费统计，精确到字段与流程。
-> 配套阅读：[应用×财务商品扣费集成设计](./app-billing-integration-design.md)（概念与运营配置）、[商品与商品计费](./product-and-billing-guide.md)、[会员管理](./membership-management-guide.md)、[Token 计费契约](./backend-token-billing-contract.md)。
+> 📚 本文属于 [业务与计费总览](../business-billing-overview.md) 文档体系；面向**应用开发者**，规定开发一个应用时如何对接会员计费、商品计费与计费统计，精确到字段与流程。
+> 配套阅读：[应用×财务商品扣费集成设计](./billing-integration-design.md)（概念与运营配置）、[商品与商品计费](../product-and-billing-guide.md)、[会员管理](../membership-management-guide.md)、[Token 计费契约](../backend-token-billing-contract.md)。
 > 统一响应信封：`{ "code": 0, "message": "ok", "data": ... }`。金额一律字符串 decimal。
 
 ---
@@ -64,7 +64,7 @@ A / B / C 可叠加：如“买套餐额度(A+C)”“开通免费按量后付(B
 
 平台购买入口唯一：`POST /api/products/{id}/purchase`（带 `Idempotency-Key` 头）。链路：实名校验→购买权限→会员门槛→取价（会员价>角色价>默认价）→算总价→幂等→建订单→**扣钱包+订单 paid 同事务**→开通生成资产。
 
-**应用开发者职责**：仅确保运营完成配置（应用 active → 商品 `product_type=application` 且 `business_ref_id=应用ID` → 套餐 → 价格 → 访问权限 → 上架）。详见 [集成设计文档 §四/案例 1–6](./app-billing-integration-design.md)。
+**应用开发者职责**：仅确保运营完成配置（应用 active → 商品 `product_type=application` 且 `business_ref_id=应用ID` → 套餐 → 价格 → 访问权限 → 上架）。详见 [集成设计文档 §四/案例 1–6](./billing-integration-design.md)。
 
 > 会员价**自动生效**：用户是有效会员且该套餐配了对应会员档价格，购买时自动按会员价扣费——你和运营都无需在购买时做额外判断。
 
@@ -220,7 +220,7 @@ GET /api/my/membership        （需登录，查本人有效会员）
 判定有效会员的口径（平台已保证）：`status=active AND (expires_at IS NULL OR expires_at > NOW())`。
 
 > 公开页可用 `GET /api/memberships`（等级列表）、`GET /api/memberships/{id}/benefits`（权益）做营销展示。
-> ⚠️ 当前“购买会员商品自动开通”链路**尚未接线**（provision 未注册 membership 处理器），会员开通以管理端手动为准，详见 [会员文档·现状必读](./membership-management-guide.md)。
+> ⚠️ 当前“购买会员商品自动开通”链路**尚未接线**（provision 未注册 membership 处理器），会员开通以管理端手动为准，详见 [会员文档·现状必读](../membership-management-guide.md)。
 
 ---
 
