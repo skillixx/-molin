@@ -1,10 +1,10 @@
 # 应用 × 财务商品 结合实现用户扣费 —— 集成设计文档
 
-> 📚 本文属于 [业务与计费总览](./business-billing-overview.md) 文档体系（商品·会员·应用·扣费），建议先读总览建立全局认知。
-> 🛠️ 要动手写应用对接代码？看 [应用接入会员/商品计费 开发对接规范（字段级）](./app-billing-integration-spec.md)。
+> 📚 本文属于 [业务与计费总览](../business-billing-overview.md) 文档体系（商品·会员·应用·扣费），建议先读总览建立全局认知。
+> 🛠️ 要动手写应用对接代码？看 [应用接入会员/商品计费 开发对接规范（字段级）](./billing-integration-spec.md)。
 > 读者：后端、运营、产品、测试
 > 关联模块：`app`（应用元数据）、`product`（商品/套餐/价格/计费规则）、`order`（订单）、`billing`（钱包扣费）、`provision`（开通）、`asset`（资产/权益）、`finance_consumer`（用量计费）
-> 关联文档：`docs/app-management-guide.md`、`docs/product-and-billing-guide.md`、`docs/membership-management-guide.md`、`docs/backend-token-billing-contract.md`
+> 关联文档：`../app-management-guide.md`、`../product-and-billing-guide.md`、`../membership-management-guide.md`、`../backend-token-billing-contract.md`
 > 统一响应信封：`{ "code": 0, "message": "ok", "data": ... }`
 
 ---
@@ -115,7 +115,7 @@ prepaid 路径（门面 → `asset` 模块额度接口，**不走上面的 produ
 **关键设计**：
 - 每条用量事件必须带**全局唯一幂等键**（`request_id:usage_type`），杜绝重复扣费。
 - 按量（`input_tokens`/`output_tokens`）与按次（`calls`）**二选一**配置在商品上，管理端强校验，避免重复收费。
-- prepaid 走 entitlement 额度（`entitlement_holds` 预占 + settle 多退少补 + FOR UPDATE 行锁防透支），与钱包路径结构对称，**绝不同一次调用既扣钱包又扣额度**。详见 `docs/backend-token-billing-contract.md`。
+- prepaid 走 entitlement 额度（`entitlement_holds` 预占 + settle 多退少补 + FOR UPDATE 行锁防透支），与钱包路径结构对称，**绝不同一次调用既扣钱包又扣额度**。详见 `../backend-token-billing-contract.md`。
 
 ---
 
@@ -347,7 +347,7 @@ curl -X POST https://api.example.com/api/internal/product-usage-events \
 2. 购买时（链路 A）钱包付套餐价，开通生成 `user_entitlements`（`quota_total` 额度）。
 3. 计费规则 `billing_mode: prepaid`；使用时门面调内部额度接口扣减，**不走钱包**。
 
-**关键边界**（见 `docs/backend-token-billing-contract.md`）：
+**关键边界**（见 `../backend-token-billing-contract.md`）：
 - 额度单位与计量同维度，额度耗尽即拒（错误码 `60005 权益额度不足`，区别于钱包 `60001`）。
 - 预占 + 结算（多退少补）+ FOR UPDATE 行锁，防并发透支。
 - prepaid 与 postpaid **互斥**：同一次调用绝不既扣钱包又扣额度。
