@@ -44,7 +44,8 @@ func (h *LaunchHandler) LaunchApp(w http.ResponseWriter, r *http.Request) {
 	}
 	userID := middleware.UserIDFromContext(r.Context())
 	if userID == 0 {
-		response.Error(w, http.StatusUnauthorized, 40100, "未登录")
+		// 防御性兜底：RequireAuth 中间件已前置拦截，此分支正常不可达；错误码与全局约定一致（40001=未登录）。
+		response.Error(w, http.StatusUnauthorized, 40001, "未登录")
 		return
 	}
 
