@@ -16,6 +16,10 @@ import (
 // accessURLMaxLen 访问入口地址最大长度（与 DB VARCHAR(512) 对齐）。
 const accessURLMaxLen = 512
 
+// normalizeAccessURL 归一化访问入口地址：去首尾空白；纯空白返回空串（视为未配置）。
+// 抽出供创建/更新统一归一，并便于单测。
+func normalizeAccessURL(raw string) string { return strings.TrimSpace(raw) }
+
 // validateAccessURL 校验用户访问入口地址 access_url。
 // 该字段面向用户、前端会据此跳转，必须严格约束以防开放重定向 / 存储型 XSS：
 //   - 空字符串视为「清空入口」，放行；
@@ -115,6 +119,13 @@ func (s *AppService) CreateApp(ctx context.Context, code, name, appType string, 
 		if err := validateAccessURL(*accessURL); err != nil {
 			return nil, err
 		}
+		// 归一化：trim 后入库；纯空白视为「未配置」置 NULL，避免前端拿到空白串误渲染入口
+		norm := normalizeAccessURL(*accessURL)
+		if norm == "" {
+			accessURL = nil
+		} else {
+			accessURL = &norm
+		}
 	}
 
 	// 校验 code 唯一性
@@ -157,6 +168,8 @@ func (s *AppService) UpdateApp(ctx context.Context, id uint64, updates map[strin
 		if err := validateAccessURL(accessStr); err != nil {
 			return err
 		}
+		// 归一化：入库 trim 后的值，纯空白归一为空串（清空入口），避免前端误判空白串为有效入口
+		updates["access_url"] = normalizeAccessURL(accessStr)
 	}
 
 	if _, err := s.repo.FindByID(ctx, id); err != nil {

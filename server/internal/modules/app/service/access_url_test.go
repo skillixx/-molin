@@ -30,6 +30,21 @@ func TestValidateAccessURL(t *testing.T) {
 	}
 }
 
+// TestNormalizeAccessURL 归一化：去首尾空白；纯空白归一为空串（视为未配置）。
+func TestNormalizeAccessURL(t *testing.T) {
+	cases := map[string]string{
+		"   ":                        "",
+		"":                           "",
+		"  https://a.com  ":          "https://a.com",
+		"https://a.com":              "https://a.com",
+	}
+	for in, want := range cases {
+		if got := normalizeAccessURL(in); got != want {
+			t.Fatalf("normalizeAccessURL(%q)=%q, want %q", in, got, want)
+		}
+	}
+}
+
 // TestValidateAccessURL_TooLong 超长校验。
 func TestValidateAccessURL_TooLong(t *testing.T) {
 	long := "https://example.com/"
