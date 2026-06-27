@@ -113,7 +113,7 @@ Headers:
 ### 4.2 平台侧处理（你需要知道的行为）
 
 1. **幂等**：按 `idempotency_key` 查 `product_consumption_records`，命中直接返回原结果。
-2. **规则匹配**：按 `(product_id, product_plan_id, usage_type)` 命中 `product_billing_rules`；**无匹配规则返回“未找到匹配的计费规则”**——你的应用应**静默跳过**（说明该商品未配该类计费），不要当错误重试。
+2. **规则匹配**：按 `(product_id, product_plan_id, usage_type)` 命中 `product_billing_rules`；**无匹配规则返回 HTTP 400 + `code=40000`、`message="未找到匹配的计费规则"`**。⚠️ 注意该错误码与参数错误同为 `40000`，需**靠 message 串判别**——命中此 message 时应用应**静默跳过**（说明该商品未配该类计费），不要当错误重试。
 3. **金额**：`amount = (usage_amount − free_quota 适用部分) × price_amount`；全部落在免费额度内（`amount ≤ 0`）时**不扣费、不报错**。
 4. **扣费**：`WalletService.DeductTx` 扣钱包（FOR UPDATE 行锁 + 乐观锁，无负余额）；余额不足按钱包错误码（`60001`）。
 5. **流水**：写 `product_consumption_records`，凭 `event_id` 可对账。
@@ -137,7 +137,7 @@ func reportUsage(userID, productID, planID uint64, usage decimal.Decimal) error 
     // 必带 X-Internal-Token；部署在白名单内网/经 Nginx 注入 X-Real-IP
     resp := httpPost("/api/internal/product-usage-events", body,
         header("X-Internal-Token", os.Getenv("INTERNAL_API_TOKEN")))
-    // code==0 成功；“未找到匹配的计费规则” → 静默跳过；余额不足 → 按业务降级
+    // code==0 成功；code==40000 且 message=="未找到匹配的计费规则" → 静默跳过；余额不足(60001) → 按业务降级
     return handle(resp)
 }
 ```
@@ -167,6 +167,7 @@ func reportUsage(userID, productID, planID uint64, usage decimal.Decimal) error 
 - 请求：`{ entitlement_id, user_id, amount(>0,decimal), idempotency_key(唯一) }`
 - 响应 `data`：`{ entitlement_id, quota_total, quota_used, remaining, status }`
 - 错误：`60005` 额度不足/权益不可用；`40003` 鉴权失败或权益不属于该用户；`40400` 权益不存在；`40000` 参数错误。
+- 说明：**不限量额度（`quota_total` 为 NULL）时，`quota_total`/`remaining` 字段为 `null`**（omitempty 指针），接入方需容许其缺省。
 
 **预占** `POST /api/internal/entitlement-reserve`
 - 请求：`{ entitlement_id, user_id, amount, idempotency_key }`
@@ -182,7 +183,9 @@ func reportUsage(userID, productID, planID uint64, usage decimal.Decimal) error 
 - 响应：`{ hold_id, status, settled_amount(=0), quota_used, quota_reserved, available }`
 
 **余额只读** `GET /api/internal/entitlement-balance?entitlement_id={id}&user_id={uid}`（前置闸用，不加锁不扣减）
-- 响应：`{ entitlement_id, user_id, quota_total, quota_used, remaining, status, expires_at, usable }`
+- 响应：`{ entitlement_id, user_id, quota_total, quota_used, quota_reserved, remaining, status, expires_at, usable }`
+- `quota_reserved`：当前已预占额度（恒返回）；`remaining = quota_total − quota_used − quota_reserved`（含已预占，避免误判可用）。
+- 不限量（`quota_total` 为 NULL）时 `quota_total`/`remaining` 为 `null`，此时 `status=active` 且未过期即 `usable=true`。
 - `usable=false`（过期/暂停/额度耗尽）时门面应直接拒绝。
 
 ### 5.3 预占模式时序（你的应用/门面侧）
