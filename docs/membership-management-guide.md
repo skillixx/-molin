@@ -20,12 +20,15 @@
 
 **两条成为会员的路径**（务必分清）：
 
-| 路径 | 触发方 | 说明 |
-|---|---|---|
-| **购买开通** | 用户自助 | 会员本质是 `product_type=membership` 的商品，走 `商品 → 下单 → 支付 → 开通` 链路，开通时写 `user_memberships` |
-| **管理端手动开通/续期** | 运营/客服 | `POST /api/admin/user-memberships`，用于补偿、人工纠错、赠送，不走支付 |
+| 路径 | 触发方 | 状态 | 说明 |
+|---|---|---|---|
+| **管理端手动开通/续期** | 运营/客服 | ✅ 当前可用 | `POST /api/admin/user-memberships`，用于补偿、人工纠错、赠送，不走支付 |
+| **购买开通** | 用户自助 | ⚠️ 设计目标，**尚未接线** | 计划让会员作为 `product_type=membership` 的商品走 `商品 → 下单 → 支付 → 开通` 链路、开通时写 `user_memberships` |
 
-> 关键设计：**购买入口单一**。会员不单独做购买接口，而是复用商品购买流程（见 `docs/product-and-billing-guide.md` 案例 7）。本模块只负责**会员等级/权益的配置**与**用户会员状态的查询/管理**。
+> ⚠️ **现状必读**：截至当前实现，`provision` 模块**只注册了 `application` / `token` 两类开通处理器，未注册 `membership`**（见 `bootstrap/app.go`）。因此「购买会员商品自动开通」这条链路**尚未打通**——若直接把会员做成商品售卖，购买会扣款且订单转 `paid`，但开通会因找不到处理器失败（仅记 WARN、不回滚订单），**不会自动写入 `user_memberships`**。
+> **现阶段开通会员请以「管理端手动开通」为准**（案例 5/6）。`CreateOrRenewMembership` 这一内部续期方法目前唯一调用方即管理端手动开通。待后续补齐 membership provisioner 接线后，本节再更新为已工作。
+
+> 关键设计意图：**购买入口单一**。会员不单独做购买接口，而是复用商品购买流程（见 `docs/product-and-billing-guide.md` 案例 7）。本模块只负责**会员等级/权益的配置**与**用户会员状态的查询/管理**。
 
 ### 会员与“会员价”的关系
 
@@ -86,17 +89,20 @@
 ```
 ① 创建会员等级（如「黄金会员」），默认 active
 ② 给等级配置权益（折扣率、专属标识等，benefit_value 用 JSON）
-③ 【关联收费】把会员做成 product_type=membership 的商品并配价（商品模块）
-   —— 或在普通商品里给该等级配“会员专属价”
-④ 用户购买会员商品 → 开通 → 自动写 user_memberships
-⑤ 运营在「用户会员列表」核对/调整会员状态
+③ 运营为用户开通会员：
+   · 当前可用 —— 管理端手动开通 POST /api/admin/user-memberships（流程 C）
+   · 设计目标（待接线）—— 把会员做成 product_type=membership 商品并配价，用户购买后自动开通
+   —— 另可在普通商品里给该等级配“会员专属价”，让会员享折扣
+④ 运营在「用户会员列表」核对/调整会员状态
 ```
 
 ### 流程 B：用户成为会员并享受权益
 
 ```
 ① 浏览会员等级 GET /api/memberships → 看权益 GET /api/memberships/{id}/benefits
-② 购买会员商品（走商品下单流程）
+② 成为会员：
+   · 当前阶段 —— 由运营在管理端为其手动开通（购买自动开通链路尚未接线，见「现状必读」）
+   · 设计目标 —— 购买会员商品（走商品下单流程）后自动开通
 ③ 开通后 GET /api/my/membership 查到本人会员（含等级名、到期时间）
 ④ 之后购买配了“会员价”的商品时，自动以会员价结算
 ```
@@ -196,20 +202,23 @@ curl https://api.example.com/api/memberships/2/benefits
 
 ---
 
-### 案例 4：用户购买会员并查询本人会员
+### 案例 4：查询本人会员（购买自动开通为设计目标）
 
-**作用**：用户成为会员的主路径。购买走商品下单流程（会员是 `product_type=membership` 的商品），支付成功后开通环节自动写入 `user_memberships`。
+**作用**：用户查询自己的会员状态。`GET /api/my/membership` 已实现且当前可用，无论会员由哪条路径开通，都能查到。
+
+> ⚠️ **关于「购买自动开通」**：下面 ① 的购买链路是**设计目标，尚未接线**——`provision` 未注册 `membership` 处理器，购买会员商品会扣款且订单 `paid`，但**不会自动写入 `user_memberships`**（见「现状必读」）。现阶段请用**管理端手动开通**（案例 5）让用户成为会员，再用 ② 查询。
 
 **操作**：
 
 ```bash
-# ① 购买会员商品（详见 docs/product-and-billing-guide.md 案例 7）
+# ① 【设计目标，尚未接线】购买会员商品（详见 docs/product-and-billing-guide.md 案例 7）
+#    现阶段请改用案例 5 的管理端手动开通
 curl -X POST https://api.example.com/api/products/{会员商品ID}/purchase \
   -H "Authorization: Bearer {{USER_TOKEN}}" -H "Content-Type: application/json" \
   -H "Idempotency-Key: 9b1c...-uuid" \
   -d '{ "plan_id": {会员套餐ID}, "quantity": 1 }'
 
-# ② 开通后查询本人会员
+# ② 查询本人会员（已实现，当前可用）
 curl https://api.example.com/api/my/membership \
   -H "Authorization: Bearer {{USER_TOKEN}}"
 ```
@@ -221,7 +230,7 @@ curl https://api.example.com/api/my/membership \
   "membership": {
     "id": 88, "user_id": 1001, "level_id": 2,
     "level_code": "gold", "level_name": "黄金会员",
-    "asset_id": 305, "status": "active",
+    "asset_id": null, "status": "active",
     "started_at": "2026-06-27T10:00:00Z",
     "expires_at": "2027-06-27T10:00:00Z"
   }
@@ -231,6 +240,7 @@ curl https://api.example.com/api/my/membership \
 **要点**：
 - 无会员时返回 `{ "membership": null }`（结构对称，前端不必分支判断）。
 - 响应直接内联 `level_code / level_name`，前端无需再按 `level_id` 查等级表。
+- `asset_id`：管理端手动开通时为 `null`（不关联资产）；未来购买开通接线后会带资产 ID。
 - `expires_at` 缺省/为 null 表示永久会员。
 - 成为有效会员后，再买配了“会员价”的商品会自动以会员价结算。
 

@@ -86,22 +86,35 @@ POST /api/products/{商品ID}/purchase   (Header: Idempotency-Key)
 
 应用在用户使用时把“用量事件”上报给计费消费端（见 `finance_consumer/service/consumer_service.go`）：
 
+> ⚠️ **两条扣费路径走不同接口，不要混淆**：
+> - **postpaid（后付，扣钱包）** 走 `POST /api/internal/product-usage-events` → `finance_consumer`。该端点**只扣钱包**，不读 `billing_mode`、不碰额度。
+> - **prepaid（预付，扣额度）** **不经过** product-usage-events，而是由门面（token_gateway 等）直接调 `asset` 模块的额度内部接口（预占 reserve / 结算 settle / 释放 release），扣 `user_entitlements` 额度。
+
+postpaid 路径（`POST /api/internal/product-usage-events` → `finance_consumer/service/consumer_service.go`）：
+
 ```
-应用/门面 ──上报用量事件──► POST /api/internal/product-usage-events   (内部接口)
+应用/门面 ──上报用量事件──► POST /api/internal/product-usage-events   (内部接口，需 X-Internal-Token)
   body: { event_id, user_id, product_id, product_plan_id, usage_type, usage_amount, idempotency_key, ... }
   │
   ├─ 1. 幂等检查          按 idempotency_key 查 product_consumption_records，重复直接返回原结果
   ├─ 2. 匹配计费规则       按 (product_id, plan_id, usage_type) 命中 product_billing_rules
   │                       └─ 无规则 → ErrNoBillingRule（门面静默跳过，不报错）
   ├─ 3. 计算金额          amount = usage_amount × price_amount（扣除 free_quota 后）
-  ├─ 4. 事务扣费          postpaid → 钱包扣 amount；prepaid → 扣 entitlement 额度
+  ├─ 4. 钱包扣费          WalletService.DeductTx 扣钱包（amount<=0 即全在免费额度内时跳过扣费）
   └─ 5. 写消费记录        product_consumption_records（带 event_id 可对账）
+```
+
+prepaid 路径（门面 → `asset` 模块额度接口，**不走上面的 product-usage-events**）：
+
+```
+门面（如 token_gateway）转发前 reserve 预占额度 → 结算 settle 多退少补 / 失败 release 释放
+  └─ asset 模块对 user_entitlements 操作；额度不足 → 60005「权益额度不足」
 ```
 
 **关键设计**：
 - 每条用量事件必须带**全局唯一幂等键**（`request_id:usage_type`），杜绝重复扣费。
 - 按量（`input_tokens`/`output_tokens`）与按次（`calls`）**二选一**配置在商品上，管理端强校验，避免重复收费。
-- prepaid 走 entitlement 额度（`entitlement_holds` 预占 + settle 多退少补 + FOR UPDATE 行锁防透支），与钱包路径结构对称，**绝不同一次调用既扣钱包又扣额度**。
+- prepaid 走 entitlement 额度（`entitlement_holds` 预占 + settle 多退少补 + FOR UPDATE 行锁防透支），与钱包路径结构对称，**绝不同一次调用既扣钱包又扣额度**。详见 `docs/backend-token-billing-contract.md`。
 
 ---
 
@@ -287,11 +300,12 @@ curl -X POST https://api.example.com/api/products/100/purchase \
 
 ### 案例 7：使用时上报用量（触发使用扣费）
 
-**作用**：用户用了 25GB 存储，应用把用量事件上报，触发**链路 B**：匹配规则、扣钱包、写消费记录。此接口为**内部接口**，由应用后端/门面调用，不对终端用户暴露。
+**作用**：用户用了 25GB 存储，应用把用量事件上报，触发**链路 B（postpaid 扣钱包）**：匹配规则、扣钱包、写消费记录。此接口为**内部接口**，由应用后端/门面调用，不对终端用户暴露；**fail-closed 鉴权**：必须带共享密钥头 `X-Internal-Token`（值为环境变量 `INTERNAL_API_TOKEN`），并受 IP 白名单限制，缺失或不符直接拒绝。
 
 ```bash
 curl -X POST https://api.example.com/api/internal/product-usage-events \
   -H "Content-Type: application/json" \
+  -H "X-Internal-Token: {{INTERNAL_API_TOKEN}}" \
   -d '{
     "event_id": "evt-uuid-1",
     "user_id": 1001,

@@ -28,7 +28,7 @@
                           │     │         │         access（谁能买/用）    │
                           │     │         └── billing_rules（使用扣费）     │
                           │     │                                        │
-   product_type 决定开通  │     ├ product_type=membership ──► 文档2 会员    │
+   product_type 决定开通  │     ├ product_type=membership（开通待接线）►文档2 会员│
    走哪个 Provisioner     │     ├ product_type=application ─► 文档3 应用    │
                           │     └ product_type=token/...                  │
                           └───────────────────────┬─────────────────────┘
@@ -80,7 +80,7 @@
 
 | 问题 | 答案 | 看哪份 |
 |---|---|---|
-| 会员怎么收费？ | 做成 `product_type=membership` 的商品走购买流程，开通写 `user_memberships` | 1 + 2 |
+| 会员怎么收费？ | 现阶段以**管理端手动开通**为准（`POST /api/admin/user-memberships`）；「做成 membership 商品购买后自动开通」是设计目标，provision 尚未注册 membership 处理器，未接线 | 1 + 2 |
 | 应用怎么收费？ | 做成 `product_type=application` 的商品，`business_ref_id=应用ID` | 3 + 4 |
 | 会员价在哪配？ | 商品 `product_prices` 的会员档（不在会员模块） | 1 案例4 / 2 |
 | 购买时扣费 vs 使用时扣费？ | 价格=买的时候付；计费规则=用的时候扣 | 1 / 4 |
