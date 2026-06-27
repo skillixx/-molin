@@ -120,7 +120,10 @@ ALTER TABLE applications DROP COLUMN access_url;
 ☑ 单测 + 并发重放测试（同票据二次 verify 必拒）
    → service/launch_service_test.go（含 64 并发恰好 1 次成功；DB 集成测试 RUN_DB_TESTS=1）
 ☑ 契约同步：full-api-design.md §5.3.1 / frontend-api-reference.md §13.1.1
-□ 待办：更新 docs/app/ 开发者接入文档（developer-integration-guide.md 补 verify 用法）；测试服重编译部署 + 配置 INTERNAL_API_TOKEN/INTERNAL_ALLOWED_IPS；前端阶段二按钮改调 launch 接口（见 §5）
+☑ 开发者接入文档 developer-integration-guide.md 补 verify 用法 + 同机部署走 127.0.0.1 约定（§8）
+☑ 测试服重编译部署 + INTERNAL_API_TOKEN 已配（INTERNAL_ALLOWED_IPS=127.0.0.1,::1，同机部署无需放开）；verify 冒烟通过
+☑ 部署拓扑（应用与平台同机）写入 §7.1
+□ 待办（非阻塞）：前端阶段二按钮改调 launch 接口（见 §5）；应用跨机部署时再把其出口 IP 加进 INTERNAL_ALLOWED_IPS
 ```
 
 ## 5. 前端任务清单（提给前端，不在此实现）
@@ -153,6 +156,12 @@ ALTER TABLE applications DROP COLUMN access_url;
 - `/api/internal/app-launch/verify` 同其它内部接口：`X-Internal-Token` 主闸 + IP 白名单，不暴露公网。
 - 不把用户长期 JWT 放进跳转 URL（阶段二票据方案即为规避此点）。
 - verify 返回最小必要信息（user_id/app_id/product_id），不返回用户敏感资料。
+
+### 7.1 部署拓扑：应用与平台服务同机（当前测试服）
+
+- **拓扑**：当前先把应用与平台服务（molin-api）部署在同一台服务器。应用后端调内部接口 `POST /api/internal/app-launch/verify` 走 loopback，来源 IP 即 `127.0.0.1`，已在默认白名单 `INTERNAL_ALLOWED_IPS=127.0.0.1,::1` 内，**无需放开白名单**，verify 也**不上公网 Nginx**。
+- **IPv4 约定**：应用调内部接口必须用 `http://127.0.0.1:8080/...`（IPv4 字面量），**不要用 `localhost`**——`localhost` 多数系统优先解析为 IPv6 `::1`，会被 IP 白名单辅助闸误拒（IP 提取对 IPv6 带方括号场景不归一，已知、本拓扑下 IPv4 不触发，记为 won't-fix）。
+- **跨机演进**：日后应用迁到独立服务器，需把应用后端出口 IP 加进平台 `INTERNAL_ALLOWED_IPS`，并经内网/专线访问 verify（仍不暴露公网）。
 
 ---
 
