@@ -33,6 +33,7 @@ const appForm = reactive({
   type: '',
   description: '',
   icon_url: '',
+  access_url: '',
   callback_url: '',
   adapter_config_json: '',
   status: 'draft',
@@ -164,6 +165,7 @@ function filterApps(list: AdminApp[], keywordValue: string) {
     app.name,
     app.type,
     app.description,
+    app.access_url,
     app.callback_url,
     app.adapter_config_json,
     app.status,
@@ -249,6 +251,7 @@ function openCreateApp() {
   appForm.type = ''
   appForm.description = ''
   appForm.icon_url = ''
+  appForm.access_url = ''
   appForm.callback_url = ''
   appForm.adapter_config_json = ''
   appForm.status = 'draft'
@@ -262,6 +265,7 @@ function openEditApp(app: AdminApp) {
   appForm.type = app.type
   appForm.description = app.description || ''
   appForm.icon_url = app.icon_url || ''
+  appForm.access_url = app.access_url || ''
   appForm.callback_url = app.callback_url || ''
   appForm.adapter_config_json = app.adapter_config_json || ''
   appForm.status = app.status
@@ -275,6 +279,11 @@ async function saveApp() {
   }
   const config = normalizeJson(appForm.adapter_config_json, '适配器配置')
   if (config === undefined) return
+  const accessUrl = appForm.access_url.trim()
+  if (accessUrl && (!accessUrl.startsWith('https://') || accessUrl.length > 512)) {
+    ElMessage.warning(accessUrl.startsWith('https://') ? '访问地址长度不能超过 512 个字符' : '访问地址必须以 https:// 开头')
+    return
+  }
   appSaving.value = true
   try {
     if (editingApp.value) {
@@ -284,6 +293,7 @@ async function saveApp() {
         type: appForm.type,
         description: appForm.description || null,
         icon_url: appForm.icon_url || null,
+        access_url: accessUrl,
         callback_url: appForm.callback_url || null,
         adapter_config_json: config,
         status: appForm.status,
@@ -297,6 +307,7 @@ async function saveApp() {
         type: appForm.type,
         description: appForm.description || null,
         icon_url: appForm.icon_url || null,
+        ...(accessUrl ? { access_url: accessUrl } : {}),
         callback_url: appForm.callback_url || null,
         adapter_config_json: config,
       })
@@ -434,6 +445,9 @@ function statusTagType(status: string) {
           <el-table-column prop="code" label="应用代码" min-width="140" />
           <el-table-column prop="name" label="应用名称" min-width="160" />
           <el-table-column prop="type" label="类型" width="120" />
+          <el-table-column prop="access_url" label="访问入口" min-width="220" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.access_url || '--' }}</template>
+          </el-table-column>
           <el-table-column prop="callback_url" label="回调地址" min-width="220" show-overflow-tooltip />
           <el-table-column label="状态" width="100">
             <template #default="{ row }"><el-tag :type="statusTagType(row.status)">{{ appStatusLabel(row.status) }}</el-tag></template>
@@ -513,6 +527,9 @@ function statusTagType(status: string) {
         <el-form-item label="应用名称"><el-input v-model="appForm.name" /></el-form-item>
         <el-form-item label="应用类型"><el-input v-model="appForm.type" /></el-form-item>
         <el-form-item label="图标地址"><el-input v-model="appForm.icon_url" /></el-form-item>
+        <el-form-item label="应用访问入口（可选）">
+          <el-input v-model="appForm.access_url" maxlength="512" show-word-limit placeholder="https://your-app.com" />
+        </el-form-item>
         <el-form-item label="回调地址"><el-input v-model="appForm.callback_url" /></el-form-item>
         <el-form-item label="适配器配置"><el-input v-model="appForm.adapter_config_json" type="textarea" :rows="5" placeholder='{"region":"cn"}' /></el-form-item>
         <el-form-item label="说明"><el-input v-model="appForm.description" type="textarea" :rows="3" /></el-form-item>

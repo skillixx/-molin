@@ -8,6 +8,7 @@ export interface AdminApp {
   type: string
   description: string | null
   icon_url: string | null
+  access_url: string | null
   callback_url: string | null
   adapter_config_json: string | null
   status: AdminAppStatus

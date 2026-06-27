@@ -86,6 +86,16 @@ const router = createRouter({
           meta: { title: '商品详情 — 墨灵' },
         },
         {
+          path: 'marketplace/apps/:id',
+          component: () => import('@/views/app/AppDetailView.vue'),
+          meta: { title: '应用详情 — 墨灵' },
+        },
+        {
+          path: 'apps/:id',
+          component: () => import('@/views/app/AppDetailView.vue'),
+          meta: { title: '应用详情 — 墨灵' },
+        },
+        {
           path: 'marketplace/:id/purchase',
           component: () => import('@/views/marketplace/PurchaseView.vue'),
           meta: {

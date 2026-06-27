@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Refresh } from '@element-plus/icons-vue'
+import { ArrowLeft, Link, Refresh } from '@element-plus/icons-vue'
+import { getMarketplaceApp } from '@/api/app'
 import { getProduct, getProductPlans } from '@/api/product'
+import type { MarketplaceApp } from '@/types/app'
 import type { Product, ProductPlan } from '@/types/product'
 import PurchaseDialog from './PurchaseDialog.vue'
 import {
@@ -18,6 +20,7 @@ const router = useRouter()
 const productId = computed(() => Number(route.params.id))
 const loading = ref(false)
 const product = ref<Product | null>(null)
+const appDetail = ref<MarketplaceApp | null>(null)
 const plans = ref<ProductPlan[]>([])
 const selectedPlan = ref<ProductPlan | null>(null)
 const purchaseVisible = ref(false)
@@ -34,9 +37,23 @@ async function fetchDetail() {
     ])
     product.value = detail.product
     plans.value = planPage.items.length > 0 ? planPage.items : detail.plans
+    appDetail.value = null
+    if (detail.product.product_type === 'application' && detail.product.business_ref_id) {
+      try {
+        appDetail.value = await getMarketplaceApp(detail.product.business_ref_id)
+      } catch {
+        // 应用入口是商品详情的增强信息，读取失败不影响商品与套餐展示。
+        appDetail.value = null
+      }
+    }
   } finally {
     loading.value = false
   }
+}
+
+function openApp() {
+  if (!appDetail.value?.access_url) return
+  window.open(appDetail.value.access_url, '_blank', 'noopener,noreferrer')
 }
 
 function openPurchase(plan: ProductPlan) {
@@ -64,6 +81,15 @@ function openPurchase(plan: ProductPlan) {
           <h2>{{ product.name }}</h2>
           <p class="product-code">{{ product.product_code }}</p>
           <p class="product-desc">{{ product.description || '暂无商品说明' }}</p>
+          <el-button
+            v-if="appDetail?.access_url"
+            class="app-entry-button"
+            type="primary"
+            :icon="Link"
+            @click="openApp"
+          >
+            进入应用
+          </el-button>
           <div class="info-grid">
             <div>
               <span>商品 ID</span>
@@ -186,6 +212,10 @@ function openPurchase(plan: ProductPlan) {
   margin-top: 18px;
   color: var(--color-text-muted);
   line-height: 1.8;
+}
+.app-entry-button {
+  width: 100%;
+  margin-top: 18px;
 }
 
 .info-grid {

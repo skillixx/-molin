@@ -281,7 +281,7 @@ function formatQuota(row: unknown) {
       </el-tabs>
     </div>
 
-    <el-drawer v-model="detailVisible" title="资产详情" size="460px">
+    <el-drawer v-model="detailVisible" title="资产详情" size="460px" class="asset-detail-drawer">
       <div v-loading="detailLoading" class="asset-detail">
         <template v-if="selectedAsset">
           <div class="detail-status">
@@ -437,6 +437,34 @@ function formatQuota(row: unknown) {
 
 .asset-detail {
   min-height: 220px;
+}
+
+:global(.asset-detail-drawer) {
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(7, 11, 18, 0.98) 100%) !important;
+  color: var(--color-text) !important;
+}
+
+:global(.asset-detail-drawer .el-drawer__header) {
+  margin-bottom: 0;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text) !important;
+}
+
+:global(.asset-detail-drawer .el-drawer__title) {
+  color: var(--color-text) !important;
+  font-weight: 700;
+}
+
+:global(.asset-detail-drawer .el-drawer__close-btn) {
+  color: var(--color-text-muted) !important;
+}
+
+:global(.asset-detail-drawer .el-drawer__body) {
+  padding: 20px;
+  background: transparent !important;
+  color: var(--color-text) !important;
 }
 
 .detail-status {
