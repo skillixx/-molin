@@ -218,6 +218,7 @@ feature/{开发者标识}-{模块}-{功能描述}
   frontend-a  — 前端 A
   frontend-b  — 前端 B
   ops         — 运维
+  docs        — 纯文档（设计/对接文档，不含代码改动，见 §8.2b）
 ```
 
 ### 8.2 各开发者分支示例
@@ -238,6 +239,24 @@ feature/{开发者标识}-{模块}-{功能描述}
 | 前端 B | web/user-console | `feature/frontend-b-user-register-login` |
 | 前端 B | web/user-console | `feature/frontend-b-marketplace-purchase` |
 | 运维 | infra / CI/CD | `feature/ops-ci-pipeline` |
+
+### 8.2b 文档类 PR 分支约定
+
+**只改 `docs/` 下 markdown、不含任何代码改动的 PR，统一用 `feature/docs-{描述}` 前缀**（不带开发者标识），便于一眼区分文档 PR 与代码 PR。
+
+```text
+feature/docs-{描述}
+
+示例：
+  feature/docs-business-billing-system
+  feature/docs-app-developer-billing-spec
+  feature/docs-entitlement-quota-tips
+```
+
+约定细则：
+- 仅当改动**全部落在 `docs/`**（设计文档、对接文档、规范）时适用；一旦同 PR 含代码改动，回退到 §8.1 的 `feature/{开发者标识}-{模块}-{描述}`。
+- 文档 PR 同样走 PR 审查（由产品经理或对应模块负责人 review），合并前需用户确认。
+- 文档 PR 不改代码、不影响构建，CI 仅作形式校验；若因账户/CI 基础设施问题阻塞，可经用户确认后由具备权限者合并，但**仅限纯文档 PR**。
 
 ### 8.3 开发前检查步骤（必须执行）
 
