@@ -1,6 +1,7 @@
 # 应用 × 财务商品 结合实现用户扣费 —— 集成设计文档
 
 > 📚 本文属于 [业务与计费总览](./business-billing-overview.md) 文档体系（商品·会员·应用·扣费），建议先读总览建立全局认知。
+> 🛠️ 要动手写应用对接代码？看 [应用接入会员/商品计费 开发对接规范（字段级）](./app-billing-integration-spec.md)。
 > 读者：后端、运营、产品、测试
 > 关联模块：`app`（应用元数据）、`product`（商品/套餐/价格/计费规则）、`order`（订单）、`billing`（钱包扣费）、`provision`（开通）、`asset`（资产/权益）、`finance_consumer`（用量计费）
 > 关联文档：`docs/app-management-guide.md`、`docs/product-and-billing-guide.md`、`docs/membership-management-guide.md`、`docs/backend-token-billing-contract.md`

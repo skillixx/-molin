@@ -16,6 +16,8 @@
 | [membership-management-guide.md](./membership-management-guide.md) | 会员管理 | 会员等级/权益，决定是否享会员价 |
 | [app-management-guide.md](./app-management-guide.md) | 应用管理 | 应用元数据（图标/描述/适配器） |
 | [app-billing-integration-design.md](./app-billing-integration-design.md) | 应用×财务商品 扣费集成 | 把应用挂成商品，购买扣费+使用扣费（总装） |
+| [app-billing-integration-spec.md](./app-billing-integration-spec.md) | 应用接入计费 开发对接规范 | 开发者视角：接口字段级契约、上报/扣减流程、功能分工 |
+| [app-developer-requirements.md](./app-developer-requirements.md) | 应用开发需求与注意事项 | 硬性需求、单价设计、会员设计、易错坑、开发规范与案例 |
 | [backend-token-billing-contract.md](./backend-token-billing-contract.md) | 计费深度契约 | 按量/按次/套餐预付的对接契约 |
 
 阅读顺序：总览 → 商品底座 → 会员/应用 → 扣费集成。
