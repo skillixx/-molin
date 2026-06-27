@@ -7,6 +7,7 @@ import { getProduct, getProductPlans } from '@/api/product'
 import type { MarketplaceApp } from '@/types/app'
 import type { Product, ProductPlan } from '@/types/product'
 import PurchaseDialog from './PurchaseDialog.vue'
+import { openAppById } from '@/utils/appLaunch'
 import {
   billingTypeLabel,
   displayAmount,
@@ -51,9 +52,9 @@ async function fetchDetail() {
   }
 }
 
-function openApp() {
-  if (!appDetail.value?.access_url) return
-  window.open(appDetail.value.access_url, '_blank', 'noopener,noreferrer')
+async function openApp() {
+  if (!appDetail.value) return
+  await openAppById(appDetail.value.id)
 }
 
 function openPurchase(plan: ProductPlan) {
