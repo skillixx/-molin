@@ -5,6 +5,7 @@ import { Edit, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import {
   createAdminApp,
   createAdminAppAdapter,
+  getAdminApp,
   listAdminAppAdapters,
   listAdminApps,
   updateAdminApp,
@@ -27,6 +28,7 @@ const adapterPagination = reactive<Pagination>({ page: 1, page_size: 20, total: 
 const appDialogVisible = ref(false)
 const editingApp = ref<AdminApp | null>(null)
 const appSaving = ref(false)
+const appDetailLoading = ref(false)
 const appForm = reactive({
   code: '',
   name: '',
@@ -258,8 +260,7 @@ function openCreateApp() {
   appDialogVisible.value = true
 }
 
-function openEditApp(app: AdminApp) {
-  editingApp.value = app
+function fillAppForm(app: AdminApp) {
   appForm.code = app.code
   appForm.name = app.name
   appForm.type = app.type
@@ -269,7 +270,20 @@ function openEditApp(app: AdminApp) {
   appForm.callback_url = app.callback_url || ''
   appForm.adapter_config_json = app.adapter_config_json || ''
   appForm.status = app.status
+}
+
+async function openEditApp(app: AdminApp) {
+  editingApp.value = app
+  fillAppForm(app)
   appDialogVisible.value = true
+  appDetailLoading.value = true
+  try {
+    const detail = await getAdminApp(app.id)
+    editingApp.value = detail
+    fillAppForm(detail)
+  } finally {
+    appDetailLoading.value = false
+  }
 }
 
 async function saveApp() {
@@ -522,7 +536,7 @@ function statusTagType(status: string) {
     </el-tabs>
 
     <el-dialog v-model="appDialogVisible" :title="editingApp ? '编辑应用' : '新建应用'" width="640px">
-      <el-form label-width="120px">
+      <el-form v-loading="appDetailLoading" label-width="120px">
         <el-form-item label="应用代码"><el-input v-model="appForm.code" :disabled="!!editingApp" /></el-form-item>
         <el-form-item label="应用名称"><el-input v-model="appForm.name" /></el-form-item>
         <el-form-item label="应用类型"><el-input v-model="appForm.type" /></el-form-item>
@@ -539,7 +553,7 @@ function statusTagType(status: string) {
           </el-select>
         </el-form-item>
       </el-form>
-      <template #footer><el-button @click="appDialogVisible = false">取消</el-button><el-button type="primary" :loading="appSaving" @click="saveApp">保存</el-button></template>
+      <template #footer><el-button @click="appDialogVisible = false">取消</el-button><el-button type="primary" :loading="appSaving" :disabled="appDetailLoading" @click="saveApp">保存</el-button></template>
     </el-dialog>
 
     <el-dialog v-model="adapterDialogVisible" :title="editingAdapter ? '编辑适配器' : '新建适配器'" width="660px">
