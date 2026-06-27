@@ -1,9 +1,8 @@
 name: 部署测试环境
 
-# 合并到 main 后自动部署到测试服务器
+# 仅在手动触发时部署到测试服务器（在 Actions 页面点 Run workflow）
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   deploy:
