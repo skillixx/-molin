@@ -22,6 +22,7 @@ type MarketplaceAppResponse struct {
 	Type        string    `json:"type"`
 	Description *string   `json:"description,omitempty"`
 	IconURL     *string   `json:"icon_url,omitempty"`
+	AccessURL   *string   `json:"access_url,omitempty"` // 用户「进入应用」跳转目标；面向用户，故进白名单
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
 }
@@ -37,6 +38,7 @@ func MapMarketplaceApp(a *model.Application) MarketplaceAppResponse {
 		Type:        a.Type,
 		Description: a.Description,
 		IconURL:     a.IconURL,
+		AccessURL:   a.AccessURL,
 		Status:      a.Status,
 		CreatedAt:   a.CreatedAt,
 	}
@@ -49,6 +51,7 @@ type CreateAppReq struct {
 	Type              string  `json:"type"`
 	Description       *string `json:"description"`
 	IconURL           *string `json:"icon_url"`
+	AccessURL         *string `json:"access_url"` // 用户访问入口地址（可选；须 https，禁危险 scheme）
 	CallbackURL       *string `json:"callback_url"`
 	AdapterConfigJSON *string `json:"adapter_config_json"` // JSON 字符串，应用特有的非交易配置
 }
@@ -59,6 +62,7 @@ type UpdateAppReq struct {
 	Type              *string `json:"type"`
 	Description       *string `json:"description"`
 	IconURL           *string `json:"icon_url"`
+	AccessURL         *string `json:"access_url"` // 用户访问入口地址（可选；须 https，禁危险 scheme）
 	CallbackURL       *string `json:"callback_url"`
 	AdapterConfigJSON *string `json:"adapter_config_json"`
 	Status            *string `json:"status"` // draft/active/inactive/archived

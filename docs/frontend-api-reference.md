@@ -1647,10 +1647,11 @@ Wechatpay-Nonce: <随机串>
 
 响应 `data`（**用户向白名单**，固定为以下字段）：
 ```json
-{ "id": 1, "code": "netdisk-basic", "name": "基础网盘", "type": "netdisk", "description": "...", "icon_url": "https://...", "status": "active", "created_at": "..." }
+{ "id": 1, "code": "netdisk-basic", "name": "基础网盘", "type": "netdisk", "description": "...", "icon_url": "https://...", "access_url": "https://app.example.com", "status": "active", "created_at": "..." }
 ```
 
-> 白名单字段：`{id, code, name, type, description, icon_url, status, created_at}`。
+> 白名单字段：`{id, code, name, type, description, icon_url, access_url, status, created_at}`。
+> **`access_url`**：用户「进入应用」跳转目标（面向用户，已配置才返回，未配为 null）。前端可据此在已购/有权应用上渲染「进入应用」按钮；为空则不显示入口。
 > **不含 `callback_url` / `adapter_config_json`（仅管理端 AP2/AP3 `GET /api/admin/apps`、`GET /api/admin/apps/{id}` 返回），亦不含 `updated_at`。** 这两个字段属内部回调地址与非交易配置（可能含集成参数/内网地址/密钥），用户端禁止下发。
 
 ### 13.2 管理端应用 CRUD
@@ -1659,9 +1660,10 @@ Wechatpay-Nonce: <随机串>
 - **GET** `/api/admin/apps/{id}` *(需 `app:manage`)* → 单个应用对象
 - **POST** `/api/admin/apps` *(需 `app:manage`)*
   ```json
-  { "code": "netdisk-basic", "name": "基础网盘", "type": "netdisk", "description": "...", "icon_url": "https://...", "callback_url": "https://...", "adapter_config_json": null }
+  { "code": "netdisk-basic", "name": "基础网盘", "type": "netdisk", "description": "...", "icon_url": "https://...", "access_url": "https://app.example.com", "callback_url": "https://...", "adapter_config_json": null }
   ```
-- **PATCH** `/api/admin/apps/{id}` *(需 `app:manage`)* → 可改 name/type/description/icon_url/callback_url/adapter_config_json/`status`(draft/active/inactive/archived)
+- **PATCH** `/api/admin/apps/{id}` *(需 `app:manage`)* → 可改 name/type/description/icon_url/`access_url`/callback_url/adapter_config_json/`status`(draft/active/inactive/archived)
+  > `access_url`（用户访问入口）写入校验：**必须 `https://`**，拒绝 `http`/`javascript:`/`data:` 等危险或不安全 scheme，长度 ≤512；传空串表示清空入口。校验失败返回 `40000`。
 
 ### 13.3 管理端适配器
 

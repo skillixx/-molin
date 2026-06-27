@@ -102,7 +102,7 @@ func (h *AppHandler) AdminCreateApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a, err := h.appSvc.CreateApp(r.Context(), req.Code, req.Name, req.Type,
-		req.Description, req.IconURL, req.CallbackURL, req.AdapterConfigJSON)
+		req.Description, req.IconURL, req.AccessURL, req.CallbackURL, req.AdapterConfigJSON)
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 		return
@@ -137,6 +137,9 @@ func (h *AppHandler) AdminUpdateApp(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.IconURL != nil {
 		updates["icon_url"] = *req.IconURL
+	}
+	if req.AccessURL != nil {
+		updates["access_url"] = *req.AccessURL
 	}
 	if req.CallbackURL != nil {
 		updates["callback_url"] = *req.CallbackURL

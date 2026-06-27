@@ -42,6 +42,7 @@ type Application struct {
     Type              string  // 应用类型，如 netdisk / ai-tool
     Description       string
     IconURL           string
+    AccessURL         string  // 用户访问入口地址（用户端「进入应用」跳转目标，面向用户、进白名单；写入须 https）
     CallbackURL       string
     AdapterConfigJSON string  // JSON：应用特有配置（非交易字段）
     Status            string  // draft / active / inactive / archived
