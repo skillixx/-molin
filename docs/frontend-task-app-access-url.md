@@ -107,6 +107,80 @@ GET /api/marketplace/apps/:id
 
 ---
 
+## 三、user-console — 「我的资产」页「进入应用」按钮（关键补充）
+
+> ⚠️ 这是用户购买应用后**真正会去的页面**。用户在商品市场买完应用后，落点是「我的资产」（`AssetListView.vue`），而不是应用详情页。当前这里**只有「详情」按钮，没有「进入应用」入口**，导致「买了却进不去」。本节优先级最高。
+
+### 涉及页面
+
+`web/user-console/src/views/assets/AssetListView.vue`
+
+### 数据拼接路径
+
+资产记录（`UserAsset`）本身**不含** `access_url`，只有 `asset_type` 和 `product_id`。需要两跳拿到访问入口：
+
+```
+asset.product_id
+  → GET /api/products/{product_id}        → product.business_ref_id（= application.id）
+  → GET /api/marketplace/apps/{business_ref_id}  → app.access_url
+```
+
+两个接口前端都已有封装，直接复用：
+- `getProductDetail(id)` —— `src/api/product.ts`，返回 `{ product, plans }`
+- `getMarketplaceApp(id)` —— `src/api/app.ts`，返回 `MarketplaceApp`
+
+### 实现要点
+
+```ts
+import { getProductDetail } from '@/api/product'
+import { getMarketplaceApp } from '@/api/app'
+
+async function launchApp(row: UserAsset) {
+  // 1. 商品 → business_ref_id
+  const { product } = await getProductDetail(row.product_id)
+  if (!product.business_ref_id) {
+    ElMessage.warning('该应用未配置访问地址')
+    return
+  }
+  // 2. 应用 → access_url
+  const app = await getMarketplaceApp(product.business_ref_id)
+  if (!app.access_url) {
+    ElMessage.warning('该应用暂未开放访问入口')
+    return
+  }
+  window.open(app.access_url, '_blank', 'noopener,noreferrer')
+}
+```
+
+### UI 要求
+
+- 在资产列表「操作」列里，当 `row.asset_type === 'application' && row.status === 'active'` 时，额外显示「进入应用」按钮（与现有「详情」按钮并列）
+- 其它资产类型（token_service 等）不显示该按钮
+- 点击触发 `launchApp(row)`
+- 资产详情抽屉（`el-drawer`）里，若是 application 类型资产，也可同步展示一个「进入应用」按钮，体验更顺
+
+---
+
+## 四、需修复的已知 Bug（admin-console）
+
+`web/admin-console/src/views/app/AppManageView.vue` — `saveApp()` 更新分支：
+
+当前写法无法**清空** access_url：
+```ts
+// ❌ 现状：清空时不发送字段，后端不会清零
+...(accessUrl ? { access_url: accessUrl } : {}),
+```
+
+应改为空字符串显式提交 `null`（后端 `UpdateApp` 会把空白归一化为清空）：
+```ts
+// ✅ 修复：空值发 null，后端清零；有值发实际地址
+access_url: accessUrl || null,
+```
+
+> 创建分支（`createAdminApp`）已是 `access_url: accessUrl`，无此问题；只需改更新分支。
+
+---
+
 ## 验收标准
 
 - [ ] admin-console 创建应用时可填写 access_url，提交后接口带该字段
@@ -114,6 +188,9 @@ GET /api/marketplace/apps/:id
 - [ ] admin-console 应用列表/详情页展示 access_url（可为空）
 - [ ] user-console 应用详情页：access_url 有值时显示「进入应用」按钮，点击新窗口打开
 - [ ] user-console 应用详情页：access_url 为空时无「进入应用」按钮
+- [ ] **user-console 我的资产页：application 类型且 active 的资产显示「进入应用」按钮，两跳拿到 access_url 后打开**
+- [ ] **user-console 我的资产页：未配置 access_url 时点击给出友好提示，不报错**
+- [ ] **admin-console：清空 access_url 后保存，DB 能真正清零（修复更新分支提交逻辑）**
 - [ ] 安全：`window.open` 使用 `noopener,noreferrer`
 
 ---
