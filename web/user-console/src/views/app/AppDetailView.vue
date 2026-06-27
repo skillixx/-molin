@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ArrowLeft, Link, Refresh } from '@element-plus/icons-vue'
 import { getMarketplaceApp } from '@/api/app'
 import type { MarketplaceApp } from '@/types/app'
+import { openAppById } from '@/utils/appLaunch'
 import { formatDateTime, productStatusLabel } from '@/utils/display'
 
 const route = useRoute()
@@ -24,9 +25,9 @@ async function fetchDetail() {
   }
 }
 
-function openApp() {
-  if (!app.value?.access_url) return
-  window.open(app.value.access_url, '_blank', 'noopener,noreferrer')
+async function openApp() {
+  if (!app.value) return
+  await openAppById(app.value.id)
 }
 </script>
 
