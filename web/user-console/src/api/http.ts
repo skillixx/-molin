@@ -9,6 +9,12 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios'
 import { ElMessage } from 'element-plus'
 
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    skipGlobalErrorMessage?: boolean
+  }
+}
+
 // 延迟导入 store 和 router，避免循环依赖
 let _authStore: ReturnType<typeof import('@/stores/auth').useAuthStore> | null = null
 let _router: typeof import('@/router').default | null = null
@@ -107,7 +113,7 @@ http.interceptors.response.use(
     }
 
     // 非 401 错误和公开认证接口的 401：展示后端返回的业务提示
-    if (status !== 401 || publicAuthRequest) {
+    if ((status !== 401 || publicAuthRequest) && !originalReq.skipGlobalErrorMessage) {
       const msg = err.response?.data?.message || '请求失败，请稍后重试'
       ElMessage.error(msg)
     }

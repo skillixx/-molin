@@ -7,6 +7,7 @@ import { getMarketplaceApp } from '@/api/app'
 import { getProductDetail } from '@/api/product'
 import type { UserAsset, UserEntitlement } from '@/types/asset'
 import type { MarketplaceApp } from '@/types/app'
+import { openAppById } from '@/utils/appLaunch'
 import { formatDateTime } from '@/utils/display'
 
 const loadingAssets = ref(false)
@@ -130,12 +131,7 @@ async function launchApp(row: unknown) {
       ElMessage.warning('该应用未配置访问地址')
       return
     }
-    const app = await getMarketplaceApp(product.business_ref_id)
-    if (!app.access_url) {
-      ElMessage.warning('该应用暂未开放访问入口')
-      return
-    }
-    window.open(app.access_url, '_blank', 'noopener,noreferrer')
+    await openAppById(product.business_ref_id)
   } finally {
     launchLoadingAssetId.value = null
   }
