@@ -198,6 +198,8 @@ func reportUsage(userID, productID, planID uint64, usage decimal.Decimal) error 
 ```
 
 > **红线**：prepaid 与 postpaid **互斥**，同一次使用绝不能既上报 product-usage-events（扣钱包）又扣额度。由你按 `billing_mode` 选一条路。
+>
+> **并发红线**：防超用靠 `reserve`/`consume` 的原子扣减（平台 `FOR UPDATE` 行锁），**不要在应用里写"查 balance → if 够 → 再扣"**——并发下两个请求都查到够、都通过 if 会超扣变负。`entitlement-balance` 只用于 UX 软前置，够不够的最终判定交给扣减调用。
 
 ---
 
@@ -229,7 +231,7 @@ GET /api/my/membership        （需登录，查本人有效会员）
 | 本人消费明细 | `GET /api/product-consumption-records` | 登录 | 扁平分页；query：`product_id`/`usage_type`/`created_from`/`created_to` |
 | 全量消费明细 | `GET /api/admin/product-consumption-records` | `wallet:view` | 上述 query + `user_id` |
 | 我的资产 | `GET /api/my/assets` `GET /api/my/assets/{id}` | 登录 | 购买开通的资产 |
-| 我的权益额度 | `GET /api/my/entitlements` | 登录 | prepaid 额度余量（`quota_total/quota_used`） |
+| 我的权益额度 | `GET /api/my/entitlements` | 登录 | prepaid 额度余量；**无 `remaining` 字段，需自己算 `quota_total − quota_used`**（服务端要现成 `remaining`/`usable` 用 `GET /api/internal/entitlement-balance`） |
 
 消费记录项（`ConsumptionRecordItem`）字段：`id, user_id, product_id, product_plan_id, instance_id, usage_type, usage_amount, usage_unit, amount, event_id, created_at`。
 > 列表不含 `wallet_transaction_id`（仅上报响应即时返回）；对账以 `event_id` 为锚点。钱包余额/充值流水走 billing 模块「我的钱包」接口。

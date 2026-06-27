@@ -116,6 +116,48 @@ status = active AND (expires_at IS NULL OR expires_at > NOW())
 - **"无匹配规则"不是错误**：说明该商品没配该 `usage_type` 的规则，静默跳过即可，别重试。
 - **下架要连动**：应用下架时同步下架其关联商品，否则用户端可见性与可购买性不一致。
 
+### 2.5 额度（积分）查询与扣减的注意事项
+
+> 适用 prepaid 场景（如"积分制"应用：买积分包→花积分）。平台的 `user_entitlements`（权益额度）就是你的"积分账户"。
+
+**A. 平台已现成提供，不用自己写额度系统**
+
+查询和消费额度的能力平台已实现、已接入、有数据库测试，直接调即可：
+
+| 能力 | 接口 | 说明 |
+|---|---|---|
+| 用户查自己额度 | `GET /api/my/entitlements` | 用户 JWT；返回 `quota_total`/`quota_used` |
+| 服务端查额度 | `GET /api/internal/entitlement-balance` | X-Internal-Token；直接返回 `remaining`/`usable` |
+| 一步扣减 | `POST /api/internal/entitlement-consume` | 用量已知（如修改扣 2 积分） |
+| 预占→结算/释放 | `entitlement-reserve`/`settle`/`release` | 用量未定或贵动作（如生成扣 6 积分，防并发/失败回滚） |
+
+**B. 查余额：两个接口的差别（容易踩）**
+
+- `GET /api/my/entitlements`：**没有 `remaining` 字段**，需自己算 `剩余 = quota_total − quota_used`；适合给用户看余额。
+- `GET /api/internal/entitlement-balance`：**直接给 `remaining`（已扣预占）+ `usable`**；适合服务端前置判断够不够。
+- 不限量额度（`quota_total` 为 NULL）时 `quota_total`/`remaining` 为 `null`，接入方需容许缺省。
+
+**C. ⚠️ 防超用靠平台原子扣减，不要应用"查了再扣"的 if 把关**
+
+限制"额度用没用完"是**分层**的，别搞错谁兜底：
+- **平台 = 硬兜底**：扣减时若不足直接拒——prepaid 额度不足 `consume`/`reserve` 返回 `60005`；postpaid 钱包余额不足在 product-usage-events 上报时返回 `60001`。`FOR UPDATE` 行锁保证并发不透支——**绕不过**。
+- **应用 = 软前置**：操作前查 `entitlement-balance`，不够就提前拦、提示充值——**只为体验和省资源**，不负责防透支。
+- ❌ **错误写法**：`查余额 → if ≥6 → 生成 → 扣6`。并发下两个请求都"查到够"、都通过 if、都扣 → 超用变负余额。
+- ✅ **正确**：够不够的**最终判定交给平台的扣减调用**（consume/reserve 原子完成校验+扣减）；应用的查余额仅用于 UX 提示。
+
+**D. consume vs reserve/settle 怎么选**
+
+- **轻、便宜、用量已知**（如修改单页扣 2）→ 直接 `entitlement-consume`。
+- **贵、耗时、可能失败**（如生成整套 PPT 扣 6）→ `reserve` 预占 → 成功 `settle` 实扣 / 失败 `release` 归还，防"白做一次"和并发白嫖。
+
+**E. 概念澄清：售卖与扣费是"买"和"用"两个阶段，不是两个套餐**
+
+- **买**（售卖）：用户花钱买"积分包套餐"→ 钱在这里扣一次 → 得到额度（entitlement）。套餐属于这一侧，可有多档（100/500/1000 积分包）。
+- **用**（扣费）：生成/修改时扣积分 → 扣的是**额度不是钱**。这不是套餐，是对已买额度的消耗。
+- prepaid（积分）下钱只在"买"时动；postpaid（按量付费）下钱在"用"时动——**两种模型二选一**，"积分扣费" ≠ "按量付费(postpaid)"。
+
+**F. 前提**：① 这些 `/api/internal/*` 需 `X-Internal-Token` + IP 白名单，不暴露公网；② 额度来自用户购买套餐后开通生成的 entitlement，没买就没额度可查/可扣。
+
 ---
 
 ## 三、开发规范（编码与流程）
@@ -283,5 +325,7 @@ httpPost("/api/internal/entitlement-settle", map[string]any{
 □ 内部接口带 X-Internal-Token，部署在 IP 白名单内网
 □ 余额不足/额度不足/无规则 三类返回均有处理分支
 □ 单价小数 ≤ 6 位，金额按 decimal 字符串收发
+□ （prepaid）查余额用对接口：用户端 my/entitlements 自己算剩余，服务端 entitlement-balance 取 remaining
+□ （prepaid）防超用交给 consume/reserve 原子扣减，未用"查了再扣"的 if 把关
+□ （prepaid）贵动作用 reserve→settle、轻动作用 consume
 ```
-</content>
