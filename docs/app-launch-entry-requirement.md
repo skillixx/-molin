@@ -1,6 +1,6 @@
 # 需求：应用访问入口与单点登录（用户「进入应用」打通）
 
-> 状态：阶段一已实现（access_url 字段链路），阶段二（SSO 票据）待排期
+> 状态：阶段一已实现（access_url 字段链路）+ 阶段二已实现（SSO 一次性票据：`POST /api/apps/{id}/launch` 签发 + `POST /api/internal/app-launch/verify` 校验消费，2026-06-28）
 >
 > **评审结论与确认范围（2026-06-27）**：产品经理评审通过；§6 拍板——(1) 进入门槛=持有 active 资产 + 应用 active；(2) 票据走 URL query（HTTPS+日志脱敏）；(3) **本次只做阶段一**，且**砍掉"把平台 JWT 交给应用"的过渡方案**（自相矛盾且不安全）——需可信身份的应用一律等阶段二票据；(4) 不做 per-plan 深链，票据带 product_id 由应用自行区分。阶段一安全必做项「access_url 强校验」已落地。
 >
@@ -110,13 +110,17 @@ ALTER TABLE applications DROP COLUMN access_url;
 □ admin_app_handler：创建/更新支持 access_url
 □ 自测 + 同步测试库
 
-阶段二（SSO 票据）
-□ POST /api/apps/{id}/launch：使用权校验 + 签发一次性票据（Redis，TTL60s，绑定 user/app/product）
-□ POST /api/internal/app-launch/verify：X-Internal-Token + IP 白名单 + 票据原子消费
-□ Redis key 设计：app_launch_ticket:{ticket} → JSON，SETEX 60，GETDEL
-□ 错误码：票据无效/过期/已用 → 40003；无使用权 → 40003；应用不存在/未上架 → 40400
-□ 单测 + 并发重放测试（同票据二次 verify 必拒）
-□ 更新 docs/app/billing-integration-spec.md 与 platform-resource-auth-checklist.md（补 launch 接口与 access_url）
+阶段二（SSO 票据）—— 已完成（2026-06-28）
+☑ POST /api/apps/{id}/launch：使用权校验 + 签发一次性票据（Redis，TTL60s，绑定 user/app/product）
+   → service/launch_service.go IssueTicket；handler/launch_handler.go LaunchApp
+☑ POST /api/internal/app-launch/verify：X-Internal-Token + IP 白名单 + 票据原子消费
+   → handler/launch_handler.go VerifyLaunch（fail-closed，与 asset/finance_consumer 内部接口对称）
+☑ Redis key 设计：app_launch_ticket:{ticket} → JSON，SET 60s，GETDEL
+☑ 错误码：票据无效/过期/已用 → 40003；无使用权 → 40003；应用不存在/未上架/未配入口 → 40400
+☑ 单测 + 并发重放测试（同票据二次 verify 必拒）
+   → service/launch_service_test.go（含 64 并发恰好 1 次成功；DB 集成测试 RUN_DB_TESTS=1）
+☑ 契约同步：full-api-design.md §5.3.1 / frontend-api-reference.md §13.1.1
+□ 待办：更新 docs/app/ 开发者接入文档（developer-integration-guide.md 补 verify 用法）；测试服重编译部署 + 配置 INTERNAL_API_TOKEN/INTERNAL_ALLOWED_IPS；前端阶段二按钮改调 launch 接口（见 §5）
 ```
 
 ## 5. 前端任务清单（提给前端，不在此实现）

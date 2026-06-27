@@ -1586,6 +1586,25 @@ PATCH /api/admin/application-adapters/:id
 
 返回 data：应用信息、适配器信息或 `updated`。
 
+#### 5.3.1 进入应用（SSO 一次性票据，阶段二）
+
+```text
+POST /api/apps/:id/launch                -- 用户端签发一次性进入票据（需登录）
+POST /api/internal/app-launch/verify     -- 应用后端用票据换身份（X-Internal-Token + IP 白名单，不对外公开）
+```
+
+**POST `/api/apps/{id}/launch`**（用户 JWT）：校验①应用 active 且已配 `access_url`；②用户对该应用持有 active 资产（使用权）。通过后签发随机短时票据。
+
+返回 data：`{ access_url, launch_ticket, expires_in }`（票据 `lt_` 前缀，TTL 60s，一次性）。
+错误码：`40400` 应用不存在/未开放入口；`40003` 无使用权。
+
+端到端流程：用户点「进入应用」→ 前端调 launch 拿 `{access_url, launch_ticket}` → 跳转 `{access_url}?ticket={launch_ticket}` → 应用后端调 verify 换身份。
+
+**POST `/api/internal/app-launch/verify`**（`X-Internal-Token` 主闸 fail-closed + IP 白名单）：
+
+Body：`{ launch_ticket }`。返回 data：`{ user_id, app_id, product_id }`（校验通过并**消费**票据，Redis `GETDEL` 原子防重放）。
+错误码：`40003` 鉴权失败 / 票据无效/已过期/已被使用。仅返回最小必要身份字段，不含用户敏感资料。
+
 ### 5.4 公告和帮助文档
 
 ```text
