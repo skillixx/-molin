@@ -19,6 +19,7 @@ const selectedApp = ref<MarketplaceApp | null>(null)
 const detailVisible = ref(false)
 const launchLoadingAssetId = ref<number | null>(null)
 const applicationAssetTypes = new Set(['application', 'app_access'])
+const launchableAssetIds = ref<Set<number>>(new Set())
 
 const query = reactive({
   status: '',
@@ -58,6 +59,7 @@ async function fetchAssets() {
       status: query.status || undefined,
     })
     assets.value = res.items
+    await refreshLaunchableAssets(res.items)
     query.page = 1
   } finally {
     loadingAssets.value = false
@@ -99,7 +101,7 @@ async function openDetail(row: unknown) {
   try {
     const detail = await getMyAsset(asset.id)
     selectedAsset.value = detail
-    if (isApplicationAsset(detail)) {
+    if (canLaunchApp(detail)) {
       selectedApp.value = await loadApplication(detail)
     }
   } finally {
@@ -113,13 +115,33 @@ function isApplicationAsset(row: Pick<UserAsset, 'asset_type'>) {
 
 function canLaunchApp(row: unknown) {
   const asset = row as UserAsset
-  return isApplicationAsset(asset) && asset.status === 'active'
+  return asset.status === 'active' && (isApplicationAsset(asset) || launchableAssetIds.value.has(asset.id))
 }
 
 async function loadApplication(row: UserAsset) {
   const { product } = await getProductDetail(row.product_id)
   if (!product.business_ref_id) return null
   return getMarketplaceApp(product.business_ref_id)
+}
+
+async function isApplicationProductAsset(row: UserAsset) {
+  if (row.status !== 'active') return false
+  if (isApplicationAsset(row)) return true
+  try {
+    const { product } = await getProductDetail(row.product_id)
+    return product.product_type === 'application' && Boolean(product.business_ref_id)
+  } catch {
+    return false
+  }
+}
+
+async function refreshLaunchableAssets(items: UserAsset[]) {
+  const candidates = items.filter(item => item.status === 'active')
+  const checks = await Promise.all(candidates.map(async item => ({
+    id: item.id,
+    launchable: await isApplicationProductAsset(item),
+  })))
+  launchableAssetIds.value = new Set(checks.filter(item => item.launchable).map(item => item.id))
 }
 
 async function launchApp(row: unknown) {
@@ -358,7 +380,7 @@ function formatQuota(row: unknown) {
             <div><dt>创建时间</dt><dd>{{ formatDateTime(selectedAsset.created_at) }}</dd></div>
           </dl>
 
-          <section v-if="isApplicationAsset(selectedAsset)" class="app-access-card">
+          <section v-if="canLaunchApp(selectedAsset)" class="app-access-card">
             <div v-if="selectedApp" class="app-access-main">
               <img v-if="selectedApp.icon_url" class="app-access-icon" :src="selectedApp.icon_url" :alt="selectedApp.name" />
               <div v-else class="app-access-icon placeholder">{{ selectedApp.name.slice(0, 1) }}</div>
