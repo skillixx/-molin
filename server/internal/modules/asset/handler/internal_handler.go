@@ -152,6 +152,51 @@ func (h *InternalAssetHandler) GetEntitlementBalance(w http.ResponseWriter, r *h
 	response.JSON(w, http.StatusOK, result)
 }
 
+// ListUserEntitlements 按 user_id + product_id 解析用户在该商品下的活跃权益（含余额/可用性）。
+// GET /api/internal/user-entitlements?user_id={uid}&product_id={pid}
+//
+// 用途：第三方应用经 SSO 票据换得 {user_id, app_id, product_id} 后，本身拿不到 entitlement_id、
+// 也没有用户 JWT（无法调 /api/my/entitlements），用本接口定位 entitlement_id，
+// 再调用 entitlement-balance / reserve / settle / consume 进行 prepaid 额度扣减。
+//
+// 响应 data：{entitlements: [{entitlement_id, user_id, quota_total, quota_used, quota_reserved,
+// remaining, status, expires_at, usable}]}（仅返回 active 权益；usable=false 表示已过期/耗尽，应用应跳过）。
+// 错误码：40003 鉴权失败；40000 参数错误。
+func (h *InternalAssetHandler) ListUserEntitlements(w http.ResponseWriter, r *http.Request) {
+	// 主闸：内部共享密钥（fail-closed，与其它内部接口完全一致）
+	if h.internalToken == "" {
+		log.Printf("[asset] 拒绝内部权益解析：INTERNAL_API_TOKEN 未配置，已 fail-closed 全拒")
+		response.Error(w, http.StatusForbidden, 40003, "内部接口鉴权失败")
+		return
+	}
+	reqToken := r.Header.Get("X-Internal-Token")
+	if subtle.ConstantTimeCompare([]byte(reqToken), []byte(h.internalToken)) != 1 {
+		response.Error(w, http.StatusForbidden, 40003, "内部接口鉴权失败")
+		return
+	}
+	// 辅助防线：IP 白名单
+	if !h.isAllowedIP(r) {
+		response.Error(w, http.StatusForbidden, 40003, "访问被拒绝：IP 未在白名单中")
+		return
+	}
+
+	// 解析查询参数
+	userID, err1 := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("user_id")), 10, 64)
+	productID, err2 := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("product_id")), 10, 64)
+	if err1 != nil || err2 != nil || userID == 0 || productID == 0 {
+		response.Error(w, http.StatusBadRequest, 40000, "user_id / product_id 为必填项且必须为正整数")
+		return
+	}
+
+	results, err := h.svc.ListUsableEntitlementsByProduct(r.Context(), userID, productID)
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "解析用户权益失败")
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]interface{}{"entitlements": results})
+}
+
 // isAllowedIP 检查请求 IP 是否在白名单中（与 finance_consumer 一致）。
 // 优先 X-Real-IP（Nginx 注入，客户端无法伪造），否则 RemoteAddr；不信任 X-Forwarded-For。
 func (h *InternalAssetHandler) isAllowedIP(r *http.Request) bool {
