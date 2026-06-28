@@ -62,7 +62,7 @@
 
 ### ② 用前校验：确认"用户有没有权用 / 额度够不够"
 - 通用：`GET /api/my/assets`（带用户 JWT）→ 有 `product_id=你的商品` 且 `status=active` 的资产才放行。
-- 积分制(prepaid)再加：`GET /api/internal/entitlement-balance`（带 `X-Internal-Token`）→ 看 `usable=true` 且 `remaining` 够不够。
+- 积分制(prepaid)：票据只给了 `user_id`/`product_id`、没有 `entitlement_id`，先调 `GET /api/internal/user-entitlements?user_id=&product_id=`（带 `X-Internal-Token`）解析出可用权益的 `entitlement_id`；需要前置看余量再调 `GET /api/internal/entitlement-balance` 看 `usable=true` 且 `remaining` 够不够。
 
 ### ③ 用时计费：把"用了多少"告诉平台
 - **postpaid（按量扣钱包）**：动作完成后调
@@ -82,6 +82,7 @@
 | 票据换身份（免登 SSO） | `POST /api/internal/app-launch/verify` | X-Internal-Token |
 | 查用户资产（用前校验） | `GET /api/my/assets` | 用户 JWT |
 | 查用户额度（给用户看） | `GET /api/my/entitlements` | 用户 JWT（无 remaining，自己算 total−used） |
+| **解析 entitlement_id**（第三方应用） | `GET /api/internal/user-entitlements?user_id=&product_id=` | X-Internal-Token（票据无 entitlement_id 时用它定位） |
 | 查额度余量（服务端判断） | `GET /api/internal/entitlement-balance` | X-Internal-Token |
 | 上报用量（postpaid） | `POST /api/internal/product-usage-events` | X-Internal-Token |
 | 扣额度·一步（prepaid） | `POST /api/internal/entitlement-consume` | X-Internal-Token |

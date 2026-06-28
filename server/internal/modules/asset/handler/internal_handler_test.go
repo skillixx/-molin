@@ -46,3 +46,41 @@ func TestGetEntitlementBalance_FailClosed(t *testing.T) {
 		}
 	})
 }
+
+// TestListUserEntitlements_FailClosed 验证按 user_id+product_id 解析权益的内部接口同样 fail-closed：
+// 鉴权在触达 service 前完成（svc 传 nil 不会被调用），任何未配置/缺/错 token 一律 403。
+func TestListUserEntitlements_FailClosed(t *testing.T) {
+	t.Run("未配置token-fail-closed-403", func(t *testing.T) {
+		h := NewInternalAssetHandler(nil, nil, "")
+		req := httptest.NewRequest(http.MethodGet, "/api/internal/user-entitlements?user_id=45&product_id=7", nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+		h.ListUserEntitlements(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("未配置 token 应返回 403，实际 %d，body=%s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("缺X-Internal-Token-403", func(t *testing.T) {
+		h := NewInternalAssetHandler(nil, nil, "secret-token")
+		req := httptest.NewRequest(http.MethodGet, "/api/internal/user-entitlements?user_id=45&product_id=7", nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+		h.ListUserEntitlements(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("缺 X-Internal-Token 应返回 403，实际 %d", rec.Code)
+		}
+	})
+
+	t.Run("token不匹配-403", func(t *testing.T) {
+		h := NewInternalAssetHandler(nil, nil, "secret-token")
+		req := httptest.NewRequest(http.MethodGet, "/api/internal/user-entitlements?user_id=45&product_id=7", nil)
+		req.Header.Set("X-Internal-Token", "wrong-token")
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+		h.ListUserEntitlements(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("token 不匹配应返回 403，实际 %d", rec.Code)
+		}
+	})
+}

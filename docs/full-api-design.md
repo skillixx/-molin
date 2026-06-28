@@ -1605,6 +1605,12 @@ POST /api/internal/app-launch/verify     -- 应用后端用票据换身份（X-I
 Body：`{ launch_ticket }`。返回 data：`{ user_id, app_id, product_id }`（校验通过并**消费**票据，Redis `GETDEL` 原子防重放）。
 错误码：`40003` 鉴权失败 / 票据无效/已过期/已被使用。仅返回最小必要身份字段，不含用户敏感资料。
 
+**GET `/api/internal/user-entitlements?user_id={uid}&product_id={pid}`**（`X-Internal-Token` 主闸 fail-closed + IP 白名单，不对外公开）：
+
+第三方应用经 SSO 票据只换得 `{user_id, product_id}`、无 `entitlement_id` 也无用户 JWT，用本接口按商品解析该用户的权益以做 prepaid 扣额度。
+返回 data：`{ entitlements: [{ entitlement_id, user_id, quota_total, quota_used, quota_reserved, remaining, status, expires_at, usable }] }`（仅 active 权益）。
+错误码：`40003` 鉴权失败；`40000` 参数错误。字段级契约见 `docs/app/billing-integration-spec.md §5.0`。
+
 ### 5.4 公告和帮助文档
 
 ```text
