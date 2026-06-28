@@ -29,6 +29,10 @@
 | [billing-integration-spec.md](./billing-integration-spec.md) | 开发者 | 字段级接口契约：上报用量/额度扣减/查询，鉴权与幂等 |
 | [developer-requirements.md](./developer-requirements.md) | 开发者 | 硬性需求、商品单价设计、会员设计、易错坑、4 个开发案例、自检清单 |
 | [billing-integration-design.md](./billing-integration-design.md) | 平台方/开发者 | 应用如何挂成商品、购买扣费 + 使用扣费的端到端设计 |
+| [tutorial-postpaid-app.md](./tutorial-postpaid-app.md) | 开发者（上手教程） | 从零接入一个**按量付费**应用，配套可运行代码 `examples/postpaid-app/` |
+| [tutorial-prepaid-app.md](./tutorial-prepaid-app.md) | 开发者（上手教程） | 从零接入一个**预付/扣积分**应用，配套可运行代码 `examples/prepaid-app/` |
+
+> 💡 想直接看可运行示例：[`examples/`](../../examples/)（两个最小 FastAPI 应用 + 各自 README）。
 
 ---
 

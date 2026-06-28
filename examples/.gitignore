@@ -1,0 +1,6 @@
+# 示例应用本地产物，禁止入库
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc

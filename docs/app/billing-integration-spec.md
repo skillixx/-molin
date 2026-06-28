@@ -150,7 +150,23 @@ func reportUsage(userID, productID, planID uint64, usage decimal.Decimal) error 
 
 用户先买“额度套餐”（走 §3 购买扣费，套餐 `quota_json` 声明额度，开通生成 `user_entitlements`）。使用时**不扣钱包，扣额度**。额度接口在 `asset` 模块，**不经 finance_consumer**。
 
-> `entitlement_id` 从哪来？用户购买套餐后，查 `GET /api/my/entitlements` 得到其权益（含 `id`、`quota_total/quota_used`、`quota_unit`、`status`、`expires_at`）。
+> `entitlement_id` 从哪来？两条路径：
+> - **用户端**：用户购买套餐后，查 `GET /api/my/entitlements`（用户 JWT）得到其权益（含 `id`、`quota_total/quota_used`、`quota_unit`、`status`、`expires_at`）。
+> - **第三方应用（SSO 票据）**：应用只换得 `{user_id, app_id, product_id}`、没有 `entitlement_id`、也拿不到用户 JWT，用内部接口 `GET /api/internal/user-entitlements?user_id={uid}&product_id={pid}`（`X-Internal-Token`）解析——见 §5.0。
+
+### 5.0 定位 entitlement_id（第三方应用 SSO 场景）
+
+```
+GET /api/internal/user-entitlements?user_id={uid}&product_id={pid}    （内部接口，不对外）
+Headers: X-Internal-Token: <INTERNAL_API_TOKEN>   （+ IP 白名单）
+```
+
+响应 `data`：`{ entitlements: [ {entitlement_id, user_id, quota_total, quota_used, quota_reserved, remaining, status, expires_at, usable} ] }`
+
+- 仅返回该用户在该商品下 **status=active** 的权益；`usable=false`（已过期/暂停/额度耗尽）的也会返回，应用应**跳过**、只取 `usable=true` 的。
+- 不限量（`quota_total` 为 NULL）时 `quota_total`/`remaining` 为 `null`，`status=active` 且未过期即 `usable=true`。
+- 错误：`40003` 鉴权失败；`40000` 参数错误（`user_id`/`product_id` 缺失或非正整数）。
+- 拿到 `entitlement_id` 后，再调下面 §5.1/§5.2 的 balance/reserve/settle/consume 扣额度。
 
 ### 5.1 两种扣减方式，按并发需求二选一
 
