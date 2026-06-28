@@ -26,6 +26,24 @@
         prepaid  → reserve/settle（扣积分，防并发）或 entitlement-consume（一步扣）
 ```
 
+## 本地体验（无需真平台）
+
+目录下自带一个 **mock 平台**（`mock-platform/`，内存模拟平台内部接口 + 签发票据，仅演示用），
+两种方式看效果：
+
+```bash
+# 方式一：浏览器交互（在你自己的机器上）
+bash run_local.sh
+# 然后打开 http://127.0.0.1:8080 → 点「进入应用」
+
+# 方式二：进程内端到端验证（不占端口/不需浏览器，直接打印计费结果）
+.venv/bin/python verify_demo.py postpaid
+.venv/bin/python verify_demo.py prepaid
+```
+
+> mock 平台不是真平台；对接真平台时把示例 `.env` 的 `PLATFORM_BASE_URL`/`INTERNAL_API_TOKEN`
+> 换成平台方给的真实值即可，示例应用代码无需改动。
+
 ## 你只需要平台方给这些就能独立开发
 
 - `INTERNAL_API_TOKEN`（内部接口密钥）

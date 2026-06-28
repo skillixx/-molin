@@ -1,8 +1,14 @@
 """配置：从环境变量读取平台对接所需信息。
 
 只在这里集中读取 env，其余模块通过导入常量使用，方便排查"少配了哪个值"。
+启动时自动加载同目录下的 .env（由 .env.example 复制而来）。
 """
 import os
+
+from dotenv import load_dotenv
+
+# 加载同目录 .env（若不存在则静默跳过，改用真实环境变量）
+load_dotenv()
 
 
 def _require(name: str) -> str:

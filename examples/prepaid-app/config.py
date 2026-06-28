@@ -1,5 +1,10 @@
-"""配置：从环境变量读取平台对接所需信息。"""
+"""配置：从环境变量读取平台对接所需信息。启动时自动加载同目录下的 .env。"""
 import os
+
+from dotenv import load_dotenv
+
+# 加载同目录 .env（若不存在则静默跳过，改用真实环境变量）
+load_dotenv()
 
 
 def _require(name: str) -> str:
