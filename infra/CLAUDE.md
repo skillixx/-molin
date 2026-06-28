@@ -98,7 +98,7 @@ infra/
 .github/
   workflows/
     ci.yml                        -- 代码提交 CI（构建 + 测试 + lint）
-    deploy-test.yml               -- 推送 main 自动部署测试环境
+    deploy-test.yml               -- 手动触发（workflow_dispatch，Actions 页面 Run workflow）部署测试环境
 
 scripts/
   create_mysql_tables.sh          -- 建表脚本（已存在）
@@ -167,6 +167,12 @@ services:
 # 4. npm run lint（前端 ESLint）
 # 5. npm run build（确认前端可以构建成功）
 ```
+
+## 测试环境部署（.github/workflows/deploy-test.yml）
+
+- **触发方式：手动触发（workflow_dispatch）**。合并到 main **不会**自动部署测试环境。
+- 操作路径：GitHub 仓库 → Actions → 选择「部署测试环境」工作流 → Run workflow（分支选 main）。
+- 流程：SSH 到测试服务器 → 拉取最新代码 → 执行 migration → 重新构建并滚动重启服务 → 等待 `/api/health` 健康检查通过。
 
 ## 环境变量管理规则
 
