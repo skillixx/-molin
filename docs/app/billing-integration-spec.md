@@ -163,7 +163,7 @@ Headers: X-Internal-Token: <INTERNAL_API_TOKEN>   （+ IP 白名单）
 
 响应 `data`：`{ entitlements: [ {entitlement_id, user_id, quota_total, quota_used, quota_reserved, remaining, status, expires_at, usable} ] }`
 
-- 仅返回该用户在该商品下 **status=active** 的权益；`usable=false`（已过期/暂停/额度耗尽）的也会返回，应用应**跳过**、只取 `usable=true` 的。
+- 仅返回该用户在该商品下 **status=active** 的权益（suspended/cancelled 等非 active 不返回）；其中 `usable=false`（已过期 / 额度耗尽）的也会返回，应用应**跳过**、只取 `usable=true` 的。
 - 不限量（`quota_total` 为 NULL）时 `quota_total`/`remaining` 为 `null`，`status=active` 且未过期即 `usable=true`。
 - 错误：`40003` 鉴权失败；`40000` 参数错误（`user_id`/`product_id` 缺失或非正整数）。
 - 拿到 `entitlement_id` 后，再调下面 §5.1/§5.2 的 balance/reserve/settle/consume 扣额度。

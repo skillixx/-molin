@@ -188,7 +188,7 @@ func (h *InternalAssetHandler) ListUserEntitlements(w http.ResponseWriter, r *ht
 		return
 	}
 
-	results, err := h.svc.ListUsableEntitlementsByProduct(r.Context(), userID, productID)
+	results, err := h.svc.ListActiveEntitlementsByProduct(r.Context(), userID, productID)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "解析用户权益失败")
 		return

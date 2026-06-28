@@ -590,12 +590,13 @@ func (s *AssetService) GetEntitlementBalance(
 	return buildBalanceResult(e, time.Now()), nil
 }
 
-// ListUsableEntitlementsByProduct 按 user_id + product_id 解析该用户在某商品下的活跃权益及余额快照。
+// ListActiveEntitlementsByProduct 按 user_id + product_id 解析该用户在某商品下的活跃权益及余额快照。
 //
 // 供第三方应用使用：SSO 票据换得 {user_id, product_id} 后，应用没有 entitlement_id 也拿不到用户 JWT
-// （无法调 /api/my/entitlements），用本方法定位可用权益，再调 entitlement-balance/reserve/settle/consume
+// （无法调 /api/my/entitlements），用本方法定位 entitlement，再调 entitlement-balance/reserve/settle/consume
 // 做 prepaid 额度扣减。复用 FindByUserID（仅 active），按 product_id 过滤，逐条算 remaining/usable。
-func (s *AssetService) ListUsableEntitlementsByProduct(
+// 注意：返回该商品下**全部 active 权益**（含 usable=false 的"已过期/额度耗尽"），调用方据 usable 取用。
+func (s *AssetService) ListActiveEntitlementsByProduct(
 	ctx context.Context, userID, productID uint64,
 ) ([]*dto.EntitlementBalanceResult, error) {
 	list, err := s.entitlementRepo.FindByUserID(ctx, userID)

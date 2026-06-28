@@ -43,6 +43,9 @@ bash run_local.sh
 
 > mock 平台不是真平台；对接真平台时把示例 `.env` 的 `PLATFORM_BASE_URL`/`INTERNAL_API_TOKEN`
 > 换成平台方给的真实值即可，示例应用代码无需改动。
+>
+> 注：示例 `app.py` 里的内联 HTML（`/workspace` 等）只是**演示脚手架**，不是平台前端页面，
+> 仅为让示例能跑起来看到效果；正式产品 UI 请由前端实现。
 
 ## 你只需要平台方给这些就能独立开发
 

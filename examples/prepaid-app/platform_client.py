@@ -61,7 +61,7 @@ def resolve_entitlement(user_id: int, product_id: int) -> dict | None:
     """按 user_id + product_id 解析该用户在本商品下"可用"的积分权益。
 
     GET /api/internal/user-entitlements?user_id=&product_id=
-    返回 data.entitlements: [{entitlement_id, quota_total, quota_used, quota_reserved,
+    返回 data.entitlements: [{entitlement_id, user_id, quota_total, quota_used, quota_reserved,
                               remaining, status, expires_at, usable}]
     本函数挑第一个 usable=true 的返回；没有可用权益返回 None。
     """
