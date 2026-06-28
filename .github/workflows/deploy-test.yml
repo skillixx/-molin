@@ -16,7 +16,7 @@ jobs:
           host:     ${{ secrets.TEST_SERVER_HOST }}
           username: ${{ secrets.TEST_SERVER_USER }}
           key:      ${{ secrets.TEST_SERVER_SSH_KEY }}
-          port:     10001
+          port:     10003
           # 部署步骤：拉取最新代码 → 重新构建镜像 → 滚动重启服务
           script: |
             set -euo pipefail
