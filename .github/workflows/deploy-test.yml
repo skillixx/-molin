@@ -1,58 +1,94 @@
-name: 部署测试环境
+name: 部署测试环境（前端）
 
-# 仅在手动触发时部署到测试服务器（在 Actions 页面点 Run workflow）
+# 手动触发（在 Actions 页面点 Run workflow）：构建两个前端镜像 → 传到测试服务器 → 重建容器。
+#
+# 说明：测试服务器为手工运维环境，与早期 compose/git 部署不符——
+#   - 后端 API 跑的是宿主机二进制 molin-api（非容器），有独立的构建/重启流程，不在本工作流范围内；
+#   - 前端 molin-admin / molin-user 是两个手工 docker run 容器，nginx 把 /api 经
+#     `--add-host api:host-gateway` 代理到宿主机上的 molin-api:8080（没有 api 容器）。
+#   本工作流只负责前端：在 runner 上构建镜像 → ship 到服务器 → 按原样重建容器。
+#
+# 需在仓库 Settings → Secrets and variables → Actions 配置：
+#   TEST_SERVER_HOST      测试服务器地址
+#   TEST_SERVER_USER      SSH 用户名
+#   TEST_SERVER_PASSWORD  SSH 密码（本服务器用密码认证，非密钥）
 on:
   workflow_dispatch:
 
+env:
+  SSH_PORT: 10003
+
 jobs:
-  deploy:
-    name: 部署到测试环境
+  deploy-frontend:
+    name: 构建并部署前端到测试服务器
     runs-on: ubuntu-latest
 
     steps:
-      - name: 通过 SSH 部署到测试服务器
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 构建前端镜像（amd64，单架构便于 save/load）
+        run: |
+          docker build --platform linux/amd64 --provenance=false \
+            -f infra/Dockerfile.admin-console -t molin-admin:latest .
+          docker build --platform linux/amd64 --provenance=false \
+            -f infra/Dockerfile.user-console -t molin-user:latest .
+
+      - name: 导出镜像
+        run: docker save molin-admin:latest molin-user:latest | gzip > molin-frontend.tar.gz
+
+      - name: 上传镜像到测试服务器
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host:     ${{ secrets.TEST_SERVER_HOST }}
+          username: ${{ secrets.TEST_SERVER_USER }}
+          password: ${{ secrets.TEST_SERVER_PASSWORD }}
+          port:     ${{ env.SSH_PORT }}
+          source:   molin-frontend.tar.gz
+          target:   /tmp/
+
+      - name: 加载镜像并重建前端容器
         uses: appleboy/ssh-action@v1.0.3
         with:
           host:     ${{ secrets.TEST_SERVER_HOST }}
           username: ${{ secrets.TEST_SERVER_USER }}
-          key:      ${{ secrets.TEST_SERVER_SSH_KEY }}
-          port:     10001
-          # 部署步骤：拉取最新代码 → 重新构建镜像 → 滚动重启服务
+          password: ${{ secrets.TEST_SERVER_PASSWORD }}
+          port:     ${{ env.SSH_PORT }}
           script: |
             set -euo pipefail
+            TS=$(date +%Y%m%d-%H%M%S)
 
-            PROJECT_DIR="/opt/molin"
-            cd "$PROJECT_DIR"
+            echo "=== 备份当前镜像便于回滚 ==="
+            docker tag molin-admin:latest molin-admin:rollback-$TS || true
+            docker tag molin-user:latest  molin-user:rollback-$TS  || true
 
-            echo "=== 拉取最新代码 ==="
-            git pull origin main
+            echo "=== 加载新镜像 ==="
+            gunzip -c /tmp/molin-frontend.tar.gz | docker load
+            rm -f /tmp/molin-frontend.tar.gz
 
-            echo "=== 执行数据库 Migration ==="
-            # 用 migrate 官方镜像执行 migration，无需在服务器安装 Go
-            source .env.test
-            docker run --rm --network host \
-              -v "$PROJECT_DIR/server/migrations:/migrations" \
-              migrate/migrate \
-              -path /migrations \
-              -database "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(127.0.0.1:3306)/${MYSQL_DATABASE}?multiStatements=true" \
-              up
+            echo "=== 重建容器（保留 --add-host api:host-gateway 代理宿主 API）==="
+            docker rm -f molin-admin
+            docker run -d --name molin-admin --restart unless-stopped \
+              -p 3001:80 --add-host api:host-gateway molin-admin:latest
+            docker rm -f molin-user
+            docker run -d --name molin-user --restart unless-stopped \
+              -p 3000:80 --add-host api:host-gateway molin-user:latest
 
-            echo "=== 重新构建并启动服务 ==="
-            docker compose -f infra/docker-compose.prod.yml \
-              --env-file .env.test \
-              up -d --build --remove-orphans
-
-            echo "=== 等待 API 健康检查通过 ==="
-            for i in $(seq 1 12); do
-              if curl -sf http://localhost:8080/api/health > /dev/null; then
-                echo "API 健康检查通过"
-                break
-              fi
-              echo "等待服务启动（${i}/12）..."
-              sleep 5
+            echo "=== 健康检查（首页 + 经 nginx 代理到宿主 API）==="
+            fail=0
+            for pair in "3001:admin" "3000:user"; do
+              port=${pair%%:*}; name=${pair##*:}
+              home=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${port}/")
+              api=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${port}/api/health")
+              echo "${name}: / -> ${home}, /api/health -> ${api}"
+              [ "$home" = "200" ] && [ "$api" = "200" ] || fail=1
             done
+            if [ "$fail" != "0" ]; then
+              echo "❌ 健康检查失败，可用 molin-*:rollback-$TS 回滚"
+              exit 1
+            fi
 
-            echo "=== 清理旧镜像 ==="
+            echo "=== 清理悬空镜像 ==="
             docker image prune -f
 
-            echo "=== 部署完成 ==="
+            echo "=== 前端部署完成 ==="
