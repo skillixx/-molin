@@ -307,7 +307,7 @@ async function saveApp() {
         type: appForm.type,
         description: appForm.description || null,
         icon_url: appForm.icon_url || null,
-        access_url: accessUrl || null,
+        access_url: accessUrl,
         callback_url: appForm.callback_url || null,
         adapter_config_json: config,
         status: appForm.status,
