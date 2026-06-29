@@ -54,6 +54,16 @@ type LaunchTicketResult struct {
 	ExpiresIn    int    `json:"expires_in"`    // 票据有效期（秒）
 }
 
+// LaunchAppReq 用户「进入应用」请求体（阶段二 SSO）。
+//
+// EntitlementID 为用户本次选择的权益 ID（user_entitlements.id）：
+//   - 多套餐场景必传，平台据此精确绑定本次进入的套餐、校验归属并写入票据透传给应用，
+//     从源头消除应用「只能猜第一个套餐」的问题；
+//   - 缺省 / 为 0 时回退为「取用户在该应用下任一 active 资产」（单套餐，兼容旧行为）。
+type LaunchAppReq struct {
+	EntitlementID uint64 `json:"entitlement_id"`
+}
+
 // VerifyLaunchReq 应用后端校验/消费 launch 票据的请求体（内部接口）。
 type VerifyLaunchReq struct {
 	LaunchTicket string `json:"launch_ticket"`
@@ -61,12 +71,16 @@ type VerifyLaunchReq struct {
 
 // LaunchClaims launch 票据所绑定的身份信息，校验+消费后返回给应用后端。
 //
-// 只返回最小必要字段：应用据 user_id 建立自有会话、据 product_id 区分套餐来源；
-// 不返回用户敏感资料。
+// 只返回最小必要字段：应用据 user_id 建立自有会话、据 product_id 区分套餐来源、
+// 据 entitlement_id 精确定位本次进入的权益（可直接调内部 balance/reserve/settle/consume，
+// 无需再调 user-entitlements 解析猜测）；不返回用户敏感资料。
+//
+// EntitlementID 为 0 表示用户进入时未指定套餐（单套餐场景），应用按 product_id 自行兜底解析。
 type LaunchClaims struct {
-	UserID    uint64 `json:"user_id"`
-	AppID     uint64 `json:"app_id"`
-	ProductID uint64 `json:"product_id"`
+	UserID        uint64 `json:"user_id"`
+	AppID         uint64 `json:"app_id"`
+	ProductID     uint64 `json:"product_id"`
+	EntitlementID uint64 `json:"entitlement_id"`
 }
 
 // CreateAppReq 创建应用请求（管理端）。

@@ -37,6 +37,8 @@ var (
 	ErrNoUseRight = errors.New("无该应用的使用权")
 	// ErrTicketInvalid 票据无效 / 已过期 / 已被使用。
 	ErrTicketInvalid = errors.New("票据无效或已过期")
+	// ErrEntitlementInvalid 用户本次选择的权益无效：不存在 / 非本人 / 非 active / 不属于该应用。
+	ErrEntitlementInvalid = errors.New("所选权益无效或不属于该用户/应用")
 )
 
 // ticketStore 抽象票据存储，便于单测注入内存实现；生产使用 Redis。
@@ -88,9 +90,13 @@ func newLaunchServiceWithStore(db *gorm.DB, store ticketStore) *LaunchService {
 
 // IssueTicket 为用户对指定应用签发一次性 launch 票据。
 //
-// 校验顺序：① 应用存在且 active 且已配 access_url；② 用户持有该应用 active 资产（使用权）。
-// 通过后生成随机票据存 Redis（TTL 60s），绑定 {user_id, app_id, product_id}。
-func (s *LaunchService) IssueTicket(ctx context.Context, userID, appID uint64) (*dto.LaunchTicketResult, error) {
+// 校验顺序：① 应用存在且 active 且已配 access_url；② 确定本次进入对应的套餐 product_id：
+//   - entitlementID != 0（用户在多套餐中显式选择）：校验该权益归属本人、active、且其商品挂在本应用名下，
+//     并由它反推 product_id（精确绑定，杜绝「只识别第一个套餐」）；
+//   - entitlementID == 0（单套餐/旧前端）：回退取用户在该应用下任一 active 资产的 product_id。
+//
+// 通过后生成随机票据存 Redis（TTL 60s），绑定 {user_id, app_id, product_id, entitlement_id}。
+func (s *LaunchService) IssueTicket(ctx context.Context, userID, appID, entitlementID uint64) (*dto.LaunchTicketResult, error) {
 	// ① 应用必须 active 且配置了访问入口
 	var appRow model.Application
 	if err := s.db.WithContext(ctx).
@@ -105,13 +111,25 @@ func (s *LaunchService) IssueTicket(ctx context.Context, userID, appID uint64) (
 		return nil, ErrAppNotLaunchable
 	}
 
-	// ② 用户必须对该应用持有 active 资产（与购买/开通一致的使用权口径）
-	productID, ok, err := s.findActiveAssetProductID(ctx, userID, appID)
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return nil, ErrNoUseRight
+	// ② 确定本次进入的 product_id
+	var productID uint64
+	if entitlementID != 0 {
+		// 用户显式选择了某个套餐对应的权益：校验归属 + active + 归属本应用，并反推 product_id。
+		pid, err := s.resolveSelectedEntitlement(ctx, userID, appID, entitlementID)
+		if err != nil {
+			return nil, err
+		}
+		productID = pid
+	} else {
+		// 未指定：回退取该应用下任一 active 资产（与购买/开通一致的使用权口径）。
+		pid, ok, err := s.findActiveAssetProductID(ctx, userID, appID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, ErrNoUseRight
+		}
+		productID = pid
 	}
 
 	// 生成票据并落库（Redis）
@@ -119,7 +137,7 @@ func (s *LaunchService) IssueTicket(ctx context.Context, userID, appID uint64) (
 	if err != nil {
 		return nil, err
 	}
-	claims := dto.LaunchClaims{UserID: userID, AppID: appID, ProductID: productID}
+	claims := dto.LaunchClaims{UserID: userID, AppID: appID, ProductID: productID, EntitlementID: entitlementID}
 	payload, err := json.Marshal(claims)
 	if err != nil {
 		return nil, err
@@ -172,6 +190,29 @@ func (s *LaunchService) findActiveAssetProductID(ctx context.Context, userID, ap
 		return 0, false, nil
 	}
 	return productID, true, nil
+}
+
+// resolveSelectedEntitlement 校验用户本次选择的权益并反推其 product_id。
+//
+// 关联链：user_entitlements.product_id → products.id（product_type=application,
+// business_ref_id = applications.id）。要求权益归属本人、状态 active、且其商品确实挂在本应用名下，
+// 任一不符均返回 ErrEntitlementInvalid（防越权携带他人/他应用的 entitlement_id）。
+func (s *LaunchService) resolveSelectedEntitlement(ctx context.Context, userID, appID, entitlementID uint64) (uint64, error) {
+	var productID uint64
+	err := s.db.WithContext(ctx).
+		Table("user_entitlements AS e").
+		Joins("JOIN products AS p ON p.id = e.product_id").
+		Where("e.id = ? AND e.user_id = ? AND e.status = ?", entitlementID, userID, "active").
+		Where("p.product_type = ? AND p.business_ref_id = ?", "application", appID).
+		Limit(1).
+		Pluck("e.product_id", &productID).Error
+	if err != nil {
+		return 0, err
+	}
+	if productID == 0 {
+		return 0, ErrEntitlementInvalid
+	}
+	return productID, nil
 }
 
 // generateTicket 生成高熵随机票据：lt_ + 32 位十六进制（16 字节随机数）。

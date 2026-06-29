@@ -1658,17 +1658,27 @@ Wechatpay-Nonce: <随机串>
 
 **POST** `/api/apps/{id}/launch` *(需登录)* — 用户「进入应用」时由前端调用，校验使用权后签发一次性票据。
 
-请求体：无（应用 ID 走路径）。响应 `data`：
+请求体（应用 ID 走路径，body 可选）：
+```json
+{ "entitlement_id": 123 }
+```
+- `entitlement_id`（可选，整数）：用户**本次选择进入的那个套餐/权益的 ID**（即 `/api/my/entitlements` 列表项的 `entitlement_id`）。
+- **多套餐必传**：当用户在同一应用下持有多个套餐（多条权益）时，必须把用户点的那一条的 `entitlement_id` 带上，否则应用侧无法区分、只会识别到第一个套餐。
+- 单套餐或旧逻辑可不传 / 传 0，后端回退取任一 active 资产（行为不变）。
+
+响应 `data`：
 ```json
 { "access_url": "https://app.example.com", "launch_ticket": "lt_xxxxxxxx", "expires_in": 60 }
 ```
 
 前端流程（取代「直接打开 access_url」的阶段一做法，用于需可信身份的应用）：
-1. 点击「进入应用」→ 调 `POST /api/apps/{id}/launch`；
+1. 用户在「我的资产/某个套餐」上点「进入应用」→ 调 `POST /api/apps/{id}/launch`，body 带该套餐的 `entitlement_id`；
 2. 拿到 `{access_url, launch_ticket}` → 浏览器跳转 `{access_url}?ticket={launch_ticket}`（票据 60s 有效、一次性，注意日志脱敏）；
-3. 应用方后端用 `ticket` 调内部接口换身份，完成免登。
+3. 应用方后端用 `ticket` 调内部接口换身份（票据里已含 `entitlement_id`），完成免登并对应到正确套餐。
 
-错误码：`40400` 应用不存在/未开放入口（不显示按钮或提示未开放）；`40003` 无使用权（提示先购买/开通）。
+> **多套餐 UI 提示**：若入口是「应用卡片」级别（用户未先选套餐），前端需先让用户选择要进入的套餐再调 launch；若入口本就在「我的资产」某条记录上，直接取该条的 `entitlement_id` 即可。
+
+错误码：`40400` 应用不存在/未开放入口（不显示按钮或提示未开放）；`40003` 无使用权（提示先购买/开通）或所选套餐权益无效/不属于本人（提示重新选择）。
 
 > `POST /api/internal/app-launch/verify` 是**应用后端**用的内部接口（`X-Internal-Token` + IP 白名单），**前端不调用**，详见 `full-api-design.md` §5.3.1。
 
