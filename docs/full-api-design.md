@@ -1596,7 +1596,7 @@ POST /api/internal/app-launch/verify     -- 应用后端用票据换身份（X-I
 **POST `/api/apps/{id}/launch`**（用户 JWT）：校验①应用 active 且已配 `access_url`；②确定本次进入对应的套餐 product_id。通过后签发随机短时票据。
 
 Body（可选）：`{ entitlement_id }` —— 用户本次选择的权益 ID（`user_entitlements.id`）。
-- **多套餐场景必传**：平台校验该权益归属本人、active、且其商品挂在本应用名下，并由它反推 product_id，把 `entitlement_id` 一并写入票据透传给应用，从源头消除应用「只能识别第一个套餐」的问题；
+- **多套餐场景必传**：平台校验该权益归属本人、active、其父资产 `user_assets` 也为 active（冻结/暂停的资产不可进入）、且其商品挂在本应用名下，并由它反推 product_id，把 `entitlement_id` 一并写入票据透传给应用，从源头消除应用「只能识别第一个套餐」的问题；
 - 缺省 / 为 0 时回退为「取用户在该应用下任一 active 资产」（单套餐，兼容旧前端）。
 
 返回 data：`{ access_url, launch_ticket, expires_in }`（票据 `lt_` 前缀，TTL 60s，一次性）。
