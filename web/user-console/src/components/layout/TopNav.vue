@@ -20,6 +20,7 @@ import {
   List,
   MagicStick,
   Medal,
+  Postcard,
   QuestionFilled,
   Tickets,
   Wallet,
@@ -143,7 +144,7 @@ onMounted(() => {
                 个人信息
               </el-dropdown-item>
               <el-dropdown-item command="identity">
-                <el-icon><id-card /></el-icon>
+                <el-icon><Postcard /></el-icon>
                 实名认证
               </el-dropdown-item>
               <el-dropdown-item command="assets">

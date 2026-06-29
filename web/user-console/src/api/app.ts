@@ -11,8 +11,12 @@ export interface LaunchTicket {
   expires_in: number
 }
 
-export function launchApp(appId: number) {
-  return http.post<unknown, LaunchTicket>(`/apps/${appId}/launch`, undefined, {
+export interface LaunchAppPayload {
+  entitlement_id?: number
+}
+
+export function launchApp(appId: number, payload?: LaunchAppPayload) {
+  return http.post<unknown, LaunchTicket>(`/apps/${appId}/launch`, payload, {
     skipGlobalErrorMessage: true,
   })
 }
