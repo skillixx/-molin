@@ -236,8 +236,8 @@ func TestIssueTicket_DBRoundTrip(t *testing.T) {
 	svc := newLaunchServiceWithStore(gdb, newMemTicketStore())
 	ctx := context.Background()
 
-	// owner：签发成功
-	res, err := svc.IssueTicket(ctx, ltTestUserOwner, ltTestAppID)
+	// owner：未指定 entitlement_id（兼容路径）签发成功，claims.EntitlementID 应为 0
+	res, err := svc.IssueTicket(ctx, ltTestUserOwner, ltTestAppID, 0)
 	if err != nil {
 		t.Fatalf("owner 应能签发票据，实际错误: %v", err)
 	}
@@ -249,13 +249,58 @@ func TestIssueTicket_DBRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("校验票据失败: %v", err)
 	}
-	if claims.UserID != ltTestUserOwner || claims.AppID != ltTestAppID || claims.ProductID != ltTestProductID {
+	if claims.UserID != ltTestUserOwner || claims.AppID != ltTestAppID || claims.ProductID != ltTestProductID || claims.EntitlementID != 0 {
 		t.Fatalf("身份不符: %+v", claims)
 	}
 
 	// 无资产用户：拒签
-	if _, err := svc.IssueTicket(ctx, ltTestUserNoRight, ltTestAppID); err != ErrNoUseRight {
+	if _, err := svc.IssueTicket(ctx, ltTestUserNoRight, ltTestAppID, 0); err != ErrNoUseRight {
 		t.Fatalf("无资产用户应 ErrNoUseRight，实际: %v", err)
+	}
+}
+
+// TestIssueTicket_SelectedEntitlement 用户显式选择某权益（多套餐）：
+// 合法 entitlement_id 精确绑定并透传；他人/他应用/不存在的 entitlement_id 一律拒签。
+func TestIssueTicket_SelectedEntitlement(t *testing.T) {
+	gdb, clean := setupLaunchDBTest(t)
+	defer clean()
+	access := "https://ppt.example.com"
+	seedLaunchFixtures(t, gdb, AppStatusActive, &access)
+
+	// 为 owner 在该应用商品下建一条 active 权益
+	ent := assetmodel.UserEntitlement{
+		UserID: ltTestUserOwner, AssetID: 1, ProductID: ltTestProductID,
+		EntitlementType: "token", Status: "active",
+	}
+	if err := gdb.Create(&ent).Error; err != nil {
+		t.Fatalf("建权益失败: %v", err)
+	}
+	defer gdb.Where("id = ?", ent.ID).Delete(&assetmodel.UserEntitlement{})
+
+	svc := newLaunchServiceWithStore(gdb, newMemTicketStore())
+	ctx := context.Background()
+
+	// 合法选择：票据带回 entitlement_id 与反推的 product_id
+	res, err := svc.IssueTicket(ctx, ltTestUserOwner, ltTestAppID, ent.ID)
+	if err != nil {
+		t.Fatalf("合法选择应能签发，实际错误: %v", err)
+	}
+	claims, err := svc.VerifyTicket(ctx, res.LaunchTicket)
+	if err != nil {
+		t.Fatalf("校验票据失败: %v", err)
+	}
+	if claims.EntitlementID != ent.ID || claims.ProductID != ltTestProductID {
+		t.Fatalf("应精确绑定所选权益，实际: %+v", claims)
+	}
+
+	// 越权：他人持有的 entitlement_id（这里用无资产用户去带 owner 的权益）→ 拒签
+	if _, err := svc.IssueTicket(ctx, ltTestUserNoRight, ltTestAppID, ent.ID); err != ErrEntitlementInvalid {
+		t.Fatalf("越权携带他人权益应 ErrEntitlementInvalid，实际: %v", err)
+	}
+
+	// 不存在的 entitlement_id → 拒签
+	if _, err := svc.IssueTicket(ctx, ltTestUserOwner, ltTestAppID, 9_900_199_999); err != ErrEntitlementInvalid {
+		t.Fatalf("不存在权益应 ErrEntitlementInvalid，实际: %v", err)
 	}
 }
 
@@ -268,14 +313,14 @@ func TestIssueTicket_NotLaunchable(t *testing.T) {
 	access := "https://ppt.example.com"
 	seedLaunchFixtures(t, gdb, AppStatusInactive, &access)
 	svc := newLaunchServiceWithStore(gdb, newMemTicketStore())
-	if _, err := svc.IssueTicket(context.Background(), ltTestUserOwner, ltTestAppID); err != ErrAppNotLaunchable {
+	if _, err := svc.IssueTicket(context.Background(), ltTestUserOwner, ltTestAppID, 0); err != ErrAppNotLaunchable {
 		t.Fatalf("未上架应用应 ErrAppNotLaunchable，实际: %v", err)
 	}
 	clean()
 
 	// 情形二：应用 active 但未配 access_url
 	seedLaunchFixtures(t, gdb, AppStatusActive, nil)
-	if _, err := svc.IssueTicket(context.Background(), ltTestUserOwner, ltTestAppID); err != ErrAppNotLaunchable {
+	if _, err := svc.IssueTicket(context.Background(), ltTestUserOwner, ltTestAppID, 0); err != ErrAppNotLaunchable {
 		t.Fatalf("未配入口应用应 ErrAppNotLaunchable，实际: %v", err)
 	}
 }

@@ -1593,16 +1593,22 @@ POST /api/apps/:id/launch                -- 用户端签发一次性进入票据
 POST /api/internal/app-launch/verify     -- 应用后端用票据换身份（X-Internal-Token + IP 白名单，不对外公开）
 ```
 
-**POST `/api/apps/{id}/launch`**（用户 JWT）：校验①应用 active 且已配 `access_url`；②用户对该应用持有 active 资产（使用权）。通过后签发随机短时票据。
+**POST `/api/apps/{id}/launch`**（用户 JWT）：校验①应用 active 且已配 `access_url`；②确定本次进入对应的套餐 product_id。通过后签发随机短时票据。
+
+Body（可选）：`{ entitlement_id }` —— 用户本次选择的权益 ID（`user_entitlements.id`）。
+- **多套餐场景必传**：平台校验该权益归属本人、active、且其商品挂在本应用名下，并由它反推 product_id，把 `entitlement_id` 一并写入票据透传给应用，从源头消除应用「只能识别第一个套餐」的问题；
+- 缺省 / 为 0 时回退为「取用户在该应用下任一 active 资产」（单套餐，兼容旧前端）。
 
 返回 data：`{ access_url, launch_ticket, expires_in }`（票据 `lt_` 前缀，TTL 60s，一次性）。
-错误码：`40400` 应用不存在/未开放入口；`40003` 无使用权。
+错误码：`40400` 应用不存在/未开放入口；`40003` 无使用权 / 所选权益无效或不属于该用户/应用。
 
-端到端流程：用户点「进入应用」→ 前端调 launch 拿 `{access_url, launch_ticket}` → 跳转 `{access_url}?ticket={launch_ticket}` → 应用后端调 verify 换身份。
+端到端流程：用户在某套餐上点「进入应用」→ 前端调 launch 带上该套餐的 `entitlement_id` 拿 `{access_url, launch_ticket}` → 跳转 `{access_url}?ticket={launch_ticket}` → 应用后端调 verify 换身份（含 `entitlement_id`，可直接用于额度操作）。
 
 **POST `/api/internal/app-launch/verify`**（`X-Internal-Token` 主闸 fail-closed + IP 白名单）：
 
-Body：`{ launch_ticket }`。返回 data：`{ user_id, app_id, product_id }`（校验通过并**消费**票据，Redis `GETDEL` 原子防重放）。
+Body：`{ launch_ticket }`。返回 data：`{ user_id, app_id, product_id, entitlement_id }`（校验通过并**消费**票据，Redis `GETDEL` 原子防重放）。
+- `entitlement_id`：用户本次选定的权益 ID；应用可直接据此调内部 `entitlement-balance / reserve / settle / consume`，**无需再调 `user-entitlements` 解析猜测**。为 `0` 表示用户进入时未指定套餐（单套餐场景），应用按 `product_id` 自行兜底解析。
+
 错误码：`40003` 鉴权失败 / 票据无效/已过期/已被使用。仅返回最小必要身份字段，不含用户敏感资料。
 
 **GET `/api/internal/user-entitlements?user_id={uid}&product_id={pid}`**（`X-Internal-Token` 主闸 fail-closed + IP 白名单，不对外公开）：

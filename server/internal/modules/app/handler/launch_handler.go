@@ -4,6 +4,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -49,11 +50,20 @@ func (h *LaunchHandler) LaunchApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.svc.IssueTicket(r.Context(), userID, appID)
+	// 请求体可空（兼容旧前端不传）；多套餐场景前端传 entitlement_id 精确指定本次进入的套餐。
+	var req dto.LaunchAppReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+
+	result, err := h.svc.IssueTicket(r.Context(), userID, appID, req.EntitlementID)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrAppNotLaunchable):
 			response.Error(w, http.StatusNotFound, 40400, "应用不存在或未开放访问入口")
+		case errors.Is(err, service.ErrEntitlementInvalid):
+			response.Error(w, http.StatusForbidden, 40003, "所选套餐权益无效或不属于您，请重新选择")
 		case errors.Is(err, service.ErrNoUseRight):
 			response.Error(w, http.StatusForbidden, 40003, "无该应用的使用权，请先购买或开通")
 		default:
