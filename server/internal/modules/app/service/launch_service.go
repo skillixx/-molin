@@ -194,15 +194,22 @@ func (s *LaunchService) findActiveAssetProductID(ctx context.Context, userID, ap
 
 // resolveSelectedEntitlement 校验用户本次选择的权益并反推其 product_id。
 //
-// 关联链：user_entitlements.product_id → products.id（product_type=application,
-// business_ref_id = applications.id）。要求权益归属本人、状态 active、且其商品确实挂在本应用名下，
-// 任一不符均返回 ErrEntitlementInvalid（防越权携带他人/他应用的 entitlement_id）。
+// 关联链：user_entitlements.asset_id → user_assets.id；user_entitlements.product_id → products.id
+// （product_type=application, business_ref_id = applications.id）。要求：
+//   - 权益归属本人、状态 active；
+//   - 其父资产 user_assets 也为 active —— 与 fallback 路径（findActiveAssetProductID 按 user_assets.status）
+//     口径对齐：冻结（suspended）只翻转 user_assets、不级联 user_entitlements，若此处只看权益状态会绕过冻结；
+//   - 其商品确实挂在本应用名下。
+//
+// 任一不符均返回 ErrEntitlementInvalid（防越权携带他人/他应用/已冻结资产的 entitlement_id）。
 func (s *LaunchService) resolveSelectedEntitlement(ctx context.Context, userID, appID, entitlementID uint64) (uint64, error) {
 	var productID uint64
 	err := s.db.WithContext(ctx).
 		Table("user_entitlements AS e").
+		Joins("JOIN user_assets AS ua ON ua.id = e.asset_id").
 		Joins("JOIN products AS p ON p.id = e.product_id").
 		Where("e.id = ? AND e.user_id = ? AND e.status = ?", entitlementID, userID, "active").
+		Where("ua.status = ?", "active").
 		Where("p.product_type = ? AND p.business_ref_id = ?", "application", appID).
 		Limit(1).
 		Pluck("e.product_id", &productID).Error

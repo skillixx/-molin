@@ -78,7 +78,8 @@ func (h *LaunchHandler) LaunchApp(w http.ResponseWriter, r *http.Request) {
 // POST /api/internal/app-launch/verify（X-Internal-Token + IP 白名单，不对外公开）
 //
 // 请求体：{launch_ticket}
-// 响应 data：{user_id, app_id, product_id}
+// 响应 data：{user_id, app_id, product_id, entitlement_id}
+//   entitlement_id 为用户本次选定的权益（0 表示未指定，应用按 product_id 兜底解析）。
 // 错误码：40003 鉴权失败 / 票据无效；40000 参数错误。
 func (h *LaunchHandler) VerifyLaunch(w http.ResponseWriter, r *http.Request) {
 	// 主闸：内部共享密钥（fail-closed，与 asset/finance_consumer 内部接口一致）

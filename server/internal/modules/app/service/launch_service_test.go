@@ -166,6 +166,8 @@ const (
 	ltTestUserNoRight uint64 = 9_900_100_002 // 无资产
 	ltTestAppID       uint64 = 9_900_100_010
 	ltTestProductID   uint64 = 9_900_100_020
+	ltTestOtherAppID     uint64 = 9_900_100_011 // 「他应用」用例：另一应用 ID
+	ltTestOtherProductID uint64 = 9_900_100_021 // 「他应用」商品（business_ref_id 指向 ltTestOtherAppID）
 )
 
 // setupLaunchDBTest 连本地 molin 开发库，按测试专用高位 ID 清理自己写入的行。
@@ -260,28 +262,48 @@ func TestIssueTicket_DBRoundTrip(t *testing.T) {
 }
 
 // TestIssueTicket_SelectedEntitlement 用户显式选择某权益（多套餐）：
-// 合法 entitlement_id 精确绑定并透传；他人/他应用/不存在的 entitlement_id 一律拒签。
+// 合法 entitlement_id 精确绑定并透传；他人/他应用/父资产冻结/不存在的 entitlement_id 一律拒签。
 func TestIssueTicket_SelectedEntitlement(t *testing.T) {
 	gdb, clean := setupLaunchDBTest(t)
 	defer clean()
 	access := "https://ppt.example.com"
 	seedLaunchFixtures(t, gdb, AppStatusActive, &access)
 
-	// 为 owner 在该应用商品下建一条 active 权益
-	ent := assetmodel.UserEntitlement{
-		UserID: ltTestUserOwner, AssetID: 1, ProductID: ltTestProductID,
-		EntitlementType: "token", Status: "active",
+	// mkEnt 为 owner 建一条父资产（指定状态）+ 挂一条 active 权益，返回 entitlement id。
+	mkEnt := func(t *testing.T, productID uint64, assetStatus string) uint64 {
+		t.Helper()
+		asset := assetmodel.UserAsset{UserID: ltTestUserOwner, AssetType: "application", ProductID: productID, Status: assetStatus}
+		if err := gdb.Create(&asset).Error; err != nil {
+			t.Fatalf("建资产失败: %v", err)
+		}
+		ent := assetmodel.UserEntitlement{UserID: ltTestUserOwner, AssetID: asset.ID, ProductID: productID, EntitlementType: "token", Status: "active"}
+		if err := gdb.Create(&ent).Error; err != nil {
+			t.Fatalf("建权益失败: %v", err)
+		}
+		t.Cleanup(func() { gdb.Where("id = ?", ent.ID).Delete(&assetmodel.UserEntitlement{}) })
+		return ent.ID
 	}
-	if err := gdb.Create(&ent).Error; err != nil {
-		t.Fatalf("建权益失败: %v", err)
+
+	// 另建一个「他应用」商品（business_ref_id 指向别的 app），用于跨应用越权用例。
+	otherRef := ltTestOtherAppID
+	if err := gdb.Create(&productmodel.Product{
+		ID: ltTestOtherProductID, ProductType: "application",
+		ProductCode: fmt.Sprintf("lt-test-other-prod-%d", ltTestOtherProductID),
+		Name:        "Launch 测试他应用商品", Status: "active", BusinessRefID: &otherRef,
+	}).Error; err != nil {
+		t.Fatalf("建他应用商品失败: %v", err)
 	}
-	defer gdb.Where("id = ?", ent.ID).Delete(&assetmodel.UserEntitlement{})
+	t.Cleanup(func() { gdb.Where("id = ?", ltTestOtherProductID).Delete(&productmodel.Product{}) })
+
+	entOK := mkEnt(t, ltTestProductID, "active")             // 合法：本应用 + 父资产 active
+	entOtherApp := mkEnt(t, ltTestOtherProductID, "active")  // 本人持有、active，但商品挂在别的 app
+	entFrozen := mkEnt(t, ltTestProductID, "suspended")      // 本应用，但父资产被冻结
 
 	svc := newLaunchServiceWithStore(gdb, newMemTicketStore())
 	ctx := context.Background()
 
 	// 合法选择：票据带回 entitlement_id 与反推的 product_id
-	res, err := svc.IssueTicket(ctx, ltTestUserOwner, ltTestAppID, ent.ID)
+	res, err := svc.IssueTicket(ctx, ltTestUserOwner, ltTestAppID, entOK)
 	if err != nil {
 		t.Fatalf("合法选择应能签发，实际错误: %v", err)
 	}
@@ -289,12 +311,22 @@ func TestIssueTicket_SelectedEntitlement(t *testing.T) {
 	if err != nil {
 		t.Fatalf("校验票据失败: %v", err)
 	}
-	if claims.EntitlementID != ent.ID || claims.ProductID != ltTestProductID {
+	if claims.EntitlementID != entOK || claims.ProductID != ltTestProductID {
 		t.Fatalf("应精确绑定所选权益，实际: %+v", claims)
 	}
 
-	// 越权：他人持有的 entitlement_id（这里用无资产用户去带 owner 的权益）→ 拒签
-	if _, err := svc.IssueTicket(ctx, ltTestUserNoRight, ltTestAppID, ent.ID); err != ErrEntitlementInvalid {
+	// 他应用的权益（本人持有、active，但商品挂在别的 app）→ 拒签
+	if _, err := svc.IssueTicket(ctx, ltTestUserOwner, ltTestAppID, entOtherApp); err != ErrEntitlementInvalid {
+		t.Fatalf("他应用权益应 ErrEntitlementInvalid，实际: %v", err)
+	}
+
+	// 父资产被冻结（suspended，未级联到 entitlement）→ 拒签，与 fallback 口径对齐，防绕过冻结
+	if _, err := svc.IssueTicket(ctx, ltTestUserOwner, ltTestAppID, entFrozen); err != ErrEntitlementInvalid {
+		t.Fatalf("父资产冻结应 ErrEntitlementInvalid，实际: %v", err)
+	}
+
+	// 越权：他人持有的 entitlement_id（无资产用户带 owner 的权益）→ 拒签
+	if _, err := svc.IssueTicket(ctx, ltTestUserNoRight, ltTestAppID, entOK); err != ErrEntitlementInvalid {
 		t.Fatalf("越权携带他人权益应 ErrEntitlementInvalid，实际: %v", err)
 	}
 
