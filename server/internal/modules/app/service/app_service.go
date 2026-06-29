@@ -11,6 +11,7 @@ import (
 
 	"molin/server/internal/modules/app/model"
 	"molin/server/internal/modules/app/repository"
+	wbsecurity "molin/server/internal/modules/workbench/security"
 )
 
 // accessURLMaxLen 访问入口地址最大长度（与 DB VARCHAR(512) 对齐）。
@@ -24,6 +25,7 @@ func normalizeAccessURL(raw string) string { return strings.TrimSpace(raw) }
 // 该字段面向用户、前端会据此跳转，必须严格约束以防开放重定向 / 存储型 XSS：
 //   - 空字符串视为「清空入口」，放行；
 //   - 仅允许 https scheme（拒绝 http / javascript: / data: 等危险或不安全 scheme）；
+//     自建可信开关（TRUST_INTERNAL_OUTBOUND）开启时额外放开 http，供局域网无 https/域名场景配置；
 //   - 必须带 host；长度不超过 512。
 func validateAccessURL(raw string) error {
 	v := strings.TrimSpace(raw)
@@ -38,7 +40,10 @@ func validateAccessURL(raw string) error {
 		return fmt.Errorf("access_url 格式非法")
 	}
 	if !strings.EqualFold(u.Scheme, "https") {
-		return fmt.Errorf("access_url 必须以 https:// 开头")
+		// 自建可信开关开启时额外允许 http；javascript:/data: 等危险 scheme 仍拒绝。
+		if !(wbsecurity.TrustInternal() && strings.EqualFold(u.Scheme, "http")) {
+			return fmt.Errorf("access_url 必须以 https:// 开头")
+		}
 	}
 	if u.Host == "" {
 		return fmt.Errorf("access_url 缺少域名")

@@ -1,6 +1,10 @@
 package service
 
-import "testing"
+import (
+	"testing"
+
+	wbsecurity "molin/server/internal/modules/workbench/security"
+)
 
 // TestValidateAccessURL 覆盖 access_url 校验：仅放行空串与合法 https，拒绝危险/不安全 scheme。
 func TestValidateAccessURL(t *testing.T) {
@@ -33,15 +37,31 @@ func TestValidateAccessURL(t *testing.T) {
 // TestNormalizeAccessURL 归一化：去首尾空白；纯空白归一为空串（视为未配置）。
 func TestNormalizeAccessURL(t *testing.T) {
 	cases := map[string]string{
-		"   ":                        "",
-		"":                           "",
-		"  https://a.com  ":          "https://a.com",
-		"https://a.com":              "https://a.com",
+		"   ":               "",
+		"":                  "",
+		"  https://a.com  ": "https://a.com",
+		"https://a.com":     "https://a.com",
 	}
 	for in, want := range cases {
 		if got := normalizeAccessURL(in); got != want {
 			t.Fatalf("normalizeAccessURL(%q)=%q, want %q", in, got, want)
 		}
+	}
+}
+
+// TestValidateAccessURL_TrustInternal 自建可信开关开启后 access_url 放开 http，危险 scheme 仍拒。
+func TestValidateAccessURL_TrustInternal(t *testing.T) {
+	wbsecurity.Configure(true)
+	defer wbsecurity.Configure(false) // 复位，避免污染默认（关闭）行为的其他用例
+
+	if err := validateAccessURL("http://192.168.20.16:3000"); err != nil {
+		t.Errorf("开关开启时 http 内网入口应放行，实际 %v", err)
+	}
+	if err := validateAccessURL("https://ppt.example.com"); err != nil {
+		t.Errorf("https 仍应放行，实际 %v", err)
+	}
+	if err := validateAccessURL("javascript:alert(1)"); err == nil {
+		t.Errorf("危险 scheme 即便开关开启仍应拒绝")
 	}
 }
 

@@ -9,6 +9,17 @@ import (
 	"strings"
 )
 
+// trustInternalOutbound 自建可信开关，由 bootstrap 启动时通过 Configure 注入。
+// 默认 false：保持 https-only + 禁内网；开启后放开 http 与内网/回环/私有 IP。
+// 仅应在网络隔离的局域网自建可信环境置 true（等价于关闭 SSRF 防护）。
+var trustInternalOutbound bool
+
+// Configure 在进程启动时调用一次，注入自建可信开关。非并发安全，仅 bootstrap 串行调用。
+func Configure(trust bool) { trustInternalOutbound = trust }
+
+// TrustInternal 返回当前自建可信开关，供 app 模块等复用同一开关（避免再单独引一个配置）。
+func TrustInternal() bool { return trustInternalOutbound }
+
 // ValidateOutboundURL 校验外呼 URL 是否安全放行（契约 §5 SSRF 防护）。
 //
 // 规则：
@@ -30,15 +41,21 @@ func ValidateOutboundURL(raw string, allowedDomains []string, resolveDNS bool) e
 		return fmt.Errorf("URL 非法")
 	}
 	if !strings.EqualFold(u.Scheme, "https") {
-		return fmt.Errorf("仅允许 https")
+		// 自建可信开关开启时额外允许 http；危险 scheme（javascript/data 等）仍拒绝。
+		if !(trustInternalOutbound && strings.EqualFold(u.Scheme, "http")) {
+			return fmt.Errorf("仅允许 https")
+		}
 	}
 	host := u.Hostname()
 	if host == "" {
 		return fmt.Errorf("缺少主机名")
 	}
 	lower := strings.ToLower(host)
-	if lower == "localhost" || strings.HasSuffix(lower, ".local") || strings.HasSuffix(lower, ".internal") {
-		return fmt.Errorf("不允许指向内网/本机")
+	// 自建可信开关开启时放行内网主机名（localhost/.local/.internal）。
+	if !trustInternalOutbound {
+		if lower == "localhost" || strings.HasSuffix(lower, ".local") || strings.HasSuffix(lower, ".internal") {
+			return fmt.Errorf("不允许指向内网/本机")
+		}
 	}
 
 	// 域名白名单（可选）：非空则必须命中。
@@ -46,9 +63,9 @@ func ValidateOutboundURL(raw string, allowedDomains []string, resolveDNS bool) e
 		return fmt.Errorf("域名 %s 不在白名单内", host)
 	}
 
-	// 字面量 IP：直接判定网段。
+	// 字面量 IP：直接判定网段。自建可信开关开启时放行内网/回环 IP。
 	if ip := net.ParseIP(host); ip != nil {
-		if isBlockedIP(ip) {
+		if !trustInternalOutbound && isBlockedIP(ip) {
 			return fmt.Errorf("不允许指向内网/回环地址")
 		}
 		return nil
@@ -64,7 +81,7 @@ func ValidateOutboundURL(raw string, allowedDomains []string, resolveDNS bool) e
 			return fmt.Errorf("主机名无解析结果")
 		}
 		for _, ip := range ips {
-			if isBlockedIP(ip) {
+			if !trustInternalOutbound && isBlockedIP(ip) {
 				return fmt.Errorf("主机名解析到内网/回环地址，拒绝外呼")
 			}
 		}
