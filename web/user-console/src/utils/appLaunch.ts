@@ -9,9 +9,10 @@ type ApiError = {
   }
 }
 
-export async function openAppById(appId: number) {
+export async function openAppById(appId: number, entitlementId?: number) {
   try {
-    const { access_url, launch_ticket } = await launchApp(appId)
+    const payload = entitlementId ? { entitlement_id: entitlementId } : undefined
+    const { access_url, launch_ticket } = await launchApp(appId, payload)
     const separator = access_url.includes('?') ? '&' : '?'
     window.open(
       `${access_url}${separator}ticket=${encodeURIComponent(launch_ticket)}`,

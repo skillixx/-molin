@@ -122,6 +122,10 @@ async function loadApplication(row: UserAsset) {
   return getMarketplaceApp(product.business_ref_id)
 }
 
+function findActiveEntitlement(assetId: number) {
+  return entitlements.value.find((item) => item.asset_id === assetId && item.status === 'active')
+}
+
 async function launchApp(row: unknown) {
   const asset = row as UserAsset
   launchLoadingAssetId.value = asset.id
@@ -131,7 +135,12 @@ async function launchApp(row: unknown) {
       ElMessage.warning('该应用未配置访问地址')
       return
     }
-    await openAppById(product.business_ref_id)
+    const entitlement = findActiveEntitlement(asset.id)
+    if (!entitlement) {
+      ElMessage.warning('未找到该资产对应的可用权益，请刷新后重试')
+      return
+    }
+    await openAppById(product.business_ref_id, entitlement.id)
   } finally {
     launchLoadingAssetId.value = null
   }
