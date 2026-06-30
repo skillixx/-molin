@@ -190,7 +190,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 ## 开发进度
 
-> 最后更新：2026-06-26
+> 最后更新：2026-06-30
 > 当前阶段：**Week 1 已验收（2026-06-05），Week 2 已验收（2026-06-06），Week 3 已验收（2026-06-07），Week 4 已验收（2026-06-07），第一阶段（Week 1-4）已于 2026-06-07 正式验收通过，并于 2026-06-08 完成最终收尾确认，正式画上句号 ✅（端到端验收 37/37 全部通过，详见 `tests/audit-stage1-final.md`；收尾确认 6/6 全部通过，详见 `tests/audit-stage1-closing-confirm.md`）**
 >
 > **前端进度更新（2026-06-19）**：管理后台（前端 A）与用户控制台（前端 B）的全部业务页面代码已完成并合并到 main（提交 `94b8466 前端甲对接后端丙管理页面`、`f6d85b6 前端乙对接后端丙用户页面` 等）。两端覆盖商品/订单/钱包/资产/会员/内容/应用/消费等模块的页面与 API 封装；后端丙对接任务 FA-06/07/09/10、FB-07/08/09 均已落地（详见各端进度表）。
@@ -206,6 +206,8 @@ scripts/                    建表、Migration、测试数据初始化脚本
 > **商品访问规则/价格回显 GET 接口（2026-06-26）**：管理后台「商品管理 → 访问与价格 / 配置访问规则」打开后不显示已配置项，根因为后端 `access`/`prices` 只有 PATCH 写入接口、缺对应 GET 回显（Service 层 `GetAccess`/`GetPrices` 早已存在但未挂路由）。**PR #270**（commit `a921280`）补齐两个只读接口 `GET /api/admin/products/{id}/access`、`GET /api/admin/products/{id}/prices`（权限码 `product:view`，响应键名 `items` 与 PATCH 写入 body 对称，非分页返回全量），前端对接任务单见 **PR #271**。已部署测试服回归并通过：**25 PASS / 0 FAIL，无缺陷**（含 P2 修复点验证：默认价 `role_id`/`membership_level_id` 输出为 `null` 键而非缺失键）。两条非缺陷观察已同步至 `docs/frontend-api-reference.md` §5.3「前端注意」：① `price_amount` 字符串经 decimal 序列化去尾随零（如 `"50.000000"`→`"50"`），前端按数值解析、勿依赖固定小数位；② 不存在的商品 id 返回 HTTP 200 + `items: []`（不做存在性校验，符合现有约定）。
 
 > **Token 模型目录按角色/分组定向可见（2026-06-26）**：token_gateway 模型目录支持按 `visible_scope`（`all`/`groups`/`roles`）给不同角色/分组定向显示指定模型，复用工作台 Agent 同款可见性模式。双层防护：用户端 `GET /api/token/models` 列表按可见性过滤 + `POST /api/token/chat/completions` 转发前置闸——不可见模型按「模型不可用」拒绝、不泄漏其存在性（fail-safe）。**PR #273**（squash 合并 main，commit `b7f4974`）含 migration `000052` 给 `token_models` 增加 `visible_scope` + `target_audience_json` 两列。已部署测试服（迁移升至 v52，两列就位，API 健康检查 200），测试工程师验收 **40/40 全通过、0 缺陷**（覆盖写入校验、all/roles/groups 定向、组内角色细分、转发前置闸、回显与覆盖语义、fail-safe），结论：通过，建议上线。前端接口契约已在本 PR 同步 `docs/frontend-task-token-admin.md`。
+
+> **自建局域网放开 http/内网 IP 外呼（2026-06-30）**：无 https/无域名的局域网内部署场景下，原代码强制 `https` 且拦截内网/回环/私有 IP，导致 MCP/插件/Skill 外呼与应用 `access_url` 无法配置 `http://192.168.x.x:端口`。方案：新增环境变量开关 **`TRUST_INTERNAL_OUTBOUND`（默认 `false`，生产保持仅 https + 禁内网防 SSRF）**，置 `true` 时一并放开 http 协议与内网/IP 直连，一处生效于四条链路。**安全红线不随开关变化**：危险 scheme（`javascript:`/`data:`）始终拒、缺 host/超长始终拒、实名附件校验始终 https、域名白名单优先级高于开关。涉及 PR：**#309**（后端开关，commit `85d2b46`：`config`/`ssrf.go`/`bootstrap`/`app_service` + 单测）、**#310**（前端对接说明 `docs/frontend-task-allow-http-ip-outbound.md`，commit `7faf123`）、**#311**（端到端回归用例 `tests/test_http_ip_outbound_regression.py`，commit `b8292dd`）、**#312**（前端 admin-console 4 处校验放开 + `outbound-url.ts` 工具 + 单测，commit `d427360`）。已部署测试服并置 `TRUST_INTERNAL_OUTBOUND=true`（启动日志确认开关生效、`/api/health` 200），测试工程师端到端验收 **12/12 全通过、0 缺陷**（正向 http/内网 IP 放行、access_url 空串清空、公网 https 回归；反向危险 scheme 与缺 host 仍拒；MCP discover 502 为网络不可达而非校验拒绝，证明已放行至真实外呼阶段）。⚠️ 生产/公网环境务必保持开关 `false`。
 
 ### 后端 A（auth / iam / identity / audit）
 
