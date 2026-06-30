@@ -54,6 +54,7 @@ import (
 	tokenclient "molin/server/internal/modules/token_gateway/client"
 	tokengatewaysvc "molin/server/internal/modules/token_gateway/service"
 	workbenchmod "molin/server/internal/modules/workbench"
+	wbsecurity "molin/server/internal/modules/workbench/security"
 	"molin/server/pkg/cache"
 	"molin/server/pkg/db"
 	"molin/server/pkg/response"
@@ -514,6 +515,12 @@ func (a *orderBillingAdapter) DeductTx(tx *gorm.DB, userID uint64, amount decima
 // NewApp 初始化所有基础设施和模块，完成依赖注入，返回可启动的 App。
 func NewApp() (*App, error) {
 	cfg := config.Load()
+
+	// 自建可信开关：注入工作台 SSRF 校验包，开启后对外链接放开 http 与内网/IP（MCP/插件/Skill/应用入口）。
+	wbsecurity.Configure(cfg.TrustInternalOutbound)
+	if cfg.TrustInternalOutbound {
+		log.Printf("[security] TRUST_INTERNAL_OUTBOUND 已开启：对外链接放开 http 与内网/IP（仅限网络隔离的自建可信环境）")
+	}
 
 	// D-46：安全密钥必填校验，任一为空则拒绝启动，避免 HMAC 退化为无密钥 hash
 	if cfg.IDCardHMACSecret == "" {

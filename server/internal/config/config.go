@@ -80,6 +80,12 @@ type Config struct {
 	// 通过 PLUGIN_DOMAIN_WHITELIST 注入（逗号分隔，如 "api.weather.com,docs.example.com"）；
 	// 空=不启用白名单（仅按 SSRF 网段规则拦内网/回环）。
 	PluginDomainWhitelist []string
+
+	// TrustInternalOutbound 自建可信环境开关：开启后对外访问链接放开 http 协议与内网/IP 直连
+	// （MCP / 插件 / Skill 外呼 / 应用 access_url）。默认 false（仅 https + 禁内网），生产环境保持默认。
+	// 仅应在网络隔离的局域网自建可信部署中置 true（等价于关闭 SSRF 防护）。
+	// 通过 TRUST_INTERNAL_OUTBOUND 注入。
+	TrustInternalOutbound bool
 }
 
 func Load() Config {
@@ -126,6 +132,8 @@ func Load() Config {
 
 		MaxRounds:             getenvInt("MAX_ROUNDS", 5),
 		PluginDomainWhitelist: splitCSV(getenv("PLUGIN_DOMAIN_WHITELIST", "")),
+
+		TrustInternalOutbound: getenvBool("TRUST_INTERNAL_OUTBOUND", false),
 	}
 }
 
@@ -150,6 +158,20 @@ func getenv(key string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+// getenvBool 读取布尔环境变量，接受 1/t/true/y/yes/on（不区分大小写）为真，其余为 fallback。
+func getenvBool(key string, fallback bool) bool {
+	v := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	if v == "" {
+		return fallback
+	}
+	switch v {
+	case "1", "t", "true", "y", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func getenvInt(key string, fallback int) int {
