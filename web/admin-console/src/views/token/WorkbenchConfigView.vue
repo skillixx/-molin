@@ -243,7 +243,7 @@
         <el-form-item label="名称" prop="name"><el-input v-model="pluginForm.name" /></el-form-item>
         <el-form-item label="描述"><el-input v-model="pluginForm.description" /></el-form-item>
         <el-form-item label="Endpoint" prop="endpoint_url">
-          <el-input v-model="pluginForm.endpoint_url" placeholder="必须是公网 https 地址" />
+          <el-input v-model="pluginForm.endpoint_url" placeholder="http://192.168.20.16:8080 或 https://example.com" />
         </el-form-item>
         <el-form-item label="鉴权配置">
           <el-input
@@ -325,6 +325,7 @@ import type {
   UpdateAdminSkillReq,
 } from '@/types/token'
 import type { Role } from '@/types/user'
+import { validateEndpointUrl } from '@/utils/outbound-url'
 
 const PaginationBar = defineComponent({
   props: { pagination: { type: Object, required: true } },
@@ -734,8 +735,9 @@ function openPluginEdit(row: AdminPlugin) {
 async function savePlugin() {
   const valid = await pluginFormRef.value?.validate().catch(() => false)
   if (!valid) return
-  if (!pluginForm.endpoint_url.startsWith('https://')) {
-    ElMessage.error('Endpoint 必须使用 https 公网地址')
+  const endpointResult = validateEndpointUrl(pluginForm.endpoint_url)
+  if (!endpointResult.valid) {
+    ElMessage.error(endpointResult.message)
     return
   }
   const schema = parseJson(pluginForm.tool_schema_text)
@@ -746,7 +748,7 @@ async function savePlugin() {
       code: pluginForm.code,
       name: pluginForm.name,
       description: pluginForm.description,
-      endpoint_url: pluginForm.endpoint_url,
+      endpoint_url: endpointResult.value || '',
       tool_schema_json: schema,
       timeout_ms: pluginForm.timeout_ms,
       is_paid: pluginForm.is_paid,

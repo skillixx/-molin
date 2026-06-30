@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
     "build": "vite build",
+    "test:outbound-url": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test tests/outbound-url.test.mjs",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
     "type-check": "vue-tsc --noEmit",
     "lint": "eslint ."
