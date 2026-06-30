@@ -30,6 +30,7 @@ import {
   isPositiveAmount,
   productStatusLabel,
 } from '@/utils/display'
+import { validateAccessUrl } from '@/utils/outbound-url'
 
 const loading = ref(false)
 const products = ref<AdminProduct[]>([])
@@ -179,18 +180,15 @@ async function loadProductAppAccess(appId: number) {
 }
 
 function normalizeAccessUrl() {
-  const accessUrl = productForm.access_url.trim()
+  const accessResult = validateAccessUrl(productForm.access_url)
+  if (!accessResult.valid) {
+    ElMessage.warning(accessResult.message)
+    return undefined
+  }
+  const accessUrl = accessResult.value || ''
   if (!accessUrl) return ''
   if (!productForm.business_ref_id) {
     ElMessage.warning('请先填写业务引用 ID，再配置应用访问入口')
-    return undefined
-  }
-  if (!accessUrl.startsWith('https://')) {
-    ElMessage.warning('访问地址必须以 https:// 开头')
-    return undefined
-  }
-  if (accessUrl.length > 512) {
-    ElMessage.warning('访问地址长度不能超过 512 个字符')
     return undefined
   }
   return accessUrl
@@ -633,7 +631,7 @@ async function saveRule() {
             :disabled="loadingProductApp"
             maxlength="512"
             show-word-limit
-            placeholder="https://your-app.com"
+            placeholder="http://192.168.20.16:3000 或 https://your-app.com"
           />
           <div class="form-tip">
             保存时会同步写入业务引用 ID 指向的应用，未填写则清空该应用访问入口。

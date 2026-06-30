@@ -14,6 +14,7 @@ import {
 import type { AdminApp, AdminAppAdapter } from '@/types/app-admin'
 import type { Pagination } from '@/types/api'
 import { appStatusLabel, formatDateTime } from '@/utils/display'
+import { validateAccessUrl } from '@/utils/outbound-url'
 
 const activeTab = ref('apps')
 const appLoading = ref(false)
@@ -293,11 +294,12 @@ async function saveApp() {
   }
   const config = normalizeJson(appForm.adapter_config_json, '适配器配置')
   if (config === undefined) return
-  const accessUrl = appForm.access_url.trim()
-  if (accessUrl && (!accessUrl.startsWith('https://') || accessUrl.length > 512)) {
-    ElMessage.warning(accessUrl.startsWith('https://') ? '访问地址长度不能超过 512 个字符' : '访问地址必须以 https:// 开头')
+  const accessResult = validateAccessUrl(appForm.access_url)
+  if (!accessResult.valid) {
+    ElMessage.warning(accessResult.message)
     return
   }
+  const accessUrl = accessResult.value || ''
   appSaving.value = true
   try {
     if (editingApp.value) {
@@ -542,7 +544,7 @@ function statusTagType(status: string) {
         <el-form-item label="应用类型"><el-input v-model="appForm.type" /></el-form-item>
         <el-form-item label="图标地址"><el-input v-model="appForm.icon_url" /></el-form-item>
         <el-form-item label="应用访问入口（可选）">
-          <el-input v-model="appForm.access_url" maxlength="512" show-word-limit placeholder="https://your-app.com" />
+          <el-input v-model="appForm.access_url" maxlength="512" show-word-limit placeholder="http://192.168.20.16:3000 或 https://your-app.com" />
         </el-form-item>
         <el-form-item label="回调地址"><el-input v-model="appForm.callback_url" /></el-form-item>
         <el-form-item label="适配器配置"><el-input v-model="appForm.adapter_config_json" type="textarea" :rows="5" placeholder='{"region":"cn"}' /></el-form-item>

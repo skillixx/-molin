@@ -69,7 +69,7 @@
         <el-form-item label="名称" prop="name"><el-input v-model="form.name" /></el-form-item>
         <el-form-item label="描述"><el-input v-model="form.description" /></el-form-item>
         <el-form-item label="Endpoint" prop="endpoint_url">
-          <el-input v-model="form.endpoint_url" placeholder="必须是公网 https 地址" />
+          <el-input v-model="form.endpoint_url" placeholder="http://192.168.20.16:8080/mcp 或 https://example.com/mcp" />
         </el-form-item>
         <el-form-item label="鉴权配置">
           <el-input
@@ -159,6 +159,7 @@ import type {
   CreateAdminMcpServerReq,
   UpdateAdminMcpServerReq,
 } from '@/types/token'
+import { validateEndpointUrl } from '@/utils/outbound-url'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -252,8 +253,9 @@ function openEdit(row: AdminMcpServer) {
 async function handleSave() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
-  if (!form.endpoint_url.startsWith('https://')) {
-    ElMessage.error('Endpoint 必须使用 https 公网地址')
+  const endpointResult = validateEndpointUrl(form.endpoint_url)
+  if (!endpointResult.valid) {
+    ElMessage.error(endpointResult.message)
     return
   }
   saving.value = true
@@ -262,7 +264,7 @@ async function handleSave() {
       code: form.code,
       name: form.name,
       description: form.description,
-      endpoint_url: form.endpoint_url,
+      endpoint_url: endpointResult.value || '',
       timeout_ms: form.timeout_ms,
       is_paid: form.is_paid,
       daily_limit: form.daily_limit || null,
