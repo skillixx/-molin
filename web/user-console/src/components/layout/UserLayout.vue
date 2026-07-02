@@ -84,6 +84,13 @@ function goToIdentity() {
   padding-top: 108px;
 }
 
+/* Chat 页面自身管理消息区和输入区高度，取消通用底部留白，避免最后几条记录被外层裁剪。 */
+.main-content:has(.chat-page),
+.main-content:has(.agent-chat-page) {
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
 /* 实名认证提示横幅 */
 .verify-banner {
   position: fixed;

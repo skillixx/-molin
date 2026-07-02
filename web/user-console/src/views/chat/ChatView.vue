@@ -328,7 +328,7 @@ function formatConversationTime(value: string | null) {
           <div class="header-left">
             <span class="page-kicker">AI 对话</span>
             <h2 class="page-title">{{ activeConversation?.title || '智能助手' }}</h2>
-            <p class="page-subtitle">会话由后端持久化保存，刷新页面后可继续上下文。</p>
+            <p class="page-subtitle" title="会话由后端持久化保存，刷新页面后可继续上下文。">会话由后端持久化保存，刷新页面后可继续上下文。</p>
           </div>
           <div class="header-right">
             <el-button class="chat-toolbar-button mobile-history" :icon="Menu" @click="drawerVisible = true">历史</el-button>
@@ -350,8 +350,8 @@ function formatConversationTime(value: string | null) {
           </div>
         </section>
 
-        <section class="chat-body glass-card" v-loading="messagesLoading">
-          <div ref="listRef" class="message-list">
+        <section ref="listRef" class="chat-body glass-card" v-loading="messagesLoading">
+          <div class="message-list">
             <div v-if="messages.length === 0" class="empty-state">
               <el-icon class="empty-icon"><ChatDotRound /></el-icon>
               <p>开始一段新的对话吧</p>
@@ -420,9 +420,13 @@ function formatConversationTime(value: string | null) {
 
 <style scoped>
 .chat-page {
-  height: calc(100vh - 64px);
+  height: calc(100dvh - 64px);
   overflow: hidden;
   padding: 18px 0 0;
+}
+
+:global(.main-content.has-banner) .chat-page {
+  height: calc(100dvh - 108px);
 }
 
 .chat-layout {
@@ -430,6 +434,7 @@ function formatConversationTime(value: string | null) {
   grid-template-columns: 304px minmax(0, 1fr);
   gap: 14px;
   height: 100%;
+  min-height: 0;
   padding-bottom: 18px;
 }
 
@@ -605,6 +610,7 @@ function formatConversationTime(value: string | null) {
 .chat-main {
   display: flex;
   min-width: 0;
+  min-height: 0;
   height: 100%;
   flex-direction: column;
   gap: 12px;
@@ -639,6 +645,10 @@ function formatConversationTime(value: string | null) {
   max-width: 560px;
   color: var(--color-text-muted);
   line-height: 1.6;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .header-right {
@@ -660,18 +670,20 @@ function formatConversationTime(value: string | null) {
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 0;
   background: linear-gradient(180deg, rgba(10, 15, 25, 0.82), rgba(7, 11, 18, 0.94));
+  -webkit-overflow-scrolling: touch;
 }
 
 .message-list {
   display: flex;
   min-height: 0;
-  flex: 1;
+  flex: 1 0 auto;
   flex-direction: column;
   gap: 18px;
-  overflow-y: auto;
+  overflow: visible;
   padding: 24px 28px 18px;
 }
 
@@ -700,6 +712,7 @@ function formatConversationTime(value: string | null) {
 
 .message-row {
   display: flex;
+  flex-shrink: 0;
   max-width: min(780px, 82%);
   gap: 12px;
 }
@@ -773,15 +786,45 @@ function formatConversationTime(value: string | null) {
 }
 
 .chat-input {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   flex-shrink: 0;
-  border-top: 1px solid rgba(148, 163, 184, 0.16);
-  background: rgba(5, 9, 15, 0.72);
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  background:
+    linear-gradient(180deg, rgba(9, 14, 23, 0.64), rgba(5, 9, 15, 0.92));
+  box-shadow: 0 -18px 36px rgba(0, 0, 0, 0.18);
   padding: 14px 20px 18px;
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 .chat-input :deep(.el-textarea__inner) {
-  border-radius: 8px;
-  line-height: 1.7;
+  min-height: 74px !important;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(11, 17, 27, 0.94)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 14px 34px rgba(0, 0, 0, 0.18);
+  color: var(--color-text);
+  line-height: 1.72;
+  padding: 13px 15px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.chat-input :deep(.el-textarea__inner:hover),
+.chat-input :deep(.el-textarea__inner:focus) {
+  border-color: rgba(34, 211, 238, 0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 3px rgba(34, 211, 238, 0.08),
+    0 16px 36px rgba(0, 0, 0, 0.22);
+}
+
+.chat-input :deep(.el-textarea__inner::placeholder) {
+  color: rgba(167, 179, 195, 0.72);
 }
 
 .input-actions {
@@ -789,11 +832,12 @@ function formatConversationTime(value: string | null) {
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 11px;
 }
 
 .composer-secondary-button {
-  height: 38px;
+  height: 36px;
+  padding: 0 12px;
   color: var(--color-text-muted);
 }
 
@@ -805,14 +849,14 @@ function formatConversationTime(value: string | null) {
 .composer-send-button,
 .composer-stop-button {
   min-width: 94px;
-  height: 38px;
+  height: 36px;
 }
 
 .composer-send-button {
   border: 0;
   background: linear-gradient(135deg, #22d3ee, #34d399);
   color: #04111d;
-  box-shadow: 0 12px 24px rgba(34, 211, 238, 0.2);
+  box-shadow: 0 10px 22px rgba(34, 211, 238, 0.22);
 }
 
 .composer-send-button.is-disabled {
@@ -899,7 +943,11 @@ function formatConversationTime(value: string | null) {
   }
 
   .chat-input {
-    padding: 12px;
+    padding: 10px 12px 12px;
+  }
+
+  .chat-input :deep(.el-textarea__inner) {
+    min-height: 68px !important;
   }
 }
 </style>
