@@ -116,7 +116,7 @@ def db_query(sql):
 
 # ── 测试数据 ────────────────────────────────────────────────
 
-ADMIN_EMAIL = "aisiqin@163.com"
+ADMIN_EMAIL = "aisiqin@example.com"
 ADMIN_PASSWORD = "123456"
 
 # 目标用户：PR#31 验收时注册的普通测试账号，当前无任何角色/权限覆盖（已确认）

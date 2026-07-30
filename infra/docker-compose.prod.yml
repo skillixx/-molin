@@ -66,6 +66,12 @@ services:
     container_name: molin-api
     restart: unless-stopped
     env_file: ../.env.prod
+    environment:
+      # 默认关闭一次性入口；其余三项只从服务器环境文件或 Secret 管理流程注入，Compose 不保存真实值。
+      EMAIL_ADMIN_VERIFY_BOOTSTRAP_ENABLED: ${EMAIL_ADMIN_VERIFY_BOOTSTRAP_ENABLED:-false}
+      EMAIL_ADMIN_VERIFY_BOOTSTRAP_TOKEN: ${EMAIL_ADMIN_VERIFY_BOOTSTRAP_TOKEN:-}
+      EMAIL_ADMIN_VERIFY_BOOTSTRAP_ALLOWED_IPS: ${EMAIL_ADMIN_VERIFY_BOOTSTRAP_ALLOWED_IPS:-}
+      EMAIL_ADMIN_VERIFY_BOOTSTRAP_TRUSTED_PROXY_IPS: ${EMAIL_ADMIN_VERIFY_BOOTSTRAP_TRUSTED_PROXY_IPS:-}
     depends_on:
       mysql:
         condition: service_healthy

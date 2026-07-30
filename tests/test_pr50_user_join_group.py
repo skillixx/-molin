@@ -142,7 +142,7 @@ def db_exec(sql):
 TS = int(time.time())
 
 # 管理员账号（DB 中已知）
-ADMIN_EMAIL    = "aisiqin@163.com"
+ADMIN_EMAIL    = "aisiqin@example.com"
 ADMIN_PASSWORD = "123456"
 ADMIN_ID       = 90
 

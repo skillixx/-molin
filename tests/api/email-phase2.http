@@ -1,0 +1,152 @@
+### Molin DirectMail Phase 2 管理接口手工验收
+### 使用方法：先逐项替换尖括号占位符；任何占位符未替换时禁止执行写请求。
+### 写请求只能对本轮专用测试模板、场景绑定和保留测试域邮箱逐条执行，禁止“运行全部”。
+### 本文件只提供请求序列，不包含自动断言；必须人工记录每次 HTTP 状态、code、idempotent 和 Adapter 计数。
+### 不要把真实 Token、邮箱、数据库主键或幂等键回填并提交到仓库。
+
+@api_base = http://127.0.0.1:8080
+@admin_mfa_token = <必须由本地客户端安全变量覆盖>
+@template_id = <必须替换为本轮专用测试模板ID>
+@template_version = <执行03后从响应读取当前version>
+@scene = register
+@scene_version = <执行05后从目标scene响应读取当前version>
+@original_scene_template_id = <执行05后记录原template_id；若为null则禁止执行06写用例>
+@original_scene_enabled = <执行05后记录原enabled布尔值>
+@restore_scene_version = <执行06B后重新读取目标scene的当前version>
+@allowlist_id = <执行10后从响应读取本轮新增白名单ID>
+@allowlist_version = <执行10后从响应读取本轮新增白名单version>
+@test_email = <必须替换为example.invalid保留域下的本轮唯一测试邮箱>
+@run_id = {{$timestamp}}
+
+### 01 概览：需要view权限以及手机、邮箱双MFA
+GET {{api_base}}/api/admin/email/summary
+Authorization: Bearer {{admin_mfa_token}}
+
+### 02 模板列表：人工确认data顶层只有D-95字段
+GET {{api_base}}/api/admin/email/templates?page=1&page_size=2
+Authorization: Bearer {{admin_mfa_token}}
+
+### 03 模板详情：记录本轮专用模板的当前version，禁止使用默认主键
+GET {{api_base}}/api/admin/email/templates/{{template_id}}
+Authorization: Bearer {{admin_mfa_token}}
+
+### 04A 模板停用：仅使用03返回的当前版本，期望200
+PATCH {{api_base}}/api/admin/email/templates/{{template_id}}/status
+Authorization: Bearer {{admin_mfa_token}}
+Content-Type: application/json
+
+{"local_enabled":false,"version":{{template_version}}}
+
+### 04B 模板旧版本冲突：原样重放04A，期望409/40900
+PATCH {{api_base}}/api/admin/email/templates/{{template_id}}/status
+Authorization: Bearer {{admin_mfa_token}}
+Content-Type: application/json
+
+{"local_enabled":false,"version":{{template_version}}}
+
+### 04C 恢复模板：先重新执行03并更新template_version，再用最新版本恢复启用，期望200
+PATCH {{api_base}}/api/admin/email/templates/{{template_id}}/status
+Authorization: Bearer {{admin_mfa_token}}
+Content-Type: application/json
+
+{"local_enabled":true,"version":{{template_version}}}
+
+### 05 场景列表：记录目标scene当前version并人工确认固定五场景
+GET {{api_base}}/api/admin/email/scenes?page=1&page_size=10
+Authorization: Bearer {{admin_mfa_token}}
+
+### 06A 更新场景绑定：使用05读取的当前版本，期望200
+PUT {{api_base}}/api/admin/email/scenes/{{scene}}
+Authorization: Bearer {{admin_mfa_token}}
+Content-Type: application/json
+
+{"template_id":{{template_id}},"enabled":true,"version":{{scene_version}}}
+
+### 06B 场景旧版本冲突：原样重放06A，期望409/40900
+PUT {{api_base}}/api/admin/email/scenes/{{scene}}
+Authorization: Bearer {{admin_mfa_token}}
+Content-Type: application/json
+
+{"template_id":{{template_id}},"enabled":true,"version":{{scene_version}}}
+
+### 06C 恢复原场景绑定：先重新执行05并更新restore_scene_version；原template_id为null时禁止执行06写用例
+PUT {{api_base}}/api/admin/email/scenes/{{scene}}
+Authorization: Bearer {{admin_mfa_token}}
+Content-Type: application/json
+
+{"template_id":{{original_scene_template_id}},"enabled":{{original_scene_enabled}},"version":{{restore_scene_version}}}
+
+### 07A 原子同步首次请求：仅在已批准的受控Mock或测试供应商窗口执行
+POST {{api_base}}/api/admin/email/templates/sync
+Authorization: Bearer {{admin_mfa_token}}
+Idempotency-Key: qa-email-phase2-sync-{{run_id}}
+Content-Type: application/json
+
+{"provider":"aliyun_directmail"}
+
+### 07B 同key同请求重放：期望同一run且idempotent=true，Adapter不得再次调用
+POST {{api_base}}/api/admin/email/templates/sync
+Authorization: Bearer {{admin_mfa_token}}
+Idempotency-Key: qa-email-phase2-sync-{{run_id}}
+Content-Type: application/json
+
+{"provider":"aliyun_directmail"}
+
+### 08 同步记录：人工确认D-95
+GET {{api_base}}/api/admin/email/template-sync-runs?page=1&page_size=2
+Authorization: Bearer {{admin_mfa_token}}
+
+### 09 白名单列表：响应不得包含完整邮箱或email_hmac
+GET {{api_base}}/api/admin/email/test-recipient-allowlist?page=1&page_size=2
+Authorization: Bearer {{admin_mfa_token}}
+
+### 10 新增本轮白名单：只允许example.invalid保留域，记录响应ID和version
+POST {{api_base}}/api/admin/email/test-recipient-allowlist
+Authorization: Bearer {{admin_mfa_token}}
+Content-Type: application/json
+
+{"email":"{{test_email}}"}
+
+### 11A 撤销本轮白名单：ID和version必须来自10的创建响应，期望200
+DELETE {{api_base}}/api/admin/email/test-recipient-allowlist/{{allowlist_id}}
+Authorization: Bearer {{admin_mfa_token}}
+Content-Type: application/json
+
+{"version":{{allowlist_version}}}
+
+### 11B 白名单旧版本冲突：原样重放11A，期望409/40900
+DELETE {{api_base}}/api/admin/email/test-recipient-allowlist/{{allowlist_id}}
+Authorization: Bearer {{admin_mfa_token}}
+Content-Type: application/json
+
+{"version":{{allowlist_version}}}
+
+### 12前置：如需执行测试发送，必须先重新创建或恢复本轮邮箱为active，并更新allowlist变量
+
+### 12A 测试发送首次请求：记录Adapter调用前后值
+POST {{api_base}}/api/admin/email/templates/{{template_id}}/test-send
+Authorization: Bearer {{admin_mfa_token}}
+Idempotency-Key: qa-email-phase2-send-{{run_id}}
+Content-Type: application/json
+
+{"scene":"{{scene}}","email":"{{test_email}}"}
+
+### 12B 测试发送同key重放：期望同一结果且idempotent=true，Adapter增量必须为0
+POST {{api_base}}/api/admin/email/templates/{{template_id}}/test-send
+Authorization: Bearer {{admin_mfa_token}}
+Idempotency-Key: qa-email-phase2-send-{{run_id}}
+Content-Type: application/json
+
+{"scene":"{{scene}}","email":"{{test_email}}"}
+
+### 13 发送日志：人工确认D-95且公开过滤器不接受pending
+GET {{api_base}}/api/admin/email/send-logs?page=1&page_size=2
+Authorization: Bearer {{admin_mfa_token}}
+
+### MFA否定：单MFA管理员请求，期望403/40003；Token必须通过客户端安全变量临时替换
+GET {{api_base}}/api/admin/email/summary
+Authorization: Bearer <必须安全替换为仅完成单项MFA的短期Token>
+
+### RBAC否定：双MFA但无view权限管理员请求，期望403/40003
+GET {{api_base}}/api/admin/email/summary
+Authorization: Bearer <必须安全替换为双MFA但无view权限的短期Token>

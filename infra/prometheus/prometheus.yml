@@ -1,0 +1,25 @@
+# Molin 测试环境 Prometheus 配置。
+# 内部 Token 由 Docker Compose secret 挂载，禁止在本文件写入任何凭据。
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: molin-email-adapter
+    metrics_path: /api/internal/metrics
+    scheme: http
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    http_headers:
+      X-Internal-Token:
+        files:
+          - /run/secrets/internal_api_token
+    static_configs:
+      # 测试服务器 API 以宿主机二进制运行，容器通过 host-gateway 访问。
+      - targets:
+          - host.docker.internal:8080
+        labels:
+          environment: test

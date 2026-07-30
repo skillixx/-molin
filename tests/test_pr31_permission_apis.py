@@ -110,7 +110,7 @@ def db_query(sql):
 
 TS = str(int(time.time()))[-8:]
 
-ADMIN_EMAIL = "aisiqin@163.com"
+ADMIN_EMAIL = "aisiqin@example.com"
 ADMIN_PASSWORD = "123456"
 
 NORMAL_EMAIL = f"pr31norm{TS}@testmail.io"

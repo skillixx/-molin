@@ -4,7 +4,7 @@ PR#47（feature/backend-a-seed-identity-review-permission, A-15）
 identity:review 权限种子修复 — 接口验收脚本
 
 修复记录：
-  - 管理员/普通用户账号改为动态创建（原硬编码 aisiqin@163.com、pr31norm）
+  - 管理员/普通用户账号改为动态创建（原硬编码 aisiqin@example.com、pr31norm）
   - 测试用户 A/B 改为通过 register_user_via_api 注册（原依赖 DB hash 复制）
   - D-89：审核接口格式 {"approve":true/false} → {"action":"approve"/"reject","reject_reason":...}
   - D-90：普通用户自查路由 /me → /latest

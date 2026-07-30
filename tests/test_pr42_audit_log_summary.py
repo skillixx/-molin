@@ -4,7 +4,7 @@ PR#42（feature/backend-a-audit-log-request-summary, A-14）
 GET /api/admin/audit-logs 响应新增 request_summary 字段 — 接口验收脚本
 
 修复记录：
-  - 管理员账号改为动态创建（原硬编码 aisiqin@163.com）
+  - 管理员账号改为动态创建（原硬编码 aisiqin@example.com）
   - TARGET_USER_ID 改为动态创建（原硬编码 id=147）
   - TEST_ROLE_ID/TEST_PERM_ID 改为从 DB 按 code 查询（原硬编码 id）
   - 普通用户权限边界测试改为使用 target 用户（原硬编码 pr31norm）

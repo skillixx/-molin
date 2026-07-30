@@ -42,6 +42,52 @@ services:
     volumes:
       - minio-data:/data
 
+  prometheus:
+    image: prom/prometheus:v3.12.0-distroless
+    container_name: molin-prometheus
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.listen-address=0.0.0.0:9090
+    ports:
+      # 测试监控界面只绑定本机回环，禁止直接暴露到公网。
+      - "127.0.0.1:${PROMETHEUS_PORT:-19090}:9090"
+    extra_hosts:
+      # 测试服务器 API 是宿主机二进制，不是 Compose 内的 api 服务。
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/email-alerts.yml:/etc/prometheus/rules/email-alerts.yml:ro
+      - prometheus-data:/prometheus
+    secrets:
+      - source: internal_api_token
+        target: internal_api_token
+        uid: "65532"
+        gid: "65532"
+        mode: 0o400
+    networks:
+      monitoring:
+        # 固定测试容器地址，便于 INTERNAL_ALLOWED_IPS 精确放行。
+        ipv4_address: ${PROMETHEUS_CONTAINER_IP:-172.31.250.10}
+    security_opt:
+      - no-new-privileges:true
+
 volumes:
   mysql-data:
   minio-data:
+  prometheus-data:
+
+networks:
+  monitoring:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${PROMETHEUS_SUBNET:-172.31.250.0/24}
+
+# Compose 从启动进程的环境变量创建只读 secret 文件，不把 Token 写入本文件或容器环境变量。
+secrets:
+  internal_api_token:
+    environment: INTERNAL_API_TOKEN

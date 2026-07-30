@@ -1,0 +1,42 @@
+# 邮件 Adapter 告警仅使用冻结的低基数标签，禁止加入邮箱、请求号或供应商原始错误。
+groups:
+  - name: molin-email-adapter
+    interval: 15s
+    rules:
+      - alert: MolinEmailMetricsTargetDown
+        expr: up{job="molin-email-adapter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          module: email
+        annotations:
+          summary: 邮件 Adapter 指标抓取连续失败
+          description: 测试环境邮件指标端点已连续两分钟无法抓取，请检查 API、内部 Token 和来源 IP 双门禁。
+
+      - alert: MolinEmailAdapterFailureRateHigh
+        expr: |
+          (
+            sum by (scene) (increase(email_adapter_calls_total{operation="send_mail",result=~"failed|timeout"}[5m]))
+            /
+            clamp_min(sum by (scene) (increase(email_adapter_calls_total{operation="send_mail"}[5m])), 1)
+          ) > 0.20
+          and on (scene)
+          sum by (scene) (increase(email_adapter_calls_total{operation="send_mail"}[5m])) >= 10
+        for: 1m
+        labels:
+          severity: critical
+          module: email
+        annotations:
+          summary: 邮件发送失败率超过门禁
+          description: 场景 {{ $labels.scene }} 最近五分钟至少调用十次，失败及超时比例持续超过 20%。
+
+      - alert: MolinEmailAdapterOutcomeUnknown
+        # 当前冻结指标把供应商超时或响应未知统一归入 timeout，不新增高基数结果标签。
+        expr: sum by (scene) (increase(email_adapter_calls_total{operation="send_mail",result="timeout"}[5m])) > 0
+        for: 0m
+        labels:
+          severity: critical
+          module: email
+        annotations:
+          summary: 邮件供应商出现未知结果
+          description: 场景 {{ $labels.scene }} 最近五分钟出现供应商超时或响应未知，请按持久化墓碑规则检查，禁止自动重发。
