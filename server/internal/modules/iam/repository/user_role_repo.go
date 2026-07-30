@@ -61,6 +61,18 @@ func (r *UserRoleRepository) GetRoleIDs(ctx context.Context, userID uint64) ([]u
 	return ids, nil
 }
 
+// HasDirectRole 只检查 user_roles 的直接角色关联，不合并分组角色或动态权限覆盖。
+// 一次性 bootstrap 用它确认操作者确实属于唯一平台 admin 角色。
+func (r *UserRoleRepository) HasDirectRole(ctx context.Context, userID uint64, roleCode string) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).
+		Table("user_roles AS ur").
+		Joins("INNER JOIN roles r ON r.id = ur.role_id").
+		Where("ur.user_id = ? AND r.code = ?", userID, roleCode).
+		Count(&count).Error
+	return count == 1, err
+}
+
 // FindRolesByUserPaged 分页查询用户已分配的角色详情，返回当前页数据及总条数。
 func (r *UserRoleRepository) FindRolesByUserPaged(ctx context.Context, userID uint64, offset, limit int) ([]model.Role, int64, error) {
 	var roles []model.Role

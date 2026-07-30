@@ -1,9 +1,14 @@
 package config
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
+	"fmt"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // Config 汇聚所有运行时配置，通过环境变量注入，无默认密钥。
@@ -39,6 +44,21 @@ type Config struct {
 	// 管理员双重认证有效期（小时），超时后需重新认证
 	AdminVerifyExpireHours int
 
+	// DirectMail 邮件发送配置。密钥仅从环境变量注入，不进入日志或接口响应。
+	DirectMailAccessKeyID     string
+	DirectMailAccessKeySecret string
+	DirectMailRegion          string
+	DirectMailAccountName     string
+	DirectMailFromAlias       string
+	DirectMailEndpoint        string
+	EmailAdapter              string
+	EmailAddressHMACSecret    string
+	EmailIdempotencySecret    string
+	EmailDebugReturnCode      bool
+	// EmailAdminVerifyBootstrap 保存一次性管理员邮箱认证配置的启动期解析结果。
+	// 默认关闭时不携带任何安全值，避免普通邮件接口意外复用该能力。
+	EmailAdminVerifyBootstrap EmailAdminVerifyBootstrapConfig
+
 	// 支付回调报文加密密钥（32 字节，AES-256-GCM），未配置时记录 warn 并降级为明文
 	NotifyBodyKey string
 
@@ -55,6 +75,11 @@ type Config struct {
 	// POST /api/internal/entitlement-consume 须带 X-Internal-Token=该值；
 	// 通过 INTERNAL_API_TOKEN 注入；与 asset/finance_consumer 校验侧同源。未配置时 prepaid 内部调用 fail-closed。
 	InternalAPIToken string
+	// 内部指标端点的来源 IP 与可信代理列表保留原始配置，由指标安全门完整解析并失败关闭。
+	InternalAllowedIPs      string
+	InternalTrustedProxyIPs string
+	// TrustedProxyIPs 仅用于公开流量来源解析，与内部 metrics 的可信代理配置完全隔离。
+	TrustedProxyIPs string
 
 	// asset 模块内部接口基址（S2-丁5），门面 prepaid 结算调用 entitlement-consume 用。
 	// 通过 ASSET_INTERNAL_BASE_URL 注入；默认本机回环（同进程部署时门面 → 本机 API 端口）。
@@ -88,9 +113,27 @@ type Config struct {
 	TrustInternalOutbound bool
 }
 
+// EmailAdminVerifyBootstrapConfig 是一次性 bootstrap 的独立安全配置。
+// Token 只保存在进程内存中；网段在启动期完成严格解析，运行期不再容错。
+type EmailAdminVerifyBootstrapConfig struct {
+	Enabled         bool
+	Token           string
+	AllowedIPs      []netip.Prefix
+	TrustedProxyIPs []netip.Prefix
+}
+
 func Load() Config {
+	rawAppEnv, appEnvExplicit := os.LookupEnv("APP_ENV")
+	appEnv := strings.ToLower(strings.TrimSpace(getenv("APP_ENV", "local")))
+	emailDebugReturnCode := strings.TrimSpace(os.Getenv("EMAIL_DEBUG_RETURN_CODE")) == "true"
+	// 普通本地启动仍保留 local 默认值，但调试回码必须同时具备显式安全环境声明。
+	// APP_ENV 缺失、空白、未知或生产环境时，即使误开调试开关也强制关闭回码。
+	if !appEnvExplicit || !(Config{AppEnv: rawAppEnv}).IsSafeNonProduction() {
+		emailDebugReturnCode = false
+	}
+
 	return Config{
-		AppEnv:  getenv("APP_ENV", "local"),
+		AppEnv:  appEnv,
 		AppName: getenv("APP_NAME", "molin-cloud-platform"),
 		APIHost: getenv("API_HOST", "0.0.0.0"),
 		APIPort: getenv("API_PORT", "8080"),
@@ -115,14 +158,28 @@ func Load() Config {
 
 		AdminVerifyExpireHours: getenvInt("ADMIN_VERIFY_EXPIRE_HOURS", 24),
 
+		DirectMailAccessKeyID:     getenv("DIRECTMAIL_ACCESS_KEY_ID", ""),
+		DirectMailAccessKeySecret: getenv("DIRECTMAIL_ACCESS_KEY_SECRET", ""),
+		DirectMailRegion:          getenv("DIRECTMAIL_REGION", ""),
+		DirectMailAccountName:     getenv("DIRECTMAIL_ACCOUNT_NAME", ""),
+		DirectMailFromAlias:       getenv("DIRECTMAIL_FROM_ALIAS", "墨灵"),
+		DirectMailEndpoint:        getenv("DIRECTMAIL_ENDPOINT", "https://dm.aliyuncs.com/"),
+		EmailAdapter:              strings.ToLower(strings.TrimSpace(getenv("EMAIL_ADAPTER", "production"))),
+		EmailAddressHMACSecret:    getenv("EMAIL_ADDRESS_HMAC_SECRET", ""),
+		EmailIdempotencySecret:    getenv("EMAIL_IDEMPOTENCY_SECRET", ""),
+		EmailDebugReturnCode:      emailDebugReturnCode,
+
 		NotifyBodyKey: getenv("NOTIFY_BODY_KEY", ""),
 
 		TokenProviderKey: getenv("TOKEN_PROVIDER_KEY", ""),
 
 		APIKeyHMACSecret: getenv("API_KEY_HMAC_SECRET", ""),
 
-		InternalAPIToken:     getenv("INTERNAL_API_TOKEN", ""),
-		AssetInternalBaseURL: getenv("ASSET_INTERNAL_BASE_URL", "http://127.0.0.1:8080"),
+		InternalAPIToken:        getenv("INTERNAL_API_TOKEN", ""),
+		InternalAllowedIPs:      os.Getenv("INTERNAL_ALLOWED_IPS"),
+		InternalTrustedProxyIPs: os.Getenv("INTERNAL_TRUSTED_PROXY_IPS"),
+		TrustedProxyIPs:         os.Getenv("TRUSTED_PROXY_IPS"),
+		AssetInternalBaseURL:    getenv("ASSET_INTERNAL_BASE_URL", "http://127.0.0.1:8080"),
 		// 兜底单价默认 0.00002 CNY/token（约 ¥0.02/千 token，保守上限；运营按真实档位下调）。
 		TokenHoldUnitPrice:        getenv("TOKEN_HOLD_UNIT_PRICE", "0.00002"),
 		TokenHoldDefaultMaxTokens: getenvInt("TOKEN_HOLD_DEFAULT_MAX_TOKENS", 4096),
@@ -134,6 +191,233 @@ func Load() Config {
 		PluginDomainWhitelist: splitCSV(getenv("PLUGIN_DOMAIN_WHITELIST", "")),
 
 		TrustInternalOutbound: getenvBool("TRUST_INTERNAL_OUTBOUND", false),
+	}
+}
+
+// ValidateAdminVerifyConfig 在基础设施初始化前校验管理员认证安全配置。
+// 负有效期不具备明确业务语义，必须拒绝启动，不能退化为永不过期。
+func (c Config) ValidateAdminVerifyConfig() error {
+	if c.AdminVerifyExpireHours < 0 {
+		return fmt.Errorf("ADMIN_VERIFY_EXPIRE_HOURS 不得小于 0")
+	}
+	return nil
+}
+
+// LoadEmailAdminVerifyBootstrapConfig 从四个冻结环境变量加载一次性 bootstrap 配置。
+// enabled 只有键缺失时默认 false；显式空值或非字面 true/false 均拒绝启动。
+func LoadEmailAdminVerifyBootstrapConfig() (EmailAdminVerifyBootstrapConfig, error) {
+	const enabledKey = "EMAIL_ADMIN_VERIFY_BOOTSTRAP_ENABLED"
+	rawEnabled, present := os.LookupEnv(enabledKey)
+	if !present {
+		return EmailAdminVerifyBootstrapConfig{}, nil
+	}
+
+	var enabled bool
+	switch {
+	case strings.EqualFold(rawEnabled, "true"):
+		enabled = true
+	case strings.EqualFold(rawEnabled, "false"):
+		return EmailAdminVerifyBootstrapConfig{}, nil
+	default:
+		return EmailAdminVerifyBootstrapConfig{}, fmt.Errorf("%s 只允许字面 true/false，且不得为空", enabledKey)
+	}
+
+	token, tokenPresent := os.LookupEnv("EMAIL_ADMIN_VERIFY_BOOTSTRAP_TOKEN")
+	if !tokenPresent || !validEmailBootstrapToken(token) {
+		return EmailAdminVerifyBootstrapConfig{}, fmt.Errorf("EMAIL_ADMIN_VERIFY_BOOTSTRAP_TOKEN 缺失或不符合安全要求")
+	}
+	allowed, err := parseRequiredBootstrapIPPrefixes(os.Getenv("EMAIL_ADMIN_VERIFY_BOOTSTRAP_ALLOWED_IPS"))
+	if err != nil {
+		return EmailAdminVerifyBootstrapConfig{}, fmt.Errorf("EMAIL_ADMIN_VERIFY_BOOTSTRAP_ALLOWED_IPS 配置无效: %w", err)
+	}
+	trusted, err := parseRequiredBootstrapIPPrefixes(os.Getenv("EMAIL_ADMIN_VERIFY_BOOTSTRAP_TRUSTED_PROXY_IPS"))
+	if err != nil {
+		return EmailAdminVerifyBootstrapConfig{}, fmt.Errorf("EMAIL_ADMIN_VERIFY_BOOTSTRAP_TRUSTED_PROXY_IPS 配置无效: %w", err)
+	}
+	if err := validateEmailBootstrapIndependence(token, allowed, trusted); err != nil {
+		return EmailAdminVerifyBootstrapConfig{}, err
+	}
+	return EmailAdminVerifyBootstrapConfig{Enabled: enabled, Token: token, AllowedIPs: allowed, TrustedProxyIPs: trusted}, nil
+}
+
+func parseRequiredBootstrapIPPrefixes(raw string) ([]netip.Prefix, error) {
+	items, err := parseRequiredIPPrefixes(raw)
+	if err != nil {
+		return nil, err
+	}
+	if prefixesCoverAddressFamily(items, true) || prefixesCoverAddressFamily(items, false) {
+		return nil, fmt.Errorf("配置不得覆盖完整 IPv4 或 IPv6 地址空间")
+	}
+	return items, nil
+}
+
+func parseRequiredIPPrefixes(raw string) ([]netip.Prefix, error) {
+	if raw == "" {
+		return nil, fmt.Errorf("配置不得为空")
+	}
+	items, err := ParseTrustedProxyIPs(raw)
+	if err != nil || len(items) == 0 {
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("配置不得为空")
+	}
+	return items, nil
+}
+
+func validEmailBootstrapToken(token string) bool {
+	if len([]byte(token)) < 32 || !utf8.ValidString(token) || strings.TrimSpace(token) != token || strings.Contains(token, ",") {
+		return false
+	}
+	for _, r := range token {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	lower := strings.ToLower(token)
+	weakMarkers := []string{"change-me", "changeme", "replace-me", "placeholder", "your-token", "example-token", "default", "secret", "test"}
+	for _, marker := range weakMarkers {
+		if strings.Contains(lower, marker) {
+			return false
+		}
+	}
+	// 少于八种不同字节属于明显低多样性值，不满足独立高强度 Token 要求。
+	distinct := make(map[byte]struct{}, 8)
+	for i := 0; i < len(token); i++ {
+		distinct[token[i]] = struct{}{}
+	}
+	return len(distinct) >= 8
+}
+
+func validateEmailBootstrapIndependence(token string, allowed, trusted []netip.Prefix) error {
+	if internal := os.Getenv("INTERNAL_API_TOKEN"); internal != "" && equalEmailBootstrapConfigValue(token, internal) {
+		return fmt.Errorf("EMAIL_ADMIN_VERIFY_BOOTSTRAP_TOKEN 不得复用 INTERNAL_API_TOKEN")
+	}
+	if prefixesShareEquivalentNetwork(allowed, trusted) {
+		return fmt.Errorf("bootstrap allowed 与 trusted proxy 网段不得复用")
+	}
+	return nil
+}
+
+func equalEmailBootstrapConfigValue(left, right string) bool {
+	leftDigest := sha256.Sum256([]byte(left))
+	rightDigest := sha256.Sum256([]byte(right))
+	return subtle.ConstantTimeCompare(leftDigest[:], rightDigest[:]) == 1
+}
+
+func prefixesShareEquivalentNetwork(left, right []netip.Prefix) bool {
+	seen := make(map[netip.Prefix]struct{}, len(left))
+	for _, prefix := range left {
+		seen[prefix.Masked()] = struct{}{}
+	}
+	for _, prefix := range right {
+		if _, ok := seen[prefix.Masked()]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func prefixesCoverAddressFamily(prefixes []netip.Prefix, ipv4 bool) bool {
+	exact, candidates := buildPrefixCoverageIndex(prefixes, ipv4)
+	if len(exact) == 0 {
+		return false
+	}
+	if ipv4 {
+		return prefixTreeCovered(netip.PrefixFrom(netip.IPv4Unspecified(), 0), 32, exact, candidates)
+	}
+	return prefixTreeCovered(netip.PrefixFrom(netip.IPv6Unspecified(), 0), 128, exact, candidates)
+}
+
+// buildPrefixCoverageIndex 同时建立精确前缀和候选祖先索引。
+// 每个输入最多贡献地址位数加一个节点，使时间和空间上界保持为 O(输入数×地址位数)。
+func buildPrefixCoverageIndex(prefixes []netip.Prefix, ipv4 bool) (map[netip.Prefix]struct{}, map[netip.Prefix]struct{}) {
+	exact := make(map[netip.Prefix]struct{}, len(prefixes))
+	candidates := make(map[netip.Prefix]struct{}, len(prefixes))
+	for _, prefix := range prefixes {
+		if prefix.Addr().Is4() != ipv4 {
+			continue
+		}
+		prefix = prefix.Masked()
+		exact[prefix] = struct{}{}
+		for bits := 0; bits <= prefix.Bits(); bits++ {
+			ancestor := netip.PrefixFrom(prefix.Addr(), bits).Masked()
+			candidates[ancestor] = struct{}{}
+		}
+	}
+	return exact, candidates
+}
+
+func prefixTreeCovered(prefix netip.Prefix, maxBits int, exact, candidates map[netip.Prefix]struct{}) bool {
+	if _, ok := exact[prefix]; ok {
+		return true
+	}
+	// 当前分支没有任何候选后代时立即剪枝，禁止向完整 IPv4/IPv6 地址树指数展开。
+	if _, ok := candidates[prefix]; !ok {
+		return false
+	}
+	if prefix.Bits() >= maxBits {
+		return false
+	}
+	return prefixTreeCovered(prefixChild(prefix, false), maxBits, exact, candidates) &&
+		prefixTreeCovered(prefixChild(prefix, true), maxBits, exact, candidates)
+}
+
+func prefixChild(prefix netip.Prefix, upper bool) netip.Prefix {
+	bit := prefix.Bits()
+	if prefix.Addr().Is4() {
+		bytes := prefix.Addr().As4()
+		if upper {
+			bytes[bit/8] |= byte(1 << (7 - bit%8))
+		}
+		return netip.PrefixFrom(netip.AddrFrom4(bytes), bit+1)
+	}
+	bytes := prefix.Addr().As16()
+	if upper {
+		bytes[bit/8] |= byte(1 << (7 - bit%8))
+	}
+	return netip.PrefixFrom(netip.AddrFrom16(bytes), bit+1)
+}
+
+// ParseTrustedProxyIPs 严格解析公开流量可信代理列表；空配置表示合法直连模式。
+func ParseTrustedProxyIPs(raw string) ([]netip.Prefix, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	networks := make([]netip.Prefix, 0, len(parts))
+	for _, part := range parts {
+		item := strings.TrimSpace(part)
+		if item == "" {
+			return nil, fmt.Errorf("可信代理列表包含空项")
+		}
+		if addr, err := netip.ParseAddr(item); err == nil {
+			if addr.Zone() != "" {
+				return nil, fmt.Errorf("可信代理地址不得包含 IPv6 zone")
+			}
+			bits := 128
+			if addr.Is4() {
+				bits = 32
+			}
+			networks = append(networks, netip.PrefixFrom(addr, bits))
+			continue
+		}
+		prefix, err := netip.ParsePrefix(item)
+		if err != nil || prefix.Addr().Zone() != "" {
+			return nil, fmt.Errorf("可信代理地址或网段格式无效")
+		}
+		networks = append(networks, prefix.Masked())
+	}
+	return networks, nil
+}
+
+// IsSafeNonProduction 只认可明确列出的开发、测试环境；未知值按生产环境失败关闭。
+func (c Config) IsSafeNonProduction() bool {
+	switch strings.ToLower(strings.TrimSpace(c.AppEnv)) {
+	case "local", "development", "dev", "test", "testing":
+		return true
+	default:
+		return false
 	}
 }
 

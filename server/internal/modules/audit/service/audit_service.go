@@ -6,6 +6,8 @@ import (
 	"log"
 	"time"
 
+	"gorm.io/gorm"
+
 	"molin/server/internal/modules/audit/model"
 	"molin/server/internal/modules/audit/repository"
 )
@@ -26,6 +28,21 @@ func NewAuditService(repo *repository.AuditLogRepository) *AuditService {
 // 审计写入失败不应阻断主业务流程：本方法内部会记录警告日志，调用方在业务关键路径上
 // 即使收到 error 也不应中断已经成功的主操作。
 func (s *AuditService) Record(ctx context.Context, operatorID *uint64, module, action string, targetType, targetID *string, ip string, requestSummary any) error {
+	entry := buildAuditEntry(operatorID, module, action, targetType, targetID, ip, requestSummary)
+	if err := s.repo.Create(ctx, entry); err != nil {
+		log.Printf("[audit] 写入审计日志失败: module=%s action=%s err=%v", module, action, err)
+		return err
+	}
+	return nil
+}
+
+// RecordWithTx 把结果审计写入调用方事务；失败必须由调用方回滚高风险业务动作。
+func (s *AuditService) RecordWithTx(ctx context.Context, tx *gorm.DB, operatorID *uint64, module, action string, targetType, targetID *string, ip string, requestSummary any) error {
+	entry := buildAuditEntry(operatorID, module, action, targetType, targetID, ip, requestSummary)
+	return s.repo.CreateWithTx(ctx, tx, entry)
+}
+
+func buildAuditEntry(operatorID *uint64, module, action string, targetType, targetID *string, ip string, requestSummary any) *model.AuditLog {
 	var summary *string
 	if requestSummary != nil {
 		raw, err := json.Marshal(requestSummary)
@@ -42,7 +59,7 @@ func (s *AuditService) Record(ctx context.Context, operatorID *uint64, module, a
 		ipPtr = &ip
 	}
 
-	entry := &model.AuditLog{
+	return &model.AuditLog{
 		OperatorID:     operatorID,
 		Module:         module,
 		Action:         action,
@@ -51,12 +68,6 @@ func (s *AuditService) Record(ctx context.Context, operatorID *uint64, module, a
 		IP:             ipPtr,
 		RequestSummary: summary,
 	}
-
-	if err := s.repo.Create(ctx, entry); err != nil {
-		log.Printf("[audit] 写入审计日志失败: module=%s action=%s err=%v", module, action, err)
-		return err
-	}
-	return nil
 }
 
 // ListPaged 分页查询审计日志，支持按 module/action/operatorID/时间范围过滤。

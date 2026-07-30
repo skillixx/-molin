@@ -23,6 +23,14 @@ func (r *AuditLogRepository) Create(ctx context.Context, log *model.AuditLog) er
 	return r.db.WithContext(ctx).Create(log).Error
 }
 
+// CreateWithTx 使用调用方事务写入审计，使高风险业务结果与业务数据同生共死。
+func (r *AuditLogRepository) CreateWithTx(ctx context.Context, tx *gorm.DB, log *model.AuditLog) error {
+	if tx == nil {
+		return gorm.ErrInvalidDB
+	}
+	return tx.WithContext(ctx).Create(log).Error
+}
+
 // ListPaged 分页查询审计日志，支持多维度过滤，按 created_at 倒序。
 // D-82：新增 operatorID（按操作人过滤）、startTime/endTime（按时间范围过滤），
 // 合规审计必备，同时对应 migration 中的 idx_audit_operator_id / idx_audit_module_action 索引。

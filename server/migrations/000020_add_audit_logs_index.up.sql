@@ -1,15 +1,4 @@
--- D-82：为 audit_logs 表补充索引，支持按 operator_id 和 module/action 高效过滤。
--- 背景：ListAuditLogs 接口扩展了 operator_id 和时间范围过滤参数，
--- 大数据量下无索引将导致全表扫描，影响管理后台查询性能。
---
--- idx_audit_operator_id  — 支持按操作人过滤（合规必备）
--- idx_audit_module_action — 支持按模块/动作联合过滤（已有 module/action 单列查询，联合索引更优）
---
--- 注：audit_logs.created_at 在 000002 中已建有 idx_audit_created_at 索引，此处不重复添加。
---
--- P1 修复：MySQL 8.0 的 ALTER TABLE ... ADD INDEX 不支持 IF NOT EXISTS 子句
--- （会报 ERROR 1064 语法错误），改为普通 ADD INDEX。
-
+-- 历史兼容修复：000002 已负责 operator_id 与 created_at 索引，
+-- 本迁移只补充模块与动作联合索引，避免新库顺序迁移时重复创建索引。
 ALTER TABLE audit_logs
-  ADD INDEX idx_audit_operator_id (operator_id),
   ADD INDEX idx_audit_module_action (module, action);

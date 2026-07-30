@@ -29,20 +29,21 @@ import (
 var usernameRegexp = regexp.MustCompile(`^[a-zA-Z0-9_]{2,32}$`)
 
 var (
-	ErrEmailAlreadyExists    = errors.New("邮箱已被注册")
-	ErrPhoneAlreadyExists    = errors.New("手机号已被注册")
-	ErrUsernameAlreadyExists = errors.New("用户名已被使用")
-	ErrUsernameInvalid       = errors.New("用户名只能包含字母、数字和下划线，长度2-32位")
-	ErrUnauthorized          = errors.New("未登录或凭证无效")
-	ErrUserDisabled          = errors.New("账号已被禁用")
-	ErrWrongPassword         = errors.New("密码错误")
-	ErrAdminPhoneNotVerified = errors.New("请先完成手机号认证")
-	ErrPhoneNotRegistered    = errors.New("手机号未注册，请先注册")
-	ErrEmailNotRegistered    = errors.New("邮箱未注册，请先注册")
+	ErrEmailAlreadyExists     = errors.New("邮箱已被注册")
+	ErrPhoneAlreadyExists     = errors.New("手机号已被注册")
+	ErrUsernameAlreadyExists  = errors.New("用户名已被使用")
+	ErrUsernameInvalid        = errors.New("用户名只能包含字母、数字和下划线，长度2-32位")
+	ErrUnauthorized           = errors.New("未登录或凭证无效")
+	ErrUserDisabled           = errors.New("账号已被禁用")
+	ErrWrongPassword          = errors.New("密码错误")
+	ErrAdminPhoneNotVerified  = errors.New("请先完成手机号认证")
+	ErrPhoneNotRegistered     = errors.New("手机号未注册，请先注册")
+	ErrEmailNotRegistered     = errors.New("邮箱未注册，请先注册")
+	ErrEmailCodeNotRegistered = errors.New("邮箱未注册，请先注册")
 	// ErrRefreshTokenAlreadyUsed D-15：Refresh Token 已被并发请求使用并吊销，本次刷新失败。
 	ErrRefreshTokenAlreadyUsed = errors.New("refresh token 已被使用，请重新登录")
 	// ErrLoginLocked D-16：登录失败次数超限，账号临时锁定。
-	ErrLoginLocked = errors.New("登录失败次数过多，请稍后再试")
+	ErrLoginLocked = errors.New("登录失败次数过多，请15分钟后重试")
 	// ErrInvalidScene D-52：scene 不在公开接口允许的白名单中。
 	ErrInvalidScene = errors.New("不支持的操作场景")
 	// ErrPhoneNotBound D-96：管理员双重认证发送手机验证码时，账号未绑定手机号。
@@ -61,6 +62,8 @@ const revokedTokenKeyFmt = "revoked:token:%s"
 
 // loginFailKeyFmt D-16：登录失败计数在 Redis 中的 key 格式，按登录标识（email/phone）维度计数。
 const loginFailKeyFmt = "login_fail:%s:%s"
+
+const emailLoginType = "email"
 
 // loginFailLimit 登录失败次数阈值，达到后在 loginFailWindow 内拒绝登录。
 const loginFailLimit = 5
@@ -287,10 +290,10 @@ var allowedPublicScenes = map[string]bool{
 // SendCode 发送验证码，在发送前：
 // 1. D-52：校验 scene 是否在公开白名单内，防止未登录调用方触发高权限场景验证码
 // 2. 根据 scene 做账号状态前置校验
-func (s *AuthService) SendCode(ctx context.Context, targetType, targetValue, scene string) (string, error) {
+func (s *AuthService) SendCode(ctx context.Context, targetType, targetValue, scene string) (VerificationSendResult, error) {
 	// D-52：scene 白名单校验，拒绝 bind_phone / bind_email / admin_verify 等高权限场景
 	if !allowedPublicScenes[scene] {
-		return "", ErrInvalidScene
+		return VerificationSendResult{}, ErrInvalidScene
 	}
 	switch scene {
 	case "register":
@@ -299,19 +302,19 @@ func (s *AuthService) SendCode(ctx context.Context, targetType, targetValue, sce
 			targetValue = normalizePhone(targetValue)
 			exists, err := s.userRepo.ExistsByPhone(ctx, targetValue)
 			if err != nil {
-				return "", err
+				return VerificationSendResult{}, err
 			}
 			if exists {
-				return "", ErrPhoneAlreadyExists
+				return VerificationSendResult{}, ErrPhoneAlreadyExists
 			}
 		case "email":
 			targetValue = normalizeEmail(targetValue)
 			exists, err := s.userRepo.ExistsByEmail(ctx, targetValue)
 			if err != nil {
-				return "", err
+				return VerificationSendResult{}, err
 			}
 			if exists {
-				return "", ErrEmailAlreadyExists
+				return VerificationSendResult{}, ErrEmailAlreadyExists
 			}
 		}
 	case "login":
@@ -320,21 +323,24 @@ func (s *AuthService) SendCode(ctx context.Context, targetType, targetValue, sce
 			targetValue = normalizePhone(targetValue)
 			exists, err := s.userRepo.ExistsByPhone(ctx, targetValue)
 			if err != nil {
-				return "", err
+				return VerificationSendResult{}, err
 			}
 			if !exists {
-				return "", ErrPhoneNotRegistered
+				return VerificationSendResult{}, ErrPhoneNotRegistered
 			}
 		case "email":
 			targetValue = normalizeEmail(targetValue)
 			exists, err := s.userRepo.ExistsByEmail(ctx, targetValue)
 			if err != nil {
-				return "", err
+				return VerificationSendResult{}, err
 			}
 			if !exists {
-				return "", ErrEmailNotRegistered
+				return VerificationSendResult{}, ErrEmailNotRegistered
 			}
 		}
+	}
+	if targetType == "email" {
+		ctx = withEmailOTPIdentity(ctx, "/api/auth/verification-codes/email", 0, targetValue)
 	}
 	return s.verifySvc.Send(ctx, targetType, targetValue, scene)
 }
@@ -342,53 +348,89 @@ func (s *AuthService) SendCode(ctx context.Context, targetType, targetValue, sce
 // SendBindPhoneCode D-96：已登录用户更换手机号前，向新手机号发送验证码（scene=bind_phone）。
 // 复用与 SendCode 中 register 场景一致的唯一性预检查：新手机号已被占用时直接返回 ErrPhoneAlreadyExists，
 // 避免用户收到验证码后在 UpdatePhone 提交时才发现手机号冲突。
-func (s *AuthService) SendBindPhoneCode(ctx context.Context, newPhone string) (string, error) {
+func (s *AuthService) SendBindPhoneCode(ctx context.Context, newPhone string) (VerificationSendResult, error) {
 	newPhone = normalizePhone(newPhone)
 	exists, err := s.userRepo.ExistsByPhone(ctx, newPhone)
 	if err != nil {
-		return "", err
+		return VerificationSendResult{}, err
 	}
 	if exists {
-		return "", ErrPhoneAlreadyExists
+		return VerificationSendResult{}, ErrPhoneAlreadyExists
 	}
 	return s.verifySvc.Send(ctx, "phone", newPhone, "bind_phone")
 }
 
 // SendBindEmailCode D-96：已登录用户更换邮箱前，向新邮箱发送验证码（scene=bind_email）。
-func (s *AuthService) SendBindEmailCode(ctx context.Context, newEmail string) (string, error) {
+func (s *AuthService) SendBindEmailCode(ctx context.Context, userID uint64, newEmail string) (VerificationSendResult, error) {
 	newEmail = normalizeEmail(newEmail)
 	exists, err := s.userRepo.ExistsByEmail(ctx, newEmail)
 	if err != nil {
-		return "", err
+		return VerificationSendResult{}, err
 	}
 	if exists {
-		return "", ErrEmailAlreadyExists
+		return VerificationSendResult{}, ErrEmailAlreadyExists
 	}
-	return s.verifySvc.Send(ctx, "email", newEmail, "bind_email")
+	return s.verifySvc.Send(withEmailOTPIdentity(ctx, "/api/me/verification-codes/email", userID, newEmail), "email", newEmail, "bind_email")
 }
 
 // SendAdminVerifyPhoneCode D-96：管理员双重认证 —— 向当前用户自己的手机号发送验证码（scene=admin_verify）。
-func (s *AuthService) SendAdminVerifyPhoneCode(ctx context.Context, userID uint64) (string, error) {
+func (s *AuthService) SendAdminVerifyPhoneCode(ctx context.Context, userID uint64) (VerificationSendResult, error) {
 	user, err := s.userRepo.FindByID(ctx, userID)
 	if err != nil {
-		return "", ErrUnauthorized
+		return VerificationSendResult{}, ErrUnauthorized
 	}
 	if user.Phone == nil {
-		return "", ErrPhoneNotBound
+		return VerificationSendResult{}, ErrPhoneNotBound
 	}
 	return s.verifySvc.Send(ctx, "phone", *user.Phone, "admin_verify")
 }
 
 // SendAdminVerifyEmailCode D-96：管理员双重认证 —— 向当前用户自己的邮箱发送验证码（scene=admin_verify）。
-func (s *AuthService) SendAdminVerifyEmailCode(ctx context.Context, userID uint64) (string, error) {
+func (s *AuthService) SendAdminVerifyEmailCode(ctx context.Context, userID uint64) (VerificationSendResult, error) {
 	user, err := s.userRepo.FindByID(ctx, userID)
 	if err != nil {
-		return "", ErrUnauthorized
+		return VerificationSendResult{}, ErrUnauthorized
+	}
+	return sendAdminVerifyEmailCode(ctx, userID, user, s.cfg.AdminVerifyExpireHours, s.verifySvc)
+}
+
+type verificationCodeSender interface {
+	Send(context.Context, string, string, string) (VerificationSendResult, error)
+}
+
+func sendAdminVerifyEmailCode(ctx context.Context, userID uint64, user *model.User, expireHours int, sender verificationCodeSender) (VerificationSendResult, error) {
+	// 邮箱二次认证必须建立在仍有效的手机二次认证之上，且不得以邮箱认证时间替代手机认证。
+	if !isAdminVerifyValid(user.AdminPhoneVerifiedAt, expireHours) {
+		return VerificationSendResult{}, ErrAdminPhoneNotVerified
 	}
 	if user.Email == nil {
-		return "", ErrEmailNotBound
+		return VerificationSendResult{}, ErrEmailNotBound
 	}
-	return s.verifySvc.Send(ctx, "email", *user.Email, "admin_verify")
+	return sender.Send(withEmailOTPIdentity(ctx, "/api/admin/auth/verification-codes/email", userID, *user.Email), "email", *user.Email, "admin_verify")
+}
+
+// AuthorizeEmailOTPRecipient 以 users 真相源复核专属场景目标，阻断伪造 userID、endpoint 或 recipient。
+func (s *AuthService) AuthorizeEmailOTPRecipient(ctx context.Context, scene, endpoint string, userID uint64, recipient, flowRecipient string) error {
+	if userID == 0 || normalizeEmail(recipient) != normalizeEmail(flowRecipient) {
+		return ErrEmailRecipientDeny
+	}
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return ErrEmailRecipientDeny
+	}
+	switch scene {
+	case "bind_email":
+		if endpoint != "/api/me/verification-codes/email" || (user.Email != nil && normalizeEmail(*user.Email) == normalizeEmail(recipient)) {
+			return ErrEmailRecipientDeny
+		}
+	case "admin_verify":
+		if endpoint != "/api/admin/auth/verification-codes/email" || user.Email == nil || normalizeEmail(*user.Email) != normalizeEmail(recipient) {
+			return ErrEmailRecipientDeny
+		}
+	default:
+		return ErrEmailRecipientDeny
+	}
+	return nil
 }
 
 // Register 统一注册（手机+邮箱+用户名，需双验证码）。
@@ -467,25 +509,82 @@ func (s *AuthService) Register(ctx context.Context, req dto.RegisterReq, ua, ip 
 func (s *AuthService) LoginEmail(ctx context.Context, req dto.LoginEmailReq, ip, ua string) (*dto.LoginResp, error) {
 	req.Email = normalizeEmail(req.Email)
 
-	if locked := s.checkLoginLocked(ctx, "email", req.Email); locked {
+	if locked := s.checkLoginLocked(ctx, emailLoginType, req.Email); locked {
 		return nil, ErrLoginLocked
 	}
 
 	user, err := s.userRepo.FindByEmail(ctx, req.Email)
 	if err != nil {
-		s.recordLogin(ctx, nil, "email", req.Email, ip, ua, "failed")
+		s.recordLogin(ctx, nil, emailLoginType, req.Email, ip, ua, "failed")
 		return nil, ErrEmailNotRegistered
 	}
 	if user.Status == "disabled" {
 		return nil, ErrUserDisabled
 	}
 	if !crypto.CheckPassword(req.Password, user.PasswordHash) {
-		s.incrLoginFail(ctx, "email", req.Email)
-		s.recordLogin(ctx, &user.ID, "email", req.Email, ip, ua, "failed")
+		s.incrLoginFail(ctx, emailLoginType, req.Email)
+		s.recordLogin(ctx, &user.ID, emailLoginType, req.Email, ip, ua, "failed")
 		return nil, ErrWrongPassword
 	}
-	s.clearLoginFail(ctx, "email", req.Email)
-	return s.loginSuccess(ctx, user, "email", req.Email, ip, ua)
+	s.clearLoginFail(ctx, emailLoginType, req.Email)
+	return s.loginSuccess(ctx, user, emailLoginType, req.Email, ip, ua)
+}
+
+type emailCodeLoginFlow struct {
+	locked func(context.Context, string) bool
+	find   func(context.Context, string) (*model.User, error)
+	verify func(context.Context, string, string) error
+	fail   func(context.Context, string)
+	clear  func(context.Context, string)
+	issue  func(context.Context, *model.User, string, string, string) (*dto.LoginResp, error)
+	record func(context.Context, *uint64, string, string, string, string)
+}
+
+func executeEmailCodeLogin(ctx context.Context, email, code, ip, ua string, flow emailCodeLoginFlow) (*dto.LoginResp, error) {
+	if flow.locked(ctx, email) {
+		return nil, ErrLoginLocked
+	}
+	user, err := flow.find(ctx, email)
+	if err != nil {
+		flow.record(ctx, nil, email, ip, ua, "failed")
+		return nil, ErrEmailCodeNotRegistered
+	}
+	if user.Status == "disabled" {
+		return nil, ErrUserDisabled
+	}
+	if err := flow.verify(ctx, email, code); err != nil {
+		flow.fail(ctx, email)
+		flow.record(ctx, &user.ID, email, ip, ua, "failed")
+		return nil, ErrInvalidCode
+	}
+	pair, err := flow.issue(ctx, user, email, ip, ua)
+	if err != nil {
+		return nil, err
+	}
+	flow.clear(ctx, email)
+	return pair, nil
+}
+
+// LoginEmailCode 使用 scene=login 的已受理邮箱验证码登录，并与密码登录共享邮箱维度的 D-16 失败计数。
+// 锁定与禁用校验均先于验证码消费；成功仅新增会话，不修改或刷新管理员 MFA 时间戳。
+func (s *AuthService) LoginEmailCode(ctx context.Context, req dto.LoginEmailCodeReq, ip, ua string) (*dto.LoginResp, error) {
+	req.Email = normalizeEmail(req.Email)
+	flow := emailCodeLoginFlow{
+		locked: func(ctx context.Context, email string) bool { return s.checkLoginLocked(ctx, emailLoginType, email) },
+		find:   s.userRepo.FindByEmail,
+		verify: func(ctx context.Context, email, code string) error {
+			return s.verifySvc.Check(ctx, "email", email, "login", code)
+		},
+		fail:  func(ctx context.Context, email string) { s.incrLoginFail(ctx, emailLoginType, email) },
+		clear: func(ctx context.Context, email string) { s.clearLoginFail(ctx, emailLoginType, email) },
+		issue: func(ctx context.Context, user *model.User, email, ip, ua string) (*dto.LoginResp, error) {
+			return s.loginSuccess(ctx, user, emailLoginType, email, ip, ua)
+		},
+		record: func(ctx context.Context, userID *uint64, email, ip, ua, status string) {
+			s.recordLogin(ctx, userID, emailLoginType, email, ip, ua, status)
+		},
+	}
+	return executeEmailCodeLogin(ctx, req.Email, req.Code, ip, ua, flow)
 }
 
 // LoginPhone 手机号验证码登录。
@@ -565,7 +664,7 @@ func (s *AuthService) incrLoginFail(ctx context.Context, loginType, account stri
 	key := fmt.Sprintf(loginFailKeyFmt, loginType, account)
 	windowMs := loginFailWindow.Milliseconds()
 	if err := incrLoginFailLua.Run(ctx, s.redis, []string{key}, windowMs).Err(); err != nil {
-		log.Printf("incrLoginFail: Redis Lua 执行失败 key=%s err=%v", key, err)
+		log.Printf("incrLoginFail: Redis Lua 执行失败 login_type=%s err=%v", loginType, err)
 	}
 }
 
@@ -573,7 +672,7 @@ func (s *AuthService) incrLoginFail(ctx context.Context, loginType, account stri
 func (s *AuthService) clearLoginFail(ctx context.Context, loginType, account string) {
 	key := fmt.Sprintf(loginFailKeyFmt, loginType, account)
 	if err := s.redis.Del(ctx, key).Err(); err != nil {
-		log.Printf("clearLoginFail: Redis DEL 失败 key=%s err=%v", key, err)
+		log.Printf("clearLoginFail: Redis DEL 失败 login_type=%s err=%v", loginType, err)
 	}
 }
 
@@ -1218,15 +1317,30 @@ func (s *AuthService) IsAdminVerified(ctx context.Context, userID uint64) bool {
 		isAdminVerifyValid(user.AdminEmailVerifiedAt, s.cfg.AdminVerifyExpireHours)
 }
 
-// isAdminVerifyValid 判断管理员认证时间戳是否在有效期内（expireHours=0 表示永不过期）。
-func isAdminVerifyValid(verifiedAt *time.Time, expireHours int) bool {
-	if verifiedAt == nil {
+// IsAdminPhoneVerified 只校验管理员手机 MFA，供首次配置邮箱认证通道使用。
+// expireHours=0 继续沿用现有“永不过期”定义，边界时刻按失效处理。
+func (s *AuthService) IsAdminPhoneVerified(ctx context.Context, userID uint64) bool {
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil || user == nil {
 		return false
 	}
-	if expireHours <= 0 {
+	return isAdminVerifyValid(user.AdminPhoneVerifiedAt, s.cfg.AdminVerifyExpireHours)
+}
+
+// isAdminVerifyValid 判断管理员认证时间戳是否在有效期内（expireHours=0 表示永不过期）。
+// 负数有效期与未来时间戳均按失败关闭处理，避免错误配置或异常数据扩大管理员权限。
+func isAdminVerifyValid(verifiedAt *time.Time, expireHours int) bool {
+	if verifiedAt == nil || expireHours < 0 {
+		return false
+	}
+	now := time.Now()
+	if verifiedAt.After(now) {
+		return false
+	}
+	if expireHours == 0 {
 		return true
 	}
-	return time.Since(*verifiedAt) < time.Duration(expireHours)*time.Hour
+	return now.Sub(*verifiedAt) < time.Duration(expireHours)*time.Hour
 }
 
 func generateRandomToken() string {

@@ -1,8 +1,4 @@
--- 回滚：删除 D-82 中为 audit_logs 添加的索引。
---
--- P1 修复：MySQL 8.0 的 ALTER TABLE ... DROP INDEX 不支持 IF EXISTS 子句
--- （会报 ERROR 1064 语法错误），改为普通 DROP INDEX。
-
+-- 回滚仅删除本迁移实际创建的模块与动作联合索引。
+-- operator_id 与 created_at 索引归 000002 管理，必须永久保留。
 ALTER TABLE audit_logs
-  DROP INDEX idx_audit_operator_id,
   DROP INDEX idx_audit_module_action;

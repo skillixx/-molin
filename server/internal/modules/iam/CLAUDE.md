@@ -242,3 +242,10 @@ GET    /api/admin/audit-logs
 | wallet:view | 查钱包 |
 | identity:review | 审核实名 |
 | content:manage | 管理公告/帮助文档 |
+
+## DirectMail bootstrap 000056 IAM 专项边界
+
+- 000056 仅 seed `email:template:bootstrap`，精确元数据为名称“首次配置管理员邮箱认证模板”、resource=`email_template`、action=`bootstrap`。
+- 该权限只授权一次性内部入口，不隐含 `email:template:view/manage/sync/test`，普通四权限也不隐含 bootstrap。
+- 身份门禁必须确认用户通过 `user_roles` 直接关联唯一 code=`admin` 角色；分组角色或动态权限 allow 不能替代直接管理员身份。
+- 专项 ownership 必须区分权限和 admin 绑定的预存/新增状态；精确 down 不得删除预存项，存在未知引用或成功 receipt 时失败关闭。

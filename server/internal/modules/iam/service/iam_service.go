@@ -91,6 +91,12 @@ func (s *IAMService) CheckPermission(ctx context.Context, userID uint64, permCod
 	return evalPerms(codes, permCode)
 }
 
+// HasDirectRole 判断用户是否直接关联指定角色；不接受组继承或权限覆盖替代平台管理员身份。
+func (s *IAMService) HasDirectRole(ctx context.Context, userID uint64, roleCode string) bool {
+	ok, err := s.userRoleRepo.HasDirectRole(ctx, userID, roleCode)
+	return err == nil && ok
+}
+
 // GetUserRoleIDs 返回用户的全部生效角色 ID：用户自身角色 ∪ 所在组绑定的角色，去重。
 // 供 product 等模块判定商品访问与定价。组角色通过 group_roles 绑定、组成员继承，
 // 使「注册落组 → 组绑角色 → 商品按角色开放」链路自动生效，无需逐人配置角色。
@@ -256,7 +262,8 @@ func (s *IAMService) SetPermissionOverride(ctx context.Context, override *model.
 
 // DeletePermissionOverride 删除用户权限覆盖，清除缓存并写入审计日志。
 // D-27：repo 层 Delete 增加 userID 过滤，rowsAffected==0 时返回 ErrOverrideNotFound；
-//       审计日志 target_id 记录被操作用户的 userID（而非 override 自增 ID）。
+//
+//	审计日志 target_id 记录被操作用户的 userID（而非 override 自增 ID）。
 func (s *IAMService) DeletePermissionOverride(ctx context.Context, overrideID, userID, operatorID uint64, ip string) error {
 	affected, err := s.overrideRepo.Delete(ctx, overrideID, userID)
 	if err != nil {
@@ -512,8 +519,9 @@ var ErrInvalidExpiresAt = fmt.Errorf("expires_at 格式不合法")
 // items 为空数组时表示清空该用户所有权限覆盖。
 // 校验：effect 只接受 allow/deny；expires_at 若提供必须为合法 ISO 8601 时间。
 // D-29：permission_id 存在性校验已移入 overrideRepo.ReplaceByUserWithValidation 事务内部，
-//       消除「校验时存在、写入时被删除」的竟态窗口。permission_code 冗余字段
-//       在事务外预先通过 permissionRepo.FindByID 查取（仍需一次 DB 读，但不在校验路径上，且在事务内还有二次确认）。
+//
+//	消除「校验时存在、写入时被删除」的竟态窗口。permission_code 冗余字段
+//	在事务外预先通过 permissionRepo.FindByID 查取（仍需一次 DB 读，但不在校验路径上，且在事务内还有二次确认）。
 func (s *IAMService) ReplaceUserOverrides(ctx context.Context, userID uint64, items []dto.OverrideItemReq, operatorID uint64, ip string) error {
 	overrides := make([]model.UserPermissionOverride, 0, len(items))
 	for _, item := range items {

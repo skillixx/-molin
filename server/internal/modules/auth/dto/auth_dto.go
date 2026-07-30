@@ -41,6 +41,12 @@ type LoginEmailReq struct {
 	Password string `json:"password"`
 }
 
+// LoginEmailCodeReq 邮箱验证码登录请求，场景由服务端固定为 login。
+type LoginEmailCodeReq struct {
+	Email string `json:"email"`
+	Code  string `json:"code"`
+}
+
 // LoginPhoneReq 手机号验证码登录请求。
 type LoginPhoneReq struct {
 	Phone string `json:"phone"`

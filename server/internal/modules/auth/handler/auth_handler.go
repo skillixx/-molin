@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -50,6 +51,15 @@ func validatePasswordLength(password string) (errMsg string, ok bool) {
 	return "", true
 }
 
+// verificationCodeResponse 统一验证码发送响应，确保生产及未知环境即使误开调试开关也绝不返回明文验证码。
+func verificationCodeResponse(cfg config.Config, sent service.VerificationSendResult) map[string]any {
+	data := map[string]any{"sent": true, "expires_in": sent.ExpiresIn}
+	if cfg.IsSafeNonProduction() && cfg.EmailDebugReturnCode && sent.Code != "" {
+		data["code"] = sent.Code
+	}
+	return data
+}
+
 // SendEmailCode POST /api/auth/verification-codes/email
 func (h *AuthHandler) SendEmailCode(w http.ResponseWriter, r *http.Request) {
 	var req dto.SendEmailCodeReq
@@ -62,18 +72,13 @@ func (h *AuthHandler) SendEmailCode(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "email 和 scene 为必填字段")
 		return
 	}
-	code, err := h.authSvc.SendCode(r.Context(), "email", req.Email, req.Scene)
+	sent, err := h.authSvc.SendCode(r.Context(), "email", req.Email, req.Scene)
 	if err != nil {
 		handleAuthError(w, err)
 		return
 	}
-	// 非生产环境在响应中返回明文验证码，方便本地调试；
-	// 判断依据为服务端 config.AppEnv，完全忽略客户端请求头（防止绕过生产保护）
-	data := map[string]string{}
-	if h.cfg.AppEnv != "production" {
-		data["code"] = code
-	}
-	response.JSON(w, http.StatusOK, data)
+	// 仅显式安全非生产环境且 EMAIL_DEBUG_RETURN_CODE=true 时允许调试回码；生产及未知环境失败关闭。
+	response.JSON(w, http.StatusOK, verificationCodeResponse(h.cfg, sent))
 }
 
 // SendPhoneCode POST /api/auth/verification-codes/phone
@@ -88,18 +93,13 @@ func (h *AuthHandler) SendPhoneCode(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "phone 和 scene 为必填字段")
 		return
 	}
-	code, err := h.authSvc.SendCode(r.Context(), "phone", req.Phone, req.Scene)
+	sent, err := h.authSvc.SendCode(r.Context(), "phone", req.Phone, req.Scene)
 	if err != nil {
 		handleAuthError(w, err)
 		return
 	}
-	// 非生产环境在响应中返回明文验证码，方便本地调试；
-	// 判断依据为服务端 config.AppEnv，完全忽略客户端请求头（防止绕过生产保护）
-	data := map[string]string{}
-	if h.cfg.AppEnv != "production" {
-		data["code"] = code
-	}
-	response.JSON(w, http.StatusOK, data)
+	// 仅显式安全非生产环境且 EMAIL_DEBUG_RETURN_CODE=true 时允许调试回码；生产及未知环境失败关闭。
+	response.JSON(w, http.StatusOK, verificationCodeResponse(h.cfg, sent))
 }
 
 // SendBindPhoneCode POST /api/me/verification-codes/phone — D-96：已登录用户更换手机号前发送验证码（scene=bind_phone）
@@ -113,18 +113,13 @@ func (h *AuthHandler) SendBindPhoneCode(w http.ResponseWriter, r *http.Request) 
 		response.Error(w, http.StatusBadRequest, 40000, "phone 为必填字段")
 		return
 	}
-	code, err := h.authSvc.SendBindPhoneCode(r.Context(), req.Phone)
+	sent, err := h.authSvc.SendBindPhoneCode(r.Context(), req.Phone)
 	if err != nil {
 		handleAuthError(w, err)
 		return
 	}
-	// 非生产环境在响应中返回明文验证码，方便本地调试；
-	// 判断依据为服务端 config.AppEnv，完全忽略客户端请求头（防止绕过生产保护）
-	data := map[string]string{}
-	if h.cfg.AppEnv != "production" {
-		data["code"] = code
-	}
-	response.JSON(w, http.StatusOK, data)
+	// 仅显式安全非生产环境且 EMAIL_DEBUG_RETURN_CODE=true 时允许调试回码；生产及未知环境失败关闭。
+	response.JSON(w, http.StatusOK, verificationCodeResponse(h.cfg, sent))
 }
 
 // SendBindEmailCode POST /api/me/verification-codes/email — D-96：已登录用户更换邮箱前发送验证码（scene=bind_email）
@@ -138,52 +133,43 @@ func (h *AuthHandler) SendBindEmailCode(w http.ResponseWriter, r *http.Request) 
 		response.Error(w, http.StatusBadRequest, 40000, "email 为必填字段")
 		return
 	}
-	code, err := h.authSvc.SendBindEmailCode(r.Context(), req.Email)
+	userID := middleware.UserIDFromContext(r.Context())
+	sent, err := h.authSvc.SendBindEmailCode(r.Context(), userID, req.Email)
 	if err != nil {
 		handleAuthError(w, err)
 		return
 	}
-	// 非生产环境在响应中返回明文验证码，方便本地调试；
-	// 判断依据为服务端 config.AppEnv，完全忽略客户端请求头（防止绕过生产保护）
-	data := map[string]string{}
-	if h.cfg.AppEnv != "production" {
-		data["code"] = code
-	}
-	response.JSON(w, http.StatusOK, data)
+	// 仅显式安全非生产环境且 EMAIL_DEBUG_RETURN_CODE=true 时允许调试回码；生产及未知环境失败关闭。
+	response.JSON(w, http.StatusOK, verificationCodeResponse(h.cfg, sent))
 }
 
 // SendAdminVerifyPhoneCode POST /api/admin/auth/verification-codes/phone — D-96：管理员双重认证发送手机验证码（scene=admin_verify）
 func (h *AuthHandler) SendAdminVerifyPhoneCode(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
-	code, err := h.authSvc.SendAdminVerifyPhoneCode(r.Context(), userID)
+	sent, err := h.authSvc.SendAdminVerifyPhoneCode(r.Context(), userID)
 	if err != nil {
 		handleAuthError(w, err)
 		return
 	}
-	// 非生产环境在响应中返回明文验证码，方便本地调试；
-	// 判断依据为服务端 config.AppEnv，完全忽略客户端请求头（防止绕过生产保护）
-	data := map[string]string{}
-	if h.cfg.AppEnv != "production" {
-		data["code"] = code
-	}
-	response.JSON(w, http.StatusOK, data)
+	// 仅显式安全非生产环境且 EMAIL_DEBUG_RETURN_CODE=true 时允许调试回码；生产及未知环境失败关闭。
+	response.JSON(w, http.StatusOK, verificationCodeResponse(h.cfg, sent))
 }
 
 // SendAdminVerifyEmailCode POST /api/admin/auth/verification-codes/email — D-96：管理员双重认证发送邮箱验证码（scene=admin_verify）
 func (h *AuthHandler) SendAdminVerifyEmailCode(w http.ResponseWriter, r *http.Request) {
+	// 该端点的收件人只能来自当前管理员绑定邮箱，真正空 Body 才合法；空白、JSON 对象和额外 email 字段均拒绝。
+	if one, err := io.ReadAll(io.LimitReader(r.Body, 1)); err != nil || len(one) != 0 {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
 	userID := middleware.UserIDFromContext(r.Context())
-	code, err := h.authSvc.SendAdminVerifyEmailCode(r.Context(), userID)
+	sent, err := h.authSvc.SendAdminVerifyEmailCode(r.Context(), userID)
 	if err != nil {
 		handleAuthError(w, err)
 		return
 	}
-	// 非生产环境在响应中返回明文验证码，方便本地调试；
-	// 判断依据为服务端 config.AppEnv，完全忽略客户端请求头（防止绕过生产保护）
-	data := map[string]string{}
-	if h.cfg.AppEnv != "production" {
-		data["code"] = code
-	}
-	response.JSON(w, http.StatusOK, data)
+	// 仅显式安全非生产环境且 EMAIL_DEBUG_RETURN_CODE=true 时允许调试回码；生产及未知环境失败关闭。
+	response.JSON(w, http.StatusOK, verificationCodeResponse(h.cfg, sent))
 }
 
 // LoginEmail POST /api/auth/login/email
@@ -204,6 +190,43 @@ func (h *AuthHandler) LoginEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.JSON(w, http.StatusOK, pair)
+}
+
+// LoginEmailCode POST /api/auth/login/email/code，严格只接受 email 与 code 两个 JSON 字段。
+func (h *AuthHandler) LoginEmailCode(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeLoginEmailCodeBody(r.Body)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+		return
+	}
+	pair, err := h.authSvc.LoginEmailCode(r.Context(), req, httputil.ClientIP(r), r.UserAgent())
+	if err != nil {
+		handleAuthError(w, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, pair)
+}
+
+func decodeLoginEmailCodeBody(body io.Reader) (dto.LoginEmailCodeReq, error) {
+	var fields map[string]json.RawMessage
+	decoder := json.NewDecoder(body)
+	if err := decoder.Decode(&fields); err != nil {
+		return dto.LoginEmailCodeReq{}, err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF || len(fields) != 2 {
+		return dto.LoginEmailCodeReq{}, errors.New("请求参数错误")
+	}
+	emailRaw, emailOK := fields["email"]
+	codeRaw, codeOK := fields["code"]
+	if !emailOK || !codeOK {
+		return dto.LoginEmailCodeReq{}, errors.New("请求参数错误")
+	}
+	var req dto.LoginEmailCodeReq
+	if json.Unmarshal(emailRaw, &req.Email) != nil || json.Unmarshal(codeRaw, &req.Code) != nil || strings.TrimSpace(req.Email) == "" || strings.TrimSpace(req.Code) == "" {
+		return dto.LoginEmailCodeReq{}, errors.New("请求参数错误")
+	}
+	return req, nil
 }
 
 // LoginPhone POST /api/auth/login/phone
@@ -702,14 +725,36 @@ func handleAuthError(w http.ResponseWriter, err error) {
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 	case service.ErrInvalidScene:
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
+	case service.ErrEmailVariables:
+		response.Error(w, http.StatusUnprocessableEntity, 51001, err.Error())
+	case service.ErrEmailOutcomeUnknown:
+		response.Error(w, http.StatusBadGateway, 51002, "供应商响应未知，请在验证码过期后重试")
+	case service.ErrEmailOutcomePending:
+		response.Error(w, http.StatusConflict, 40900, "邮件发送结果确认中，请在验证码过期后重试")
+	case service.ErrEmailSending:
+		response.Error(w, http.StatusConflict, 40900, "邮件正在发送，请稍后重试")
+	case service.ErrEmailBindingMissing, service.ErrEmailSceneDisabled, service.ErrEmailTemplateOff, service.ErrEmailTemplateDraft, service.ErrEmailTemplateReview, service.ErrEmailTemplateReject, service.ErrEmailTemplateGone, service.ErrEmailSyncRunning:
+		response.Error(w, http.StatusConflict, 40900, err.Error())
+	case service.ErrEmailRecipientDeny:
+		response.Error(w, http.StatusForbidden, 40003, "无权向该邮箱发送验证码")
+	case service.ErrEmailRateLimited:
+		response.Error(w, http.StatusTooManyRequests, 42900, "请求频率超限")
+	case service.ErrEmailUpstream, service.ErrDirectMailUpstream:
+		response.Error(w, http.StatusBadGateway, 51002, "邮件上游调用失败")
+	case service.ErrEmailNotReady:
+		response.Error(w, http.StatusServiceUnavailable, 51003, "邮件发送服务未就绪")
+	case service.ErrEmailConflict:
+		response.Error(w, http.StatusConflict, 40900, "邮件正在发送，请稍后重试")
 	case service.ErrAdminPhoneNotVerified:
-		response.Error(w, http.StatusBadRequest, 40000, err.Error())
+		response.Error(w, http.StatusForbidden, 40003, err.Error())
 	// D-96：管理员双重认证发码时账号未绑定手机号/邮箱
 	case service.ErrPhoneNotBound, service.ErrEmailNotBound:
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 	// D-56：手机/邮箱未注册属于"资源不存在"，统一使用 40400，与 GetUser 保持一致
-	case service.ErrPhoneNotRegistered, service.ErrEmailNotRegistered:
+	case service.ErrPhoneNotRegistered:
 		response.Error(w, http.StatusNotFound, 40400, err.Error())
+	case service.ErrEmailNotRegistered, service.ErrEmailCodeNotRegistered:
+		response.Error(w, http.StatusNotFound, 40404, err.Error())
 	case service.ErrLoginLocked:
 		// D-16：登录失败次数超限，账号临时锁定，提示用户稍后重试
 		response.Error(w, http.StatusLocked, 42901, err.Error())

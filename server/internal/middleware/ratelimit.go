@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -67,6 +68,48 @@ func RateLimitByIP(redisClient *redis.Client, action string, limit int, window t
 		}
 		if !allowed {
 			response.Error(w, http.StatusTooManyRequests, 42900, "请求过于频繁，请稍后再试")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// RateLimitEmailByIP 仅用于邮件发送入口，保持邮件阶段二冻结的 42900 错误文案，不改变既有短信等接口契约。
+
+type emailIPRateCounter func(context.Context, string, int, time.Duration) (bool, error)
+
+func RateLimitEmailByIP(redisClient *redis.Client, resolver PublicSourceIPResolver, action string, limit int, window time.Duration, next http.Handler) http.Handler {
+	counter := func(ctx context.Context, key string, limit int, window time.Duration) (bool, error) {
+		return incrAndCheck(ctx, redisClient, key, limit, window)
+	}
+	return rateLimitEmailByIP(resolver, counter, action, limit, window, next)
+}
+
+func rateLimitEmailByIP(resolver PublicSourceIPResolver, counter emailIPRateCounter, action string, limit int, window time.Duration, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if resolver == nil {
+			response.Error(w, http.StatusServiceUnavailable, 51003, "邮件发送服务未就绪")
+			return
+		}
+		ip, err := resolver.Resolve(r)
+		if err != nil {
+			if errors.Is(err, ErrPublicSourceIPForbidden) {
+				response.Error(w, http.StatusForbidden, 40003, "无权限")
+				return
+			}
+			response.Error(w, http.StatusServiceUnavailable, 51003, "邮件发送服务未就绪")
+			return
+		}
+		key := fmt.Sprintf("ratelimit:ip:%s:%s", ip, action)
+		allowed, err := counter(r.Context(), key, limit, window)
+		if err != nil {
+			// IP 限流是纵深防御；Redis 故障时由服务层账户限流继续关闭失败。
+			log.Printf("RateLimitEmailByIP: Redis 操作失败 key=%s err=%v", key, err)
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !allowed {
+			response.Error(w, http.StatusTooManyRequests, 42900, "请求频率超限")
 			return
 		}
 		next.ServeHTTP(w, r)

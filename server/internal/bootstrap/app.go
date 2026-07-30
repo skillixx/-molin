@@ -515,6 +515,19 @@ func (a *orderBillingAdapter) DeductTx(tx *gorm.DB, userID uint64, amount decima
 // NewApp 初始化所有基础设施和模块，完成依赖注入，返回可启动的 App。
 func NewApp() (*App, error) {
 	cfg := config.Load()
+	if err := cfg.ValidateAdminVerifyConfig(); err != nil {
+		return nil, fmt.Errorf("管理员认证配置无效: %w", err)
+	}
+	emailBootstrapCfg, err := config.LoadEmailAdminVerifyBootstrapConfig()
+	if err != nil {
+		return nil, fmt.Errorf("管理员邮箱认证 bootstrap 配置无效: %w", err)
+	}
+	cfg.EmailAdminVerifyBootstrap = emailBootstrapCfg
+	trustedProxyNetworks, err := config.ParseTrustedProxyIPs(cfg.TrustedProxyIPs)
+	if err != nil {
+		return nil, fmt.Errorf("TRUSTED_PROXY_IPS 配置无效: %w", err)
+	}
+	publicSourceIP := middleware.NewPublicSourceIPResolver(trustedProxyNetworks)
 
 	// 自建可信开关：注入工作台 SSRF 校验包，开启后对外链接放开 http 与内网/IP（MCP/插件/Skill/应用入口）。
 	wbsecurity.Configure(cfg.TrustInternalOutbound)
@@ -574,9 +587,27 @@ func NewApp() (*App, error) {
 	verificationRepo := authrep.NewVerificationRepository(gormDB)
 	loginLogRepo := authrep.NewLoginLogRepository(gormDB)
 	verifySvc := authsvc.NewVerificationService(verificationRepo)
+	// DirectMail Adapter 在 bootstrap 唯一装配：生产环境禁止选择 Mock，未就绪时发送服务失败关闭。
+	emailRepo := authrep.NewEmailRepository(gormDB)
+	var emailAdapter authsvc.DirectMailAdapter
+	if cfg.EmailAdapter == "mock" && cfg.IsSafeNonProduction() {
+		emailAdapter = &authsvc.MockEmailAdapter{}
+	} else {
+		emailAdapter = authsvc.NewProductionDirectMailAdapter(cfg.DirectMailAccessKeyID, cfg.DirectMailAccessKeySecret,
+			cfg.DirectMailRegion, cfg.DirectMailAccountName, cfg.DirectMailFromAlias, cfg.DirectMailEndpoint, 10*time.Second)
+	}
+	emailSvc := authsvc.NewEmailService(emailRepo, verificationRepo, emailAdapter, auditSvc, redisClient,
+		cfg.EmailAddressHMACSecret, cfg.EmailIdempotencySecret, cfg.AppEnv, cfg.EmailAdapter)
+	emailBootstrapSvc := authsvc.NewEmailBootstrapService(emailRepo, emailSvc, auditSvc)
+	// 白名单撤销记录只保留 30 天；服务启动后立即清理并按日继续执行。
+	go emailSvc.StartAllowlistCleanup(context.Background())
+	verifySvc.SetEmailSender(emailSvc)
+	verifySvc.SetEmailTargetKeyer(emailSvc)
 	// 传入 redisClient，用于封禁用户黑名单（P1-01 修复）；传入 auditSvc 用于封禁/解封审计记录（A-05）；
 	// 传入 iamService 作为 PermissionResolver，用于 GET /api/me/permissions（A-10）
 	authService := authsvc.NewAuthService(userRepo, sessionRepo, verifySvc, loginLogRepo, cfg, redisClient, auditSvc, iamService, gormDB)
+	// 专属邮件场景必须回查 users 真相源，禁止调用方伪造 userID、endpoint 或收件人。
+	emailSvc.SetRecipientAuthorizer(authService)
 	// A-28：注入 RoleAssigner，用于管理员创建用户时分配角色
 	authService.SetRoleAssigner(iamService)
 	// D-85：注入 RolesFetcher，用于 ListUsers / GetUser 附带 roles 字段
@@ -658,7 +689,8 @@ func NewApp() (*App, error) {
 	})
 
 	// 注册各模块路由（authService 实现 BanChecker 接口，用于封禁黑名单检查）
-	authmod.RegisterRoutes(mux, authService, verifySvc, cfg, iamService, scopeService, redisClient, apiKeyService)
+	authmod.RegisterRoutes(mux, authService, verifySvc, emailSvc, cfg, iamService, scopeService, redisClient, publicSourceIP, apiKeyService)
+	authmod.RegisterEmailBootstrapRoute(mux, emailBootstrapSvc, cfg, authService, iamService, iamService)
 	iammod.RegisterRoutes(mux, iamService, groupService, cfg.JWTSecret, authService, authService)
 	identitymod.RegisterRoutes(mux, identityService, iamService, cfg.JWTSecret, authService, authService)
 

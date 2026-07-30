@@ -570,3 +570,24 @@ POST /api/admin/auth/verification-codes/email  -- D-96：向当前管理员自�
 | 40900 | 邮箱/手机号/用户名已被注册 |
 | 40000 | 验证码错误或已过期 |
 | 42900 | 请求频率超限 |
+
+## DirectMail `admin_verify` bootstrap 000056 专项授权
+
+本专项已由 `docs/team-task-assignment.md §10.1` 和 `docs/agents/backend-a.md` 正式分配给后端甲，仅覆盖冻结契约中的一次性内部入口及其安全凭据：
+
+- 实现默认关闭的 `POST /api/internal/email/bootstrap/admin-verify`，仅建立 `admin_verify` 投递通道，不写管理员 MFA 时间戳、不签发 Token、不发送邮件。
+- 实现独立 Token/CIDR、管理员 JWT、直接 `admin` 角色、手机 MFA、`email:template:bootstrap` 权限、严格 Header/Body、供应商资格校验及精确错误。
+- 实现包含 `admin_id` 的幂等摘要与指纹、跨管理员隔离、绑定行锁与初始态 CAS、成功 receipt，以及 attempt 审计与事务内 result 审计。
+- 000056 只允许新增 bootstrap receipt、专项权限 seed、独立 ownership 和精确 down 门禁，不得借此修改其他 migration 或普通邮件接口契约。
+- 不执行远程 migration，不注入真实 Secret/CIDR，不停止或部署现有 API，不使用 `force`，不删除或伪造成功 receipt。
+
+## 验证码调试回码环境门禁
+
+- `EMAIL_DEBUG_RETURN_CODE` 默认关闭，仅供本地开发和自动化测试观察验证码发送结果。
+- 调试回码必须同时满足两个条件：`APP_ENV` 被显式设置为安全非生产环境，且 `EMAIL_DEBUG_RETURN_CODE` 去除首尾空白后精确等于小写 `true`。
+- 安全非生产环境仅包括 `local`、`development`、`dev`、`test`、`testing`；生产、`staging`、未知、空白或未设置环境均强制关闭调试回码。
+- `EMAIL_DEBUG_RETURN_CODE` 不复用通用宽松布尔解析；大写值及数字、单字母、yes/on 等别名一律视为关闭。
+- 为兼容普通本地启动，未设置 `APP_ENV` 时配置对象仍使用 `local` 默认值，但该默认值不构成“显式安全环境”证明，因此不能开启调试回码。
+- 所有验证码发送接口必须通过 `verificationCodeResponse` 生成响应，禁止直接序列化 `VerificationSendResult`，避免内部明文验证码进入正常生产响应。
+- 回归测试位于 `server/internal/config/config_email_test.go` 和 `server/internal/modules/auth/handler/auth_handler_email_test.go`，分别覆盖配置加载门禁与生产/未知环境响应门禁。
+- bootstrap IP 地址空间覆盖检测使用候选祖先索引剪枝；没有候选后代的分支必须立即返回，禁止递归展开完整 IPv4 或 IPv6 地址树。
