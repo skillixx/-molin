@@ -15,7 +15,7 @@
 |---|---|
 | 分层 | 页面只调用 `src/api/*.ts`，禁止组件内直接 `import axios` |
 | 分页 | 后端甲已 **D-95 扁平化**：`data` 顶层即 `{items, page, page_size, total}`，无 `pagination`、无 `list`；`page_size` 固定 20 |
-| 错误码 | 40001→跳登录、40003→无权限提示、40031→跳 `/admin-verify`、42900→频率超限提示，统一在 `http.ts` 处理 |
+| 错误码 | 40001→跳登录、40003+message=`请先完成管理员双重认证`→跳 `/admin-verify`、其他40003→无权限提示、42900→频率超限提示，统一在 `http.ts` 处理 |
 | 破坏性操作 | 删除/封禁/解封必须 `ElMessageBox.confirm` 二次确认 |
 | 文案/品牌 | 全中文；品牌「墨灵」，署名「爱斯琴网络科技有限公司」 |
 | 主题 | 深色 + 蓝紫渐变（见 `web/admin-console/CLAUDE.md` 主题规范） |
@@ -26,23 +26,24 @@
 
 ---
 
-## 1. 任务总览（阶段 A1–A6）
+## 1. 任务总览（阶段 A1–A7）
 
 | 阶段 | 内容 | 工期 | 现状 |
 |---|---|---|---|
-| **A1** | 基础设施与鉴权链路对齐 | 3.5d | 部分（http.ts 缺 40031/刷新） |
+| **A1** | 基础设施与鉴权链路对齐 | 3.5d | 部分（http.ts 缺 40003 MFA 文案分支/刷新） |
 | **A2** | 管理员登录 + 双重认证闭环 | 2.5d | 有骨架 |
 | **A3** | 用户管理（含 A-28/29/30） | 4.5d | 有列表骨架 |
 | **A4** | 角色/权限/用户授权 ★本单细化到签名级 | 6.5d | role.ts 仅覆盖约一半端点 |
 | **A5** | 用户分组管理（16 端点） | 5.5d | 未开始 |
 | **A6** | 实名审核 + 审计日志 | 4d | 实名列表有骨架；审核格式待改、审计页未做 |
+| **A7** | DirectMail 邮件模板管理 | Phase 3 前端范围已形成；Phase 4 待真实环境验收 | 页面、契约与本地自动化证据已形成；真实 MFA、权限矩阵、五场景及供应商链路仍须按阶段门禁验收 |
 
 ---
 
 ## 2. 各阶段任务清单（A1–A3、A5–A6）
 
 ### A1 基础设施与鉴权
-- [ ] `http.ts` 增加 40031 处理 → 跳 `/admin-verify`
+- [ ] `http.ts` 增加 `403/40003「请先完成管理员双重认证」` 处理 → 跳 `/admin-verify`
 - [ ] `http.ts` 增加 401 静默刷新（队列重放，refresh 自身 401 不再触发刷新）
 - [ ] `types/api.ts` 统一 `PageResult<T>`（扁平），删除任何 `pagination` 嵌套假设
 - [ ] `stores/auth.ts` 落地 `currentUser` + `permissionCodes`（`GET /api/me/permissions`）+ `adminVerified`
@@ -478,6 +479,108 @@ export function disableInviteCode(id: number, inviteId: number) {
 - [ ] A-06 三个 PATCH 批量接口（`roles/{id}/permissions`、`users/{id}/roles`、`users/{id}/permission-overrides`）的**请求体字段名**（`permission_codes` / `role_ids` / `overrides`？参考文档未列）
 - [ ] A-11 `GET roles/{id}/permissions` 与 A-12 `effective-permissions` 的**响应结构**
 - [ ] 前端甲是否需要接入 `PATCH /api/me/*`（管理员自助改资料），还是只做管理态
+
+---
+
+## 5.1 阶段 A7：DirectMail 邮件模板管理（Phase 3 前端范围已形成，Phase 4 未验收）
+
+> **门禁状态**：Phase 1 契约评审、Phase 2 本地实现证据与 Phase 3 前端范围已经形成；Phase 4 真实测试环境尚未通过，禁止进入 Phase 5。阶段真相、000055→000056→000057 发布链及回滚门禁统一以 `docs/aliyun-directmail-email-template-feature-acceptance.md §17` 为准，本前端任务单不重复定义后端迁移顺序。
+> 当前只可确认前端构建、契约测试、测试服务器部署及未认证安全冒烟；真实 Redis、五场景邮件、RAM 否定矩阵、管理员完整 MFA、四权限授权态矩阵和完整 E2E 均不得据此判定通过。
+数据库验收口径固定为：up 保留旧 `code VARCHAR(64) NULL` 并新增 `code_hash`；down 删除 `code_hash`，继续保留旧
+`code VARCHAR(64) NULL`。禁止字段重命名，管理端不得读取、展示或尝试恢复旧验证码字段。
+`migration_000055_permission_ownership` 是 migration-only 技术表，不属于五张邮件业务表，不新增页面或 API 对接任务。
+环境门禁需验证 up 后五业务表+一技术表完整；down 后均按预期清理且预存权限/admin 绑定保留。
+
+### 5.1.1 页面与权限拆分
+
+四个邮件权限对应的全部接口都必须经过管理员手机+邮箱 MFA。未完成 MFA 固定显示后端
+`403/40003「请先完成管理员双重认证」`；资源不存在固定为 `404/40400`，不得兼容旧 `40004/40031`。
+
+| 页面/区域 | 权限 | 主要接口 | 关键规则 |
+|---|---|---|---|
+| 邮件概览 | `email:template:view` | `GET /api/admin/email/summary` | 固定七字段；上海自然日提交/失败统计；最近同步可空 |
+| 邮件模板列表/详情/启停 | view + `email:template:manage` | `GET /templates[/{id}]`、`PATCH /templates/{id}/status` | D-95；local_enabled+version；详情 HTML 隔离预览 |
+| 五场景绑定 | view + `email:template:manage` | `GET/PUT /api/admin/email/scenes[/{scene}]` | 只选 approved、本地启用、非 missing、变量完整模板；提交 version |
+| 同步记录 | view + `email:template:sync` | `POST /templates/sync`、`GET /template-sync-runs` | 同步按钮生成 Idempotency-Key；409 处理中不重复创建任务 |
+| 测试邮箱白名单 | view + `email:template:manage` | `GET/POST/DELETE /test-recipient-allowlist` | 仅显示脱敏邮箱；删除提交 version |
+| 模板测试发送 | `email:template:test` | `POST /templates/{id}/test-send` | code 与 10 分钟过期值由服务端生成；SingleSendMail；响应无验证码 |
+| 发送日志 | `email:template:view` | `GET /send-logs` | 仅 accepted/failed；内部 pending 不公开；完整邮箱不可见 |
+
+以上表格中的缩写路径仅用于阅读，实际对接端点固定为：
+
+```text
+GET    /api/admin/email/templates
+GET    /api/admin/email/templates/{id}
+GET    /api/admin/email/summary
+PATCH  /api/admin/email/templates/{id}/status
+GET    /api/admin/email/scenes
+PUT    /api/admin/email/scenes/{scene}
+POST   /api/admin/email/templates/sync
+GET    /api/admin/email/template-sync-runs
+GET    /api/admin/email/test-recipient-allowlist
+POST   /api/admin/email/test-recipient-allowlist
+DELETE /api/admin/email/test-recipient-allowlist/{id}
+POST   /api/admin/email/templates/{id}/test-send
+GET    /api/admin/email/send-logs
+```
+
+### 5.1.2 API 与类型目标
+
+当前实现采用单页签聚合，文件结构为：
+
+```text
+src/api/email.ts
+src/types/email.ts
+src/views/email/EmailManagementView.vue
+src/components/email/SafeEmailHtmlPreview.vue
+```
+
+类型与字段以 `docs/frontend-api-reference.md §五之二` 为 SSOT。所有列表统一复用扁平
+`PageResult<T>={items,page,page_size,total}`，即使五场景列表固定只有五条也不得改成裸数组假设。
+
+### 5.1.3 交互红线
+
+- 场景枚举固定：`register` / `login` / `reset_password` / `bind_email` / `admin_verify`，不提供“新增场景”。
+- 变量映射只读展示 `code→Code`、`expire_minutes→ExpireMinutes`；不提供自由编辑，避免破坏 OTP 模板。
+- 概览固定展示 template_total、approved_count、local_enabled_count、unbound_scene_count、submitted_today_count、
+  failed_today_count、last_synced_at；“今日”按 Asia/Shanghai 自然日，last_synced_at=null 显示“尚未同步”。模板启停提交 local_enabled+version，409/40900 后刷新，不静默覆盖。
+- 场景绑定保存必须提交当前 `version`；`409/40900` 时重新拉取并让管理员确认，禁止自动覆盖。
+- 模板非 approved、本地停用、missing 或缺少 Code/ExpireMinutes 时显示阻断状态，绑定/启用/测试按钮均禁用；后端 `422/51001` 仍需兜底展示。
+- HTML 预览必须使用独立 iframe srcdoc + 空 sandbox，禁止 allow-scripts/forms/top-navigation/top-navigation-by-user-activation/popups/same-origin；
+  注入阻断网络的 CSP 并净化 script、事件属性、form、iframe/object/embed、base、meta refresh，禁止主文档 `v-html`。
+- 同步与测试发送每次用户动作生成唯一 `Idempotency-Key`，网络重试复用同 key；新一次明确点击才生成新 key。
+- 测试发送返回 pending 冲突时提示“邮件正在发送，请稍后重试”，不得换 key 自动重发；pending 是外呼前安全占位，不是供应商受理证明。
+- test-send 锁 scope 固定为 `admin-email-template-test:admin:{admin_id}:template:{platform_template_id}:scene:{scene}:recipient:{recipient_hmac}`，Idempotency-Key 不进入 scope；同四维请求即使换 key 也竞争同锁，任一维度不同不竞争。未知/超时复用原发送日志行写 `provider_outcome_unknown` 作为持久化冷却墓碑，不新增表；purpose=test 的 expires_at 始终为 null，`cooldown_until=submitted_at+10分钟`，Redis 重启也必须先查该记录。
+- 同步幂等 scope 是跨管理员全局 `admin-email-template-sync:aliyun_directmail`；前端收到原 run 时按幂等成功处理。
+- 测试邮箱只在新增/发送表单中短暂出现。禁止写入浏览器持久缓存、埋点、console、错误详情或表格明文列。
+- 历史邮箱验证码迁移后统一失效且不可关联，管理端不得提供恢复、展示或反查历史邮箱的入口。
+- 白名单新增成功按 HTTP 201 active 对象刷新，撤销成功按 HTTP 200 revoked 对象刷新；不得假设 data=null。
+- 未命中 active 测试白名单固定按 `400/40000` 展示参数类提示，不按无权限页面处理。
+- 邮件专属错误固定为缺变量 `422/51001`、DirectMail/RAM 失败 `502/51002`、生产 Adapter/配置未就绪 `503/51003`，不得复用 token_gateway 的 50200/50300 文案。
+- 前置状态文案按 SSOT 精确展示：资源不存在 `404/40400「邮件资源不存在」`；无绑定 `409/40900「邮件场景未绑定模板」`；绑定停用 `409/40900「邮件场景已停用」`；模板本地停用 `409/40900「邮件模板已停用」`；draft/pending/rejected/missing 分别为 `邮件模板尚未提交审核` / `邮件模板正在审核` / `邮件模板审核未通过` / `邮件模板在供应商侧不存在`；变量缺失 `422/51001「邮件模板变量不完整」`。
+- 发送日志状态只展示 `accepted` / `failed`；数据库内部 pending 不进入列表、筛选或概览，`accepted` 文案固定为“供应商已受理发送请求”。
+- Redis 分布式锁是发布必需依赖；只有未取得锁或外呼开始前丢锁返回 `503/51003「邮件发送服务未就绪」` 且不外呼。外呼开始后丢锁由后端按明确响应 fencing 或 unknown failed 规则收敛，不返回 503。
+- unknown 原请求及旧 key 重放显示 `502/51002「供应商响应未知，请在验证码过期后重试」`；`cooldown_until` 前新 key 显示 `409/40900「邮件发送结果确认中，请在验证码过期后重试」`。`cooldown_until` 到期后仅新 key 可重新发送，旧 key 仍显示原失败；OTP 的 cooldown_until=expires_at，test 的 cooldown_until=submitted_at+10分钟。
+- 明确 accepted/rejected 分别由后端以 `WHERE id=? AND status='pending'` 从原 pending 行唯一收敛 accepted/failed；前端不得把 unknown failed 当成明确 rejected，也不得显示长期 pending。
+- 管理员 `admin_verify` 邮箱发码端点严格无 Body，不提供邮箱输入；额外 email 字段按 `400/40000「请求参数错误」` 展示。`bind_email` 邮箱仅由当前登录用户换绑表单提交，不能复用管理端测试邮箱作为目标。
+- 当前范围不实现投递回执 Webhook、最终送达、打开率或点击率页面、字段和统计。
+- 前端不接触 DirectMail AccessKey、Region、发信地址配置，不提供生产/Mock Adapter 切换，不发送供应商 `TemplateId`。
+- Loading/空数据/错误/无权限/正常五态齐全；同步失败保留旧列表，不把局部结果渲染成最新状态。
+
+### 5.1.4 A7 验收清单（后续阶段执行）
+
+- [ ] 菜单、路由、按钮分别按四个邮件权限码控制，不能用单一 `role:manage` 替代；四权限接口均验证手机+邮箱 MFA，未完成时精确处理 `403/40003「请先完成管理员双重认证」`。
+- [ ] 概览统计字段完整；模板 local_enabled 启停执行 version 乐观锁并刷新统计。
+- [ ] 模板、场景、同步、白名单、发送日志五类列表均正确解析 D-95。
+- [ ] 五固定场景完整展示，变量映射大小写正确且不可编辑。
+- [ ] 缺少 Code 或 ExpireMinutes 时绑定、启用、测试均被阻断并展示 `422/51001`。
+- [ ] HTML XSS payload 在 sandbox 预览中不能执行脚本、提交表单、顶层跳转、打开弹窗或发起外部网络请求。
+- [ ] 两管理员并发编辑同一场景时，后提交者收到 409 并刷新，不覆盖先提交结果。
+- [ ] 同 key 重试同步/测试发送只展示同一结果；同 key 不同请求显示冲突。
+- [ ] 非白名单测试邮箱收到固定 `400/40000`；合法请求入参可短暂含邮箱，但响应/日志/审计/持久化/telemetry 不泄露完整邮箱或测试验证码。
+- [ ] 发送日志公开状态只使用 accepted/failed；pending 不可见，accepted 始终显示“供应商已受理发送请求”，不展示送达、打开率、点击率。
+- [ ] RAM 否定权限导致后端失败时，页面显示安全中文消息，不展示供应商原始错误。
+- [x] `npm run type-check`、`npm run lint`、`npm run build` 通过；已对账本机最新 `main` 提交 `608172e`，其增量仅涉及用户端聊天布局，与 A7 管理后台、认证和邮件契约无交集。
 
 ---
 

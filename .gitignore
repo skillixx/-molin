@@ -2,6 +2,8 @@
 .env.local
 infra/.env.local
 infra/.env.test
+infra/.env.test.backup.*
+infra/.env.test.tmp.*
 molin-api
 
 # 数据库备份文件（含测试数据，禁止入库）
@@ -12,6 +14,10 @@ dist/
 .vite/
 
 coverage/
+
+# Python 解释器缓存（按机器生成，无需入库）
+__pycache__/
+*.py[cod]
 
 *.log
 
@@ -30,3 +36,4 @@ infra/.data/
 
 # Agent 临时工作目录（按机器生成，无需入库）
 .claude/worktrees/
+.gstack/

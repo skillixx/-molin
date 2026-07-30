@@ -609,6 +609,41 @@ server/migrations/
 
 对应 down.sql 每个文件一份。
 
+### 10.1 DirectMail `admin_verify` bootstrap 000056 专项分配
+
+**负责人：后端 A（后端甲）**
+
+本专项已完成 QA 契约可测性签署和产品经理业务契约复签，允许后端甲按已冻结契约进入实现；该结论仅代表需求、职责和验收口径已确认，**不代表 000056、Go 服务、真实数据库、DirectMail、部署或上线已经实现或通过**。
+
+负责范围：
+
+- 新增 `server/migrations/000056_add_email_admin_verify_bootstrap.up.sql` 与对应 `down.sql`。
+- 建立 `email_admin_verify_bootstrap_receipts`、`migration_000056_permission_ownership` 及 migration 临时断言对象。
+- seed `email:template:bootstrap` 专用权限，并按 ownership 精确处理唯一 `admin` 角色绑定的预存与新增状态。
+- 实现 000056 的新库、存量库、partial-up、partial-down、未知引用、成功 receipt 阻断常规 down 和 A/B/C 回滚矩阵。
+- 与 auth / iam / audit 代码保持同一契约，补齐中文开发文档、自测说明和 QA 所需证据。
+- 开始业务实现前，先在同一任务分支同步 `server/internal/modules/auth/CLAUDE.md`；如涉及 IAM 权限 seed 说明，再同步 `server/internal/modules/iam/CLAUDE.md`，明确 000056 是本专项授权路径，不能扩展为其他 migration 的通用修改权限。
+
+不负责范围：
+
+- 不修改普通 13 个 `/api/admin/email/*` 接口、前端页面或前端 API 封装。
+- 不由后端甲注入真实 Secret、配置生产 CIDR、执行测试或生产部署、恢复生产流量；以上由运维按批准变更单执行。
+- 不直接写管理员 MFA 时间戳，不通过手工 SQL 绑定模板，不删除或伪造成功 receipt，不使用 migration `force` 绕过安全凭据。
+- 不把本专项授权扩展到商品、订单、钱包、资产、会员、应用或内容模块。
+
+开工前置：
+
+- `docs/full-api-design.md`、`docs/database-schema-design.md`、`docs/test-plan.md` 和 DirectMail 设计评审中的 bootstrap delta 保持一致。
+- QA 已书面确认契约可测，产品经理已书面确认一次性内部运维边界、最小权限、幂等隔离、默认 404、回滚及 `accepted` 语义。
+- 后端甲确认工作分支合规，并完成上述模块级 `CLAUDE.md` 授权同步；不得因旧 Week 1 文件清单遗漏 000056 而自行扩大或缩小本专项范围。
+
+交付出口：
+
+1. 后端甲完成 000056 up/down、相关后端实现、中文文档和自测，提交合规 PR。
+2. QA 按 bootstrap delta 矩阵验证 migration、权限、并发幂等、审计、敏感信息和回滚，测试报告中 P0/P1 为 0。
+3. 产品经理确认业务边界、普通 13 接口不变、成功后关闭并恢复 404，以及 `accepted` 不等于最终送达。
+4. QA 与产品经理均通过后方可合并；真实环境执行、部署与上线仍需运维变更单和后续阶段门禁，不因代码合并自动获得批准。
+
 ---
 
 ## 11. 公共 pkg 分配

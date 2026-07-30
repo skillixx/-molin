@@ -15,7 +15,7 @@
 |---|---|
 | 分层 | 页面只调用 `src/api/*.ts`，禁止组件内直接 `import axios` |
 | 分页 | 全模块已 **D-95 扁平化**：`{items, page, page_size, total}`，无 `pagination`/`list`。后端甲（auth/iam）与后端乙（product/order/billing）均已统一，`PageResult<T>` 可复用 |
-| 错误码 | 40001→跳登录、40404→引导注册、42900→频率超限、70001→引导实名，统一在 `http.ts` 处理 |
+| 错误码 | 40001→跳登录、40404→引导注册、42900→发码频率超限、42901（HTTP 423）→登录锁定 15 分钟、70001→引导实名，统一在 `http.ts` 处理 |
 | 安全红线 | 身份证号前端不缓存、不打印日志（CLAUDE.md 安全约定） |
 | 文案/品牌 | 全中文；品牌「墨灵」，署名「爱斯琴网络科技有限公司」 |
 
@@ -47,6 +47,7 @@
 ### B2 注册 / 登录 / 找回密码
 - [ ] 注册（双 OTP 单入口）：`sendEmailCode`+`sendPhoneCode`+`register`（`email/phone/scene` 必填；密码 6-72 位）
 - [ ] 邮箱密码登录 `POST /api/auth/login/email`（响应含 `user`，D-93）
+- [ ] 邮箱验证码登录 `POST /api/auth/login/email/code`（Phase 1 delta，待 QA/PM 签署；不得替换邮箱密码登录）
 - [ ] 手机验证码登录 `POST /api/auth/login/phone`（`{phone, code}`；未注册 40404→引导注册）
 - [ ] 找回密码 `POST /api/auth/password/reset`（发码校验，无需旧密码）
 - [ ] 退出登录 `POST /api/auth/logout`（退出后 Access Token 立即吊销）
@@ -219,6 +220,11 @@ export interface LoginEmailBody {
   password: string
 }
 
+export interface LoginEmailCodeBody {
+  email: string
+  code: string                    // 只提交 scene=login 对应的邮箱验证码
+}
+
 export interface LoginPhoneBody {
   phone: string
   code: string                    // 先发 scene=login 验证码
@@ -237,7 +243,8 @@ export interface ResetPasswordBody {
 ```typescript
 import http from './http'
 import type {
-  TokenPair, RegisterBody, LoginEmailBody, LoginPhoneBody, ResetPasswordBody, PublicCodeScene,
+  TokenPair, RegisterBody, LoginEmailBody, LoginEmailCodeBody, LoginPhoneBody,
+  ResetPasswordBody, PublicCodeScene,
 } from '@/types/auth'
 
 /* ===== 发码（公开端点，scene 仅 register/login/reset_password；D-96 后不再接受 bind/admin） ===== */
@@ -264,6 +271,11 @@ export function register(body: RegisterBody) {
 /** 邮箱密码登录（未注册→40404；禁用→40003；密码错→40001） */
 export function loginByEmail(body: LoginEmailBody) {
   return http.post<unknown, TokenPair>('/auth/login/email', body)
+}
+
+/** 邮箱验证码登录；Body 严格只含 email、code，不得附带 scene 或其他字段 */
+export function loginByEmailCode(body: LoginEmailCodeBody) {
+  return http.post<unknown, TokenPair>('/auth/login/email/code', body)
 }
 
 /** 手机验证码登录（先发 scene=login 验证码；未注册→40404；码错→40000） */
@@ -295,19 +307,20 @@ export function resetPassword(body: ResetPasswordBody) {
 > 1. `sendEmailCode/sendPhoneCode` 的 scene 联合类型删掉 `bind_email/bind_phone`（D-96 公开端点已拒绝），换绑发码迁到 `account.ts`（见 §3）。
 > 2. 现有 `logout()` **无 body**，须改为 `logout(refresh_token)` 传 `{refresh_token}`（§1.5）。
 > 3. `updatePhone/updateEmail/changePassword/updateUsername` 从 `auth.ts` 迁出到 `account.ts`（见 §3.2 清理项）。
+> 4. 邮箱验证码登录是独立的 Phase 1 delta，当前待 QA/PM 签署；签署与后端实现验收前，不得将该项标记为完成。
 
 ### 4.3 B2 视图层任务
 
 | 视图 | 用到的 API | 关键交互 |
 |---|---|---|
 | `views/auth/RegisterView.vue` | `sendPhoneCode('register')`+`sendEmailCode('register')`+`register` | 手机/邮箱各一个发码按钮（60s 倒计时）；密码 6-72 位校验；已注册→40900 提示；成功后用响应 `user` 直接写入 store |
-| `views/auth/LoginView.vue` | `loginByEmail` / `loginByPhone` + `sendPhoneCode('login')` | 邮箱密码 / 手机验证码 双 Tab；40404→引导去注册；禁用→40003 提示 |
+| `views/auth/LoginView.vue` | `loginByEmail` / `loginByEmailCode` / `loginByPhone` + `sendEmailCode('login')` / `sendPhoneCode('login')` | 保留邮箱密码登录，并增加邮箱验证码登录入口；发码按钮提供倒计时、加载态和失败提示；40404→引导注册，40003→账号禁用，40000→“验证码错误或已过期”，42901（HTTP 423）→展示 15 分钟锁定提示 |
 | `views/auth/ResetPasswordView.vue` | `sendEmailCode('reset_password')`/`sendPhoneCode('reset_password')` + `resetPassword` | 选择手机/邮箱找回；发码倒计时；新密码 6-72 位 |
 | 顶栏退出按钮 | `logout(refresh_token)` | 退出后清本地 token + 跳登录 |
 
 ### 4.4 B2 登录态写入约定（配合 store）
 ```
-register / loginByEmail / loginByPhone 成功 →
+register / loginByEmail / loginByEmailCode / loginByPhone 成功 →
   存 access_token + refresh_token（refresh_token 不入可被 XSS 读取的位置，按 http.ts 约定）
   → currentUser 直接取响应 user（D-93），无需再 GET /api/me
 刷新 token 成功（refreshToken）→ 同步更新 access_token 与 currentUser
@@ -315,7 +328,11 @@ register / loginByEmail / loginByPhone 成功 →
 
 ### 4.5 B2 验收标准
 - [ ] 注册需手机+邮箱双验证码，缺一不可；密码 5 位/73 位被拒（D-94 边界）
-- [ ] 两种登录方式均通；未注册账号统一 40404 → 引导注册
+- [ ] 三种登录方式均通；邮箱密码入口保持不变；未注册账号统一 40404 → 引导注册
+- [ ] 邮箱验证码登录 Body 严格只有 `email`、`code`；客户端不得附带 `scene` 或其他字段，额外字段由服务端按 `400/40000「请求参数错误」` 拒绝
+- [ ] 邮箱验证码登录只使用 `scene=login` 且已 accepted、未使用、未过期、匹配的验证码；失败统一展示 `400/40000「验证码错误或已过期」`
+- [ ] 邮箱密码与邮箱验证码登录共享 D-16：失败累计 5 次后按 `423/42901` 锁定 15 分钟，任一方式成功后清除失败计数；发码同时处理 `10/min/IP` 与 `10/min/邮箱 HMAC` 的 `429/42900`
+- [ ] 邮箱验证码登录成功复用 `LoginResp`；新会话不吊销其他会话，普通登录 Token 不能绕过管理员双重认证
 - [ ] 登录/注册/刷新后 `currentUser` 来自响应 `user`，无多余 `GET /api/me` 调用
 - [ ] 退出登录传 `refresh_token`，退出后旧 Access Token 再次请求得 40001 并已跳登录
 - [ ] 找回密码全流程通；发码按钮统一 60s 倒计时，命中 42900 不重置倒计时

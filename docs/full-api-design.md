@@ -40,7 +40,7 @@ Idempotency-Key: idem_xxx
 
 - `Authorization`：需要登录的接口必须传。
 - `X-Request-ID`：可选，不传则后端生成。
-- `Idempotency-Key`：购买、支付、充值、按量计费、资产开通等关键写操作必须传。
+- `Idempotency-Key`：购买、支付、充值、按量计费、资产开通、邮件模板同步、邮件测试发送等关键写操作必须传。
 
 ### 1.4 限流策略
 
@@ -55,7 +55,7 @@ RequestID -> Logger -> Recovery -> RateLimit -> Auth（非公开接口）-> Perm
 | 接口分类 | 限制 | 说明 |
 |---|---|---|
 | 全局 | 1000 req/s / IP | 超出返回 429 |
-| 注册 / 登录 / 验证码 | 10 req/min / IP | 防暴力破解 |
+| 注册 / 登录 / 验证码 | 10 req/min / IP，且 10 req/min / 账号 | 两个维度分别计数，任一超限即拒绝；邮箱账号键使用规范化值的 HMAC，不存完整邮箱 |
 | 充值创建订单 | 20 req/min / 用户 | 防重复充值 |
 | 支付回调 | 不限流 | 第三方平台回调，需签名校验 |
 | Token 网关调用 | 按 token_quota_accounts.monthly_limit_tokens | 用户级别月度配额 |
@@ -89,10 +89,14 @@ X-RateLimit-Reset: 1748000000
 40400  资源不存在
 40404  账号未注册（登录/发验证码接口对未注册手机号或邮箱返回此码，提示先注册）
 40900  数据冲突
+42901  登录失败次数超限，账号临时锁定（HTTP 423）
 50000  系统内部错误
 50200  上游模型服务失败（HTTP 502，token_gateway 透传上游失败）
 50300  渠道不可用（HTTP 503，token_gateway 未配置可用渠道 / 渠道停用）
 50301  系统繁忙/可重试（HTTP 503，token_gateway 乐观锁冲突重试耗尽，可重试；D-M2-02，区别于 60001 余额不足）
+51001  邮件模板变量不完整（HTTP 422，缺少 Code 或 ExpireMinutes）
+51002  邮件上游调用失败（HTTP 502，DirectMail 调用或 RAM 授权失败）
+51003  邮件发送服务未就绪（HTTP 503，生产 Adapter 或必要配置不可用）
 60001  余额不足
 60002  重复支付
 60003  商品状态不可用
@@ -123,7 +127,51 @@ Body 参数：
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | sent | boolean | 是否发送成功 |
-| expires_in | integer | 有效秒数 |
+| expires_in | integer | 从响应时刻计算的剩余有效秒数；首次成功为 600，幂等重放不得重置有效期 |
+
+成功统一返回 HTTP 200、`data={"sent":true,"expires_in":600}`。生产环境响应永远不得包含明文 `code`。
+既有非生产调试模式只有在 `APP_ENV` 被显式设置，且经 trim+小写后精确属于 `local/development/dev/test/testing`，同时原调试开关经 trim 后精确等于小写 `true` 时，才可额外返回 `data.code`。`APP_ENV` 缺失、空白、`staging`、未知值或 `production` 均按生产安全边界失败关闭；调试开关的大写、混合大小写、数字及其他宽松布尔别名均不接受。该字段不属于稳定契约，
+前端类型、页面、日志、审计和 telemetry 均不得读取或记录。Phase 2 不扩大这一既有调试边界。
+
+邮件 OTP 发送补充约定：
+
+- 邮件业务场景固定为 `register`、`login`、`reset_password`、`bind_email`、`admin_verify` 五种；公开端点仍只接受前三种，后两种必须走 D-96 认证态端点。
+- auth 模块仅依赖稳定的 `EmailOTPSender.SendOTP(business_request_no, scene, recipient, code, expire_minutes)` 接口，不依赖阿里云 SDK、`TemplateId` 或供应商响应结构；业务请求号由服务端生成/复用，不要求现有客户端新增 Idempotency-Key Header。
+- 业务字段固定映射到 DirectMail 模板变量：`code` → `Code`、`expire_minutes` → `ExpireMinutes`。大小写必须完全一致，不允许由调用方覆盖。
+- 邮件验证码有效期固定为 10 分钟；发送前先落库并显式写 `verification_codes.send_status=pending`。只有 DirectMail 明确受理后才能原子更新为 `send_status=accepted, accepted_at=NOW()`，并写入 accepted 发送日志。
+- 验证码校验仅接受 `send_status=accepted` 且未使用、未过期的记录。供应商拒绝、失败或超时都原子改为 `send_status=failed`；手机验证码由全新应用显式写 accepted，不经过邮件 Adapter。
+- 邮件验证码、发送日志、模板镜像、场景绑定、模板同步记录、测试收件人白名单和 bootstrap 成功凭据涉及的 MySQL `DATETIME` 冻结为 UTC 墙上时间语义。即使现有全局 DSN 仍为 `loc=Local`，auth 邮件仓储也必须在写入、条件查询和扫描返回三处完成对称转换；进程位于 `Asia/Shanghai` 时不得把 UTC 时间额外加减八小时。`pending/accepted/failed/running/succeeded`、`expires_at/accepted_at/used_at/submitted_at/started_at/completed_at/created_at/updated_at/revoked_at/missing_since/provider_created_at/last_synced_at` 和验证码原子消费使用同一 UTC 时间域。模板同步比较供应商创建时间前必须先把数据库扫描值恢复为 UTC 墙钟；供应商内容与时间完全相同的连续同步必须计为 `unchanged`，不得重复递增模板版本。现有列为 MySQL `DATETIME`，契约精度固定到秒，不得用不可落库的纳秒决定过期或 stale；恰到 `expires_at` 边界即失效，`started_at` 必须严格早于五分钟前的秒级边界才可收敛 stale，部署前旧 failed 记录只能阻断至原真实十分钟窗口结束。本契约不授权修改全局 DSN，也不要求 migration。
+- `accepted` 仅表示供应商同步受理，不等于最终送达。当前范围不接入投递回执 Webhook，不跟踪最终送达、打开率或点击率，页面和接口不得把 `accepted` 表述为“已送达”。
+- 正式 OTP 与后台模板测试均从已冻结的本地模板镜像读取 `TemplateText`，只按固定映射在本地渲染 `Code` 与 `ExpireMinutes`，再由 DirectMail 生产 Adapter 调用 `SingleSendMail` 并提交 `Subject + HtmlBody`。`TemplateId` 仅用于场景绑定、发送日志和追踪：正式 OTP 从当前场景绑定解析，模板测试从 URL 中的平台模板镜像 ID 解析；不得硬编码，也不得作为 `SingleSendMail` 的 `Template.TemplateId/Template.TemplateData` 参数发送。
+- 模板查询字段分开冻结：`QueryTemplateByParam` 列表只读 `TemplateId/TemplateName/TemplateStatus/CreateTime`；`DescTemplate` 详情只读非废弃字段 `RequestId/CreateTime/TemplateSubject/TemplateStatus/TemplateName/TemplateText`，不得以废弃的 TemplateNickName 为依据。
+- `DescTemplate` 只有供应商 Code 精确命中显式 not-found 白名单时才能归为模板不存在；禁止用 contains、前后缀或模糊匹配。形似 not-found 的未知 Code 必须走通用上游失败并归一为安全 `other`，不得泄露原始 Code 或 Message。
+- `APP_ENV=production` 时未配置生产 Adapter、凭据、发信地址、已审核模板或当前场景绑定，发送必须失败关闭；Mock Adapter 只能在上述显式非生产配置下启用，未知环境不得启用 Mock 或验证码调试回传。
+- 收件邮箱必须是单个裸地址，拒绝逗号、多地址、显示名与 CR/LF；trim 后完整地址统一小写，再计算 HMAC。邮件验证码行只保存 `target_hash/target_masked`，`target_value` 为 null；手机号验证码继续使用 `target_value`。
+- 000055 采用PM B全停机方案：保留旧code VARCHAR(64) NULL并新增code_hash；历史email OTP全部置failed/过期/已使用，逐行写不可关联随机占位hash与统一masked占位并清空target_value。仅全新应用读写code_hash。
+- `migration_000055_permission_ownership` 仅是 migration-only 技术表，不属于五张邮件业务表。up 用四行记录权限/admin 绑定的预存 ownership，补缺项并回填最终 ID；down 仅按 created 标志精确清理本次新增记录，未知角色、用户覆盖或分组引用一律 fail-closed，写后断言通过才删除技术表。真实 MySQL 门禁必须验证五业务表+一技术表，down 后两类表均按预期清理且预存权限/绑定保留。
+- 发布固定顺序：停止邮箱/手机 OTP 发码、OTP 校验、注册、登录流量 → 等待 10 分钟 → 停止全部 auth/API 实例 → 备份并验证可恢复 → 执行 000055 up → 部署全部新版本应用实例 → 核验 health、ready、应用版本、schema 版本与配置 → 恢复流量。回滚固定顺序：停止上述流量 → 等待 10 分钟 → 停止全部实例 → 备份并验证可恢复 → 先执行 000055 down（删除 `code_hash` 并保留 `code VARCHAR(64) NULL`）→ 部署旧版本应用 → 核验 health 与 schema → 恢复流量。禁止滚动部署，禁止新旧应用共存。
+- `SingleSendMail` 固定提交 `FromAlias=墨灵`、`ClickTrace=0`，并以当前模板镜像 `subject` 提交 `Subject`；主题必须是有效 UTF-8、非空且不超过 100 个 Unicode 字符。`HtmlBody` 必须是有效 UTF-8、非空且按 UTF-8 字节不超过 80 KiB；别名允许由 `DIRECTMAIL_FROM_ALIAS` 配置覆盖但不得为空。
+- 日志和审计禁止出现验证码、完整邮箱、AccessKey、完整 `TemplateData`、供应商原始响应；本次新增的邮件模板管理、测试发送和发送日志 API 响应同样禁止返回这些字段。敏感扫描应排除接收 email/code 的合法请求入参内存，只扫描响应、日志、审计、持久化和 telemetry。只允许记录内部日志 ID、场景、脱敏邮箱、业务请求号、阿里云 RequestId 和归一化安全失败原因。
+- 所有管理写动作先写 `.attempt` 审计，失败则不执行；动作后写 `.result`，结果审计失败必须告警但不得把已生效动作返回为500。清理任务失败同样必须写运行日志以便告警。
+
+正式邮件 OTP 的服务端幂等不新增客户端 Header。auth 层在原子限流/冷却窗口内为同一入口和目标生成或复用
+`business_request_no`，并按以下固定 scope 计算 `idempotency_key_hash=HMAC-SHA256(business_request_no|scope, EMAIL_IDEMPOTENCY_SECRET)`：
+
+```text
+register       auth:register:email:{target_hmac}
+login          auth:login:email:{target_hmac}
+reset_password auth:reset_password:email:{target_hmac}
+bind_email     auth:bind_email:user:{user_id}:email:{target_hmac}
+admin_verify   auth:admin_verify:user:{admin_id}:email:{target_hmac}
+```
+
+请求指纹固定为规范化 `{endpoint,scene,target_hmac,purpose,expire_minutes,template_id,binding_version}` 的 SHA-256。
+后端必须按 scope 获取 Redis 分布式锁，在 `verification_codes` 中原子创建或复用 business_request_no、scope、fingerprint；数据库条件更新仅用于 fencing 和唯一收敛，不得替代 Redis 锁。
+同一冷却窗口内相同 scope+指纹且已 accepted 的重放返回同一业务结果，`sent=true` 且 expires_in 按原 expires_at 计算剩余秒数；
+failed 重放返回原安全错误；仍 pending 的并发重放返回 `409/40900「邮件正在发送，请稍后重试」`。三者均不重新生成验证码、
+不重置有效期、不再次调用供应商；同一业务请求号或
+幂等键对应不同指纹返回 `409/40900`。冷却窗口结束后的明确新发码生成新的业务请求号。五个入口均执行同一规则。
+同步running超过5分钟仅成为陈旧候选；收敛前必须竞争同一同步lease，原任务仍续租时返回冲突且不得标failed。同步事务首尾以run的running状态作fencing，最终更新RowsAffected不是1则回滚全部镜像。测试发送pending规则不变。
 
 ### 2.2 发送短信验证码
 
@@ -223,6 +271,43 @@ user 字段：
 - 邮箱未注册 → `404 40404`「邮箱未注册，请先注册」
 - 账号已被禁用 → `403 40003`
 - 密码错误 → `401 40001`「邮箱或密码错误」
+
+### 2.4.1 邮箱验证码登录（Phase 1 delta，待 QA/PM 签署）
+
+```text
+POST /api/auth/login/email/code
+```
+
+`POST /api/auth/login/email` 继续作为邮箱+密码登录，路径、Body 和行为保持不变。新端点只接受严格 JSON Body：
+
+```json
+{
+  "email": "user@example.com",
+  "code": "123456"
+}
+```
+
+Body 必须且只能包含 `email`、`code`；缺少字段、空值、类型错误或任何额外字段统一返回
+`400/40000「请求参数错误」`。后端只消费 `scene=login`、`send_status=accepted`、未使用、未过期且邮箱/验证码匹配的记录；
+验证码验证与 `used_at` 条件更新必须在同一数据库事务中原子完成，并发请求只有一个能消费成功。验证码不匹配、scene 错误、
+非 accepted、已使用、已过期或并发消费失败统一返回 `400/40000「验证码错误或已过期」`。
+
+错误与 D-16：
+
+- 邮箱未注册：`404/40404「邮箱未注册，请先注册」`。
+- 账号禁用：`403/40003「账号已被禁用」`。
+- 邮箱密码登录与邮箱验证码登录复用同一 D-16 邮箱失败计数。认证失败累计达到 5 次后锁定 15 分钟，锁定期返回
+  `423/42901「登录失败次数过多，请15分钟后重试」`；锁定请求不得消费验证码或创建会话。
+- 任一邮箱密码登录或邮箱验证码登录成功后清除该规范化邮箱的 D-16 失败计数。
+- `scene=login` 发码继续同时执行 10 次/分钟/IP 与 10 次/分钟/规范化邮箱 HMAC，任一维度超限返回
+  `429/42900「请求频率超限」`。
+
+成功响应完全复用邮箱密码登录的 `LoginResp`（access_token、refresh_token、expires_in、user）。成功只创建一条新会话，
+不吊销该用户的其他有效会话。普通登录签发的 Token 不写入或刷新管理员手机/邮箱 MFA 状态；管理员访问需要双重认证的接口时，
+仍必须完成手机+邮箱 MFA，不能借邮箱验证码登录绕过。
+
+本接口复用现有 `verification_codes` 与会话表，不新增数据库表或字段。本节仅为 Phase 1 契约 delta，尚待 QA/PM 书面签署，
+不代表 Go 实现、环境或端到端验收通过。
 
 ### 2.5 手机号登录
 
@@ -421,7 +506,8 @@ Body 参数：
 
 D-96：获取 `scene=admin_verify` 验证码请调用 `POST /api/admin/auth/verification-codes/phone`（需 Bearer Token + `user:manage` 权限，无请求体），
 验证码发送至当前登录管理员自己绑定的手机号；若该账号未绑定手机号则返回 400（错误码 40000）。
-返回 data 非生产环境含 `code` 字段（明文验证码，便于调试），生产环境为 `{}`。
+发码成功统一返回 `data={"sent":true,"expires_in":600}`；生产环境永不返回 code。仅既有显式非生产调试模式可额外返回
+`data.code`，该字段不属于稳定前端契约，也不得进入日志、审计、持久化或 telemetry。
 
 ### 2.15 管理员邮箱双重认证
 
@@ -443,7 +529,9 @@ Body 参数：
 
 D-96：获取 `scene=admin_verify` 验证码请调用 `POST /api/admin/auth/verification-codes/email`（需 Bearer Token + `user:manage` 权限，无请求体），
 验证码发送至当前登录管理员自己绑定的邮箱；若该账号未绑定邮箱则返回 400（错误码 40000）。
-返回 data 非生产环境含 `code` 字段（明文验证码，便于调试），生产环境为 `{}`。
+该端点严格无 Body；请求携带额外 `email` 字段固定返回 `400/40000「请求参数错误」`。服务层若通过受控测试 fixture 注入非当前管理员绑定邮箱，固定返回 `403/40003「无权向该邮箱发送验证码」`。
+发码成功统一返回 `data={"sent":true,"expires_in":600}`；生产环境永不返回 code。仅既有显式非生产调试模式可额外返回
+`data.code`，该字段不属于稳定前端契约，也不得进入日志、审计、持久化或 telemetry。
 
 ### 2.16 修改用户名
 
@@ -470,7 +558,9 @@ PATCH /api/me/phone
 需要：Bearer Token。先向新手机号发送验证码（scene=bind_phone），再提交本接口。
 
 D-96：发送验证码请调用 `POST /api/me/verification-codes/phone`（需 Bearer Token），body 为 `{"phone": "<新手机号>"}`；
-若新手机号已被其他账号注册则返回 409（错误码 40900）。返回 data 非生产环境含 `code` 字段（明文验证码，便于调试），生产环境为 `{}`。
+若新手机号已被其他账号注册则返回 409（错误码 40900）。发码成功统一返回
+`data={"sent":true,"expires_in":600}`；生产环境永不返回 code。仅既有显式非生产调试模式可额外返回 `data.code`，
+该字段不属于稳定前端契约，也不得进入日志、审计、持久化或 telemetry。
 
 Body 参数：
 
@@ -490,7 +580,11 @@ PATCH /api/me/email
 需要：Bearer Token。先向新邮箱发送验证码（scene=bind_email），再提交本接口。
 
 D-96：发送验证码请调用 `POST /api/me/verification-codes/email`（需 Bearer Token），body 为 `{"email": "<新邮箱>"}`；
-若新邮箱已被其他账号注册则返回 409（错误码 40900）。返回 data 非生产环境含 `code` 字段（明文验证码，便于调试），生产环境为 `{}`。
+若新邮箱已被其他账号注册则返回 409（错误码 40900）。发码成功统一返回
+`data={"sent":true,"expires_in":600}`；生产环境永不返回 code。仅既有显式非生产调试模式可额外返回 `data.code`，
+该字段不属于稳定前端契约，也不得进入日志、审计、持久化或 telemetry。
+
+`bind_email` 收件人只能来自当前登录用户此次换绑流程提交并校验的新邮箱。服务层若通过受控测试 fixture 注入其他流程或其他用户目标，固定返回 `403/40003「无权向该邮箱发送验证码」`。
 
 Body 参数：
 
@@ -1196,6 +1290,400 @@ GET /api/admin/users/:id/effective-permissions
 `/api/admin/users/{id}/...` 接口——如 3.6 用户角色、用户权限覆盖等——保持一致，IAM 模块
 不持有用户表，无法做存在性校验）。若 `:id` 不存在，`permissions` 和 `overrides` 均返回
 空数组 `[]`，HTTP 状态码仍为 `200`，**不会**返回 404。
+
+### 3.19 邮件模板与发送管理（DirectMail Phase 1 契约，Phase 2 未验收）
+
+> Phase 0 只收集外部资质、模板与 RAM 准备证据；Phase 1 冻结协议与设计，并以 `docs/aliyun-directmail-email-template-phase1-design-review.md §15` 的 QA/PM 书面记录为唯一出口；Phase 2 才验收 Go、migration、真实 MySQL/Redis、DirectMail、前端与 E2E。现有实现和环境材料仅是 Phase 2 待复验输入，不能倒置 Phase 1 门禁。本轮只确认协议与 Redis 锁原语，Go 集成未验收。本节是 API SSOT，不代表功能整体完成。固定五场景为
+> `register`、`login`、`reset_password`、`bind_email`、`admin_verify`，不得通过管理端新增第六种场景。
+
+#### 3.19.1 权限与通用规则
+
+| 权限码 | 能力 |
+|---|---|
+| `email:template:view` | 查看概览统计、模板镜像、场景绑定、同步记录、测试白名单和发送日志 |
+| `email:template:manage` | 修改模板本地启停、五场景模板绑定、启停绑定、维护测试邮箱白名单 |
+| `email:template:sync` | 从 DirectMail 原子同步模板镜像 |
+| `email:template:test` | 向白名单邮箱发送模板测试邮件 |
+| `email:template:bootstrap` | 仅授权一次性内部 `admin_verify` 首次配置入口；不授权普通邮件管理接口 |
+
+普通 13 个邮件管理接口均需 Bearer Token + 对应的 view/manage/sync/test 权限 + 管理员手机与邮箱两项认证均在有效期内。这四个权限对应的所有读写接口都强制执行 MFA，不能因 view/sync/test 为细分权限而绕过。bootstrap 专用权限及其手机 MFA 例外只适用于 §3.19.12 的默认关闭内部入口。未完成双重认证固定返回 HTTP 403、code=40003、message=`请先完成管理员双重认证`；权限不足仍返回 HTTP 403、code=40003、message=`无权限`。所有列表接口遵循 D-95，`data` 顶层固定为
+`{items,page,page_size,total}`。所有写操作写入 `audit_logs`，但审计摘要只能包含场景、内部记录 ID、
+脱敏邮箱、操作结果与版本，不得包含完整邮箱、验证码、模板变量值、凭据或供应商原始响应。
+其中 summary、模板/场景/同步记录/白名单/发送日志 GET 使用 view；模板 status、场景绑定和白名单写使用 manage；
+同步 POST 使用 sync；模板 test-send 使用 test。
+
+#### 3.19.2 概览统计、模板镜像列表与详情
+
+```text
+GET /api/admin/email/summary
+GET /api/admin/email/templates
+GET /api/admin/email/templates/{id}
+PATCH /api/admin/email/templates/{id}/status
+```
+
+`GET /summary` 返回对象而非列表，字段和类型固定为：
+
+```json
+{
+  "template_total": 12,
+  "approved_count": 8,
+  "local_enabled_count": 7,
+  "unbound_scene_count": 1,
+  "submitted_today_count": 123,
+  "failed_today_count": 3,
+  "last_synced_at": "2026-07-22T02:30:00Z"
+}
+```
+
+前六项均为非负 integer，`last_synced_at` 为最近一次 succeeded 同步的 completed_at（ISO 8601），从未成功同步时为 null。
+`template_total` 统计全部本地镜像，`approved_count` 统计 approved 且 missing=false，`local_enabled_count` 统计 local_enabled=true，
+`unbound_scene_count` 统计固定五场景中 template_id 为 null 的记录。今日固定为 Asia/Shanghai 自然日 `[00:00, 次日00:00)`：
+`submitted_today_count` 仅统计窗口内 accepted/failed 最终发送日志，数据库内部 pending 不计入；`failed_today_count` 仅统计 failed。
+
+列表 Query 参数：`keyword`、`provider_status`（draft/pending/approved/rejected）、`local_enabled`、`variables_complete`、`missing`（boolean）、`scene`、
+`page`、`page_size`。
+
+列表 `data.items` 单条字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| id | integer | 平台模板镜像 ID |
+| provider | string | 固定 `aliyun_directmail` |
+| provider_template_id | string | DirectMail `TemplateId`，仅作供应商资源标识，不允许前端自行拼接发送请求 |
+| name | string | 模板名称 |
+| subject | string | 邮件主题 |
+| provider_status | string | draft / pending / approved / rejected |
+| review_comment | string\|null | 归一化审核意见，不保存供应商原始响应 |
+| variables_complete | boolean | 是否同时包含 Code 与 ExpireMinutes |
+| local_enabled | boolean | 平台本地启停状态；供应商同步不得覆盖 |
+| bound_scenes | array\<string\> | 当前绑定到该模板的固定场景 |
+| missing | boolean | 最近一次完整同步中供应商侧是否已不存在 |
+| missing_since | string\|null | 首次标 missing 时间；重新出现后为 null |
+| last_synced_at | string | 最近同步时间（ISO 8601） |
+| version | integer | 乐观锁版本 |
+
+详情在上述字段上增加 `sender_nickname`、`template_text`、`variables`、`content_sha256`。`variables` 只返回变量名，
+不返回任何实际变量值；`template_text` 一律视为不可信 HTML。资源不存在返回 `404 40400`。
+管理前端只能在独立 iframe `srcdoc` 中预览，并使用空 sandbox（不得加入 allow-scripts、allow-forms、
+allow-top-navigation、allow-top-navigation-by-user-activation、allow-popups、allow-same-origin）和限制网络加载的 CSP；不得直接用 `v-html` 注入主文档。
+
+`PATCH /templates/{id}/status` Body 固定为 `{ "local_enabled": true, "version": 3 }`，成功返回更新后的完整模板摘要并令
+version+1。更新条件必须包含 id+version；冲突返回 `409/40900`。启用时必须同时满足 approved、missing=false、
+`variables_complete=true`，否则缺变量返回 `422/51001`，其他模板状态冲突返回 `409/40900`。停用立即阻断已有绑定的
+正式发送和模板测试，但保留绑定与历史日志；停用也必须读取并记录当前变量完整性，但为保证故障模板可立即关停，
+`local_enabled=false` 不因缺变量被拒绝。供应商同步不得重新开启本地停用模板。
+
+#### 3.19.3 五场景绑定
+
+```text
+GET /api/admin/email/scenes
+PUT /api/admin/email/scenes/{scene}
+```
+
+`GET` 为列表接口，固定五条记录但仍使用 D-95。单条字段：
+`scene`、`display_name`、`template_id`（平台镜像 ID）、`provider_template_id`、`provider_status`、`local_enabled`、
+`variables_complete`、`missing`、
+`enabled`、`variable_mapping`、`version`、`updated_at`。`variable_mapping` 固定返回：
+
+```json
+{
+  "code": "Code",
+  "expire_minutes": "ExpireMinutes"
+}
+```
+
+`PUT` Body：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| template_id | integer | 是 | 平台模板镜像 ID；必须 approved、local_enabled=true、missing=false 且变量完整 |
+| enabled | boolean | 是 | 是否允许该场景发送 |
+| version | integer | 是 | 客户端读取到的当前版本 |
+
+返回更新后的场景绑定。更新条件必须包含 `WHERE scene=? AND version=?`，成功后 `version=version+1`；版本不一致返回
+`409 40900「配置已被其他管理员修改，请刷新后重试」`。五场景名和变量映射不可修改；模板进入
+`rejected`/`missing`/本地停用后，即使绑定仍在也必须停止发送。绑定与 `enabled=true` 都必须重新解析模板变量，
+同时包含大小写完全一致的 `Code` 和 `ExpireMinutes`；缺任一变量返回 `422/51001`，不得保存绑定或启用状态。
+
+#### 3.19.4 原子幂等同步
+
+```text
+POST /api/admin/email/templates/sync
+GET  /api/admin/email/template-sync-runs
+```
+
+`POST` 必须传 `Idempotency-Key`，Body 固定为 `{ "provider": "aliyun_directmail" }`。幂等 scope 固定为跨管理员全局
+`admin-email-template-sync:aliyun_directmail`，请求指纹固定为规范化 method+path+provider 的 SHA-256；数据库唯一键为
+scope+key_hash，而非仅按管理员隔离。同步流程必须先完整拉取
+DirectMail 全部分页和详情；只有远端读取全部成功后，才在单个数据库事务中 upsert 全量镜像并把“上次存在、本次未出现”的模板
+标为 `missing=true` 并仅在首次缺失时写 `missing_since`；重新出现时清空 missing_since。任一页或详情读取失败时，
+本地模板镜像、missing/missing_since 与 local_enabled 均不得改变。
+首次同步创建的模板 `local_enabled=false`，必须由管理员通过 status 端点显式启用；后续同步保留本地值。
+
+同一 `Idempotency-Key` + 同一请求指纹重复请求返回原同步结果并带 `idempotent=true`；同 key 不同请求指纹返回
+`409 40900`。不同 key 在已有同步运行时返回 `409 40900「模板同步正在进行」`，不允许两个同步任务并发改写镜像。
+
+POST 与 GET 的同步记录字段和可空性固定为：`run_id:integer`、`provider:string`、
+`status:running|succeeded|failed`、四个计数 `integer`、`error_code:string|null`、`error_message:string|null`、
+`created_by:integer`、`started_at:string`、`completed_at:string|null`；POST 另含 `idempotent:boolean`。
+仅 running 的 completed_at 为 null；failed 的安全 error_code/error_message 必须非 null，其他状态两字段必须为 null，且不透传供应商原始响应。
+
+`GET` 为 D-95 列表，支持 `status`、`page`、`page_size`，返回上述计数、发起管理员 ID、开始/完成时间。
+
+Redis 分布式锁是发布必需依赖：同步锁使用 `lock:email:template-sync:aliyun_directmail`、TTL 30 秒；OTP/测试发送锁使用
+scope HMAC 摘要 key、TTL 15 秒。加锁必须为 `SET key token NX PX ttl`，续租间隔不超过 TTL 三分之一且用 Lua
+比较 token 后 `PEXPIRE`，释放用 Lua 比较 token 后 `DEL`。进入事务/外呼前重新校验所有权；外呼前丢锁立即停止，外呼期间丢锁按下方 fencing/墓碑规则唯一收敛；
+只有未取得 Redis 锁，或外呼开始前发生续租/所有权校验失败时，才统一返回 `503/51003「邮件发送服务未就绪」`，Adapter 调用次数增量为 0。外呼开始后的续租/所有权失败不得返回 503，也不得断言 Adapter 增量为 0，必须按明确响应 fencing 或未知结果持久化阻断规则收敛。
+本轮只冻结锁协议，Go 集成留待 Phase 2 验收。
+
+邮件同步、测试发送和正式 OTP 均必须使用 Redis 锁，数据库锁或唯一约束只能作为二次 fencing，不能替代 Redis。
+test-send scope 固定为
+`admin-email-template-test:admin:{admin_id}:template:{platform_template_id}:scene:{scene}:recipient:{recipient_hmac}`。
+邮箱先 trim、统一小写并完成单裸地址校验，再计算 `recipient_hmac`；Redis key 仅使用完整 scope 的 HMAC 摘要。
+`Idempotency-Key` 不进入锁 scope：同管理员/平台模板/场景/收件人竞争同锁，任一维度不同不竞争。
+
+#### 3.19.5 测试邮箱白名单
+
+```text
+GET    /api/admin/email/test-recipient-allowlist
+POST   /api/admin/email/test-recipient-allowlist
+DELETE /api/admin/email/test-recipient-allowlist/{id}
+```
+
+列表使用 D-95，仅返回 `id`、`email_masked`、`status`、`version`、`created_by`、`created_at`；禁止返回完整邮箱或
+邮箱 HMAC。新增 Body 为 `{email}`，后端只保存规范化邮箱的 HMAC-SHA256 与脱敏值，重复邮箱返回 `409 40900`。
+POST 成功固定 HTTP 201，data 为
+`{id:integer,email_masked:string,status:"active",version:integer,created_at:string}`。
+DELETE Body 必须带 `{version}`，成功固定 HTTP 200，data 为
+`{id:integer,email_masked:string,status:"revoked",version:integer,revoked_at:string}`；版本冲突返回 `409 40900`。
+白名单只限制后台测试发送，不得被正式 OTP 发送复用为收件人来源；未命中 active 白名单固定返回 `400/40000`。
+
+#### 3.19.6 模板测试发送与发送日志
+
+```text
+POST /api/admin/email/templates/{id}/test-send
+GET  /api/admin/email/send-logs
+```
+
+测试发送必须传 `Idempotency-Key`，Body 为 `{ "scene": "register", "email": "<测试邮箱>" }`。路径 `{id}` 是平台模板镜像 ID；
+后端必须据此解析当前 `approved` 且 `missing=false` 的 DirectMail `TemplateId`，不得要求该模板已绑定到所选场景。
+后端先规范化邮箱并计算 HMAC，只有命中 active 白名单才允许通过 `SingleSendMail` 发送。测试验证码由服务端生成且不具备认证用途，
+服务端从该镜像的 `TemplateText` 本地渲染 `Code` 与 `ExpireMinutes=10`，仅替换大小写精确的两个固定变量；响应和日志不得返回变量实际值或渲染后的完整正文。
+发送前还必须要求 `local_enabled=true`，并从同步后的 variables 再次确认同时包含大小写完全一致的 `Code` 与 `ExpireMinutes`；
+缺任一变量固定返回 `422/51001` 且不调用供应商。未命中 active 白名单固定返回 `400/40000`。
+
+响应字段：`send_log_id`、`business_request_no`、`template_id`、`scene`、`recipient_masked`、
+`status`（固定 accepted）、`failure_reason`（固定 null）、`idempotent`、`submitted_at`；只有 DirectMail 明确受理才返回
+HTTP 200。供应商明确失败/拒绝必须先安全落库 status=failed、归一化 failure_reason，再返回
+HTTP 502、code=51002、message=`邮件上游调用失败`、data=null；响应未知/超时则按下方
+`provider_outcome_unknown` 与专用 502/51002 文案处理。任何失败不得以 HTTP 200/status=failed 表示。
+DirectMail 明确返回业务 Code 时，`failure_reason` 仅允许写
+`provider_rejected_{category}_{http_class}`。`category` 是严格白名单枚举
+`auth/permission/sender/recipient/content/rate_limited/request/other`，未知 Code 固定归 `other`；
+`http_class` 仅允许 `http_2xx/http_3xx/http_4xx/http_5xx/http_other`。不得保存或记录供应商原始 Code、Message、响应正文、请求字段值、HtmlBody、OTP、完整邮箱、AccessKey、Secret 或 Authorization。普通 Mock/内部上游错误可继续归一为不带供应商细节的 `provider_rejected`。该观测复用既有 `failure_reason`，不新增列。
+同 Idempotency-Key+同请求重放：原结果 accepted 时返回同一 HTTP 200 并令 idempotent=true；原结果 failed 时返回同一安全
+`502/51002` 错误信封，且不再次调用供应商。同 key 不同模板、邮箱或场景返回 `409/40900`。
+
+外呼期间丢锁时不得遗留长期 pending，也不得新增墓碑表。供应商明确 accepted/rejected 时，分别使用
+`WHERE id=? AND status='pending'` 唯一收敛 accepted/failed；accepted 只能依据明确 accepted 响应。响应未知或超时时，复用已持久化的
+`email_send_logs` pending 行，在同一数据库事务中条件更新 `status=pending→failed`、
+`failure_reason=provider_outcome_unknown` 并保留 `idempotency_scope`。`purpose=otp` 保留发送日志/验证码的 `expires_at`，
+正式 OTP 同事务把对应 `verification_codes.send_status` 置 failed；`purpose=test` 的 `email_send_logs.expires_at` 必须保持 NULL，
+不得为了墓碑写入非空值。该 unknown failed 行即持久化冷却墓碑。
+
+墓碑查询、响应和新旧 key 规则统一使用服务层派生 `cooldown_until`：OTP=`expires_at`，test=`submitted_at + 10分钟`；
+`cooldown_until` 不新增数据库列。每次新外呼必须先取得 Redis 锁，再按同 scope 与 `cooldown_until` 查询仍在冷却期的 pending 或 `provider_outcome_unknown` failed 行；命中即阻断，
+Redis 重启或锁 key 丢失也不能绕过。原未知请求返回 `502/51002「供应商响应未知，请在验证码过期后重试」`；同一旧
+Idempotency-Key 重放原 502/51002 且 `idempotent=true`。墓碑期内新 key 返回
+`409/40900「邮件发送结果确认中，请在验证码过期后重试」`，Adapter 调用增量为 0。`cooldown_until` 到期后仅新 key 可重新发送，
+旧 key 仍重放原失败。条件更新影响行数非 1 时读取已有终态并返回，不覆盖终态且产生告警。
+
+发送日志列表使用 D-95，支持 `scene`、`purpose`（otp/test）、`status`（accepted/failed）、`template_id`、时间范围、分页；pending 仅为数据库内部幂等状态，筛选 pending 返回 400/40000且列表永不公开。
+单条字段和可空性固定为：`id:integer`、`scene:string`、`purpose:otp|test`、`recipient_masked:string`、
+`template_id:integer`、`provider_template_id:string`（DirectMail TemplateId）、`business_request_no:string`、
+`provider_request_id:string|null`（阿里云 RequestId）、`status:accepted|failed`、`failure_reason:string|null`、
+`submitted_at:string`。accepted 时 provider_request_id 非空且 failure_reason 为 null；failed 时 failure_reason 非空，
+provider_request_id 可为 null。不返回验证码、完整邮箱、模板变量、AccessKey 或供应商原始响应。
+
+`accepted` 只代表阿里云同步受理，成功文案固定为“供应商已受理发送请求”，严禁显示为“已送达”。当前范围不提供投递回执 Webhook、最终送达状态、
+打开率或点击率字段，也不提供相关写接口或统计接口。
+
+#### 3.19.7 所有邮件发送的前置条件
+
+正式 OTP 和后台测试邮件均必须逐项满足：
+
+1. 场景属于固定五场景，且调用端点与场景认证级别匹配；
+2. 生产环境只能使用生产 DirectMail Adapter，Mock Adapter 仅允许显式非生产环境；
+3. DirectMail 凭据、Region、发信地址已通过安全配置注入，凭据非空；
+4. 正式 OTP 的场景绑定存在且 `enabled=true`；后台模板测试的路径模板存在；两类模板都必须 approved、local_enabled=true、missing=false；
+5. 正式 OTP 的 `TemplateId` 从绑定关系解析，模板测试的 `TemplateId` 从路径镜像 ID 解析；两者只用于绑定、日志和追踪。同步变量必须同时含 Code/ExpireMinutes，发送前从镜像 `TemplateText` 本地固定渲染 `HtmlBody`，禁止硬编码、由请求覆盖或向 `SingleSendMail` 发送 `Template.*` 参数；
+6. 正式 OTP 收件人必须来自当前认证流程已经校验的目标；后台测试收件人必须命中测试邮箱白名单；
+7. 通过既有验证码限流与场景前置校验，10 分钟有效期和一次性消费规则不变；
+8. 以上模板/变量/收件人前置条件全部通过后，正式 OTP 才持久化验证码并写 `send_status=pending`，再调用供应商；只有明确受理才原子置 accepted 并写 accepted 日志，其他供应商结果原子置 failed 并写 failed 日志；前置失败不创建验证码或发送日志；
+9. 幂等键与请求指纹校验通过，不得重复发信或重复生成可用验证码；
+10. 审计和应用日志执行脱敏，任何失败均不得泄露供应商凭据或原始响应。
+
+DirectMail RAM 最小权限严格只允许 `dm:SingleSendMail`、`dm:QueryTemplateByParam`、`dm:DescTemplate`。
+后台测试发送与正式 OTP 共用 `dm:SingleSendMail`，不得依赖其他测试发送 action。QA 必须覆盖三个允许 action 分别被显式
+`Deny` 时的失败行为，并验证 `dm:CreateTemplate`、`dm:ModifyTemplate`、`dm:DeleteTemplate` 均未授权且应用不调用：
+供应商授权或调用失败统一返回 `502/51002「邮件上游调用失败」`，本地绑定和模板镜像不被污染、
+验证码保持不可用、无任何敏感信息出现在响应或日志中。平台侧缺少上述四个邮件权限码仍返回 `403 40003`；
+生产 Adapter 或必要配置未就绪返回 `503/51003`；缺少模板变量返回 `422/51001`；参数、非法场景或测试邮箱未命中白名单返回 `400/40000`。
+
+发送前置失败契约固定如下；除 accepted 的首次外呼外，所有行的 Adapter `send_mail` 调用次数增量必须为 0：
+
+| 条件 | HTTP/code | message |
+|---|---|---|
+| 路径模板或邮件资源不存在 | `404/40400` | `邮件资源不存在` |
+| 场景无绑定 | `409/40900` | `邮件场景未绑定模板` |
+| 绑定 `enabled=false` | `409/40900` | `邮件场景已停用` |
+| 模板本地停用 | `409/40900` | `邮件模板已停用` |
+| 模板 draft | `409/40900` | `邮件模板尚未提交审核` |
+| 模板 pending | `409/40900` | `邮件模板正在审核` |
+| 模板 rejected | `409/40900` | `邮件模板审核未通过` |
+| 模板 missing | `409/40900` | `邮件模板在供应商侧不存在` |
+| 变量缺失 | `422/51001` | `邮件模板变量不完整` |
+| 未取得 Redis 锁、外呼前丢锁，或生产 Adapter/必要配置未就绪 | `503/51003` | `邮件发送服务未就绪` |
+
+资源不存在统一使用 `404/40400`，不得使用 `40004`。管理员未完成手机+邮箱 MFA 固定返回
+`403/40003「请先完成管理员双重认证」`。验证码同时执行 10 次/分钟/IP 与 10 次/分钟/账号限制；公开邮箱账号键为
+规范化邮箱 HMAC，换绑和管理员验证分别按 user_id/admin_id，任一超限返回 `429/42900「请求频率超限」`。
+
+可观测性要求：Adapter 每次调用递增 `email_adapter_calls_total{operation,scene,result}`，label 不含任何敏感值；
+前置拒绝和幂等重放前后调用计数不变。审计 attempt 失败不执行动作，result 失败以及 Redis 锁所有权异常必须告警。
+敏感扫描固定覆盖 HTTP 响应、应用/集中日志、audit_logs、邮件表与 verification_codes、指标/trace/event、前端 console/埋点/持久缓存；
+不得出现完整邮箱、OTP、AccessKey、TemplateData、锁 token 或供应商原始响应。
+
+### 3.19.12 首次配置 `admin_verify` 的一次性内部 bootstrap delta
+
+000055 将五个邮件场景初始化为未绑定且停用；普通 13 个 `/api/admin/email/*` 接口又全部要求管理员手机与邮箱 MFA。由于管理员邮箱 MFA 发码本身依赖已经启用的 `admin_verify` 场景，首次配置必须通过以下一次性内部运维入口完成。该入口只建立投递通道，不完成邮箱 MFA、不写 `admin_email_verified_at`、不签发 Token，也不发送测试或正式邮件。
+
+```text
+POST /api/internal/email/bootstrap/admin-verify
+Authorization: Bearer <管理员 Access Token>
+X-Email-Bootstrap-Token: <独立一次性运维 Token>
+Idempotency-Key: <本次操作唯一键>
+Content-Type: application/json
+
+{"provider_template_id":"<精确 DirectMail TemplateId>"}
+```
+
+**注册与网络边界：**
+
+- 四个配置键固定为：`EMAIL_ADMIN_VERIFY_BOOTSTRAP_ENABLED`、`EMAIL_ADMIN_VERIFY_BOOTSTRAP_TOKEN`、`EMAIL_ADMIN_VERIFY_BOOTSTRAP_ALLOWED_IPS`、`EMAIL_ADMIN_VERIFY_BOOTSTRAP_TRUSTED_PROXY_IPS`，不得增加隐式回退别名。
+- `EMAIL_ADMIN_VERIFY_BOOTSTRAP_ENABLED` 仅键缺失时默认 false；显式 false 时全方法404。显式空字符串及除字面 true/false 外的任何值均启动失败。
+- enabled=true 时，Token、allowed CIDR、trusted proxy CIDR 三项都必须显式非空且合法，任一缺失、空值、弱占位、低多样性或解析失败均使应用启动失败，不能只让 ready 降级后继续承载流量。trusted proxy 采用显式空列表字符串不合法；直连部署必须填入不会命中实际来源的已批准 CIDR，不能通过缺省表达。
+- Bootstrap Token 复用 `INTERNAL_API_TOKEN` 的客观安全校验基线和常量时间比较实现，但不复用配置值：按原始 UTF-8 字节校验，至少 32 字节、无首尾空白，大小写不敏感拒绝空值、`REPLACE_WITH_EMAIL_BOOTSTRAP_TOKEN`、`REPLACE_WITH_INTERNAL_API_TOKEN`、`CHANGE_ME`、`CHANGEME`、`DEFAULT`、`SECRET`、`TEST`，且原始值至少包含 8 种不同字节；低于 8 种视为低多样性并启动失败。部署值必须由 CSPRNG 生成至少 32 个随机字节后编码。当 `INTERNAL_API_TOKEN` 同时配置时，Bootstrap Token 与其原始字节完全相等也必须启动失败；比较过程不得记录任一值。
+- 三项 bootstrap 安全配置使用独立键，禁止从 `INTERNAL_API_TOKEN`、`INTERNAL_ALLOWED_IPS`、`INTERNAL_TRUSTED_PROXY_IPS` 或 `TRUSTED_PROXY_IPS` 隐式读取、合并或回退。Bootstrap CIDR 与平台既有 INTERNAL/TRUSTED 列表独立显式配置后允许条目同值或部分重叠，同一 Nginx 可信代理网段可按不同端点需要分别写入。allowed/trusted proxy 均为逗号分隔、无空项的精确 IP 或 CIDR；任何解析后前缀长度为 0 的 IPv4/IPv6 网段（包括 `0.0.0.0/0`、`::/0` 及等价写法）一律启动失败。Bootstrap allowed 与 bootstrap trusted-proxy 两个列表之间若存在规范化后完全相同的 CIDR 条目必须启动失败；不同前缀仅部分重叠允许。还必须分别计算两个列表各自的规范化 CIDR 地址并集；任一列表的并集覆盖完整 IPv4 或 IPv6 地址族也必须启动失败，例如 `0.0.0.0/1,128.0.0.0/1` 或 `::/1,8000::/1`。两个不同语义列表之间不合并计算全地址族并集。非 trusted 连接只信任 `RemoteAddr`；trusted 连接只信任代理覆盖的恰好一个合法单值 `X-Real-IP`。应用永不读取 `X-Forwarded-For`。Token 或来源任一失败统一返回 `403/40003「无权限」`，无数据库、审计、锁或 Adapter 副作用。
+- 反向代理不得把本路径暴露给公网或浏览器；仅批准的运维网络可达。成功后必须移除 enabled/token 配置并重启，确认路径恢复 404。
+
+**身份与最小权限：**
+
+- 在独立 Token 与来源双闸之后，仍必须校验正常管理员 JWT、账号有效、当前用户直接关联唯一 code=`admin` 角色、当前手机 MFA 有效，以及 `email:template:bootstrap` 专用权限。仅通过角色/分组/用户动态 allow override 获得该权限、但不直接关联 admin 角色的普通用户仍固定返回 `403/40003「无权限」`。该权限仅授权本入口，不隐含 view/manage/sync/test，也不能用于普通 13 个邮件接口。
+- `ADMIN_VERIFY_EXPIRE_HOURS<0` 属于非法安全配置，无论 bootstrap 是否启用都必须使应用启动失败；`=0` 明确定义为永不过期。手机 MFA 以 users 当前值为真相源：`admin_phone_verified_at` 必须非空且不得晚于当前数据库 UTC 时间；未来时间即使 `ADMIN_VERIFY_EXPIRE_HOURS=0` 也失败关闭。`ADMIN_VERIFY_EXPIRE_HOURS>0` 时还要求该时间仍在有效窗口内。缺失、未来时间和恰好到达过期边界都视为无效，返回 `403/40003「请先完成手机号认证」`，且 attempt 审计、Adapter 与数据库增量均为 0。
+- 邮箱 MFA 缺失是本入口允许修复的唯一认证缺口；手机 MFA 缺失或过期固定拒绝。入口不得接受 user_id、scene、enabled、变量映射、邮箱、验证码、模板正文或任何 MFA 时间戳。
+- enabled=true 时只允许 POST；同路径其他方法返回 `405/40000「请求方法不允许」` 并带 `Allow: POST`。`Content-Type` 经标准媒体类型解析后必须为 `application/json`，charset 只允许缺省或 `utf-8`；否则返回 `415/40000「请求参数错误」`。
+- `Authorization` 按既有 Bearer JWT 中间件处理：缺失、空、重复/逗号多值或格式错误均走标准 401 契约。`X-Email-Bootstrap-Token` 缺失、空、重复、逗号多值或常量时间比较不匹配，统一返回 `403/40003「无权限」`，不得转成 400。`Idempotency-Key` 必须恰好一个值，缺失、空、重复或逗号多值均返回 `400/40000「请求参数错误」`；其原始 UTF-8 值必须为 16-128 字节、无首尾空白或控制字符。
+- Body 上限 4 KiB，必须是单个 JSON 对象且只含一个 `provider_template_id`；该值必须是 1-64 字节的 ASCII 十进制正整数，并按原字节传给供应商。空值、全零、65 字节及以上、非数字、正负号、小数、指数表示、首尾或内部空白、控制字符、Body 缺失/超限、额外字段、重复键、尾随 JSON 均返回 `400/40000「请求参数错误」`，且必须在 attempt 审计、Adapter 和数据库之前拒绝，三者增量均为 0。
+
+**供应商校验与原子写入：**
+
+0. 以 `EMAIL_IDEMPOTENCY_SECRET` 计算包含 admin_id 与原始 key 的 HMAC，并计算覆盖 admin_id、method、path、scope、provider_template_id 的 fingerprint。仅 key hash、fingerprint、completed_by 当前admin 三者匹配才重放；跨admin或指纹不同返回409且不泄露操作者。
+1. 若尚无 receipt，先成功写入 fail-closed 的 `email.admin_verify.bootstrap.attempt` 审计，之后才允许调用一次 Adapter `DescribeTemplate(provider_template_id)`（供应商 API 名为 DescTemplate）；attempt 写入失败返回 `500/50000「系统内部错误」`，Adapter `describe_template` 增量必须为 0。不同 Idempotency-Key 的首次并发请求允许各自完成这一只读 Describe；并发控制只在后续数据库写事务执行。
+2. 阿里云官方 DescTemplate 响应字段为 `TemplateName`、`TemplateStatus`、`TemplateText`；现有 Adapter 把 JSON `TemplateName` 精确映射为 `ProviderTemplate.Name`、把 `TemplateStatus` 归一化为 `ProviderTemplate.Status`，并从 `TemplateText` 提取变量。官方字段定义见 [阿里云 DirectMail DescTemplate](https://help.aliyun.com/en/direct-mail/api-dm-2015-11-23-desctemplate)。
+3. `ProviderTemplate.Name` 必须按 UTF-8 字节、大小写精确等于 `molin_admin_verify_code_v1`，不得 trim、折叠大小写或用 Subject/Text 替代名称校验；Status 必须为 `approved`（官方 `TemplateStatus=2`），模板变量必须包含大小写精确的 `Code` 与 `ExpireMinutes`。资格判断只以上述三个客观条件为准，不接受调用方自定义映射。
+4. Describe 校验通过后开启单个数据库事务，先以 `SELECT ... FOR UPDATE` 锁定唯一 `email_scene_bindings.scene='admin_verify'` 行，再在事务内复查 receipt。绑定行必须仍满足 `template_id IS NULL AND enabled=0 AND version=1`；随后 upsert 精确模板镜像并置 `local_enabled=true`、以带相同初始条件的 UPDATE CAS 更新绑定、插入 scope 唯一的 000056 成功 receipt，并写 `email.admin_verify.bootstrap.result` 成功审计。result 审计的 `target_type` 固定为 `email_admin_verify_bootstrap_receipt`，`target_id` 固定为本事务新建 receipt 的内部十进制 ID，不得使用供应商 TemplateId、管理员 ID 或 scene 代替。任一步失败整事务回滚；result 审计失败返回 `500/50000「系统内部错误」`，不能留下已生效动作。
+5. 不同 key 可重复Describe但仅一个提交。同admin同key同fingerprint首次并发的第二个即使已Describe，行锁后匹配receipt也返回原成功且idempotent=true。跨admin同key固定409/40900已完成且不泄露操作者。普通13接口不变。
+6. 成功只返回 `{scene:"admin_verify",configured:true,idempotent:false}`；不得返回模板正文、供应商原始响应、Token、邮箱、OTP 或 MFA 状态。相同 Idempotency-Key 和相同 fingerprint 重放返回原成功语义且 `idempotent=true`，不再 Describe；同 key 不同 fingerprint 返回 `409/40900「数据冲突，请刷新后重试」`。
+
+`DescribeTemplate` 每次实际调用都复用既有指标 `email_adapter_calls_total{operation="describe_template",scene="template_sync",result}` 并按 accepted/failed/timeout 递增一次，不新增 bootstrap scene、operation 或任何新时间序列；前置拒绝、receipt 预检冲突、attempt 审计失败和幂等重放增量均为 0。
+
+**精确错误契约：**
+
+| 条件 | HTTP/code | message |
+|---|---|---|
+| 无 Authorization | `401/40001` | `未登录` |
+| JWT 无效或过期 | `401/40001` | `token 无效或已过期` |
+| JWT 已吊销 | `401/40001` | `token 已失效，请重新登录` |
+| 账号已封禁 | `401/40101` | `账号已被封禁` |
+| bootstrap Token 缺失/空/重复/逗号多值/错误，来源失败，无专用权限，或非 admin 普通用户仅动态获权 | `403/40003` | `无权限` |
+| 手机 MFA 未完成或过期 | `403/40003` | `请先完成手机号认证` |
+| 严格 Header/Body/Content-Type 失败 | 见上文 `400` 或 `415`/`40000` | `请求参数错误` |
+| 供应商确认模板不存在 | `404/40400` | `邮件资源不存在` |
+| Name 不精确匹配 | `409/40900` | `邮件模板名称不符合管理员认证约定` |
+| Status=draft/pending/rejected | `409/40900` | 分别为 `邮件模板尚未提交审核` / `邮件模板正在审核` / `邮件模板审核未通过` |
+| Status 未知或非 approved | `409/40900` | `邮件模板状态不允许首次配置` |
+| 缺 Code 或 ExpireMinutes | `422/51001` | `邮件模板变量不完整` |
+| DirectMail/RAM/网络明确失败 | `502/51002` | `邮件上游调用失败` |
+| DirectMail 超时或结果未知 | `502/51002` | `供应商响应未知，请稍后重试` |
+| binding CAS/receipt/幂等冲突 | `409/40900` | 对应上文冻结文案 |
+| attempt/result 审计或数据库内部失败 | `500/50000` | `系统内部错误` |
+
+`email_admin_verify_bootstrap_receipts` 已存在成功记录时，任何新 key 或不同操作者均固定返回 `409/40900「管理员邮箱认证场景已完成首次配置」`，不得再次调用供应商或改写绑定。失败尝试只进入审计，不写成功 receipt，修复可重试。成功后管理员必须继续走既有“手机发码与校验 → 邮箱发码与校验”流程，完整 MFA 生效后才能访问普通 13 个邮件管理接口。
+
+**普通接口与权限文案保持冻结：**
+
+- 现有 13 个 `/api/admin/email/*` 的路径、Body、四个既有权限和完整 MFA 要求全部不变，不得把 bootstrap 条件分支加入普通同步或场景绑定接口。
+- 邮件管理权限不足固定为 `403/40003「无权限」`。实现应使用邮件专用权限包装器，不直接改变全局 `RequirePerm` 的历史 `「无操作权限」` 文案，避免影响 auth/iam/identity 及其他管理接口。
+
+**000056 与回滚：**
+
+000056 新增 `email:template:bootstrap` 权限（精确元数据：name=`首次配置管理员邮箱认证模板`、resource=`email_template`、action=`bootstrap`）、admin 角色精确绑定、`migration_000056_permission_ownership` 和 `email_admin_verify_bootstrap_receipts`。执行前要求 code=`admin` 的角色恰好一行；0 行或多行均失败关闭。预存同名权限只有元数据完全一致才可复用，预存 admin 绑定也可复用；ownership 必须在创建前记录预存/新增状态，并在创建后回填最终 ID。
+
+`migration_000056_permission_ownership` 精确复用 000055 ownership 结构：`permission_code VARCHAR(191)` 主键、可空且唯一的 `permission_id BIGINT UNSIGNED`、布尔 `permission_created`、可空且唯一的 `admin_role_permission_id BIGINT UNSIGNED`、布尔 `admin_binding_created`、`created_at DATETIME`；不加外键，且只允许一行 `email:template:bootstrap`。000056 不修改或复用 `migration_000055_permission_ownership`。
+
+000056 可使用 migration-only 临时断言表 `migration_000056_assertions`：`assertion_name VARCHAR(191)` 主键、`passed TINYINT(1)` 非空且 CHECK 固定等于 1。up/down 入口均要求该表不存在，成功结尾必须删除；partial 失败遗留该表时，它只作为断点证据，禁止直接删除后重跑。
+
+up 前 receipt/000056 ownership 两表都必须不存在；任一同名表、权限元数据冲突或 admin 多行立即失败。MySQL DDL 隐式提交，因此 partial-up 不得盲目重跑：按 information_schema、权限、绑定和 ownership 逐项判断断点，优先从已验证备份恢复；选择前向修复时只能补齐缺失对象并重新执行全部写后断言。partial-down 同样先核对 receipt、ownership 和引用，任何未知中间态失败关闭。
+
+down 的第一道断言是 receipt 行数必须为 0。随后仅当 `admin_binding_created=1` 才删除记录的精确 admin role_permission，仅当 `permission_created=1` 且不存在其他 role_permissions、user_permission_overrides、group_permissions 引用时才删除权限；预存权限/绑定必须保留。写后断言通过才删除 receipt 空表和 000056 ownership。成功 receipt 是安全凭据：一旦存在，常规 down 必须在任何删除前失败关闭。应用回滚应关闭 bootstrap 配置并保留 schema 56 与 receipt；如确需移除，必须另行审批、备份恢复验证和不可变审计留存，禁止 migration `force` 绕过。
+
+### 3.19.13 公开邮件发码来源 IP（Phase 1 delta，待 QA/PM 签署）
+
+本节适用于公开邮件验证码端点的 IP 限流与安全判定。新增全局 `TRUSTED_PROXY_IPS`，仅描述面向公开流量的可信反向代理；它与内部 metrics 专用的 `INTERNAL_TRUSTED_PROXY_IPS` 独立配置、独立校验，禁止互相回退或合并。
+
+- `TRUSTED_PROXY_IPS` 为空是合法的直连模式：应用只使用 `RemoteAddr` 解析出的 IP，忽略所有来源 Header。
+- 非空值是逗号分隔的精确 IP 或 CIDR 列表，每项先 trim 再严格解析；拒绝空项、非法 IP/CIDR 与带 IPv6 zone 的地址。非空配置任一项非法时应用启动失败，或至少 `/api/ready` 不通过且不得承载公开邮件发码流量。
+- 每个请求先解析 `RemoteAddr`。当其不命中 `TRUSTED_PROXY_IPS`（包括列表为空）时，最终来源只能是 `RemoteAddr`；`X-Real-IP`、`X-Forwarded-For`、`Forwarded` 均不得改变结果。
+- 仅当 `RemoteAddr` 命中 trusted proxy 时，才要求并信任代理覆盖写入的恰好一个 `X-Real-IP` 单值。该值必须是无逗号的合法 IP；缺失、空值、非法值、逗号多值或重复 Header 均固定返回 `403/40003「无权限」`，不得透露具体原因。
+- 上述 trusted proxy Header 拒绝发生在限流计数与业务服务之前：不递增 IP/账号发码计数，不创建验证码或发送记录，不取得发送锁，不进入邮件服务，Adapter 调用增量固定为 0。
+- 应用永远不得把 `X-Forwarded-For` 用于安全判定。运行期间来源解析器不可用或无法执行安全判定时失败关闭，固定返回 `503/51003「邮件发送服务未就绪」`，同样不计数、不进入业务服务且 Adapter 增量为 0。
+- Nginx 只能从约定公开入口代理发码路径，必须覆盖 `X-Real-IP=$remote_addr`，删除而非透传 `X-Forwarded-For` 与 `Forwarded`，并确保其连接应用所用地址显式配置在 `TRUSTED_PROXY_IPS`。网络位置不能替代应用判定。
+
+该 delta 仅冻结契约与验收口径，尚待 QA/PM 书面签署；不代表 Go、Nginx、限流器、DirectMail 或 E2E 实现通过。
+
+### 3.20 内部邮件 Adapter 指标（Phase 1 metrics delta，待 QA/PM 复签）
+
+```text
+GET /api/internal/metrics
+```
+
+本端点仅供监控系统从内部监控网络抓取，不是用户端或管理端业务 API。QA 阻断修订已落档，当前待 QA/PM 复签；未验收 Go、反向代理、监控系统或端到端实现。
+
+**请求与响应：**
+
+- 只允许 `GET`。包括 `HEAD` 在内的其他方法统一返回 HTTP 405，并带 `Allow: GET`；不得把其他方法降级为 GET。
+- 成功固定返回 HTTP 200、Prometheus text exposition format 0.0.4，`Content-Type: text/plain; version=0.0.4; charset=utf-8`，同时返回 `Cache-Control: no-store` 与 `X-Content-Type-Options: nosniff`。
+- 请求必须同时通过 Token 与来源 IP 两道不可降级的安全闸，任一失败固定返回 `403/40003「无权限」`，不得暴露具体失败原因或配置状态。
+- `INTERNAL_API_TOKEN` 按原始 UTF-8 字节校验，不做 trim：值不得含首尾空白，编码后至少 32 字节，并以大小写不敏感方式拒绝空值、`REPLACE_WITH_INTERNAL_API_TOKEN`、`CHANGE_ME`、`CHANGEME`、`DEFAULT`、`SECRET`、`TEST`。部署应由 CSPRNG 生成至少 32 个随机字节后再编码为 base64 或 hex，通过安全渠道注入。请求头 `X-Internal-Token` 与配置值按原始字节做常量时间比较；Token 不得写入应用日志、访问日志、审计、指标或错误响应。
+- `INTERNAL_ALLOWED_IPS` 与 `INTERNAL_TRUSTED_PROXY_IPS` 都必须为非空的逗号分隔列表；每项 trim 后只能解析为精确 IP 或 CIDR。任一空项、非法项或整个列表为空，metrics 端点均失败关闭，不得承载抓取流量。
+- 来源 IP 真相首先来自 `RemoteAddr` 解析出的 IP。仅当 `RemoteAddr` 命中 `INTERNAL_TRUSTED_PROXY_IPS` 时，才要求并信任由代理覆盖写入的恰好一个 `X-Real-IP` 单值，且该值必须是合法 IP；缺失、空值、多值或非法值均返回 `403/40003「无权限」`。非可信代理或直连请求始终只用 `RemoteAddr` 与 `INTERNAL_ALLOWED_IPS` 匹配，任何 `X-Real-IP`、`X-Forwarded-For` 或 `Forwarded` 都不能改变结果。应用永远不得读取 `X-Forwarded-For`。
+- 三项配置缺失、为空或非法时不得放宽为匿名、本机默认、可信代理豁免或仅单闸访问；部署就绪检查应阻止错误配置承载监控流量。
+
+**唯一允许输出的指标族：**
+
+```text
+email_adapter_calls_total{operation="...",scene="...",result="..."}
+```
+
+- `operation` 只允许 `query_templates`、`describe_template`、`send_mail`。
+- `query_templates` 与 `describe_template` 的 `scene` 只能是 `template_sync`；`send_mail` 的 `scene` 只能是 `register`、`login`、`reset_password`、`bind_email`、`admin_verify`。
+- `result` 只允许 `accepted`、`failed`、`timeout`。上述 operation/scene 合法配对与三个 result 构成封闭的 21 个时间序列；进程启动后即全部输出，未发生调用的序列值为 0。
+- 指标是进程内单调递增计数器；同一进程生命周期内不得递减，进程重启允许重置为 0，不承诺跨重启持久化。
+- 禁止增加邮箱、邮箱 HMAC、OTP、用户/管理员 ID、请求 ID、业务请求号、供应商 RequestId、TemplateId、错误原文、IP、Token 或其他高基数/敏感 label。
+- 当前端点不得输出 Go runtime、process、HTTP、数据库、Redis 或其他任何指标族；输出中只能出现 `email_adapter_calls_total` 的 HELP/TYPE 元数据与上述封闭样本。
+
+**反向代理边界：** 反向代理只能从专用监控网络暴露该路径，必须删除 `X-Forwarded-For` 与 `Forwarded`，并覆盖而非追加 `X-Real-IP` 为代理直接看到的单一客户端 IP；代理自身地址必须显式位于 `INTERNAL_TRUSTED_PROXY_IPS`。网络隔离只是附加防护，应用层 Token 与来源 IP 双闸必须始终执行，禁止因请求来自内网、回环地址或反向代理而绕过任一安全闸。
 
 ## 4. 商品、订单、钱包和计费接口
 

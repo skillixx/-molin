@@ -22,6 +22,7 @@
 - 角色、权限、用户角色、用户动态权限覆盖。
 - 权限计算、权限 Redis 缓存和缓存失效。
 - 审计日志写入与查询。
+- DirectMail `admin_verify` 一次性内部 bootstrap 的后端实现，以及配套 000056 up/down、专用权限 seed、ownership 和成功 receipt 安全凭据。
 
 ## 不负责
 
@@ -48,6 +49,7 @@
 - 权限变更后必须让权限缓存失效。
 - 新增权限码必须提供 seed migration。
 - 接口字段变更必须同步 `docs/full-api-design.md` 和前端对接文档。
+- 000056 仅按 `docs/team-task-assignment.md` 的 DirectMail bootstrap 专项授权实施；开始业务实现前必须同步 auth 模块 `CLAUDE.md`，涉及 IAM seed 说明时同步 iam 模块 `CLAUDE.md`，不得据此修改无关 migration。
 
 ## 交付物
 
