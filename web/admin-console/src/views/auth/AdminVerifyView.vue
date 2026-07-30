@@ -35,7 +35,7 @@
             <el-button
               class="action-btn"
               :loading="sendingPhone"
-              :disabled="phoneCountdown > 0"
+              :disabled="sendingVerificationCode || phoneCountdown > 0"
               @click="handleSendPhoneCode"
             >
               {{ phoneCountdown > 0 ? `重新发送（${phoneCountdown}s）` : '发送验证码' }}
@@ -54,6 +54,7 @@
               placeholder="请输入手机收到的验证码"
               class="code-input"
               maxlength="6"
+              inputmode="numeric"
               clearable
               @keydown.enter="handleVerifyPhone"
             />
@@ -62,6 +63,7 @@
               <el-button
                 class="action-btn"
                 :loading="verifyingPhone"
+                :disabled="!isSixDigitVerificationCode(phoneCode)"
                 @click="handleVerifyPhone"
               >
                 验证
@@ -82,7 +84,7 @@
             <el-button
               class="action-btn"
               :loading="sendingEmail"
-              :disabled="emailCountdown > 0"
+              :disabled="sendingVerificationCode || emailCountdown > 0"
               @click="handleSendEmailCode"
             >
               {{ emailCountdown > 0 ? `重新发送（${emailCountdown}s）` : '发送验证码' }}
@@ -101,6 +103,7 @@
               placeholder="请输入邮箱收到的验证码"
               class="code-input"
               maxlength="6"
+              inputmode="numeric"
               clearable
               @keydown.enter="handleVerifyEmail"
             />
@@ -109,6 +112,7 @@
               <el-button
                 class="action-btn"
                 :loading="verifyingEmail"
+                :disabled="!isSixDigitVerificationCode(emailCode)"
                 @click="handleVerifyEmail"
               >
                 验证
@@ -153,6 +157,7 @@ import {
 } from '@element-plus/icons-vue'
 import { sendAdminVerificationCode, adminVerifyPhone, adminVerifyEmail } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
+import { isSixDigitVerificationCode } from './admin-verification-policy'
 
 const router = useRouter()
 const route = useRoute()
@@ -172,6 +177,8 @@ const emailCode = ref('')
 const sendingEmail = ref(false)
 const verifyingEmail = ref(false)
 const emailCountdown = ref(0)
+// 两个发码端点共享互斥状态，避免快速点击或异步状态切换造成并发发送。
+const sendingVerificationCode = computed(() => sendingPhone.value || sendingEmail.value)
 
 // 倒计时定时器
 let phoneTimer: ReturnType<typeof setInterval> | null = null
@@ -220,6 +227,7 @@ function startEmailCountdown() {
 
 /** Step 0：发送手机验证码（D-96：改用 admin 专属发码端点，不传 target/scene）*/
 async function handleSendPhoneCode() {
+  if (sendingVerificationCode.value) return
   sendingPhone.value = true
   try {
     await sendAdminVerificationCode('phone')
@@ -235,8 +243,8 @@ async function handleSendPhoneCode() {
 
 /** Step 1：验证手机验证码 */
 async function handleVerifyPhone() {
-  if (!phoneCode.value) {
-    ElMessage.warning('请输入验证码')
+  if (!isSixDigitVerificationCode(phoneCode.value)) {
+    ElMessage.warning('请输入 6 位数字验证码')
     return
   }
   verifyingPhone.value = true
@@ -254,6 +262,7 @@ async function handleVerifyPhone() {
 
 /** Step 2：发送邮箱验证码（D-96：改用 admin 专属发码端点，不传 target/scene）*/
 async function handleSendEmailCode() {
+  if (sendingVerificationCode.value) return
   sendingEmail.value = true
   try {
     await sendAdminVerificationCode('email')
@@ -269,8 +278,8 @@ async function handleSendEmailCode() {
 
 /** Step 3：验证邮箱验证码 */
 async function handleVerifyEmail() {
-  if (!emailCode.value) {
-    ElMessage.warning('请输入验证码')
+  if (!isSixDigitVerificationCode(emailCode.value)) {
+    ElMessage.warning('请输入 6 位数字验证码')
     return
   }
   verifyingEmail.value = true
@@ -293,22 +302,18 @@ async function handleVerifyEmail() {
 
 /** 统一错误处理 */
 function handleApiError(err: unknown, type: 'phone' | 'email') {
-  // http 拦截器已处理通用错误，这里处理特定业务码
+  // HTTP 拦截器已经统一显示服务端安全文案，此处只处理页面状态副作用，避免同一错误重复弹窗。
   const code = (err as { response?: { data?: { code?: number } } })?.response?.data?.code
-  if (code === 40000) {
-    ElMessage.error('验证码错误，请重新输入')
-  } else if (code === 40003) {
-    ElMessage.error('您没有管理员权限')
+  if (code === 40003) {
     router.push('/login')
   } else if (code === 42900) {
-    ElMessage.error('发送太频繁，请稍后重试')
+    // 触发服务端限流后同步启动本地倒计时，避免用户在冷却期内重复点击。
     if (type === 'phone') {
       startPhoneCountdown()
     } else {
       startEmailCountdown()
     }
   }
-  // 其他错误由 http 拦截器统一处理（ElMessage.error）
 }
 
 // 组件卸载时清理定时器

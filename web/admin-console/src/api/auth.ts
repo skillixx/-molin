@@ -18,8 +18,7 @@ export function refreshToken(params: { refresh_token: string }) {
 }
 
 /** 退出登录（吊销当前 session） */
-export function logout() {
-  const refreshToken = localStorage.getItem('refresh_token')
+export function logout(refreshToken?: string) {
   return http.post<unknown, null>('/auth/logout', refreshToken ? { refresh_token: refreshToken } : {})
 }
 
@@ -56,7 +55,8 @@ export function sendVerificationCode(
  * 需要 Bearer Token + user:manage 权限，固定用于 admin_verify 场景，无需传 scene 字段
  */
 export function sendAdminVerificationCode(targetType: 'phone' | 'email') {
-  return http.post<unknown, null>(`/admin/auth/verification-codes/${targetType}`, {})
+  // 后端对管理员发码接口执行严格空 Body 校验，空对象也会被视为非法请求参数。
+  return http.post<unknown, null>(`/admin/auth/verification-codes/${targetType}`, undefined)
 }
 
 /** 管理员手机双重认证（需先调用 sendAdminVerificationCode('phone') 发码）*/

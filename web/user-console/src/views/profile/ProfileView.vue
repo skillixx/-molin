@@ -22,6 +22,15 @@ import {
 
 const authStore = useAuthStore()
 
+// D-93 登录响应只含脱敏摘要；进入个人中心时补拉完整资料，确保用户名和创建时间真实可用。
+onMounted(async () => {
+  try {
+    await authStore.fetchMe()
+  } catch (error: unknown) {
+    ElMessage.error(getErrorMessage(error, '个人资料加载失败，请稍后重试'))
+  }
+})
+
 // =================== 实名状态映射 ===================
 
 // 实名状态映射，type 值对齐 el-tag 的 type 属性
@@ -163,7 +172,13 @@ const emailForm = reactive({ email: '', code: '' })
 const emailCountdown = ref(0)
 const emailSending = ref(false)
 const emailSubmitting = ref(false)
+const emailError = ref('')
 let emailTimer: ReturnType<typeof setInterval>
+
+// 将换绑失败原因保留在当前卡片内，便于用户修正后再次提交。
+function getErrorMessage(error: unknown, fallback: string) {
+  return (error as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback
+}
 
 const emailStep1Rules: FormRules = {
   email: [
@@ -174,17 +189,20 @@ const emailStep1Rules: FormRules = {
 const emailStep2Rules: FormRules = {
   code: [
     { required: true, message: '请输入验证码', trigger: 'blur' },
-    { len: 6, message: '验证码为6位', trigger: 'blur' },
+    { pattern: /^\d{6}$/, message: '验证码为6位数字', trigger: 'blur' },
   ],
 }
 
 async function sendEmailVerifyCode() {
-  const valid = await (emailFormRef.value?.validateField('email') as Promise<boolean>).catch(() => false)
-  if (!valid) return
+  // 在异步表单校验前先关闭重复入口，避免快速连点产生两次换绑邮件。
   if (emailCountdown.value > 0 || emailSending.value) return
 
   emailSending.value = true
   try {
+    const valid = await (emailFormRef.value?.validateField('email') as Promise<boolean>).catch(() => false)
+    if (!valid) return
+
+    emailError.value = ''
     await sendBindEmailCode(emailForm.email)
     ElMessage.success('验证码已发送至新邮箱')
     emailStep.value = 2
@@ -195,9 +213,9 @@ async function sendEmailVerifyCode() {
     }, 1000)
   } catch (err: unknown) {
     const code = (err as { response?: { data?: { code?: number } } })?.response?.data?.code
-    if (code === 42900) {
-      ElMessage.error('发送频率超限，请稍后再试')
-    }
+    const fallback = code === 42900 ? '发送频率超限，请稍后再试' : '验证码发送失败，请稍后重试'
+    emailError.value = getErrorMessage(err, fallback)
+    ElMessage.error(emailError.value)
   } finally {
     emailSending.value = false
   }
@@ -207,6 +225,7 @@ async function handleUpdateEmail() {
   const valid = await emailFormRef.value?.validate().catch(() => false)
   if (!valid) return
 
+  emailError.value = ''
   emailSubmitting.value = true
   try {
     await updateEmail({ email: emailForm.email, code: emailForm.code })
@@ -219,15 +238,16 @@ async function handleUpdateEmail() {
     await authStore.fetchMe()
   } catch (err: unknown) {
     const code = (err as { response?: { data?: { code?: number } } })?.response?.data?.code
-    if (code === 40000) {
-      ElMessage.error('验证码错误或已过期')
-    }
+    const fallback = code === 40000 ? '验证码错误或已过期' : '邮箱修改失败，请稍后重试'
+    emailError.value = getErrorMessage(err, fallback)
+    ElMessage.error(emailError.value)
   } finally {
     emailSubmitting.value = false
   }
 }
 
 function resetEmailStep() {
+  emailError.value = ''
   emailStep.value = 1
   emailForm.email = ''
   emailForm.code = ''
@@ -245,13 +265,15 @@ const passwordForm = reactive({
 })
 const passwordSubmitting = ref(false)
 
+// D-94：改密入口统一执行 6-72 位边界，避免前端规则与后端契约不一致。
 const passwordRules: FormRules = {
   old_password: [
     { required: true, message: '请输入旧密码', trigger: 'blur' },
+    { min: 6, max: 72, message: '密码长度须为6-72位', trigger: 'blur' },
   ],
   new_password: [
     { required: true, message: '请输入新密码', trigger: 'blur' },
-    { min: 8, message: '密码至少8位', trigger: 'blur' },
+    { min: 6, max: 72, message: '密码长度须为6-72位', trigger: 'blur' },
   ],
   confirm_password: [
     { required: true, message: '请确认新密码', trigger: 'blur' },
@@ -562,6 +584,10 @@ onUnmounted(() => {
             label-position="top"
             class="profile-form"
           >
+            <p v-if="emailError" class="form-error" role="alert">
+              {{ emailError }}
+            </p>
+
             <!-- Step 1：输入新邮箱 -->
             <template v-if="emailStep === 1">
               <el-form-item label="新邮箱地址" prop="email">
@@ -629,7 +655,7 @@ onUnmounted(() => {
             </span>
             <div>
               <span class="card-title">修改密码</span>
-              <p class="card-subtitle">建议使用不少于8位的高强度密码</p>
+              <p class="card-subtitle">密码长度为6-72位，建议组合使用字母、数字和符号</p>
             </div>
           </div>
           <el-form
@@ -646,6 +672,7 @@ onUnmounted(() => {
                 placeholder="请输入当前密码"
                 show-password
                 autocomplete="current-password"
+                maxlength="72"
                 size="large"
               />
             </el-form-item>
@@ -653,9 +680,10 @@ onUnmounted(() => {
               <el-input
                 v-model="passwordForm.new_password"
                 type="password"
-                placeholder="至少8位"
+                placeholder="6-72位"
                 show-password
                 autocomplete="new-password"
+                maxlength="72"
                 size="large"
               />
             </el-form-item>
@@ -666,6 +694,7 @@ onUnmounted(() => {
                 placeholder="再次输入新密码"
                 show-password
                 autocomplete="new-password"
+                maxlength="72"
                 size="large"
               />
             </el-form-item>
@@ -957,6 +986,17 @@ onUnmounted(() => {
   margin-top: 4px;
 }
 
+.form-error {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(248, 113, 113, 0.36);
+  border-radius: 8px;
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.18);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .password-form {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -981,7 +1021,7 @@ onUnmounted(() => {
 .inline-btn {
   flex-shrink: 0;
   min-width: 112px;
-  height: 40px;
+  min-height: 44px;
   background: var(--gradient-primary) !important;
   border: none !important;
   color: #fff !important;
@@ -1036,7 +1076,7 @@ onUnmounted(() => {
   flex-shrink: 0;
   min-width: 106px;
   padding: 0 12px;
-  height: 40px;
+  min-height: 44px;
   background: rgba(99, 102, 241, 0.12);
   border: 1px solid var(--color-border);
   color: var(--color-primary);
@@ -1059,7 +1099,7 @@ onUnmounted(() => {
 }
 
 :deep(.el-input__wrapper) {
-  min-height: 42px;
+  min-height: 44px;
   border-radius: 9px;
 }
 

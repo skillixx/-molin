@@ -6,10 +6,12 @@
       <el-button
         class="collapse-btn"
         text
-        @click="appStore.toggleSideMenu()"
+        :aria-label="mobile ? '打开导航菜单' : '折叠或展开侧边栏'"
+        @click="emit('toggle-menu')"
       >
         <el-icon size="18">
-          <Fold v-if="!appStore.sideMenuCollapsed" />
+          <Menu v-if="mobile" />
+          <Fold v-else-if="!appStore.sideMenuCollapsed" />
           <Expand v-else />
         </el-icon>
       </el-button>
@@ -57,13 +59,15 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
-import { User, SwitchButton, CircleCheck, Warning } from '@element-plus/icons-vue'
+import { User, SwitchButton, CircleCheck, Warning, Menu } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const appStore = useAppStore()
+defineProps<{ mobile: boolean }>()
+const emit = defineEmits<{ 'toggle-menu': [] }>()
 
 // 用户名首字母作为头像占位
 const userInitial = computed(() => {
@@ -186,5 +190,13 @@ async function handleCommand(cmd: string) {
 .arrow-icon {
   color: var(--mc-text-muted);
   font-size: 12px;
+}
+
+@media (max-width: 768px) {
+  .top-bar { padding: 0 10px; }
+  .top-bar-left { min-width: 0; gap: 6px; }
+  .page-title { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .username, .arrow-icon { display: none; }
+  .user-info { padding: 6px; }
 }
 </style>

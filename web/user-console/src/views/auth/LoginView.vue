@@ -1,15 +1,16 @@
 <script setup lang="ts">
 /**
  * 登录页
- * 支持邮箱密码登录和手机号验证码登录
+ * 支持邮箱密码、邮箱验证码和手机号验证码登录
  * 登录成功后跳转到商品市场
  */
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
+import axios from 'axios'
 import { useAuthStore } from '@/stores/auth'
-import { sendPhoneCode } from '@/api/auth'
+import { sendEmailCode, sendPhoneCode } from '@/api/auth'
 
 const router = useRouter()
 const route = useRoute()
@@ -18,8 +19,11 @@ const authStore = useAuthStore()
 // 当前 Tab
 const activeTab = ref<'email' | 'phone'>('email')
 
+// 邮箱登录方式可随时切换，密码登录入口保持不变
+const emailLoginMode = ref<'password' | 'code'>('password')
+
 // 邮箱登录表单
-const emailForm = reactive({ email: '', password: '', captcha: '' })
+const emailForm = reactive({ email: '', password: '', code: '', captcha: '' })
 
 // 手机号验证码登录表单
 const phoneForm = reactive({ phone: '', code: '', captcha: '' })
@@ -31,12 +35,17 @@ const captchaAnswer = ref(0)
 // 提交状态
 const submitting = ref(false)
 
+// 表单内状态用于覆盖正常、错误和无权限等反馈，避免只依赖瞬时消息提示
+const loginFeedback = ref<{ type: 'info' | 'error' | 'warning'; message: string } | null>(null)
+
 // 发送验证码状态
 const sendingCode = ref(false)
 
 // 60s 倒计时
-const countdown = ref(0)
-let countdownTimer: ReturnType<typeof setInterval>
+const phoneCountdown = ref(0)
+const emailCountdown = ref(0)
+let phoneCountdownTimer: ReturnType<typeof setInterval> | undefined
+let emailCountdownTimer: ReturnType<typeof setInterval> | undefined
 
 // 表单 ref
 const emailFormRef = ref<FormInstance>()
@@ -86,7 +95,15 @@ const emailRules: FormRules = {
     { required: true, message: '请输入邮箱地址', trigger: 'blur' },
     { type: 'email', message: '邮箱格式不正确', trigger: 'blur' },
   ],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+  // D-94：邮箱密码登录与服务端统一使用 6-72 位边界。
+  password: [
+    { required: true, message: '请输入密码', trigger: 'blur' },
+    { min: 6, max: 72, message: '密码长度须为6-72位', trigger: 'blur' },
+  ],
+  code: [
+    { required: true, message: '请输入验证码', trigger: 'blur' },
+    { pattern: /^\d{6}$/, message: '验证码为6位数字', trigger: 'blur' },
+  ],
   captcha: [{ validator: captchaValidator, trigger: 'blur' }],
 }
 
@@ -105,24 +122,57 @@ const phoneRules: FormRules = {
 // =================== 登录 ===================
 
 async function handleEmailLogin() {
+  if (submitting.value) return
   const valid = await emailFormRef.value?.validate().catch(() => false)
   if (!valid) return
 
   submitting.value = true
+  loginFeedback.value = { type: 'info', message: '正在验证账号信息，请稍候…' }
   try {
-    await authStore.loginWithEmail(emailForm.email, emailForm.password)
+    if (emailLoginMode.value === 'password') {
+      await authStore.loginWithEmail(emailForm.email, emailForm.password)
+    } else {
+      await authStore.loginWithEmailCode(emailForm.email, emailForm.code)
+    }
     ElMessage.success('登录成功')
     router.push(getRedirectPath())
-  } catch {
+  } catch (error) {
+    loginFeedback.value = toLoginFeedback(error)
     refreshCaptcha()
   } finally {
     submitting.value = false
   }
 }
 
+// 发送邮箱登录验证码。请求体只含 email 和固定 login 场景，不读取响应中的调试验证码。
+async function sendEmailLoginCode() {
+  if (emailCountdown.value > 0 || sendingCode.value || submitting.value) return
+
+  // 在异步表单校验前占用互斥锁，阻止快速双击同时通过校验并重复发码。
+  sendingCode.value = true
+  try {
+    const valid = await emailFormRef.value
+      ?.validateField(['email', 'captcha'])
+      .then(() => true)
+      .catch(() => false)
+    if (!valid) return
+
+    loginFeedback.value = { type: 'info', message: '正在发送邮箱验证码…' }
+    await sendEmailCode(emailForm.email, 'login')
+    loginFeedback.value = { type: 'info', message: '验证码已发送，请前往邮箱查收。' }
+    ElMessage.success('验证码已发送，请查收')
+    startCountdown(emailCountdown, 'email')
+  } catch (error) {
+    loginFeedback.value = toLoginFeedback(error)
+    refreshCaptcha()
+  } finally {
+    sendingCode.value = false
+  }
+}
+
 // 发送手机验证码（登录场景），60s 倒计时
 async function sendLoginCode() {
-  if (countdown.value > 0 || sendingCode.value) return
+  if (phoneCountdown.value > 0 || sendingCode.value || submitting.value) return
 
   // 发送前单独校验手机号格式
   const valid = await phoneFormRef.value
@@ -135,12 +185,9 @@ async function sendLoginCode() {
   try {
     await sendPhoneCode(phoneForm.phone, 'login')
     ElMessage.success('验证码已发送，请查收')
-    countdown.value = 60
-    countdownTimer = setInterval(() => {
-      countdown.value--
-      if (countdown.value <= 0) clearInterval(countdownTimer)
-    }, 1000)
-  } catch {
+    startCountdown(phoneCountdown, 'phone')
+  } catch (error) {
+    loginFeedback.value = toLoginFeedback(error)
     refreshCaptcha()
   } finally {
     sendingCode.value = false
@@ -148,23 +195,57 @@ async function sendLoginCode() {
 }
 
 async function handlePhoneLogin() {
+  if (submitting.value) return
   const valid = await phoneFormRef.value?.validate().catch(() => false)
   if (!valid) return
 
   submitting.value = true
+  loginFeedback.value = { type: 'info', message: '正在验证账号信息，请稍候…' }
   try {
     await authStore.loginWithPhone(phoneForm.phone, phoneForm.code)
     ElMessage.success('登录成功')
     router.push(getRedirectPath())
-  } catch {
+  } catch (error) {
+    loginFeedback.value = toLoginFeedback(error)
     refreshCaptcha()
   } finally {
     submitting.value = false
   }
 }
 
+function startCountdown(target: typeof emailCountdown, kind: 'email' | 'phone') {
+  target.value = 60
+  const timer = setInterval(() => {
+    target.value--
+    if (target.value <= 0) clearInterval(timer)
+  }, 1000)
+  if (kind === 'email') emailCountdownTimer = timer
+  else phoneCountdownTimer = timer
+}
+
+function switchEmailLoginMode(mode: 'password' | 'code') {
+  if (submitting.value || emailLoginMode.value === mode) return
+  emailLoginMode.value = mode
+  loginFeedback.value = null
+  emailFormRef.value?.clearValidate(['password', 'code'])
+}
+
+function toLoginFeedback(error: unknown) {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status
+    const message = error.response?.data?.message
+      || (status === 403 ? '账号已被禁用或无权访问，请联系管理员' : '登录失败，请稍后重试')
+    if (status === 403) return { type: 'warning' as const, message }
+    return { type: 'error' as const, message }
+  }
+  return { type: 'error' as const, message: '网络异常，请检查连接后重试' }
+}
+
 onMounted(createCaptcha)
-onUnmounted(() => clearInterval(countdownTimer))
+onUnmounted(() => {
+  if (phoneCountdownTimer) clearInterval(phoneCountdownTimer)
+  if (emailCountdownTimer) clearInterval(emailCountdownTimer)
+})
 
 function getRedirectPath() {
   const redirect = route.query.redirect
@@ -211,6 +292,27 @@ function getRedirectPath() {
         <el-tabs v-model="activeTab" class="auth-tabs">
           <!-- 邮箱密码登录 -->
           <el-tab-pane label="邮箱登录" name="email">
+            <div class="login-mode-switch" role="group" aria-label="邮箱登录方式">
+              <button
+                type="button"
+                :class="['mode-button', { 'mode-button--active': emailLoginMode === 'password' }]"
+                :aria-pressed="emailLoginMode === 'password'"
+                :disabled="submitting"
+                @click="switchEmailLoginMode('password')"
+              >
+                密码登录
+              </button>
+              <button
+                type="button"
+                :class="['mode-button', { 'mode-button--active': emailLoginMode === 'code' }]"
+                :aria-pressed="emailLoginMode === 'code'"
+                :disabled="submitting"
+                @click="switchEmailLoginMode('code')"
+              >
+                验证码登录
+              </button>
+            </div>
+
             <el-form
               ref="emailFormRef"
               :model="emailForm"
@@ -229,15 +331,37 @@ function getRedirectPath() {
                 />
               </el-form-item>
 
-              <el-form-item label="密码" prop="password">
+              <el-form-item v-if="emailLoginMode === 'password'" label="密码" prop="password">
                 <el-input
                   v-model="emailForm.password"
                   type="password"
                   placeholder="请输入密码"
                   show-password
                   autocomplete="current-password"
+                  maxlength="72"
                   size="large"
                 />
+              </el-form-item>
+
+              <el-form-item v-else label="邮箱验证码" prop="code">
+                <div class="code-row">
+                  <el-input
+                    v-model="emailForm.code"
+                    placeholder="请输入6位验证码"
+                    maxlength="6"
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    size="large"
+                  />
+                  <button
+                    type="button"
+                    class="code-btn"
+                    :disabled="emailCountdown > 0 || sendingCode || submitting"
+                    @click="sendEmailLoginCode"
+                  >
+                    {{ emailCountdown > 0 ? `${emailCountdown}s 后重发` : (sendingCode ? '发送中...' : '发送验证码') }}
+                  </button>
+                </div>
               </el-form-item>
 
               <el-form-item label="计算校验码" prop="captcha">
@@ -263,10 +387,11 @@ function getRedirectPath() {
               <el-form-item>
                 <button
                   class="btn-primary auth-submit"
+                  type="button"
                   :disabled="submitting"
                   @click.prevent="handleEmailLogin"
                 >
-                  {{ submitting ? '登录中...' : '登录' }}
+                  {{ submitting ? '登录中...' : (emailLoginMode === 'code' ? '验证码登录' : '密码登录') }}
                 </button>
               </el-form-item>
             </el-form>
@@ -302,11 +427,12 @@ function getRedirectPath() {
                     size="large"
                   />
                   <button
+                    type="button"
                     class="code-btn"
-                    :disabled="countdown > 0 || sendingCode"
+                    :disabled="phoneCountdown > 0 || sendingCode || submitting"
                     @click.prevent="sendLoginCode"
                   >
-                    {{ countdown > 0 ? `${countdown}s 后重发` : (sendingCode ? '发送中...' : '发送验证码') }}
+                    {{ phoneCountdown > 0 ? `${phoneCountdown}s 后重发` : (sendingCode ? '发送中...' : '发送验证码') }}
                   </button>
                 </div>
               </el-form-item>
@@ -334,6 +460,7 @@ function getRedirectPath() {
               <el-form-item>
                 <button
                   class="btn-primary auth-submit"
+                  type="button"
                   :disabled="submitting"
                   @click.prevent="handlePhoneLogin"
                 >
@@ -343,6 +470,15 @@ function getRedirectPath() {
             </el-form>
           </el-tab-pane>
         </el-tabs>
+
+        <div
+          v-if="loginFeedback"
+          :class="['login-feedback', `login-feedback--${loginFeedback.type}`]"
+          role="status"
+          aria-live="polite"
+        >
+          {{ loginFeedback.message }}
+        </div>
 
         <!-- 底部跳转 -->
         <div class="auth-footer-row">
@@ -526,6 +662,44 @@ function getRedirectPath() {
   margin-top: 18px;
 }
 
+.login-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 18px;
+  padding: 4px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.54);
+}
+
+.mode-button {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--color-text-muted);
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s, border-color 0.2s;
+}
+
+.mode-button:hover:not(:disabled) {
+  color: var(--color-text);
+  background: rgba(34, 211, 238, 0.08);
+}
+
+.mode-button--active {
+  color: var(--color-accent);
+  border-color: rgba(52, 211, 153, 0.28);
+  background: rgba(52, 211, 153, 0.1);
+}
+
+.mode-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .auth-submit {
   margin-top: 8px;
   height: 46px;
@@ -544,7 +718,7 @@ function getRedirectPath() {
 .captcha-code {
   flex-shrink: 0;
   min-width: 118px;
-  height: 42px;
+  min-height: 44px;
   border: 1px solid rgba(34, 211, 238, 0.28);
   border-radius: 8px;
   color: var(--color-accent);
@@ -580,7 +754,7 @@ function getRedirectPath() {
   flex-shrink: 0;
   min-width: 112px;
   padding: 0 14px;
-  height: 40px;
+  min-height: 44px;
   background: rgba(34, 211, 238, 0.1);
   border: 1px solid var(--color-border);
   color: var(--color-primary);
@@ -589,6 +763,29 @@ function getRedirectPath() {
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.2s, border-color 0.2s;
+}
+
+.login-feedback {
+  margin-top: 8px;
+  padding: 11px 12px;
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  border-radius: 8px;
+  color: var(--color-text-muted);
+  background: rgba(34, 211, 238, 0.07);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.login-feedback--error {
+  border-color: rgba(248, 113, 113, 0.32);
+  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.login-feedback--warning {
+  border-color: rgba(251, 191, 36, 0.32);
+  color: #fcd34d;
+  background: rgba(251, 191, 36, 0.08);
 }
 
 .code-btn:hover:not(:disabled) {
@@ -635,7 +832,7 @@ function getRedirectPath() {
 }
 
 :deep(.el-input__wrapper) {
-  min-height: 42px;
+  min-height: 44px;
   border-radius: 8px;
 }
 

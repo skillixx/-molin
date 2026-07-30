@@ -37,9 +37,15 @@ let emailTimer: ReturnType<typeof setInterval> | undefined
 const submitting = ref(false)
 const sendingPhoneCode = ref(false)
 const sendingEmailCode = ref(false)
+const formError = ref('')
 
 // 表单 ref
 const formRef = ref<FormInstance>()
+
+// 优先展示后端安全错误文案，缺失时使用当前操作的中文兜底提示。
+function getErrorMessage(error: unknown, fallback: string) {
+  return (error as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback
+}
 
 onMounted(() => {
   hydrateInviteCodeFromQuery()
@@ -142,11 +148,15 @@ async function sendPhoneVerifyCode() {
     ElMessage.warning('请输入正确的11位手机号')
     return
   }
+  formError.value = ''
   sendingPhoneCode.value = true
   try {
     await sendPhoneCode(form.phone, 'register')
     ElMessage.success('验证码已发送，请查收短信')
     startCountdown(phoneCountdown, (t) => { phoneTimer = t })
+  } catch (error: unknown) {
+    formError.value = getErrorMessage(error, '短信验证码发送失败，请稍后重试')
+    ElMessage.error(formError.value)
   } finally {
     sendingPhoneCode.value = false
   }
@@ -162,11 +172,15 @@ async function sendEmailVerifyCode() {
     ElMessage.warning('邮箱格式不正确')
     return
   }
+  formError.value = ''
   sendingEmailCode.value = true
   try {
     await sendEmailCode(form.email, 'register')
     ElMessage.success('验证码已发送，请查收邮件')
     startCountdown(emailCountdown, (t) => { emailTimer = t })
+  } catch (error: unknown) {
+    formError.value = getErrorMessage(error, '邮箱验证码发送失败，请稍后重试')
+    ElMessage.error(formError.value)
   } finally {
     sendingEmailCode.value = false
   }
@@ -178,6 +192,7 @@ async function handleRegister() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
 
+  formError.value = ''
   submitting.value = true
   try {
     const inviteCode = form.inviteCode.trim()
@@ -194,6 +209,9 @@ async function handleRegister() {
     await authStore.applyLoginResponse(tokens)
     ElMessage.success('注册成功，欢迎使用墨灵！')
     router.push('/marketplace')
+  } catch (error: unknown) {
+    formError.value = getErrorMessage(error, '注册失败，请检查填写信息后重试')
+    ElMessage.error(formError.value)
   } finally {
     submitting.value = false
   }
@@ -365,6 +383,10 @@ onUnmounted(() => {
               </div>
             </el-form-item>
           </div>
+
+          <p v-if="formError" class="form-error" role="alert">
+            {{ formError }}
+          </p>
 
           <el-form-item>
             <button
@@ -552,6 +574,17 @@ onUnmounted(() => {
   margin-top: 4px;
 }
 
+.form-error {
+  margin: 4px 0 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(248, 113, 113, 0.36);
+  border-radius: 8px;
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.18);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 /* 区块容器：手机号区块 / 邮箱区块 */
 .form-section {
   border: 1px solid var(--color-border);
@@ -589,7 +622,7 @@ onUnmounted(() => {
   flex-shrink: 0;
   min-width: 112px;
   padding: 0 14px;
-  height: 40px;
+  min-height: 44px;
   background: rgba(99, 102, 241, 0.12);
   border: 1px solid var(--color-border);
   color: var(--color-primary);
@@ -634,7 +667,7 @@ onUnmounted(() => {
 }
 
 :deep(.el-input__wrapper) {
-  min-height: 42px;
+  min-height: 44px;
   border-radius: 9px;
 }
 

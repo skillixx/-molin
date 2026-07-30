@@ -2,8 +2,14 @@
 export interface TokenPair {
   access_token: string
   refresh_token: string
-  expires_in?: number
-  user?: LoginUserSummary
+  expires_in: number
+  user: LoginUserSummary
+}
+
+// 邮箱发码稳定响应只公开发送状态和剩余有效期，生产页面不得依赖调试验证码。
+export interface VerificationCodeSendResult {
+  sent: boolean
+  expires_in: number
 }
 
 // 登录/注册/刷新响应中的用户摘要，字段少于 GET /api/me 的完整用户信息
@@ -48,6 +54,12 @@ export interface IdentityVerification {
 export interface LoginEmailBody {
   email: string
   password: string
+}
+
+// 邮箱验证码登录请求体：严格只允许邮箱和验证码两个契约字段
+export interface LoginEmailCodeBody {
+  email: string
+  code: string
 }
 
 // 手机号验证码登录请求体

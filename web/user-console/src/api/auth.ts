@@ -7,8 +7,10 @@ import type {
   TokenPair,
   User,
   LoginEmailBody,
+  LoginEmailCodeBody,
   LoginPhoneBody,
   RegisterBody,
+  VerificationCodeSendResult,
 } from '@/types/auth'
 
 // 发送邮箱验证码
@@ -16,7 +18,7 @@ export function sendEmailCode(
   email: string,
   scene: 'register' | 'login' | 'reset_password',
 ) {
-  return http.post<unknown, void>('/auth/verification-codes/email', { email, scene })
+  return http.post<unknown, VerificationCodeSendResult>('/auth/verification-codes/email', { email, scene })
 }
 
 // 发送短信验证码
@@ -34,7 +36,7 @@ export function sendBindPhoneCode(phone: string) {
 
 // 已登录用户更换邮箱前发送验证码，scene 由服务端固定为 bind_email
 export function sendBindEmailCode(email: string) {
-  return http.post<unknown, void>('/me/verification-codes/email', { email })
+  return http.post<unknown, VerificationCodeSendResult>('/me/verification-codes/email', { email })
 }
 
 // 统一注册（手机号 + 邮箱必须同时提交，需双重 OTP 验证码）
@@ -45,6 +47,11 @@ export function register(body: RegisterBody) {
 // 邮箱密码登录
 export function loginByEmail(body: LoginEmailBody) {
   return http.post<unknown, TokenPair>('/auth/login/email', body)
+}
+
+// 邮箱验证码登录，不能附带模板标识或验证码过期时间等服务端配置
+export function loginByEmailCode(body: LoginEmailCodeBody) {
+  return http.post<unknown, TokenPair>('/auth/login/email/code', body)
 }
 
 // 手机号验证码登录

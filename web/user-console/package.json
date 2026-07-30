@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5174",
     "build": "vite build",
+    "test:email-otp": "node --test tests/email-otp-contract.test.mjs",
     "preview": "vite preview --host 0.0.0.0 --port 4174",
     "type-check": "vue-tsc --noEmit",
     "lint": "eslint ."

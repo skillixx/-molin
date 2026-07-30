@@ -3,10 +3,12 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { loginByEmail, logout as apiLogout, getMe, getMePermissions, refreshToken as apiRefreshToken } from '@/api/auth'
 import type { User } from '@/types/user'
+import { clearStoredAuthTokens, readStoredAccessToken, writeStoredAccessToken } from './token-storage'
 
 export const useAuthStore = defineStore('auth', () => {
-  const accessToken = ref<string>(localStorage.getItem('access_token') ?? '')
-  const refreshToken = ref<string>(localStorage.getItem('refresh_token') ?? '')
+  const accessToken = ref<string>(readStoredAccessToken())
+  // 后端现有刷新接口要求请求体携带 refresh_token，因此仅在当前页面进程内存中保存。
+  const refreshToken = ref<string>('')
   const currentUser = ref<User | null>(null)
   const permissionCodes = ref<string[]>([])
 
@@ -23,8 +25,7 @@ export const useAuthStore = defineStore('auth', () => {
   function setTokens(access: string, refresh: string) {
     accessToken.value = access
     refreshToken.value = refresh
-    localStorage.setItem('access_token', access)
-    localStorage.setItem('refresh_token', refresh)
+    writeStoredAccessToken(access)
   }
 
   /** 仅清理本地登录态，避免在拦截器里再次触发登出请求 */
@@ -33,8 +34,7 @@ export const useAuthStore = defineStore('auth', () => {
     refreshToken.value = ''
     currentUser.value = null
     permissionCodes.value = []
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('refresh_token')
+    clearStoredAuthTokens()
     sessionStorage.removeItem('admin_verify_pending')
   }
 
@@ -54,7 +54,7 @@ export const useAuthStore = defineStore('auth', () => {
   /** 登出：调用接口吊销 session，清空本地状态 */
   async function logout() {
     try {
-      await apiLogout()
+      await apiLogout(refreshToken.value)
     } catch {
       // 忽略接口错误，直接清理本地状态
     }
@@ -86,6 +86,18 @@ export const useAuthStore = defineStore('auth', () => {
     permissionCodes.value = res.permissions ?? res.codes ?? []
   }
 
+  /** 后端判定 MFA 已失效时立即修正前端快照，避免认证页因旧 true 状态跳回原页面形成循环。 */
+  function markAdminVerificationRequired() {
+    if (currentUser.value) {
+      currentUser.value = {
+        ...currentUser.value,
+        admin_phone_verified: false,
+        admin_email_verified: false,
+      }
+    }
+    sessionStorage.setItem('admin_verify_pending', '1')
+  }
+
   /** 使用 refresh_token 静默刷新 access_token */
   async function refreshAccessToken() {
     if (!refreshToken.value) throw new Error('缺少 refresh_token')
@@ -111,6 +123,7 @@ export const useAuthStore = defineStore('auth', () => {
     restoreUser,
     fetchMe,
     fetchPermissions,
+    markAdminVerificationRequired,
     refreshAccessToken,
   }
 })

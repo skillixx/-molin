@@ -6,6 +6,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import {
   loginByEmail,
+  loginByEmailCode,
   loginByPhone,
   logout as apiLogout,
   refreshToken as apiRefreshToken,
@@ -42,6 +43,14 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
+   * 邮箱验证码登录，登录后的 Token、用户摘要和权限加载复用统一成功链路。
+   */
+  async function loginWithEmailCode(email: string, code: string) {
+    const data = await loginByEmailCode({ email, code })
+    await applyLoginResponse(data)
+  }
+
+  /**
    * 手机号验证码登录
    */
   async function loginWithPhone(phone: string, code: string) {
@@ -57,7 +66,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (!raw) throw new Error('无 refresh_token，请重新登录')
     const data = await apiRefreshToken(raw)
     _applyTokens(data.access_token, data.refresh_token)
-    if (data.user) currentUser.value = toUser(data.user)
+    currentUser.value = toUser(data.user)
     await fetchPermissions()
   }
 
@@ -99,12 +108,13 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
-   * 注册/登录成功后统一写入 Token、用户摘要，并补全用户详情和权限码。
+   * 注册/登录成功后直接使用 D-93 用户摘要建立登录态，仅补充权限码。
+   * 用户摘要已包含实名状态等路由所需字段，无需再额外请求个人信息。
    */
   async function applyLoginResponse(data: TokenPair) {
     _applyTokens(data.access_token, data.refresh_token)
-    if (data.user) currentUser.value = toUser(data.user)
-    await fetchMe()
+    currentUser.value = toUser(data.user)
+    await fetchPermissions()
   }
 
   // 应用新 Token 到内存和 localStorage
@@ -143,6 +153,7 @@ export const useAuthStore = defineStore('auth', () => {
     realNameStatus,
     isRealNameVerified,
     loginWithEmail,
+    loginWithEmailCode,
     loginWithPhone,
     refreshToken,
     fetchMe,

@@ -60,6 +60,17 @@
       <template #title>审计日志</template>
     </el-menu-item>
 
+    <el-sub-menu v-if="can('email:template:view')" index="message-center">
+      <template #title>
+        <el-icon><Message /></el-icon>
+        <span>消息中心</span>
+      </template>
+      <el-menu-item index="/message/email-templates">
+        <el-icon><DocumentChecked /></el-icon>
+        <template #title>邮件模板</template>
+      </el-menu-item>
+    </el-sub-menu>
+
     <el-sub-menu v-if="can('product:view')" index="product">
       <template #title>
         <el-icon><Goods /></el-icon>

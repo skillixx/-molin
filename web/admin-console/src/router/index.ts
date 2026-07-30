@@ -82,6 +82,17 @@ const router = createRouter({
           meta: { requiresAuth: true, requiresAdminVerify: true, title: '审计日志', permission: 'audit:read' },
         },
         {
+          path: 'message/email-templates',
+          name: 'EmailManagement',
+          component: () => import('@/views/email/EmailManagementView.vue'),
+          meta: {
+            requiresAuth: true,
+            requiresAdminVerify: true,
+            title: '邮件模板管理',
+            permission: 'email:template:view',
+          },
+        },
+        {
           path: 'products',
           name: 'ProductList',
           component: () => import('@/views/product/ProductListView.vue'),

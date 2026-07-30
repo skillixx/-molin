@@ -32,10 +32,16 @@ const step2Form = reactive({
 // 加载状态
 const sendingCode = ref(false)
 const submitting = ref(false)
+const formError = ref('')
 
 // 60s 倒计时
 const countdown = ref(0)
 let countdownTimer: ReturnType<typeof setInterval>
+
+// 将后端可公开的错误消息保留在表单内，避免 Toast 消失后用户失去上下文。
+function getErrorMessage(error: unknown, fallback: string) {
+  return (error as { response?: { data?: { message?: string } } })?.response?.data?.message || fallback
+}
 
 // 表单 ref
 const step1FormRef = ref<FormInstance>()
@@ -67,11 +73,11 @@ const step1Rules = computed<FormRules>(() => ({
 const step2Rules: FormRules = {
   code: [
     { required: true, message: '请输入验证码', trigger: 'blur' },
-    { len: 6, message: '验证码为6位数字', trigger: 'blur' },
+    { pattern: /^\d{6}$/, message: '验证码为6位数字', trigger: 'blur' },
   ],
   new_password: [
     { required: true, message: '请输入新密码', trigger: 'blur' },
-    { min: 8, message: '密码至少8位', trigger: 'blur' },
+    { min: 6, max: 72, message: '密码长度须为6-72位', trigger: 'blur' },
   ],
   confirm_password: [
     { required: true, message: '请确认新密码', trigger: 'blur' },
@@ -91,11 +97,14 @@ const step2Rules: FormRules = {
 // =================== 步骤一：发送验证码 ===================
 
 async function sendCode() {
-  const valid = await step1FormRef.value?.validate().catch(() => false)
-  if (!valid) return
-
+  // 表单校验期间也要阻止重复点击，确保一次用户操作只产生一次发码请求。
+  if (sendingCode.value) return
   sendingCode.value = true
   try {
+    const valid = await step1FormRef.value?.validate().catch(() => false)
+    if (!valid) return
+
+    formError.value = ''
     if (targetType.value === 'phone') {
       await sendPhoneCode(targetValue.value, 'reset_password')
     } else {
@@ -112,13 +121,11 @@ async function sendCode() {
     }, 1000)
   } catch (err: unknown) {
     const code = (err as { response?: { data?: { code?: number } } })?.response?.data?.code
-    if (code === 42900) {
-      ElMessage.error('发送频率超限，请稍后再试')
-    } else if (code === 40404) {
-      ElMessage.error('该手机号/邮箱未注册')
-    } else {
-      ElMessage.error('发送失败，请稍后重试')
-    }
+    const fallback = code === 42900
+      ? '发送频率超限，请稍后再试'
+      : code === 40404 ? '该手机号/邮箱未注册' : '发送失败，请稍后重试'
+    formError.value = getErrorMessage(err, fallback)
+    ElMessage.error(formError.value)
   } finally {
     sendingCode.value = false
   }
@@ -127,6 +134,7 @@ async function sendCode() {
 // 重新发送验证码（在第二步）
 async function resendCode() {
   if (countdown.value > 0 || sendingCode.value) return
+  formError.value = ''
   sendingCode.value = true
   try {
     if (targetType.value === 'phone') {
@@ -142,11 +150,9 @@ async function resendCode() {
     }, 1000)
   } catch (err: unknown) {
     const code = (err as { response?: { data?: { code?: number } } })?.response?.data?.code
-    if (code === 42900) {
-      ElMessage.error('发送频率超限，请稍后再试')
-    } else {
-      ElMessage.error('发送失败，请稍后重试')
-    }
+    const fallback = code === 42900 ? '发送频率超限，请稍后再试' : '发送失败，请稍后重试'
+    formError.value = getErrorMessage(err, fallback)
+    ElMessage.error(formError.value)
   } finally {
     sendingCode.value = false
   }
@@ -158,6 +164,7 @@ async function handleReset() {
   const valid = await step2FormRef.value?.validate().catch(() => false)
   if (!valid) return
 
+  formError.value = ''
   submitting.value = true
   try {
     await resetPassword({
@@ -170,13 +177,13 @@ async function handleReset() {
     router.push('/login')
   } catch (err: unknown) {
     const code = (err as { response?: { data?: { code?: number } } })?.response?.data?.code
-    if (code === 40000) {
-      ElMessage.error('验证码错误或已过期')
-    } else if (code === 40404) {
-      ElMessage.error('该手机号/邮箱未注册')
-    } else if (code === 42900) {
-      ElMessage.error('发送频率超限，请稍后再试')
-    }
+    const fallback = code === 40000
+      ? '验证码错误或已过期'
+      : code === 40404
+        ? '该手机号/邮箱未注册'
+        : code === 42900 ? '发送频率超限，请稍后再试' : '密码重置失败，请稍后重试'
+    formError.value = getErrorMessage(err, fallback)
+    ElMessage.error(formError.value)
   } finally {
     submitting.value = false
   }
@@ -237,10 +244,15 @@ onUnmounted(() => clearInterval(countdownTimer))
           <el-step title="设置新密码" />
         </el-steps>
 
+        <p v-if="formError" class="form-error" role="alert">
+          {{ formError }}
+        </p>
+
         <!-- 第一步：选择方式 + 发送验证码 -->
         <div v-if="currentStep === 0" class="step-content">
           <div class="method-tabs">
             <button
+              type="button"
               class="method-tab"
               :class="{ active: targetType === 'phone' }"
               @click="targetType = 'phone'; targetValue = ''"
@@ -248,6 +260,7 @@ onUnmounted(() => clearInterval(countdownTimer))
               手机号重置
             </button>
             <button
+              type="button"
               class="method-tab"
               :class="{ active: targetType === 'email' }"
               @click="targetType = 'email'; targetValue = ''"
@@ -279,6 +292,7 @@ onUnmounted(() => clearInterval(countdownTimer))
 
             <el-form-item>
               <button
+                type="button"
                 class="btn-primary auth-submit"
                 :disabled="sendingCode"
                 @click.prevent="sendCode"
@@ -309,9 +323,12 @@ onUnmounted(() => clearInterval(countdownTimer))
                   v-model="step2Form.code"
                   placeholder="请输入6位验证码"
                   maxlength="6"
+                  inputmode="numeric"
+                  autocomplete="one-time-code"
                   size="large"
                 />
                 <button
+                  type="button"
                   class="code-btn"
                   :disabled="countdown > 0 || sendingCode"
                   @click.prevent="resendCode"
@@ -325,7 +342,8 @@ onUnmounted(() => clearInterval(countdownTimer))
               <el-input
                 v-model="step2Form.new_password"
                 type="password"
-                placeholder="至少8位"
+                placeholder="6-72位"
+                maxlength="72"
                 show-password
                 autocomplete="new-password"
                 size="large"
@@ -337,6 +355,7 @@ onUnmounted(() => clearInterval(countdownTimer))
                 v-model="step2Form.confirm_password"
                 type="password"
                 placeholder="再次输入新密码"
+                maxlength="72"
                 show-password
                 autocomplete="new-password"
                 size="large"
@@ -345,6 +364,7 @@ onUnmounted(() => clearInterval(countdownTimer))
 
             <el-form-item>
               <button
+                type="button"
                 class="btn-primary auth-submit"
                 :disabled="submitting"
                 @click.prevent="handleReset"
@@ -577,7 +597,7 @@ onUnmounted(() => clearInterval(countdownTimer))
 
 .method-tab {
   flex: 1;
-  height: 38px;
+  min-height: 44px;
   border: none;
   border-radius: 8px;
   background: transparent;
@@ -601,6 +621,17 @@ onUnmounted(() => clearInterval(countdownTimer))
 /* 表单 */
 .auth-form {
   margin-top: 4px;
+}
+
+.form-error {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(248, 113, 113, 0.36);
+  border-radius: 8px;
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.18);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .auth-submit {
@@ -637,7 +668,7 @@ onUnmounted(() => clearInterval(countdownTimer))
 .code-btn {
   flex-shrink: 0;
   padding: 0 14px;
-  height: 40px;
+  min-height: 44px;
   background: rgba(99, 102, 241, 0.12);
   border: 1px solid var(--color-border);
   color: var(--color-primary);
@@ -693,7 +724,7 @@ onUnmounted(() => clearInterval(countdownTimer))
 }
 
 :deep(.el-input__wrapper) {
-  min-height: 42px;
+  min-height: 44px;
   border-radius: 9px;
 }
 

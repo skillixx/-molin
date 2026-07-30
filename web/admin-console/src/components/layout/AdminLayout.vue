@@ -12,7 +12,7 @@
     <!-- 右侧主区域 -->
     <div class="main-area">
       <!-- 顶部导航栏 -->
-      <TopBar />
+      <TopBar :mobile="isMobile" @toggle-menu="handleMenuToggle" />
 
       <!-- 页面内容 -->
       <main class="page-content">
@@ -21,6 +21,18 @@
         <router-view />
       </main>
     </div>
+
+    <!-- 手机端不保留固定侧栏，使用可关闭抽屉恢复完整内容宽度。 -->
+    <el-drawer
+      v-model="mobileMenuVisible"
+      class="mobile-menu-drawer"
+      direction="ltr"
+      size="82%"
+      :with-header="false"
+      append-to-body
+    >
+      <SideMenu :collapsed="false" @click="mobileMenuVisible = false" />
+    </el-drawer>
   </div>
 </template>
 
@@ -29,11 +41,36 @@ import SideMenu from './SideMenu.vue'
 import TopBar from './TopBar.vue'
 import { useAppStore } from '@/stores/app'
 import { useRoute, useRouter } from 'vue-router'
-import { watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const appStore = useAppStore()
 const route = useRoute()
 const router = useRouter()
+const isMobile = ref(false)
+const mobileMenuVisible = ref(false)
+let mobileMediaQuery: MediaQueryList | null = null
+
+/** 同步断点状态；离开手机宽度时主动关闭抽屉，避免桌面端残留遮罩。 */
+function syncMobileLayout(event?: MediaQueryListEvent) {
+  isMobile.value = event?.matches ?? mobileMediaQuery?.matches ?? false
+  if (!isMobile.value) mobileMenuVisible.value = false
+}
+
+function handleMenuToggle() {
+  if (isMobile.value) {
+    mobileMenuVisible.value = !mobileMenuVisible.value
+    return
+  }
+  appStore.toggleSideMenu()
+}
+
+onMounted(() => {
+  mobileMediaQuery = window.matchMedia('(max-width: 768px)')
+  syncMobileLayout()
+  mobileMediaQuery.addEventListener('change', syncMobileLayout)
+})
+
+onBeforeUnmount(() => mobileMediaQuery?.removeEventListener('change', syncMobileLayout))
 
 // 路由切换时更新页面标题
 watch(
@@ -77,8 +114,25 @@ void router
 /* 右侧主区域 */
 .main-area {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+
+@media (max-width: 768px) {
+  .aside { display: none; }
+  .main-area { width: 100%; }
+  .page-content { padding: 12px; }
+}
+
+:global(.mobile-menu-drawer) {
+  max-width: 320px;
+  background: var(--mc-sidebar);
+}
+
+:global(.mobile-menu-drawer .el-drawer__body) {
+  padding: 0;
   overflow: hidden;
 }
 
