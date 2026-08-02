@@ -6,7 +6,7 @@ Token 网关后续开发统一使用：
 
 ```text
 目录：D:\molingproject\molin-gateway-worktree
-分支：feature/bifrost-ai-gateway
+分支：feature/bifrost-ai-gateway-v2
 ```
 
 短信和邮件开发分别保留在其他工作目录，不能通过切换原目录分支的方式开展网关开发。
@@ -31,7 +31,7 @@ node --version
 预期分支必须是：
 
 ```text
-feature/bifrost-ai-gateway
+feature/bifrost-ai-gateway-v2
 ```
 
 如果分支、目录或工作树状态与预期不一致，应先停止修改并核对，不得清理、覆盖或暂存来源不明的改动。
@@ -79,7 +79,7 @@ Bifrost：http://127.0.0.1:28080
 → 本地编码与单元测试
 → 前端 type-check、lint、build
 → 检查差异和敏感信息
-→ 提交 feature/bifrost-ai-gateway
+→ 提交 feature/bifrost-ai-gateway-v2
 → CI 构建 Linux amd64 制品
 → 部署到测试 Linux
 → 执行获批的 migration
@@ -101,7 +101,7 @@ Bifrost：http://127.0.0.1:28080
 
 ```text
 请在 D:\molingproject\molin-gateway-worktree 中开发 Token 网关。
-目标分支必须是 feature/bifrost-ai-gateway。
+目标分支必须是 feature/bifrost-ai-gateway-v2。
 本地负责开发和单元测试，集成测试部署到测试 Linux。
 不得修改短信工作区和邮件 worktree，不得在代码、文档或日志中保存真实密钥。
 ```

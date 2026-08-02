@@ -673,7 +673,7 @@ P1：Usage 大面积缺失、结算积压、价格过期、毛利低于底线、
 
 ### 22.1 分支与环境
 
-AI 网关固定在 `D:\molingproject\molin-gateway-worktree` 的 `feature/bifrost-ai-gateway` 开发，不切换短信或邮件工作区。2026-08-03 基线审计发现该分支落后 `origin/main` 且包含一笔聊天 UI 提交；处理方式以 [`ai-gateway-phase0-freeze-record.md`](./ai-gateway-phase0-freeze-record.md) 为准。在开始第一笔核心网关代码前，仍须确认前置核心商业闭环已经通过阶段验收。
+AI 网关固定在 `D:\molingproject\molin-gateway-worktree` 的 `feature/bifrost-ai-gateway-v2` 开发，不切换短信或邮件工作区。该分支已从 2026-08-03 的最新 `origin/main` 建立，并只迁移纯网关、Node 24 CI 和阶段0规划提交；基线证据见 [`ai-gateway-phase0-freeze-record.md`](./ai-gateway-phase0-freeze-record.md)。在开始第一笔核心网关代码前，仍须确认前置核心商业闭环已经通过阶段验收。
 
 环境分为本地、测试、预发布和生产。Fake/Mock、沙箱上游、供应商接受、生产调用和客户验收必须分别记录，不能互相替代。
 

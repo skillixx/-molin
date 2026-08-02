@@ -9,7 +9,7 @@
 执行 Token 网关相关任务时必须遵守：
 
 1. 唯一开发目录为 `D:\molingproject\molin-gateway-worktree`。
-2. 唯一开发分支为 `feature/bifrost-ai-gateway`；执行修改前必须用 `git branch --show-current` 再次确认。
+2. 唯一开发分支为 `feature/bifrost-ai-gateway-v2`；执行修改前必须用 `git branch --show-current` 再次确认。
 3. 不得在 `D:\molingproject\molin` 中开发 Token 网关；该目录保留给短信及其他既有任务。
 4. 不得修改 `D:\molingproject\molin-email-worktree`；该目录和邮件分支独立运行。
 5. 本地 Windows 负责代码编写、Go 单元测试、前端检查和构建；MySQL、Redis、RabbitMQ、MinIO、Bifrost 和集成验收运行在测试 Linux。

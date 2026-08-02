@@ -6,7 +6,7 @@
 >
 > 适用工作区：`D:\molingproject\molin-gateway-worktree`
 >
-> 适用分支：`feature/bifrost-ai-gateway`
+> 适用分支：`feature/bifrost-ai-gateway-v2`
 >
 > 状态：工程参数已冻结，可用于接口、数据模型和测试开发；商业发布仍需产品、财务和合规审批。
 
@@ -18,24 +18,24 @@
 
 ## 2. 分支基线
 
-2026-08-03 执行 `git fetch origin` 后的证据：
+2026-08-03 首次执行 `git fetch origin` 后，旧分支的证据为：
 
 ```text
 当前 HEAD：dae5ef6 统一前端 CI 使用 Node 24
-当前分支：feature/bifrost-ai-gateway
+旧分支：feature/bifrost-ai-gateway
 与 origin/main 的 merge-base：288599f054eacbe334ea0e3a5734a75db7331a9f
 相对 origin/main：落后 6 个提交，领先 4 个提交
 ```
 
-当前分支包含提交 `608172e 优化用户端聊天滚动和输入框样式`，该提交不是 Token 网关专属变更。因此当前结论是：
+旧分支包含提交 `608172e 优化用户端聊天滚动和输入框样式`，该提交不是 Token 网关专属变更。
 
-- 工作区和分支身份已确认。
-- 当前工作树干净，远程跟踪正常。
-- 当前分支不是可直接提交网关 PR 的纯净基线。
-- 未经项目负责人授权，不执行 rebase、历史重写、强制推送或删除聊天 UI 变更。
-- 第一笔核心网关代码提交前，必须选择“创建干净的新网关分支并迁移网关提交”或“合并最新 main 并明确接受混合历史”。
+项目负责人已确认采用干净分支方案。执行结果：
 
-工程建议采用第一种方式，但本记录不代替项目负责人的 Git 决策。
+- 从最新 `origin/main@696806c` 创建 `feature/bifrost-ai-gateway-v2`。
+- 迁移 Bifrost 双上游配置和脚本、网关 Worktree 规范、Node 24 CI 和阶段0规划提交。
+- 不迁移 `608172e` 聊天 UI 提交。
+- 不重写、不强推、不删除旧远程分支，保留完整追溯证据。
+- 新分支是后续 Token 网关核心代码的唯一开发基线。
 
 ## 3. 首批公开模型
 
