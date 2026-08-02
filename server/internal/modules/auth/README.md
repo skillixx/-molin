@@ -23,6 +23,8 @@
 
 管理接口为 `GET /api/admin/email/summary`、模板列表/详情/启停、场景列表/绑定、模板同步/同步记录、测试白名单、模板测试发送和发送日志。所有列表响应为 D-95 扁平分页。
 
+配置键、测试/生产部署、MySQL `13306/3306` 端口边界、Migration、模板初始化、发布验证和回滚操作统一见 `docs/directmail-configuration-deployment-guide.md`。
+
 ### 开发结构
 
 - `model/email.go`：五类邮件表模型。

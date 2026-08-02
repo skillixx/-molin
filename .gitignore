@@ -1,5 +1,8 @@
 .env
 .env.local
+.env.prod
+.env.prod.backup.*
+.env.prod.tmp.*
 infra/.env.local
 infra/.env.test
 infra/.env.test.backup.*

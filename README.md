@@ -101,7 +101,7 @@ cd web/user-console && npm install && npm run dev
 | 管理后台（Vite） | `http://127.0.0.1:5173` | — | — |
 | 用户控制台（Vite） | `http://127.0.0.1:5174` | — | — |
 
-本地环境变量参考 `infra/.env.example`，复制为 `infra/.env.local` 后填写实际值。
+本地环境变量参考 `infra/.env.example`，复制为 `infra/.env.local` 后填写实际值。DirectMail 的配置、测试/生产部署、Migration、模板初始化和回滚流程见 `docs/directmail-configuration-deployment-guide.md`。
 
 ### 测试服务器（8.130.9.163）
 
