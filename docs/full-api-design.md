@@ -2216,6 +2216,8 @@ PATCH /api/admin/token/routes/:id
 GET   /api/admin/token/usage
 ```
 
+> 文字执行驱动契约：Chat Completions 路由在现有 SK/JWT 鉴权、模型可见范围、SK 模型范围和资产门禁之后调用统一 `ExecutionDriver`。部署默认 `native`，可显式切换 `bifrost`。Bifrost 响应会移除 `extra_fields`、路由信息、供应商响应头和内部 Key 名称；HTTP 200 业务错误仍按失败处理。Usage 缺失记录 `pending_reconcile`，禁止按 `max_tokens` 猜测扣费。
+
 供应商 Body 参数：
 
 | 字段 | 类型 | 必填 | 说明 |
@@ -2247,7 +2249,7 @@ Chat 请求 Body 参数：
 说明：
 
 - `stream = true` 时响应使用 Server-Sent Events（SSE）格式，`Content-Type: text/event-stream`。
-- 网关层不缓冲流式响应 body，直接透传上游 SSE 数据；确认所有中间件（Logger、Recovery）不会缓冲响应 body。
-- 路由选择：根据 `logical_model_code` 查找 `token_model_routes`，按 `weight` 加权随机选择上游；若选中的上游断路器熔断，按 `priority` 升序取下一个。
+- 网关层不缓冲完整流式响应；每个 SSE `data:` 事件由当前执行驱动校验和脱敏后立即写出，Bifrost 扩展元数据不对外透传。
+- 当前一次请求只选择一个执行驱动。Native 使用模型绑定的活动渠道与 `upstream_model`；Bifrost 使用冻结的显式 Provider 模型映射。结果未知或已经输出 SSE 后禁止自动切换供应商，本阶段不启用加权随机和透明熔断回退。
 
 返回 data：模型列表、OpenAI 兼容响应、Token 用量统计。

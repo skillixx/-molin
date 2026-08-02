@@ -24,7 +24,8 @@
           "name": "bailian-main",
           "value": "env.BAILIAN_API_KEY",
           "models": [
-            "qwen-turbo"
+            "qwen-turbo",
+            "qwen3.7-flash-2026-07-15"
           ],
           "weight": 1
         }

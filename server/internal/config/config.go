@@ -65,6 +65,10 @@ type Config struct {
 	// Token 网关上游渠道 api_key 加密密钥（32 字节，AES-256-GCM）
 	// 用于 token_channels.api_key_encrypted 加解密；通过 TOKEN_PROVIDER_KEY 注入。
 	TokenProviderKey string
+	// TokenExecutionDriver 选择文字模型执行层，默认 native；Bifrost 配置仅在显式启用时生效。
+	TokenExecutionDriver string
+	BifrostBaseURL       string
+	BifrostInternalToken string
 
 	// 平台 API Key（sk）HMAC 密钥（S2-甲5）。
 	// DB 只存 HMAC-SHA256(sk 明文, APIKeyHMACSecret)，明文只在签发时返回一次。
@@ -171,7 +175,10 @@ func Load() Config {
 
 		NotifyBodyKey: getenv("NOTIFY_BODY_KEY", ""),
 
-		TokenProviderKey: getenv("TOKEN_PROVIDER_KEY", ""),
+		TokenProviderKey:     getenv("TOKEN_PROVIDER_KEY", ""),
+		TokenExecutionDriver: strings.ToLower(strings.TrimSpace(getenv("TOKEN_EXECUTION_DRIVER", "native"))),
+		BifrostBaseURL:       getenv("BIFROST_BASE_URL", "http://127.0.0.1:18080"),
+		BifrostInternalToken: getenv("BIFROST_INTERNAL_TOKEN", ""),
 
 		APIKeyHMACSecret: getenv("API_KEY_HMAC_SECRET", ""),
 

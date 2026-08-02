@@ -1,0 +1,39 @@
+map $http_authorization $bifrost_internal_authorized {
+    default 0;
+    "Bearer ${BIFROST_INTERNAL_TOKEN}" 1;
+}
+
+upstream bifrost_nodes {
+    least_conn;
+    server bifrost-1:8080 max_fails=3 fail_timeout=10s;
+    server bifrost-2:8080 max_fails=3 fail_timeout=10s;
+    keepalive 128;
+}
+
+server {
+    listen 8080;
+
+    # 健康检查只在宿主机回环地址使用，不代理模型调用权限。
+    location = /health {
+        proxy_pass http://bifrost_nodes;
+    }
+
+    location / {
+        if ($bifrost_internal_authorized = 0) {
+            return 401;
+        }
+
+        proxy_pass http://bifrost_nodes;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 900s;
+        proxy_send_timeout 900s;
+
+        # 内部入口完成校验后清除 Token，禁止 Bifrost 或上游误用该凭据。
+        proxy_set_header Authorization "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Request-ID $http_x_request_id;
+        add_header X-Accel-Buffering no;
+    }
+}

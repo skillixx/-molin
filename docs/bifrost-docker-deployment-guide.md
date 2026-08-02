@@ -80,7 +80,7 @@ OpenRouter 测试 Key
 ```text
 /opt/bifrost/
   config.json
-  nginx.conf
+  nginx.conf.template
   data/
     node-1/
     node-2/
@@ -110,6 +110,7 @@ sudo nano /opt/molin-secrets/bifrost.env
 
 ```dotenv
 BIFROST_ENCRYPTION_KEY=<独立的32字节随机密钥>
+BIFROST_INTERNAL_TOKEN=<墨灵到Bifrost入口的独立高强度Token>
 BAILIAN_API_KEY=<百炼测试SK>
 OPENROUTER_API_KEY=<OpenRouter测试Key>
 ```
@@ -118,6 +119,12 @@ OPENROUTER_API_KEY=<OpenRouter测试Key>
 
 ```bash
 openssl rand -base64 32
+```
+
+内部入口 Token 单独生成，不得复用上游 Key：
+
+```bash
+openssl rand -base64 48 | tr -d '\n'
 ```
 
 设置权限：
@@ -161,7 +168,7 @@ sudo sed -n 's/=.*$/=[REDACTED]/p' /opt/molin-secrets/bifrost.env
         {
           "name": "bailian-test",
           "value": "env.BAILIAN_API_KEY",
-          "models": ["qwen-turbo"],
+          "models": ["qwen-turbo", "qwen3.7-flash-2026-07-15"],
           "weight": 1
         }
       ],
@@ -206,47 +213,22 @@ sudo chmod 644 /opt/bifrost/config.json
 
 ## 7. Nginx 负载均衡配置
 
-保存为 `/opt/bifrost/nginx.conf`：
+将仓库中的 `infra/bifrost/nginx.conf.template` 安装为 `/opt/bifrost/nginx.conf.template`。该模板通过官方 Nginx 容器入口的 `envsubst` 注入 `BIFROST_INTERNAL_TOKEN`，内部 Token 不写入 Git：
 
 ```nginx
-events {
-    worker_connections 4096;
+map $http_authorization $bifrost_internal_authorized {
+    default 0;
+    "Bearer ${BIFROST_INTERNAL_TOKEN}" 1;
 }
 
-http {
-    upstream bifrost_nodes {
-        least_conn;
-        server bifrost-1:8080 max_fails=3 fail_timeout=10s;
-        server bifrost-2:8080 max_fails=3 fail_timeout=10s;
-        keepalive 128;
-    }
-
-    server {
-        listen 8080;
-
-        location / {
-            proxy_pass http://bifrost_nodes;
-            proxy_http_version 1.1;
-
-            # SSE 响应必须立即转发，不能被代理缓冲或缓存。
-            proxy_buffering off;
-            proxy_cache off;
-            proxy_read_timeout 600s;
-            proxy_send_timeout 600s;
-
-            proxy_set_header Host $host;
-            proxy_set_header X-Request-ID $http_x_request_id;
-            add_header X-Accel-Buffering no;
-        }
-    }
-}
+# upstream 和 server 完整内容以仓库模板为准。
 ```
 
 设置权限：
 
 ```bash
-sudo chown root:root /opt/bifrost/nginx.conf
-sudo chmod 644 /opt/bifrost/nginx.conf
+sudo chown root:root /opt/bifrost/nginx.conf.template
+sudo chmod 600 /opt/bifrost/nginx.conf.template
 ```
 
 ## 8. 拉取并锁定镜像
@@ -331,8 +313,9 @@ sudo docker run -d \
   --name bifrost-lb \
   --restart unless-stopped \
   --network bifrost-net \
+  --env-file /opt/molin-secrets/bifrost.env \
   -p 127.0.0.1:18080:8080 \
-  -v /opt/bifrost/nginx.conf:/etc/nginx/nginx.conf:ro \
+  -v /opt/bifrost/nginx.conf.template:/etc/nginx/templates/bifrost.conf.template:ro \
   nginx:1.27-alpine
 ```
 
@@ -340,6 +323,7 @@ sudo docker run -d \
 
 - 只能绑定 `127.0.0.1:18080`，禁止使用 `0.0.0.0:18080` 暴露到公网。
 - 不在安全组或防火墙开放 `18080`。
+- `/health` 之外的请求必须携带正确的 `Authorization: Bearer <BIFROST_INTERNAL_TOKEN>`；缺失、错误或重复 Header 均返回 401。
 - 如需临时查看 Web UI，应使用 SSH 本地端口转发，不直接开放公网端口。
 
 ## 12. 启动验证
@@ -379,11 +363,20 @@ sudo docker logs --tail 100 bifrost-lb
 
 ## 13. 最小推理测试
 
+先在受控服务器终端加载内部 Token，禁止回显变量值：
+
+```bash
+set -a
+source /opt/molin-secrets/bifrost.env
+set +a
+```
+
 ### 13.1 OpenRouter
 
 ```bash
 curl --fail-with-body http://127.0.0.1:18080/v1/chat/completions \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer ${BIFROST_INTERNAL_TOKEN}" \
   -d '{
     "model": "openrouter/cohere/north-mini-code:free",
     "messages": [
@@ -399,6 +392,7 @@ curl --fail-with-body http://127.0.0.1:18080/v1/chat/completions \
 ```bash
 curl --fail-with-body http://127.0.0.1:18080/v1/chat/completions \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer ${BIFROST_INTERNAL_TOKEN}" \
   -d '{
     "model": "bailian/qwen-turbo",
     "messages": [
@@ -416,6 +410,7 @@ curl --fail-with-body http://127.0.0.1:18080/v1/chat/completions \
 ```bash
 curl --no-buffer http://127.0.0.1:18080/v1/chat/completions \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer ${BIFROST_INTERNAL_TOKEN}" \
   -d '{
     "model": "bailian/qwen-turbo",
     "messages": [
@@ -577,7 +572,7 @@ sudo docker rm -f bifrost-lb bifrost-1 bifrost-2
 
 ```text
 运行配置：~/molin/bifrost/config.json
-负载均衡：~/molin/bifrost/nginx.conf
+负载均衡模板：~/molin/bifrost/nginx.conf.template
 节点数据：~/molin/bifrost/data/node-1、node-2
 密钥文件：~/molin/secrets/bifrost.env
 ```

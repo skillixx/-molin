@@ -1,5 +1,7 @@
 # Token 网关 — OpenAI 兼容接入指南
 
+> 执行层说明：当前代码支持 Native 与 Bifrost 两种文字模型驱动，部署默认仍为 `native`。公开路由、平台 SK/JWT、模型范围和资产门禁保持一致。Bifrost 内部地址、内部 Token、路由信息及供应商响应头不会向客户端公开。
+
 面向终端用户：如何在 Cline、Cherry Studio、以及任何「OpenAI 兼容」客户端中，凭 Molin 平台 sk 密钥直接接入 Molin Token 网关，使用平台上架的各家大模型。
 
 > 本文档面向使用方。Molin 网关本身不持有任何上游供应商 api_key，也不会在任何响应或日志中返回上游 key / 对话内容明文。
@@ -124,7 +126,7 @@ curl -X POST 'https://<域名>/v1/chat/completions' \
   }'
 ```
 
-响应为标准 OpenAI Chat Completion 对象（含 `choices`、`usage`）。网关读取 `usage` 写入用量流水并按 input/output tokens 计费。
+响应为标准 OpenAI Chat Completion 对象（含 `choices`、`usage`）。网关读取 `usage` 写入用量流水并按 input/output tokens 结算；若上游未返回 Usage，本次记录为 `pending_reconcile`，不会按 `max_tokens` 猜测扣费。
 
 ### 4.3 POST /v1/chat/completions（SSE 流式）
 
@@ -139,7 +141,7 @@ curl -N -X POST 'https://<域名>/v1/chat/completions' \
   }'
 ```
 
-`stream:true` 时返回 `text/event-stream`，网关直接透传上游 SSE，不缓冲 body。
+`stream:true` 时返回 `text/event-stream`。网关不缓冲完整 body，但会逐事件校验、脱敏后立即转发；只有收到 `[DONE]` 才确认流正常结束。
 
 ## 5. 错误与约束
 
@@ -155,4 +157,6 @@ OpenAI 兼容别名层无需新增数据库迁移或权限码，但 sk 鉴权与
 
 - `API_KEY_HMAC_SECRET`：平台 sk 解析（缺失时 sk 鉴权链路不启用，`/v1/*` 退化为仅登录态 JWT 可用）。
 - `TOKEN_PROVIDER_KEY`：渠道 api_key 的 AES-256-GCM 加解密密钥。
-- `ONEAPI_BASE_URL` / `ONEAPI_INTERNAL_KEY`：网关对接上游转发引擎 one-api 所需。
+- `TOKEN_EXECUTION_DRIVER`：执行驱动，默认 `native`；测试环境确认后才可显式设为 `bifrost`。
+- `BIFROST_BASE_URL`：Bifrost 私网入口，默认 `http://127.0.0.1:18080`。
+- `BIFROST_INTERNAL_TOKEN`：墨灵调用 Bifrost 私网入口的独立 Token；启用 Bifrost 时必填，并由入口 Nginx 校验。

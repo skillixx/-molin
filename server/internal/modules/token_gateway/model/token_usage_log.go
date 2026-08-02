@@ -22,7 +22,7 @@ type TokenUsageLog struct {
 	Units            decimal.Decimal `gorm:"type:decimal(18,6);not null;default:0" json:"units"`                             // 非 token 计量用量（生图/语音等）
 	SaleAmount       decimal.Decimal `gorm:"type:decimal(18,6);not null;default:0" json:"sale_amount"`                       // 本次销售金额（扣费金额）
 	IsStream         bool            `gorm:"not null;default:0" json:"is_stream"`                                            // 是否流式调用
-	Status           string          `gorm:"size:32;not null" json:"status"`                                                 // success/failed/timeout
+	Status           string          `gorm:"size:32;not null" json:"status"`                                                 // success/failed/timeout/pending_reconcile
 	ErrorCode        *string         `gorm:"size:64" json:"error_code,omitempty"`                                            // 错误码，失败时记录
 	CreatedAt        time.Time       `gorm:"index:idx_token_usage_logs_user_created,priority:2;index:idx_token_usage_logs_apikey_created,priority:2" json:"created_at"`
 }

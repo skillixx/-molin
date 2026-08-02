@@ -782,6 +782,13 @@ func NewApp() (*App, error) {
 		if tokenGatewayModule, tgErr := tokengatewaymod.New(gormDB, cfg.TokenProviderKey, assetService, tokenReporter, tokenScopeResolver); tgErr != nil {
 			log.Printf("[token_gateway] 初始化失败，管理端/用户端未启用: %v", tgErr)
 		} else {
+			// 执行层默认继续使用原生 Go 转发器；只有显式配置 bifrost 且内部鉴权完整时才切换。
+			if driverErr := tokenGatewayModule.ForwardService.ConfigureExecutionDriver(
+				cfg.TokenExecutionDriver, cfg.BifrostBaseURL, cfg.BifrostInternalToken,
+			); driverErr != nil {
+				log.Printf("[token_gateway] 执行驱动配置失败，应用拒绝启动: %v", driverErr)
+				return nil, driverErr
+			}
 			// S2-丁5：注入计费路由依赖（postpaid 预扣保证金 / prepaid 扣套餐额度）。
 			// 兜底单价非法时退化为 0（门面据此跳过预扣，仅按 product-usage-events 实扣，不阻断调用）。
 			holdUnitPrice, perr := decimal.NewFromString(cfg.TokenHoldUnitPrice)

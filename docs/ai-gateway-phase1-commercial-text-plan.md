@@ -7,6 +7,8 @@
 > 权威范围：本文是 Phase 1 唯一执行依据；`multimodal-ai-gateway-implementation-plan.md` 仅作为长期多模态蓝图。两者冲突时，Phase 1 以本文为准。
 >
 > 证据声明：本文描述目标设计，不代表 Bifrost、真实支付、生产上游或商业计费已经启用。
+
+> 2026-08-03 执行层增量：已实现 `ExecutionDriver`、Native 默认驱动和 Bifrost 文字驱动，并使用 Fake Bifrost 完成契约测试。该增量只替换鉴权后上游执行层，不代表商业账本、价格引擎、内容审核、限流或生产 Bifrost 已完成；详见 `docs/bifrost-driver-development.md`。
 >
 > Phase 0 冻结依据：[`ai-gateway-phase0-freeze-record.md`](./ai-gateway-phase0-freeze-record.md)。
 

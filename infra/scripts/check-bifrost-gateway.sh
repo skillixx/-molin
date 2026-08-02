@@ -3,9 +3,22 @@
 set -euo pipefail
 
 gateway_url="${BIFROST_GATEWAY_URL:-http://127.0.0.1:18080}"
+: "${BIFROST_INTERNAL_TOKEN:?请通过安全环境变量注入 BIFROST_INTERNAL_TOKEN}"
 bailian_body="$(mktemp)"
 openrouter_body="$(mktemp)"
 trap 'rm -f "${bailian_body}" "${openrouter_body}"' EXIT
+
+# 内部入口必须拒绝缺失、错误和重复 Authorization，防止绕过墨灵鉴权与资产门禁。
+for auth_mode in missing wrong duplicate; do
+  auth_args=()
+  case "${auth_mode}" in
+    wrong) auth_args=(-H 'Authorization: Bearer invalid-internal-token') ;;
+    duplicate) auth_args=(-H "Authorization: Bearer ${BIFROST_INTERNAL_TOKEN}" -H 'Authorization: Bearer duplicate-token') ;;
+  esac
+  auth_code="$(curl -sS -o /dev/null -w '%{http_code}' "${gateway_url}/v1/chat/completions" \
+    -H 'Content-Type: application/json' "${auth_args[@]}" -d '{"model":"bailian/qwen-turbo","messages":[]}')"
+  [[ "${auth_code}" == "401" ]]
+done
 
 # 通过负载均衡入口验证百炼自定义 Provider 的模型解析、转发和 usage 返回。
 http_code="$(curl -sS \
@@ -15,6 +28,7 @@ http_code="$(curl -sS \
   -w '%{http_code}' \
   "${gateway_url}/v1/chat/completions" \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer ${BIFROST_INTERNAL_TOKEN}" \
   -d '{"model":"bailian/qwen-turbo","messages":[{"role":"user","content":"只回答OK"}],"max_tokens":1}')"
 
 echo "BIFROST_HTTP=${http_code}"
@@ -36,6 +50,7 @@ openrouter_code="$(curl -sS \
   -w '%{http_code}' \
   "${gateway_url}/v1/chat/completions" \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer ${BIFROST_INTERNAL_TOKEN}" \
   -d '{"model":"openrouter/cohere/north-mini-code:free","messages":[{"role":"user","content":"Reply OK"}],"max_tokens":1}')"
 
 echo "BIFROST_OPENROUTER_HTTP=${openrouter_code}"
