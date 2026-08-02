@@ -42,7 +42,8 @@ def _unwrap(resp: httpx.Response) -> dict:
     try:
         body = resp.json()
     except Exception:
-        raise PlatformError(-1, f"平台返回非 JSON（HTTP {resp.status_code}）：{resp.text[:200]}", resp.status_code)
+        # 上游正文可能包含代理诊断、内部地址或凭据，异常只保留 HTTP 状态。
+        raise PlatformError(-1, f"平台返回非 JSON（HTTP {resp.status_code}）", resp.status_code) from None
     code = body.get("code", -1)
     if code != CODE_OK:
         raise PlatformError(code, body.get("message", "未知错误"), resp.status_code)

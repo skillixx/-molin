@@ -146,21 +146,23 @@ def main() -> int:
     )
     require_sql(
         up,
-        r"BINARY clause_raw = BINARY CONCAT\(.*?CHAR\(92\).*?CHAR\(39\)",
-        "CHECK 原始文本按字节精确比较并显式保留引号转义",
+        r"BINARY clause_compact = BINARY REPLACE\(CONCAT\(.*?CHAR\(39\).*?OCTET_LENGTH\(clause_compact\).*?LOWER\(SHA2\(clause_compact, 256\)\)",
+        "CHECK 同时保留文本比较与固定长度哈希兼容分支",
     )
-    for constraint_name, clause_fragment in (
-        ("chk_verification_code_hash", "BINARY clause_raw = BINARY CONCAT('regexp_like(`code_hash`,_utf8mb4'"),
-        ("chk_verification_send_status", "BINARY clause_raw = BINARY CONCAT('(`send_status` in (_utf8mb4'"),
-        ("chk_verification_target_type", "BINARY clause_raw = BINARY CONCAT('(`target_type` in (_utf8mb4'"),
-        ("chk_verification_target_shape", "BINARY clause_raw = BINARY CONCAT('(((`target_type` = _utf8mb4'"),
-        ("chk_verification_email_acceptance", "BINARY clause_raw = BINARY CONCAT('((`target_type` <> _utf8mb4'"),
-        ("chk_verification_email_idempotency", "`business_request_no` is null"),
-        ("chk_verification_request_fingerprint", "regexp_like(`request_fingerprint`,_utf8mb4"),
-        ("chk_verification_target_hash", "regexp_like(`target_hash`,_utf8mb4"),
+    for constraint_name, clause_fragment, length, fingerprint in (
+        ("chk_verification_code_hash", "regexp_like(`code_hash`", 48, "b3f6d38e6965b16c300e0057dc2074afef859b72e28d20f28bc1fde167dccfef"),
+        ("chk_verification_send_status", "(`send_status` in (", 69, "e05e098693ce41e8d9e204e823ea8f50f9fdcb45abdc3a7eae2236359bf04f02"),
+        ("chk_verification_target_type", "(`target_type` in (", 48, "80907c599c935b2bd8b2e9ef6b5a56530203ac83edb6ef05c96250dfbe33dd53"),
+        ("chk_verification_target_shape", "(((`target_type` = ", 227, "656ef4e1b29c3c481b43aed49b3279f0dfb8f9bb6ed4868e9ef57e55ff660385"),
+        ("chk_verification_email_acceptance", "((`target_type` <> ", 176, "ee9f0a7c0344ae5c6220d17b7043e58e8d0735b42fd5cd8caa739d1212e71e06"),
+        ("chk_verification_email_idempotency", "`business_request_no` is null", 232, "7345bcbc8d4592a7f62d24a0b3c6e6bbd8ae6fcc86da2533575df162932818d0"),
+        ("chk_verification_request_fingerprint", "regexp_like(`request_fingerprint`", 91, "02aade59c6a977c09e3595f8e6a5f9b11a2a59ad3a129bb0bc4390edbdbc3ed7"),
+        ("chk_verification_target_hash", "regexp_like(`target_hash`", 75, "fb3d30c4907cd8ac267ce323b7b2cc6c584d938ffd7fcc638bda58642541dd3d"),
     ):
         require(up, f"constraint_name = '{constraint_name}'", f"{constraint_name} 名称")
         require(up, clause_fragment, f"{constraint_name} 精确表达式")
+        require(up, f"OCTET_LENGTH(clause_compact) = {length}", f"{constraint_name} 固定长度")
+        require(up, fingerprint, f"{constraint_name} 固定哈希")
     require_sql(
         up,
         r"SELECT '五个邮件场景必须保持 000055 安全初始态'.*?COUNT\(\*\) = 5.*?COUNT\(DISTINCT scene\) = 5.*?FROM email_scene_bindings.*?template_id IS NULL.*?enabled = 0.*?version = 1",

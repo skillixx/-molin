@@ -6,13 +6,13 @@ export PATH
 
 readonly source_db=molin
 readonly target_prefix=molin_restore_57_reverify_
-readonly protected_legacy_target_db=molin_restore_57_reverify_8fb6f25611b25d07a563f15105d0906a
 target_db=
-readonly work_dir=/root/molin-000057-container-cycle-3263e5469732436c910dd22f894d647b
-readonly evidence_dir="$work_dir/evidence"
-readonly dump_file="$evidence_dir/molin_source_schema56.sql"
-readonly up_file="$work_dir/000057_fix_email_datetime_utc_seconds.up.sql"
-readonly down_file="$work_dir/000057_fix_email_datetime_utc_seconds.down.sql"
+readonly asset_dir=/root/molin-000057-schema57-cycle-assets
+run_dir=
+evidence_dir=
+dump_file=
+readonly up_file="$asset_dir/000057_fix_email_datetime_utc_seconds.up.sql"
+readonly down_file="$asset_dir/000057_fix_email_datetime_utc_seconds.down.sql"
 readonly expected_up_sha=50DCD97A45D8ADCF2F7CAC316B44D942DDB880D4F922B8872CAA34BA01CFC67C
 readonly expected_down_sha=EE05D166EB874D34A14A0D12FC17EE083CAC28DAFEEAC3772A8C14A4945495BB
 readonly MYSQL_BIN=/usr/bin/mysql
@@ -44,19 +44,27 @@ for tool in "$MYSQL_BIN" "$MYSQLDUMP_BIN" "$CAT_BIN" "$SHA256SUM_BIN" "$AWK_BIN"
   [[ -x "$tool" ]]
 done
 
-# 启动时只生成一次严格格式的新隔离目标，立即冻结；旧 dirty1 目标只用于禁止复用比较，绝不查询、修改或清理。
+# 启动时只读取一次系统 UUID，同时派生全新隔离库与运行目录；旧隔离库不进入任何查询、修改或清理表达式。
 target_uuid=$($CAT_BIN /proc/sys/kernel/random/uuid)
 [[ "$target_uuid" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$ ]]
-target_db="${target_prefix}${target_uuid//-/}"
+target_suffix=${target_uuid//-/}
+target_db="${target_prefix}${target_suffix}"
+run_dir="/root/molin-000057-schema57-cycle-run-${target_suffix}"
+evidence_dir="$run_dir/evidence"
+dump_file="$evidence_dir/molin_source_schema57.sql"
 [[ "$target_db" =~ ^molin_restore_57_reverify_[a-f0-9]{32}$ ]]
-[[ "$target_db" != "$protected_legacy_target_db" ]]
+[[ "$run_dir" =~ ^/root/molin-000057-schema57-cycle-run-[a-f0-9]{32}$ ]]
 readonly target_db
-unset target_uuid
+readonly run_dir evidence_dir dump_file
+unset target_uuid target_suffix
 
-[[ -d "$work_dir" && ! -L "$work_dir" ]]
-[[ ! -e "$evidence_dir" ]]
+[[ -d "$asset_dir" && ! -L "$asset_dir" ]]
+[[ ! -e "$run_dir" ]]
 for sql_file in "$up_file" "$down_file"; do [[ -f "$sql_file" && ! -L "$sql_file" ]]; done
+"$MKDIR_BIN" --mode=0700 -- "$run_dir"
 "$MKDIR_BIN" --mode=0700 -- "$evidence_dir"
+[[ "$($STAT_BIN -c %u -- "$run_dir")" = 0 ]]
+[[ "$($STAT_BIN -c %a -- "$run_dir")" = 700 ]]
 [[ "$($STAT_BIN -c %u -- "$evidence_dir")" = 0 ]]
 [[ "$($STAT_BIN -c %a -- "$evidence_dir")" = 700 ]]
 verify_sql_hash() {
@@ -78,15 +86,72 @@ verify_sql_hash "$up_file" "$expected_up_sha"
 verify_sql_hash "$down_file" "$expected_down_sha"
 
 mysql_query_db() {
-  local database_name=$1 sql=$2
-  MYSQL_PWD="$MYSQL_ROOT_PASSWORD" "$MYSQL_BIN" --host=127.0.0.1 --port=3306 --user=root --database="$database_name" --batch --skip-column-names --raw --execute="$sql" 2>/dev/null
+  local database_name=$1 sql=$2 exit_code
+  : > "$evidence_dir/mysql.stdout"
+  : > "$evidence_dir/mysql.stderr"
+  "$CHMOD_BIN" 600 "$evidence_dir/mysql.stdout" "$evidence_dir/mysql.stderr"
+  set +e
+  MYSQL_PWD="$MYSQL_ROOT_PASSWORD" "$MYSQL_BIN" --no-defaults --host=127.0.0.1 --port=3306 --user=root --database="$database_name" --batch --skip-column-names --raw --execute="$sql" >"$evidence_dir/mysql.stdout" 2>"$evidence_dir/mysql.stderr"
+  exit_code=$?
+  set -e
+  if [[ $exit_code -ne 0 ]]; then
+    : > "$evidence_dir/mysql.stdout"
+    report_mysql_failure "$exit_code" "$evidence_dir/mysql.stderr"
+    return "$exit_code"
+  fi
+  "$CAT_BIN" "$evidence_dir/mysql.stdout"
+  : > "$evidence_dir/mysql.stdout"
+  : > "$evidence_dir/mysql.stderr"
 }
 mysql_query() { mysql_query_db "$target_db" "$1"; }
 mysql_admin_query() {
-  MYSQL_PWD="$MYSQL_ROOT_PASSWORD" "$MYSQL_BIN" --host=127.0.0.1 --port=3306 --user=root --batch --skip-column-names --raw --execute="$1" 2>/dev/null
+  local exit_code
+  : > "$evidence_dir/mysql.stdout"
+  : > "$evidence_dir/mysql.stderr"
+  "$CHMOD_BIN" 600 "$evidence_dir/mysql.stdout" "$evidence_dir/mysql.stderr"
+  set +e
+  MYSQL_PWD="$MYSQL_ROOT_PASSWORD" "$MYSQL_BIN" --no-defaults --host=127.0.0.1 --port=3306 --user=root --batch --skip-column-names --raw --execute="$1" >"$evidence_dir/mysql.stdout" 2>"$evidence_dir/mysql.stderr"
+  exit_code=$?
+  set -e
+  if [[ $exit_code -ne 0 ]]; then
+    : > "$evidence_dir/mysql.stdout"
+    report_mysql_failure "$exit_code" "$evidence_dir/mysql.stderr"
+    return "$exit_code"
+  fi
+  "$CAT_BIN" "$evidence_dir/mysql.stdout"
+  : > "$evidence_dir/mysql.stdout"
+  : > "$evidence_dir/mysql.stderr"
 }
 mysql_from_file() {
-  MYSQL_PWD="$MYSQL_ROOT_PASSWORD" "$MYSQL_BIN" --host=127.0.0.1 --port=3306 --user=root --database="$target_db" --batch --skip-column-names --raw >/dev/null 2>/dev/null < "$1"
+  local exit_code
+  : > "$evidence_dir/mysql.stderr"
+  "$CHMOD_BIN" 600 "$evidence_dir/mysql.stderr"
+  set +e
+  MYSQL_PWD="$MYSQL_ROOT_PASSWORD" "$MYSQL_BIN" --no-defaults --host=127.0.0.1 --port=3306 --user=root --database="$target_db" --batch --skip-column-names --raw >/dev/null 2>"$evidence_dir/mysql.stderr" < "$1"
+  exit_code=$?
+  set -e
+  if [[ $exit_code -ne 0 ]]; then
+    report_mysql_failure "$exit_code" "$evidence_dir/mysql.stderr"
+    return "$exit_code"
+  fi
+  : > "$evidence_dir/mysql.stderr"
+}
+report_mysql_failure() {
+  local exit_code=$1 stderr_file=$2 stderr_length error_category
+  stderr_length=$($STAT_BIN -c %s -- "$stderr_file")
+  error_category=$($AWK_BIN '
+    BEGIN { IGNORECASE = 1; category = "other" }
+    /access denied|authentication plugin|using password/ { category = "authentication" }
+    /can.t connect|connection refused|lost connection|server has gone away/ { category = "connectivity" }
+    /unknown database|doesn.t exist|no such file/ { category = "missing_resource" }
+    /syntax error|you have an error in your sql syntax/ { category = "sql_syntax" }
+    /deadlock|lock wait timeout/ { category = "concurrency" }
+    END { print category }
+  ' "$stderr_file")
+  [[ "$stderr_length" =~ ^[0-9]+$ ]]
+  [[ "$error_category" =~ ^(authentication|connectivity|missing_resource|sql_syntax|concurrency|other)$ ]]
+  printf 'mysql_failure_category=%s\nmysql_exit_code=%s\nmysql_stderr_length=%s\n' "$error_category" "$exit_code" "$stderr_length" >&2
+  : > "$stderr_file"
 }
 assert_scalar() {
   local actual
@@ -96,7 +161,7 @@ assert_scalar() {
 version_dirty() { mysql_query "SELECT CONCAT(version, ':', dirty) FROM schema_migrations;"; }
 source_version_dirty() { mysql_query_db "$source_db" "SELECT CONCAT(version, ':', dirty) FROM schema_migrations;"; }
 assert_source_migration_state_unchanged() {
-  [[ $(source_version_dirty) = 56:0 ]]
+  [[ $(source_version_dirty) = 57:0 ]]
   [[ "$(mysql_query_db "$source_db" "SELECT COUNT(*) FROM schema_migrations;")" = 1 ]]
 }
 
@@ -124,6 +189,9 @@ receipt_second_hash() {
 }
 receipt_full_hash() {
   hash_query "SELECT LOWER(SHA2(CONCAT_WS(CHAR(31), CAST(id AS CHAR), COALESCE(HEX(scope), 'NULL'), COALESCE(HEX(provider), 'NULL'), COALESCE(HEX(provider_template_id), 'NULL'), COALESCE(CAST(template_id AS CHAR), 'NULL'), COALESCE(idempotency_key_hash, 'NULL'), COALESCE(request_fingerprint, 'NULL'), COALESCE(CAST(completed_by AS CHAR), 'NULL'), DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s.%f')), 256)) FROM email_admin_verify_bootstrap_receipts ORDER BY id;"
+}
+receipt_original_hash_from_backup() {
+  hash_query "SELECT LOWER(SHA2(CONCAT_WS(CHAR(31), CAST(r.id AS CHAR), COALESCE(HEX(r.scope), 'NULL'), COALESCE(HEX(r.provider), 'NULL'), COALESCE(HEX(r.provider_template_id), 'NULL'), COALESCE(CAST(r.template_id AS CHAR), 'NULL'), COALESCE(r.idempotency_key_hash, 'NULL'), COALESCE(r.request_fingerprint, 'NULL'), COALESCE(CAST(r.completed_by AS CHAR), 'NULL'), DATE_FORMAT(COALESCE(b.created_at_original, r.created_at), '%Y-%m-%d %H:%i:%s.%f')), 256)) FROM email_admin_verify_bootstrap_receipts r LEFT JOIN migration_000057_email_receipt_time_backup b ON b.row_kind = 'receipt' AND b.receipt_id = r.id ORDER BY r.id;"
 }
 scene_value_hash() {
   hash_query "SELECT LOWER(SHA2(CONCAT_WS(CHAR(31), CAST(id AS CHAR), COALESCE(HEX(scene), 'NULL'), COALESCE(HEX(provider), 'NULL'), COALESCE(CAST(template_id AS CHAR), 'NULL'), COALESCE(CAST(enabled AS CHAR), 'NULL'), COALESCE(HEX(variable_mapping_json), 'NULL'), COALESCE(CAST(version AS CHAR), 'NULL'), COALESCE(CAST(updated_by AS CHAR), 'NULL'), DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s'), DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s')), 256)) FROM email_scene_bindings ORDER BY id;"
@@ -154,23 +222,34 @@ assert_data_hashes() {
   [[ $(scene_value_hash) = "$scene_values_before" ]]
 }
 
-# 源库只读门禁、单事务备份与唯一目标恢复。
+# 源库只读门禁、单事务备份与唯一目标恢复。源库已是完整 schema57，禁止为了复验回退测试主库。
 stage=source_gate
 assert_source_migration_state_unchanged
-[[ "$(mysql_query_db "$source_db" "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE';")" = 68 ]]
+[[ "$(mysql_query_db "$source_db" "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE';")" = 69 ]]
 [[ "$(mysql_query_db "$source_db" "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' AND engine <> 'InnoDB';")" = 0 ]]
 [[ "$(mysql_query_db "$source_db" "SELECT COUNT(*) FROM information_schema.views WHERE table_schema = DATABASE();")" = 0 ]]
 [[ "$(mysql_query_db "$source_db" "SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema = DATABASE();")" = 0 ]]
 [[ "$(mysql_query_db "$source_db" "SELECT COUNT(*) FROM information_schema.routines WHERE routine_schema = DATABASE();")" = 0 ]]
 [[ "$(mysql_query_db "$source_db" "SELECT COUNT(*) FROM information_schema.events WHERE event_schema = DATABASE();")" = 0 ]]
 [[ "$(mysql_admin_query "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = '$target_db';")" = 0 ]]
+[[ "$(mysql_query_db "$source_db" "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'migration_000057_email_receipt_time_backup';")" = 1 ]]
 source_charset=$(mysql_admin_query "SELECT default_character_set_name FROM information_schema.schemata WHERE schema_name = '$source_db';")
 source_collation=$(mysql_admin_query "SELECT default_collation_name FROM information_schema.schemata WHERE schema_name = '$source_db';")
 [[ "$source_charset" =~ ^[A-Za-z0-9_]+$ ]]
 [[ "$source_collation" =~ ^[A-Za-z0-9_]+$ ]]
 
 stage=source_dump
-MYSQL_PWD="$MYSQL_ROOT_PASSWORD" "$MYSQLDUMP_BIN" --host=127.0.0.1 --port=3306 --user=root --single-transaction --quick --skip-lock-tables --routines --triggers --events --hex-blob --set-gtid-purged=OFF --no-tablespaces "$source_db" >"$dump_file" 2>/dev/null
+: > "$evidence_dir/mysqldump.stderr"
+"$CHMOD_BIN" 600 "$evidence_dir/mysqldump.stderr"
+set +e
+MYSQL_PWD="$MYSQL_ROOT_PASSWORD" "$MYSQLDUMP_BIN" --no-defaults --host=127.0.0.1 --port=3306 --user=root --single-transaction --quick --skip-lock-tables --routines --triggers --events --hex-blob --set-gtid-purged=OFF --no-tablespaces "$source_db" >"$dump_file" 2>"$evidence_dir/mysqldump.stderr"
+dump_exit_code=$?
+set -e
+if [[ $dump_exit_code -ne 0 ]]; then
+  report_mysql_failure "$dump_exit_code" "$evidence_dir/mysqldump.stderr"
+  fail
+fi
+: > "$evidence_dir/mysqldump.stderr"
 "$CHMOD_BIN" 600 "$dump_file"
 [[ -s "$dump_file" ]]
 dump_sha=$($SHA256SUM_BIN -- "$dump_file" | $AWK_BIN '{print toupper($1)}')
@@ -308,17 +387,19 @@ stage=database_precheck
 assert_scalar "SELECT IF(DATABASE() = '$target_db', 1, 0);" 1
 assert_scalar "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = '$target_db';" 1
 assert_scalar "SELECT COUNT(*) FROM schema_migrations;" 1
-[[ $(version_dirty) = 56:0 ]]
-schema56_shape
+[[ $(version_dirty) = 57:0 ]]
+schema57_shape
 receipt_rows_before=$(mysql_query "SELECT COUNT(*) FROM email_admin_verify_bootstrap_receipts;")
 scene_rows_before=$(mysql_query "SELECT COUNT(*) FROM email_scene_bindings;")
 receipt_non_time_before=$(receipt_non_time_hash)
 receipt_second_before=$(receipt_second_hash)
 receipt_full_before=$(receipt_full_hash)
+receipt_original_before=$(receipt_original_hash_from_backup)
+backup_receipt_count_before=$(mysql_query "SELECT COUNT(*) FROM migration_000057_email_receipt_time_backup WHERE row_kind = 'receipt';")
 scene_values_before=$(scene_value_hash)
 snapshot_tables "$evidence_dir/stable_before.tsv" stable
 snapshot_tables "$evidence_dir/full_before.tsv" full
-assert_scalar "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE';" 68
+assert_scalar "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE';" 69
 restored_total_rows=$($AWK_BIN -F '\t' '{sum += $2} END {print sum + 0}' "$evidence_dir/full_before.tsv")
 [[ "$restored_total_rows" =~ ^[0-9]+$ ]]
 stable_before_sha=$($SHA256SUM_BIN -- "$evidence_dir/stable_before.tsv" | "$AWK_BIN" '{print toupper($1)}')
@@ -328,6 +409,25 @@ assert_source_migration_state_unchanged
 stage=cycle_start
 "$TOUCH_BIN" "$evidence_dir/cycle_started"
 "$CHMOD_BIN" 600 "$evidence_dir/cycle_started"
+
+stage=first_down_mark_dirty
+assert_scalar "UPDATE schema_migrations SET dirty = 1 WHERE version = 57 AND dirty = 0; SELECT ROW_COUNT();" 1
+stage=first_down_sql
+verify_sql_hash "$down_file" "$expected_down_sha"
+mysql_from_file "$down_file"
+stage=first_down_finalize
+assert_scalar "UPDATE schema_migrations SET version = 56, dirty = 0 WHERE version = 57 AND dirty = 1; SELECT ROW_COUNT();" 1
+stage=first_down_validate
+[[ $(version_dirty) = 56:0 ]]
+schema56_shape
+assert_scalar "SELECT COUNT(*) FROM email_admin_verify_bootstrap_receipts;" "$receipt_rows_before"
+assert_scalar "SELECT COUNT(*) FROM email_scene_bindings;" "$scene_rows_before"
+[[ $(receipt_full_hash) = "$receipt_original_before" ]]
+assert_data_hashes
+snapshot_tables "$evidence_dir/stable_after_first_down.tsv" stable
+files_equal "$evidence_dir/stable_before.tsv" "$evidence_dir/stable_after_first_down.tsv"
+assert_scalar "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE';" 68
+assert_source_migration_state_unchanged
 
 stage=first_up_mark_dirty
 assert_scalar "UPDATE schema_migrations SET dirty = 1 WHERE version = 56 AND dirty = 0; SELECT ROW_COUNT();" 1
@@ -341,31 +441,30 @@ stage=first_up_validate
 schema57_shape
 assert_scalar "SELECT COUNT(*) FROM email_admin_verify_bootstrap_receipts;" "$receipt_rows_before"
 assert_scalar "SELECT COUNT(*) FROM email_scene_bindings;" "$scene_rows_before"
+[[ $(receipt_full_hash) = "$receipt_full_before" ]]
 assert_data_hashes
-snapshot_tables "$evidence_dir/stable_after_first_up.tsv" stable
-files_equal "$evidence_dir/stable_before.tsv" "$evidence_dir/stable_after_first_up.tsv"
-first_backup_count=$(mysql_query "SELECT COUNT(*) FROM migration_000057_email_receipt_time_backup WHERE row_kind = 'receipt';")
+assert_scalar "SELECT COUNT(*) FROM migration_000057_email_receipt_time_backup WHERE row_kind = 'receipt';" "$backup_receipt_count_before"
+snapshot_tables "$evidence_dir/full_after_first_up.tsv" full
+files_equal "$evidence_dir/full_before.tsv" "$evidence_dir/full_after_first_up.tsv"
 assert_scalar "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE';" 69
 assert_source_migration_state_unchanged
 
-stage=down_mark_dirty
+stage=second_down_mark_dirty
 assert_scalar "UPDATE schema_migrations SET dirty = 1 WHERE version = 57 AND dirty = 0; SELECT ROW_COUNT();" 1
-stage=down_sql
+stage=second_down_sql
 verify_sql_hash "$down_file" "$expected_down_sha"
 mysql_from_file "$down_file"
-stage=down_finalize
+stage=second_down_finalize
 assert_scalar "UPDATE schema_migrations SET version = 56, dirty = 0 WHERE version = 57 AND dirty = 1; SELECT ROW_COUNT();" 1
-stage=down_validate
+stage=second_down_validate
 [[ $(version_dirty) = 56:0 ]]
 schema56_shape
 assert_scalar "SELECT COUNT(*) FROM email_admin_verify_bootstrap_receipts;" "$receipt_rows_before"
 assert_scalar "SELECT COUNT(*) FROM email_scene_bindings;" "$scene_rows_before"
-[[ $(receipt_full_hash) = "$receipt_full_before" ]]
+[[ $(receipt_full_hash) = "$receipt_original_before" ]]
 assert_data_hashes
-snapshot_tables "$evidence_dir/stable_after_down.tsv" stable
-files_equal "$evidence_dir/stable_before.tsv" "$evidence_dir/stable_after_down.tsv"
-snapshot_tables "$evidence_dir/full_after_down.tsv" full
-files_equal "$evidence_dir/full_before.tsv" "$evidence_dir/full_after_down.tsv"
+snapshot_tables "$evidence_dir/stable_after_second_down.tsv" stable
+files_equal "$evidence_dir/stable_before.tsv" "$evidence_dir/stable_after_second_down.tsv"
 assert_scalar "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE';" 68
 assert_source_migration_state_unchanged
 
@@ -381,11 +480,11 @@ stage=second_up_validate
 schema57_shape
 assert_scalar "SELECT COUNT(*) FROM email_admin_verify_bootstrap_receipts;" "$receipt_rows_before"
 assert_scalar "SELECT COUNT(*) FROM email_scene_bindings;" "$scene_rows_before"
+[[ $(receipt_full_hash) = "$receipt_full_before" ]]
 assert_data_hashes
-snapshot_tables "$evidence_dir/stable_after_second_up.tsv" stable
-files_equal "$evidence_dir/stable_before.tsv" "$evidence_dir/stable_after_second_up.tsv"
-second_backup_count=$(mysql_query "SELECT COUNT(*) FROM migration_000057_email_receipt_time_backup WHERE row_kind = 'receipt';")
-[[ "$second_backup_count" = "$first_backup_count" ]]
+assert_scalar "SELECT COUNT(*) FROM migration_000057_email_receipt_time_backup WHERE row_kind = 'receipt';" "$backup_receipt_count_before"
+snapshot_tables "$evidence_dir/full_after_second_up.tsv" full
+files_equal "$evidence_dir/full_before.tsv" "$evidence_dir/full_after_second_up.tsv"
 assert_scalar "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE';" 69
 assert_source_migration_state_unchanged
 
@@ -403,7 +502,8 @@ printf 'final_version_dirty=57:0\n'
 printf 'three_column_schema_target=true\n'
 printf 'affected_row_counts_preserved=true\n'
 printf 'affected_values_preserved=true\n'
-printf 'down_full_snapshot_restored=true\n'
+printf 'millisecond_original_restored_twice=true\n'
+printf 'down_up_down_up_cycle=true\n'
 printf 'stable_tables_preserved=true\n'
 printf 'stable_aggregate_sha256=%s\n' "$stable_before_sha"
 printf 'up_sha256=%s\n' "$expected_up_sha"

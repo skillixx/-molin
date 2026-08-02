@@ -240,7 +240,7 @@ type LoginLogItem struct {
 }
 
 // MaskPhone 对手机号做脱敏处理：前3后4，中间替换为 ****。
-// 例如：13812345678 → 138****5678
+// 例如：11 位手机号会转换为“前 3 位 + **** + 后 4 位”。
 func MaskPhone(phone string) string {
 	if len(phone) < 7 {
 		return phone

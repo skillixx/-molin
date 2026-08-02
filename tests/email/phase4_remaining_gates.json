@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "phase": "directmail_email_otp_phase4",
+  "evidence_date": "2026-08-02",
+  "overall_status": "passed_with_project_owner_waivers",
+  "accepted_semantics": "provider_acceptance_only",
+  "closed_gates": [
+    {"id": "runtime_six_surface_scan", "status": "passed", "must_not_repeat": true},
+    {"id": "credential_cleanup", "status": "passed", "must_not_repeat": false},
+    {"id": "redis_lease", "status": "passed", "must_not_repeat": true},
+    {"id": "redis_history_cleanup", "status": "passed", "must_not_repeat": true},
+    {"id": "redis_history_postcheck", "status": "passed", "must_not_repeat": true},
+    {"id": "redis_unknown_restart_cycle", "status": "passed", "must_not_repeat": true},
+    {"id": "ram_read_actions", "status": "passed", "must_not_repeat": true},
+    {"id": "ram_effective_permissions", "status": "waived_by_project_owner_not_verified", "must_not_repeat": true},
+    {"id": "five_scene_real_replay_expiry", "status": "waived_by_project_owner_not_verified", "must_not_repeat": true},
+    {"id": "migration_000057_cycle", "status": "passed", "must_not_repeat": true},
+    {"id": "migration_000055_matrix", "status": "passed", "must_not_repeat": true},
+    {"id": "migration_000056_matrix", "status": "passed", "must_not_repeat": true},
+    {"id": "frontend_scope_dod", "status": "passed", "must_not_repeat": true},
+    {"id": "real_role_responsive_matrix", "status": "passed", "must_not_repeat": true},
+    {"id": "deployed_frontend_error_state", "status": "passed", "must_not_repeat": true},
+    {"id": "template_send_real_fault_matrix", "status": "waived_by_project_owner_not_verified", "must_not_repeat": true},
+    {"id": "five_business_flow_e2e", "status": "waived_by_project_owner_not_verified", "must_not_repeat": true},
+    {"id": "qa_phase4_report", "status": "passed_with_project_owner_waivers", "must_not_repeat": true},
+    {"id": "pm_phase4_signoff", "status": "passed_with_project_owner_waivers", "must_not_repeat": true}
+  ],
+  "open_gates": [],
+  "authorization_state": {
+    "redis_database_fixture_cycle": "passed_manual_legacy_scp_cycle_no_repeat",
+    "migration_matrices": "passed_isolated_mysql8_matrix_no_repeat",
+    "external_mail_e2e": "waived_by_project_owner_not_verified"
+  },
+  "qa_pm": {
+    "qa_status": "passed_with_project_owner_waivers",
+    "pm_status": "passed_with_project_owner_waivers",
+    "p0_open": 0,
+    "p1_open": 0,
+    "p2_open": 0
+  }
+}

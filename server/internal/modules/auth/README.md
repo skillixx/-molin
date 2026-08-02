@@ -39,6 +39,8 @@
 
 `000055_add_directmail_email_management.up.sql/down.sql` 已在真实 MySQL 8.4.10 通过核心验收：新库 1→55、旧库 54→55、55→54、ownership 预存组合、元数据冲突和三类未知引用均通过；partial-up 16/16、partial-down 15/15 共 31 个故障注入全部通过，注入均 `exit=1` 且 `information_schema`/ownership 状态与断点一致；另有无注入 up/down 各 1 次，均 `exit=0` 并恢复目标结构。schema 核对为 35 个 CHECK（业务+verification 33，ownership 2）、7 个外键、35 个索引（五业务表按 `(table_name,index_name)` 计 26，含 verification+ownership 共 35）；合法模板/绑定/白名单/accepted 日志 CRUD 通过，大写 SHA、非法外键、删除已绑定模板、accepted 日志缺少 RequestId 均被拒绝。54/55 状态库代表性备份恢复后 up/down 成功。最终工作树已用隔离 Go 1.25.0 与临时 modfile 重跑 `go test -count=1 ./...`、`go build ./...`、`go vet ./...` 全通过，仓库 `go.mod`、`go.sum` 未修改。000020 最小兼容修复已获产品经理批准、实施并通过：真实 `golang-migrate` + MySQL 8.4.10 空库 1→55 为 version55/dirty0，19→20→19→20 与 55→54→55 均 dirty0，三索引、五邮件表 0→5、ownership 4 正确，同一 v20 库继续到 55 未重放 000020；测试服务器 MySQL 8.0.46 只读审计为 version54/dirty0 且三索引正确。全程未使用 force，当前 up/down SHA256 为 `C91CB6A30CE6577C3CC88BE18CEADFC03406435172A03D61D39A7014EB8AB9A8` / `921521A7863E2FE7DC95A067267198C2E690537367D9A729C73F11D3FD81070C`，与 ADR 一致。Redis 基础设施 P1、其余四个邮件场景、RAM 否定矩阵和完整 E2E 尚未通过，上线前仍须逐项完成以下门禁。历史迁移边界为：除该 000020 修复外，不修改其他 000001-000054 migration；000055 自身可按本功能验收结果继续修正：
 
+> 状态更正（2026-07-30）：上一段末尾“Redis 基础设施 P1、其余四个邮件场景尚未通过”属于早期历史状态，已被后续证据取代。当前五场景均已有一次真实 accepted、人工收件和一次业务消费；真实 Redis lease 已通过；000057 技术可逆周期已通过且两个新增隔离资产冻结保留。仍未关闭的是 000055/000056 剩余隔离矩阵、历史 Redis unknown 夹具 cleanup 与修复后新周期、五场景真实重放/过期、真实模板测试发送故障矩阵、RAM 最小权限/Deny、同窗运行时敏感扫描及最终 QA/PM 签署。accepted 仍只表示供应商受理，不等于最终送达。
+
 1. up 保留旧 `verification_codes.code`，扩为 `VARCHAR(64) NULL`，并新增 `code_hash CHAR(64)`；历史歧义值全部安全失效。新应用只读写 code_hash，旧 code 仅供 down 后旧应用使用。
 2. 新增状态与邮箱目标列。维护窗必须暂停全部发码并等待至少10分钟；所有历史 email 行置 failed/过期/已使用，逐行生成不可关联随机占位 target_hash（不用应用HMAC密钥）、统一 masked 占位并清空 target_value。只有新 email 行写真实HMAC；phone继续使用 target_value。
 3. 按顺序创建 `email_provider_templates`、`email_scene_bindings`、`email_template_sync_runs`、`email_test_recipient_allowlist`、`email_send_logs` 五张业务表；发送日志状态必须包含 `pending/accepted/failed`，字段、CHECK、唯一键和普通索引逐项使用 `docs/database-schema-design.md §3.1.1`，不得弱化。
@@ -146,3 +148,17 @@ COMMIT;
 迁移后只读验证还必须覆盖：`verification_codes.code VARCHAR(64) NULL` 与 `code_hash CHAR(64) NOT NULL`；历史行全部 failed/过期/已使用；历史 email 的 `target_value` 全空且目标摘要/脱敏占位完整；历史 phone 继续保留 `target_value`；五场景初始均 disabled；五业务表、ownership、CHECK、外键和索引数量与 migration SSOT 一致。检查只统计状态、长度和空值，禁止导出完整邮箱、OTP、HMAC 或其他敏感值。
 
 任何真实同步、绑定、白名单、测试发送或 OTP 发码必须同时具备：独立的显式总确认开关、本轮 UUID 前缀、单一精确平台模板 ID/场景/version/脱敏测试账号，以及可复核的精确清理清单。不得使用通配删除、`KEYS *`、`FLUSHDB` 或扫描后批量回滚；模板停用属于有意安全动作，不得自动恢复覆盖其他管理员的新版本。
+
+### Redis unknown 历史夹具精确清理门禁
+
+`TestEmailUnknownTombstoneSurvivesRedisRestart` 的 `cleanup` 阶段只用于清理本轮已经由正式只读门禁确认归属的历史测试夹具，不是通用数据清理工具。
+
+- cleanup 在建立 MySQL 或 Redis 连接前先使用 `Lstat` 检查状态文件：必须是非符号链接的普通文件、权限精确为 `0600`，并在 Linux 测试服务器上由当前有效 UID 持有；非 Linux 的实际 cleanup 所有权检查默认失败关闭，离线测试只能通过注入元数据验证控制流。
+- 状态 JSON 拒绝重复键、未知字段和尾随内容；其内容必须是 `version=1`、`phase=phase1_created`，`nonce` 为 32 位小写十六进制，Redis `run_id` 为 40 位小写十六进制；操作员、模板、白名单、原日志和意外日志五个主键都必须为正数，两个日志主键必须不同。任一字段不满足时，不建立 Redis 或数据库连接。
+- 历史正式只读门禁已经确认派生锁键 `EXISTS=0`。cleanup 只在执行前再次确认该键仍不存在，不执行 `DEL`、`KEYS`、`SCAN`、`FLUSHDB` 或模式删除；数据库事务提交后再次要求 `EXISTS=0`。
+- 数据库事务先以 `FOR UPDATE` 锁定同一幂等 scope 的恰好两条日志，再按完整冻结谓词分别锁定两条日志、一条测试白名单和一条模板镜像。日志同时核对供应商、供应商模板号和 `verification_code_id IS NULL`；白名单同时核对脱敏邮箱、状态、版本和创建/更新人；模板同时核对供应商、正文摘要、变量、审核、本地启用、missing 和版本等固定属性。
+- 四项删除复用与锁定阶段完全相同的归属谓词，每项 `RowsAffected` 必须严格等于 1；任一归属漂移、缺行、多行或数据库错误都会回滚整个数据库事务。
+- 只有数据库事务成功且 Redis 后验仍为 0 时才删除状态文件。数据库提交后 Redis 后验查询失败时保留状态文件作为人工对账证据，禁止自动重试或据此宣称数据库未发生写入。
+- cleanup 不触碰 migration、000057 隔离库、备份、周期证据、其他 Redis key 或其他业务数据；正式 wrapper 仍需独立核对测试环境、`schema_migrations=57/dirty=0`、恢复点、冻结测试二进制 SHA-256 和 000057 资产前后摘要。
+
+离线故障注入覆盖连接前非法状态、符号链接、owner 不匹配、重复/未知 JSON 字段、缺失主键、重复日志主键、Redis key 仍存在、归属漂移、事务后续失败、数据库提交后 Redis 查询失败，以及全部成功后状态文件只删除一次。远程执行前必须再运行这些定向 Go 测试，且不得用静态检查代替真实 Go 编译结果。

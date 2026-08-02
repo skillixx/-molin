@@ -1,78 +1,98 @@
-# DirectMail RAM 最小权限安全探针
+# DirectMail RAM 最小权限验收说明
 
-## 用途
+## 1. 目的与结论
 
-该探针用于验证测试环境专用 RAM 身份仅具备以下最小权限：
+本说明用于验收测试环境专用 RAM 身份是否仅具备以下三个 DirectMail Action：
 
 - `dm:QueryTemplateByParam`
 - `dm:DescTemplate`
 - `dm:SingleSendMail`
 
-并确认 `CreateTemplate`、`ModifyTemplate`、`DeleteTemplate` 被拒绝。
+本轮废止“向 `SingleSendMail` 或模板写 API 发送缺少必填字段的请求，可依据参数错误证明 Allow/Deny”的旧假设。参数校验与权限校验的执行顺序不能作为稳定契约；`MissingParameter`、`InvalidParameter` 或其他请求类错误均不能证明某个 Action 已授权或被拒绝。
 
-探针默认只执行完全离线自测。真实 RAM 检查必须由测试负责人单独授权，并同时开启两个显式门禁。不得把凭据、完整邮箱、验证码或供应商原始响应写入命令、日志或报告。
+`SingleSendMail` 没有 `DryRun` 参数。合法请求成功即会触发真实发送，因此不得为补齐 RAM 证据重复发送邮件。当前仓库中的缺参真实探针及其 `request`/`permission` 分类不再作为 RAM 验收依据，真实模式暂停执行；离线分类测试即使通过，也不能关闭本门禁。
 
-## 安全请求设计
+## 2. 官方规则
 
-- 读取模板列表使用合法的最小分页参数。
-- 查询详情只使用测试负责人指定且已审核通过的 `TemplateId`。
-- `SingleSendMail` 只发送带签名但缺失全部业务必填参数的 RPC，不包含收件人、主题、正文或完整发信字段。正确的 Allow 策略应返回安全归类后的 `request`。
-- 三个模板写动作同样不携带任何业务必填参数。正确的最小权限策略应先返回安全归类后的 `permission`；如果错误地获得写权限，供应商最多只能返回 `request`，探针随即失败，不会创建、修改或删除模板。
-- 显式 Deny 验证每次只检查一个 action。无论 action 是否为读取、发送或模板写入，探针都期待 `permission`。
-- 探针不自动重试，不打印供应商 Code、Message、响应正文、RequestId、请求字段值或凭据。
-- 如果供应商返回未进入现有安全白名单的 Code，测试专用观测器只输出该 Code 的 SHA-256、UTF-8 字节长度和 HTTP 状态族。它不会保存或输出原始 Code。
-- 观测器只把摘要与源码内冻结的官方通用请求参数错误候选集合（`MissingParameter`、`InvalidParameter`）离线比较。仅当摘要唯一匹配时才输出规范化候选名；没有匹配或匹配不唯一时固定输出 `unknown`，不得自行推测字段后缀或扩充集合。
+- `SingleSendMail` 的授权 Action 为 `dm:SingleSendMail`，资源范围为 `*`，无关联操作；请求没有 `DryRun`，成功调用属于真实发送。
+- DirectMail 返回 HTTP 400 且 Code 为 `Forbidden` 时，表示调用者无该操作权限。
+- RAM 通用拒绝码还可能表现为 `NoPermission`、`Forbidden.RAM`、`NotAuthorized` 等；策略求值时显式 Deny 优先于 Allow。
+- 不能只凭 HTTP 状态或错误码完成归因。应使用对应 `RequestId` 在 OpenAPI Troubleshoot 中核对 `AccessDeniedDetail`、`AuthAction`，或使用 RAM 权限审计核对实际可能权限及最近 API 尝试。
+- 日志和测试报告不得记录 AccessKey、Secret、Token、完整邮箱、供应商响应正文或其他敏感信息。`RequestId` 仅进入受控证据附件，公开报告只记录脱敏引用位置。
 
-## 默认离线验证
+## 3. 无额外发信的最小 Allow 验收
+
+必须先证明三份证据来自同一 RAM 身份。记录身份别名、策略版本、证据时间窗和部署版本，不记录凭证值。
+
+| Action | 合格证据 | 判定边界 |
+|---|---|---|
+| `dm:QueryTemplateByParam` | 同一 RAM 身份既有的真实成功响应及受控 `RequestId` | 仅证明该 Action 在证据时点为 Allow |
+| `dm:DescTemplate` | 同一 RAM 身份既有的真实成功响应及受控 `RequestId` | 仅证明该 Action 在证据时点为 Allow |
+| `dm:SingleSendMail` | 同一 RAM 身份既有的真实调用已获供应商 `accepted`，并保留受控 `RequestId` 与消费记录 | `accepted` 只证明供应商接受调用和当时具备发送权限，不等于最终送达；不得因此再次发信 |
+
+若无法证明历史 `accepted` 与两个读 API 使用同一 RAM 身份、同一有效策略版本或可解释的连续时间窗，则本项记为 `BLOCKED`，不能用新的发信请求补证。
+
+## 4. 策略静态检查与权限审计
+
+由运维通过安全渠道导出该 RAM 身份在证据时点的有效策略快照，测试人员只读核对：
+
+1. Allow Action 归一化后必须恰好为上述三个 Action。
+2. `dm:SingleSendMail` 的 Resource 必须为 `*`。
+3. 不得存在 `dm:*`、`*` 或其他可扩张 DirectMail 权限的通配 Allow。
+4. 不得 Allow `dm:CreateTemplate`、`dm:ModifyTemplate`、`dm:DeleteTemplate`。
+5. 同时核对附加策略、用户组策略、角色信任链和显式 Deny；显式 Deny 优先。
+6. 在 RAM 权限审计中按 API Action 检查实际可能权限及最近尝试，保存身份别名、策略版本、Action、时间窗和审计结论的脱敏证据。
+
+只有“历史真实 Allow 证据 + 策略快照恰好三个 Action + 权限审计一致”同时满足，才可判定最小 Allow 通过。
+
+## 5. 写操作与显式 Deny 的无副作用验收
+
+`CreateTemplate`、`ModifyTemplate`、`DeleteTemplate` 以及各 Action 的显式 Deny，优先使用以下证据，不新增业务请求：
+
+1. RAM 权限审计显示目标 Action 不在实际可能权限内，或被显式 Deny 命中。
+2. 对既有失败请求的 `RequestId` 使用 OpenAPI Troubleshoot，确认 `AccessDeniedDetail` 与 `AuthAction` 指向预期 Action。
+3. DirectMail 的 HTTP 400 `Forbidden`，或 RAM 的 `NoPermission`、`Forbidden.RAM`、`NotAuthorized`，仅在与上述 `RequestId` 诊断或权限审计相互印证时作为拒绝证据。
+
+缺少必填字段的写请求不能证明拒绝，因为请求可能在权限校验之前失败。反过来，使用完整合法参数调用写 API，一旦策略配置错误就可能创建、修改或删除模板，也不能保证无副作用。
+
+因此，在权限审计或既有 `RequestId` 诊断不足时，本项必须记为 `BLOCKED`。如仍要求进行真实 API 拒绝测试，必须另行取得明确授权，并先由阿里云能力或隔离环境证明该请求即使意外获准也不会产生副作用；无法证明时不得执行。`SingleSendMail` 没有 `DryRun`，不能以真实发送请求验证显式 Deny。
+
+## 6. 验收记录
+
+| 检查项 | 所需证据 | 当前判定规则 |
+|---|---|---|
+| 两个读 Action 为 Allow | 同一 RAM 身份的既有成功响应、受控 `RequestId` | 证据完整才 PASS |
+| `SingleSendMail` 为 Allow | 同一 RAM 身份的既有真实 `accepted`、受控 `RequestId` | 不新增发信；证据完整才 PASS |
+| Allow 集合恰好为三个 Action | 有效策略快照与权限审计 | 无通配、无模板写权限才 PASS |
+| 三个模板写 Action 被拒绝 | 权限审计或既有 `RequestId` 诊断 | 禁止用缺参错误代替；不足则 BLOCKED |
+| 显式 Deny 优先 | 权限审计或既有 `RequestId` 诊断 | 每个目标 Action 单独留证；不足则 BLOCKED |
+
+旧输出 `RAM_PROBE PASS mode=minimum_allow ... send_signature_only=request ...` 和 `RAM_PROBE PASS mode=explicit_deny ... safe_request=true` 均为无效验收结论，不得写入新的测试报告。最终报告应分别列出每项 Action 的证据类型、证据时点、策略版本和 `PASS/BLOCKED/FAIL`，不得把部分证据扩展为 RAM 门禁通过。
+
+## 7. 脱敏证据离线验收器
+
+`directmail_ram_effective_evidence.py` 只读取运维通过安全渠道交付的脱敏 JSON 清单，不调用 RAM、DirectMail 或 OpenAPI。调用时必须同时提供清单绝对路径和独立冻结的 SHA-256：
 
 ```powershell
-$go = (Get-Command go -ErrorAction Stop).Source
-$env:GOENV = 'off'
-$env:GOTOOLCHAIN = 'local'
-$env:CGO_ENABLED = '0'
-& $go test ./internal/modules/auth/service -run '^TestDirectMailRAMProbe' -count=1 -v
+python tests/email/directmail_ram_effective_evidence.py `
+  --manifest <脱敏清单绝对路径> `
+  --manifest-sha256 <独立冻结的64位小写SHA-256>
+python tests/email/directmail_ram_effective_evidence_contract.py
+python -O tests/email/directmail_ram_effective_evidence_contract.py
 ```
 
-命令只接受当前受控终端 `PATH` 中已经安装并完成来源校验的 Go；找不到时固定记为 `BLOCKED`。不得把某次执行产生的临时目录、随机工具路径或个人工作站路径写入仓库文档，也不得联网自动下载工具链。
+清单固定绑定不超过 24 小时的 UTC 证据窗、不可逆身份别名摘要、策略版本摘要、部署 SHA、有效策略完整性、附加策略与用户组策略完整性、Deny 优先级、直接 RAM 用户或完整角色信任链、最近 API 尝试审计，以及六个固定 Action。两个读取 Action 必须是既有成功证据，`SingleSendMail` 只能使用历史 `accepted`，三个模板写 Action 必须分别由权限审计或既有 Troubleshoot 证明 `explicit_deny`。
 
-未开启真实门禁时，真实探针必须显示固定的 `RAM_PROBE SKIP gate=double_confirmation`。离线分类和请求字段门禁必须通过。
+验证器递归拒绝 AccessKey、Secret、Token、RequestId、邮箱、收件人、供应商 Message/response/body 和凭据字段；每份原始证据只允许以 SHA-256 引用。它不接受 `delivered` 代替历史 `accepted`，也不接受 live write request 作为模板写 Deny 证据。当前验证器 SHA-256 为 `6BFB43F8EA43D622BFCC46D661DDB53196D84DBC8ACF1AAC55656535D87D699E`，攻击契约 SHA-256 为 `1EE0573446C8868295D60C8399BF94E3006EFB7EBA2AAC59D0D2E26F6287BA5F`；normal/`-O` 均通过 15 个攻击模型。当前尚未收到真实脱敏清单，因此 RAM 有效权限门禁仍为 `external_evidence_required`，不能记为 PASS。
 
-## 真实测试门禁
+## 8. 阿里云官方资料
 
-真实执行必须在独立安全进程中注入以下环境变量，不得从聊天、命令历史或普通文本文件复制凭据：
+- [SingleSendMail API：授权信息、请求参数与返回参数](https://help.aliyun.com/zh/direct-mail/api-dm-2015-11-23-singlesendmail)
+- [QueryTemplateByParam API](https://help.aliyun.com/zh/direct-mail/api-dm-2015-11-23-querytemplatebyparam)
+- [DescTemplate API](https://help.aliyun.com/zh/direct-mail/api-dm-2015-11-23-desctemplate)
+- [DirectMail 错误码](https://help.aliyun.com/zh/direct-mail/error-codes)
+- [OpenAPI 错误诊断](https://help.aliyun.com/zh/openapi/user-guide/api-error-diagnosis)
+- [RAM 权限审计](https://help.aliyun.com/zh/ram/overview-of-permissions-audit)
+- [RAM 权限策略判定流程](https://help.aliyun.com/zh/ram/policy-evaluation-process)
 
-- `RUN_DIRECTMAIL_RAM_PROBE=1`
-- `DIRECTMAIL_RAM_PROBE_CONFIRM=I_CONFIRM_SAFE_SIGNED_MISSING_PARAMETER_PROBE`
-- `APP_ENV=test`
-- `EMAIL_ADAPTER=production`
-- `DIRECTMAIL_ENDPOINT=https://dm.aliyuncs.com/`
-- `DIRECTMAIL_REGION=cn-hangzhou`
-- `DIRECTMAIL_RAM_PROBE_TEMPLATE_ID`：已审核通过的测试模板 ID
-- 现有 DirectMail 凭据、发信地址和别名环境变量
-
-最小 Allow 基线执行时，`DIRECTMAIL_RAM_PROBE_DENY_ACTION` 必须为空。显式 Deny 检查时，每次只设置下列一个固定 action 并单独运行：
-
-- `QueryTemplateByParam`
-- `DescTemplate`
-- `SingleSendMail`
-- `CreateTemplate`
-- `ModifyTemplate`
-- `DeleteTemplate`
-
-真实执行属于外部权限验证，必须单独取得授权。本文件不构成执行授权。
-
-## 固定结果语义
-
-- 最小 Allow 通过：`RAM_PROBE PASS mode=minimum_allow reads=true send_signature_only=request writes_denied=3`
-- 单 action Deny 通过：`RAM_PROBE PASS mode=explicit_deny permission=true safe_request=true`
-- 失败：仅输出 `RAM_PROBE FAIL stage=<固定阶段> category=<安全类别>`
-
-未知 Code 的附加安全字段固定为：
-
-```text
-code_sha256=<64位小写十六进制摘要> code_length=<UTF-8字节数> http_class=<固定状态族> candidate=<冻结候选名或unknown>
-```
-
-这些字段不能用于证明供应商错误语义；只有 `candidate` 唯一命中时，才可作为下一次扩充生产安全白名单的人工评审线索。禁止依据摘要自动修改生产错误码分类。
-
-`request` 表示供应商已验证签名权限后拒绝缺参请求，不表示邮件已发送；`permission` 表示 RAM 策略拒绝；`unknown` 表示无法安全判断，必须失败并停止。
+以上资料用于解释权限证据，不构成外部调用授权。若官方页面后续调整，应以执行验收时的阿里云官方文档为准，并在报告中记录查阅日期。

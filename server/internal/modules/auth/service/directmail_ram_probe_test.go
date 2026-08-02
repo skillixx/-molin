@@ -22,24 +22,31 @@ import (
 const (
 	directMailRAMProbeEnable  = "RUN_DIRECTMAIL_RAM_PROBE"
 	directMailRAMProbeConfirm = "DIRECTMAIL_RAM_PROBE_CONFIRM"
-	directMailRAMProbePhrase  = "I_CONFIRM_SAFE_SIGNED_MISSING_PARAMETER_PROBE"
+	directMailRAMProbePhrase  = "I_CONFIRM_SAFE_SIGNED_READ_ONLY_PROBE"
 	directMailRAMProbeDeny    = "DIRECTMAIL_RAM_PROBE_DENY_ACTION"
 )
 
-var directMailRAMProbeActions = map[string]struct{}{
+var directMailRAMProbeReadActions = map[string]struct{}{
 	"QueryTemplateByParam": {},
 	"DescTemplate":         {},
-	"SingleSendMail":       {},
-	"CreateTemplate":       {},
-	"ModifyTemplate":       {},
-	"DeleteTemplate":       {},
 }
 
-// directMailRAMProbeOfficialCandidates 只包含官方文档中的请求参数错误候选。
+// directMailRAMProbeOfficialCandidates 只包含官方文档中的权限和请求错误候选。
 // 候选名本身不是供应商现场值；现场 Code 只能以摘要与这些冻结值离线比对。
 var directMailRAMProbeOfficialCandidates = []string{
+	"Forbidden",
+	"Forbidden.RAM",
 	"InvalidParameter",
 	"MissingParameter",
+	"NoPermission",
+	"NotAuthorized",
+}
+
+var directMailRAMProbeOfficialPermissionCandidates = map[string]struct{}{
+	"Forbidden":     {},
+	"Forbidden.RAM": {},
+	"NoPermission":  {},
+	"NotAuthorized": {},
 }
 
 // directMailRAMProbeObservation 只保存不可逆摘要和固定枚举，不保存原始 Code 或响应内容。
@@ -126,6 +133,17 @@ func matchDirectMailRAMProbeCandidate(digest [sha256.Size]byte) string {
 type directMailRAMProbeResult struct {
 	Category    string
 	Observation directMailRAMProbeObservation
+}
+
+func newDirectMailRAMProbeResult(err error, observation directMailRAMProbeObservation) directMailRAMProbeResult {
+	category := directMailRAMProbeCategory(err)
+	// 生产分类尚未覆盖的 RAM 通用码只能在精确命中官方冻结集合后归类当前请求；该分类不证明策略中的显式 Deny。
+	if category == "rejected_other" && observation.Present {
+		if _, ok := directMailRAMProbeOfficialPermissionCandidates[observation.Candidate]; ok {
+			category = "permission"
+		}
+	}
+	return directMailRAMProbeResult{Category: category, Observation: observation}
 }
 
 func directMailRAMProbeSafeFailure(stage string, result directMailRAMProbeResult) string {
@@ -221,33 +239,26 @@ func directMailRAMProbeBusiness(action, templateID string) map[string]string {
 	case "DescTemplate":
 		return map[string]string{"TemplateId": templateID}
 	default:
-		// 发送和模板写动作故意不提供任何业务参数，使误授权最多返回缺参错误。
-		return map[string]string{}
+		// 安全探针只允许构造只读请求，写入和发信动作必须通过外部审计证据验证。
+		return nil
 	}
 }
 
 func assertDirectMailRAMProbeSafeShape(t *testing.T, action string, form url.Values) {
 	t.Helper()
+	if _, ok := directMailRAMProbeReadActions[action]; !ok {
+		t.Fatal("RAM_PROBE FAIL stage=request_shape category=non_read_action")
+	}
 	if form.Get("Action") != action || form.Get("AccessKeyId") == "" || form.Get("Signature") == "" {
 		t.Fatal("RAM_PROBE FAIL stage=request_shape category=common_fields")
 	}
-	for _, forbidden := range []string{"ToAddress", "Subject", "HtmlBody", "TextBody"} {
+	for _, forbidden := range []string{
+		"AccountName", "AddressType", "ReplyToAddress", "FromAlias", "ClickTrace",
+		"ToAddress", "Subject", "HtmlBody", "TextBody",
+		"TemplateName", "TemplateSubject", "TemplateText", "TemplateType",
+	} {
 		if form.Has(forbidden) {
-			t.Fatal("RAM_PROBE FAIL stage=request_shape category=mail_content")
-		}
-	}
-	if action == "SingleSendMail" {
-		for _, forbidden := range []string{"AccountName", "AddressType", "ReplyToAddress", "FromAlias", "ClickTrace"} {
-			if form.Has(forbidden) {
-				t.Fatal("RAM_PROBE FAIL stage=request_shape category=complete_mail_fields")
-			}
-		}
-	}
-	if action == "CreateTemplate" || action == "ModifyTemplate" || action == "DeleteTemplate" {
-		for _, forbidden := range []string{"TemplateId", "TemplateName", "TemplateSubject", "TemplateText", "TemplateType"} {
-			if form.Has(forbidden) {
-				t.Fatal("RAM_PROBE FAIL stage=request_shape category=template_write_fields")
-			}
+			t.Fatal("RAM_PROBE FAIL stage=request_shape category=side_effect_fields")
 		}
 	}
 }
@@ -258,10 +269,13 @@ func TestDirectMailRAMProbeOfflineClassificationAndSafeRequestShape(t *testing.T
 		status                 int
 		want                   string
 	}{
-		{name: "权限拒绝", action: "CreateTemplate", status: http.StatusForbidden, response: `{"Code":"Forbidden.RAM","Message":"不得输出的供应商原文"}`, want: "permission"},
-		{name: "缺少参数", action: "SingleSendMail", status: http.StatusBadRequest, response: `{"Code":"MissingParameter","Message":"不得输出的供应商原文"}`, want: "request"},
+		{name: "DirectMail官方Forbidden", action: "QueryTemplateByParam", status: http.StatusBadRequest, response: `{"Code":"Forbidden","Message":"不得输出的供应商原文"}`, want: "permission"},
+		{name: "RAM通用Forbidden", action: "QueryTemplateByParam", status: http.StatusBadRequest, response: `{"Code":"Forbidden.RAM","Message":"不得输出的供应商原文"}`, want: "permission"},
+		{name: "RAM通用NoPermission", action: "DescTemplate", status: http.StatusBadRequest, response: `{"Code":"NoPermission","Message":"不得输出的供应商原文"}`, want: "permission"},
+		{name: "缺少参数只归类请求错误", action: "DescTemplate", status: http.StatusBadRequest, response: `{"Code":"MissingParameter","Message":"不得输出的供应商原文"}`, want: "request"},
+		{name: "未知近似权限码不得猜测", action: "DescTemplate", status: http.StatusBadRequest, response: `{"Code":"NotAuthorized.UnknownVariant","Message":"不得输出的供应商原文"}`, want: "rejected_other"},
 		{name: "明确成功", action: "QueryTemplateByParam", status: http.StatusOK, response: `{"RequestId":"offline-request"}`, want: "success"},
-		{name: "响应未知", action: "DeleteTemplate", status: http.StatusBadGateway, response: `{`, want: "unknown"},
+		{name: "响应未知", action: "DescTemplate", status: http.StatusBadGateway, response: `{`, want: "unknown"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -297,8 +311,9 @@ func TestDirectMailRAMProbeUnknownCodeObservationIsIrreversibleAndCandidateBound
 			adapter := NewProductionDirectMailAdapter("offline-access-id", "offline-access-secret-with-safe-length", "cn-hangzhou", "offline@example.invalid", "离线探针", directMailOfficialEndpoint, time.Second)
 			adapter.client = &http.Client{Transport: observer, Timeout: time.Second}
 			var out directMailResponse
-			err := adapter.call(context.Background(), "SingleSendMail", map[string]string{}, &out)
-			result := directMailRAMProbeResult{Category: directMailRAMProbeCategory(err), Observation: observer.snapshot()}
+			// 使用完整的只读详情请求测试观测器；伪造响应仅用于离线验证脱敏边界。
+			err := adapter.call(context.Background(), "DescTemplate", map[string]string{"TemplateId": "offline-template"}, &out)
+			result := newDirectMailRAMProbeResult(err, observer.snapshot())
 			if !result.Observation.Present || result.Observation.Candidate != tc.wantCandidate || result.Observation.HTTPClass != "http_4xx" {
 				t.Fatal("RAM_PROBE FAIL stage=offline_observation category=contract")
 			}
@@ -326,10 +341,44 @@ func TestDirectMailRAMProbeUnknownCodeObservationIsIrreversibleAndCandidateBound
 	}
 }
 
-func TestDirectMailRAMProbeAllActionsHaveStaticSafeBusinessFields(t *testing.T) {
-	for action := range directMailRAMProbeActions {
+func TestDirectMailRAMProbeOfficialPermissionCodesRequireExactMatch(t *testing.T) {
+	for _, code := range []string{"Forbidden", "Forbidden.RAM", "NoPermission", "NotAuthorized"} {
+		t.Run(code, func(t *testing.T) {
+			transport := &directMailRAMProbeTransport{
+				status: http.StatusBadRequest,
+				body:   `{"Code":"` + code + `","Message":"不得输出的供应商原文"}`,
+			}
+			observer := &directMailRAMProbeObserver{base: transport}
+			adapter := NewProductionDirectMailAdapter("offline-access-id", "offline-access-secret-with-safe-length", "cn-hangzhou", "offline@example.invalid", "离线探针", directMailOfficialEndpoint, time.Second)
+			adapter.client = &http.Client{Transport: observer, Timeout: time.Second}
+			var out directMailResponse
+			err := adapter.call(context.Background(), "DescTemplate", map[string]string{"TemplateId": "offline-template"}, &out)
+			result := newDirectMailRAMProbeResult(err, observer.snapshot())
+			if result.Category != "permission" || result.Observation.Candidate != code {
+				t.Fatal("RAM_PROBE FAIL stage=official_permission category=contract")
+			}
+		})
+	}
+
+	transport := &directMailRAMProbeTransport{
+		status: http.StatusBadRequest,
+		body:   `{"Code":"NotAuthorized.UnknownVariant","Message":"不得输出的供应商原文"}`,
+	}
+	observer := &directMailRAMProbeObserver{base: transport}
+	adapter := NewProductionDirectMailAdapter("offline-access-id", "offline-access-secret-with-safe-length", "cn-hangzhou", "offline@example.invalid", "离线探针", directMailOfficialEndpoint, time.Second)
+	adapter.client = &http.Client{Transport: observer, Timeout: time.Second}
+	var out directMailResponse
+	err := adapter.call(context.Background(), "DescTemplate", map[string]string{"TemplateId": "offline-template"}, &out)
+	result := newDirectMailRAMProbeResult(err, observer.snapshot())
+	if result.Category != "rejected_other" || result.Observation.Candidate != "unknown" {
+		t.Fatal("RAM_PROBE FAIL stage=official_permission category=unknown_guessed")
+	}
+}
+
+func TestDirectMailRAMProbeOnlyReadActionsHaveStaticSafeBusinessFields(t *testing.T) {
+	for action := range directMailRAMProbeReadActions {
 		t.Run(action, func(t *testing.T) {
-			adapter, transport := newOfflineDirectMailRAMProbe(http.StatusBadRequest, `{"Code":"MissingParameter"}`)
+			adapter, transport := newOfflineDirectMailRAMProbe(http.StatusOK, `{"RequestId":"offline-request"}`)
 			var out directMailResponse
 			_ = adapter.call(context.Background(), action, directMailRAMProbeBusiness(action, "offline-template"), &out)
 			form, requests := transport.snapshot()
@@ -337,6 +386,16 @@ func TestDirectMailRAMProbeAllActionsHaveStaticSafeBusinessFields(t *testing.T) 
 				t.Fatal("RAM_PROBE FAIL stage=static_gate category=request_count")
 			}
 			assertDirectMailRAMProbeSafeShape(t, action, form)
+		})
+	}
+}
+
+func TestDirectMailRAMProbeNeverBuildsSideEffectBusinessFields(t *testing.T) {
+	for _, action := range []string{"SingleSendMail", "CreateTemplate", "ModifyTemplate", "DeleteTemplate"} {
+		t.Run(action, func(t *testing.T) {
+			if business := directMailRAMProbeBusiness(action, "offline-template"); business != nil {
+				t.Fatal("RAM_PROBE FAIL stage=static_gate category=side_effect_action")
+			}
 		})
 	}
 }
@@ -385,36 +444,24 @@ func callLiveDirectMailRAMProbe(t *testing.T, adapter *ProductionDirectMailAdapt
 	defer cancel()
 	var out directMailResponse
 	err := adapter.call(ctx, action, business, &out)
-	return directMailRAMProbeResult{Category: directMailRAMProbeCategory(err), Observation: observer.snapshot()}
+	return newDirectMailRAMProbeResult(err, observer.snapshot())
 }
 
-// TestDirectMailRAMMinimumPermissionProbe 只有双重门禁显式开启后才执行一次安全 RAM 基线。
-// 发送和模板写动作均缺少全部业务必填参数，无法组成可投递邮件或可写模板请求。
+// TestDirectMailRAMMinimumPermissionProbe 只有双重门禁显式开启后才执行一次只读 RAM 基线。
+// SingleSendMail 没有 DryRun，缺参错误也不能证明授权结果，因此本测试绝不调用发信或模板写入 API。
 func TestDirectMailRAMMinimumPermissionProbe(t *testing.T) {
-	adapter, observer, templateID := liveDirectMailRAMProbeAdapter(t)
+	requireDirectMailRAMProbeGate(t)
 	if denyAction := strings.TrimSpace(os.Getenv(directMailRAMProbeDeny)); denyAction != "" {
-		if _, ok := directMailRAMProbeActions[denyAction]; !ok {
-			t.Fatal("RAM_PROBE FAIL stage=deny_action category=invalid")
-		}
-		if result := callLiveDirectMailRAMProbe(t, adapter, observer, denyAction, directMailRAMProbeBusiness(denyAction, templateID)); result.Category != "permission" {
-			t.Fatal(directMailRAMProbeSafeFailure("explicit_deny", result))
-		}
-		t.Log("RAM_PROBE PASS mode=explicit_deny permission=true safe_request=true")
-		return
+		// Deny 必须改用权限审计，或结合官方 RequestId/AccessDeniedDetail 诊断；缺参写请求不再受支持。
+		t.Fatal("RAM_PROBE FAIL stage=deny_action category=external_diagnosis_required")
 	}
+	adapter, observer, templateID := liveDirectMailRAMProbeAdapter(t)
 
 	for _, action := range []string{"QueryTemplateByParam", "DescTemplate"} {
 		if result := callLiveDirectMailRAMProbe(t, adapter, observer, action, directMailRAMProbeBusiness(action, templateID)); result.Category != "success" {
 			t.Fatal(directMailRAMProbeSafeFailure("minimum_allow_read", result))
 		}
 	}
-	if result := callLiveDirectMailRAMProbe(t, adapter, observer, "SingleSendMail", map[string]string{}); result.Category != "request" {
-		t.Fatal(directMailRAMProbeSafeFailure("minimum_allow_send", result))
-	}
-	for _, action := range []string{"CreateTemplate", "ModifyTemplate", "DeleteTemplate"} {
-		if result := callLiveDirectMailRAMProbe(t, adapter, observer, action, map[string]string{}); result.Category != "permission" {
-			t.Fatal(directMailRAMProbeSafeFailure("template_write_deny", result))
-		}
-	}
-	t.Log("RAM_PROBE PASS mode=minimum_allow reads=true send_signature_only=request writes_denied=3")
+	// SingleSendMail Allow 只能引用既有且经授权的真实发送证据，本只读探针不制造新证据。
+	t.Log("RAM_PROBE PASS mode=minimum_allow reads=true send_allow=existing_authorized_evidence_required deny=external_diagnosis_required")
 }

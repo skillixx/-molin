@@ -115,7 +115,13 @@ SELECT 'verification_codes 必须保留 000055 八个安全 CHECK',
        IF(COUNT(*) = 8, 1, 0)
 FROM (
   SELECT tc.constraint_name,
-         cc.check_clause AS clause_raw
+         REPLACE(REPLACE(REPLACE(REPLACE(
+           REPLACE(
+             REPLACE(cc.check_clause, CONCAT(CHAR(92), CHAR(39)), CHAR(39)),
+             '_utf8mb4',
+             ''
+           ),
+           ' ', ''), CHAR(9), ''), CHAR(10), ''), CHAR(13), '') AS clause_compact
   FROM information_schema.table_constraints tc
   JOIN information_schema.check_constraints cc
     ON cc.constraint_schema = tc.constraint_schema
@@ -126,21 +132,29 @@ FROM (
     AND tc.enforced = 'YES'
 ) checks
 WHERE (constraint_name = 'chk_verification_code_hash'
-       AND BINARY clause_raw = BINARY CONCAT('regexp_like(`code_hash`,_utf8mb4', CHAR(92), CHAR(39), '^[0-9a-f]{64}$', CHAR(92), CHAR(39), ')'))
+       AND (BINARY clause_compact = BINARY REPLACE(CONCAT('regexp_like(`code_hash`,', CHAR(39), '^[0-9a-f]{64}$', CHAR(39), ')'), ' ', '')
+            OR (OCTET_LENGTH(clause_compact) = 48 AND LOWER(SHA2(clause_compact, 256)) = 'b3f6d38e6965b16c300e0057dc2074afef859b72e28d20f28bc1fde167dccfef')))
    OR (constraint_name = 'chk_verification_send_status'
-       AND BINARY clause_raw = BINARY CONCAT('(`send_status` in (_utf8mb4', CHAR(92), CHAR(39), 'pending', CHAR(92), CHAR(39), ',_utf8mb4', CHAR(92), CHAR(39), 'accepted', CHAR(92), CHAR(39), ',_utf8mb4', CHAR(92), CHAR(39), 'failed', CHAR(92), CHAR(39), '))'))
+       AND (BINARY clause_compact = BINARY REPLACE(CONCAT('(`send_status` in (', CHAR(39), 'pending', CHAR(39), ',', CHAR(39), 'accepted', CHAR(39), ',', CHAR(39), 'failed', CHAR(39), '))'), ' ', '')
+            OR (OCTET_LENGTH(clause_compact) = 69 AND LOWER(SHA2(clause_compact, 256)) = 'e05e098693ce41e8d9e204e823ea8f50f9fdcb45abdc3a7eae2236359bf04f02')))
    OR (constraint_name = 'chk_verification_target_type'
-       AND BINARY clause_raw = BINARY CONCAT('(`target_type` in (_utf8mb4', CHAR(92), CHAR(39), 'email', CHAR(92), CHAR(39), ',_utf8mb4', CHAR(92), CHAR(39), 'phone', CHAR(92), CHAR(39), '))'))
+       AND (BINARY clause_compact = BINARY REPLACE(CONCAT('(`target_type` in (', CHAR(39), 'email', CHAR(39), ',', CHAR(39), 'phone', CHAR(39), '))'), ' ', '')
+            OR (OCTET_LENGTH(clause_compact) = 48 AND LOWER(SHA2(clause_compact, 256)) = '80907c599c935b2bd8b2e9ef6b5a56530203ac83edb6ef05c96250dfbe33dd53')))
    OR (constraint_name = 'chk_verification_target_shape'
-       AND BINARY clause_raw = BINARY CONCAT('(((`target_type` = _utf8mb4', CHAR(92), CHAR(39), 'email', CHAR(92), CHAR(39), ') and (`target_value` is null) and (`target_hash` is not null) and (`target_masked` is not null)) or ((`target_type` = _utf8mb4', CHAR(92), CHAR(39), 'phone', CHAR(92), CHAR(39), ') and (`target_value` is not null) and (`target_hash` is null) and (`target_masked` is null)))'))
+       AND (BINARY clause_compact = BINARY REPLACE(CONCAT('(((`target_type` = ', CHAR(39), 'email', CHAR(39), ') and (`target_value` is null) and (`target_hash` is not null) and (`target_masked` is not null)) or ((`target_type` = ', CHAR(39), 'phone', CHAR(39), ') and (`target_value` is not null) and (`target_hash` is null) and (`target_masked` is null)))'), ' ', '')
+            OR (OCTET_LENGTH(clause_compact) = 227 AND LOWER(SHA2(clause_compact, 256)) = '656ef4e1b29c3c481b43aed49b3279f0dfb8f9bb6ed4868e9ef57e55ff660385')))
    OR (constraint_name = 'chk_verification_email_acceptance'
-       AND BINARY clause_raw = BINARY CONCAT('((`target_type` <> _utf8mb4', CHAR(92), CHAR(39), 'email', CHAR(92), CHAR(39), ') or ((`send_status` = _utf8mb4', CHAR(92), CHAR(39), 'accepted', CHAR(92), CHAR(39), ') and (`accepted_at` is not null)) or ((`send_status` in (_utf8mb4', CHAR(92), CHAR(39), 'pending', CHAR(92), CHAR(39), ',_utf8mb4', CHAR(92), CHAR(39), 'failed', CHAR(92), CHAR(39), ')) and (`accepted_at` is null)))'))
+       AND (BINARY clause_compact = BINARY REPLACE(CONCAT('((`target_type` <> ', CHAR(39), 'email', CHAR(39), ') or ((`send_status` = ', CHAR(39), 'accepted', CHAR(39), ') and (`accepted_at` is not null)) or ((`send_status` in (', CHAR(39), 'pending', CHAR(39), ',', CHAR(39), 'failed', CHAR(39), ')) and (`accepted_at` is null)))'), ' ', '')
+            OR (OCTET_LENGTH(clause_compact) = 176 AND LOWER(SHA2(clause_compact, 256)) = 'ee9f0a7c0344ae5c6220d17b7043e58e8d0735b42fd5cd8caa739d1212e71e06')))
    OR (constraint_name = 'chk_verification_email_idempotency'
-       AND BINARY clause_raw = BINARY CONCAT('((`target_type` <> _utf8mb4', CHAR(92), CHAR(39), 'email', CHAR(92), CHAR(39), ') or ((`business_request_no` is null) and (`idempotency_scope` is null) and (`request_fingerprint` is null)) or ((`business_request_no` is not null) and (`idempotency_scope` is not null) and (`request_fingerprint` is not null)))'))
+       AND (BINARY clause_compact = BINARY REPLACE(CONCAT('((`target_type` <> ', CHAR(39), 'email', CHAR(39), ') or ((`business_request_no` is null) and (`idempotency_scope` is null) and (`request_fingerprint` is null)) or ((`business_request_no` is not null) and (`idempotency_scope` is not null) and (`request_fingerprint` is not null)))'), ' ', '')
+            OR (OCTET_LENGTH(clause_compact) = 232 AND LOWER(SHA2(clause_compact, 256)) = '7345bcbc8d4592a7f62d24a0b3c6e6bbd8ae6fcc86da2533575df162932818d0')))
    OR (constraint_name = 'chk_verification_request_fingerprint'
-       AND BINARY clause_raw = BINARY CONCAT('((`request_fingerprint` is null) or regexp_like(`request_fingerprint`,_utf8mb4', CHAR(92), CHAR(39), '^[0-9a-f]{64}$', CHAR(92), CHAR(39), '))'))
+       AND (BINARY clause_compact = BINARY REPLACE(CONCAT('((`request_fingerprint` is null) or regexp_like(`request_fingerprint`,', CHAR(39), '^[0-9a-f]{64}$', CHAR(39), '))'), ' ', '')
+            OR (OCTET_LENGTH(clause_compact) = 91 AND LOWER(SHA2(clause_compact, 256)) = '02aade59c6a977c09e3595f8e6a5f9b11a2a59ad3a129bb0bc4390edbdbc3ed7')))
    OR (constraint_name = 'chk_verification_target_hash'
-       AND BINARY clause_raw = BINARY CONCAT('((`target_hash` is null) or regexp_like(`target_hash`,_utf8mb4', CHAR(92), CHAR(39), '^[0-9a-f]{64}$', CHAR(92), CHAR(39), '))'));
+       AND (BINARY clause_compact = BINARY REPLACE(CONCAT('((`target_hash` is null) or regexp_like(`target_hash`,', CHAR(39), '^[0-9a-f]{64}$', CHAR(39), '))'), ' ', '')
+            OR (OCTET_LENGTH(clause_compact) = 75 AND LOWER(SHA2(clause_compact, 256)) = 'fb3d30c4907cd8ac267ce323b7b2cc6c584d938ffd7fcc638bda58642541dd3d')));
 
 INSERT INTO migration_000056_assertions (assertion_name, passed)
 SELECT '000055 ownership 必须恰好包含四个冻结权限码',
