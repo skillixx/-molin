@@ -59,6 +59,7 @@ jobs:
           REFRESH_TOKEN_SECRET: test_refresh_secret_for_ci_32chars
           ID_CARD_HMAC_SECRET: test_hmac_secret_for_ci_only_32c
           SMS_MIGRATION_TEST_DSN: "molin:molin_password@tcp(127.0.0.1:3306)/molin_sms_test_ci?parseTime=true&multiStatements=true"
+          SMS_REDIS_INTEGRATION_TEST: "1"
         run: go test -v -race -count=1 ./...
 
       - name: 构建确认
