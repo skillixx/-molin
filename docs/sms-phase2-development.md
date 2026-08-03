@@ -10,7 +10,7 @@
 
 1. 模板同步只读取阿里云模板列表和新版模板详情，不创建、修改或删除云端模板和签名。
 2. 只保存固定签名下、验证码类型且包含 `${code}` 的模板；供应商查询全部成功后才开启数据库事务。
-3. 固定场景为 `register/login/reset_password/bind_phone/admin_verify`，签名只读取 `SMS_ALIYUN_SIGN_NAME`。
+3. 固定场景为 `register/login/reset_password/bind_phone/admin_verify`，签名只读取 `SMS_ALIYUN_SIGN_NAME`；五场景必须分别绑定独立模板。同一模板启用到其他场景时返回稳定的 `409/40900`，仓储事务通过模板行锁保证并发请求最多一个成功，同时允许停用历史共用绑定完成整改。
 4. 模板和场景更新使用 `version` 乐观锁；审核失效或供应商移除会安全停用模板及其绑定。
 5. 测试发送必须同时满足 `SMS_ENABLED=true`、`SMS_TEST_MODE=true`、白名单、双重认证、细分权限、幂等键和管理员/手机号 Redis 双维限流。
 6. 测试发送先用数据库唯一约束抢占，再调用阿里云；相同请求重放不再限流或发送，异参复用返回冲突。

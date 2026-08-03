@@ -86,6 +86,33 @@ func TestGetAdminSummaryUsesSingleDatabaseAggregate(t *testing.T) {
 	}
 }
 
+func TestUpsertAdminSceneBindingRejectsTemplateUsedByAnotherEnabledScene(t *testing.T) {
+	repo, mock, closeDB := newSMSRepositoryMock(t)
+	defer closeDB()
+	now := time.Now().UTC()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT \\* FROM `sms_templates` WHERE `sms_templates`.`id` = \\? ORDER BY `sms_templates`.`id` LIMIT \\? FOR UPDATE").
+		WithArgs(uint64(7), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "provider", "template_code", "template_name", "template_type", "provider_audit_status", "content", "local_enabled", "version", "created_at", "updated_at"}).
+			AddRow(7, "aliyun", "SMS_SHARED", "共享模板", "verification", "approved", "验证码 ${code}", true, 1, now, now))
+	mock.ExpectQuery("SELECT \\* FROM `sms_scene_bindings` WHERE scene = \\? ORDER BY `sms_scene_bindings`.`id` LIMIT \\? FOR UPDATE").
+		WithArgs("login", 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+	mock.ExpectQuery("SELECT `id` FROM `sms_scene_bindings` WHERE template_id = \\? AND enabled = \\? AND scene <> \\? LIMIT \\? FOR UPDATE").
+		WithArgs(uint64(7), true, "login", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(3))
+	mock.ExpectRollback()
+
+	_, err := repo.UpsertAdminSceneBinding(context.Background(), "login", "固定签名", 7, 0, 10, true)
+	if !errors.Is(err, ErrAdminSceneTemplateInUse) {
+		t.Fatalf("同一启用模板复用到其他场景必须被拒绝: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("独立模板仓储检查不符合预期: %v", err)
+	}
+}
+
 func TestListAdminTemplatesLoadsBoundScenesInOneQuery(t *testing.T) {
 	repo, mock, closeDB := newSMSRepositoryMock(t)
 	defer closeDB()

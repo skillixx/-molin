@@ -658,7 +658,7 @@ server/internal/modules/asset/
 | SMS-A03 | `GET /api/admin/sms/templates/{id}` | `sms:template:view` | 完整字段、可空字段、404/40400 和敏感信息边界 | 自动化通过；QA HTTP 待验收 |
 | SMS-A04 | `POST /api/admin/sms/templates/sync` | `sms:template:sync` | 无 body；幂等计数；供应商失败无部分写；后端总截止 10 秒 | 自动化及真实阿里云重复同步通过；QA HTTP 待复核 |
 | SMS-A05 | `GET /api/admin/sms/scenes` | `sms:template:view` | 固定五场景、D-95；未绑定字段为 `null`、`enabled=false`、`version=0` | 自动化通过；QA HTTP 待验收 |
-| SMS-A06 | `PUT /api/admin/sms/scenes/{scene}` | `sms:template:manage` | 只接收 `template_id/enabled/version`；不接收 `sign_name`；版本冲突返回 409/40900 | 自动化通过；QA HTTP 待验收 |
+| SMS-A06 | `PUT /api/admin/sms/scenes/{scene}` | `sms:template:manage` | 只接收 `template_id/enabled/version`；不接收 `sign_name`；版本冲突返回 409/40900；同一模板绑定另一启用场景返回 409/40900，停用历史共用绑定允许整改 | 自动化通过；QA HTTP 待验收 |
 | SMS-A07 | `PATCH /api/admin/sms/templates/{id}/status` | `sms:template:manage` | 乐观锁、审核状态约束及有效绑定阻止停用 | 自动化通过；QA HTTP 待验收 |
 | SMS-A08 | `POST /api/admin/sms/templates/{id}/test-send` | `sms:template:test` | 白名单、场景绑定、`Idempotency-Key`、双维度限流和受理语义 | 自动化通过；真实发送已受理且原白名单手机确认收件；QA HTTP 待复核 |
 | SMS-A09 | `GET /api/admin/sms/send-logs` | `sms:template:view` | D-95、筛选、可空字段、RFC3339 闭区间、开始不晚于结束、最大 31 天及脱敏 | 自动化通过；QA HTTP 待验收 |

@@ -20,6 +20,7 @@ var (
 	ErrAdminTemplateConflict       = errors.New("短信模板版本或绑定状态冲突")
 	ErrAdminSceneConflict          = errors.New("短信场景版本冲突")
 	ErrAdminSceneTemplateInvalid   = errors.New("短信场景模板不可用")
+	ErrAdminSceneTemplateInUse     = errors.New("短信模板已绑定其他启用场景")
 	ErrTestSendIdempotencyConflict = errors.New("短信测试发送幂等参数冲突")
 )
 
@@ -145,6 +146,11 @@ func (r *SMSRepository) UpsertAdminSceneBinding(ctx context.Context, scene, sign
 			if version != 0 {
 				return ErrAdminSceneConflict
 			}
+			if enabled {
+				if err := ensureTemplateNotBoundToOtherScene(tx, templateID, scene); err != nil {
+					return err
+				}
+			}
 			result = model.SceneBinding{Scene: scene, TemplateID: templateID, SignName: signName, Enabled: enabled, Version: 1, CreatedBy: &operatorID, UpdatedBy: &operatorID}
 			if err := tx.Create(&result).Error; err != nil {
 				var mysqlErr *mysqlDriver.MySQLError
@@ -160,6 +166,11 @@ func (r *SMSRepository) UpsertAdminSceneBinding(ctx context.Context, scene, sign
 				return err
 			}
 			return ErrAdminSceneConflict
+		}
+		if enabled {
+			if err := ensureTemplateNotBoundToOtherScene(tx, templateID, scene); err != nil {
+				return err
+			}
 		}
 		update := tx.Model(&model.SceneBinding{}).Where("id = ? AND version = ?", existing.ID, version).Updates(map[string]any{
 			"template_id": templateID, "sign_name": signName, "enabled": enabled,
@@ -179,6 +190,23 @@ func (r *SMSRepository) UpsertAdminSceneBinding(ctx context.Context, scene, sign
 		return nil, err
 	}
 	return &result, nil
+}
+
+// ensureTemplateNotBoundToOtherScene 强制一个启用模板只服务一个业务场景。
+// 外层事务已经先锁定模板行，因此两个场景并发争用同一模板时会串行检查，避免检查后写入竞态。
+func ensureTemplateNotBoundToOtherScene(tx *gorm.DB, templateID uint64, scene string) error {
+	var conflict model.SceneBinding
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Select("id").
+		Where("template_id = ? AND enabled = ? AND scene <> ?", templateID, true, scene).
+		Take(&conflict).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return ErrAdminSceneTemplateInUse
 }
 
 func (r *SMSRepository) ListAdminSendLogs(ctx context.Context, filter model.SendLogListFilter) ([]model.SendLog, int64, error) {

@@ -31,6 +31,7 @@ var (
 	ErrSMSTemplateSyncFailed          = errors.New("短信模板同步失败")
 	ErrSMSSceneInvalid                = errors.New("短信场景不合法")
 	ErrSMSSceneTemplateInvalid        = errors.New("短信场景模板不可用")
+	ErrSMSSceneTemplateInUse          = errors.New("短信模板已绑定其他启用场景")
 	ErrSMSSceneVersionConflict        = errors.New("短信场景版本冲突")
 	ErrSMSTestSendUnavailable         = errors.New("短信测试发送不可用")
 	ErrSMSTestSendIdempotencyConflict = errors.New("短信测试发送幂等冲突")
@@ -183,6 +184,9 @@ func (s *SMSAdminService) SetScene(ctx context.Context, scene string, templateID
 	}
 	if errors.Is(err, repository.ErrAdminSceneTemplateInvalid) {
 		return nil, ErrSMSSceneTemplateInvalid
+	}
+	if errors.Is(err, repository.ErrAdminSceneTemplateInUse) {
+		return nil, ErrSMSSceneTemplateInUse
 	}
 	if err != nil {
 		return nil, err

@@ -1278,7 +1278,7 @@ Redis 分布式锁是发布必需依赖；只有未取得锁或外呼开始前�
 | POST | `/api/admin/sms/templates/{id}/test-send` | `sms:template:test` |
 | GET | `/api/admin/sms/send-logs` | `sms:template:view` |
 
-全部接口需要管理员登录和有效的手机+邮箱双重认证。列表遵循 D-95 `{items,page,page_size,total}`。场景更新只提交 `{template_id,enabled,version}`，模板启停只提交 `{enabled,version}`，禁止提交 `sign_name`。测试发送请求体为 `{scene,phone}`，并必须携带 `Idempotency-Key`；完整手机号只能存在于单次请求内存中，页面不得缓存、日志或埋点记录。
+全部接口需要管理员登录和有效的手机+邮箱双重认证。列表遵循 D-95 `{items,page,page_size,total}`。场景更新只提交 `{template_id,enabled,version}`，模板启停只提交 `{enabled,version}`，禁止提交 `sign_name`。五个场景必须分别选择独立模板；同一模板已被其他启用场景使用时，后端返回 `409/40900「该模板已绑定其他短信场景，请为当前场景选择独立模板」`，阶段 3 页面必须保留当前表单并引导重新选择。测试发送请求体为 `{scene,phone}`，并必须携带 `Idempotency-Key`；完整手机号只能存在于单次请求内存中，页面不得缓存、日志或埋点记录。
 
 `submit_status=accepted` 的界面语义固定为“供应商已受理/提交成功”，不得显示“发送成功”“送达成功”或“用户已收到”。阶段 3 对接时必须分别处理 `40000/40001/40003/40031/40400/40900/42900/50200/50300`，其中版本冲突应刷新最新配置，频率限制按 `Retry-After` 展示剩余时间。
 

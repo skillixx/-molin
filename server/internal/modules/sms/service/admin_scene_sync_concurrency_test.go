@@ -55,6 +55,13 @@ func (r *concurrentSceneRepository) ListAdminSceneBindings(context.Context) ([]m
 func (r *concurrentSceneRepository) UpsertAdminSceneBinding(_ context.Context, scene, signName string, templateID, version, operatorID uint64, enabled bool) (*model.SceneBinding, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if enabled {
+		for boundScene, binding := range r.bindings {
+			if boundScene != scene && binding.Enabled && binding.TemplateID == templateID {
+				return nil, repository.ErrAdminSceneTemplateInUse
+			}
+		}
+	}
 	existing, exists := r.bindings[scene]
 	if !exists {
 		if version != 0 {
@@ -74,6 +81,51 @@ func (r *concurrentSceneRepository) UpsertAdminSceneBinding(_ context.Context, s
 	r.bindings[scene] = existing
 	r.updateCalls.Add(1)
 	return &existing, nil
+}
+
+func TestSMSAdminSceneConcurrentBindingRejectsSharedTemplate(t *testing.T) {
+	repo := newConcurrentSceneRepository()
+	svc := NewSMSAdminService(repo)
+	svc.ConfigureTemplateSync(nil, "固定签名")
+
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	for _, scene := range []string{"register", "login"} {
+		go func(scene string) {
+			<-start
+			_, err := svc.SetScene(context.Background(), scene, 7, 0, 10, true)
+			results <- err
+		}(scene)
+	}
+	close(start)
+	success, inUse := 0, 0
+	for i := 0; i < 2; i++ {
+		err := <-results
+		switch {
+		case err == nil:
+			success++
+		case errors.Is(err, ErrSMSSceneTemplateInUse):
+			inUse++
+		default:
+			t.Fatalf("并发争用同一模板返回意外错误: %v", err)
+		}
+	}
+	if success != 1 || inUse != 1 || repo.updateCalls.Load() != 1 {
+		t.Fatalf("同一模板只能绑定一个启用场景: success=%d in_use=%d calls=%d", success, inUse, repo.updateCalls.Load())
+	}
+}
+
+func TestSMSAdminSceneAllowsDisablingLegacySharedBinding(t *testing.T) {
+	repo := newConcurrentSceneRepository()
+	repo.bindings["register"] = model.SceneBinding{ID: 1, Scene: "register", TemplateID: 7, SignName: "固定签名", Enabled: true, Version: 1}
+	repo.bindings["login"] = model.SceneBinding{ID: 2, Scene: "login", TemplateID: 7, SignName: "固定签名", Enabled: true, Version: 1}
+	svc := NewSMSAdminService(repo)
+	svc.ConfigureTemplateSync(nil, "固定签名")
+
+	binding, err := svc.SetScene(context.Background(), "login", 7, 1, 10, false)
+	if err != nil || binding.Enabled || binding.Version != 2 || repo.updateCalls.Load() != 1 {
+		t.Fatalf("历史共用模板必须允许先停用以便整改: binding=%#v err=%v calls=%d", binding, err, repo.updateCalls.Load())
+	}
 }
 
 func (r *concurrentSceneRepository) ListAdminSendLogs(context.Context, model.SendLogListFilter) ([]model.SendLog, int64, error) {

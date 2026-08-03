@@ -255,6 +255,19 @@ func TestSMSAdminFailedConfigurationWritesRecordSafeAudit(t *testing.T) {
 	}
 }
 
+func TestSMSAdminRejectsTemplateAlreadyUsedByAnotherScene(t *testing.T) {
+	h := NewSMSAdminHandler(&fakeSMSAdminApplication{sceneErr: service.ErrSMSSceneTemplateInUse})
+	request := httptest.NewRequest(http.MethodPut, "/api/admin/sms/scenes/login", bytes.NewBufferString(`{"template_id":7,"enabled":true,"version":0}`))
+	request.SetPathValue("scene", "login")
+	recorder := httptest.NewRecorder()
+
+	h.SetScene(recorder, request)
+
+	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), "选择独立模板") {
+		t.Fatalf("复用其他场景模板必须返回明确 409: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestSMSAdminListsUseFlatPaginationAndHideInternalDigests(t *testing.T) {
 	t.Run("模板空列表", func(t *testing.T) {
 		h := NewSMSAdminHandler(&fakeSMSAdminApplication{})

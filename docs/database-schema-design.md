@@ -621,7 +621,7 @@ MYSQL_PASSWORD
 阶段 2 migration `000059` 在阶段 1 三张短信表上扩展管理控制面，不修改 `verification_codes` 的统一 OTP 状态机。
 
 - `sms_templates` 新增模板类型、变量 JSON、拒绝原因和供应商更新时间；同步以 `(provider, template_code)` 唯一约束保证幂等。
-- `sms_scene_bindings` 新增创建人，并继续以 `scene` 唯一约束保护五个固定场景；所有更新使用 `version` 乐观锁。
+- `sms_scene_bindings` 新增创建人，并继续以 `scene` 唯一约束保护五个固定场景；所有更新使用 `version` 乐观锁。启用或换绑时，事务先锁定目标 `sms_templates` 行，再查询是否存在 `template_id` 相同、`enabled=1` 且 `scene` 不同的绑定；命中即拒绝。同一模板的并发请求由模板行锁串行化，保证最多一个启用场景获胜；停用操作不执行该冲突检查，以便整改历史共用数据。
 - `sms_send_logs` 新增 `purpose=otp/test`、提交/完成时间、内部 `retry_after_seconds` 及测试发送幂等摘要；阶段 1 历史行的 `submitted_at` 必须由原 `created_at` 回填，不能使用升级时间。`(idempotency_scope, idempotency_key_hash)` 固定业务请求，`idempotency_owner_key_hash` 额外保证同一管理员复用同一 key 修改参数时发生冲突；恢复秒数仅用于精确重放首次 429，不对管理列表公开；这些字段都不保存幂等键明文、验证码或完整手机号。
 - `sms_template_sync_locks` 仅保存阿里云模板同步单例锁。供应商查询必须在事务外全部完成，事务内取得行锁后一次应用完整快照。
 - `sms_phase2_permission_ownership` 记录 migration 新增权限及 admin 绑定的所有权，使 down 只删除本 migration 创建且未被其他主体引用的数据。
