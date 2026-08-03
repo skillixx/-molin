@@ -17,7 +17,7 @@ func TestAILedgerTableNamesAndOrthogonalStates(t *testing.T) {
 		(AIRequest{}).TableName() != "ai_requests" ||
 		(AIUsageItem{}).TableName() != "ai_usage_items" ||
 		(AIExecutionAttempt{}).TableName() != "ai_execution_attempts" {
-		t.Fatal("AI 网关 G1 领域模型必须与 000059 Expand Migration 表名一致")
+		t.Fatal("AI 网关 G1 领域模型必须与 000060 Expand Migration 表名一致")
 	}
 
 	moderation := []string{AIModerationPending, AIModerationPassed, AIModerationRejected, AIModerationError}
@@ -88,14 +88,14 @@ func TestAILedgerJSONDoesNotExposeInternalTopology(t *testing.T) {
 	}
 }
 
-func TestAIGatewayMigration000059Contract(t *testing.T) {
+func TestAIGatewayMigration000060Contract(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("无法定位 AI 账本契约测试文件")
 	}
 	migrationsDir := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", "..", "..", "migrations"))
-	up := readMigrationForTest(t, filepath.Join(migrationsDir, "000059_create_ai_gateway_ledger_expand.up.sql"))
-	down := readMigrationForTest(t, filepath.Join(migrationsDir, "000059_create_ai_gateway_ledger_expand.down.sql"))
+	up := readMigrationForTest(t, filepath.Join(migrationsDir, "000060_create_ai_gateway_ledger_expand.up.sql"))
+	down := readMigrationForTest(t, filepath.Join(migrationsDir, "000060_create_ai_gateway_ledger_expand.down.sql"))
 
 	for _, required := range []string{
 		"CREATE TABLE IF NOT EXISTS ai_projects",
@@ -132,7 +132,7 @@ func TestAIGatewayMigration000059Contract(t *testing.T) {
 		"version_no",
 	} {
 		if !strings.Contains(up, required) {
-			t.Fatalf("000059 Expand Migration 缺少契约片段: %s", required)
+			t.Fatalf("000060 Expand Migration 缺少契约片段: %s", required)
 		}
 	}
 
@@ -146,22 +146,22 @@ func TestAIGatewayMigration000059Contract(t *testing.T) {
 	lowerDown := strings.ToLower(down)
 	for _, destructive := range []string{"drop table", "delete from", "truncate table"} {
 		if strings.Contains(lowerDown, destructive) {
-			t.Fatalf("000059 回滚必须保留审计账本，禁止破坏性语句: %s", destructive)
+			t.Fatalf("000060 回滚必须保留审计账本，禁止破坏性语句: %s", destructive)
 		}
 	}
 	if !strings.Contains(down, "ai_gateway_expand_schema_retained") {
-		t.Fatal("000059 down 必须显式声明保留 Expand Schema")
+		t.Fatal("000060 down 必须显式声明保留 Expand Schema")
 	}
 }
 
-func TestAIGatewayMigration000060G2Contract(t *testing.T) {
+func TestAIGatewayMigration000061G2Contract(t *testing.T) {
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("无法定位 G2 Migration 契约测试文件")
 	}
 	migrationsDir := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", "..", "..", "migrations"))
-	up := readMigrationForTest(t, filepath.Join(migrationsDir, "000060_add_ai_gateway_g2_projects_keys.up.sql"))
-	down := readMigrationForTest(t, filepath.Join(migrationsDir, "000060_add_ai_gateway_g2_projects_keys.down.sql"))
+	up := readMigrationForTest(t, filepath.Join(migrationsDir, "000061_add_ai_gateway_g2_projects_keys.up.sql"))
+	down := readMigrationForTest(t, filepath.Join(migrationsDir, "000061_add_ai_gateway_g2_projects_keys.down.sql"))
 
 	for _, required := range []string{
 		"ADD COLUMN project_id", "ADD COLUMN scope_mode", "ADD COLUMN expires_at", "ADD COLUMN rotated_from_id",
@@ -171,23 +171,23 @@ func TestAIGatewayMigration000060G2Contract(t *testing.T) {
 		"FOREIGN KEY (api_key_id, project_id, user_id)", "fk_ai_requests_api_key_project_owner",
 	} {
 		if !strings.Contains(up, required) {
-			t.Fatalf("000060 G2 Migration 缺少契约片段: %s", required)
+			t.Fatalf("000061 G2 Migration 缺少契约片段: %s", required)
 		}
 	}
 	lowerUp := strings.ToLower(up)
 	for _, forbidden := range []string{"api_key_plaintext", "secret_key", "wallet_holds", "quoted_amount =", "billing_status = 'held'"} {
 		if strings.Contains(lowerUp, forbidden) {
-			t.Fatalf("000060 不得写入密钥明文或进入 G3 计费事实: %s", forbidden)
+			t.Fatalf("000061 不得写入密钥明文或进入 G3 计费事实: %s", forbidden)
 		}
 	}
 	lowerDown := strings.ToLower(down)
 	for _, destructive := range []string{"drop table", "drop column", "delete from", "truncate table"} {
 		if strings.Contains(lowerDown, destructive) {
-			t.Fatalf("000060 down 必须保留审计和权限事实: %s", destructive)
+			t.Fatalf("000061 down 必须保留审计和权限事实: %s", destructive)
 		}
 	}
 	if !strings.Contains(down, "ai_gateway_g2_expand_schema_retained") {
-		t.Fatal("000060 down 必须声明保留 G2 Expand Schema")
+		t.Fatal("000061 down 必须声明保留 G2 Expand Schema")
 	}
 }
 

@@ -890,7 +890,7 @@ INSERT INTO user_roles (user_id, role_id)
 - 401、429、500、HTTP 200 业务错误、非法 JSON、缺少 choices。
 - 禁止自动 fallback；公开响应和日志不泄露内部 Token、路由、Key 名称和供应商错误正文。
 - 内部入口缺失/错误 Token 固定 401；重复 Authorization 在上游前以 Nginx 400 或鉴权 401 拒绝。
-- `000059` 必须包含四张 Expand 表、正交状态、唯一约束和 Decimal 精度，且 down 不执行破坏性删除。
+- `000060` 必须包含四张 Expand 表、正交状态、唯一约束和 Decimal 精度，且 down 不执行破坏性删除。
 - Bifrost 配置必须同时包含百炼和 OpenRouter，并且 Key 只能引用环境变量。
 
 ### G1 Linux POC
@@ -901,7 +901,7 @@ INSERT INTO user_roles (user_id, role_id)
 
 `infra/scripts/run-bifrost-g1-benchmark.sh` 必须显式接收模式，保存权限 `0600` 的独立 TSV，记录模式、顺序、原始耗时和差值并输出 SHA256。失败文件不得覆盖或删除。真实调用授权与 4 次最小 POC 授权相互独立；受控模式不得携带真实上游 SK。
 
-Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration-000059.sh` 在隔离临时 MySQL 8 容器验证，必须确认项目数据库未被连接，并取得首次 up、保留结构 down、re-up 后 `59/dirty=0` 及租户/预算/幂等约束证据。
+Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration-000060.sh` 在隔离临时 MySQL 8 容器验证，必须确认项目数据库未被连接，并取得首次 up、保留结构 down、re-up 后 `60/dirty=0` 及租户/预算/幂等约束证据。
 
 ### G2 自动化与阶段门禁
 
@@ -920,7 +920,7 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - Usage 缺失不生成计量行，不按 `max_tokens` 估算。
 - Finalize 重试不重复 attempt 或 Usage；周期恢复扫描只选择超过安全窗口的遗留请求，并在事务锁内重查状态与截止时间，Reconcile 同时收敛请求与运行中的 attempt。
 - `billing_status=unquoted`；不得生成价格、钱包 hold、settled、released、Outbox 或旧 `token_usage_logs` 双写。
-- `infra/scripts/verify-ai-gateway-migration-000060.sh` 只在无网络、无端口、tmpfs 的隔离 MySQL 8 容器执行，验证首次 up、保留式 down、re-up、allowlist 和三元租户外键；禁止连接项目数据库。
+- `infra/scripts/verify-ai-gateway-migration-000061.sh` 只在无网络、无端口、tmpfs 的隔离 MySQL 8 容器执行，验证首次 up、保留式 down、re-up、allowlist 和三元租户外键；禁止连接项目数据库。
 
 ### G3 自动化与阶段门禁
 
@@ -954,7 +954,7 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - RabbitMQ URL 未配置时不启动 Worker，Outbox 保持 pending；已配置但 Broker 临时停机时增加重试，恢复后必须 broker confirm，并从持久绑定队列读取相同 Message ID。
 - Outbox 锁超时重领使用 `locked_at` 租约 CAS，旧 Worker 不得覆盖新拥有者。
 - Outbox 退避重试覆盖至少 2 小时 Broker 故障，单次发布必须有限超时；同聚合前序失败时不得投递后序事件，dead 事件受控重新入队后按原 `event_id` 有序恢复。
-- `infra/scripts/verify-ai-gateway-migration-000061.sh` 只使用隔离临时 MySQL/RabbitMQ 网络，验证首次/重复 up、保留 down/re-up、真实并发和 Broker 恢复。
+- `infra/scripts/verify-ai-gateway-migration-000062.sh` 只使用隔离临时 MySQL/RabbitMQ 网络，验证首次/重复 up、保留 down/re-up、真实并发和 Broker 恢复。
 - 必须通过 `go test -count=1 ./...`、`go vet ./...`、测试 Linux `go test -race -count=1 ./...` 和 `git diff --check`。
 - 静态和 staged diff 必须扫描真实 SK、密码、Token、HMAC Secret、RabbitMQ URL 和上游密钥；测试凭据只能在临时环境生成。
 
@@ -970,6 +970,6 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - 预算预留只能按 G3 settled/released 同步；没有 G3 请求的过期预留才可 expired。
 - 同步失败形成的补偿任务在 `next_retry_at` 到期后立即重试，不等待 24 小时预算预留过期。连续八次失败进入 dead，可用乐观锁转 retry/manual_review；dead/manual_review 停止自动扫描且不会被失败记录覆盖，只有显式 retry 恢复；坏任务不阻塞批次。
 - 管理写接口必须先审计，具备 JWT、对应 `ai_gateway:*_manage` 细粒度权限和管理员双重认证；用户事件与申诉只允许 JWT 且响应最小化。
-- 000062 up 可重复执行；down/re-up 保留治理事实；不得写旧 `token_usage_logs`。
+- 000063 up 可重复执行；down/re-up 保留治理事实；不得写旧 `token_usage_logs`。
 - 必须执行本地全量测试、Linux `go test -race -count=1 ./...`、G3 回归和 `verify-ai-gateway-g4-governance.sh`。
 - 独立 QA 与产品经理均需给出 P0/P1/P2；P0/P1 为 0 才允许提交阶段完成结论。
