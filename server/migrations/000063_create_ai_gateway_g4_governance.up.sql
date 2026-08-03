@@ -207,24 +207,8 @@ CREATE TABLE IF NOT EXISTS ai_compensation_tasks (
   CONSTRAINT chk_ai_compensation_status CHECK (status IN ('pending','running','retry','dead','manual_review'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI 网关幂等补偿任务';
 
--- 默认策略只提供工程初始防线，生产词库、分类器和留存策略上线前仍需合规审批。
-INSERT INTO ai_safety_policy_versions
-  (version_no, status, refusal_message, rules_json, created_by, approved_by, effective_at)
-SELECT 1, 'active', '请求内容违反中国大陆相关法律法规或平台安全规范，无法继续处理。',
-  JSON_ARRAY(
-    JSON_OBJECT('code','illegal-001','category','illegal','keywords',JSON_ARRAY('违法犯罪教程','制作假证')),
-    JSON_OBJECT('code','sexual-001','category','sexual','keywords',JSON_ARRAY('色情内容','成人视频')),
-    JSON_OBJECT('code','gambling-001','category','gambling','keywords',JSON_ARRAY('网络赌博','赌博平台')),
-    JSON_OBJECT('code','drugs-001','category','drugs','keywords',JSON_ARRAY('毒品交易','制毒方法')),
-    JSON_OBJECT('code','terror-001','category','terror','keywords',JSON_ARRAY('恐怖袭击教程')),
-    JSON_OBJECT('code','hate-001','category','hate','keywords',JSON_ARRAY('种族灭绝宣传')),
-    JSON_OBJECT('code','self-harm-001','category','self_harm','keywords',JSON_ARRAY('自杀教程','自残方法'))
-  ),
-  u.id, u.id, UTC_TIMESTAMP()
-FROM users u
-ORDER BY u.id
-LIMIT 1
-ON DUPLICATE KEY UPDATE version_no = VALUES(version_no);
+-- 安全策略必须由具备权限且完成二次认证的管理员通过发布接口创建和审批。
+-- Migration 不冒用普通用户身份自动发布策略；没有 active 策略时网关按设计失败关闭。
 
 -- G4 治理页面使用细粒度权限，旧 token:manage 只继续保护渠道、模型和旧用量页面。
 INSERT IGNORE INTO permissions (code, name, resource, action)

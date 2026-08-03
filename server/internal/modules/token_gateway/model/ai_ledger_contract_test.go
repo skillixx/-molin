@@ -191,6 +191,20 @@ func TestAIGatewayMigration000061G2Contract(t *testing.T) {
 	}
 }
 
+func TestAIGatewayMigration000063DoesNotImpersonateUser(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("无法定位 G4 Migration 契约测试文件")
+	}
+	migrationsDir := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", "..", "..", "migrations"))
+	up := strings.ToLower(readMigrationForTest(t, filepath.Join(migrationsDir, "000063_create_ai_gateway_g4_governance.up.sql")))
+	for _, forbidden := range []string{"from users", "limit 1", "insert into ai_safety_policy_versions"} {
+		if strings.Contains(up, forbidden) {
+			t.Fatalf("000063 不得冒用普通用户身份自动发布安全策略: %s", forbidden)
+		}
+	}
+}
+
 func assertUniqueStates(t *testing.T, dimension string, states []string, expected int) {
 	t.Helper()
 	seen := make(map[string]struct{}, len(states))

@@ -157,6 +157,23 @@ func TestFinalizeAfterExecutionIgnoresCanceledExecutionContext(t *testing.T) {
 	}
 }
 
+func TestFinalizePreservesCallerDeadline(t *testing.T) {
+	store := newMemoryOrchestratorStore()
+	orchestrator := newTestOrchestrator(store)
+	prepared := prepareTestRequest(t, orchestrator, "req-finalize-deadline", "", map[string]interface{}{"model": "molin/qwen-turbo"})
+	now := time.Now()
+	running := ExecutionAttempt{AttemptNo: 1, Driver: "bifrost", ProviderCode: "bailian", ProviderModel: "qwen-turbo", StartedAt: now, Outcome: "running"}
+	if err := store.StartRequest(context.Background(), prepared.RequestID, ptrAttempt(running.ToLedgerModel(prepared.RequestID, ExecutionUsage{}))); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := orchestrator.Finalize(ctx, prepared.RequestID, ExecutionResult{Attempt: failedAttempt(running, "network_timeout", true)})
+	if !errors.Is(err, context.Canceled) || !errors.Is(store.finalizeContextErr, context.Canceled) {
+		t.Fatalf("Finalize 必须保留调用方取消信号，避免终结无限阻塞: err=%v store_err=%v", err, store.finalizeContextErr)
+	}
+}
+
 func TestModerationSegmentByteLimitIsBounded(t *testing.T) {
 	if moderationSegmentWouldOverflow(0, maxModerationSegmentBytes) {
 		t.Fatal("空缓冲区必须允许接收单个达到上限的事件行")

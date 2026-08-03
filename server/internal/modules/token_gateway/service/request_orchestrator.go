@@ -477,7 +477,7 @@ func (s *RequestOrchestratorService) Execute(ctx context.Context, requestID stri
 func (s *RequestOrchestratorService) executeJSON(ctx context.Context, sink StreamSink, executed *ExecutionResponse, requestID string) error {
 	body, err := io.ReadAll(io.LimitReader(executed.Response.Body, 8<<20))
 	if err != nil {
-		if finalizeErr := s.Finalize(ctx, requestID, ExecutionResult{Attempt: failedAttempt(executed.Attempt, "response_read_error", true), ErrorCode: "response_read_error"}); finalizeErr != nil {
+		if finalizeErr := s.finalizeAfterExecution(ctx, requestID, ExecutionResult{Attempt: failedAttempt(executed.Attempt, "response_read_error", true), ErrorCode: "response_read_error"}); finalizeErr != nil {
 			return finalizeErr
 		}
 		return ErrUpstream
@@ -719,10 +719,10 @@ func (s *RequestOrchestratorService) Finalize(ctx context.Context, requestID str
 			errorCodeValue = result.Attempt.ErrorClass
 		}
 		errorCode := optionalString(errorCodeValue)
-		finalizeErr = s.repo.FinalizeRequest(context.WithoutCancel(ctx), requestID, ledgerAttempt, usage, result.ClientDisconnected, errorClass, errorCode)
+		finalizeErr = s.repo.FinalizeRequest(ctx, requestID, ledgerAttempt, usage, result.ClientDisconnected, errorClass, errorCode)
 	}
 	if ticket, loaded := s.activeTickets.LoadAndDelete(requestID); loaded && s.governance != nil {
-		s.governance.FinishExecution(context.WithoutCancel(ctx), ticket.(*GovernanceTicket), result.Usage)
+		s.governance.FinishExecution(ctx, ticket.(*GovernanceTicket), result.Usage)
 	}
 	return finalizeErr
 }
