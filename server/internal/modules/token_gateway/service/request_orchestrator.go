@@ -2,6 +2,7 @@ package service
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -74,6 +75,7 @@ type PreparedRequest struct {
 	baseURL              string
 	apiKey               string
 	driver               ExecutionDriver
+	governanceTicket     *GovernanceTicket
 	retrySourceRequestID string
 }
 
@@ -88,10 +90,11 @@ type RequestBillingStatus struct {
 }
 
 type ExecutionResult struct {
-	Attempt            ExecutionAttempt
-	Usage              ExecutionUsage
-	ClientDisconnected bool
-	ErrorCode          string
+	Attempt              ExecutionAttempt
+	Usage                ExecutionUsage
+	ClientDisconnected   bool
+	ErrorCode            string
+	CustomerChargeWaived bool
 }
 
 // RequestOrchestratorService 使用进程内临时上下文承接不落盘的提示词；账本永久不保存请求正文。
@@ -103,12 +106,20 @@ type RequestOrchestratorService struct {
 	driverSelector ExecutionDriverSelector
 	visibility     modelVisibilityChecker
 	billing        *AIBillingService
+	governance     *GovernanceService
 	prepared       sync.Map
+	activeTickets  sync.Map
 }
 
 // WithBillingService 启用 G3 正式报价、钱包预占和一次终态结算链路。
 func (s *RequestOrchestratorService) WithBillingService(billing *AIBillingService) *RequestOrchestratorService {
 	s.billing = billing
+	return s
+}
+
+// WithGovernance 启用 G4 内容安全、预算和分布式资源治理链路。
+func (s *RequestOrchestratorService) WithGovernance(governance *GovernanceService) *RequestOrchestratorService {
+	s.governance = governance
 	return s
 }
 
@@ -251,14 +262,34 @@ func (s *RequestOrchestratorService) Prepare(ctx context.Context, cmd PrepareCom
 		BillingStatus: model.AIBillingUnquoted, VersionNo: 1,
 	}
 	billingStatus := model.AIBillingUnquoted
+	var governanceTicket *GovernanceTicket
 	var createErr error
 	if s.billing != nil {
+		var quote *PriceQuote
+		var safetyDecision *SafetyDecision
+		subject := SafetySubject{RequestID: cmd.RequestID, UserID: cmd.UserID, ProjectID: projectID, APIKeyID: cmd.APIKeyID}
+		if s.governance != nil {
+			safetyDecision, err = s.governance.CheckInput(ctx, subject, cmd.Body)
+			if err != nil {
+				return nil, err
+			}
+			request.ModerationStatus = model.AIModerationPassed
+		}
+		quote, err = s.billing.QuoteRequest(ctx, request.LogicalModelCode, cmd.Body)
+		if err != nil {
+			return nil, err
+		}
+		if s.governance != nil {
+			governanceTicket, err = s.governance.AdmitAfterSafety(ctx, subject, snapshot.Timezone, cmd.Body, quote, safetyDecision)
+			if err != nil {
+				return nil, err
+			}
+		}
 		var preparation *BillingPreparation
-		var err error
 		if retrySourceRequestID != "" {
-			preparation, err = s.billing.PrepareRetryRequest(ctx, retrySourceRequestID, request, cmd.Body)
+			preparation, err = s.billing.PrepareRetryQuotedRequest(ctx, retrySourceRequestID, request, quote)
 		} else {
-			preparation, err = s.billing.PrepareRequest(ctx, request, cmd.Body)
+			preparation, err = s.billing.PrepareQuotedRequest(ctx, request, quote)
 		}
 		if err == nil {
 			billingStatus = preparation.BillingStatus
@@ -277,6 +308,9 @@ func (s *RequestOrchestratorService) Prepare(ctx context.Context, cmd PrepareCom
 		createErr = s.repo.CreateRequest(ctx, request)
 	}
 	if createErr != nil {
+		if governanceTicket != nil {
+			s.governance.AbortBeforeUpstream(ctx, governanceTicket)
+		}
 		// 并发命中唯一索引时重新读取赢家，禁止第二次调用上游。
 		if existing, existingErr := s.findExisting(ctx, cmd, projectID, fingerprint); existing != nil || existingErr != nil {
 			return existing, existingErr
@@ -287,6 +321,7 @@ func (s *RequestOrchestratorService) Prepare(ctx context.Context, cmd PrepareCom
 		RequestID: cmd.RequestID, ExecutionStatus: model.AIExecutionPending, BillingStatus: billingStatus,
 		ProjectID: projectID, command: cmd, tokenModel: tokenModel,
 		providerCode: channel.Code, endpointCode: channel.Code, baseURL: channel.BaseURL, apiKey: apiKey, driver: driver,
+		governanceTicket: governanceTicket,
 	}
 	s.prepared.Store(cmd.RequestID, prepared)
 	return prepared, nil
@@ -352,6 +387,14 @@ func (s *RequestOrchestratorService) Execute(ctx context.Context, requestID stri
 		return ErrPreparedRequestMissing
 	}
 	prepared := value.(*PreparedRequest)
+	if prepared.governanceTicket != nil {
+		s.activeTickets.Store(requestID, prepared.governanceTicket)
+		defer func() {
+			if ticket, loaded := s.activeTickets.LoadAndDelete(requestID); loaded {
+				s.governance.FinishExecution(context.WithoutCancel(ctx), ticket.(*GovernanceTicket), ExecutionUsage{})
+			}
+		}()
+	}
 	driver := prepared.driver
 	if driver == nil {
 		return ErrPreparedRequestMissing
@@ -373,6 +416,18 @@ func (s *RequestOrchestratorService) Execute(ctx context.Context, requestID stri
 	}
 	executionCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultStreamExecutionTimeout)
 	defer cancel()
+	if prepared.governanceTicket != nil {
+		heartbeat := s.governance.StartHeartbeat(executionCtx, prepared.governanceTicket)
+		go func() {
+			select {
+			case heartbeatErr, ok := <-heartbeat:
+				if ok && heartbeatErr != nil {
+					cancel()
+				}
+			case <-executionCtx.Done():
+			}
+		}()
+	}
 	var executed *ExecutionResponse
 	var err error
 	if prepared.command.Stream {
@@ -420,9 +475,34 @@ func (s *RequestOrchestratorService) executeJSON(ctx context.Context, sink Strea
 		}
 		return ErrUpstream
 	}
-	result := ExecutionResult{Attempt: executed.Attempt, Usage: executed.Usage}
+	var moderationErr error
+	if executed.Response.StatusCode >= 200 && executed.Response.StatusCode < 300 {
+		if ticket := s.activeGovernanceTicket(requestID); ticket != nil {
+			text := extractJSONResponseText(body)
+			if strings.TrimSpace(text) == "" {
+				moderationErr = ErrModerationUnavailable
+				_ = s.governance.safety.MarkRequest(context.WithoutCancel(ctx), requestID, model.AIModerationError)
+			} else if _, err := s.governance.safety.ModerateOutput(context.WithoutCancel(ctx), ticket.Subject, text); err != nil {
+				moderationErr = err
+				status := model.AIModerationError
+				if errors.Is(err, ErrContentPolicyViolation) {
+					status = model.AIModerationRejected
+				}
+				_ = s.governance.safety.MarkRequest(context.WithoutCancel(ctx), requestID, status)
+			} else if err := s.governance.safety.MarkRequest(context.WithoutCancel(ctx), requestID, model.AIModerationPassed); err != nil {
+				moderationErr = ErrModerationUnavailable
+			}
+		}
+	}
+	result := ExecutionResult{Attempt: executed.Attempt, Usage: executed.Usage, CustomerChargeWaived: moderationErr != nil}
+	if moderationErr != nil {
+		result.ErrorCode = "output_moderation_blocked"
+	}
 	if err := s.Finalize(ctx, requestID, result); err != nil {
 		return err
+	}
+	if moderationErr != nil {
+		return moderationErr
 	}
 	contentType := executed.Response.Header.Get("Content-Type")
 	if contentType == "" {
@@ -439,6 +519,15 @@ func (s *RequestOrchestratorService) executeJSON(ctx context.Context, sink Strea
 	return nil
 }
 
+func (s *RequestOrchestratorService) activeGovernanceTicket(requestID string) *GovernanceTicket {
+	value, ok := s.activeTickets.Load(requestID)
+	if !ok {
+		return nil
+	}
+	ticket, _ := value.(*GovernanceTicket)
+	return ticket
+}
+
 func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink StreamSink, driver ExecutionDriver, executed *ExecutionResponse, logicalModel, requestID string) error {
 	sink.SetHeader("Content-Type", "text/event-stream")
 	sink.SetHeader("Cache-Control", "no-cache")
@@ -448,6 +537,39 @@ func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink Str
 	scanner.Buffer(make([]byte, 64*1024), 2*1024*1024)
 	usage := ExecutionUsage{}
 	var doneLine []byte
+	ticket := s.activeGovernanceTicket(requestID)
+	var pendingPayload bytes.Buffer
+	var pendingText strings.Builder
+	var safeTail string
+	var moderationErr error
+	outputBlocked := false
+	flushSegment := func(force bool) {
+		if pendingPayload.Len() == 0 || (!force && pendingText.Len() < 512 && !strings.ContainsAny(pendingText.String(), "。！？.!?\n")) {
+			return
+		}
+		segment := pendingText.String()
+		if ticket != nil && strings.TrimSpace(segment) != "" && moderationErr == nil {
+			_, err := s.governance.safety.ModerateOutput(context.WithoutCancel(ctx), ticket.Subject, safeTail+segment)
+			if err != nil {
+				moderationErr = err
+				outputBlocked = true
+				status := model.AIModerationError
+				if errors.Is(err, ErrContentPolicyViolation) {
+					status = model.AIModerationRejected
+				}
+				_ = s.governance.safety.MarkRequest(context.WithoutCancel(ctx), requestID, status)
+			} else {
+				safeTail = trailingText(safeTail+segment, 128)
+			}
+		}
+		if !outputBlocked && !clientDisconnected {
+			if err := sink.Write(append([]byte(nil), pendingPayload.Bytes()...)); err != nil || sink.Flush() != nil {
+				clientDisconnected = true
+			}
+		}
+		pendingPayload.Reset()
+		pendingText.Reset()
+	}
 	for scanner.Scan() {
 		line := append([]byte(nil), scanner.Bytes()...)
 		chunk, err := driver.NormalizeStreamLine(line, logicalModel)
@@ -459,17 +581,19 @@ func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink Str
 			break
 		}
 		if chunk.Done {
+			flushSegment(true)
 			doneLine = append(append([]byte(nil), chunk.PublicLine...), '\n', '\n')
 			// [DONE] 是 SSE 响应的协议终态，收到后立即停止读取，不能等待上游主动关闭连接。
 			break
 		}
-		if len(chunk.PublicLine) > 0 && !clientDisconnected {
-			payload := append(append([]byte(nil), chunk.PublicLine...), '\n')
-			if err := sink.Write(payload); err != nil || sink.Flush() != nil {
-				clientDisconnected = true
-			}
+		if len(chunk.PublicLine) > 0 {
+			pendingPayload.Write(chunk.PublicLine)
+			pendingPayload.WriteByte('\n')
+			pendingText.WriteString(extractSSEText(chunk.PublicLine))
+			flushSegment(false)
 		}
 	}
+	flushSegment(true)
 	if scanErr := scanner.Err(); scanErr != nil {
 		executed.Attempt = failedAttempt(executed.Attempt, "stream_read_error", true)
 	}
@@ -480,12 +604,26 @@ func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink Str
 		executed.Attempt.Outcome = "success"
 		executed.Attempt.ResultUnknown = false
 	}
-	result := ExecutionResult{Attempt: executed.Attempt, Usage: usage, ClientDisconnected: clientDisconnected}
+	// 输出审核状态必须在财务终态前持久化；写入失败同样失败关闭并免除用户费用。
+	if ticket != nil && moderationErr == nil {
+		if err := s.governance.safety.MarkRequest(context.WithoutCancel(ctx), requestID, model.AIModerationPassed); err != nil {
+			moderationErr = ErrModerationUnavailable
+			outputBlocked = true
+		}
+	}
+	result := ExecutionResult{Attempt: executed.Attempt, Usage: usage, ClientDisconnected: clientDisconnected, CustomerChargeWaived: outputBlocked}
+	if outputBlocked {
+		result.ErrorCode = "output_moderation_blocked"
+	}
 	if err := s.Finalize(ctx, requestID, result); err != nil {
 		if !clientDisconnected {
 			_ = writeStreamBillingStatus(sink, requestID, err)
 		}
 		return err
+	}
+	if outputBlocked && !clientDisconnected {
+		_ = writeStreamModerationStatus(sink, requestID, moderationErr)
+		return nil
 	}
 	if !clientDisconnected && len(doneLine) > 0 {
 		if err := sink.Write(doneLine); err == nil {
@@ -493,6 +631,34 @@ func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink Str
 		}
 	}
 	return nil
+}
+
+func trailingText(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return string(runes[len(runes)-limit:])
+}
+
+func writeStreamModerationStatus(sink StreamSink, requestID string, err error) error {
+	errorType := "moderation_unavailable"
+	message := "内容安全服务暂不可用，请稍后重试。"
+	if errors.Is(err, ErrContentPolicyViolation) {
+		errorType = "content_policy_violation"
+		message = DefaultSafetyRefusal
+	}
+	payload, marshalErr := json.Marshal(map[string]string{"request_id": requestID, "error": errorType, "message": message})
+	if marshalErr != nil {
+		return marshalErr
+	}
+	if err := sink.Write([]byte("event: molin.content_policy\ndata: " + string(payload) + "\n\n")); err != nil {
+		return err
+	}
+	if err := sink.Write([]byte("data: [DONE]\n\n")); err != nil {
+		return err
+	}
+	return sink.Flush()
 }
 
 func writeStreamBillingStatus(sink StreamSink, requestID string, err error) error {
@@ -516,21 +682,27 @@ func writeStreamBillingStatus(sink StreamSink, requestID string, err error) erro
 }
 
 func (s *RequestOrchestratorService) Finalize(ctx context.Context, requestID string, result ExecutionResult) error {
+	var finalizeErr error
 	if s.billing != nil {
-		return s.billing.FinalizeRequest(ctx, requestID, result)
+		finalizeErr = s.billing.FinalizeRequest(ctx, requestID, result)
+	} else {
+		ledgerAttempt := result.Attempt.ToLedgerModel(requestID, result.Usage)
+		usage := usageModels(requestID, result.Usage)
+		var errorClass *string
+		if result.Attempt.ErrorClass != "" {
+			errorClass = &result.Attempt.ErrorClass
+		}
+		errorCodeValue := result.ErrorCode
+		if errorCodeValue == "" && result.Attempt.ErrorClass != "" {
+			errorCodeValue = result.Attempt.ErrorClass
+		}
+		errorCode := optionalString(errorCodeValue)
+		finalizeErr = s.repo.FinalizeRequest(context.WithoutCancel(ctx), requestID, ledgerAttempt, usage, result.ClientDisconnected, errorClass, errorCode)
 	}
-	ledgerAttempt := result.Attempt.ToLedgerModel(requestID, result.Usage)
-	usage := usageModels(requestID, result.Usage)
-	var errorClass *string
-	if result.Attempt.ErrorClass != "" {
-		errorClass = &result.Attempt.ErrorClass
+	if ticket, loaded := s.activeTickets.LoadAndDelete(requestID); loaded && s.governance != nil {
+		s.governance.FinishExecution(context.WithoutCancel(ctx), ticket.(*GovernanceTicket), result.Usage)
 	}
-	errorCodeValue := result.ErrorCode
-	if errorCodeValue == "" && result.Attempt.ErrorClass != "" {
-		errorCodeValue = result.Attempt.ErrorClass
-	}
-	errorCode := optionalString(errorCodeValue)
-	return s.repo.FinalizeRequest(context.WithoutCancel(ctx), requestID, ledgerAttempt, usage, result.ClientDisconnected, errorClass, errorCode)
+	return finalizeErr
 }
 
 func (s *RequestOrchestratorService) Reconcile(ctx context.Context, requestID string) error {

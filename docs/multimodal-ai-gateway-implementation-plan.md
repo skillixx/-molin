@@ -10,6 +10,8 @@
 >
 > 本次补充：将 Bifrost 确定为首选内部执行层，LiteLLM 降为可选备用驱动，并增加生产部署拓扑、管理员发布流程、客户调用链路、异步媒体任务、故障补偿和灰度回滚设计。本文是规划，不代表 Bifrost 已部署或生产计费已启用。
 
+> 2026-08-03 G4 实现说明：独立分支已完成 chat 链路的输入/输出内容安全、Redis 四层资源治理、Project/SK 预算和补偿任务后端底座；详见 `ai-gateway-g4-feature.md`、`ai-gateway-g4-development.md`、`ai-gateway-g4-operations-runbook.md` 和 `ai-gateway-g4-acceptance.md`。管理后台 UI、多模态异步任务和生产部署仍按后续阶段执行。
+
 ## 1. 总体决策
 
 不能继续在 `forward_service.go` 中增加 `if modality == ...`。应把现有网关深化为统一多模态网关模块，把供应商差异、同步/异步差异、文件存储和计量差异隐藏在模块内部。
@@ -939,12 +941,17 @@ ai_gateway:billing_view
 ai_gateway:task_manage
 ai_gateway:release_manage
 ai_gateway:reconcile_manage
+ai_gateway:safety_manage
+ai_gateway:resource_manage
+ai_gateway:budget_manage
 content_safety:view
 content_safety:manage
 content_safety:review
 security_log:view
 security_log:export
 ```
+
+G4 首期治理接口冻结为：所有脱敏治理列表使用 `ai_gateway:view`；安全策略、主体处置和申诉写操作使用 `ai_gateway:safety_manage`；并发/RPM/TPM 写操作使用 `ai_gateway:resource_manage`；Project/SK 预算和临时增额写操作使用 `ai_gateway:budget_manage`；补偿处置使用 `ai_gateway:reconcile_manage`。`content_safety:view/manage/review` 与 `security_log:view/export` 留给后续受控证据区和安全日志导出，G4 不创建该证据区，也不以这些预留权限保护现有接口。
 
 价格发布、密钥轮换、人工调账和全量发布要求管理员双重认证。`price_manage` 的编辑和发布建议分离为 maker/checker；同一人不能同时提交并批准高风险调价。
 

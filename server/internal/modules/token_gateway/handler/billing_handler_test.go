@@ -25,6 +25,11 @@ func (f *fakeBillingExceptionResolver) ResolveException(_ context.Context, _ str
 	return f.err
 }
 
+func (f *fakeBillingExceptionResolver) ResolveContentPolicyWaiver(_ context.Context, _ string, usage service.ExecutionUsage) error {
+	f.called, f.usage = true, usage
+	return f.err
+}
+
 type fakeBillingAuditRecorder struct {
 	err    error
 	errors []error
@@ -121,5 +126,30 @@ func TestBillingHandlerKeepsTerminalConflictPriority(t *testing.T) {
 	handler.ResolveException(recorder, req)
 	if recorder.Code != http.StatusConflict {
 		t.Fatalf("服务确认已有终态时 HTTP 必须返回 409: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestBillingHandlerContentPolicyWaiverFailsClosedWhenAuditUnavailable(t *testing.T) {
+	resolver := &fakeBillingExceptionResolver{}
+	handler := NewBillingHandler(resolver, &fakeBillingAuditRecorder{err: errors.New("audit down")})
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/token/billing/content-policy/req-policy/resolve", strings.NewReader(`{"prompt_tokens":10,"completion_tokens":5}`))
+	req.SetPathValue("request_id", "req-policy")
+	recorder := httptest.NewRecorder()
+	handler.ResolveContentPolicyWaiver(recorder, req)
+	if recorder.Code != http.StatusInternalServerError || resolver.called {
+		t.Fatalf("前置审计失败时不得执行内容安全财务对账: status=%d called=%t", recorder.Code, resolver.called)
+	}
+}
+
+func TestBillingHandlerContentPolicyWaiverPassesTrustedUsage(t *testing.T) {
+	resolver := &fakeBillingExceptionResolver{}
+	audit := &fakeBillingAuditRecorder{}
+	handler := NewBillingHandler(resolver, audit)
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/token/billing/content-policy/req-policy/resolve", strings.NewReader(`{"prompt_tokens":10,"completion_tokens":5,"cached_tokens":2,"reasoning_tokens":1}`))
+	req.SetPathValue("request_id", "req-policy")
+	recorder := httptest.NewRecorder()
+	handler.ResolveContentPolicyWaiver(recorder, req)
+	if recorder.Code != http.StatusOK || !resolver.called || audit.calls != 2 || !resolver.usage.Present || resolver.usage.TotalTokens != 15 {
+		t.Fatalf("内容安全对账应完成前后审计并传递完整 Usage: status=%d called=%t audits=%d usage=%+v", recorder.Code, resolver.called, audit.calls, resolver.usage)
 	}
 }

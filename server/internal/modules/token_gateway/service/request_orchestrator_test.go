@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -525,6 +526,68 @@ func TestRequestOrchestratorSSEDoneDoesNotWaitForUpstreamClose(t *testing.T) {
 	}
 	if !bytes.Contains(sink.body.Bytes(), []byte("[DONE]")) {
 		t.Fatal("客户端必须及时收到 SSE 终止符")
+	}
+}
+
+func TestRequestOrchestratorSSEBlocksViolatingSegmentWithoutLeakAndPersistsUsage(t *testing.T) {
+	store := newMemoryOrchestratorStore()
+	orchestrator := newTestOrchestrator(store)
+	stream := "data: {\"choices\":[{\"delta\":{\"content\":\"blocked phrase\"}}]}\n\n" +
+		"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}\n\n" +
+		"data: [DONE]\n\n"
+	orchestrator.SetExecutionDriverSelector(staticExecutionDriverSelector{driver: &fakeOrchestratorDriver{streamBody: io.NopCloser(strings.NewReader(stream))}})
+	prepared, err := orchestrator.Prepare(context.Background(), PrepareCommand{
+		RequestID: "req-sse-safety", UserID: 3, APIKeyID: 7, LogicalModel: "molin/qwen-turbo", Stream: true,
+		Body: map[string]interface{}{"model": "molin/qwen-turbo", "stream": true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules, _ := json.Marshal([]safetyRule{{Code: "illegal-001", Category: "illegal", Keywords: []string{"blocked phrase"}}})
+	safetyRepo := &memorySafetyRepository{policy: &model.AISafetyPolicyVersion{ID: 1, VersionNo: 1, Status: model.AISafetyPolicyActive, RefusalMessage: DefaultSafetyRefusal, RulesJSON: rules}}
+	orchestrator.governance = NewGovernanceService(
+		NewSafetyService(safetyRepo, "0123456789abcdef0123456789abcdef"),
+		&memoryBudgetRepository{}, &memoryResourceLimiter{},
+	)
+	orchestrator.activeTickets.Store(prepared.RequestID, &GovernanceTicket{
+		Subject:  SafetySubject{RequestID: prepared.RequestID, UserID: 3, ProjectID: 8, APIKeyID: 7},
+		Resource: &ResourceTicket{},
+	})
+	defer orchestrator.activeTickets.Delete(prepared.RequestID)
+	sink := &memorySink{}
+	if err := orchestrator.Execute(context.Background(), prepared.RequestID, sink); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(sink.body.String(), "blocked phrase") || !strings.Contains(sink.body.String(), "event: molin.content_policy") || !strings.Contains(sink.body.String(), "[DONE]") {
+		t.Fatalf("违规分段不得泄漏且必须稳定终止 SSE: %s", sink.body.String())
+	}
+	if len(store.usage[prepared.RequestID]) != 3 || safetyRepo.marked[prepared.RequestID] != model.AIModerationRejected {
+		t.Fatalf("违规输出仍须持久化 usage 和审核终态: usage=%d status=%s", len(store.usage[prepared.RequestID]), safetyRepo.marked[prepared.RequestID])
+	}
+}
+
+func TestRequestOrchestratorSSEBlocksViolatingToolArguments(t *testing.T) {
+	store := newMemoryOrchestratorStore()
+	orchestrator := newTestOrchestrator(store)
+	stream := "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\"blocked phrase\"}}]}}]}\n\n" +
+		"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}\n\n" +
+		"data: [DONE]\n\n"
+	orchestrator.SetExecutionDriverSelector(staticExecutionDriverSelector{driver: &fakeOrchestratorDriver{streamBody: io.NopCloser(strings.NewReader(stream))}})
+	prepared, err := orchestrator.Prepare(context.Background(), PrepareCommand{RequestID: "req-sse-tool-safety", UserID: 3, APIKeyID: 7, LogicalModel: "molin/qwen-turbo", Stream: true, Body: map[string]interface{}{"model": "molin/qwen-turbo", "stream": true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules, _ := json.Marshal([]safetyRule{{Code: "illegal-001", Category: "illegal", Keywords: []string{"blocked phrase"}}})
+	safetyRepo := &memorySafetyRepository{policy: &model.AISafetyPolicyVersion{ID: 1, VersionNo: 1, Status: model.AISafetyPolicyActive, RefusalMessage: DefaultSafetyRefusal, RulesJSON: rules}}
+	orchestrator.governance = NewGovernanceService(NewSafetyService(safetyRepo, "0123456789abcdef0123456789abcdef"), &memoryBudgetRepository{}, &memoryResourceLimiter{})
+	orchestrator.activeTickets.Store(prepared.RequestID, &GovernanceTicket{Subject: SafetySubject{RequestID: prepared.RequestID, UserID: 3, ProjectID: 8, APIKeyID: 7}, Resource: &ResourceTicket{}})
+	defer orchestrator.activeTickets.Delete(prepared.RequestID)
+	sink := &memorySink{}
+	if err := orchestrator.Execute(context.Background(), prepared.RequestID, sink); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(sink.body.String(), "blocked phrase") || !strings.Contains(sink.body.String(), "molin.content_policy") {
+		t.Fatalf("违规工具参数不得泄漏: %s", sink.body.String())
 	}
 }
 

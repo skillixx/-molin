@@ -74,8 +74,9 @@ func (s *ProjectService) WithAuditRecorder(recorder projectAuditRecorder) *Proje
 }
 
 type CreateProjectInput struct {
-	UserID uint64
-	Name   string
+	UserID   uint64
+	Name     string
+	Timezone string
 }
 
 type UpdateProjectInput struct {
@@ -83,6 +84,7 @@ type UpdateProjectInput struct {
 	ProjectID uint64
 	Name      *string
 	Status    *string
+	Timezone  *string
 }
 
 func (s *ProjectService) Create(ctx context.Context, in CreateProjectInput) (*model.AIProject, error) {
@@ -90,7 +92,11 @@ func (s *ProjectService) Create(ctx context.Context, in CreateProjectInput) (*mo
 	if in.UserID == 0 || name == "" || len(name) > 191 {
 		return nil, ErrProjectInvalid
 	}
-	project := &model.AIProject{UserID: in.UserID, Name: name, Status: ProjectStatusActive, BudgetMode: "disabled", Timezone: "Asia/Shanghai"}
+	timezone, err := normalizeProjectTimezone(in.Timezone, "Asia/Shanghai")
+	if err != nil {
+		return nil, err
+	}
+	project := &model.AIProject{UserID: in.UserID, Name: name, Status: ProjectStatusActive, BudgetMode: "disabled", Timezone: timezone}
 	if err := s.repo.CreateProject(ctx, project); err != nil {
 		return nil, err
 	}
@@ -121,6 +127,13 @@ func (s *ProjectService) Update(ctx context.Context, in UpdateProjectInput) (*mo
 		}
 		updates["status"] = status
 	}
+	if in.Timezone != nil {
+		timezone, err := normalizeProjectTimezone(*in.Timezone, "")
+		if err != nil {
+			return nil, err
+		}
+		updates["timezone"] = timezone
+	}
 	if len(updates) == 0 {
 		return s.repo.FindProject(ctx, in.UserID, in.ProjectID)
 	}
@@ -128,6 +141,20 @@ func (s *ProjectService) Update(ctx context.Context, in UpdateProjectInput) (*mo
 		return nil, err
 	}
 	return s.repo.FindProject(ctx, in.UserID, in.ProjectID)
+}
+
+func normalizeProjectTimezone(value, fallback string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		value = fallback
+	}
+	if value == "" || len(value) > 64 || value == "Local" {
+		return "", ErrProjectInvalid
+	}
+	if _, err := time.LoadLocation(value); err != nil {
+		return "", ErrProjectInvalid
+	}
+	return value, nil
 }
 
 type IssueProjectKeyInput struct {

@@ -158,6 +158,28 @@ func TestPricingDoesNotApplyMinimumToFailedUsage(t *testing.T) {
 	}
 }
 
+func TestPricingCalculatesProviderCostFromFrozenSnapshot(t *testing.T) {
+	now := time.Now()
+	repo := validPriceFixture(now)
+	pricing := NewPricingService(repo)
+	pricing.now = func() time.Time { return now }
+	quote, err := pricing.Quote(context.Background(), "qwen-plus", map[string]interface{}{"max_tokens": "10"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo.skus[0].CostUnitPrice = decimal.NewFromInt(999)
+	costed, err := pricing.CalculateProviderCost("req-provider-cost", quote.SnapshotJSON, ExecutionUsage{PromptTokens: 10, CompletionTokens: 5, Present: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(costed.Items) != 4 || costed.Items[0].Source != "provider_cost" || costed.Items[0].UnitPrice == nil || costed.Items[0].Amount == nil {
+		t.Fatalf("平台成本行不完整: %+v", costed.Items)
+	}
+	if !costed.FinalAmount.Equal(decimal.RequireFromString("0.0001")) {
+		t.Fatalf("平台成本必须使用冻结成本价且不应用销售最低收费: %s", costed.FinalAmount)
+	}
+}
+
 func TestPricingUint64BoundaryDoesNotUnderHold(t *testing.T) {
 	now := time.Now()
 	repo := validPriceFixture(now)

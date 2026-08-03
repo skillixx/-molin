@@ -2,6 +2,8 @@
 
 > Token 文字模型执行层：前端继续调用既有 `/api/token/chat/completions` 或 `/v1/chat/completions`，无需感知 Native/Bifrost。公开响应不包含 Bifrost `extra_fields`、路由信息、供应商响应头或内部 Key 名称。成功响应缺少 Usage 时，后台记录为 `settlement_pending`，前端不得自行使用 `max_tokens` 估算已扣金额。
 
+> G4 前端处理：40310 显示后端稳定拒绝文案；该文案不可由策略编辑器修改。40311 提示联系管理员；42920 提示预算达到上限；42921/42922 读取 `Retry-After` 后允许倒计时重试；50320/50321 显示服务暂不可用。SSE 收到 `molin.content_policy` 后显示其 message 并以随后 `[DONE]` 正常结束，不展示已经缓冲但未通过审核的内容；该请求用户消费为 0，上游成本只供平台财务对账。
+
 > G0/G1 说明：`000058` 新商业账本是后端 Expand Schema，当前不改变前端请求和用量查询。G2 切换新读写前，前端不得依赖 `ai_requests`、`ai_usage_items` 或执行模型内部字段；阶段契约见 [`ai-gateway-g0-g1-contract.md`](./ai-gateway-g0-g1-contract.md)。
 
 > **版本**：Week 1 + Week 2 已验收（2026-06-06）；2026-06-10 补丁更新（发码拦截 + 管理员双重认证强制）；2026-06-11 接口变更同步（用户列表 keyword、角色/权限模糊搜索、实名审核 status 过滤、权限覆盖过滤参数及 snake_case 字段、实名审核详情新增 user_id/submitted_at/reviewed_at、POST 实名认证响应新增 data.id）；2026-06-12 更新（认证/角色权限/用户分组/实名认证）：分页响应字段 `list` → `items`（仅认证/角色权限/实名认证相关章节）；发送验证码接口拆分为 `/api/auth/verification-codes/email` 和 `/api/auth/verification-codes/phone` 两个独立接口，`email`/`phone`/`scene` 均为必填；手机号登录改为密码登录（`{phone, password}`）；实名认证提交响应字段修正为 `{id, status}`（`verification_id` 为设计文档冗余字段，已于 2026-06-12 从 `full-api-design.md` 中移除，不再视为缺口）；新增角色详情接口 `GET /api/admin/roles/{id}`；新增审计日志接口 `GET /api/admin/audit-logs`；新增"用户分组管理"章节（16 个接口）；2026-06-13 更新：手机号登录改为验证码登录（`{phone, code}`，PR#20）；退出登录后当前 Access Token 立即吊销，401/40001（PR#22）；`/api/auth/login/phone`、`/api/auth/login/email` 对未注册账号统一返回 404/40404（PR#25）；**2026-06-15 更新（Round 7 审计 D-93/D-94/D-95/D-96 全部闭环）**：登录/注册/刷新令牌响应新增 `user` 对象（D-93，PR#91）；密码长度约束统一为 6-72 位（D-94，PR#95）；auth/iam/identity 模块 11 个分页接口响应结构改为扁平（去掉嵌套 `pagination` 对象，D-95，PR#97）；`bind_phone`/`bind_email`/`admin_verify` 三个 scene 迁移到专属认证态发码接口，不再接受公开端点的请求（D-96，PR#93）；**2026-06-16 更新（后端乙缺陷修复闭环，88/88 回归全通过）**：`GET /api/wallet` 响应字段 `id` → `wallet_id`（D-008，PR#135）；`PATCH /api/admin/products/{id}/prices` body 结构统一为 `{"items":[{"product_plan_id":...,...}]}`（D-009，PR#135）；`PATCH /api/admin/products/{id}/access` body key 统一为 `items`，缺失 `items` 字段返回 400（D-011，PR#137）；购买接口 `POST /api/products/{id}/purchase` 响应新增 `idempotent` 字段，`status` 直接返回 `paid`（BUG-A，PR#136）；商品/套餐/计划不存在时接口统一返回 404/40400（BUG-B，PR#136）；重复 product_code/plan_code 返回 400 友好提示（BUG-C，PR#136）；多套餐价格覆盖写入改为单事务原子操作（BUG-D，PR#136）；**2026-06-16 更新（二）（后端乙契约勘误 + #144，已部署测试服回归 52/52 通过）**：套餐 `user_price` 未配置价格时统一返回 `"-1"`（区别于合法免费价 `"0"`，#144，PR#144）；`GET /api/products/{id}/plans` 响应订正为 D-95 扁平分页 `{items,page,page_size,total}`（原文档误写 `{plans:[]}`）；购买响应补 `asset_id` 字段（异步开通时为 `null`/`0`）；`order_type` 取值订正为 `product`（购买）/`recharge`（充值）（原误写 `purchase`）；商品状态切换 `PATCH /api/admin/products/{id}/status` 仅接受 `active`/`inactive`（`draft` 为创建初始态、不可设置）；**2026-06-19 更新（后端丙会员对接增强 #167~#170，已部署测试服回归 22 用例通过）**：新增公开权益端点 `GET /api/memberships/{id}/benefits`（无需登录，仅返回 `status=active` 权益，等级不存在/未上架返回 404/40400，见 §11.1b，PR#168）；`GET /api/my/membership`（§11.2）与 `GET /api/admin/user-memberships`（§11.5）会员对象**内联** `level_code`/`level_name`（保留 `level_id`，纯增量，前端无需再按 level_id 映射等级名，PR#168）；`asset_id` 去掉 `omitempty`，无关联资产时返回 `null`（key 恒在，PR#169）；管理端列表 `page_size` 上限 100、用户端公告上限 50；帮助文章详情 `GET /api/help/articles/{id}` 的 `data` 直接为文章对象（非包裹，§12.2，PR#167）
@@ -2069,6 +2071,16 @@ Wechatpay-Nonce: <随机串>
 
 ## 十四、Token 网关模块（第二阶段）
 
+### G4 管理页面接口规划
+
+管理后台新增“安全治理”“资源策略”“预算策略”“补偿任务”四个页面；页面和列表读取统一要求 `ai_gateway:view`，写按钮再分别检查 `ai_gateway:safety_manage`、`ai_gateway:resource_manage`、`ai_gateway:budget_manage`、`ai_gateway:reconcile_manage`。接口清单和字段以 `docs/full-api-design.md` 的 G4 节为准；所有列表使用 `{items,page,page_size,total}`。策略创建只提交 `rules`，不得显示可编辑的拒绝文案。策略、处置、预算和补偿写操作必须展示提交中、成功、失败和 409 冲突状态；409 后重新拉取记录，不能覆盖更新。
+
+输出审核阻断且 Usage 暂缺时，对账详情页使用 `POST /api/admin/token/billing/content-policy/{request_id}/resolve` 补录四类 Token Usage。按钮只对 `ai_gateway:reconcile_manage` 且已完成管理员二次认证的人员显示；确认框明确展示“用户消费 0 元、平台承担上游成本”。成功后刷新请求、钱包 hold、Usage 和 Outbox 状态，409 时禁止覆盖提交。G4 当前只交付该接口契约，Vue 页面仍属后续前端阶段。
+
+用户控制台先调用 `GET /api/token/safety/events?page=1&page_size=20` 查询本人最小化事件，再调用 `POST /api/token/safety/appeals`，body 为 `{event_id,reason}`。前端不得收集或回传完整违规提示词，只使用事件 ID 和用户填写的申诉理由；后端会再次验证事件归属。
+
+桌面端使用表格和侧栏编辑；平板压缩操作列；手机端改为单列记录和底部抽屉。危险操作使用确认对话框，按钮必须有可见反馈。当前 G4 分支只交付接口，不代表这些 Vue 页面已完成。
+
 > 模块：`token_gateway`（后端丁），sk 鉴权由后端甲提供。
 > 计费口径（2026-06-21 决策）：**按量（token 数）+ 按次（调用次数）+ 套餐（预付 token 额度）三种并存**；按量/按次为后付扣钱包，套餐为预付扣 entitlement 额度。Agent/Skill/插件均免费，唯一收费点是模型 token 调用。
 > 状态标记：✅ 已实现并合并 main ｜ 🔜 待实现（含归属）。前端按状态决定可对接时间。
@@ -2428,6 +2440,11 @@ DELETE /api/token/projects/{id}/keys/{key_id}
 | `content:manage` | 公告/帮助文档管理（后端丙） |
 | `app:manage` | 应用与适配器管理（后端丙） |
 | `token:manage` | Token 网关渠道/模型目录管理 + 全量用量（后端丁，需管理员双重认证） |
+| `ai_gateway:view` | AI 网关治理只读列表（后端丁，需管理员双重认证） |
+| `ai_gateway:safety_manage` | AI 网关安全策略、主体处置与申诉处理（后端丁，需管理员双重认证） |
+| `ai_gateway:resource_manage` | AI 网关并发、RPM、TPM 资源策略（后端丁，需管理员双重认证） |
+| `ai_gateway:budget_manage` | AI 网关 Project/SK 预算策略与临时增额（后端丁，需管理员双重认证） |
+| `ai_gateway:reconcile_manage` | AI 网关补偿任务人工处置（后端丁，需管理员双重认证） |
 | `agent:manage` | Agent（官方预设）管理 + skill/插件绑定（后端丁，需管理员双重认证） |
 | `skill:manage` | Skill 内置能力管理（后端丁，需管理员双重认证） |
 | `plugin:manage` | 外部插件管理 + **MCP server 管理**（第二种工具源，复用同权限码，后端丁，需管理员双重认证） |

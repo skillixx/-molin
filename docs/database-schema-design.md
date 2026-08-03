@@ -401,7 +401,7 @@ Migration `000058_create_ai_gateway_ledger_expand` 新增以下商业请求账�
 
 - `ai_projects`：用户与 Project 的消费归集边界，冻结预算模式、月预算和 IANA 时区。
 - `ai_requests`：请求主记录，保存 request_id、Project、SK、逻辑/执行模型及审核、执行、计费三个正交状态。
-- `ai_usage_items`：标准化 Usage 与未来不可变计费行，数量为 `DECIMAL(30,10)`，单价和金额为 `DECIMAL(20,8)`。
+- `ai_usage_items`：标准化 Usage 与不可变计费行，数量为 `DECIMAL(30,10)`，单价和金额为 `DECIMAL(20,8)`；`source=provider_cost` 专门保存输出审核拒绝时的平台成本，不得进入用户销售额汇总。
 - `ai_execution_attempts`：Native/Bifrost 的执行尝试、Provider、内部端点、上游请求 ID、耗时和 Usage 摘要。
 
 关键唯一约束：`ai_requests.request_id`、`(user_id,idempotency_key)`、`(request_id,meter_type,source,sequence_no)`、`(request_id,attempt_no)`。新表禁止保存提示词、响应正文和明文密钥。G1 应用回滚保留 Expand Schema 与审计记录，物理清理由后续单独审批的 Contract Migration 承担。
@@ -433,6 +433,25 @@ Migration `000060_create_ai_gateway_g3_billing` 新增：
 价格发布使用逻辑模型共享行锁校验审批、四 SKU 和时间区间重叠；报价读取价格与 SKU 使用同一一致性事务。已发布版本不提供原地改价接口，只能暂停或创建新版本。000060 down 保留所有财务表和事实，不执行 DROP 或数据删除。
 
 完整字段与状态契约见 [`ai-gateway-g0-g1-contract.md`](./ai-gateway-g0-g1-contract.md)。
+
+#### 3.5.4 AI 网关 Phase 1 G4 内容安全与资源治理
+
+Migration `000061_create_ai_gateway_g4_governance` 新增以下 expand 表：
+
+| 表 | 事实与约束 |
+|---|---|
+| `ai_safety_policy_versions` | 不可变安全策略版本，draft/active/retired |
+| `ai_safety_events` | 只存摘要、分类、规则和处置，不存原始内容 |
+| `ai_safety_subject_actions` | 用户或 SK 暂停、撤销和过期事实 |
+| `ai_safety_appeals` | 每用户每事件唯一申诉及乐观锁版本 |
+| `ai_resource_policies` | user/project/api_key/model 四层并发、RPM、TPM 覆盖 |
+| `ai_budget_policies` | Project/SK disabled/soft/hard 日月预算 |
+| `ai_budget_overrides` | 有原因、操作人和有效期的临时增额 |
+| `ai_budget_reservations` | request_id 唯一的 held/settled/released/expired 预算预留 |
+| `ai_budget_alerts` | 主体、周期、80/90/100 阈值唯一提醒事实 |
+| `ai_compensation_tasks` | pending/running/retry/dead/manual_review 幂等补偿任务 |
+
+预算预留不是第二套财务账本：reserved_amount 来自 G3 报价快照，settled_amount 只读取 G3 终态。Redis 不保存预算金额，只保存带 TTL 的并发与速率状态。000061 down 为事实保留型 no-op，应用回滚不得删除安全、预算和补偿记录。
 
 ## 4. 关键状态
 

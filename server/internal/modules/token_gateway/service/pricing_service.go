@@ -162,28 +162,50 @@ func (s *PricingService) CalculateFinalWithPolicy(requestID string, snapshotJSON
 	return s.calculateFinal(requestID, snapshotJSON, usage, applyMinimum)
 }
 
-func (s *PricingService) calculateFinal(requestID string, snapshotJSON json.RawMessage, usage ExecutionUsage, applyMinimum bool) (*BilledUsage, error) {
-	if !usage.Present || usage.PromptTokens < 0 || usage.CompletionTokens < 0 || usage.CachedTokens < 0 || usage.ReasoningTokens < 0 {
-		return nil, ErrUnquotableRequest
-	}
-	if usage.CachedTokens > usage.PromptTokens || usage.ReasoningTokens > usage.CompletionTokens {
-		return nil, ErrUnquotableRequest
+// CalculateProviderCost 使用逐请求冻结的成本单价生成平台成本事实，不应用面向用户的最低收费。
+func (s *PricingService) CalculateProviderCost(requestID string, snapshotJSON json.RawMessage, usage ExecutionUsage) (*BilledUsage, error) {
+	if err := validateBillableUsage(usage); err != nil {
+		return nil, err
 	}
 	var snapshot PriceSnapshot
 	if err := json.Unmarshal(snapshotJSON, &snapshot); err != nil {
 		return nil, ErrPriceUnavailable
 	}
-	input := usage.PromptTokens - usage.CachedTokens
-	output := usage.CompletionTokens - usage.ReasoningTokens
-	values := []struct {
-		meter    string
-		quantity int64
-	}{
-		{meter: "input_tokens", quantity: input},
-		{meter: "cached_tokens", quantity: usage.CachedTokens},
-		{meter: "output_tokens", quantity: output},
-		{meter: "reasoning_tokens", quantity: usage.ReasoningTokens},
+	values := splitTokenUsage(usage)
+	items := make([]model.AIUsageItem, 0, len(values))
+	total := decimal.Zero
+	for _, value := range values {
+		sku, ok := snapshot.SKUs[value.meter]
+		if !ok {
+			return nil, ErrPriceUnavailable
+		}
+		unitPrice, err := decimal.NewFromString(sku.CostUnitPrice)
+		if err != nil || unitPrice.LessThan(decimal.Zero) {
+			return nil, ErrPriceUnavailable
+		}
+		scale, err := decimal.NewFromString(sku.Scale)
+		if err != nil || scale.LessThanOrEqual(decimal.Zero) {
+			return nil, ErrPriceUnavailable
+		}
+		amount := decimal.NewFromInt(value.quantity).Mul(unitPrice).Div(scale).RoundCeil(8)
+		total = total.Add(amount)
+		items = append(items, model.AIUsageItem{
+			RequestID: requestID, MeterType: value.meter, Source: "provider_cost", SequenceNo: 0,
+			Quantity: decimal.NewFromInt(value.quantity), UnitPrice: &unitPrice, Amount: &amount,
+		})
 	}
+	return &BilledUsage{Items: items, FinalAmount: total.RoundCeil(8)}, nil
+}
+
+func (s *PricingService) calculateFinal(requestID string, snapshotJSON json.RawMessage, usage ExecutionUsage, applyMinimum bool) (*BilledUsage, error) {
+	if err := validateBillableUsage(usage); err != nil {
+		return nil, err
+	}
+	var snapshot PriceSnapshot
+	if err := json.Unmarshal(snapshotJSON, &snapshot); err != nil {
+		return nil, ErrPriceUnavailable
+	}
+	values := splitTokenUsage(usage)
 	items := make([]model.AIUsageItem, 0, len(values))
 	total := decimal.Zero
 	for _, value := range values {
@@ -219,6 +241,28 @@ func (s *PricingService) calculateFinal(requestID string, snapshotJSON json.RawM
 		total = minimum
 	}
 	return &BilledUsage{Items: items, FinalAmount: total.RoundCeil(8)}, nil
+}
+
+type tokenUsageValue struct {
+	meter    string
+	quantity int64
+}
+
+func validateBillableUsage(usage ExecutionUsage) error {
+	if !usage.Present || usage.PromptTokens < 0 || usage.CompletionTokens < 0 || usage.CachedTokens < 0 || usage.ReasoningTokens < 0 ||
+		usage.CachedTokens > usage.PromptTokens || usage.ReasoningTokens > usage.CompletionTokens {
+		return ErrUnquotableRequest
+	}
+	return nil
+}
+
+func splitTokenUsage(usage ExecutionUsage) []tokenUsageValue {
+	return []tokenUsageValue{
+		{meter: "input_tokens", quantity: usage.PromptTokens - usage.CachedTokens},
+		{meter: "cached_tokens", quantity: usage.CachedTokens},
+		{meter: "output_tokens", quantity: usage.CompletionTokens - usage.ReasoningTokens},
+		{meter: "reasoning_tokens", quantity: usage.ReasoningTokens},
+	}
 }
 
 func maxSKUPrice(left, right PriceSKUSnapshot) PriceSKUSnapshot {

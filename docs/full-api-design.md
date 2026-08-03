@@ -2231,11 +2231,28 @@ POST  /api/admin/token/billing/exceptions/{request_id}/resolve
 
 > G2 文字执行契约：公开 Chat Completions 要求 Project SK，在用户状态/实名、Project、SK、显式模型权限、用户分组/角色可见性和模型发布状态通过后调用唯一 `RequestOrchestrator`，再进入统一 `ExecutionDriver`。部署默认 `native`，可显式切换 `bifrost`。Bifrost 响应会移除 `extra_fields`、路由信息、供应商响应头和内部 Key 名称；HTTP 200 业务错误仍按失败处理。Usage 缺失不生成计量行，禁止按 `max_tokens` 猜测。
 
+> G4 治理契约：通过上述检查后，调用顺序固定为输入审核、G3 报价、MySQL 预算预留、Redis 四层资源准入、G3 钱包 hold、上游执行、输出审核、G3 结算与治理回收。安全、预算或 Redis 依赖异常均失败关闭。SSE 违规分段不得外泄，但必须继续收集可信 Usage；原始 Usage 使用 `provider` 行，冻结成本单价和平台成本金额使用独立 `provider_cost` 行，用户钱包 hold 全额释放、销售金额为 0，并写入 `billing_content_policy_waived` Outbox 事件。Usage 暂缺时保持 `settlement_pending` 与 hold，只能通过下述受控管理接口补录，不允许直接修改数据库。
+
+**POST** `/api/admin/token/billing/content-policy/{request_id}/resolve` *(需 `ai_gateway:reconcile_manage` + 管理员二次认证)*
+
+用于为 `error_code=output_moderation_blocked` 且处于 `settlement_pending` 或 `billing_exception` 的请求补录可信 Provider Usage。Body：
+
+```json
+{
+  "prompt_tokens": 10,
+  "completion_tokens": 5,
+  "cached_tokens": 0,
+  "reasoning_tokens": 0
+}
+```
+
+接口先写管理员操作审计，再在单个 MySQL 事务中写入 `provider` 原始 Usage、按请求冻结价格快照计算 `provider_cost`、释放钱包 hold、将用户销售金额固定为 0，并写入 `billing_content_policy_waived` Outbox。相同 Usage 重放返回成功；已补录 Usage、请求状态或错误类型不一致返回 HTTP 409 + `40900`。该接口不接受正文、关键词证据或上游密钥，也不能对普通计费异常免单。
+
 > G0/G1 商业账本契约：`request_id`、Project、SK、逻辑模型、执行模型、三类正交状态、标准 Usage 和执行尝试见 [`ai-gateway-g0-g1-contract.md`](./ai-gateway-g0-g1-contract.md)。G3 已在 G2 RequestOrchestrator 上启用价格快照、钱包预占和一次终态结算；公开 Chat 不再使用 G2 的 `unquoted` 规则。
 
 > Request ID 与幂等：`X-Request-ID` 由墨灵生成，并由 Token Handler、执行驱动和账本共用。客户端重放可使用单值 `Idempotency-Key`；重复、逗号多值、空值或超过 191 字节在写账本前返回 400/40000。同用户、Project、SK、请求指纹返回已有状态，不同指纹返回 HTTP 409/code 40901。
 
-Project 管理使用登录态 JWT，不能使用 SK 自助扩大权限。创建 body 为 `{name}`；更新 body 可包含 `name` 和 `status=active|suspended|archived`。列表为扁平分页 `{items,page,page_size,total}`。
+Project 管理使用登录态 JWT，不能使用 SK 自助扩大权限。创建 body 为 `{name,timezone?}`；更新 body 可包含 `name`、`status=active|suspended|archived` 和 `timezone`。时区必须是有效 IANA 标识（如 `Asia/Shanghai`），创建时缺省为 `Asia/Shanghai`，禁止使用依赖宿主机的 `Local`。列表为扁平分页 `{items,page,page_size,total}`。
 
 Project SK 创建 body：
 
@@ -2284,6 +2301,38 @@ Chat 请求 Body 参数：
 - `stream = true` 时响应使用 Server-Sent Events（SSE）格式，`Content-Type: text/event-stream`。
 - 网关层不缓冲完整流式响应；每个 SSE `data:` 事件由当前执行驱动校验和脱敏后立即写出，Bifrost 扩展元数据不对外透传。`[DONE]` 只在请求、attempt 和 Usage 成功持久化后发送。
 - 当前一次请求只选择一个执行驱动。Native 使用模型绑定的活动渠道与 `upstream_model`；Bifrost 使用冻结的显式 Provider 模型映射。结果未知或已经输出 SSE 后禁止自动切换供应商，本阶段不启用加权随机和透明熔断回退。
+
+### G4 内容安全、资源和预算治理接口
+
+除用户事件和申诉外，以下接口统一要求 JWT 和管理员双重认证；治理列表统一使用 `ai_gateway:view`，只返回治理元数据且不返回提示词或模型正文。安全治理写操作使用 `ai_gateway:safety_manage`，资源治理写操作使用 `ai_gateway:resource_manage`，预算治理写操作使用 `ai_gateway:budget_manage`，补偿任务写操作使用 `ai_gateway:reconcile_manage`。所有写操作先写审计，失败时不执行变更。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/admin/token/safety/policies` | 策略版本列表 |
+| POST | `/api/admin/token/safety/policies` | 创建 draft；body 只包含 rules，拒绝文案由平台固定且不可自定义 |
+| POST | `/api/admin/token/safety/policies/{id}/publish` | 按 version_no 发布并退休旧 active |
+| POST | `/api/admin/token/safety/policies/{id}/rollback` | 复制历史规则为新 active 版本 |
+| GET | `/api/admin/token/safety/events` | 扁平分页安全事件 |
+| GET | `/api/admin/token/safety/actions` | 扁平分页主体处置 |
+| POST | `/api/admin/token/safety/actions` | 暂停 user 或 api_key |
+| POST | `/api/admin/token/safety/actions/{id}/revoke` | 按 version_no 撤销处置 |
+| GET | `/api/token/safety/events` | JWT 用户扁平分页查询本人事件 |
+| POST | `/api/token/safety/appeals` | JWT 用户提交事件申诉 |
+| GET | `/api/admin/token/safety/appeals` | 扁平分页申诉 |
+| POST | `/api/admin/token/safety/appeals/{id}/resolve` | 按 version_no approved/rejected |
+| GET | `/api/admin/token/resource-policies` | 扁平分页资源策略 |
+| PUT | `/api/admin/token/resource-policies` | 乐观锁更新四层并发/RPM/TPM |
+| GET | `/api/admin/token/budget-policies` | 扁平分页预算策略 |
+| PUT | `/api/admin/token/budget-policies` | 乐观锁更新 Project/SK 日月预算 |
+| GET | `/api/admin/token/budget-overrides` | 扁平分页临时增额 |
+| POST | `/api/admin/token/budget-overrides` | 创建有有效期的临时增额 |
+| GET | `/api/admin/token/budget-alerts` | 扁平分页预算阈值事件 |
+| GET | `/api/admin/token/compensation-tasks` | 扁平分页补偿任务 |
+| POST | `/api/admin/token/compensation-tasks/{id}/resolve` | 按 updated_at 转 retry/manual_review |
+
+策略规则项结构为 `{code,category,keywords}`；category 仅允许 illegal、sexual、gambling、drugs、terror、hate、self_harm。列表统一返回 `{items,page,page_size,total}`。用户事件接口只返回当前 JWT 用户的最小化事件，申诉时仓储层再次校验 event_id 归属。资源策略 scope_type 为 user/project/api_key/model，预算 scope_type 为 project/api_key。
+
+G4 错误码：40310 内容违规、40311 主体暂停、42920 hard 预算、42921 RPM/TPM、42922 并发、50320 审核不可用、50321 治理不可用。42921/42922 包含 `Retry-After`、`request_id` 和公开 `limit_scope`。
 - G3 在上游调用前写不可变价格快照并创建钱包 hold。JSON 或正常结束 SSE 的可信 Usage 完整时，无论执行成功或明确失败都按四类 SKU 汇总一次金额并 settle；成功且存在正用量时才应用最低收费。只有确认未产生成本且无 Usage 时 release；Usage 缺失、不一致、结果未知或 SSE 未正常结束时，即使已经取得中间 Usage 也返回 `202/settlement_pending` 并保留 hold。Settlement Worker 对遗留 held/pending 请求按相同规则收敛，超过期限进入人工异常。正式链路不写旧 `token_usage_logs`。
 - 请求状态可通过 `GET /api/token/requests/{request_id}` 或 OpenAI 兼容入口 `GET /v1/requests/{request_id}` 查询；必须使用原 Project SK，跨用户或跨 SK 统一拒绝且不泄露请求是否存在。
 - `messages` 必须包含至少一条非空文字内容；G2 对图片、音频等多模态消息在写账本和调用上游前返回 400/40000。未实名返回 400/70001，渠道不可用返回 503/50300。

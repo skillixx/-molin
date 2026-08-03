@@ -25,12 +25,14 @@ func NewProjectHandler(projectService *service.ProjectService) *ProjectHandler {
 }
 
 type createProjectRequest struct {
-	Name string `json:"name"`
+	Name     string `json:"name"`
+	Timezone string `json:"timezone"`
 }
 
 type updateProjectRequest struct {
-	Name   *string `json:"name"`
-	Status *string `json:"status"`
+	Name     *string `json:"name"`
+	Status   *string `json:"status"`
+	Timezone *string `json:"timezone"`
 }
 
 type projectListResponse struct {
@@ -46,7 +48,7 @@ func (h *ProjectHandler) Create(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
 		return
 	}
-	project, err := h.service.Create(r.Context(), service.CreateProjectInput{UserID: middleware.UserIDFromContext(r.Context()), Name: request.Name})
+	project, err := h.service.Create(r.Context(), service.CreateProjectInput{UserID: middleware.UserIDFromContext(r.Context()), Name: request.Name, Timezone: request.Timezone})
 	if err != nil {
 		h.writeError(w, err)
 		return
@@ -89,7 +91,7 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	project, err := h.service.Update(r.Context(), service.UpdateProjectInput{
 		UserID: middleware.UserIDFromContext(r.Context()), ProjectID: projectID,
-		Name: request.Name, Status: request.Status,
+		Name: request.Name, Status: request.Status, Timezone: request.Timezone,
 	})
 	if err != nil {
 		h.writeError(w, err)

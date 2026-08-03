@@ -66,6 +66,14 @@ func NewAIBillingService(db *gorm.DB, pricing *PricingService, priceRepo priceVe
 	return &AIBillingService{db: db, pricing: pricing, priceRepo: priceRepo, walletHolds: walletHolds, now: time.Now}
 }
 
+// QuoteRequest 在预算与资源治理前生成确定性价格快照；后续钱包 hold 必须复用同一快照。
+func (s *AIBillingService) QuoteRequest(ctx context.Context, modelCode string, body map[string]interface{}) (*PriceQuote, error) {
+	if s == nil || s.pricing == nil {
+		return nil, ErrPriceUnavailable
+	}
+	return s.pricing.Quote(ctx, modelCode, body)
+}
+
 // PrepareRequest 先完成确定报价，再在一个事务中创建请求、冻结钱包、写财务关联和 Outbox。
 func (s *AIBillingService) PrepareRequest(ctx context.Context, request *model.AIRequest, body map[string]interface{}) (*BillingPreparation, error) {
 	if s == nil || s.db == nil || s.pricing == nil || s.walletHolds == nil {
@@ -75,7 +83,15 @@ func (s *AIBillingService) PrepareRequest(ctx context.Context, request *model.AI
 	if err != nil {
 		return nil, err
 	}
-	err = retryFinancialTransaction(ctx, func() error {
+	return s.PrepareQuotedRequest(ctx, request, quote)
+}
+
+// PrepareQuotedRequest 使用治理阶段已校验的不可变价格快照完成钱包预占，避免预算与钱包采用不同价格版本。
+func (s *AIBillingService) PrepareQuotedRequest(ctx context.Context, request *model.AIRequest, quote *PriceQuote) (*BillingPreparation, error) {
+	if s == nil || s.db == nil || s.walletHolds == nil || quote == nil {
+		return nil, ErrPriceUnavailable
+	}
+	err := retryFinancialTransaction(ctx, func() error {
 		// 回滚后 GORM 仍可能保留已分配的自增 ID，重试前必须清空，避免误用未提交主键。
 		request.ID = 0
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return s.prepareQuotedRequestTx(tx, request, quote) })
@@ -98,7 +114,15 @@ func (s *AIBillingService) PrepareRetryRequest(ctx context.Context, previousRequ
 	if err != nil {
 		return nil, err
 	}
-	err = retryFinancialTransaction(ctx, func() error {
+	return s.PrepareRetryQuotedRequest(ctx, previousRequestID, request, quote)
+}
+
+// PrepareRetryQuotedRequest 复用治理阶段的价格快照执行明确未送达请求的安全重试。
+func (s *AIBillingService) PrepareRetryQuotedRequest(ctx context.Context, previousRequestID string, request *model.AIRequest, quote *PriceQuote) (*BillingPreparation, error) {
+	if s == nil || s.db == nil || s.walletHolds == nil || request.IdempotencyKey == nil || quote == nil {
+		return nil, ErrBillingException
+	}
+	err := retryFinancialTransaction(ctx, func() error {
 		request.ID = 0
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			var previous model.AIRequest
@@ -180,6 +204,42 @@ func (s *AIBillingService) FinalizeRequest(ctx context.Context, requestID string
 			errorClass := optionalString(result.Attempt.ErrorClass)
 			errorCode := optionalString(result.ErrorCode)
 			completed := s.now()
+
+			// 平台输出审核未交付结果时，保留 Provider Usage 和执行成本事实，但用户销售金额固定为零。
+			if result.CustomerChargeWaived {
+				if err := createUsageTx(tx, usageModels(requestID, result.Usage)); err != nil {
+					return err
+				}
+				if !result.Usage.Present {
+					if err := updateRequestBillingTx(tx, request, executionStatus, model.AIBillingSettlementPending, result.ClientDisconnected, nil, errorClass, errorCode, ledgerAttempt.ExecutionModelCode, completed); err != nil {
+						return err
+					}
+					if err := createOutboxTx(tx, requestID, "billing_reconcile_required", model.AIBillingSettlementPending, *request.HeldAmount, completed); err != nil {
+						return err
+					}
+					pendingCommitted = true
+					return nil
+				}
+				costed, err := s.pricing.CalculateProviderCost(requestID, request.PriceSnapshotJSON, result.Usage)
+				if err != nil {
+					return err
+				}
+				if err := createUsageTx(tx, costed.Items); err != nil {
+					return err
+				}
+				released, err := s.walletHolds.ReleaseHoldTx(tx, link.WalletHoldID, requestID+":content-policy-release")
+				if err != nil {
+					return err
+				}
+				if err := updateWalletLinkTx(tx, link, released); err != nil {
+					return err
+				}
+				zero := decimal.Zero
+				if err := updateRequestBillingTx(tx, request, executionStatus, model.AIBillingReleased, result.ClientDisconnected, &zero, errorClass, errorCode, ledgerAttempt.ExecutionModelCode, completed); err != nil {
+					return err
+				}
+				return createOutboxTx(tx, requestID, "billing_content_policy_waived", model.AIBillingReleased, zero, completed)
+			}
 
 			// 结果未知时即使已经看到 Usage 也不能证明它是最终事实，必须保留 hold 等待对账。
 			mustWaitForReconcile := result.Attempt.ResultUnknown || executionStatus == model.AIExecutionUnknown ||
@@ -395,6 +455,110 @@ func (s *AIBillingService) ResolveException(ctx context.Context, requestID, reso
 	})
 }
 
+// ResolveContentPolicyWaiver 为输出审核拦截请求补录可信 Provider Usage，并按冻结快照记录平台成本。
+// 该流程只释放用户预占、绝不产生用户消费；重复提交相同 Usage 幂等成功，冲突 Usage 明确拒绝。
+func (s *AIBillingService) ResolveContentPolicyWaiver(ctx context.Context, requestID string, usage ExecutionUsage) error {
+	if s == nil || s.db == nil || s.pricing == nil || s.walletHolds == nil ||
+		!usage.Present || usage.PromptTokens+usage.CompletionTokens <= 0 {
+		return ErrBillingAmountException
+	}
+	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+	return retryFinancialTransaction(ctx, func() error {
+		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			request, link, err := lockRequestAndLink(tx, requestID)
+			if err != nil {
+				return err
+			}
+			if pointerValue(request.ErrorCode) != "output_moderation_blocked" {
+				return repository.ErrRequestStateConflict
+			}
+			costed, err := s.pricing.CalculateProviderCost(requestID, request.PriceSnapshotJSON, usage)
+			if err != nil {
+				return ErrBillingAmountException
+			}
+			rawItems := usageModels(requestID, usage)
+			if request.BillingStatus == model.AIBillingReleased {
+				rawMatches, matchErr := usageItemsMatchTx(tx, requestID, "provider", 0, rawItems)
+				if matchErr != nil {
+					return matchErr
+				}
+				costMatches, matchErr := usageItemsMatchTx(tx, requestID, "provider_cost", 0, costed.Items)
+				if matchErr != nil {
+					return matchErr
+				}
+				if rawMatches && costMatches && request.SettledAmount != nil && request.SettledAmount.IsZero() {
+					return nil
+				}
+				return repository.ErrRequestStateConflict
+			}
+			if request.BillingStatus != model.AIBillingSettlementPending && request.BillingStatus != model.AIBillingException {
+				return repository.ErrRequestStateConflict
+			}
+			if err := createUsageTx(tx, rawItems); err != nil {
+				return err
+			}
+			if matches, matchErr := usageItemsMatchTx(tx, requestID, "provider", 0, rawItems); matchErr != nil {
+				return matchErr
+			} else if !matches {
+				return repository.ErrRequestStateConflict
+			}
+			if err := createUsageTx(tx, costed.Items); err != nil {
+				return err
+			}
+			released, err := s.walletHolds.ReleaseHoldTx(tx, link.WalletHoldID, requestID+":content-policy-release")
+			if err != nil {
+				return err
+			}
+			if err := updateWalletLinkTx(tx, link, released); err != nil {
+				return err
+			}
+			zero := decimal.Zero
+			updated := tx.Model(&model.AIRequest{}).
+				Where("id = ? AND version_no = ? AND billing_status = ?", request.ID, request.VersionNo, request.BillingStatus).
+				Updates(map[string]interface{}{
+					"billing_status": model.AIBillingReleased, "settled_amount": zero,
+					"completed_at": s.now(), "version_no": gorm.Expr("version_no + 1"),
+				})
+			if updated.Error != nil {
+				return updated.Error
+			}
+			if updated.RowsAffected != 1 {
+				return repository.ErrRequestStateConflict
+			}
+			return createOutboxTx(tx, requestID, "billing_content_policy_waived", model.AIBillingReleased, zero, s.now())
+		})
+	})
+}
+
+// usageItemsMatchTx 校验同一来源的计量事实是否与本次补录完全一致，防止幂等键掩盖冲突数据。
+func usageItemsMatchTx(tx *gorm.DB, requestID, source string, sequenceNo uint32, expected []model.AIUsageItem) (bool, error) {
+	var stored []model.AIUsageItem
+	if err := tx.Where("request_id = ? AND source = ? AND sequence_no = ?", requestID, source, sequenceNo).Find(&stored).Error; err != nil {
+		return false, err
+	}
+	if len(stored) != len(expected) {
+		return false, nil
+	}
+	byMeter := make(map[string]model.AIUsageItem, len(stored))
+	for _, item := range stored {
+		byMeter[item.MeterType] = item
+	}
+	for _, item := range expected {
+		actual, ok := byMeter[item.MeterType]
+		if !ok || !actual.Quantity.Equal(item.Quantity) || !optionalDecimalEqual(actual.UnitPrice, item.UnitPrice) || !optionalDecimalEqual(actual.Amount, item.Amount) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func optionalDecimalEqual(left, right *decimal.Decimal) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return left.Equal(*right)
+}
+
 // manualSettlementMatchesTx 核对重复人工结算参数与已落库金额、逐项 Usage 完全一致。
 func (s *AIBillingService) manualSettlementMatchesTx(tx *gorm.DB, request *model.AIRequest, usage ExecutionUsage) (bool, error) {
 	applyMinimum := request.ExecutionStatus == model.AIExecutionSucceeded && usage.PromptTokens+usage.CompletionTokens > 0
@@ -489,7 +653,11 @@ func (s *AIBillingService) reconcileOne(ctx context.Context, requestID string, n
 	if attemptFound {
 		usage, complete := loadConfirmedUsage(ctx, s.db, requestID)
 		if !attempt.ResultUnknown && (attempt.Status == "succeeded" || attempt.Status == "failed") && complete {
-			result := ExecutionResult{Attempt: ledgerAttemptToExecution(attempt), Usage: usage, ClientDisconnected: request.ClientDisconnected}
+			waived := pointerValue(request.ErrorCode) == "output_moderation_blocked"
+			result := ExecutionResult{
+				Attempt: ledgerAttemptToExecution(attempt), Usage: usage, ClientDisconnected: request.ClientDisconnected,
+				CustomerChargeWaived: waived, ErrorCode: pointerValue(request.ErrorCode),
+			}
 			return true, s.FinalizeRequest(ctx, requestID, result)
 		}
 		if attempt.Status == "failed" && !attempt.ResultUnknown && pointerValue(attempt.ErrorClass) == "request_not_sent" {
@@ -506,8 +674,13 @@ func (s *AIBillingService) reconcileOne(ctx context.Context, requestID string, n
 			if locked.BillingStatus != model.AIBillingSettlementPending || !locked.UpdatedAt.Before(now.Add(-manualReconcileDeadline)) {
 				return nil
 			}
+			deadlineErrorCode := "reconcile_deadline_exceeded"
+			if pointerValue(locked.ErrorCode) == "output_moderation_blocked" {
+				// 内容安全免单请求必须保留原始分类，超期后专用对账入口才能安全识别并按零销售额收敛。
+				deadlineErrorCode = "output_moderation_blocked"
+			}
 			if err := updateRequestBillingTx(tx, locked, locked.ExecutionStatus, model.AIBillingException, locked.ClientDisconnected, nil,
-				stringPointer("manual_reconcile_required"), stringPointer("reconcile_deadline_exceeded"), pointerValue(locked.ExecutionModelCode), now); err != nil {
+				stringPointer("manual_reconcile_required"), stringPointer(deadlineErrorCode), pointerValue(locked.ExecutionModelCode), now); err != nil {
 				return err
 			}
 			return createOutboxTx(tx, requestID, "billing_manual_review_required", model.AIBillingException, *locked.HeldAmount, now)

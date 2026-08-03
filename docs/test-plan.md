@@ -869,3 +869,19 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - `infra/scripts/verify-ai-gateway-migration-000060.sh` 只使用隔离临时 MySQL/RabbitMQ 网络，验证首次/重复 up、保留 down/re-up、真实并发和 Broker 恢复。
 - 必须通过 `go test -count=1 ./...`、`go vet ./...`、测试 Linux `go test -race -count=1 ./...` 和 `git diff --check`。
 - 静态和 staged diff 必须扫描真实 SK、密码、Token、HMAC Secret、RabbitMQ URL 和上游密钥；测试凭据只能在临时环境生成。
+
+## AI 网关 Phase 1 G4 验收
+
+- 输入违规必须在报价、预算、钱包 hold 和上游调用前拒绝，返回 40310 与稳定文案。
+- JSON 违规输出不得返回正文；SSE 违规分段不得外泄；所有实际透传字符串字段（含 legacy functions、工具定义及 tool_calls arguments）均必须审核。可信 Usage、冻结成本单价和平台成本金额以 `provider_cost` 行保留，用户钱包 hold 释放且消费为 0；Usage 暂缺时保持待对账，只能由具备 `ai_gateway:reconcile_manage` 和管理员二次认证的受控接口补录。验收必须覆盖前置审计失败不执行、相同 Usage 幂等、冲突 Usage 返回 409、平台成本入账、用户消费为 0、hold 释放和唯一 Outbox；禁止直接改库作为业务验收路径。
+- 安全策略缺失或数据库异常返回 50320，不允许绕过。
+- Redis 四层并发、RPM、TPM 任一超限返回 42921/42922、Retry-After、request_id 和脱敏 scope。
+- Redis 停止时返回 50321；恢复后租约可重新准入，不存在永久计数或幽灵租约。
+- 100 个并发、两个 SK、同一 Project hard 预算不得超卖；累计值精确等于限额时允许，只有超过限额才拒绝；soft 预算不阻断。
+- 80/90/100 阈值按主体和周期幂等；日/月周期按 Project IANA 时区。
+- 预算预留只能按 G3 settled/released 同步；没有 G3 请求的过期预留才可 expired。
+- 同步失败形成的补偿任务在 `next_retry_at` 到期后立即重试，不等待 24 小时预算预留过期。连续八次失败进入 dead，可用乐观锁转 retry/manual_review；dead/manual_review 停止自动扫描且不会被失败记录覆盖，只有显式 retry 恢复；坏任务不阻塞批次。
+- 管理写接口必须先审计，具备 JWT、对应 `ai_gateway:*_manage` 细粒度权限和管理员双重认证；用户事件与申诉只允许 JWT 且响应最小化。
+- 000061 up 可重复执行；down/re-up 保留治理事实；不得写旧 `token_usage_logs`。
+- 必须执行本地全量测试、Linux `go test -race -count=1 ./...`、G3 回归和 `verify-ai-gateway-g4-governance.sh`。
+- 独立 QA 与产品经理均需给出 P0/P1/P2；P0/P1 为 0 才允许提交阶段完成结论。

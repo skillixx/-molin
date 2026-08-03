@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"molin/server/internal/middleware"
 	"molin/server/internal/modules/token_gateway/service"
@@ -46,7 +48,7 @@ func (h *ChatHandler) RequestStatus(w http.ResponseWriter, r *http.Request) {
 	result, err := h.statusReader.GetRequestStatus(r.Context(), r.PathValue("request_id"),
 		middleware.UserIDFromContext(r.Context()), middleware.APIKeyIDFromContext(r.Context()))
 	if err != nil {
-		writeOrchestratorError(w, err)
+		writeOrchestratorError(w, err, middleware.RequestIDFromContext(r.Context()))
 		return
 	}
 	response.JSON(w, http.StatusOK, result)
@@ -102,7 +104,7 @@ func (h *ChatHandler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		UserID: userID, APIKeyID: apiKeyID, LogicalModel: modelCode, Stream: stream, Body: body,
 	})
 	if err != nil {
-		writeOrchestratorError(w, err)
+		writeOrchestratorError(w, err, requestID)
 		return
 	}
 	if prepared.Existing {
@@ -111,7 +113,7 @@ func (h *ChatHandler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 	sink := &httpStreamSink{writer: w}
 	if err := h.orchestrator.Execute(r.Context(), prepared.RequestID, sink); err != nil && !sink.started {
-		writeOrchestratorError(w, err)
+		writeOrchestratorError(w, err, requestID)
 	}
 }
 
@@ -194,8 +196,11 @@ func (s *httpStreamSink) Flush() error {
 	return nil
 }
 
-func writeOrchestratorError(w http.ResponseWriter, err error) {
+func writeOrchestratorError(w http.ResponseWriter, err error, fallbackRequestID ...string) {
 	requestID := ""
+	if len(fallbackRequestID) > 0 {
+		requestID = fallbackRequestID[0]
+	}
 	var statusErr *service.BillingStatusError
 	if errors.As(err, &statusErr) {
 		requestID = statusErr.RequestID
@@ -215,6 +220,18 @@ func writeOrchestratorError(w http.ResponseWriter, err error) {
 		response.Error(w, http.StatusBadRequest, 40000, "模型不可用或未配置")
 	case errors.Is(err, service.ErrIdempotencyConflict):
 		response.Error(w, http.StatusConflict, 40901, "幂等键对应的请求内容不一致")
+	case errors.Is(err, service.ErrContentPolicyViolation):
+		response.ErrorWithTypeAndRequestID(w, http.StatusForbidden, 40310, "content_policy_violation", service.DefaultSafetyRefusal, requestID)
+	case errors.Is(err, service.ErrSafetySubjectSuspended):
+		response.ErrorWithTypeAndRequestID(w, http.StatusForbidden, 40311, "content_access_suspended", "该 Project SK 或用户已因内容安全策略暂停", requestID)
+	case errors.Is(err, service.ErrModerationUnavailable):
+		response.ErrorWithTypeAndRequestID(w, http.StatusServiceUnavailable, 50320, "moderation_unavailable", "内容安全服务暂不可用，请稍后重试", requestID)
+	case errors.Is(err, service.ErrBudgetExceeded):
+		response.ErrorWithTypeAndRequestID(w, http.StatusTooManyRequests, 42920, "budget_limit_exceeded", "Project 或 Project SK 预算已达到上限", requestID)
+	case errors.Is(err, service.ErrBudgetUnavailable), errors.Is(err, service.ErrResourceUnavailable):
+		response.ErrorWithTypeAndRequestID(w, http.StatusServiceUnavailable, 50321, "governance_unavailable", "资源治理服务暂不可用，请稍后重试", requestID)
+	case errors.Is(err, service.ErrConcurrencyExceeded), errors.Is(err, service.ErrRateLimitExceeded):
+		writeResourceLimitError(w, err, requestID)
 	case errors.Is(err, service.ErrPriceUnavailable):
 		response.ErrorWithType(w, http.StatusServiceUnavailable, 50310, "pricing_unavailable", "模型价格暂不可用")
 	case errors.Is(err, service.ErrPriceExpired):
@@ -240,4 +257,31 @@ func writeOrchestratorError(w http.ResponseWriter, err error) {
 	default:
 		response.Error(w, http.StatusInternalServerError, 50000, "AI 请求编排失败")
 	}
+}
+
+func writeResourceLimitError(w http.ResponseWriter, err error, requestID string) {
+	var limitErr *service.ResourceLimitError
+	if !errors.As(err, &limitErr) {
+		response.ErrorWithTypeAndRequestID(w, http.StatusServiceUnavailable, 50321, "governance_unavailable", "资源治理服务暂不可用，请稍后重试", requestID)
+		return
+	}
+	retrySeconds := int64((limitErr.RetryAfter + time.Second - 1) / time.Second)
+	if retrySeconds < 1 {
+		retrySeconds = 1
+	}
+	w.Header().Set("Retry-After", strconv.FormatInt(retrySeconds, 10))
+	errorType := "rate_limit_exceeded"
+	code := 42921
+	message := "请求速率达到上限，请稍后重试"
+	if errors.Is(err, service.ErrConcurrencyExceeded) {
+		errorType = "concurrency_limit_exceeded"
+		code = 42922
+		message = "并发请求达到上限，请稍后重试"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusTooManyRequests)
+	_ = json.NewEncoder(w).Encode(response.Body{
+		Code: code, ErrorType: errorType, Message: message,
+		Data: map[string]string{"limit_scope": limitErr.LimitScope}, RequestID: requestID,
+	})
 }

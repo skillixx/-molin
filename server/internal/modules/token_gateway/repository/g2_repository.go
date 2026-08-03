@@ -79,6 +79,9 @@ func isDuplicateKey(err error) bool {
 	return errors.As(err, &mysqlError) && mysqlError.Number == 1062
 }
 
+// IsDuplicateKeyForHandler 供治理管理接口把唯一冲突稳定映射为 409，不暴露数据库错误正文。
+func IsDuplicateKeyForHandler(err error) bool { return isDuplicateKey(err) }
+
 // CreateProjectKey 在一个事务内创建哈希密钥和 allowlist，避免出现可用密钥但权限未落库的窗口。
 func (r *G2Repository) CreateProjectKey(ctx context.Context, key *authmodel.APIKey, scopes []authmodel.APIKeyModelScope) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -190,6 +193,7 @@ type G2AccessSnapshot struct {
 	KeyStatus      string
 	ScopeMode      string
 	KeyExpiresAt   *time.Time
+	Timezone       string
 	ModelAllowed   bool
 	TokenModel     model.TokenModel
 }
@@ -199,7 +203,7 @@ func (r *G2Repository) LoadAccessSnapshot(ctx context.Context, userID, projectID
 	err := r.db.WithContext(ctx).Raw(`
 		SELECT u.status AS user_status, u.real_name_status,
 		       p.status AS project_status, k.status AS key_status,
-		       k.scope_mode, k.expires_at,
+		       k.scope_mode, k.expires_at, p.timezone,
 		       CASE
 		         WHEN k.scope_mode = 'all' THEN 1
 		         WHEN k.scope_mode = 'allowlist' AND s.id IS NOT NULL THEN 1

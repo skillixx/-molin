@@ -322,6 +322,105 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 		assertCount(t, db, "ai_usage_items", "request_id = ? AND source = 'provider' AND sequence_no = 1 AND unit_price IS NOT NULL AND amount IS NOT NULL", request.RequestID, 4)
 	})
 
+	t.Run("输出审核拦截保留上游成本但不向用户扣费", func(t *testing.T) {
+		if !supportsProviderCostSource(t, db) {
+			t.Skip("仅在 000061 已应用的 G4 隔离数据库验证平台成本事实")
+		}
+		request := integrationRequest("g4-content-policy-waived", 16)
+		if _, err := billing.PrepareRequest(ctx, request, map[string]interface{}{"max_tokens": "100"}); err != nil {
+			t.Fatal(err)
+		}
+		started := startIntegrationAttempt(t, ctx, g2, request.RequestID)
+		if err := billing.FinalizeRequest(ctx, request.RequestID, ExecutionResult{
+			Attempt:              successfulIntegrationAttempt(started),
+			Usage:                ExecutionUsage{PromptTokens: 10, CompletionTokens: 5, Present: true},
+			CustomerChargeWaived: true,
+			ErrorCode:            "output_moderation_blocked",
+		}); err != nil {
+			t.Fatal(err)
+		}
+		assertRequestAndHoldStatus(t, db, request.RequestID, model.AIBillingReleased, "released")
+		assertCount(t, db, "wallet_transactions", "user_id = ? AND type = 'consume'", 16, 0)
+		assertCount(t, db, "ai_usage_items", "request_id = ? AND source = 'provider' AND sequence_no = 0", request.RequestID, 3)
+		assertCount(t, db, "ai_usage_items", "request_id = ? AND source = 'provider' AND sequence_no = 1", request.RequestID, 0)
+		assertCount(t, db, "ai_usage_items", "request_id = ? AND source = 'provider_cost' AND sequence_no = 0 AND unit_price IS NOT NULL AND amount IS NOT NULL", request.RequestID, 4)
+		var providerCost decimal.Decimal
+		if err := db.Raw("SELECT COALESCE(SUM(amount),0) FROM ai_usage_items WHERE request_id = ? AND source = 'provider_cost'", request.RequestID).Row().Scan(&providerCost); err != nil {
+			t.Fatal(err)
+		}
+		if !providerCost.Equal(decimal.RequireFromString("0.000015")) {
+			t.Fatalf("平台成本金额必须按冻结成本价保存: %s", providerCost)
+		}
+		assertCount(t, db, "ai_outbox_events", "aggregate_id = ? AND event_type = 'billing_content_policy_waived'", request.RequestID, 1)
+	})
+
+	t.Run("输出审核拦截缺失 Usage 时保持预占并在补录后零扣费收敛", func(t *testing.T) {
+		if !supportsProviderCostSource(t, db) {
+			t.Skip("仅在 000061 已应用的 G4 隔离数据库验证平台成本对账")
+		}
+		request := integrationRequest("g4-content-policy-reconcile", 17)
+		if _, err := billing.PrepareRequest(ctx, request, map[string]interface{}{"max_tokens": "100"}); err != nil {
+			t.Fatal(err)
+		}
+		started := startIntegrationAttempt(t, ctx, g2, request.RequestID)
+		if err := billing.FinalizeRequest(ctx, request.RequestID, ExecutionResult{
+			Attempt: successfulIntegrationAttempt(started), CustomerChargeWaived: true,
+			ErrorCode: "output_moderation_blocked",
+		}); !errors.Is(err, ErrSettlementPending) {
+			t.Fatalf("缺失 Usage 时必须进入待对账: %v", err)
+		}
+		assertRequestAndHoldStatus(t, db, request.RequestID, model.AIBillingSettlementPending, "holding")
+		confirmed := ExecutionUsage{PromptTokens: 10, CompletionTokens: 5, Present: true, TotalTokens: 15}
+		if err := billing.ResolveContentPolicyWaiver(ctx, request.RequestID, confirmed); err != nil {
+			t.Fatalf("受控补录入口应完成平台成本核算和用户零扣费收敛: %v", err)
+		}
+		assertRequestAndHoldStatus(t, db, request.RequestID, model.AIBillingReleased, "released")
+		assertCount(t, db, "wallet_transactions", "user_id = ? AND type = 'consume'", 17, 0)
+		assertCount(t, db, "ai_usage_items", "request_id = ? AND source = 'provider' AND sequence_no = 0", request.RequestID, 3)
+		assertCount(t, db, "ai_usage_items", "request_id = ? AND source = 'provider_cost' AND amount IS NOT NULL", request.RequestID, 4)
+		if err := billing.ResolveContentPolicyWaiver(ctx, request.RequestID, confirmed); err != nil {
+			t.Fatalf("相同 Usage 重复补录必须幂等成功: %v", err)
+		}
+		conflicting := ExecutionUsage{PromptTokens: 11, CompletionTokens: 5, Present: true, TotalTokens: 16}
+		if err := billing.ResolveContentPolicyWaiver(ctx, request.RequestID, conflicting); !errors.Is(err, repository.ErrRequestStateConflict) {
+			t.Fatalf("冲突 Usage 重复补录必须返回状态冲突: %v", err)
+		}
+		assertCount(t, db, "ai_outbox_events", "aggregate_id = ? AND event_type = 'billing_content_policy_waived'", request.RequestID, 1)
+	})
+
+	t.Run("输出审核缺失 Usage 超期转人工异常后仍可受控补录", func(t *testing.T) {
+		if !supportsProviderCostSource(t, db) {
+			t.Skip("仅在 000061 已应用的 G4 隔离数据库验证人工异常收敛")
+		}
+		request := integrationRequest("g4-content-policy-exception-reconcile", 18)
+		if _, err := billing.PrepareRequest(ctx, request, map[string]interface{}{"max_tokens": "100"}); err != nil {
+			t.Fatal(err)
+		}
+		started := startIntegrationAttempt(t, ctx, g2, request.RequestID)
+		if err := billing.FinalizeRequest(ctx, request.RequestID, ExecutionResult{
+			Attempt: successfulIntegrationAttempt(started), CustomerChargeWaived: true,
+			ErrorCode: "output_moderation_blocked",
+		}); !errors.Is(err, ErrSettlementPending) {
+			t.Fatalf("缺失 Usage 时必须先进入待对账: %v", err)
+		}
+		if err := db.Model(&model.AIRequest{}).Where("request_id = ?", request.RequestID).
+			Update("updated_at", time.Now().Add(-manualReconcileDeadline-time.Minute)).Error; err != nil {
+			t.Fatal(err)
+		}
+		changed, err := billing.ReconcileInterrupted(ctx, 20)
+		if err != nil || changed == 0 {
+			t.Fatalf("超过对账期限后应进入人工异常: changed=%d err=%v", changed, err)
+		}
+		assertRequestAndHoldStatus(t, db, request.RequestID, model.AIBillingException, "holding")
+		confirmed := ExecutionUsage{PromptTokens: 20, CompletionTokens: 6, Present: true, TotalTokens: 26}
+		if err := billing.ResolveContentPolicyWaiver(ctx, request.RequestID, confirmed); err != nil {
+			t.Fatalf("内容安全人工异常应通过受控入口零扣费收敛: %v", err)
+		}
+		assertRequestAndHoldStatus(t, db, request.RequestID, model.AIBillingReleased, "released")
+		assertCount(t, db, "wallet_transactions", "user_id = ? AND type = 'consume'", 18, 0)
+		assertCount(t, db, "ai_usage_items", "request_id = ? AND source = 'provider_cost' AND amount IS NOT NULL", request.RequestID, 4)
+	})
+
 	t.Run("缺省 max_tokens 同时用于报价和实际上游请求", func(t *testing.T) {
 		projectID, channelID := uint64(13), uint64(1)
 		upstreamModel := "qwen-plus"
@@ -923,6 +1022,17 @@ func assertCount(t *testing.T, db *gorm.DB, table, where string, arg interface{}
 	if count != want {
 		t.Fatalf("%s 计数不符: got=%d want=%d", table, count, want)
 	}
+}
+
+func supportsProviderCostSource(t *testing.T, db *gorm.DB) bool {
+	t.Helper()
+	var count int64
+	if err := db.Raw(`SELECT COUNT(*) FROM information_schema.check_constraints
+		WHERE constraint_schema = DATABASE() AND constraint_name = 'chk_ai_usage_source'
+		AND check_clause LIKE '%provider_cost%'`).Row().Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	return count == 1
 }
 
 func assertAtMostOne(t *testing.T, db *gorm.DB, table, where string, arg interface{}) {

@@ -14,6 +14,35 @@ import (
 	"molin/server/pkg/crypto"
 )
 
+func TestNormalizeProjectTimezone(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    string
+		fallback string
+		want     string
+		wantErr  bool
+	}{
+		{name: "使用默认时区", fallback: "Asia/Shanghai", want: "Asia/Shanghai"},
+		{name: "允许标准 IANA 时区", value: "America/New_York", want: "America/New_York"},
+		{name: "拒绝本机动态时区", value: "Local", wantErr: true},
+		{name: "拒绝无效时区", value: "China/NotFound", wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := normalizeProjectTimezone(test.value, test.fallback)
+			if test.wantErr {
+				if !errors.Is(err, ErrProjectInvalid) {
+					t.Fatalf("应返回项目参数错误，实际 %v", err)
+				}
+				return
+			}
+			if err != nil || got != test.want {
+				t.Fatalf("时区归一化结果错误: got=%s want=%s err=%v", got, test.want, err)
+			}
+		})
+	}
+}
+
 type memoryProjectStore struct {
 	project  model.AIProject
 	keys     map[uint64]authmodel.APIKey
