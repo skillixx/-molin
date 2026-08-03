@@ -70,7 +70,19 @@ jobs:
         env:
           AI_GATEWAY_G3_MYSQL_APPROVED: "YES"
           G3_DOCKER_PULL_POLICY: missing
-        run: bash infra/scripts/verify-ai-gateway-migration-000060.sh
+        run: bash infra/scripts/verify-ai-gateway-migration-000062.sh
+
+  gateway-g4:
+    name: AI 网关 G4 安全与资源治理验收
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 隔离验证 MySQL 8、Redis 7 与 RabbitMQ 恢复
+        env:
+          AI_GATEWAY_G4_ISOLATED_APPROVED: "YES"
+          G4_DOCKER_PULL_POLICY: missing
+        run: bash infra/scripts/verify-ai-gateway-g4-governance.sh
 
   # ---- 前端 CI ----
   frontend-admin:
