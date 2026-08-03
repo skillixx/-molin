@@ -2204,6 +2204,14 @@ Skill 版本 Body 参数：version、manifest_json、package_url、changelog、s
 GET   /api/token/models
 POST  /api/token/chat/completions
 GET   /api/token/usage
+POST  /api/token/projects
+GET   /api/token/projects
+GET   /api/token/projects/{id}
+PATCH /api/token/projects/{id}
+POST  /api/token/projects/{id}/keys
+GET   /api/token/projects/{id}/keys
+POST  /api/token/projects/{id}/keys/{key_id}/rotate
+DELETE /api/token/projects/{id}/keys/{key_id}
 GET   /api/admin/token/providers
 POST  /api/admin/token/providers
 PATCH /api/admin/token/providers/:id
@@ -2216,11 +2224,26 @@ PATCH /api/admin/token/routes/:id
 GET   /api/admin/token/usage
 ```
 
-> 文字执行驱动契约：Chat Completions 路由在现有 SK/JWT 鉴权、模型可见范围、SK 模型范围和资产门禁之后调用统一 `ExecutionDriver`。部署默认 `native`，可显式切换 `bifrost`。Bifrost 响应会移除 `extra_fields`、路由信息、供应商响应头和内部 Key 名称；HTTP 200 业务错误仍按失败处理。Usage 缺失记录 `pending_reconcile`，禁止按 `max_tokens` 猜测扣费。
+> G2 文字执行契约：公开 Chat Completions 要求 Project SK，在用户状态/实名、Project、SK、显式模型权限、用户分组/角色可见性和模型发布状态通过后调用唯一 `RequestOrchestrator`，再进入统一 `ExecutionDriver`。部署默认 `native`，可显式切换 `bifrost`。Bifrost 响应会移除 `extra_fields`、路由信息、供应商响应头和内部 Key 名称；HTTP 200 业务错误仍按失败处理。Usage 缺失不生成计量行，禁止按 `max_tokens` 猜测。
 
-> G0/G1 商业账本契约：公开路由在 G1 保持不变；`request_id`、Project、SK、逻辑模型、执行模型、三类正交状态、标准 Usage 和执行尝试写入契约见 [`ai-gateway-g0-g1-contract.md`](./ai-gateway-g0-g1-contract.md)。Migration `000058` 只创建 Expand Schema，不代表 RequestOrchestrator、新计费或新查询接口已经启用。
+> G0/G1 商业账本契约：`request_id`、Project、SK、逻辑模型、执行模型、三类正交状态、标准 Usage 和执行尝试见 [`ai-gateway-g0-g1-contract.md`](./ai-gateway-g0-g1-contract.md)。G2 已启用 RequestOrchestrator 和新账本写入，但 `billing_status` 固定为 `unquoted`，不代表价格、钱包预占、扣费或结算已经启用。
 
-> Request ID：全局中间件返回的 `X-Request-ID` 与 Token Handler、执行驱动和账本使用同一值。客户端自带 ID 仅允许 1～128 位字母、数字和 `-_.:`；非法值会被替换为服务端生成值。
+> Request ID 与幂等：`X-Request-ID` 由墨灵生成，并由 Token Handler、执行驱动和账本共用。客户端重放可使用单值 `Idempotency-Key`；重复、逗号多值、空值或超过 191 字节在写账本前返回 400/40000。同用户、Project、SK、请求指纹返回已有状态，不同指纹返回 HTTP 409/code 40901。
+
+Project 管理使用登录态 JWT，不能使用 SK 自助扩大权限。创建 body 为 `{name}`；更新 body 可包含 `name` 和 `status=active|suspended|archived`。列表为扁平分页 `{items,page,page_size,total}`。
+
+Project SK 创建 body：
+
+```json
+{
+  "name": "生产服务",
+  "scope_mode": "allowlist",
+  "model_codes": ["molin/qwen-turbo"],
+  "expires_at": "2026-12-31T16:00:00Z"
+}
+```
+
+新 Key 默认 `allowlist`，空 allowlist 拒绝全部模型；`all` 必须显式选择且不能同时提交 `model_codes`。创建和轮换响应包含一次性 `secret_key` 并设置 `Cache-Control: no-store`；列表只返回 prefix、状态、权限和时间。停用 Project、吊销或过期 Key 均在上游调用前拒绝。
 
 供应商 Body 参数：
 
@@ -2253,7 +2276,10 @@ Chat 请求 Body 参数：
 说明：
 
 - `stream = true` 时响应使用 Server-Sent Events（SSE）格式，`Content-Type: text/event-stream`。
-- 网关层不缓冲完整流式响应；每个 SSE `data:` 事件由当前执行驱动校验和脱敏后立即写出，Bifrost 扩展元数据不对外透传。
+- 网关层不缓冲完整流式响应；每个 SSE `data:` 事件由当前执行驱动校验和脱敏后立即写出，Bifrost 扩展元数据不对外透传。`[DONE]` 只在请求、attempt 和 Usage 成功持久化后发送。
 - 当前一次请求只选择一个执行驱动。Native 使用模型绑定的活动渠道与 `upstream_model`；Bifrost 使用冻结的显式 Provider 模型映射。结果未知或已经输出 SSE 后禁止自动切换供应商，本阶段不启用加权随机和透明熔断回退。
+- G2 成功和失败请求均写 `ai_requests`、`ai_execution_attempts`；Usage 完整时写 `ai_usage_items`。所有请求保持 `billing_status=unquoted`，金额字段为空，不写旧 `token_usage_logs`。
+- `messages` 必须包含至少一条非空文字内容；G2 对图片、音频等多模态消息在写账本和调用上游前返回 400/40000。未实名返回 400/70001，渠道不可用返回 503/50300。
+- 周期恢复扫描先找候选，再在事务锁内重新校验状态和截止时间，只把仍超过安全窗口的 pending/running 请求收敛为 `unknown`，不重放上游。Project SK 创建、轮换和吊销写脱敏审计摘要；审计持久化失败沿用平台 best-effort 语义，必须输出脱敏告警但不反转已经生效的密钥操作。
 
 返回 data：模型列表、OpenAI 兼容响应、Token 用量统计。

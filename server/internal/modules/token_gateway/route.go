@@ -55,10 +55,10 @@ func RegisterRoutes(
 	mux.Handle("GET /api/admin/token/usage", admin(uh.ListAll))
 }
 
-// RegisterUserRoutes 注册 token_gateway 用户端路由（双模式鉴权：平台 sk + 网页登录态）。
-// 中间件统一用 RequireUserAuth：sk- 前缀走 apiKeyResolver 注入 userID+api_key_id，
-// 否则走 JWT（含封禁/吊销检查）仅注入 userID；门面内做门禁/额度/转发。
-//   - forwardSvc：核心转发服务（选渠道 + 转发上游 + 读 usage + 计费编排）
+// RegisterUserRoutes 注册 token_gateway 用户端路由（Project SK + 网页登录态）。
+// Project 管理接口使用 JWT；模型目录兼容 JWT 与 Project SK；公开对话接口必须使用 Project SK。
+// G2 对话由 RequestOrchestrator 统一执行权限校验、上游调用和无收费账本写入，计费状态保持 unquoted。
+//   - forwardSvc：仅保留构造兼容性，公开对话不会回退到旧转发链路
 //   - jwtSecret：JWT 校验密钥
 //   - banChecker：封禁/吊销黑名单检查
 //   - apiKeyResolver：平台 sk 解析器（S2-甲3）；可为 nil（sk 系统未就绪时退化为纯 JWT）。
@@ -67,24 +67,45 @@ func RegisterRoutes(
 func RegisterUserRoutes(
 	mux *http.ServeMux,
 	forwardSvc *service.ForwardService,
+	orchestrator service.RequestOrchestrator,
+	projectSvc *service.ProjectService,
 	catalogSvc *service.CatalogService,
 	usageSvc *service.UsageService,
 	jwtSecret string,
 	banChecker middleware.BanChecker,
 	apiKeyResolver middleware.APIKeyResolver,
 ) {
-	chatH := handler.NewChatHandler(forwardSvc)
+	chatH := handler.NewChatHandler(forwardSvc).WithOrchestrator(orchestrator)
 	modelH := handler.NewModelHandler(catalogSvc)
+	if access, ok := orchestrator.(handler.ModelAccessChecker); ok {
+		modelH.WithAccess(access)
+	}
 	usageH := handler.NewUsageHandler(usageSvc)
 
 	// 用户端中间件链：双模式鉴权（sk 或登录态 JWT，JWT 路径含封禁/吊销检查）。
 	user := func(next http.HandlerFunc) http.Handler {
 		return middleware.RequireUserAuth(jwtSecret, banChecker, apiKeyResolver, http.HandlerFunc(next))
 	}
+	jwtUser := func(next http.HandlerFunc) http.Handler {
+		return middleware.RequireAuth(jwtSecret, banChecker, http.HandlerFunc(next))
+	}
+
+	// Project 与 Project SK 只能由登录态管理，禁止使用 SK 自助轮换或扩大自身权限。
+	if projectSvc != nil {
+		projectH := handler.NewProjectHandler(projectSvc)
+		mux.Handle("POST /api/token/projects", jwtUser(projectH.Create))
+		mux.Handle("GET /api/token/projects", jwtUser(projectH.List))
+		mux.Handle("GET /api/token/projects/{id}", jwtUser(projectH.Get))
+		mux.Handle("PATCH /api/token/projects/{id}", jwtUser(projectH.Update))
+		mux.Handle("POST /api/token/projects/{id}/keys", jwtUser(projectH.IssueKey))
+		mux.Handle("GET /api/token/projects/{id}/keys", jwtUser(projectH.ListKeys))
+		mux.Handle("POST /api/token/projects/{id}/keys/{key_id}/rotate", jwtUser(projectH.RotateKey))
+		mux.Handle("DELETE /api/token/projects/{id}/keys/{key_id}", jwtUser(projectH.RevokeKey))
+	}
 
 	// 列出已上架（active）模型，供用户端选择（仅公开精简字段）。
 	mux.Handle("GET /api/token/models", user(modelH.ListPublic))
-	// OpenAI 兼容对话转发（支持非流式 + SSE 流式）。
+	// OpenAI 兼容对话转发（仅 Project SK，支持非流式 + SSE 流式）。
 	mux.Handle("POST /api/token/chat/completions", user(chatH.ChatCompletions))
 	// 我的用量流水（S2-丁1，§14.3）：仅查本人，可选筛选 model/start/end。
 	// 双模式：sk 调用按 sk 绑定的 user_id 过滤（与登录态一致只查本人）。
@@ -92,8 +113,8 @@ func RegisterUserRoutes(
 
 	// ---- OpenAI 兼容别名层（/v1/*）----
 	// 让 Cline / Cherry Studio 等「OpenAI 兼容」客户端把 Base URL 填为 https://<域名>/v1，
-	// 凭平台 sk 直接接入；复用同一套 RequireUserAuth 中间件，sk 鉴权 / model_scope 越界校验 /
-	// 计费分流（postpaid/prepaid）与 /api/token/* 完全一致。现有 /api/token/* 路由保留不变。
+	// 凭 Project SK 直接接入；复用同一套鉴权和模型权限校验，并由 RequestOrchestrator
+	// 写入 ai_requests、ai_execution_attempts 与 ai_usage_items；G2 不执行钱包或价格结算。
 	// POST /v1/chat/completions：纯别名，复用现有 ChatCompletions handler（含 SSE 流式透传）。
 	mux.Handle("POST /v1/chat/completions", user(chatH.ChatCompletions))
 	// GET /v1/models：返回 OpenAI 标准格式，供客户端自动拉取模型下拉列表。

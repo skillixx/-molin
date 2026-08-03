@@ -15,12 +15,23 @@ import (
 
 // ModelHandler 处理 Token 网关对外模型目录管理（管理端，需 token:manage + 管理员双重认证）。
 type ModelHandler struct {
-	svc *service.CatalogService
+	svc    *service.CatalogService
+	access ModelAccessChecker
+}
+
+// ModelAccessChecker 让模型目录复用 G2 的 Project SK 权限判定。
+type ModelAccessChecker interface {
+	ModelAllowed(ctx context.Context, userID, apiKeyID uint64, modelCode string) bool
 }
 
 // NewModelHandler 创建模型目录管理 handler。
 func NewModelHandler(svc *service.CatalogService) *ModelHandler {
 	return &ModelHandler{svc: svc}
+}
+
+func (h *ModelHandler) WithAccess(access ModelAccessChecker) *ModelHandler {
+	h.access = access
+	return h
 }
 
 // ListModels GET /api/admin/token/models
@@ -52,10 +63,28 @@ func (h *ModelHandler) ListPublic(w http.ResponseWriter, r *http.Request) {
 	modality := r.URL.Query().Get("modality")
 	p := pagination.Parse(r)
 	// 按定向可见性过滤：仅返回对该用户可见的 active 模型。
-	items, total, err := h.svc.ListVisible(r.Context(), userID, modality, p.Offset(), p.PageSize)
+	apiKeyID := middleware.APIKeyIDFromContext(r.Context())
+	offset, limit := p.Offset(), p.PageSize
+	if apiKeyID != 0 && h.access != nil {
+		offset, limit = 0, 0
+	}
+	items, total, err := h.svc.ListVisible(r.Context(), userID, modality, offset, limit)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return
+	}
+	if apiKeyID != 0 && h.access != nil {
+		items = filterModelsByKeyAccess(r.Context(), h.access, userID, apiKeyID, items)
+		total = int64(len(items))
+		start := p.Offset()
+		if start > len(items) {
+			start = len(items)
+		}
+		end := start + p.PageSize
+		if end > len(items) {
+			end = len(items)
+		}
+		items = items[start:end]
 	}
 	pub := make([]dto.PublicModelResp, len(items))
 	for i := range items {
@@ -87,10 +116,30 @@ func (h *ModelHandler) ListOpenAIModels(w http.ResponseWriter, r *http.Request) 
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return
 	}
+	apiKeyID := middleware.APIKeyIDFromContext(r.Context())
+	if apiKeyID != 0 && h.access != nil {
+		filtered := make([]dto.OpenAIModel, 0, len(list.Data))
+		for _, item := range list.Data {
+			if h.access.ModelAllowed(r.Context(), userID, apiKeyID, item.ID) {
+				filtered = append(filtered, item)
+			}
+		}
+		list.Data = filtered
+	}
 	// 直接写裸 OpenAI 结构（绕过 response.JSON 包络），保证客户端解析兼容。
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(list)
+}
+
+func filterModelsByKeyAccess(ctx context.Context, access ModelAccessChecker, userID, apiKeyID uint64, items []dto.ModelResp) []dto.ModelResp {
+	filtered := make([]dto.ModelResp, 0, len(items))
+	for _, item := range items {
+		if access.ModelAllowed(ctx, userID, apiKeyID, item.LogicalModelCode) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 // visibleModelLister 是 ListOpenAIModels 依赖的最小可见性查询接口，*service.CatalogService 实现之。

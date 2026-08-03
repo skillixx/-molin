@@ -2073,6 +2073,7 @@ Wechatpay-Nonce: <随机串>
 > 计费口径（2026-06-21 决策）：**按量（token 数）+ 按次（调用次数）+ 套餐（预付 token 额度）三种并存**；按量/按次为后付扣钱包，套餐为预付扣 entitlement 额度。Agent/Skill/插件均免费，唯一收费点是模型 token 调用。
 > 状态标记：✅ 已实现并合并 main ｜ 🔜 待实现（含归属）。前端按状态决定可对接时间。
 > 站内聊天工作台的 Agent 对话端点（tool-use 编排）契约见 §14.8（待实现）。
+> G2 增量：公开 `/api/token/chat/completions` 与 `/v1/chat/completions` 已切换到 Project SK + RequestOrchestrator 的无收费正式账本链路。G2 不扣钱包、不扣套餐、不返回金额；旧计费说明仅描述历史接口和 G3 目标，不适用于 G2 公开 Chat 链。
 
 ### 本模块专用错误码（chat 转发）
 
@@ -2085,10 +2086,13 @@ Wechatpay-Nonce: <随机串>
 | 50200 | 502 | 上游服务调用失败 |
 | 50300 | 503 | 上游渠道不可用（未配置可用渠道 / 渠道停用） |
 | 50301 | 503 | 系统繁忙，请稍后重试（高并发钱包乐观锁冲突重试耗尽，**可重试**；D-M2-02，区别于 60001 余额不足） |
+| 40901 | 409 | 相同 Idempotency-Key 对应的请求内容不一致 |
 
 ### 鉴权说明（双模式）
 
-- **用户端 chat / models / usage**：支持两种凭证，二选一注入到 `Authorization`：
+- **G2 Project/Key 管理**：只允许登录态 JWT。
+- **G2 公开 chat**：必须使用 Project SK；JWT 不能绕过 Project 归属进入正式文字链。
+- **models / 历史 usage**：仍支持双模式凭证：
   - 登录态 JWT：`Authorization: Bearer <access_token>`（✅ 当前已支持）
   - 平台 API Key（sk）：`Authorization: Bearer sk-molin-xxxx`（🔜 后端甲 sk 系统上线后支持，外部程序/Agent 用）
   - 两条路最终都解析出 `user_id`，后续门禁/计费逻辑一致。
@@ -2114,8 +2118,9 @@ Wechatpay-Nonce: <随机串>
 
 ### 14.2 OpenAI 兼容对话转发（用户端）✅
 
-- **POST** `/api/token/chat/completions` *(登录态 / sk)*
-- 请求体 = 标准 OpenAI Chat Completions 报文，门面近似纯透传，**仅 `model` 字段必填**（填 14.1 的 `logical_model_code`）；`stream=true` 时走 SSE。
+- **POST** `/api/token/chat/completions` 或 `/v1/chat/completions` *(G2：Project SK)*
+- Header 可带一个 `Idempotency-Key`。重复 Header、逗号多值、空值或超过 191 字节返回 `400/40000`；相同 Key、相同请求指纹返回 HTTP 202 和已有 `{request_id,execution_status,billing_status,existing:true}`，不重复调用上游；不同指纹返回 `409/40901`。
+- 请求体 = 标准 OpenAI Chat Completions 报文，门面近似纯透传，**`model` 与至少一条非空文字 `messages` 必填**（`model` 填 14.1 的 `logical_model_code`）；G2 拒绝图片、音频等多模态消息，`stream=true` 时走 SSE。
   ```json
   {
     "model": "deepseek-chat",
@@ -2124,9 +2129,9 @@ Wechatpay-Nonce: <随机串>
   }
   ```
 - **非流式**（`stream=false`/缺省）：原样透传上游 OpenAI 响应体（`choices`/`usage` 等），HTTP 200。
-- **流式**（`stream=true`）：`Content-Type: text/event-stream`，逐 chunk SSE 透传，末尾 `data: [DONE]`；门面已对上游开启 `stream_options.include_usage`，usage 在末尾 chunk。
-- **前置错误**（尚未开始透传时）：返回统一 JSON `{code,message,data}`，错误码见上表（40300/50200/50300，prepaid 额度耗尽 60005 / 余额不足 60001 / 归属不符 40003 / 系统繁忙可重试 50301，及 40000 model 为空 / 40001 未登录）。
-- 计费：调用成功后按 input/output tokens 扣钱包，明细见 14.3；**对话内容不落明文日志**。
+- **流式**（`stream=true`）：`Content-Type: text/event-stream`，逐 chunk SSE 输出；账本 Finalize 成功后才发送 `data: [DONE]`。客户端断连后后台继续读取可确定的尾部 Usage。
+- **前置错误**（尚未开始透传时）：返回统一 JSON `{code,message,data}`。G2 使用 `40000`（请求参数）、`40001`（未登录/非 Project SK）、`70001`（未实名）、`40300`（Project/SK/模型权限）、`50200`（上游失败）和 `50300`（渠道不可用）；历史计费错误不适用于 G2 公开 Chat 链。
+- G2 计量：完整 Usage 写入正式账本；缺失时不估算。`billing_status=unquoted`，不扣钱包或套餐；**对话内容不落明文日志**。
 
 ### 14.3 我的用量（用户端）🔜（后端丁）
 
@@ -2167,6 +2172,49 @@ Wechatpay-Nonce: <随机串>
   ```
 - **DELETE** `/api/keys/{id}` *(登录态)* — 吊销 sk（`status=revoked`，立即失效）
 - 联动：用户被封禁 → 名下所有 sk 失效。
+
+### 14.4A Project 与 Project SK（G2）✅
+
+Project 管理接口只用 JWT：
+
+```text
+POST   /api/token/projects
+GET    /api/token/projects?page=1&page_size=20
+GET    /api/token/projects/{id}
+PATCH  /api/token/projects/{id}
+```
+
+- 创建：`{"name":"我的服务"}`。
+- 更新：`{"name":"新名称","status":"active|suspended|archived"}`，字段均可选。
+- 停用/归档不物理删除；停用后其 Project SK 不能调用模型。
+- 列表响应为 `{items,page,page_size,total}`。
+
+Project SK 接口只用 JWT：
+
+```text
+POST   /api/token/projects/{id}/keys
+GET    /api/token/projects/{id}/keys
+POST   /api/token/projects/{id}/keys/{key_id}/rotate
+DELETE /api/token/projects/{id}/keys/{key_id}
+```
+
+创建示例：
+
+```json
+{
+  "name": "服务端调用",
+  "scope_mode": "allowlist",
+  "model_codes": ["molin/qwen-turbo"],
+  "expires_at": null
+}
+```
+
+- `scope_mode` 缺省为 `allowlist`；空 `model_codes` 表示拒绝全部模型。
+- 全模型必须显式提交 `scope_mode=all`，此时 `model_codes` 必须为空。
+- 创建和轮换响应中的 `secret_key` 仅出现一次；前端必须立即展示保存提示，离开后不可找回。
+- 创建、轮换和吊销会写入只含内部 ID、权限模式和模型代码的审计摘要，不记录完整 SK 或 HMAC Secret。
+- 列表返回 `id,project_id,name,key_prefix,scope_mode,model_codes,status,expires_at,last_used_at,created_at`，不返回明文和 hash。
+- `/v1/models` 和 `/api/token/models` 会按当前 Project SK 的权限过滤。
 
 ---
 

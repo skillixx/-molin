@@ -814,3 +814,22 @@ INSERT INTO user_roles (user_id, role_id)
 `infra/scripts/run-bifrost-g1-benchmark.sh` 必须显式接收模式，保存权限 `0600` 的独立 TSV，记录模式、顺序、原始耗时和差值并输出 SHA256。失败文件不得覆盖或删除。真实调用授权与 4 次最小 POC 授权相互独立；受控模式不得携带真实上游 SK。
 
 Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration-000058.sh` 在隔离临时 MySQL 8 容器验证，必须确认项目数据库未被连接，并取得首次 up、保留结构 down、re-up 后 `58/dirty=0` 及租户/预算/幂等约束证据。
+
+### G2 自动化与阶段门禁
+
+- `go test ./...`，远程 Linux CI 必须执行 `go test -v -race -count=1 ./...`。
+- Project CRUD、停用/归档、单用户租户隔离。
+- Project SK 默认空 allowlist、显式 all、创建、列表、轮换、吊销和过期。
+- 定向模型必须同时通过用户分组/角色可见性，不能只凭 Project SK allowlist 绕过。
+- 空 messages、多模态内容、多值/逗号 Idempotency-Key 在写请求账本前返回 400；未实名为 70001，渠道不可用为 50300。
+- Project SK 创建、轮换和吊销审计完整，摘要不含明文 SK、HMAC Secret 或上游凭据；审计写入失败必须输出脱敏告警，不能静默丢失。
+- Key 明文只返回一次且响应 `no-store`，数据库/日志/错误不含明文或 HMAC Secret。
+- 普通 JSON 与 SSE 共用 RequestOrchestrator；SSE 只在 Finalize 成功后发送 `[DONE]`。
+- 公开 Chat 未装配 RequestOrchestrator 时失败关闭，不得回落旧 ForwardService、钱包或 `token_usage_logs`。
+- 同 Idempotency-Key 相同指纹返回已有状态；不同指纹 409；并发重复请求只调用一次上游。
+- 同 request_id 换用户、Project 或 SK 拒绝且不泄露原请求。
+- 断连继续读取尾部 Usage；超时、流不完整和结果未知进入 `unknown`，禁止 fallback。
+- Usage 缺失不生成计量行，不按 `max_tokens` 估算。
+- Finalize 重试不重复 attempt 或 Usage；周期恢复扫描只选择超过安全窗口的遗留请求，并在事务锁内重查状态与截止时间，Reconcile 同时收敛请求与运行中的 attempt。
+- `billing_status=unquoted`；不得生成价格、钱包 hold、settled、released、Outbox 或旧 `token_usage_logs` 双写。
+- `infra/scripts/verify-ai-gateway-migration-000059.sh` 只在无网络、无端口、tmpfs 的隔离 MySQL 8 容器执行，验证首次 up、保留式 down、re-up、allowlist 和三元租户外键；禁止连接项目数据库。

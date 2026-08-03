@@ -16,6 +16,8 @@ func TestRegisterUserRoutes_OpenAIAlias(t *testing.T) {
 	// apiKeyResolver 传 nil（退化为纯 JWT），banChecker 传 nil；本测试只校验路由表，不发起鉴权。
 	RegisterUserRoutes(mux,
 		&service.ForwardService{},
+		nil,
+		nil,
 		&service.CatalogService{},
 		&service.UsageService{},
 		"test-secret",

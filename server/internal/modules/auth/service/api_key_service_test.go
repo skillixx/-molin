@@ -22,6 +22,23 @@ type fakeAPIKeyRepo struct {
 	nextID uint64
 }
 
+// TestResolveKey_ProjectKeyExpired 验证 Project SK 到期后立即失效，且不会泄露具体失效原因。
+func TestResolveKey_ProjectKeyExpired(t *testing.T) {
+	repo := newFakeAPIKeyRepo()
+	svc := NewAPIKeyService(repo, "expiry-test-secret", nil)
+	plaintext, view, err := svc.IssueKey(context.Background(), IssueKeyInput{UserID: 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-time.Minute)
+	repo.mu.Lock()
+	repo.rows[view.ID].ExpiresAt = &past
+	repo.mu.Unlock()
+	if _, err := svc.ResolveKey(context.Background(), plaintext); err != ErrKeyInvalid {
+		t.Fatalf("过期 Project SK 必须统一返回 ErrKeyInvalid，实际: %v", err)
+	}
+}
+
 func newFakeAPIKeyRepo() *fakeAPIKeyRepo {
 	return &fakeAPIKeyRepo{rows: map[uint64]*model.APIKey{}, nextID: 1}
 }

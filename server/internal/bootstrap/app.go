@@ -779,7 +779,7 @@ func NewApp() (*App, error) {
 			tokenScopeResolver = &modelScopeResolverAdapter{svc: apiKeyService}
 		}
 
-		if tokenGatewayModule, tgErr := tokengatewaymod.New(gormDB, cfg.TokenProviderKey, assetService, tokenReporter, tokenScopeResolver); tgErr != nil {
+		if tokenGatewayModule, tgErr := tokengatewaymod.New(gormDB, cfg.TokenProviderKey, cfg.APIKeyHMACSecret, assetService, tokenReporter, tokenScopeResolver); tgErr != nil {
 			log.Printf("[token_gateway] 初始化失败，管理端/用户端未启用: %v", tgErr)
 		} else {
 			// 执行层默认继续使用原生 Go 转发器；只有显式配置 bifrost 且内部鉴权完整时才切换。
@@ -787,6 +787,12 @@ func NewApp() (*App, error) {
 				cfg.TokenExecutionDriver, cfg.BifrostBaseURL, cfg.BifrostInternalToken,
 			); driverErr != nil {
 				log.Printf("[token_gateway] 执行驱动配置失败，应用拒绝启动: %v", driverErr)
+				return nil, driverErr
+			}
+			if driverErr := tokenGatewayModule.Orchestrator.ConfigureExecutionDriver(
+				cfg.TokenExecutionDriver, cfg.BifrostBaseURL, cfg.BifrostInternalToken,
+			); driverErr != nil {
+				log.Printf("[token_gateway] G2 编排执行驱动配置失败，应用拒绝启动: %v", driverErr)
 				return nil, driverErr
 			}
 			// S2-丁5：注入计费路由依赖（postpaid 预扣保证金 / prepaid 扣套餐额度）。
@@ -813,6 +819,11 @@ func NewApp() (*App, error) {
 			modelRoleResolver := &roleResolverAdapter{getter: iamRoleGetter, db: gormDB}
 			tokenGatewayModule.CatalogService.WithResolvers(modelGroupResolver, modelRoleResolver)
 			tokenGatewayModule.ForwardService.WithResolvers(modelGroupResolver, modelRoleResolver)
+			if tokenGatewayModule.ProjectService != nil {
+				tokenGatewayModule.ProjectService.WithAuditRecorder(auditSvc)
+			}
+			// 周期收敛进程中断后遗留的请求，不重放上游，也不生成任何计费事实。
+			go tokenGatewayModule.Orchestrator.StartRecoveryLoop(context.Background(), time.Minute)
 
 			// 管理端：渠道 / 模型目录 / 全量用量（token:manage + 管理员双重认证）。
 			tokengatewaymod.RegisterRoutes(mux, tokenGatewayModule.ChannelService, tokenGatewayModule.CatalogService,
@@ -824,7 +835,7 @@ func NewApp() (*App, error) {
 			if apiKeyService != nil {
 				tokenAPIKeyResolver = &apiKeyResolverAdapter{svc: apiKeyService}
 			}
-			tokengatewaymod.RegisterUserRoutes(mux, tokenGatewayModule.ForwardService, tokenGatewayModule.CatalogService,
+			tokengatewaymod.RegisterUserRoutes(mux, tokenGatewayModule.ForwardService, tokenGatewayModule.Orchestrator, tokenGatewayModule.ProjectService, tokenGatewayModule.CatalogService,
 				tokenGatewayModule.UsageService, cfg.JWTSecret, authService, tokenAPIKeyResolver)
 			// 供 workbench 编排端点复用单轮转发（ChatOnce 含门禁/选渠道/计费）。
 			tokenForwardSvc = tokenGatewayModule.ForwardService

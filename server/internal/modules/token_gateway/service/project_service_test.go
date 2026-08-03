@@ -1,0 +1,230 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	authmodel "molin/server/internal/modules/auth/model"
+	"molin/server/internal/modules/token_gateway/model"
+	"molin/server/internal/modules/token_gateway/repository"
+	"molin/server/pkg/crypto"
+)
+
+type memoryProjectStore struct {
+	project  model.AIProject
+	keys     map[uint64]authmodel.APIKey
+	scopes   map[uint64][]string
+	nextID   uint64
+	modelsOK bool
+}
+
+type memoryProjectAudit struct {
+	actions   []string
+	summaries []interface{}
+}
+
+func (a *memoryProjectAudit) Record(_ context.Context, _ *uint64, _, action string, _, _ *string, _ string, summary any) error {
+	a.actions = append(a.actions, action)
+	a.summaries = append(a.summaries, summary)
+	return nil
+}
+
+func newMemoryProjectStore() *memoryProjectStore {
+	return &memoryProjectStore{
+		project: model.AIProject{ID: 9, UserID: 5, Name: "演示项目", Status: ProjectStatusActive},
+		keys:    map[uint64]authmodel.APIKey{}, scopes: map[uint64][]string{}, nextID: 10, modelsOK: true,
+	}
+}
+func (s *memoryProjectStore) CreateProject(_ context.Context, project *model.AIProject) error {
+	project.ID = s.project.ID
+	s.project = *project
+	return nil
+}
+func (s *memoryProjectStore) FindProject(_ context.Context, userID, projectID uint64) (*model.AIProject, error) {
+	if s.project.UserID != userID || s.project.ID != projectID {
+		return nil, repository.ErrProjectNotFound
+	}
+	copy := s.project
+	return &copy, nil
+}
+func (s *memoryProjectStore) ListProjects(_ context.Context, userID uint64, _, _ int) ([]model.AIProject, int64, error) {
+	if userID != s.project.UserID {
+		return nil, 0, nil
+	}
+	return []model.AIProject{s.project}, 1, nil
+}
+func (s *memoryProjectStore) UpdateProject(_ context.Context, userID, projectID uint64, updates map[string]interface{}) error {
+	if userID != s.project.UserID || projectID != s.project.ID {
+		return repository.ErrProjectNotFound
+	}
+	if name, ok := updates["name"].(string); ok {
+		s.project.Name = name
+	}
+	if status, ok := updates["status"].(string); ok {
+		s.project.Status = status
+	}
+	return nil
+}
+func (s *memoryProjectStore) CreateProjectKey(_ context.Context, key *authmodel.APIKey, scopes []authmodel.APIKeyModelScope) error {
+	key.ID = s.nextID
+	s.nextID++
+	key.CreatedAt = time.Now()
+	s.keys[key.ID] = *key
+	for _, scope := range scopes {
+		s.scopes[key.ID] = append(s.scopes[key.ID], scope.LogicalModelCode)
+	}
+	return nil
+}
+func (s *memoryProjectStore) ListProjectKeys(_ context.Context, userID, projectID uint64) ([]authmodel.APIKey, error) {
+	result := []authmodel.APIKey{}
+	for _, key := range s.keys {
+		if key.UserID == userID && key.ProjectID != nil && *key.ProjectID == projectID {
+			result = append(result, key)
+		}
+	}
+	return result, nil
+}
+func (s *memoryProjectStore) FindProjectKey(_ context.Context, userID, projectID, keyID uint64) (*authmodel.APIKey, error) {
+	key, ok := s.keys[keyID]
+	if !ok || key.UserID != userID || key.ProjectID == nil || *key.ProjectID != projectID {
+		return nil, repository.ErrProjectKeyNotFound
+	}
+	copy := key
+	return &copy, nil
+}
+func (s *memoryProjectStore) ListKeyScopes(_ context.Context, keyID uint64) ([]string, error) {
+	return append([]string(nil), s.scopes[keyID]...), nil
+}
+func (s *memoryProjectStore) RevokeProjectKey(_ context.Context, userID, projectID, keyID uint64) error {
+	key, err := s.FindProjectKey(context.Background(), userID, projectID, keyID)
+	if err != nil {
+		return err
+	}
+	key.Status = "revoked"
+	s.keys[keyID] = *key
+	return nil
+}
+func (s *memoryProjectStore) RotateProjectKey(_ context.Context, oldKey *authmodel.APIKey, newKey *authmodel.APIKey, scopes []authmodel.APIKeyModelScope) error {
+	current, ok := s.keys[oldKey.ID]
+	if !ok || current.Status != "active" {
+		return repository.ErrProjectKeyNotFound
+	}
+	newKey.ID = s.nextID
+	s.nextID++
+	newKey.CreatedAt = time.Now()
+	s.keys[newKey.ID] = *newKey
+	for _, scope := range scopes {
+		s.scopes[newKey.ID] = append(s.scopes[newKey.ID], scope.LogicalModelCode)
+	}
+	current.Status = "revoked"
+	s.keys[oldKey.ID] = current
+	return nil
+}
+func (s *memoryProjectStore) ActiveChatModelsExist(_ context.Context, _ []string) (bool, error) {
+	return s.modelsOK, nil
+}
+
+func TestProjectKeyDefaultsToDenyAllAllowlistAndStoresOnlyHash(t *testing.T) {
+	store := newMemoryProjectStore()
+	service := NewProjectService(store, "project-key-test-secret").WithVisibilityChecker(fakeVisibilityChecker{visible: true})
+	plaintext, view, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, Name: "默认密钥"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := store.keys[view.ID]
+	if view.ScopeMode != ScopeModeAllowlist || len(view.ModelCodes) != 0 || len(store.scopes[view.ID]) != 0 {
+		t.Fatalf("新 Project SK 必须默认空 allowlist: %+v", view)
+	}
+	if stored.KeyHash == "" || stored.KeyHash != crypto.HMAC256(plaintext, "project-key-test-secret") || stored.KeyHash == plaintext {
+		t.Fatal("数据库必须只保存 HMAC，不能保存可恢复明文")
+	}
+}
+
+func TestProjectKeyAllModeRequiresExplicitEmptyModelList(t *testing.T) {
+	store := newMemoryProjectStore()
+	service := NewProjectService(store, "secret").WithVisibilityChecker(fakeVisibilityChecker{visible: true})
+	_, _, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, ScopeMode: ScopeModeAll, ModelCodes: []string{"molin/qwen-turbo"}})
+	if !errors.Is(err, ErrScopeModeInvalid) {
+		t.Fatalf("all 必须由用户明确选择且不能混用 allowlist: %v", err)
+	}
+	_, view, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, ScopeMode: ScopeModeAll})
+	if err != nil || view.ScopeMode != ScopeModeAll {
+		t.Fatalf("显式 all 应签发成功: view=%+v err=%v", view, err)
+	}
+}
+
+func TestProjectKeyRotateRevokesOldKeyAndReturnsSecretOnce(t *testing.T) {
+	store := newMemoryProjectStore()
+	service := NewProjectService(store, "rotate-secret").WithVisibilityChecker(fakeVisibilityChecker{visible: true})
+	oldPlaintext, oldView, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, ModelCodes: []string{"molin/qwen-turbo"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newPlaintext, newView, err := service.RotateKey(context.Background(), 5, 9, oldView.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if oldPlaintext == newPlaintext || store.keys[oldView.ID].Status != "revoked" || store.keys[newView.ID].Status != "active" {
+		t.Fatal("轮换必须原子地产生新密钥并吊销旧密钥")
+	}
+	if newView.ScopeMode != oldView.ScopeMode || len(newView.ModelCodes) != 1 || newView.ModelCodes[0] != "molin/qwen-turbo" {
+		t.Fatalf("轮换必须保留原权限: %+v", newView)
+	}
+}
+
+func TestProjectKeyRejectsInactiveProjectInvalidModelAndExpiredTime(t *testing.T) {
+	store := newMemoryProjectStore()
+	service := NewProjectService(store, "validation-secret").WithVisibilityChecker(fakeVisibilityChecker{visible: true})
+	store.project.Status = ProjectStatusSuspended
+	if _, _, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9}); !errors.Is(err, ErrProjectInactive) {
+		t.Fatalf("停用 Project 不得签发 SK: %v", err)
+	}
+	store.project.Status = ProjectStatusActive
+	store.modelsOK = false
+	if _, _, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, ModelCodes: []string{"missing-model"}}); !errors.Is(err, ErrScopeModelInvalid) {
+		t.Fatalf("不存在或非文字模型不得进入 allowlist: %v", err)
+	}
+	store.modelsOK = true
+	service.WithVisibilityChecker(fakeVisibilityChecker{visible: false})
+	if _, _, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, ModelCodes: []string{"hidden-model"}}); !errors.Is(err, ErrScopeModelInvalid) {
+		t.Fatalf("当前用户不可见模型不得进入 allowlist: %v", err)
+	}
+	service.WithVisibilityChecker(fakeVisibilityChecker{visible: true})
+	past := time.Now().Add(-time.Second)
+	if _, _, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, ExpiresAt: &past}); !errors.Is(err, ErrKeyExpiresAtInvalid) {
+		t.Fatalf("过期时间不得早于当前时间: %v", err)
+	}
+	if _, _, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 6, ProjectID: 9}); !errors.Is(err, repository.ErrProjectNotFound) {
+		t.Fatalf("跨用户访问 Project 必须按不存在处理: %v", err)
+	}
+}
+
+func TestProjectKeyLifecycleWritesAuditWithoutPlaintext(t *testing.T) {
+	store := newMemoryProjectStore()
+	audit := &memoryProjectAudit{}
+	service := NewProjectService(store, "audit-secret").
+		WithVisibilityChecker(fakeVisibilityChecker{visible: true}).
+		WithAuditRecorder(audit)
+	plaintext, view, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, ModelCodes: []string{"molin/qwen-turbo"}, IP: "127.0.0.1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotatedPlaintext, rotated, err := service.RotateKey(context.Background(), 5, 9, view.ID, "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RevokeKey(context.Background(), 5, 9, rotated.ID, "127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(audit.actions, ",") != "create_project_key,rotate_project_key,revoke_project_key" {
+		t.Fatalf("SK 生命周期审计不完整: %v", audit.actions)
+	}
+	summary := fmt.Sprint(audit.summaries)
+	if strings.Contains(summary, plaintext) || strings.Contains(summary, rotatedPlaintext) || strings.Contains(summary, "audit-secret") {
+		t.Fatal("审计摘要不得包含 SK 明文或 HMAC Secret")
+	}
+}

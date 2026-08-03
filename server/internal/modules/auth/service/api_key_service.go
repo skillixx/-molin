@@ -81,12 +81,15 @@ type APIKeyAuth struct {
 type APIKeyView struct {
 	ID          uint64     `json:"id"`
 	UserID      uint64     `json:"user_id"`
+	ProjectID   *uint64    `json:"project_id,omitempty"`
 	KeyPrefix   string     `json:"key_prefix"`
 	Name        string     `json:"name"`
 	BillingMode string     `json:"billing_mode"`
 	SourceID    *uint64    `json:"source_id,omitempty"`
 	ModelScope  []string   `json:"model_scope"`
+	ScopeMode   string     `json:"scope_mode"`
 	Status      string     `json:"status"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
 	LastUsedAt  *time.Time `json:"last_used_at"`
 	CreatedAt   time.Time  `json:"created_at"`
 }
@@ -194,6 +197,7 @@ func (s *APIKeyService) IssueKey(ctx context.Context, in IssueKeyInput) (string,
 		BillingMode: billingMode,
 		SourceID:    sourceID,
 		ModelScope:  scopeStr,
+		ScopeMode:   "legacy_all",
 		Status:      "active",
 	}
 	if err := s.repo.Create(ctx, key); err != nil {
@@ -224,6 +228,10 @@ func (s *APIKeyService) ResolveKey(ctx context.Context, rawSK string) (APIKeyAut
 	}
 	// sk 已吊销 → 立即失效。
 	if key.Status != "active" {
+		return APIKeyAuth{}, ErrKeyInvalid
+	}
+	// Project SK 到期后立即失效；只比较服务端时间，不接受客户端时间参与鉴权。
+	if key.ExpiresAt != nil && !key.ExpiresAt.After(time.Now()) {
 		return APIKeyAuth{}, ErrKeyInvalid
 	}
 	// 封禁联动（方案 A）：用户被封禁 → 名下 sk 立即失效，解封后自动恢复。
@@ -353,12 +361,15 @@ func toAPIKeyView(k *model.APIKey) APIKeyView {
 	return APIKeyView{
 		ID:          k.ID,
 		UserID:      k.UserID,
+		ProjectID:   k.ProjectID,
 		KeyPrefix:   k.KeyPrefix,
 		Name:        k.Name,
 		BillingMode: k.BillingMode,
 		SourceID:    k.SourceID, // prepaid=entitlement_id；postpaid=nil（omitempty 不展示）
 		ModelScope:  splitModelScope(k.ModelScope),
+		ScopeMode:   k.ScopeMode,
 		Status:      k.Status,
+		ExpiresAt:   k.ExpiresAt,
 		LastUsedAt:  k.LastUsedAt,
 		CreatedAt:   k.CreatedAt,
 	}

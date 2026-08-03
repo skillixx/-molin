@@ -381,7 +381,7 @@ Bifrost 负责协议转换、统一响应、流式转发和受控路由。墨灵
 - 完整密钥只在创建时显示一次，数据库只保存 HMAC 哈希。
 - Key 前缀仅用于识别，不得作为鉴权凭据。
 - 新建 Project Key 默认使用模型白名单；空白名单表示禁止全部模型，不表示无限授权。
-- 轮换时允许短期双 Key，并要求明确过渡截止时间。
+- G2 轮换采用事务内创建新 Key 并立即吊销旧 Key，保证不存在双活窗口；如后续产品确需零停机双 Key，必须新增明确的过渡截止时间和审计规则后另行实现。
 - 吊销、预算超限和内容违规可以只暂停单个 SK。
 - 创建、修改、轮换和吊销全部写审计日志。
 
@@ -457,6 +457,8 @@ POST /v1/chat/completions
 认证使用 `Authorization: Bearer sk-molin-...`。响应保留 OpenAI 兼容字段；墨灵账单详情通过独立接口查询，避免破坏第三方 SDK。
 
 ### 14.2 用户端 API
+
+> G2 路径决策：复用现有 Token 网关命名空间 `/api/token/projects`，避免同一能力同时出现 `/api/ai` 与 `/api/token` 两套真相。下列 `/api/ai/*` 为后续完整商业控制台目标路径，G2 不注册这些别名。
 
 ```text
 GET/POST/PATCH /api/ai/projects
@@ -678,7 +680,7 @@ P1：Usage 大面积缺失、结算积压、价格过期、毛利低于底线、
 
 ### 22.1 分支与环境
 
-AI 网关固定在 `D:\molingproject\molin-gateway-worktree` 的 `feature/bifrost-ai-gateway-v2` 开发，不切换短信或邮件工作区。该分支已从 2026-08-03 的最新 `origin/main` 建立，并只迁移纯网关、Node 24 CI 和阶段0规划提交；基线证据见 [`ai-gateway-phase0-freeze-record.md`](./ai-gateway-phase0-freeze-record.md)。在开始第一笔核心网关代码前，仍须确认前置核心商业闭环已经通过阶段验收。
+AI 网关固定在 `D:\molingproject\molin-gateway-worktree` 开发，不切换短信或邮件工作区。`feature/bifrost-ai-gateway-v2` 只作为 G0/G1 已签收基线；G2 使用 `feature/bifrost-ai-gateway-g2`，后续阶段继续从已签收基线创建语义清晰的独立功能分支。阶段0基线证据见 [`ai-gateway-phase0-freeze-record.md`](./ai-gateway-phase0-freeze-record.md)。在开始第一笔核心网关代码前，仍须确认前置核心商业闭环已经通过阶段验收。
 
 环境分为本地、测试、预发布和生产。Fake/Mock、沙箱上游、供应商接受、生产调用和客户验收必须分别记录，不能互相替代。
 

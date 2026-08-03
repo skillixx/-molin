@@ -406,7 +406,15 @@ Migration `000058_create_ai_gateway_ledger_expand` 新增以下商业请求账�
 
 关键唯一约束：`ai_requests.request_id`、`(user_id,idempotency_key)`、`(request_id,meter_type,source,sequence_no)`、`(request_id,attempt_no)`。新表禁止保存提示词、响应正文和明文密钥。G1 应用回滚保留 Expand Schema 与审计记录，物理清理由后续单独审批的 Contract Migration 承担。
 
-`ai_projects` 和现有 `api_keys` 分别增加 `(id,user_id)` 复合唯一键，`ai_requests` 通过对应复合外键保证 Project、SK 和请求用户属于同一租户。G1 不新增 `api_keys.project_id/scope_mode`；Project SK 创建与显式模型范围属于 G2。
+`ai_projects` 和现有 `api_keys` 分别增加 `(id,user_id)` 复合唯一键，`ai_requests` 通过对应复合外键保证 Project、SK 和请求用户属于同一租户。
+
+#### 3.5.2 AI 网关 Phase 1 G2 Project SK Expand Schema
+
+Migration `000059_add_ai_gateway_g2_projects_keys` 为 `api_keys` 增加 `project_id`、`scope_mode`、`expires_at` 和 `rotated_from_id`，并新增 `api_key_model_scopes`。新 Project SK 默认 `scope_mode=allowlist`，空表记录表示拒绝全部；只有显式选择才使用 `all`。旧 SK 标记为 `legacy_all`，保留旧 `model_scope` 行为。
+
+数据库使用 `(id,project_id,user_id)`、`(project_id,user_id)` 和 `(api_key_id,project_id,user_id)` 复合唯一键/外键，强制 Project、SK、权限行和 `ai_requests` 属于同一用户。轮换通过 `rotated_from_id` 保留内部追踪，但任何表都不保存 SK 明文。
+
+G2 正式写入 `ai_requests`、`ai_execution_attempts` 和 `ai_usage_items`；`billing_status` 固定为 `unquoted`，所有价格和金额字段为空。000059 down 保留 Project SK、权限和请求审计事实，物理清理需单独审批。
 
 Project 预算合法组合固定为：`disabled + monthly_budget=NULL`，或 `soft/hard + monthly_budget>0`。`soft` 超限仅告警并继续，`hard` 在预计消费越限时于上游调用前拒绝；月周期按 Project 的 IANA 时区从当地月初计算。G1 只冻结约束，准确预占、并发控制和拒绝逻辑在 G3/G4 实现。
 

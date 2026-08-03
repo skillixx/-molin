@@ -14,12 +14,18 @@ import (
 // ChatHandler 处理 OpenAI 兼容对话转发（用户端，网页登录态）。
 // 安全约定：请求/响应中的对话内容绝不落明文日志；渠道 api_key 绝不出现在响应。
 type ChatHandler struct {
-	svc *service.ForwardService
+	orchestrator service.RequestOrchestrator
 }
 
 // NewChatHandler 创建对话转发 handler。
-func NewChatHandler(svc *service.ForwardService) *ChatHandler {
-	return &ChatHandler{svc: svc}
+func NewChatHandler(_ *service.ForwardService) *ChatHandler {
+	return &ChatHandler{}
+}
+
+// WithOrchestrator 为公开文字接口装配 G2 唯一编排器；旧 ForwardService 仅保留给工作台内部调用。
+func (h *ChatHandler) WithOrchestrator(orchestrator service.RequestOrchestrator) *ChatHandler {
+	h.orchestrator = orchestrator
+	return h
 }
 
 // ChatCompletions POST /api/token/chat/completions
@@ -51,51 +57,138 @@ func (h *ChatHandler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "model 不能为空")
 		return
 	}
-	stream, _ := body["stream"].(bool)
-	in := service.ForwardInput{
-		RequestID: requestID,
-		UserID:    userID,
-		APIKeyID:  apiKeyID,
-		Model:     modelCode,
-		Stream:    stream,
-		Body:      body,
+	if !validTextMessages(body["messages"]) {
+		response.Error(w, http.StatusBadRequest, 40000, "messages 必须包含至少一条非空文字消息")
+		return
 	}
-
-	// Forward 内部一旦开始透传上游响应即返回 nil；返回 error 表示尚未写出，可安全返回 JSON 错误。
-	if err := h.svc.Forward(r.Context(), w, in); err != nil {
-		writeForwardError(w, err)
+	idempotencyKey, ok := singleIdempotencyKey(r.Header.Values("Idempotency-Key"))
+	if !ok {
+		response.Error(w, http.StatusBadRequest, 40000, "Idempotency-Key 必须是长度不超过 191 的单值 Header")
+		return
+	}
+	stream, _ := body["stream"].(bool)
+	if h.orchestrator == nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "AI 请求编排服务未装配")
+		return
+	}
+	prepared, err := h.orchestrator.Prepare(r.Context(), service.PrepareCommand{
+		RequestID: requestID, IdempotencyKey: idempotencyKey,
+		UserID: userID, APIKeyID: apiKeyID, LogicalModel: modelCode, Stream: stream, Body: body,
+	})
+	if err != nil {
+		writeOrchestratorError(w, err)
+		return
+	}
+	if prepared.Existing {
+		response.JSON(w, http.StatusAccepted, prepared)
+		return
+	}
+	sink := &httpStreamSink{writer: w}
+	if err := h.orchestrator.Execute(r.Context(), prepared.RequestID, sink); err != nil && !sink.started {
+		writeOrchestratorError(w, err)
 	}
 }
 
-// writeForwardError 将转发前置错误映射为 HTTP 状态码 + 中文 message。
-func writeForwardError(w http.ResponseWriter, err error) {
+func singleIdempotencyKey(values []string) (string, bool) {
+	if len(values) == 0 {
+		return "", true
+	}
+	if len(values) != 1 {
+		return "", false
+	}
+	value := values[0]
+	if value == "" || value != strings.TrimSpace(value) || len(value) > 191 || strings.Contains(value, ",") {
+		return "", false
+	}
+	return value, true
+}
+
+// validTextMessages 拒绝空消息和多模态内容，确保 G2 只把有效文字请求写入账本并发往上游。
+func validTextMessages(raw interface{}) bool {
+	messages, ok := raw.([]interface{})
+	if !ok || len(messages) == 0 {
+		return false
+	}
+	meaningful := false
+	for _, rawMessage := range messages {
+		message, ok := rawMessage.(map[string]interface{})
+		if !ok || strings.TrimSpace(stringValue(message["role"])) == "" {
+			return false
+		}
+		switch content := message["content"].(type) {
+		case string:
+			meaningful = meaningful || strings.TrimSpace(content) != ""
+		case []interface{}:
+			if len(content) == 0 {
+				continue
+			}
+			for _, rawPart := range content {
+				part, ok := rawPart.(map[string]interface{})
+				if !ok || stringValue(part["type"]) != "text" {
+					return false
+				}
+				meaningful = meaningful || strings.TrimSpace(stringValue(part["text"])) != ""
+			}
+		case nil:
+			continue
+		default:
+			return false
+		}
+	}
+	return meaningful
+}
+
+func stringValue(value interface{}) string {
+	text, _ := value.(string)
+	return text
+}
+
+type httpStreamSink struct {
+	writer  http.ResponseWriter
+	started bool
+}
+
+func (s *httpStreamSink) SetHeader(key, value string) { s.writer.Header().Set(key, value) }
+func (s *httpStreamSink) WriteHeader(status int) error {
+	if !s.started {
+		s.started = true
+		s.writer.WriteHeader(status)
+	}
+	return nil
+}
+func (s *httpStreamSink) Write(data []byte) error {
+	s.started = true
+	_, err := s.writer.Write(data)
+	return err
+}
+func (s *httpStreamSink) Flush() error {
+	if flusher, ok := s.writer.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	return nil
+}
+
+func writeOrchestratorError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, service.ErrModelNotConfigured):
+	case errors.Is(err, service.ErrProjectKeyRequired):
+		response.Error(w, http.StatusUnauthorized, 40001, "请使用有效的 Project SK 调用")
+	case errors.Is(err, service.ErrUserUnavailable):
+		response.Error(w, http.StatusForbidden, 40300, "账号不可用")
+	case errors.Is(err, service.ErrRealNameRequired):
+		response.Error(w, http.StatusBadRequest, 70001, "请先完成实名认证")
+	case errors.Is(err, service.ErrProjectAccessDenied):
+		response.Error(w, http.StatusForbidden, 40300, "Project 或 SK 不可用")
+	case errors.Is(err, service.ErrG2ModelNotAllowed):
+		response.Error(w, http.StatusForbidden, 40300, "该 Project SK 未授权调用此模型")
+	case errors.Is(err, service.ErrG2ModelUnavailable), errors.Is(err, service.ErrModelNotConfigured):
 		response.Error(w, http.StatusBadRequest, 40000, "模型不可用或未配置")
-	case errors.Is(err, service.ErrAccessDenied):
-		response.Error(w, http.StatusForbidden, 40300, "未开通 token 服务，无法调用")
-	case errors.Is(err, service.ErrModelNotInScope):
-		// S2-丁4b：sk 的 model_scope 越界（请求的 model 不在该 API Key 授权范围内）。
-		response.Error(w, http.StatusForbidden, 40300, "该 API Key 未授权调用此模型")
-	case errors.Is(err, service.ErrWalletInsufficient):
-		// S2-丁5 / D1：postpaid 钱包余额不足以冻结预扣保证金（前置闸拒绝，未发起上游、不计费、无冻结）。
-		response.Error(w, http.StatusPaymentRequired, 60001, "钱包余额不足")
-	case errors.Is(err, service.ErrQuotaExhausted):
-		// S2-丁5：prepaid 套餐额度不足（复用 60005，禁止新造 60002）。
-		response.Error(w, http.StatusPaymentRequired, 60005, "套餐额度不足")
-	case errors.Is(err, service.ErrEntitlementDenied):
-		// S2-丁5：prepaid 套餐归属不符。
-		response.Error(w, http.StatusForbidden, 40003, "套餐额度归属不符")
-	case errors.Is(err, service.ErrSystemBusy):
-		// D-M2-02：postpaid 预扣保证金乐观锁冲突重试耗尽（可重试），区别于真余额不足（60001）。
-		// 全局错误码表无专用「系统繁忙/可重试」码，故沿用 token_gateway 5030x 服务不可用族新增 50301
-		// （HTTP 503，客户端可稍后重试），与 50300「上游渠道不可用」区分，绝不映射为 60001。
-		response.Error(w, http.StatusServiceUnavailable, 50301, "系统繁忙，请稍后重试")
-	case errors.Is(err, service.ErrChannelUnavailable):
-		response.Error(w, http.StatusServiceUnavailable, 50300, "上游渠道不可用")
+	case errors.Is(err, service.ErrIdempotencyConflict):
+		response.Error(w, http.StatusConflict, 40901, "幂等键对应的请求内容不一致")
 	case errors.Is(err, service.ErrUpstream):
 		response.Error(w, http.StatusBadGateway, 50200, "上游服务调用失败")
+	case errors.Is(err, service.ErrChannelUnavailable):
+		response.Error(w, http.StatusServiceUnavailable, 50300, "上游渠道不可用")
 	default:
-		response.Error(w, http.StatusInternalServerError, 50000, "对话转发失败")
+		response.Error(w, http.StatusInternalServerError, 50000, "AI 请求编排失败")
 	}
 }

@@ -154,6 +154,43 @@ func TestAIGatewayMigration000058Contract(t *testing.T) {
 	}
 }
 
+func TestAIGatewayMigration000059G2Contract(t *testing.T) {
+	_, currentFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("无法定位 G2 Migration 契约测试文件")
+	}
+	migrationsDir := filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", "..", "..", "migrations"))
+	up := readMigrationForTest(t, filepath.Join(migrationsDir, "000059_add_ai_gateway_g2_projects_keys.up.sql"))
+	down := readMigrationForTest(t, filepath.Join(migrationsDir, "000059_add_ai_gateway_g2_projects_keys.down.sql"))
+
+	for _, required := range []string{
+		"ADD COLUMN project_id", "ADD COLUMN scope_mode", "ADD COLUMN expires_at", "ADD COLUMN rotated_from_id",
+		"chk_api_keys_scope_mode", "UPDATE api_keys SET scope_mode = 'legacy_all'",
+		"CREATE TABLE IF NOT EXISTS api_key_model_scopes", "UNIQUE KEY uk_api_key_model_scope",
+		"UNIQUE KEY uk_api_keys_id_project_user", "FOREIGN KEY (project_id, user_id)",
+		"FOREIGN KEY (api_key_id, project_id, user_id)", "fk_ai_requests_api_key_project_owner",
+	} {
+		if !strings.Contains(up, required) {
+			t.Fatalf("000059 G2 Migration 缺少契约片段: %s", required)
+		}
+	}
+	lowerUp := strings.ToLower(up)
+	for _, forbidden := range []string{"api_key_plaintext", "secret_key", "wallet_holds", "quoted_amount =", "billing_status = 'held'"} {
+		if strings.Contains(lowerUp, forbidden) {
+			t.Fatalf("000059 不得写入密钥明文或进入 G3 计费事实: %s", forbidden)
+		}
+	}
+	lowerDown := strings.ToLower(down)
+	for _, destructive := range []string{"drop table", "drop column", "delete from", "truncate table"} {
+		if strings.Contains(lowerDown, destructive) {
+			t.Fatalf("000059 down 必须保留审计和权限事实: %s", destructive)
+		}
+	}
+	if !strings.Contains(down, "ai_gateway_g2_expand_schema_retained") {
+		t.Fatal("000059 down 必须声明保留 G2 Expand Schema")
+	}
+}
+
 func assertUniqueStates(t *testing.T, dimension string, states []string, expected int) {
 	t.Helper()
 	seen := make(map[string]struct{}, len(states))
