@@ -35,6 +35,13 @@ var (
 	ErrPreparedRequestMissing = errors.New("请求执行上下文不存在")
 )
 
+const (
+	// 账务终结必须脱离上游执行超时，但仍设置独立上限，避免数据库异常时无限占用请求协程。
+	defaultFinalizationTimeout = 30 * time.Second
+	// SSE 单行上限为 2 MiB，待审核段也使用同一上限，防止无文本结构化事件持续累积内存。
+	maxModerationSegmentBytes = 2 * 1024 * 1024
+)
+
 // RequestOrchestrator 是唯一允许推动 ai_requests 执行状态的应用服务；G3 财务状态由注入的单一计费服务原子推进。
 type RequestOrchestrator interface {
 	Prepare(ctx context.Context, cmd PrepareCommand) (*PreparedRequest, error)
@@ -449,13 +456,13 @@ func (s *RequestOrchestratorService) Execute(ctx context.Context, requestID stri
 		if attempt.ErrorClass == "request_not_sent" && !attempt.ResultUnknown {
 			errorCode = "request_not_sent"
 		}
-		if finalizeErr := s.Finalize(executionCtx, requestID, ExecutionResult{Attempt: attempt, ErrorCode: errorCode}); finalizeErr != nil {
+		if finalizeErr := s.finalizeAfterExecution(executionCtx, requestID, ExecutionResult{Attempt: attempt, ErrorCode: errorCode}); finalizeErr != nil {
 			return finalizeErr
 		}
 		return ErrUpstream
 	}
 	if executed == nil || executed.Response == nil {
-		if finalizeErr := s.Finalize(executionCtx, requestID, ExecutionResult{Attempt: failedAttempt(running, "empty_upstream_response", true), ErrorCode: "empty_upstream_response"}); finalizeErr != nil {
+		if finalizeErr := s.finalizeAfterExecution(executionCtx, requestID, ExecutionResult{Attempt: failedAttempt(running, "empty_upstream_response", true), ErrorCode: "empty_upstream_response"}); finalizeErr != nil {
 			return finalizeErr
 		}
 		return ErrUpstream
@@ -498,7 +505,7 @@ func (s *RequestOrchestratorService) executeJSON(ctx context.Context, sink Strea
 	if moderationErr != nil {
 		result.ErrorCode = "output_moderation_blocked"
 	}
-	if err := s.Finalize(ctx, requestID, result); err != nil {
+	if err := s.finalizeAfterExecution(ctx, requestID, result); err != nil {
 		return err
 	}
 	if moderationErr != nil {
@@ -587,10 +594,14 @@ func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink Str
 			break
 		}
 		if len(chunk.PublicLine) > 0 {
+			// 当前行加入后可能超过审核段上限，先处理已有段，保证缓冲区始终有界。
+			if moderationSegmentWouldOverflow(pendingPayload.Len(), len(chunk.PublicLine)) {
+				flushSegment(true)
+			}
 			pendingPayload.Write(chunk.PublicLine)
 			pendingPayload.WriteByte('\n')
 			pendingText.WriteString(extractSSEText(chunk.PublicLine))
-			flushSegment(false)
+			flushSegment(pendingPayload.Len() >= maxModerationSegmentBytes)
 		}
 	}
 	flushSegment(true)
@@ -615,7 +626,7 @@ func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink Str
 	if outputBlocked {
 		result.ErrorCode = "output_moderation_blocked"
 	}
-	if err := s.Finalize(ctx, requestID, result); err != nil {
+	if err := s.finalizeAfterExecution(ctx, requestID, result); err != nil {
 		if !clientDisconnected {
 			_ = writeStreamBillingStatus(sink, requestID, err)
 		}
@@ -631,6 +642,17 @@ func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink Str
 		}
 	}
 	return nil
+}
+
+func moderationSegmentWouldOverflow(currentBytes, nextLineBytes int) bool {
+	return currentBytes > 0 && currentBytes+nextLineBytes+1 > maxModerationSegmentBytes
+}
+
+// finalizeAfterExecution 使用独立上下文保存已经形成的上游和账务事实，不能因上游超时或客户端断开而跳过终结。
+func (s *RequestOrchestratorService) finalizeAfterExecution(ctx context.Context, requestID string, result ExecutionResult) error {
+	finalizeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultFinalizationTimeout)
+	defer cancel()
+	return s.Finalize(finalizeCtx, requestID, result)
 }
 
 func trailingText(value string, limit int) string {

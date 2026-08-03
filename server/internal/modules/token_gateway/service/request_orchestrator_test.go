@@ -27,6 +27,7 @@ type memoryOrchestratorStore struct {
 	usage                 map[string][]model.AIUsageItem
 	recoverable           []string
 	recoverableStillStale bool
+	finalizeContextErr    error
 }
 
 func newMemoryOrchestratorStore() *memoryOrchestratorStore {
@@ -105,9 +106,13 @@ func (s *memoryOrchestratorStore) StartRequest(_ context.Context, requestID stri
 	s.attempts[requestID] = *attempt
 	return nil
 }
-func (s *memoryOrchestratorStore) FinalizeRequest(_ context.Context, requestID string, attempt model.AIExecutionAttempt, usage []model.AIUsageItem, disconnected bool, errorClass, errorCode *string) error {
+func (s *memoryOrchestratorStore) FinalizeRequest(ctx context.Context, requestID string, attempt model.AIExecutionAttempt, usage []model.AIUsageItem, disconnected bool, errorClass, errorCode *string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.finalizeContextErr = ctx.Err()
+	if s.finalizeContextErr != nil {
+		return s.finalizeContextErr
+	}
 	request := s.requests[requestID]
 	if request == nil {
 		return repository.ErrRequestNotFound
@@ -130,6 +135,38 @@ func (s *memoryOrchestratorStore) FinalizeRequest(_ context.Context, requestID s
 	}
 	request.BillingStatus = model.AIBillingUnquoted
 	return nil
+}
+
+func TestFinalizeAfterExecutionIgnoresCanceledExecutionContext(t *testing.T) {
+	store := newMemoryOrchestratorStore()
+	orchestrator := newTestOrchestrator(store)
+	prepared := prepareTestRequest(t, orchestrator, "req-finalize-after-timeout", "", map[string]interface{}{"model": "molin/qwen-turbo"})
+	now := time.Now()
+	running := ExecutionAttempt{AttemptNo: 1, Driver: "bifrost", ProviderCode: "bailian", ProviderModel: "qwen-turbo", StartedAt: now, Outcome: "running"}
+	if err := store.StartRequest(context.Background(), prepared.RequestID, ptrAttempt(running.ToLedgerModel(prepared.RequestID, ExecutionUsage{}))); err != nil {
+		t.Fatal(err)
+	}
+	executionCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	result := ExecutionResult{Attempt: failedAttempt(running, "network_timeout", true), ErrorCode: "upstream_execution_error"}
+	if err := orchestrator.finalizeAfterExecution(executionCtx, prepared.RequestID, result); err != nil {
+		t.Fatalf("上游上下文取消后仍应完成账务终结: %v", err)
+	}
+	if store.finalizeContextErr != nil || store.requests[prepared.RequestID].ExecutionStatus != model.AIExecutionUnknown {
+		t.Fatalf("终结必须使用新的有效上下文并保存未知终态: ctx_err=%v status=%s", store.finalizeContextErr, store.requests[prepared.RequestID].ExecutionStatus)
+	}
+}
+
+func TestModerationSegmentByteLimitIsBounded(t *testing.T) {
+	if moderationSegmentWouldOverflow(0, maxModerationSegmentBytes) {
+		t.Fatal("空缓冲区必须允许接收单个达到上限的事件行")
+	}
+	if moderationSegmentWouldOverflow(maxModerationSegmentBytes-8, 7) {
+		t.Fatal("加入换行后恰好达到上限时不应提前刷新")
+	}
+	if !moderationSegmentWouldOverflow(maxModerationSegmentBytes-8, 8) {
+		t.Fatal("追加后超过上限时必须先刷新已有审核段")
+	}
 }
 func (s *memoryOrchestratorStore) MarkPendingOrRunningUnknown(_ context.Context, requestID string) error {
 	s.mu.Lock()
