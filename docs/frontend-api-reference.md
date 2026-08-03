@@ -2416,3 +2416,11 @@ Wechatpay-Nonce: <随机串>
 | `email_template_sync_run.status` | `running` / `succeeded` / `failed` |
 | `email_test_allowlist.status` | `active` / `revoked` |
 | `email_send_log.status` | `accepted` / `failed` |
+
+## 短信验证码阶段 1 前端约定
+
+- 手机发码成功必须同时校验 `sent=true`、`expires_in`、`business_request_id`、`submit_status=accepted`，契约不完整时不得进入倒计时或下一步。
+- HTTP `503` / code `50300` 显示“短信功能当前不可用”；HTTP `502` / code `50200` 显示“短信发送失败，请稍后重试”。
+- 手机验证码响应永远没有明文 `code`；前端不得读取或展示供应商请求标识。
+- 找回密码等成功确认区域必须显示脱敏手机号，接口失败后按钮恢复可操作状态。
+- 邮箱验证码继续使用 DirectMail 独立契约和非生产调试门禁，不受 `SMS_ENABLED` 影响。

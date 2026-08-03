@@ -591,3 +591,10 @@ POST /api/admin/auth/verification-codes/email  -- D-96：向当前管理员自�
 - 所有验证码发送接口必须通过 `verificationCodeResponse` 生成响应，禁止直接序列化 `VerificationSendResult`，避免内部明文验证码进入正常生产响应。
 - 回归测试位于 `server/internal/config/config_email_test.go` 和 `server/internal/modules/auth/handler/auth_handler_email_test.go`，分别覆盖配置加载门禁与生产/未知环境响应门禁。
 - bootstrap IP 地址空间覆盖检测使用候选祖先索引剪枝；没有候选后代的分支必须立即返回，禁止递归展开完整 IPv4 或 IPv6 地址树。
+
+## 短信验证码阶段 1 合并规则
+
+- 手机验证码与邮件验证码共用 `code_hash`、`send_status`、`accepted_at` 和 `business_request_no`，统一使用 `pending → accepted/failed`，不得重新引入 `sent` 或 `not_applicable` 状态。
+- `SMS_ENABLED=false` 时五个手机发码入口必须失败关闭且不得创建验证码、发送日志或供应商请求；邮箱入口保持独立可用。
+- 手机验证码只有 `accepted`、未使用且未过期时可以原子消费，任何 HTTP 响应都不得包含明文验证码。
+- `000058` 只拥有短信供应商字段、短信索引和三张短信表；回滚不得删除 `000055` 的邮件验证码基础字段或约束。

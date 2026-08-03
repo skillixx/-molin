@@ -45,9 +45,11 @@
 | 文档 | 说明 |
 |---|---|
 | [base-architecture-environment.md](./base-architecture-environment.md) | 基础架构与环境 |
+| [test-environment-backup-checklist.md](./test-environment-backup-checklist.md) | 测试环境备份内容、频率、校验与恢复清单 |
 | [backend-stage2-architecture-roadmap.md](./backend-stage2-architecture-roadmap.md) | 第二阶段架构路线图 |
 | [backend-token-gateway-design.md](./backend-token-gateway-design.md) | Token 网关设计 |
 | [backend-token-gateway-integration.md](./backend-token-gateway-integration.md) | Token 网关集成 |
+| [multimodal-ai-gateway-implementation-plan.md](./multimodal-ai-gateway-implementation-plan.md) | 多模态 AI 网关实施方案与任务分配 |
 | [token-gateway-openai-compat.md](./token-gateway-openai-compat.md) | OpenAI 兼容对话 |
 | [backend-sk-auth-contract.md](./backend-sk-auth-contract.md) | SK 鉴权契约 |
 | [backend-chat-workbench-contract.md](./backend-chat-workbench-contract.md) | 聊天工作台契约 |
@@ -60,6 +62,8 @@
 | [backend-dev-plan-backend-b.md](./backend-dev-plan-backend-b.md) | 后端乙（product/order/billing） |
 | [backend-dev-plan-backend-c.md](./backend-dev-plan-backend-c.md) | 后端丙（asset/membership/app/provision/content） |
 | [backend-a-group-roles-design.md](./backend-a-group-roles-design.md) | 后端甲 分组角色设计 |
+| [sms-phase1-feature.md](./sms-phase1-feature.md) | 阿里云短信验证码阶段 1 功能说明 |
+| [sms-phase1-development.md](./sms-phase1-development.md) | 阿里云短信验证码阶段 1 开发说明 |
 | [backend-b-fix-plan.md](./backend-b-fix-plan.md) | 后端乙 修复计划 |
 | [backend-b-go-live-checklist.md](./backend-b-go-live-checklist.md) | 后端乙 上线检查单 |
 | [backend-stage2-go-live-checklist.md](./backend-stage2-go-live-checklist.md) | 第二阶段上线检查单 |

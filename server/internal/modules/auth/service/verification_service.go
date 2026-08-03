@@ -3,21 +3,28 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
 
 	"molin/server/internal/modules/auth/model"
+	smsservice "molin/server/internal/modules/sms/service"
 	"molin/server/pkg/crypto"
 )
 
-var ErrInvalidCode = errors.New("验证码错误或已过期")
+var (
+	ErrInvalidCode    = errors.New("验证码错误或已过期")
+	ErrSMSUnavailable = errors.New("短信功能当前不可用")
+	ErrSMSSendFailed  = errors.New("短信提交失败")
+)
 
 // VerificationService 负责验证码的生成、发送和校验。
 type VerificationService struct {
-	repo        verificationRepository
-	emailSender EmailOTPSender
-	emailKeyer  EmailTargetKeyer
+	repo          verificationRepository
+	emailSender   EmailOTPSender
+	emailKeyer    EmailTargetKeyer
+	smsDispatcher *smsservice.Dispatcher
 }
 
 type verificationRepository interface {
@@ -27,6 +34,7 @@ type verificationRepository interface {
 	FindLatestByScope(context.Context, string, time.Time) (*model.VerificationCode, error)
 	FailStaleEmailSend(context.Context, string, string, time.Time) (bool, error)
 	FinalizeEmailSend(context.Context, uint64, string, *time.Time, *model.EmailSendLog) error
+	UpdateSMSSendState(context.Context, uint64, string, *time.Time, string, string) error
 }
 
 // EmailOTPSender 是 auth 与具体邮件供应商之间的稳定边界，不暴露 TemplateId 或 SDK 类型。
@@ -40,8 +48,11 @@ type EmailTargetKeyer interface {
 }
 
 type VerificationSendResult struct {
-	Code      string
-	ExpiresIn int
+	Code              string
+	Sent              bool
+	ExpiresIn         int
+	BusinessRequestID string
+	SubmitStatus      string
 }
 
 func NewVerificationService(repo verificationRepository) *VerificationService {
@@ -52,10 +63,22 @@ func (s *VerificationService) SetEmailSender(sender EmailOTPSender) { s.emailSen
 
 func (s *VerificationService) SetEmailTargetKeyer(keyer EmailTargetKeyer) { s.emailKeyer = keyer }
 
-// Send 生成 6 位数字验证码，存库前用 SHA-256 哈希（防止 DB 泄露后 OTP 可直接使用）。
-// 返回明文 rawCode，由调用方通过 SMS/邮件发给用户；明文不入库。
+// SetSMSDispatcher 注入短信发送编排器；未注入时手机号发码必须失败关闭。
+func (s *VerificationService) SetSMSDispatcher(dispatcher *smsservice.Dispatcher) {
+	s.smsDispatcher = dispatcher
+}
+
+// Send 保留 auth 服务现有调用契约，并把详细结果交给统一实现生成。
 func (s *VerificationService) Send(ctx context.Context, targetType, targetValue, scene string) (VerificationSendResult, error) {
+	return s.SendDetailed(ctx, targetType, targetValue, scene)
+}
+
+// SendDetailed 生成验证码并返回安全发送结果；手机验证码明文绝不进入返回值。
+func (s *VerificationService) SendDetailed(ctx context.Context, targetType, targetValue, scene string) (VerificationSendResult, error) {
 	targetValue = normalizeVerificationTarget(targetType, targetValue)
+	if targetType == "phone" {
+		return s.sendPhoneCode(ctx, targetValue, scene)
+	}
 	rawCode, err := generateCode(6)
 	if err != nil {
 		return VerificationSendResult{}, errors.New("验证码生成失败")
@@ -83,7 +106,7 @@ func (s *VerificationService) Send(ctx context.Context, targetType, targetValue,
 		if acceptance.Idempotent {
 			rawCode = ""
 		}
-		return VerificationSendResult{Code: rawCode, ExpiresIn: expiresIn}, nil
+		return VerificationSendResult{Code: rawCode, Sent: true, ExpiresIn: expiresIn}, nil
 	}
 	// 存库前对明文 OTP 做 SHA-256 哈希；OTP 短时效，SHA-256 无需 HMAC 密钥
 	codeHash := crypto.SHA256Hex(rawCode)
@@ -102,7 +125,65 @@ func (s *VerificationService) Send(ctx context.Context, targetType, targetValue,
 		return VerificationSendResult{}, err
 	}
 	// 返回明文供调用方发送给用户
-	return VerificationSendResult{Code: rawCode, ExpiresIn: 600}, nil
+	return VerificationSendResult{Code: rawCode, Sent: true, ExpiresIn: 600}, nil
+}
+
+// sendPhoneCode 执行 pending → accepted/failed 状态机；任何失败都不会留下可消费验证码。
+func (s *VerificationService) sendPhoneCode(ctx context.Context, phone, scene string) (VerificationSendResult, error) {
+	if s.smsDispatcher == nil {
+		return VerificationSendResult{}, ErrSMSUnavailable
+	}
+	plan, err := s.smsDispatcher.Prepare(ctx, scene, phone)
+	if err != nil {
+		if errors.Is(err, smsservice.ErrSMSUnavailable) || errors.Is(err, smsservice.ErrSceneNotBound) || errors.Is(err, smsservice.ErrPhoneNotAllowed) {
+			return VerificationSendResult{}, ErrSMSUnavailable
+		}
+		return VerificationSendResult{}, err
+	}
+	rawCode, err := generateCode(6)
+	if err != nil {
+		return VerificationSendResult{}, errors.New("验证码生成失败")
+	}
+	businessRequestID, err := generateBusinessRequestID()
+	if err != nil {
+		return VerificationSendResult{}, err
+	}
+	provider := plan.Provider
+	codeHash := crypto.SHA256Hex(rawCode)
+	v := &model.VerificationCode{
+		TargetType:        "phone",
+		TargetValue:       &phone,
+		CodeHash:          codeHash,
+		Scene:             scene,
+		SendStatus:        "pending",
+		Provider:          &provider,
+		BusinessRequestNo: &businessRequestID,
+		ExpiresAt:         time.Now().UTC().Truncate(time.Second).Add(10 * time.Minute),
+	}
+	if err := s.repo.Create(ctx, v); err != nil {
+		return VerificationSendResult{}, err
+	}
+	result, sendErr := s.smsDispatcher.Submit(ctx, plan, phone, rawCode, businessRequestID)
+	// 即使 HTTP 请求已经取消，也要尽力把 pending 收敛为明确终态。
+	terminalCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+	defer cancel()
+	if sendErr != nil || !result.Accepted {
+		if err := s.repo.UpdateSMSSendState(terminalCtx, v.ID, "failed", nil, plan.Provider, result.ProviderRequestID); err != nil {
+			return VerificationSendResult{}, err
+		}
+		return VerificationSendResult{}, ErrSMSSendFailed
+	}
+	acceptedAt := time.Now().UTC().Truncate(time.Second)
+	if err := s.repo.UpdateSMSSendState(terminalCtx, v.ID, "accepted", &acceptedAt, plan.Provider, result.ProviderRequestID); err != nil {
+		return VerificationSendResult{}, err
+	}
+	// 明文验证码已经提交给 Sender，禁止继续返回给 handler 或日志。
+	return VerificationSendResult{
+		Sent:              true,
+		ExpiresIn:         600,
+		BusinessRequestID: businessRequestID,
+		SubmitStatus:      "accepted",
+	}, nil
 }
 
 // Check D-49：校验验证码，通过后原子标记为已使用（防止重放和并发竞态）。
@@ -150,4 +231,12 @@ func generateCode(length int) (string, error) {
 		code += fmt.Sprintf("%d", int(byt)%10)
 	}
 	return code, nil
+}
+
+func generateBusinessRequestID() (string, error) {
+	random := make([]byte, 16)
+	if _, err := rand.Read(random); err != nil {
+		return "", errors.New("生成短信业务请求标识失败")
+	}
+	return "sms_" + hex.EncodeToString(random), nil
 }

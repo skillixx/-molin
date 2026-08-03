@@ -200,3 +200,81 @@ services:
 - 后端日志输出到 stdout，由 Docker 收集。
 - 生产环境必须配置日志持久化（建议挂载 volume 或接入日志服务）。
 - 敏感字段（密码、Token、身份证号）不允许出现在日志中。
+
+## 阿里云短信部署契约
+
+### 配置边界与权威来源
+
+首期只支持阿里云中国大陆验证码短信。运维负责安全注入运行配置和控制发布开关，不负责维护模板业务数据或实现发送逻辑。
+
+| 配置 | 作用 | 生产要求 |
+|---|---|---|
+| `SMS_ENABLED` | 短信总开关 | 默认 `false`；只有完成真实小流量验证和验收后才能开启 |
+| `SMS_PROVIDER` | 短信供应商 | 首期固定为 `aliyun`，其他值必须拒绝启动或拒绝短信提交 |
+| `SMS_ALIYUN_ACCESS_KEY_ID` | 最小权限 RAM 凭证标识 | 通过服务器环境变量或 Secret Manager 注入，不入库 |
+| `SMS_ALIYUN_ACCESS_KEY_SECRET` | 最小权限 RAM 凭证密钥 | 只通过安全渠道注入，不得输出到日志或接口 |
+| `SMS_ALIYUN_SIGN_NAME` | 首期唯一已审核签名 | 运行时固定值；数据库绑定中的签名只能作为提交快照且必须与其一致 |
+| `SMS_ALIYUN_ENDPOINT` | 阿里云短信 API 域名 | 默认 `dysmsapi.aliyuncs.com`，不得配置为任意 URL 或内网地址 |
+| `SMS_PHONE_HMAC_SECRET` | 完整手机号的不可逆 HMAC 密钥 | 与 AccessKey、JWT、身份证 HMAC 密钥完全独立，至少 32 字节 |
+| `SMS_TEST_MODE` | 真实短信白名单限制开关 | `true` 仍调用阿里云；不得实现或开启模拟发送回退 |
+| `SMS_TEST_PHONE_WHITELIST` | 测试发送和灰度手机号白名单 | 真实号码只存在于不入库环境文件或密钥系统；空白名单全拒 |
+
+五个业务场景 `register`、`login`、`reset_password`、`bind_phone`、`admin_verify` 的模板编码不得继续使用 `SMS_TEMPLATE_CODE_*` 环境变量。模板编码和审核状态来自阿里云同步快照，场景绑定和本地启停来自数据库；这是唯一权威来源，避免环境变量与数据库长期形成两套配置。
+
+首期固定签名以 `SMS_ALIYUN_SIGN_NAME` 为运行权威。场景绑定和发送日志可以保存签名快照，但后台提交的签名必须与环境变量固定值一致，不允许借管理接口切换到未审核签名。
+
+### 生产 fail-closed 规则
+
+- `SMS_ENABLED=false` 时，所有手机短信提交均应明确返回服务未启用，不生成可校验的手机验证码；邮箱验证码链路不受此开关影响。
+- `SMS_ENABLED=true` 时，供应商、AccessKey ID、AccessKey Secret、固定签名、端点、手机号 HMAC 密钥或当前场景有效绑定任一缺失，必须启动失败或拒绝短信提交。
+- 阿里云超时、限流、签名错误、模板错误、账户异常和网络错误均不得回退到模拟供应商、固定验证码或响应明文验证码。
+- `SMS_TEST_MODE=true` 且白名单为空时必须全拒；手机号不在白名单时必须拒绝，且日志只能记录脱敏手机号和 HMAC。
+- 生产环境不得把阿里云 `Code=OK` 表述为用户已收到，只能记录“供应商已受理”。
+
+### 密钥注入与轮换
+
+1. 本地开发使用不入库的 `infra/.env.local`，测试环境使用不入库的 `infra/.env.test`，生产使用服务器受控环境变量、`.env.prod` 或 Secret Manager。
+2. 阿里云账号使用最小权限 RAM 用户或 RAM 角色，禁止使用主账号长期 AccessKey。
+3. 轮换 AccessKey 时先注入新凭证，在 `SMS_TEST_MODE=true` 下完成白名单提交验证，再撤销旧凭证；整个过程不得把密钥打印到终端记录、CI 日志或工单正文。
+4. `SMS_PHONE_HMAC_SECRET` 轮换会改变手机号 HMAC。轮换前必须确认历史限流和排障查询的兼容方案；不得直接覆盖后宣称历史索引仍连续可查。
+5. CI/CD 只传递 Secret 引用，不得把真实值写入 workflow、Docker build argument、镜像层或制品。
+
+### 网络放行
+
+- API 运行环境必须能解析 `SMS_ALIYUN_ENDPOINT`，并按域名放行出站 TCP 443。
+- 阿里云域名解析 IP 可能动态变化，防火墙或云安全策略不得固定单个解析 IP；应使用支持 FQDN 的出站策略或受控代理。
+- 禁止为了短信接入放开任意公网出站；只放行批准的阿里云短信 API 域名和必要的 DNS、HTTPS 链路。
+- 端点变更必须经过安全评审，禁止通过环境变量指向环回、内网或非阿里云域名。
+
+### 灰度发布与回滚
+
+上线顺序：
+
+```text
+注入新配置但保持 SMS_ENABLED=false
+  → 执行 migration 和权限 seed
+  → 后台同步阿里云已审核模板
+  → 配置并核对五个数据库场景绑定
+  → 设置 SMS_TEST_MODE=true 和受控白名单
+  → 开启 SMS_ENABLED，执行小流量真实阿里云提交与手机收件验证
+  → 测试工程师和产品经理确认
+  → SMS_TEST_MODE=false，逐步放量
+```
+
+出现提交失败率异常、签名或模板错误、费用异常、验证码安全问题时，立即将 `SMS_ENABLED=false` 并重启或重新加载服务。回滚只关闭新短信提交，不删除模板快照、场景绑定、发送日志和审计记录，不启用模拟回退。恢复前必须重新完成白名单真实验证。
+
+### 短信上线检查清单
+
+```text
+□ SMS_ENABLED 初始为 false
+□ SMS_PROVIDER 固定为 aliyun
+□ RAM 最小权限凭证已通过安全渠道注入，仓库和镜像中无真实密钥
+□ 固定签名已审核通过，SMS_ALIYUN_SIGN_NAME 与首期批准签名一致
+□ SMS_PHONE_HMAC_SECRET 为独立强随机密钥
+□ SMS_ALIYUN_ENDPOINT 域名解析与 TCP 443 出站正常，未固定动态 IP
+□ 环境变量中不存在 SMS_TEMPLATE_CODE_*，五个模板均通过数据库绑定
+□ SMS_TEST_MODE=true 时白名单非空，非白名单号码实测被拒
+□ 阿里云异常时手机验证码 fail-closed，无模拟回退和明文验证码响应
+□ 已区分“阿里云受理”和“真实手机收到”，两项证据分别记录
+□ 回滚开关、负责人和密钥撤销方式已确认
+```

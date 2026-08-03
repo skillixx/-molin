@@ -13,6 +13,8 @@ type VerificationCode struct {
 	Scene              string  `gorm:"size:32;not null"`
 	SendStatus         string  `gorm:"size:16;not null"` // pending / accepted / failed
 	BusinessRequestNo  *string `gorm:"size:64;uniqueIndex"`
+	Provider           *string `gorm:"size:32"`
+	ProviderRequestID  *string `gorm:"size:128"`
 	IdempotencyScope   *string `gorm:"size:191;index"`
 	RequestFingerprint *string `gorm:"size:64"`
 	AcceptedAt         *time.Time
