@@ -2,7 +2,7 @@
 
 ## 结论
 
-截至当前阶段 2 工作树，本地后端自动化、安全扫描以及 PR #315 的首轮 MySQL 8、Redis 7、Linux race 远程 CI 已通过；受控真实短信及正式验收仍未形成证据。当前状态只能表述为“阶段 2 代码开发及自动化验证已形成，完整阶段验收未通过”，不能表述为生产可用或阶段 2 已完成。后续提交必须以 PR 当前三项检查全绿为合并前证据。
+截至当前阶段 2 工作树，本地后端自动化、安全扫描以及 PR #315 预合并修复提交 `9686433` 的 MySQL 8、Redis 7、Linux race 远程 CI 已通过；受控真实短信及正式验收仍未形成证据。当前状态只能表述为“阶段 2 代码开发及自动化验证已形成，完整阶段验收未通过”，不能表述为生产可用或阶段 2 已完成。后续提交必须以 PR 当前三项检查全绿为合并前证据。
 
 ## 已执行
 
@@ -15,7 +15,7 @@
 | 16 路并发幂等重放（连续 20 轮）仅一次限流和一次供应商调用 | 通过 |
 | 同键异参冲突、跨管理员幂等隔离、白名单前置拒绝 | 通过 |
 | 管理员/手机号 HMAC 双维 Redis Lua 限流及失败关闭单测 | 通过（测试替身，不等于真实 Redis） |
-| 真实 Redis 双维原子计数、每分钟第 11 次拒绝及 TTL 集成资产 | 本机安全跳过；GitHub Actions 运行 #371 的 Redis 7 门禁通过 |
+| 真实 Redis 双维原子计数、每分钟第 11 次拒绝及 TTL 集成资产 | 本机安全跳过；GitHub Actions 运行 #373 的 Redis 7 门禁通过 |
 | 两路同版本场景并发更新仅一路成功 | 通过 |
 | 20 路模板同步去重、畸形快照零写入、重复模板忽略 | 通过 |
 | 发送日志隐藏 `pending`、Phone HMAC 和内部摘要 | 通过 |
@@ -30,17 +30,17 @@
 | `tests/email/sensitive_scan_selftest.py` | 通过，4/4 |
 | 阶段 2 范围敏感信息扫描 | 通过，FAIL=0、REVIEW=0 |
 | `git diff --check` | 通过 |
-| MySQL 8 `000001→000059→000058→000059` 测试资产 | 本机安全跳过；GitHub Actions 运行 #371 的 MySQL 8 门禁通过 |
-| Linux `go test -v -race -count=1 ./...` | GitHub Actions 运行 #371 通过 |
+| MySQL 8 `000001→000059→000058→000059` 测试资产 | 本机安全跳过；GitHub Actions 运行 #373 的 MySQL 8 门禁通过 |
+| Linux `go test -v -race -count=1 ./...` | GitHub Actions 运行 #373 通过 |
 
 ## 未执行和残余门禁
 
-1. 本机没有 Docker、MySQL 客户端和可用的隔离 MySQL 8；`SMS_MIGRATION_TEST_DSN` 未配置，因此本机迁移测试按显式门禁安全跳过。远程 MySQL 8 `1→59→58→59` 隔离矩阵已由 GitHub Actions 运行 #371 补证。
+1. 本机没有 Docker、MySQL 客户端和可用的隔离 MySQL 8；`SMS_MIGRATION_TEST_DSN` 未配置，因此本机迁移测试按显式门禁安全跳过。远程 MySQL 8 `1→59→58→59` 隔离矩阵已由 GitHub Actions 运行 #373 补证。
 2. `SMS_ENABLED` 保持关闭，未使用真实密钥、未调用阿里云 SendSms、未产生短信费用。
-3. Redis Lua 的键、原子计数、TTL、重试秒数与失败关闭已通过单测；真实 Redis 7 原子计数、限流和 TTL 已由 GitHub Actions 运行 #371 补证，恢复周期仍需独立 QA 复核。
+3. Redis Lua 的键、原子计数、TTL、重试秒数与失败关闭已通过单测；真实 Redis 7 原子计数、限流和 TTL 已由 GitHub Actions 运行 #373 补证，恢复周期仍需独立 QA 复核。
 4. 尚未由独立测试工程师复核，也未由产品经理正式批准。
-5. PR #315 已创建且首轮三项 CI 通过，尚未完成正式评审和合并。
-6. 当前 Windows Go 环境未启用 CGO，`go test -race` 无法执行；Linux race 已由 GitHub Actions 运行 #371 补证。
+5. PR #315 已创建，预合并修复提交的三项 CI 已通过，尚未完成独立正式评审和合并。
+6. 当前 Windows Go 环境未启用 CGO，`go test -race` 无法执行；Linux race 已由 GitHub Actions 运行 #373 补证。
 
 真实验证需单独授权，并限定白名单号码、单次窗口、费用上限和回滚动作；阿里云返回 `OK/accepted` 后仍需人工确认实际收件。
 

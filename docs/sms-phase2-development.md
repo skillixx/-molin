@@ -42,6 +42,6 @@ go mod verify
 go test ./migrations -run TestSMSPhase2FullMySQL8Matrix -count=1 -v
 ```
 
-最后一条迁移测试只有在显式配置 `SMS_MIGRATION_TEST_DSN`、目标库名以 `molin_sms_test_` 开头且服务端确认为 MySQL 8 时才执行；否则安全跳过，不能计为数据库通过。PR #315 的 [GitHub Actions 运行 #371](https://github.com/skillixx/-molin/actions/runs/30793978670) 已在隔离 MySQL 8、Redis 7 环境执行全库 Linux race 并通过；后续提交仍必须以 PR 当前检查全绿为合并前证据。
+最后一条迁移测试只有在显式配置 `SMS_MIGRATION_TEST_DSN`、目标库名以 `molin_sms_test_` 开头且服务端确认为 MySQL 8 时才执行；否则安全跳过，不能计为数据库通过。预合并修复提交 `9686433` 对应的 [GitHub Actions 运行 #373](https://github.com/skillixx/-molin/actions/runs/30796827755) 已在隔离 MySQL 8、Redis 7 环境执行全库 Linux race 并通过；后续提交仍必须以 PR 当前检查全绿为合并前证据。
 
 当前开发机没有 Docker/MySQL 客户端，也没有可复用的隔离 Redis，因此本机仍只保留安全 SKIP；MySQL 8 全迁移/回滚矩阵和真实 Redis 7 限流已由远程 CI 补证。真实短信测试、合并和部署仍需项目负责人分别授权。
