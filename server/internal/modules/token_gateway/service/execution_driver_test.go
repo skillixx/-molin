@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -127,7 +128,9 @@ func TestBifrostDriver_ChatCompletionStreamInjectsUsageAndReadsSSE(t *testing.T)
 		t.Fatalf("Bifrost HTTP SSE 调用失败: %v", err)
 	}
 	defer result.Response.Body.Close()
-	usage, err := readExecutionStreamForTest(result.Response.Body, driver.NormalizeStreamLine)
+	usage, err := readExecutionStreamForTest(result.Response.Body, func(line []byte) (ExecutionStreamChunk, error) {
+		return driver.NormalizeStreamLine(line, "molin/qwen-turbo")
+	})
 	if err != nil || !includeUsage || !usage.Present || usage.TotalTokens != 3 {
 		t.Fatalf("Bifrost HTTP SSE 契约错误 include_usage=%v usage=%+v err=%v", includeUsage, usage, err)
 	}
@@ -135,22 +138,24 @@ func TestBifrostDriver_ChatCompletionStreamInjectsUsageAndReadsSSE(t *testing.T)
 
 func TestBifrostDriver_SSESuccessAndMidstreamError(t *testing.T) {
 	driver := NewBifrostDriver(BifrostDriverConfig{})
-	chunk, err := driver.NormalizeStreamLine([]byte("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":3,\"total_tokens\":5,\"extra_fields\":{\"key\":\"secret\"}}}\n"))
+	chunk, err := driver.NormalizeStreamLine([]byte("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":3,\"total_tokens\":5,\"extra_fields\":{\"key\":\"secret\"}}}\n"), "molin/qwen-turbo")
 	if err != nil || !chunk.Usage.Present || chunk.Usage.TotalTokens != 5 || bytes.Contains(chunk.PublicLine, []byte("secret")) {
 		t.Fatalf("SSE usage 或脱敏错误: chunk=%+v err=%v", chunk, err)
 	}
-	_, err = driver.NormalizeStreamLine([]byte("data: {\"is_bifrost_error\":true,\"error\":{\"message\":\"provider failed\"}}\n"))
+	_, err = driver.NormalizeStreamLine([]byte("data: {\"is_bifrost_error\":true,\"error\":{\"message\":\"provider failed\"}}\n"), "molin/qwen-turbo")
 	if err == nil {
 		t.Fatal("SSE 中途业务错误必须被识别")
 	}
-	usage, err := readExecutionStreamForTest(strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"O\"}}]}\n\ndata: {\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1}}\n\ndata: [DONE]\n\n"), driver.NormalizeStreamLine)
+	usage, err := readExecutionStreamForTest(strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"O\"}}]}\n\ndata: {\"choices\":[],\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1}}\n\ndata: [DONE]\n\n"), func(line []byte) (ExecutionStreamChunk, error) {
+		return driver.NormalizeStreamLine(line, "molin/qwen-turbo")
+	})
 	if err != nil || !usage.Present || usage.TotalTokens != 2 {
 		t.Fatalf("SSE 完整读取失败 usage=%+v err=%v", usage, err)
 	}
-	if _, err := driver.NormalizeStreamLine([]byte(`{"is_bifrost_error":true,"error":{"message":"stream failed"}}`)); err == nil {
+	if _, err := driver.NormalizeStreamLine([]byte(`{"is_bifrost_error":true,"error":{"message":"stream failed"}}`), "molin/qwen-turbo"); err == nil {
 		t.Fatal("HTTP 200 普通 JSON 流式错误必须被识别，不能作为 SSE 透传")
 	}
-	metadata, err := driver.NormalizeStreamLine([]byte(": routing_info=secret\n"))
+	metadata, err := driver.NormalizeStreamLine([]byte(": routing_info=secret\n"), "molin/qwen-turbo")
 	if err != nil || len(metadata.PublicLine) != 0 {
 		t.Fatalf("Bifrost 非 data 扩展行必须丢弃: chunk=%+v err=%v", metadata, err)
 	}
@@ -168,7 +173,7 @@ func TestBifrostDriver_TimeoutAndNoAutomaticFallback(t *testing.T) {
 	if err == nil || !isTimeout(err) {
 		t.Fatalf("应返回超时且不得 fallback: %v", err)
 	}
-	if result == nil || !result.Attempt.ResultUnknown || result.Attempt.Outcome != "timeout" {
+	if result == nil || !result.Attempt.ResultUnknown || result.Attempt.Outcome != "timeout" || result.Attempt.ErrorClass != "network_timeout" {
 		t.Fatalf("超时也必须返回独立且结果未知的 attempt: %+v", result)
 	}
 	_, err = driver.ChatCompletion(context.Background(), ExecutionRequest{LogicalModel: "unknown/model", Body: map[string]interface{}{}})
@@ -402,12 +407,12 @@ func TestBifrostDriver_ClientCancellationReturnsUnknownWithoutFallback(t *testin
 }
 
 func TestNativeDriver_PreservesCompatibleResponse(t *testing.T) {
-	want := `{"choices":[{"message":{"content":"OK"}}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3},"extra_fields":{"native":"preserved"}}`
+	upstream := `{"choices":[{"message":{"content":"OK"}}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3},"extra_fields":{"native":"internal"}}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer provider-key" {
 			t.Fatal("原生驱动未传递渠道密钥")
 		}
-		_, _ = io.WriteString(w, want)
+		_, _ = io.WriteString(w, upstream)
 	}))
 	defer server.Close()
 	driver := NewNativeOpenAICompatibleDriver(server.Client())
@@ -417,21 +422,104 @@ func TestNativeDriver_PreservesCompatibleResponse(t *testing.T) {
 	}
 	defer result.Response.Body.Close()
 	raw, _ := io.ReadAll(result.Response.Body)
-	if string(raw) != want || !result.Usage.Present || result.Usage.TotalTokens != 3 {
+	if bytes.Contains(raw, []byte("extra_fields")) || bytes.Contains(raw, []byte("internal")) || !result.Usage.Present || result.Usage.TotalTokens != 3 {
 		t.Fatalf("原生兼容响应回归 raw=%s usage=%+v", raw, result.Usage)
+	}
+}
+
+func TestNativeDriver_RecognizesBusinessAndProtocolErrors(t *testing.T) {
+	for _, body := range []string{
+		`{"error":{"message":"provider secret"}}`,
+		`{"choices":[]}`,
+		`{"id":"missing-choices"}`,
+		`{`,
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, body)
+		}))
+		driver := NewNativeOpenAICompatibleDriver(server.Client())
+		result, err := driver.ChatCompletion(context.Background(), ExecutionRequest{ProviderModel: "provider/model", BaseURL: server.URL, APIKey: "provider-key", Body: map[string]interface{}{}})
+		server.Close()
+		if err != nil {
+			t.Fatalf("Native 协议错误应归一化为受控响应: %v", err)
+		}
+		defer result.Response.Body.Close()
+		raw, _ := io.ReadAll(result.Response.Body)
+		if result.Response.StatusCode != http.StatusBadGateway || result.Attempt.Outcome != "failed" || bytes.Contains(raw, []byte("provider secret")) {
+			t.Fatalf("Native 必须与 Bifrost 使用同一错误和脱敏契约: status=%d attempt=%+v body=%s", result.Response.StatusCode, result.Attempt, raw)
+		}
+	}
+}
+
+func TestNativeAndBifrostDriversExposeEquivalentStandardResponse(t *testing.T) {
+	standardResponse := `{"id":"equivalent","model":"provider/private-model","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":5,"total_tokens":8,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens_details":{"reasoning_tokens":4}}}`
+	nativeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, standardResponse)
+	}))
+	defer nativeServer.Close()
+	bifrostServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		var payload map[string]interface{}
+		_ = json.Unmarshal([]byte(standardResponse), &payload)
+		payload["extra_fields"] = map[string]interface{}{"routing_info": map[string]interface{}{"key": "internal"}}
+		_ = json.NewEncoder(w).Encode(payload)
+	}))
+	defer bifrostServer.Close()
+
+	native := NewNativeOpenAICompatibleDriver(nativeServer.Client())
+	bifrost := NewBifrostDriver(BifrostDriverConfig{BaseURL: bifrostServer.URL, InternalToken: "internal-token", HTTPClient: bifrostServer.Client()})
+	nativeResult, err := native.ChatCompletion(context.Background(), ExecutionRequest{LogicalModel: "molin/qwen-turbo", ProviderModel: "provider/model", BaseURL: nativeServer.URL, APIKey: "provider-key", Body: map[string]interface{}{}})
+	if err != nil {
+		t.Fatalf("Native 等价契约调用失败: %v", err)
+	}
+	defer nativeResult.Response.Body.Close()
+	bifrostResult, err := bifrost.ChatCompletion(context.Background(), ExecutionRequest{LogicalModel: "molin/qwen-turbo", Body: map[string]interface{}{}})
+	if err != nil {
+		t.Fatalf("Bifrost 等价契约调用失败: %v", err)
+	}
+	defer bifrostResult.Response.Body.Close()
+
+	var nativePublic, bifrostPublic map[string]interface{}
+	if err := json.NewDecoder(nativeResult.Response.Body).Decode(&nativePublic); err != nil {
+		t.Fatalf("解析 Native 公开响应失败: %v", err)
+	}
+	if err := json.NewDecoder(bifrostResult.Response.Body).Decode(&bifrostPublic); err != nil {
+		t.Fatalf("解析 Bifrost 公开响应失败: %v", err)
+	}
+	if !reflect.DeepEqual(nativePublic, bifrostPublic) {
+		t.Fatalf("Native 与 Bifrost 的标准公开响应不等价: native=%v bifrost=%v", nativePublic, bifrostPublic)
+	}
+	if nativePublic["model"] != "molin/qwen-turbo" || bifrostPublic["model"] != "molin/qwen-turbo" {
+		t.Fatalf("公开响应只能返回墨灵逻辑模型，不能泄露执行模型: native=%v bifrost=%v", nativePublic["model"], bifrostPublic["model"])
+	}
+	if nativeResult.Usage != bifrostResult.Usage || !nativeResult.Usage.Present || nativeResult.Usage.ReasoningTokens != 4 || nativeResult.Usage.CachedTokens != 2 {
+		t.Fatalf("Native 与 Bifrost 的标准 Usage 不等价: native=%+v bifrost=%+v", nativeResult.Usage, bifrostResult.Usage)
 	}
 }
 
 func TestNativeDriver_PreservesSSEAndUsage(t *testing.T) {
 	driver := NewNativeOpenAICompatibleDriver(&http.Client{})
 	line := []byte("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":6}}\n")
-	chunk, err := driver.NormalizeStreamLine(line)
-	if err != nil || !bytes.Equal(chunk.PublicLine, line) || !chunk.Usage.Present || chunk.Usage.TotalTokens != 10 {
+	chunk, err := driver.NormalizeStreamLine(line, "molin/qwen-turbo")
+	if err != nil || !chunk.Usage.Present || chunk.Usage.TotalTokens != 10 {
 		t.Fatalf("Native SSE 行为回归: chunk=%+v err=%v", chunk, err)
 	}
-	done, err := driver.NormalizeStreamLine([]byte("data: [DONE]\n"))
+	var publicEvent map[string]interface{}
+	publicData := bytes.TrimSpace(bytes.TrimPrefix(bytes.TrimSpace(chunk.PublicLine), []byte("data:")))
+	if err := json.Unmarshal(publicData, &publicEvent); err != nil {
+		t.Fatalf("Native SSE 公开事件必须保持合法 JSON: %v", err)
+	}
+	if _, ok := publicEvent["choices"]; !ok {
+		t.Fatalf("Native SSE 标准 choices 字段丢失: %v", publicEvent)
+	}
+	if publicEvent["model"] != "molin/qwen-turbo" {
+		t.Fatalf("Native SSE 必须公开墨灵逻辑模型: %v", publicEvent)
+	}
+	done, err := driver.NormalizeStreamLine([]byte("data: [DONE]\n"), "molin/qwen-turbo")
 	if err != nil || !done.Done {
 		t.Fatalf("Native SSE 必须识别 [DONE]: chunk=%+v err=%v", done, err)
+	}
+	if _, err := driver.NormalizeStreamLine([]byte(`data: {"error":{"message":"secret"}}`+"\n"), "molin/qwen-turbo"); err == nil {
+		t.Fatal("Native SSE 业务错误必须与 Bifrost 一样被拒绝")
 	}
 }
 
@@ -444,6 +532,47 @@ func TestStaticDriverSelector_DoesNotFallback(t *testing.T) {
 	}
 	if _, err := (staticExecutionDriverSelector{}).Select("molin/qwen-turbo"); err == nil {
 		t.Fatal("未配置驱动必须失败")
+	}
+}
+
+func TestExecutionAttemptLedgerStateMapping(t *testing.T) {
+	tests := []struct {
+		outcome       string
+		resultUnknown bool
+		attemptStatus string
+		requestStatus string
+	}{
+		{outcome: "success", attemptStatus: "succeeded", requestStatus: model.AIExecutionSucceeded},
+		{outcome: "failed", attemptStatus: "failed", requestStatus: model.AIExecutionFailed},
+		{outcome: "failed", resultUnknown: true, attemptStatus: "failed", requestStatus: model.AIExecutionUnknown},
+		{outcome: "timeout", resultUnknown: true, attemptStatus: "timeout", requestStatus: model.AIExecutionUnknown},
+		{outcome: "pending_reconcile", resultUnknown: true, attemptStatus: "unknown", requestStatus: model.AIExecutionUnknown},
+		{outcome: "running", attemptStatus: "running", requestStatus: model.AIExecutionRunning},
+	}
+	for _, tc := range tests {
+		attempt := ExecutionAttempt{Outcome: tc.outcome, ResultUnknown: tc.resultUnknown}
+		if attempt.LedgerStatus() != tc.attemptStatus || attempt.RequestExecutionStatus() != tc.requestStatus {
+			t.Fatalf("运行态映射错误 outcome=%s ledger=%s request=%s", tc.outcome, attempt.LedgerStatus(), attempt.RequestExecutionStatus())
+		}
+	}
+
+	started := time.Now().Add(-20 * time.Millisecond)
+	finished := time.Now()
+	attempt := ExecutionAttempt{
+		AttemptNo: 1, Driver: "bifrost", ProviderCode: "bailian", EndpointCode: "bifrost/bailian",
+		ProviderModel: "bailian/qwen-turbo", StartedAt: started, FinishedAt: finished, Outcome: "success",
+	}
+	ledger := attempt.ToLedgerModel("req-ledger-map", ExecutionUsage{PromptTokens: 3, CompletionTokens: 5, ReasoningTokens: 2, CachedTokens: 1, Present: true})
+	if ledger.RequestID != "req-ledger-map" || ledger.Status != "succeeded" || ledger.ProviderCode != "bailian" || ledger.EndpointCode == nil || *ledger.EndpointCode != "bifrost/bailian" {
+		t.Fatalf("执行尝试持久化映射缺字段: %+v", ledger)
+	}
+	if ledger.PromptTokens == nil || *ledger.PromptTokens != 3 || ledger.CompletionTokens == nil || *ledger.CompletionTokens != 5 || ledger.LatencyMS == nil {
+		t.Fatalf("执行尝试 Usage 或耗时映射错误: %+v", ledger)
+	}
+	clockSkewAttempt := ExecutionAttempt{StartedAt: finished, FinishedAt: started}
+	clockSkewLedger := clockSkewAttempt.ToLedgerModel("req-clock-skew", ExecutionUsage{})
+	if clockSkewLedger.LatencyMS == nil || *clockSkewLedger.LatencyMS != 0 {
+		t.Fatalf("时钟回拨时耗时必须归零，不能发生无符号整数溢出: %+v", clockSkewLedger)
 	}
 }
 
@@ -484,12 +613,27 @@ func TestBifrostFrozenModelsMatchInfrastructureConfig(t *testing.T) {
 	var config struct {
 		Providers map[string]struct {
 			Keys []struct {
+				Value  string   `json:"value"`
 				Models []string `json:"models"`
 			} `json:"keys"`
 		} `json:"providers"`
 	}
 	if err := json.Unmarshal(raw, &config); err != nil {
 		t.Fatalf("解析 Bifrost 配置失败: %v", err)
+	}
+	for provider, expectedEnv := range map[string]string{
+		"bailian":    "env.BAILIAN_API_KEY",
+		"openrouter": "env.OPENROUTER_API_KEY",
+	} {
+		providerConfig, exists := config.Providers[provider]
+		if !exists || len(providerConfig.Keys) == 0 {
+			t.Fatalf("G1 双上游配置缺少 Provider: %s", provider)
+		}
+		for _, key := range providerConfig.Keys {
+			if key.Value != expectedEnv {
+				t.Fatalf("Provider %s 必须只引用受限环境变量，实际为 %q", provider, key.Value)
+			}
+		}
 	}
 	for logicalModel, mappedModel := range DefaultBifrostModelMapping() {
 		provider, modelName, ok := strings.Cut(mappedModel, "/")
@@ -512,9 +656,40 @@ func TestBifrostFrozenModelsMatchInfrastructureConfig(t *testing.T) {
 			t.Fatalf("Bifrost Nginx 模板缺少内部鉴权约束: %s", required)
 		}
 	}
+
+	pocRaw, err := os.ReadFile(filepath.Join(repoRoot, "infra", "scripts", "run-bifrost-g1-poc.sh"))
+	if err != nil {
+		t.Fatalf("读取 G1 POC 脚本失败: %v", err)
+	}
+	pocText := string(pocRaw)
+	for _, required := range []string{
+		"AI_GATEWAY_G1_POC_APPROVED",
+		"max_tokens\\\":1",
+		"bailian/qwen-turbo",
+		"openrouter/cohere/north-mini-code:free",
+		"\\\"stream\\\":true",
+		"stream_options",
+		"data: [DONE]",
+		"-H @",
+		"text/event-stream",
+		"G1_POC=PASS",
+	} {
+		if !strings.Contains(pocText, required) {
+			t.Fatalf("G1 POC 脚本缺少安全或验收约束: %s", required)
+		}
+	}
+	approvalGate := strings.Index(pocText, "AI_GATEWAY_G1_POC_APPROVED")
+	firstNetworkRequest := strings.Index(pocText, "for auth_mode in missing wrong duplicate")
+	if approvalGate < 0 || firstNetworkRequest < 0 || approvalGate > firstNetworkRequest {
+		t.Fatal("G1 POC 付费授权必须发生在任何网络探测之前")
+	}
+	if strings.Contains(pocText, `-H "Authorization: Bearer ${BIFROST_INTERNAL_TOKEN}"`) {
+		t.Fatal("G1 POC 不得把内部 Token 展开到 curl 进程参数")
+	}
 }
 
 func providerAllowsModel(keys []struct {
+	Value  string   `json:"value"`
 	Models []string `json:"models"`
 }, modelName string) bool {
 	for _, key := range keys {

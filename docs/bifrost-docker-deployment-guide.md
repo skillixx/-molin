@@ -562,6 +562,64 @@ sudo docker rm -f bifrost-lb bifrost-1 bifrost-2
 
 全部通过只能说明 Bifrost Docker POC 可用，不代表墨灵 AI 网关、用户计费、内容安全、钱包结算或生产商业能力已经完成。
 
+### 20.1 G1 双上游最小验收脚本
+
+`infra/scripts/run-bifrost-g1-poc.sh` 默认不发起任何网络请求，直接以退出码 3 提示需要负责人批准。这样即使测试服务器仍运行旧 Nginx，鉴权探测也不会意外穿透到真实模型。获得本轮真实调用授权后，在测试服务器受限会话中执行：
+
+历史检查脚本 `check-bifrost-gateway.sh` 和 `check-bifrost-upstreams.sh` 也已改为默认退出码 3，分别要求 `AI_GATEWAY_BIFROST_CHECK_APPROVED=YES` 和 `AI_GATEWAY_UPSTREAM_CHECK_APPROVED=YES`；所有真实 Bearer 值均通过权限为 600 的临时 Header 文件传给 curl，禁止展开到进程参数。
+
+```bash
+set -a
+source ~/molin/secrets/bifrost.env
+set +a
+export AI_GATEWAY_G1_POC_APPROVED=YES
+export BIFROST_GATEWAY_URL=http://127.0.0.1:18080
+bash ~/molin/infra/scripts/run-bifrost-g1-poc.sh
+unset AI_GATEWAY_G1_POC_APPROVED
+```
+
+脚本固定执行 4 次最小调用：百炼/OpenRouter 各一次普通请求和一次 SSE，每次 `max_tokens=1`。它只输出 HTTP、Token 数和时延，不输出响应正文、Authorization 或密钥。执行结果必须人工转录到 `docs/ai-gateway-g1-poc-report.md`，不得把服务器密钥文件复制进仓库。
+
+### 20.2 G1 Native/Bifrost 配对基准
+
+最小验收脚本不能形成 P95。`infra/scripts/run-bifrost-g1-benchmark.sh` 默认使用同一百炼模型执行 20 组 Native/Bifrost 普通请求和流式请求，共 80 次、每次 `max_tokens=1`。脚本默认拒绝联网，只有负责人单独批准预计调用次数和费用后，才可在测试服务器受限会话中配置以下变量并执行：
+
+```bash
+export AI_GATEWAY_G1_BENCHMARK_APPROVED=YES
+export AI_GATEWAY_G1_PERF_SAMPLES=20
+export G1_BENCHMARK_MODE=real_upstream_observation
+export BIFROST_GATEWAY_URL=http://127.0.0.1:18080
+export G1_NATIVE_CHAT_URL=https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions
+export G1_NATIVE_API_KEY="${BAILIAN_API_KEY}"
+export G1_NATIVE_MODEL=qwen-turbo
+export G1_BIFROST_MODEL=bailian/qwen-turbo
+mkdir -p -m 700 ~/molin/bifrost/g1-evidence
+export G1_BENCHMARK_EVIDENCE_FILE="$HOME/molin/bifrost/g1-evidence/benchmark-$(date -u +%Y%m%dT%H%M%SZ).tsv"
+bash ~/molin/infra/scripts/run-bifrost-g1-benchmark.sh
+unset AI_GATEWAY_G1_BENCHMARK_APPROVED G1_BENCHMARK_MODE G1_NATIVE_API_KEY G1_BENCHMARK_EVIDENCE_FILE
+```
+
+证据文件路径必须是尚不存在的绝对路径，父目录不能是符号链接；脚本以 `0600` 权限保存模式、20 组调用顺序、耗时和配对差值，不保存密钥、提示词或响应正文。每轮使用独立文件，失败结果不得覆盖。真实上游模式仅作端到端观察，20 组只能说明本轮是否观察到成功率差异，不能在统计意义上证明长期差异小于 0.1 个百分点，也不能把模型生成和公网波动归因给 Bifrost。
+
+### 20.3 G1 受控上游性能硬门
+
+`infra/scripts/verify-bifrost-g1-controlled-latency.sh` 会用仓库内固定响应 Go 程序构建临时只读容器，只加入 `bifrost-net`，并临时增加允许私网访问的 `g1mock` Provider。它不读取真实上游 SK、不连接百炼/OpenRouter，先执行 5 组预热，再调用同一基准脚本执行 20 组正式样本。退出时只删除带 `molin.g1-controlled=true` 标签的临时容器，恢复原配置并核对 SHA256；任何失败轮次均保留独立 TSV。
+
+```bash
+set -a
+source ~/molin/secrets/bifrost.env
+set +a
+mkdir -p -m 700 ~/molin/bifrost/g1-evidence
+export G1_CONTROLLED_EVIDENCE_FILE="$HOME/molin/bifrost/g1-evidence/controlled-$(date -u +%Y%m%dT%H%M%SZ).tsv"
+export AI_GATEWAY_G1_CONTROLLED_APPROVED=YES
+export AI_GATEWAY_G1_EXPECTED_HOST=pc-Z790-UD-AX
+export G1_EXPECTED_CONFIG_SHA256=2995f01d7f81776c6bd02a0d5bf0415fa70f7f195d23aa7f371e93dfd00189aa
+bash ~/molin/bifrost/g1-staging/scripts/verify-bifrost-g1-controlled-latency.sh
+unset AI_GATEWAY_G1_CONTROLLED_APPROVED AI_GATEWAY_G1_EXPECTED_HOST G1_EXPECTED_CONFIG_SHA256 G1_CONTROLLED_EVIDENCE_FILE
+```
+
+脚本在任何容器创建或配置写入前校验显式批准、测试机主机名和批准时冻结的正式配置 SHA256。最终验收要求 80/80 成功、JSON 配对差值 P95 不超过 20ms、SSE TTFT 配对差值 P95 不超过 30ms，并由另一套命令从 TSV 独立复算。受控结果只判定纯网关增量，不能替代真实双上游 POC。
+
 ## 21. 测试环境实际部署记录
 
 部署日期：2026-07-30。
@@ -609,3 +667,5 @@ OPENROUTER_API_KEY：已配置，文档不保存明文
 ```
 
 2026-08-03 复核时，当前配置包含 `bailian` 和 `openrouter` 两个 Provider，本地配置与服务器配置 SHA256 一致，两个 Bifrost 节点和统一入口健康。2026-07-30 已分别取得百炼和 OpenRouter 非流式真实推理及 Usage 返回证据；该历史证据不替代 Phase 1 要求的最新普通响应、SSE、错误结构、计量契约、单节点故障和延迟对照验收。
+
+后续 G1 分支只读复核发现服务器仍保留上述历史配置，而当前分支已经增加内部 Token Nginx 模板和冻结模型映射，因此两端 SHA256 不再相同；服务器受限环境文件也尚无 `BIFROST_INTERNAL_TOKEN`。在完成备份、凭据注入和滚动配置升级前，不得把当前统一入口视为已经满足墨灵内部鉴权要求。最新证据和未关闭项见 `docs/ai-gateway-g1-poc-report.md`。

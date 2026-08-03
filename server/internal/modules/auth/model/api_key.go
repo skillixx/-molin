@@ -10,8 +10,8 @@ import "time"
 // 安全红线：KeyHash 字段标记 json:"-"，绝不序列化到任何响应；
 // 对外只暴露 KeyPrefix（展示用前缀，如 sk-molin-AbCd，不可反推）。
 type APIKey struct {
-	ID          uint64     `gorm:"primaryKey;autoIncrement"`
-	UserID      uint64     `gorm:"not null;index:idx_api_keys_user,priority:1"`
+	ID          uint64     `gorm:"primaryKey;autoIncrement;uniqueIndex:uk_api_keys_id_user,priority:1"`
+	UserID      uint64     `gorm:"not null;uniqueIndex:uk_api_keys_id_user,priority:2;index:idx_api_keys_user,priority:1"`
 	KeyPrefix   string     `gorm:"size:32;not null"`                                                   // 展示用前缀，如 sk-molin-AbCd
 	KeyHash     string     `gorm:"size:128;not null;uniqueIndex" json:"-"`                             // HMAC-SHA256(明文)，绝不序列化
 	Name        string     `gorm:"size:128;not null;default:''"`                                       // 用户备注名

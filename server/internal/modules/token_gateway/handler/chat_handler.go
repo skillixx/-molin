@@ -8,7 +8,6 @@ import (
 
 	"molin/server/internal/middleware"
 	"molin/server/internal/modules/token_gateway/service"
-	"molin/server/pkg/idgen"
 	"molin/server/pkg/response"
 )
 
@@ -26,6 +25,12 @@ func NewChatHandler(svc *service.ForwardService) *ChatHandler {
 // ChatCompletions POST /api/token/chat/completions
 // 鉴权（RequireUserAuth 注入 userID，sk 调用另注入 api_key_id）→ 门面校验/门禁/转发上游 → 透传响应（含 SSE 流式）。
 func (h *ChatHandler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
+	requestID := middleware.RequestIDFromContext(r.Context())
+	if requestID == "" {
+		// 缺少中间件身份属于服务装配错误，禁止 Handler 生成第二个账本 ID 掩盖问题。
+		response.Error(w, http.StatusInternalServerError, 50000, "请求标识初始化失败")
+		return
+	}
 	userID := middleware.UserIDFromContext(r.Context())
 	if userID == 0 {
 		response.Error(w, http.StatusUnauthorized, 40001, "未登录")
@@ -47,9 +52,8 @@ func (h *ChatHandler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stream, _ := body["stream"].(bool)
-
 	in := service.ForwardInput{
-		RequestID: idgen.NewRequestID(),
+		RequestID: requestID,
 		UserID:    userID,
 		APIKeyID:  apiKeyID,
 		Model:     modelCode,

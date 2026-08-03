@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"molin/server/internal/modules/token_gateway/model"
 )
 
 // ExecutionRequest 是统一执行驱动接收的请求，逻辑模型与供应商模型必须同时保留，便于后续账本关联。
@@ -17,6 +19,9 @@ type ExecutionRequest struct {
 	RequestID     string
 	LogicalModel  string
 	ProviderModel string
+	ProviderCode  string
+	EndpointCode  string
+	AttemptNo     uint32
 	BaseURL       string
 	APIKey        string
 	Body          map[string]interface{}
@@ -34,12 +39,128 @@ type ExecutionUsage struct {
 
 // ExecutionAttempt 记录一次独立上游尝试的最小元数据，不保存提示词、密钥或供应商响应头。
 type ExecutionAttempt struct {
+	AttemptNo     uint32
 	Driver        string
+	ProviderCode  string
+	EndpointCode  string
 	ProviderModel string
 	StartedAt     time.Time
 	FinishedAt    time.Time
 	Outcome       string
+	ErrorClass    string
 	ResultUnknown bool
+}
+
+// LedgerStatus 把运行态 Outcome 收敛为 ai_execution_attempts.status 的冻结枚举。
+func (a ExecutionAttempt) LedgerStatus() string {
+	switch a.Outcome {
+	case "success", "succeeded":
+		return "succeeded"
+	case "running":
+		return "running"
+	case "timeout":
+		return "timeout"
+	case "pending_reconcile", "unknown":
+		return "unknown"
+	default:
+		return "failed"
+	}
+}
+
+// RequestExecutionStatus 把一次尝试映射为 ai_requests.execution_status。
+// 超时或结果未知不得伪装成失败后自动重试，统一进入 unknown 对账路径。
+func (a ExecutionAttempt) RequestExecutionStatus() string {
+	status := a.LedgerStatus()
+	if a.ResultUnknown || status == "timeout" || status == "unknown" {
+		return model.AIExecutionUnknown
+	}
+	switch status {
+	case "succeeded":
+		return model.AIExecutionSucceeded
+	case "running":
+		return model.AIExecutionRunning
+	default:
+		return model.AIExecutionFailed
+	}
+}
+
+// ToLedgerModel 形成 G2 可直接持久化的执行尝试快照，不包含提示词、密钥或响应正文。
+func (a ExecutionAttempt) ToLedgerModel(requestID string, usage ExecutionUsage) model.AIExecutionAttempt {
+	attemptNo := a.AttemptNo
+	if attemptNo == 0 {
+		attemptNo = 1
+	}
+	ledger := model.AIExecutionAttempt{
+		RequestID:          requestID,
+		AttemptNo:          attemptNo,
+		ExecutionDriver:    a.Driver,
+		ProviderCode:       a.ProviderCode,
+		ExecutionModelCode: a.ProviderModel,
+		Status:             a.LedgerStatus(),
+		ResultUnknown:      a.ResultUnknown,
+		StartedAt:          a.StartedAt,
+		CreatedAt:          a.StartedAt,
+	}
+	if a.EndpointCode != "" {
+		ledger.EndpointCode = &a.EndpointCode
+	}
+	if a.ErrorClass != "" {
+		ledger.ErrorClass = &a.ErrorClass
+	}
+	if !a.FinishedAt.IsZero() {
+		ledger.FinishedAt = &a.FinishedAt
+		latencyMilliseconds := a.FinishedAt.Sub(a.StartedAt).Milliseconds()
+		if latencyMilliseconds < 0 {
+			latencyMilliseconds = 0
+		}
+		latency := uint64(latencyMilliseconds)
+		ledger.LatencyMS = &latency
+	}
+	if usage.Present {
+		ledger.PromptTokens = nonNegativeTokenPointer(usage.PromptTokens)
+		ledger.CompletionTokens = nonNegativeTokenPointer(usage.CompletionTokens)
+		ledger.ReasoningTokens = nonNegativeTokenPointer(usage.ReasoningTokens)
+		ledger.CachedTokens = nonNegativeTokenPointer(usage.CachedTokens)
+	}
+	return ledger
+}
+
+func nonNegativeTokenPointer(value int64) *uint64 {
+	if value < 0 {
+		return nil
+	}
+	converted := uint64(value)
+	return &converted
+}
+
+func executionNetworkErrorClass(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "network_timeout"
+	}
+	var timeout interface{ Timeout() bool }
+	if errors.As(err, &timeout) && timeout.Timeout() {
+		return "network_timeout"
+	}
+	return "network_error"
+}
+
+func newExecutionAttempt(driver string, in ExecutionRequest, providerModel string, started time.Time) ExecutionAttempt {
+	attemptNo := in.AttemptNo
+	if attemptNo == 0 {
+		attemptNo = 1
+	}
+	providerCode := in.ProviderCode
+	if mappedProvider, _, ok := strings.Cut(providerModel, "/"); ok && mappedProvider != "" {
+		providerCode = mappedProvider
+	}
+	endpointCode := in.EndpointCode
+	if endpointCode == "" {
+		endpointCode = providerCode
+	}
+	return ExecutionAttempt{
+		AttemptNo: attemptNo, Driver: driver, ProviderCode: providerCode, EndpointCode: endpointCode,
+		ProviderModel: providerModel, StartedAt: started,
+	}
 }
 
 // ExecutionResponse 保留标准 HTTP 响应并附带归一化用量与尝试信息。
@@ -61,7 +182,7 @@ type ExecutionDriver interface {
 	Name() string
 	ChatCompletion(ctx context.Context, req ExecutionRequest) (*ExecutionResponse, error)
 	ChatCompletionStream(ctx context.Context, req ExecutionRequest) (*ExecutionResponse, error)
-	NormalizeStreamLine(line []byte) (ExecutionStreamChunk, error)
+	NormalizeStreamLine(line []byte, logicalModel string) (ExecutionStreamChunk, error)
 }
 
 // ExecutionDriverSelector 支持全局默认值，并为后续按模型选择驱动保留稳定扩展点。
@@ -112,44 +233,47 @@ func (d *NativeOpenAICompatibleDriver) execute(ctx context.Context, in Execution
 		client = d.streamClient
 	}
 	resp, err := executeHTTPRequest(ctx, client, buildChatURL(in.BaseURL), in.APIKey, in.RequestID, body, stream)
-	attempt := ExecutionAttempt{Driver: d.Name(), ProviderModel: in.ProviderModel, StartedAt: started}
+	attempt := newExecutionAttempt(d.Name(), in, in.ProviderModel, started)
 	if err != nil {
 		attempt.FinishedAt = time.Now()
 		attempt.Outcome = statusFromErr(err)
+		attempt.ErrorClass = executionNetworkErrorClass(err)
 		attempt.ResultUnknown = true
 		return &ExecutionResponse{Attempt: attempt}, err
 	}
-	attempt.Outcome = "success"
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		attempt.Outcome = "failed"
-	}
-	if stream || resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		if !stream {
-			attempt.FinishedAt = time.Now()
-		}
+	if stream && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		attempt.Outcome = "success"
 		return &ExecutionResponse{Response: resp, Attempt: attempt}, nil
 	}
-	raw, err := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	resp.Body.Close()
 	if err != nil {
 		attempt.FinishedAt = time.Now()
 		attempt.Outcome = "failed"
+		attempt.ErrorClass = "response_read_error"
 		attempt.ResultUnknown = true
 		return &ExecutionResponse{Attempt: attempt}, err
 	}
+	publicBody, usage, valid := normalizeExecutionJSON(raw, resp.StatusCode >= 200 && resp.StatusCode < 300, false, in.LogicalModel)
+	if !valid && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		resp.StatusCode = http.StatusBadGateway
+		resp.Status = "502 Bad Gateway"
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		attempt.Outcome = "failed"
+		attempt.ErrorClass = "upstream_response_error"
+		publicBody = publicExecutionError("upstream_error", "上游服务调用失败")
+	} else {
+		attempt.Outcome = "success"
+	}
 	attempt.FinishedAt = time.Now()
-	resp.Body = io.NopCloser(bytes.NewReader(raw))
-	return &ExecutionResponse{Response: resp, Usage: parseExecutionUsage(raw), Attempt: attempt}, nil
+	resp.Header.Set("Content-Type", "application/json")
+	resp.Body = io.NopCloser(bytes.NewReader(publicBody))
+	return &ExecutionResponse{Response: resp, Usage: usage, Attempt: attempt}, nil
 }
 
-func (d *NativeOpenAICompatibleDriver) NormalizeStreamLine(line []byte) (ExecutionStreamChunk, error) {
-	trimmed := bytes.TrimSpace(line)
-	data := bytes.TrimSpace(bytes.TrimPrefix(trimmed, []byte("data:")))
-	usage := ExecutionUsage{}
-	if bytes.HasPrefix(trimmed, []byte("data:")) && len(data) > 0 && !bytes.Equal(data, []byte("[DONE]")) {
-		usage = parseExecutionUsage(data)
-	}
-	return ExecutionStreamChunk{PublicLine: line, Usage: usage, Done: isSSEDone(line)}, nil
+func (d *NativeOpenAICompatibleDriver) NormalizeStreamLine(line []byte, logicalModel string) (ExecutionStreamChunk, error) {
+	return normalizeExecutionStreamLine(line, logicalModel)
 }
 
 // BifrostDriverConfig 仅接受环境注入值，禁止在代码中保存真实内部 Token。
@@ -215,7 +339,10 @@ func (d *BifrostDriver) execute(ctx context.Context, in ExecutionRequest, stream
 	providerModel, ok := d.models[in.LogicalModel]
 	provider, providerModelName, mapped := strings.Cut(providerModel, "/")
 	if !ok || !mapped || strings.TrimSpace(provider) == "" || strings.TrimSpace(providerModelName) == "" {
-		attempt := ExecutionAttempt{Driver: d.Name(), StartedAt: started, FinishedAt: time.Now(), Outcome: "failed"}
+		attempt := newExecutionAttempt(d.Name(), in, providerModel, started)
+		attempt.FinishedAt = time.Now()
+		attempt.Outcome = "failed"
+		attempt.ErrorClass = "model_mapping_error"
 		return &ExecutionResponse{Attempt: attempt}, fmt.Errorf("Bifrost 模型未显式映射: %s", in.LogicalModel)
 	}
 	body := cloneExecutionBody(in.Body)
@@ -228,10 +355,11 @@ func (d *BifrostDriver) execute(ctx context.Context, in ExecutionRequest, stream
 		client = d.streamClient
 	}
 	resp, err := executeHTTPRequest(ctx, client, buildChatURL(d.baseURL), d.token, in.RequestID, body, stream)
-	attempt := ExecutionAttempt{Driver: d.Name(), ProviderModel: providerModel, StartedAt: started}
+	attempt := newExecutionAttempt(d.Name(), in, providerModel, started)
 	if err != nil {
 		attempt.FinishedAt = time.Now()
 		attempt.Outcome = statusFromErr(err)
+		attempt.ErrorClass = executionNetworkErrorClass(err)
 		attempt.ResultUnknown = true
 		return &ExecutionResponse{Attempt: attempt}, err
 	}
@@ -244,16 +372,18 @@ func (d *BifrostDriver) execute(ctx context.Context, in ExecutionRequest, stream
 	if readErr != nil {
 		attempt.FinishedAt = time.Now()
 		attempt.Outcome = "failed"
+		attempt.ErrorClass = "response_read_error"
 		attempt.ResultUnknown = true
 		return &ExecutionResponse{Attempt: attempt}, readErr
 	}
-	publicBody, usage, valid := normalizeBifrostJSON(raw, resp.StatusCode >= 200 && resp.StatusCode < 300, false)
+	publicBody, usage, valid := normalizeExecutionJSON(raw, resp.StatusCode >= 200 && resp.StatusCode < 300, false, in.LogicalModel)
 	if !valid && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		resp.StatusCode = http.StatusBadGateway
 		resp.Status = "502 Bad Gateway"
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		attempt.Outcome = "failed"
+		attempt.ErrorClass = "upstream_response_error"
 		publicBody = publicExecutionError("upstream_error", "上游服务调用失败")
 	} else {
 		attempt.Outcome = "success"
@@ -264,15 +394,20 @@ func (d *BifrostDriver) execute(ctx context.Context, in ExecutionRequest, stream
 	return &ExecutionResponse{Response: resp, Usage: usage, Attempt: attempt}, nil
 }
 
-func (d *BifrostDriver) NormalizeStreamLine(line []byte) (ExecutionStreamChunk, error) {
+func (d *BifrostDriver) NormalizeStreamLine(line []byte, logicalModel string) (ExecutionStreamChunk, error) {
+	return normalizeExecutionStreamLine(line, logicalModel)
+}
+
+// normalizeExecutionStreamLine 为 Native 与 Bifrost 使用同一公开 SSE 白名单、错误识别和 Usage 语义。
+func normalizeExecutionStreamLine(line []byte, logicalModel string) (ExecutionStreamChunk, error) {
 	trimmed := bytes.TrimSpace(line)
 	if !bytes.HasPrefix(trimmed, []byte("data:")) {
 		// 部分上游会在流式请求失败时以 HTTP 200 返回普通 JSON 错误，不能把它当作 SSE 文本透传。
 		if bytes.HasPrefix(trimmed, []byte("{")) {
-			if _, _, valid := normalizeBifrostJSON(trimmed, true, false); !valid {
-				return ExecutionStreamChunk{}, errors.New("Bifrost 流式响应返回业务错误或非法 JSON")
+			if _, _, valid := normalizeExecutionJSON(trimmed, true, false, logicalModel); !valid {
+				return ExecutionStreamChunk{}, errors.New("执行驱动流式响应返回业务错误或非法 JSON")
 			}
-			return ExecutionStreamChunk{}, errors.New("Bifrost 流式响应未使用 SSE 格式")
+			return ExecutionStreamChunk{}, errors.New("执行驱动流式响应未使用 SSE 格式")
 		}
 		if len(trimmed) == 0 {
 			return ExecutionStreamChunk{PublicLine: line}, nil
@@ -287,9 +422,9 @@ func (d *BifrostDriver) NormalizeStreamLine(line []byte) (ExecutionStreamChunk, 
 	if len(data) == 0 {
 		return ExecutionStreamChunk{PublicLine: line}, nil
 	}
-	public, usage, valid := normalizeBifrostJSON(data, true, true)
+	public, usage, valid := normalizeExecutionJSON(data, true, true, logicalModel)
 	if !valid {
-		return ExecutionStreamChunk{}, errors.New("Bifrost SSE 返回业务错误或非法数据")
+		return ExecutionStreamChunk{}, errors.New("执行驱动 SSE 返回业务错误或非法数据")
 	}
 	return ExecutionStreamChunk{PublicLine: append(append([]byte("data: "), public...), '\n'), Usage: usage}, nil
 }
@@ -330,12 +465,12 @@ func cloneExecutionBody(body map[string]interface{}) map[string]interface{} {
 	return cloned
 }
 
-func normalizeBifrostJSON(raw []byte, requireChoices, allowUsageOnly bool) ([]byte, ExecutionUsage, bool) {
+func normalizeExecutionJSON(raw []byte, requireChoices, allowUsageOnly bool, logicalModel string) ([]byte, ExecutionUsage, bool) {
 	var value map[string]interface{}
 	if json.Unmarshal(raw, &value) != nil {
 		return nil, ExecutionUsage{}, false
 	}
-	if hasBifrostError(value) {
+	if hasExecutionError(value) {
 		return nil, ExecutionUsage{}, false
 	}
 	usage := parseExecutionUsage(raw)
@@ -343,12 +478,12 @@ func normalizeBifrostJSON(raw []byte, requireChoices, allowUsageOnly bool) ([]by
 	if requireChoices && (!choicesPresent || emptyJSONList(choices)) && !(allowUsageOnly && usage.Present) {
 		return nil, usage, false
 	}
-	sanitizeBifrostResponse(value)
+	sanitizeExecutionResponse(value, logicalModel)
 	public, err := json.Marshal(value)
 	return public, usage, err == nil
 }
 
-func hasBifrostError(value map[string]interface{}) bool {
+func hasExecutionError(value map[string]interface{}) bool {
 	if flag, ok := value["is_bifrost_error"].(bool); ok && flag {
 		return true
 	}
@@ -365,8 +500,8 @@ func emptyJSONList(value interface{}) bool {
 	return !ok || len(items) == 0
 }
 
-// sanitizeBifrostResponse 顶层只允许 OpenAI 兼容字段，未知字段默认不对外公开。
-func sanitizeBifrostResponse(value map[string]interface{}) {
+// sanitizeExecutionResponse 顶层只允许 G1 已冻结的 OpenAI 兼容字段，未知字段默认不对外公开。
+func sanitizeExecutionResponse(value map[string]interface{}, logicalModel string) {
 	allowed := map[string]struct{}{
 		"id": {}, "object": {}, "created": {}, "model": {}, "choices": {}, "usage": {},
 		"system_fingerprint": {}, "service_tier": {},
@@ -376,10 +511,13 @@ func sanitizeBifrostResponse(value map[string]interface{}) {
 			delete(value, key)
 		}
 	}
-	redactBifrostFields(value)
+	if logicalModel != "" {
+		value["model"] = logicalModel
+	}
+	redactExecutionInternalFields(value)
 }
 
-func redactBifrostFields(value interface{}) {
+func redactExecutionInternalFields(value interface{}) {
 	switch typed := value.(type) {
 	case map[string]interface{}:
 		for key, child := range typed {
@@ -387,12 +525,12 @@ func redactBifrostFields(value interface{}) {
 			case "extra_fields", "routing_info", "provider_response_headers", "is_bifrost_error", "api_key", "api_key_name", "bifrost_key_name":
 				delete(typed, key)
 			default:
-				redactBifrostFields(child)
+				redactExecutionInternalFields(child)
 			}
 		}
 	case []interface{}:
 		for _, child := range typed {
-			redactBifrostFields(child)
+			redactExecutionInternalFields(child)
 		}
 	}
 }

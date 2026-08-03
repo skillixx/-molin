@@ -2218,6 +2218,10 @@ GET   /api/admin/token/usage
 
 > 文字执行驱动契约：Chat Completions 路由在现有 SK/JWT 鉴权、模型可见范围、SK 模型范围和资产门禁之后调用统一 `ExecutionDriver`。部署默认 `native`，可显式切换 `bifrost`。Bifrost 响应会移除 `extra_fields`、路由信息、供应商响应头和内部 Key 名称；HTTP 200 业务错误仍按失败处理。Usage 缺失记录 `pending_reconcile`，禁止按 `max_tokens` 猜测扣费。
 
+> G0/G1 商业账本契约：公开路由在 G1 保持不变；`request_id`、Project、SK、逻辑模型、执行模型、三类正交状态、标准 Usage 和执行尝试写入契约见 [`ai-gateway-g0-g1-contract.md`](./ai-gateway-g0-g1-contract.md)。Migration `000058` 只创建 Expand Schema，不代表 RequestOrchestrator、新计费或新查询接口已经启用。
+
+> Request ID：全局中间件返回的 `X-Request-ID` 与 Token Handler、执行驱动和账本使用同一值。客户端自带 ID 仅允许 1～128 位字母、数字和 `-_.:`；非法值会被替换为服务端生成值。
+
 供应商 Body 参数：
 
 | 字段 | 类型 | 必填 | 说明 |

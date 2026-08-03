@@ -785,3 +785,32 @@ INSERT INTO user_roles (user_id, role_id)
 - 优先级：P0（生产阻断）/ P1（核心功能缺陷）/ P2（一般缺陷）/ P3（体验问题）。
 - P0、P1 缺陷必须在下一个迭代前修复，不得上线。
 - 每个缺陷 Issue 必须包含：复现步骤、期望结果、实际结果、截图或日志。
+## AI 网关 Phase 1 G0/G1 验收
+
+### G0 证据
+
+- `tests/audit-stage1-final.md`：核心商业闭环 37/37 通过。
+- `tests/audit-stage1-closing-confirm.md`：阶段收尾确认通过。
+- `docs/frontend-acceptance-stage1-pm-review.md`：产品经理前端业务验收通过；完整核心闭环产品复核必须另行签收。
+- `docs/ai-gateway-g0-g1-acceptance.md`：产品经理采纳 37/37 QA、权限收口和前端证据，G0 完整核心闭环产品验收通过。
+
+### G1 自动化矩阵
+
+- `go test -count=1 ./internal/modules/token_gateway/...`。
+- Native/Bifrost 标准响应与 input/output/reasoning/cached/total Usage 等价。
+- 非流式、SSE、`include_usage`、`[DONE]`、断连、超时和结果未知。
+- 401、429、500、HTTP 200 业务错误、非法 JSON、缺少 choices。
+- 禁止自动 fallback；公开响应和日志不泄露内部 Token、路由、Key 名称和供应商错误正文。
+- 内部入口缺失/错误 Token 固定 401；重复 Authorization 在上游前以 Nginx 400 或鉴权 401 拒绝。
+- `000058` 必须包含四张 Expand 表、正交状态、唯一约束和 Decimal 精度，且 down 不执行破坏性删除。
+- Bifrost 配置必须同时包含百炼和 OpenRouter，并且 Key 只能引用环境变量。
+
+### G1 Linux POC
+
+必须在固定 Bifrost 镜像上复验两个上游的普通响应、SSE、Usage、错误、内部鉴权、单节点退出、恢复和配置/镜像回滚。产生费用的真实调用需要负责人明确授权；Fake 通过不得替代真实 POC。证据统一写入 `docs/ai-gateway-g1-poc-report.md`。
+
+性能测试分为两种不可混用的模式。`real_upstream_observation` 使用真实百炼做端到端观察，不判定纯网关开销；`controlled` 使用 `infra/testsupport/fixed-openai-upstream/main.go` 提供固定 JSON、SSE、Usage 和分片，Native/Bifrost 指向同一实例，不连接外网。受控模式先执行 5 组等量预热，再执行 20 组交替顺序的正式配对样本，共 80 次；每组按 `Bifrost - Native` 计算，所有请求及协议检查必须成功，非流式差值 P95 不超过 20ms，流式 TTFT 差值 P95 不超过 30ms。
+
+`infra/scripts/run-bifrost-g1-benchmark.sh` 必须显式接收模式，保存权限 `0600` 的独立 TSV，记录模式、顺序、原始耗时和差值并输出 SHA256。失败文件不得覆盖或删除。真实调用授权与 4 次最小 POC 授权相互独立；受控模式不得携带真实上游 SK。
+
+Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration-000058.sh` 在隔离临时 MySQL 8 容器验证，必须确认项目数据库未被连接，并取得首次 up、保留结构 down、re-up 后 `58/dirty=0` 及租户/预算/幂等约束证据。

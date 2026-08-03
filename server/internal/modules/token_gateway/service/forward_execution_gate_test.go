@@ -62,7 +62,7 @@ func (d *countingExecutionDriver) ChatCompletionStream(ctx context.Context, req 
 	return d.ChatCompletion(ctx, req)
 }
 
-func (d *countingExecutionDriver) NormalizeStreamLine(line []byte) (ExecutionStreamChunk, error) {
+func (d *countingExecutionDriver) NormalizeStreamLine(line []byte, _ string) (ExecutionStreamChunk, error) {
 	return ExecutionStreamChunk{PublicLine: line}, nil
 }
 

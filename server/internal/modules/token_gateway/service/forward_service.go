@@ -493,6 +493,7 @@ func (s *ForwardService) Forward(ctx context.Context, w http.ResponseWriter, in 
 	}
 	executionRequest := ExecutionRequest{
 		RequestID: requestID, LogicalModel: in.Model, ProviderModel: *tm.UpstreamModel,
+		ProviderCode: ch.Code, EndpointCode: ch.Code, AttemptNo: 1,
 		BaseURL: ch.BaseURL, APIKey: apiKey, Body: in.Body,
 	}
 
@@ -671,7 +672,7 @@ func (s *ForwardService) forwardStream(_ context.Context, w http.ResponseWriter,
 	for {
 		line, err := reader.ReadBytes('\n')
 		if len(line) > 0 {
-			chunk, normalizeErr := driver.NormalizeStreamLine(line)
+			chunk, normalizeErr := driver.NormalizeStreamLine(line, in.Model)
 			if normalizeErr != nil {
 				attempt.FinishedAt = time.Now()
 				attempt.Outcome = "failed"

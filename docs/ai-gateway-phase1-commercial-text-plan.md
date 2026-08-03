@@ -9,6 +9,8 @@
 > 证据声明：本文描述目标设计，不代表 Bifrost、真实支付、生产上游或商业计费已经启用。
 
 > 2026-08-03 执行层增量：已实现 `ExecutionDriver`、Native 默认驱动和 Bifrost 文字驱动，并使用 Fake Bifrost 完成契约测试。该增量只替换鉴权后上游执行层，不代表商业账本、价格引擎、内容审核、限流或生产 Bifrost 已完成；详见 `docs/bifrost-driver-development.md`。
+
+> G0/G1 增量：`000058` 已冻结 `ai_projects`、`ai_requests`、`ai_usage_items`、`ai_execution_attempts` 的 Expand Schema 与 Go 模型，并补充 Native/Bifrost 等价和双上游配置契约。新表尚未接入现有转发读写，真实 Linux 双上游 POC 仍以 `docs/ai-gateway-g1-poc-report.md` 为准；未关闭前不得进入 G2。
 >
 > Phase 0 冻结依据：[`ai-gateway-phase0-freeze-record.md`](./ai-gateway-phase0-freeze-record.md)。
 
@@ -354,12 +356,13 @@ Bifrost 负责协议转换、统一响应、流式转发和受控路由。墨灵
 ### 10.3 POC 验收
 
 - 原生 Go 与 Bifrost 的响应字段和错误分类一致。
-- 非流式附加延迟 P95 目标不超过 20ms；流式 TTFT 增量目标不超过 30ms。
-- 成功率差异不超过 0.1 个百分点。
+- Bifrost 路径附加延迟使用不联网、固定 JSON/SSE/Usage/分片的受控上游测量：非流式配对差值 P95 不超过 20ms，流式 TTFT 配对差值 P95 不超过 30ms。
+- 受控测试至少 20 组、交替顺序、每组按 `Bifrost - Native` 计算；正式样本前完成等量预热，80 次正式请求必须全部成功。
+- 真实百炼/OpenRouter 继续验证端到端成功率、协议和 Usage；其延迟只作观察，不用于归因网关自身开销。短样本未观察到成功率差异不等于统计证明差异小于 0.1 个百分点。
 - Usage 完整率、断连行为、超时、429 和取消语义通过契约测试。
 - 单实例退出时不重复请求、不重复结算；可按模型回切原生驱动。
 
-这些指标是墨灵 POC 门槛，不是第三方性能承诺。
+这些指标是墨灵 POC 门槛，不是第三方性能承诺。2026-08-03 QA 与产品经理在受控测试执行前批准上述口径修正，门槛数值未降低；此前真实上游失败轮次必须永久保留。
 
 ## 11. Project、SK、预算与并发
 

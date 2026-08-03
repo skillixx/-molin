@@ -2,6 +2,11 @@
 
 set -euo pipefail
 
+if [[ "${AI_GATEWAY_UPSTREAM_CHECK_APPROVED:-NO}" != "YES" ]]; then
+  echo "UPSTREAM_CHECK=APPROVAL_REQUIRED network_requests=2 paid_model_calls=1 max_output_tokens=1"
+  exit 3
+fi
+
 # 仅从服务器受限环境文件读取密钥，避免密钥出现在命令参数和日志中。
 env_file="${1:-/home/pc/molin/secrets/bifrost.env}"
 if [[ ! -f "${env_file}" ]]; then
@@ -17,9 +22,15 @@ set +a
 : "${BAILIAN_API_KEY:?BAILIAN_API_KEY 未配置}"
 : "${OPENROUTER_API_KEY:?OPENROUTER_API_KEY 未配置}"
 
-openrouter_body="$(mktemp)"
-bailian_body="$(mktemp)"
-trap 'rm -f "${openrouter_body}" "${bailian_body}"' EXIT
+tmp_dir="$(mktemp -d)"
+trap 'rm -rf "${tmp_dir}"' EXIT
+openrouter_body="${tmp_dir}/openrouter.body"
+bailian_body="${tmp_dir}/bailian.body"
+openrouter_headers="${tmp_dir}/openrouter.headers"
+bailian_headers="${tmp_dir}/bailian.headers"
+printf 'Authorization: Bearer %s\n' "${OPENROUTER_API_KEY}" >"${openrouter_headers}"
+printf 'Authorization: Bearer %s\n' "${BAILIAN_API_KEY}" >"${bailian_headers}"
+chmod 600 "${openrouter_headers}" "${bailian_headers}"
 
 # OpenRouter 的密钥信息接口只验证鉴权，不调用计费模型。
 openrouter_code="$(curl -sS \
@@ -28,7 +39,7 @@ openrouter_code="$(curl -sS \
   -o "${openrouter_body}" \
   -w '%{http_code}' \
   'https://openrouter.ai/api/v1/auth/key' \
-  -H "Authorization: Bearer ${OPENROUTER_API_KEY}")"
+  -H @"${openrouter_headers}")"
 echo "OPENROUTER_HTTP=${openrouter_code}"
 
 if [[ "${openrouter_code}" != "200" ]]; then
@@ -44,7 +55,7 @@ bailian_code="$(curl -sS \
   -o "${bailian_body}" \
   -w '%{http_code}' \
   'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions' \
-  -H "Authorization: Bearer ${BAILIAN_API_KEY}" \
+  -H @"${bailian_headers}" \
   -H 'Content-Type: application/json' \
   -d '{"model":"qwen-turbo","messages":[{"role":"user","content":"只回答OK"}],"max_tokens":1}')"
 echo "BAILIAN_HTTP=${bailian_code}"

@@ -134,6 +134,7 @@ func (s *ForwardService) ChatOnce(ctx context.Context, oin ChatOnceInput) (*Chat
 	// ⑤ 通过统一驱动发起上游调用；单次执行不进行隐式跨供应商 fallback。
 	executed, err := driver.ChatCompletion(ctx, ExecutionRequest{
 		RequestID: in.RequestID, LogicalModel: in.Model, ProviderModel: *tm.UpstreamModel,
+		ProviderCode: ch.Code, EndpointCode: ch.Code, AttemptNo: 1,
 		BaseURL: ch.BaseURL, APIKey: apiKey, Body: in.Body,
 	})
 	if err != nil {

@@ -395,6 +395,23 @@ created 标记对象均已清理，才删除 `migration_000055_permission_owners
 - `token_usage_logs`
 - `token_quota_accounts`
 
+#### 3.5.1 AI 网关 Phase 1 G0/G1 Expand Schema
+
+Migration `000058_create_ai_gateway_ledger_expand` 新增以下商业请求账本表，但不切换旧 `token_usage_logs` 读写：
+
+- `ai_projects`：用户与 Project 的消费归集边界，冻结预算模式、月预算和 IANA 时区。
+- `ai_requests`：请求主记录，保存 request_id、Project、SK、逻辑/执行模型及审核、执行、计费三个正交状态。
+- `ai_usage_items`：标准化 Usage 与未来不可变计费行，数量为 `DECIMAL(30,10)`，单价和金额为 `DECIMAL(20,8)`。
+- `ai_execution_attempts`：Native/Bifrost 的执行尝试、Provider、内部端点、上游请求 ID、耗时和 Usage 摘要。
+
+关键唯一约束：`ai_requests.request_id`、`(user_id,idempotency_key)`、`(request_id,meter_type,source,sequence_no)`、`(request_id,attempt_no)`。新表禁止保存提示词、响应正文和明文密钥。G1 应用回滚保留 Expand Schema 与审计记录，物理清理由后续单独审批的 Contract Migration 承担。
+
+`ai_projects` 和现有 `api_keys` 分别增加 `(id,user_id)` 复合唯一键，`ai_requests` 通过对应复合外键保证 Project、SK 和请求用户属于同一租户。G1 不新增 `api_keys.project_id/scope_mode`；Project SK 创建与显式模型范围属于 G2。
+
+Project 预算合法组合固定为：`disabled + monthly_budget=NULL`，或 `soft/hard + monthly_budget>0`。`soft` 超限仅告警并继续，`hard` 在预计消费越限时于上游调用前拒绝；月周期按 Project 的 IANA 时区从当地月初计算。G1 只冻结约束，准确预占、并发控制和拒绝逻辑在 G3/G4 实现。
+
+完整字段与状态契约见 [`ai-gateway-g0-g1-contract.md`](./ai-gateway-g0-g1-contract.md)。
+
 ## 4. 关键状态
 
 用户状态：
