@@ -165,10 +165,11 @@ func (h *SMSAdminHandler) SetScene(w http.ResponseWriter, r *http.Request) {
 	}
 	item, err := h.svc.SetScene(r.Context(), r.PathValue("scene"), request.TemplateID, request.Version, middleware.UserIDFromContext(r.Context()), *request.Enabled)
 	if err != nil {
+		h.recordAudit(r, "scene_binding_update", "scene", r.PathValue("scene"), map[string]any{"template_id": request.TemplateID, "enabled": *request.Enabled, "version": request.Version, "outcome": "failed"})
 		smsAdminError(w, err)
 		return
 	}
-	h.recordAudit(r, "scene_binding_update", "scene", r.PathValue("scene"), map[string]any{"template_id": request.TemplateID, "enabled": *request.Enabled, "version": item.Version})
+	h.recordAudit(r, "scene_binding_update", "scene", r.PathValue("scene"), map[string]any{"template_id": request.TemplateID, "enabled": *request.Enabled, "version": item.Version, "outcome": "succeeded"})
 	response.JSON(w, http.StatusOK, item)
 }
 
@@ -308,10 +309,11 @@ func (h *SMSAdminHandler) SetTemplateStatus(w http.ResponseWriter, r *http.Reque
 	}
 	template, err := h.svc.SetTemplateStatus(r.Context(), id, request.Version, *request.Enabled)
 	if err != nil {
+		h.recordAudit(r, "template_status_update", "template", strconv.FormatUint(id, 10), map[string]any{"enabled": *request.Enabled, "version": request.Version, "outcome": "failed"})
 		smsAdminError(w, err)
 		return
 	}
-	h.recordAudit(r, "template_status_update", "template", strconv.FormatUint(id, 10), map[string]any{"enabled": *request.Enabled, "version": template.Version})
+	h.recordAudit(r, "template_status_update", "template", strconv.FormatUint(id, 10), map[string]any{"enabled": *request.Enabled, "version": template.Version, "outcome": "succeeded"})
 	response.JSON(w, http.StatusOK, smsTemplateStatusResponse{ID: template.ID, LocalEnabled: template.LocalEnabled, Version: template.Version})
 }
 

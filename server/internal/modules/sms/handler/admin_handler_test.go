@@ -23,6 +23,7 @@ type fakeSMSAdminApplication struct {
 	statusCalls    int
 	syncResult     model.TemplateSyncResult
 	sceneResult    *model.AdminScene
+	sceneErr       error
 	testResult     service.TestSendResult
 	testErr        error
 	templateItems  []model.Template
@@ -42,7 +43,7 @@ func (f *fakeSMSAdminApplication) ListScenes(context.Context) ([]model.AdminScen
 	return nil, nil
 }
 func (f *fakeSMSAdminApplication) SetScene(context.Context, string, uint64, uint64, uint64, bool) (*model.AdminScene, error) {
-	return f.sceneResult, nil
+	return f.sceneResult, f.sceneErr
 }
 func (f *fakeSMSAdminApplication) ListSendLogs(context.Context, model.SendLogListFilter) ([]model.SendLog, int64, error) {
 	return f.sendLogItems, int64(len(f.sendLogItems)), nil
@@ -203,6 +204,39 @@ func TestSMSAdminTestSendRateLimitKeepsHeaderAndBodyConsistent(t *testing.T) {
 	data, ok := body.Data.(map[string]any)
 	if body.Code != 42900 || !ok || data["retry_after_seconds"] != float64(27) {
 		t.Fatalf("限流响应体必须与 Retry-After 一致: %#v", body)
+	}
+}
+
+func TestSMSAdminFailedConfigurationWritesRecordSafeAudit(t *testing.T) {
+	app := &fakeSMSAdminApplication{sceneErr: service.ErrSMSSceneVersionConflict, statusErr: service.ErrSMSTemplateVersionConflict}
+	audit := &fakeSMSAuditRecorder{}
+	h := NewSMSAdminHandler(app, audit)
+
+	sceneRequest := httptest.NewRequest(http.MethodPut, "/api/admin/sms/scenes/register", bytes.NewBufferString(`{"template_id":7,"enabled":true,"version":3}`))
+	sceneRequest.SetPathValue("scene", "register")
+	statusRequest := httptest.NewRequest(http.MethodPatch, "/api/admin/sms/templates/7/status", bytes.NewBufferString(`{"enabled":false,"version":4}`))
+	statusRequest.SetPathValue("id", "7")
+	for _, item := range []struct {
+		call func(http.ResponseWriter, *http.Request)
+		req  *http.Request
+	}{
+		{call: h.SetScene, req: sceneRequest},
+		{call: h.SetTemplateStatus, req: statusRequest},
+	} {
+		recorder := httptest.NewRecorder()
+		item.call(recorder, item.req)
+		if recorder.Code != http.StatusConflict {
+			t.Fatalf("配置冲突应返回 409: status=%d body=%s", recorder.Code, recorder.Body.String())
+		}
+	}
+	if len(audit.records) != 2 {
+		t.Fatalf("两类失败写操作都必须记录审计: %#v", audit.records)
+	}
+	for _, record := range audit.records {
+		encoded, err := json.Marshal(record.summary)
+		if err != nil || !strings.Contains(string(encoded), `"outcome":"failed"`) || strings.Contains(string(encoded), "phone") || strings.Contains(string(encoded), "idempotency") {
+			t.Fatalf("失败审计摘要不安全或不完整: action=%s summary=%s err=%v", record.action, encoded, err)
+		}
 	}
 }
 
