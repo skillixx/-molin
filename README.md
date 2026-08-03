@@ -252,7 +252,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | 数据范围中间件（组管理员仅可见本组用户，超管 `scope:all` 不受限，已接入管理员用户列表/详情） | `server/internal/middleware/scope.go`、`modules/iam/service/scope_service.go`、`modules/auth/handler/auth_handler.go` | ✅ 已完成 |
 | Migration 000015（用户分组基础表 ×4）、000016（`group:manage`/`scope:all` 权限码 seed） | `server/migrations/` | ✅ 已完成 |
 | 阿里云短信验证码阶段 1（数据基础、Sender 适配、五场景关闭态与前端容错） | `modules/sms/`、`modules/auth/`、`web/user-console/`、`server/migrations/000058*` | ✅ PR #314 已合并，阶段 1 正式闭环（`main` 提交 `3aa8f3e`） |
-| 阿里云短信验证码阶段 2（模板同步、场景绑定、9 个管理 API 与安全测试发送） | `modules/sms/`、`modules/auth/`、`modules/iam/`、`server/migrations/000059*` | 🧪 PR #315 已创建，本地回归及 MySQL 8/Redis 7/Linux race CI 通过；等待 QA/PM、正式评审、合并及另行授权的真实验证 |
+| 阿里云短信验证码阶段 2（模板同步、场景绑定、9 个管理 API 与安全测试发送） | `modules/sms/`、`modules/auth/`、`modules/iam/`、`server/migrations/000059*` | ⛔ PR #315 的代码、CI、部署和受控收件证据已形成，但测试服仅 1 个合格模板且五场景共用，违反独立模板规则；QA/PM 验收不通过，禁止合并及进入阶段 3 |
 
 ### 后端 B（product / order / billing / finance_consumer）
 

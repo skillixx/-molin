@@ -649,18 +649,18 @@ server/internal/modules/asset/
 
 九个管理接口必须逐项覆盖：
 
-> 开发及 CI 快照（2026-08-03）：九条路由及最小权限映射、九接口 401/403/MFA 矩阵、模板适配器、同步失败零写入与总截止、同步去重、模板启停 CAS、固定五场景、同版本场景冲突、测试发送并发单外呼、幂等隔离与冲突、白名单、双维限流失败关闭、审计/响应脱敏、全库 Go 测试、vet、依赖校验和敏感扫描已通过。PR #315 预合并修复提交 `9686433` 的 GitHub Actions 运行 #373 已在 MySQL 8、Redis 7 和 Linux race 环境通过。下表状态仍明确保留独立 QA HTTP 验收及获批真实阿里云验证，自动化不能代替验收签字。
+> 开发及验证快照（2026-08-03）：九条路由及最小权限映射、九接口 401/403/MFA 矩阵、模板适配器、同步失败零写入与总截止、同步去重、模板启停 CAS、固定五场景、同版本场景冲突、测试发送并发单外呼、幂等隔离与冲突、白名单、双维限流失败关闭、审计/响应脱敏、全库 Go 测试、vet、依赖校验和敏感扫描已通过。PR #315 提交 `34b69a4` 的 GitHub Actions 运行 #375 已在 MySQL 8、Redis 7 和 Linux race 环境通过；隔离测试服也已完成模板同步、五场景绑定、管理测试发送和五入口真实发码/收件。下表仍保留独立 QA HTTP 与业务 E2E 验收，自动化及开发侧真实验证不能替代验收签字。
 
 | 编号 | 方法与路径 | 权限 | 核心检查 | 当前状态 |
 |---|---|---|---|---|
 | SMS-A01 | `GET /api/admin/sms/summary` | `sms:template:view` | 统计口径正确；从未同步时 `last_synced_at=null`；无客户端多页聚合假设 | 自动化通过；QA HTTP 待验收 |
 | SMS-A02 | `GET /api/admin/sms/templates` | `sms:template:view` | 筛选、边界分页、空列表及 D-95 `{items,page,page_size,total}` | 自动化通过；QA HTTP 待验收 |
 | SMS-A03 | `GET /api/admin/sms/templates/{id}` | `sms:template:view` | 完整字段、可空字段、404/40400 和敏感信息边界 | 自动化通过；QA HTTP 待验收 |
-| SMS-A04 | `POST /api/admin/sms/templates/sync` | `sms:template:sync` | 无 body；幂等计数；供应商失败无部分写；后端总截止 10 秒 | 自动化通过；真实阿里云待授权 |
+| SMS-A04 | `POST /api/admin/sms/templates/sync` | `sms:template:sync` | 无 body；幂等计数；供应商失败无部分写；后端总截止 10 秒 | 自动化及真实阿里云重复同步通过；QA HTTP 待复核 |
 | SMS-A05 | `GET /api/admin/sms/scenes` | `sms:template:view` | 固定五场景、D-95；未绑定字段为 `null`、`enabled=false`、`version=0` | 自动化通过；QA HTTP 待验收 |
 | SMS-A06 | `PUT /api/admin/sms/scenes/{scene}` | `sms:template:manage` | 只接收 `template_id/enabled/version`；不接收 `sign_name`；版本冲突返回 409/40900 | 自动化通过；QA HTTP 待验收 |
 | SMS-A07 | `PATCH /api/admin/sms/templates/{id}/status` | `sms:template:manage` | 乐观锁、审核状态约束及有效绑定阻止停用 | 自动化通过；QA HTTP 待验收 |
-| SMS-A08 | `POST /api/admin/sms/templates/{id}/test-send` | `sms:template:test` | 白名单、场景绑定、`Idempotency-Key`、双维度限流和受理语义 | 自动化通过；真实发送待授权 |
+| SMS-A08 | `POST /api/admin/sms/templates/{id}/test-send` | `sms:template:test` | 白名单、场景绑定、`Idempotency-Key`、双维度限流和受理语义 | 自动化通过；真实发送已受理且原白名单手机确认收件；QA HTTP 待复核 |
 | SMS-A09 | `GET /api/admin/sms/send-logs` | `sms:template:view` | D-95、筛选、可空字段、RFC3339 闭区间、开始不晚于结束、最大 31 天及脱敏 | 自动化通过；QA HTTP 待验收 |
 
 四个权限必须分别创建最小权限管理员测试，不能只用超级管理员覆盖：
@@ -692,11 +692,11 @@ server/internal/modules/asset/
 
 | 场景 | 发码入口 | 后续业务 | 必须验证 | 当前状态 |
 |---|---|---|---|---|
-| `register` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 统一注册 | 独立注册模板、正确签名、验证码可单次消费 | 待执行 |
-| `login` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 手机验证码登录 | 独立登录模板，不可与注册验证码串用 | 待执行 |
-| `reset_password` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 重置密码 | 独立重置模板、成功后旧会话失效 | 待执行 |
-| `bind_phone` | `POST /api/me/verification-codes/phone`，body 仅含新 `phone` | 换绑手机号 | 必须登录；公开端点传该 scene 被拒；成功后手机号更新 | 待执行 |
-| `admin_verify` | `POST /api/admin/auth/verification-codes/phone`，无 body | 管理员手机双重认证 | 发往当前管理员绑定手机号；公开端点传该 scene 被拒 | 待执行 |
+| `register` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 统一注册 | 独立注册模板、正确签名、验证码可单次消费 | 发码受理且原白名单收件；**独立注册模板/文案不通过**，后续注册与单次消费 E2E 待 QA |
+| `login` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 手机验证码登录 | 独立登录模板，不可与注册验证码串用 | 发码受理且新管理员手机收件；**独立登录模板/文案不通过**，后续登录与跨场景隔离 E2E 待 QA |
+| `reset_password` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 重置密码 | 独立重置模板、成功后旧会话失效 | 发码受理且原白名单收件；**独立重置模板/文案不通过**，后续重置与旧会话失效 E2E 待 QA |
+| `bind_phone` | `POST /api/me/verification-codes/phone`，body 仅含新 `phone` | 换绑手机号 | 必须登录；公开端点传该 scene 被拒；成功后手机号更新 | 受理/收件/验证码消费/换绑完成；**独立换绑模板/文案不通过** |
+| `admin_verify` | `POST /api/admin/auth/verification-codes/phone`，无 body | 管理员手机双重认证 | 发往当前管理员绑定手机号；公开端点传该 scene 被拒 | 受理/收件/验证码消费/MFA 建立完成；**独立管理员验证模板/文案不通过** |
 
 邮箱注册、登录、重置密码、`POST /api/me/verification-codes/email` 换绑邮箱及
 `POST /api/admin/auth/verification-codes/email` 管理员邮箱验证必须全量回归，证明短信改造未将邮箱接入短信适配器，也未错误要求 `send_status=sent`。
@@ -710,6 +710,10 @@ server/internal/modules/asset/
 | 白名单真实手机收件记录 | 指定手机收到本次正确签名、场景文案和验证码 | 全量用户送达率及长期稳定性 |
 
 真实链路验收必须保存脱敏的时间、场景、模板编码、`business_request_id`、供应商请求标识和收件确认，禁止保存验证码、完整手机号或密钥。只有外部准备项已核验、`SMS_TEST_MODE=true`、白名单非空且获得测试授权后，才允许执行真实阿里云提交和收件验证。
+
+> 本轮真实窗口共形成 7 条 `Code=OK/accepted`：管理测试 1 条、OTP 6 条。阶段要求的管理测试发送和五业务入口各覆盖 1 次；另有 1 条第一次换绑流程停止超时留下的额外 `bind_phone` 受理记录，不重复计入入口验收。用户确认最后四条收件分布为原白名单手机号 3 条、新绑定管理员手机号 1 条；`bind_phone` 和 `admin_verify` 另由验证码成功消费证明收件。窗口结束后已恢复 `SMS_ENABLED=false`、原白名单 1 个号码，运行时敏感扫描通过。
+
+> 独立验收结论：上述证据证明阿里云受理和白名单手机可达，但五场景实际共用同一模板，不能证明五种场景文案正确。产品经理按 P1 拒绝验收；QA 另要求补齐九 API 部署态 HTTP 复核、前三个公开业务后续 E2E，以及最新证据提交后的复核。
 
 ## 4. 并发与安全测试
 
