@@ -692,11 +692,11 @@ server/internal/modules/asset/
 
 | 场景 | 发码入口 | 后续业务 | 必须验证 | 当前状态 |
 |---|---|---|---|---|
-| `register` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 统一注册 | 独立注册模板、正确签名、验证码可单次消费 | 发码受理且原白名单收件；**独立注册模板/文案不通过**，后续注册与单次消费 E2E 待 QA |
-| `login` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 手机验证码登录 | 独立登录模板，不可与注册验证码串用 | 发码受理且新管理员手机收件；**独立登录模板/文案不通过**，后续登录与跨场景隔离 E2E 待 QA |
-| `reset_password` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 重置密码 | 独立重置模板、成功后旧会话失效 | 发码受理且原白名单收件；**独立重置模板/文案不通过**，后续重置与旧会话失效 E2E 待 QA |
-| `bind_phone` | `POST /api/me/verification-codes/phone`，body 仅含新 `phone` | 换绑手机号 | 必须登录；公开端点传该 scene 被拒；成功后手机号更新 | 受理/收件/验证码消费/换绑完成；**独立换绑模板/文案不通过** |
-| `admin_verify` | `POST /api/admin/auth/verification-codes/phone`，无 body | 管理员手机双重认证 | 发往当前管理员绑定手机号；公开端点传该 scene 被拒 | 受理/收件/验证码消费/MFA 建立完成；**独立管理员验证模板/文案不通过** |
+| `register` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 统一注册 | 独立注册模板、正确签名、验证码可单次消费 | 独立模板发码受理并由用户确认收件/签名/文案正确；后续注册与单次消费 E2E 待 QA |
+| `login` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 手机验证码登录 | 独立登录模板，不可与注册验证码串用 | 独立模板发码受理并由用户确认收件/签名/文案正确；后续登录与跨场景隔离 E2E 待 QA |
+| `reset_password` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 重置密码 | 独立重置模板、成功后旧会话失效 | 独立模板发码受理并由用户确认收件/签名/文案正确；后续重置与旧会话失效 E2E 待 QA |
+| `bind_phone` | `POST /api/me/verification-codes/phone`，body 仅含新 `phone` | 换绑手机号 | 必须登录；公开端点传该 scene 被拒；成功后手机号更新 | 独立模板发码受理并由用户确认收件/签名/文案正确 |
+| `admin_verify` | `POST /api/admin/auth/verification-codes/phone`，无 body | 管理员手机双重认证 | 发往当前管理员绑定手机号；公开端点传该 scene 被拒 | 独立模板发码受理并由用户确认收件/签名/文案正确 |
 
 邮箱注册、登录、重置密码、`POST /api/me/verification-codes/email` 换绑邮箱及
 `POST /api/admin/auth/verification-codes/email` 管理员邮箱验证必须全量回归，证明短信改造未将邮箱接入短信适配器，也未错误要求 `send_status=sent`。
@@ -711,9 +711,9 @@ server/internal/modules/asset/
 
 真实链路验收必须保存脱敏的时间、场景、模板编码、`business_request_id`、供应商请求标识和收件确认，禁止保存验证码、完整手机号或密钥。只有外部准备项已核验、`SMS_TEST_MODE=true`、白名单非空且获得测试授权后，才允许执行真实阿里云提交和收件验证。
 
-> 本轮真实窗口共形成 7 条 `Code=OK/accepted`：管理测试 1 条、OTP 6 条。阶段要求的管理测试发送和五业务入口各覆盖 1 次；另有 1 条第一次换绑流程停止超时留下的额外 `bind_phone` 受理记录，不重复计入入口验收。用户确认最后四条收件分布为原白名单手机号 3 条、新绑定管理员手机号 1 条；`bind_phone` 和 `admin_verify` 另由验证码成功消费证明收件。窗口结束后已恢复 `SMS_ENABLED=false`、原白名单 1 个号码，运行时敏感扫描通过。
+> 2026-08-04 五模板窗口共新增 6 条 `Code=OK/accepted`：管理测试 1 条、OTP 5 条，覆盖五个业务入口且失败 0。用户确认收到 6 条，并确认统一签名和六条文案正确。窗口结束后已恢复 `SMS_ENABLED=false`、`SMS_TEST_MODE=true` 和原白名单，健康检查为 200。历史 7 条受理记录继续保留为前次验证证据，但不与本轮计数混算。
 
-> 独立验收结论：上述证据证明阿里云受理和白名单手机可达，但五场景实际共用同一模板，不能证明五种场景文案正确。产品经理按 P1 拒绝验收；QA 另要求补齐九 API 部署态 HTTP 复核、前三个公开业务后续 E2E，以及最新证据提交后的复核。
+> 独立复验结论：五独立模板、五场景绑定、真实收件、统一签名和文案证据已关闭历史单模板 P1，当前 P0=0、P1=0。阶段 2 仍须部署最新审计修复、完成九 API 独立部署态 HTTP、补齐前三个公开业务后续 E2E，并将最新证据提交到 PR 后重新签署。
 
 ## 4. 并发与安全测试
 
