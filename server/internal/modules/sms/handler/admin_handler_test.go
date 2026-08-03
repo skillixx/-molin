@@ -57,9 +57,15 @@ type auditRecord struct {
 	summary any
 }
 
-type fakeSMSAuditRecorder struct{ records []auditRecord }
+type fakeSMSAuditRecorder struct {
+	records []auditRecord
+	err     error
+}
 
 func (f *fakeSMSAuditRecorder) Record(_ context.Context, _ *uint64, module, action string, _, _ *string, _ string, summary any) error {
+	if f.err != nil {
+		return f.err
+	}
 	if module != "sms" {
 		return errors.New("审计模块错误")
 	}
@@ -119,9 +125,25 @@ func TestSMSAdminTemplateStatusRejectsUnknownFields(t *testing.T) {
 	}
 }
 
+func TestSMSAdminTemplateStatusFailsClosedBeforeBusinessWhenAuditUnavailable(t *testing.T) {
+	for _, audit := range []smsAuditRecorder{nil, &fakeSMSAuditRecorder{err: errors.New("审计存储不可用")}} {
+		app := &fakeSMSAdminApplication{statusTemplate: &model.Template{ID: 7, LocalEnabled: true, Version: 2}}
+		h := NewSMSAdminHandler(app, audit)
+		req := httptest.NewRequest(http.MethodPatch, "/api/admin/sms/templates/7/status", bytes.NewBufferString(`{"enabled":true,"version":1}`))
+		req.SetPathValue("id", "7")
+		rec := httptest.NewRecorder()
+
+		h.SetTemplateStatus(rec, req)
+
+		if rec.Code != http.StatusInternalServerError || app.statusCalls != 0 {
+			t.Fatalf("审计不可用时必须在业务写入前失败关闭: status=%d calls=%d body=%s", rec.Code, app.statusCalls, rec.Body.String())
+		}
+	}
+}
+
 func TestSMSAdminTemplateStatusMapsAuditConflict(t *testing.T) {
 	app := &fakeSMSAdminApplication{statusErr: service.ErrSMSTemplateNotApproved}
-	h := NewSMSAdminHandler(app)
+	h := NewSMSAdminHandler(app, &fakeSMSAuditRecorder{})
 	req := httptest.NewRequest(http.MethodPatch, "/api/admin/sms/templates/7/status", bytes.NewBufferString(`{"enabled":true,"version":1}`))
 	req.SetPathValue("id", "7")
 	rec := httptest.NewRecorder()
@@ -135,7 +157,7 @@ func TestSMSAdminTemplateStatusMapsAuditConflict(t *testing.T) {
 
 func TestSMSAdminTemplateStatusMapsMissingFixedSignToUnavailable(t *testing.T) {
 	app := &fakeSMSAdminApplication{statusErr: service.ErrSMSAdminUnavailable}
-	h := NewSMSAdminHandler(app)
+	h := NewSMSAdminHandler(app, &fakeSMSAuditRecorder{})
 	req := httptest.NewRequest(http.MethodPatch, "/api/admin/sms/templates/7/status", bytes.NewBufferString(`{"enabled":true,"version":1}`))
 	req.SetPathValue("id", "7")
 	recorder := httptest.NewRecorder()
@@ -178,10 +200,10 @@ func TestSMSAdminWriteEndpointsRecordSanitizedAudit(t *testing.T) {
 			t.Fatalf("写接口应成功并审计: status=%d body=%s", recorder.Code, recorder.Body.String())
 		}
 	}
-	if len(audit.records) != 4 {
-		t.Fatalf("四类写操作必须各有审计: %#v", audit.records)
+	if len(audit.records) != 8 {
+		t.Fatalf("四类写操作必须各有请求与结果审计: %#v", audit.records)
 	}
-	wantActions := []string{"template_sync", "scene_binding_update", "template_status_update", "template_test_send"}
+	wantActions := []string{"template_sync", "template_sync", "scene_binding_update", "scene_binding_update", "template_status_update", "template_status_update", "template_test_send", "template_test_send"}
 	for index, record := range audit.records {
 		if record.action != wantActions[index] {
 			t.Fatalf("审计动作错误: got=%s want=%s", record.action, wantActions[index])
@@ -201,7 +223,7 @@ func TestSMSAdminTestSendRateLimitKeepsHeaderAndBodyConsistent(t *testing.T) {
 	h := NewSMSAdminHandler(&fakeSMSAdminApplication{
 		testResult: service.TestSendResult{RetryAfterSeconds: 27},
 		testErr:    service.ErrSMSTestSendRateLimited,
-	})
+	}, &fakeSMSAuditRecorder{})
 	req := httptest.NewRequest(http.MethodPost, "/api/admin/sms/templates/7/test-send", bytes.NewBufferString(`{"scene":"register","phone":"phone-test-a"}`))
 	req.SetPathValue("id", "7")
 	req.Header.Set("Idempotency-Key", "rate-limit-replay-key")
@@ -244,19 +266,23 @@ func TestSMSAdminFailedConfigurationWritesRecordSafeAudit(t *testing.T) {
 			t.Fatalf("配置冲突应返回 409: status=%d body=%s", recorder.Code, recorder.Body.String())
 		}
 	}
-	if len(audit.records) != 2 {
-		t.Fatalf("两类失败写操作都必须记录审计: %#v", audit.records)
+	if len(audit.records) != 4 {
+		t.Fatalf("两类失败写操作都必须记录请求与结果审计: %#v", audit.records)
 	}
-	for _, record := range audit.records {
+	for index, record := range audit.records {
 		encoded, err := json.Marshal(record.summary)
-		if err != nil || !strings.Contains(string(encoded), `"outcome":"failed"`) || strings.Contains(string(encoded), "phone") || strings.Contains(string(encoded), "idempotency") {
+		wantOutcome := `"outcome":"requested"`
+		if index%2 == 1 {
+			wantOutcome = `"outcome":"failed"`
+		}
+		if err != nil || !strings.Contains(string(encoded), wantOutcome) || strings.Contains(string(encoded), "phone") || strings.Contains(string(encoded), "idempotency") {
 			t.Fatalf("失败审计摘要不安全或不完整: action=%s summary=%s err=%v", record.action, encoded, err)
 		}
 	}
 }
 
 func TestSMSAdminRejectsTemplateAlreadyUsedByAnotherScene(t *testing.T) {
-	h := NewSMSAdminHandler(&fakeSMSAdminApplication{sceneErr: service.ErrSMSSceneTemplateInUse})
+	h := NewSMSAdminHandler(&fakeSMSAdminApplication{sceneErr: service.ErrSMSSceneTemplateInUse}, &fakeSMSAuditRecorder{})
 	request := httptest.NewRequest(http.MethodPut, "/api/admin/sms/scenes/login", bytes.NewBufferString(`{"template_id":7,"enabled":true,"version":0}`))
 	request.SetPathValue("scene", "login")
 	recorder := httptest.NewRecorder()

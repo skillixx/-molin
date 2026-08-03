@@ -20,13 +20,12 @@ func RegisterAdminRoutes(
 		middleware.BanChecker
 		middleware.AdminVerifiedChecker
 	},
-	audit ...*auditservice.AuditService,
+	audit *auditservice.AuditService,
 ) {
-	var h *handler.SMSAdminHandler
-	if len(audit) > 0 {
-		h = handler.NewSMSAdminHandler(svc, audit[0])
-	} else {
-		h = handler.NewSMSAdminHandler(svc)
+	// 审计服务是短信管理写接口的必需依赖；缺失时 Handler 会对写操作失败关闭。
+	h := handler.NewSMSAdminHandler(svc)
+	if audit != nil {
+		h = handler.NewSMSAdminHandler(svc, audit)
 	}
 	admin := func(permission string, next http.HandlerFunc) http.Handler {
 		return middleware.RequireAuth(cfg.JWTSecret, securityChecker,

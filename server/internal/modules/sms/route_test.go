@@ -53,7 +53,7 @@ func TestSMSAdminRegistersNineRoutesWithLeastPermissions(t *testing.T) {
 		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
 			security := &routeSecurityStub{permission: true, verified: true}
 			mux := http.NewServeMux()
-			RegisterAdminRoutes(mux, service.NewSMSAdminService(routeSummaryRepository{}), config.Config{JWTSecret: secret}, security, security)
+			RegisterAdminRoutes(mux, service.NewSMSAdminService(routeSummaryRepository{}), config.Config{JWTSecret: secret}, security, security, nil)
 			req := httptest.NewRequest(tc.method, tc.path, bytes.NewBufferString(tc.body))
 			req.Header.Set("Authorization", "Bearer "+token)
 			if strings.Contains(tc.path, "test-send") {
@@ -97,7 +97,7 @@ func TestSMSAdminSummaryRouteEnforcesAuthPermissionAndMFA(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			security := &routeSecurityStub{permission: tc.permission, verified: tc.verified}
 			mux := http.NewServeMux()
-			RegisterAdminRoutes(mux, service.NewSMSAdminService(routeSummaryRepository{}), config.Config{JWTSecret: secret}, security, security)
+			RegisterAdminRoutes(mux, service.NewSMSAdminService(routeSummaryRepository{}), config.Config{JWTSecret: secret}, security, security, nil)
 			req := httptest.NewRequest(http.MethodGet, "/api/admin/sms/summary", nil)
 			if tc.token != "" {
 				req.Header.Set("Authorization", "Bearer "+tc.token)
@@ -152,7 +152,7 @@ func TestAllSMSAdminRoutesRejectAuthPermissionAndMFABypass(t *testing.T) {
 			t.Run(gate.name+" "+route.method+" "+route.path, func(t *testing.T) {
 				security := &routeSecurityStub{permission: gate.permission, verified: gate.verified}
 				mux := http.NewServeMux()
-				RegisterAdminRoutes(mux, service.NewSMSAdminService(routeSummaryRepository{}), config.Config{JWTSecret: secret}, security, security)
+				RegisterAdminRoutes(mux, service.NewSMSAdminService(routeSummaryRepository{}), config.Config{JWTSecret: secret}, security, security, nil)
 				req := httptest.NewRequest(route.method, route.path, bytes.NewBufferString(route.body))
 				if gate.withToken {
 					req.Header.Set("Authorization", "Bearer "+token)
