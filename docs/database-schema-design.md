@@ -607,3 +607,12 @@ MYSQL_PASSWORD
 41. help_categories
 42. help_articles（依赖 help_categories）
 ```
+
+## 阿里云短信验证码阶段 1 增量
+
+阶段 1 migration `000058` 建立 `sms_templates`、`sms_scene_bindings`、`sms_send_logs` 三张表。短信与 DirectMail 共用 `verification_codes` 的 `code_hash`、`send_status`、`accepted_at` 和 `business_request_no`；`000058` 只增加 `provider`、`provider_request_id` 以及短信查询索引，禁止重复创建或在回滚时删除 `000055` 的邮件基础字段。
+
+- `sms_templates`：阿里云模板只读快照，`provider + template_code` 唯一。
+- `sms_scene_bindings`：五个短信场景唯一绑定模板与签名，默认关闭。
+- `sms_send_logs`：只保存脱敏手机号、独立 HMAC、模板/签名快照和平台/供应商请求标识，不保存验证码或完整手机号。
+- 手机验证码状态复用 `pending → accepted/failed`；只有 `accepted`、未使用且未过期的记录可以被消费。

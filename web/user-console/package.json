@@ -9,7 +9,8 @@
     "test:email-otp": "node --test tests/email-otp-contract.test.mjs",
     "preview": "vite preview --host 0.0.0.0 --port 4174",
     "type-check": "vue-tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:sms": "node --experimental-strip-types --test tests/privacy.test.ts tests/sms.test.ts"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.0",

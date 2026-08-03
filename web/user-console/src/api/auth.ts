@@ -12,6 +12,10 @@ import type {
   RegisterBody,
   VerificationCodeSendResult,
 } from '@/types/auth'
+import {
+  assertSmsSendAccepted,
+  type SmsSendResult,
+} from '@/utils/sms'
 
 // 发送邮箱验证码
 export function sendEmailCode(
@@ -26,12 +30,24 @@ export function sendPhoneCode(
   phone: string,
   scene: 'register' | 'login' | 'reset_password',
 ) {
-  return http.post<unknown, void>('/auth/verification-codes/phone', { phone, scene })
+  return http
+    .post<unknown, SmsSendResult>(
+      '/auth/verification-codes/phone',
+      { phone, scene },
+      { skipGlobalErrorMessage: true },
+    )
+    .then(assertSmsSendAccepted)
 }
 
 // 已登录用户更换手机号前发送验证码，scene 由服务端固定为 bind_phone
 export function sendBindPhoneCode(phone: string) {
-  return http.post<unknown, void>('/me/verification-codes/phone', { phone })
+  return http
+    .post<unknown, SmsSendResult>(
+      '/me/verification-codes/phone',
+      { phone },
+      { skipGlobalErrorMessage: true },
+    )
+    .then(assertSmsSendAccepted)
 }
 
 // 已登录用户更换邮箱前发送验证码，scene 由服务端固定为 bind_email
