@@ -24,6 +24,7 @@ type fakeSMSAdminApplication struct {
 	syncResult     model.TemplateSyncResult
 	sceneResult    *model.AdminScene
 	testResult     service.TestSendResult
+	testErr        error
 	templateItems  []model.Template
 	sendLogItems   []model.SendLog
 }
@@ -47,7 +48,7 @@ func (f *fakeSMSAdminApplication) ListSendLogs(context.Context, model.SendLogLis
 	return f.sendLogItems, int64(len(f.sendLogItems)), nil
 }
 func (f *fakeSMSAdminApplication) TestSend(context.Context, uint64, uint64, string, string, string) (service.TestSendResult, error) {
-	return f.testResult, nil
+	return f.testResult, f.testErr
 }
 
 type auditRecord struct {
@@ -177,6 +178,31 @@ func TestSMSAdminWriteEndpointsRecordSanitizedAudit(t *testing.T) {
 		if strings.Contains(text, "phone-test-a") || strings.Contains(text, "private-idempotency-key") {
 			t.Fatalf("审计摘要不得包含完整测试目标或幂等键: %s", text)
 		}
+	}
+}
+
+func TestSMSAdminTestSendRateLimitKeepsHeaderAndBodyConsistent(t *testing.T) {
+	h := NewSMSAdminHandler(&fakeSMSAdminApplication{
+		testResult: service.TestSendResult{RetryAfterSeconds: 27},
+		testErr:    service.ErrSMSTestSendRateLimited,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/sms/templates/7/test-send", bytes.NewBufferString(`{"scene":"register","phone":"phone-test-a"}`))
+	req.SetPathValue("id", "7")
+	req.Header.Set("Idempotency-Key", "rate-limit-replay-key")
+	recorder := httptest.NewRecorder()
+
+	h.TestSend(recorder, req)
+
+	if recorder.Code != http.StatusTooManyRequests || recorder.Header().Get("Retry-After") != "27" {
+		t.Fatalf("限流响应头错误: status=%d retry=%s", recorder.Code, recorder.Header().Get("Retry-After"))
+	}
+	var body response.Body
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("解析限流响应失败: %v", err)
+	}
+	data, ok := body.Data.(map[string]any)
+	if body.Code != 42900 || !ok || data["retry_after_seconds"] != float64(27) {
+		t.Fatalf("限流响应体必须与 Retry-After 一致: %#v", body)
 	}
 }
 

@@ -26,6 +26,7 @@ func TestSMSPhase2MigrationContract(t *testing.T) {
 		"idempotency_key_hash",
 		"idempotency_owner_key_hash",
 		"request_fingerprint",
+		"retry_after_seconds",
 		"uk_sms_send_logs_idempotency",
 		"uk_sms_send_logs_owner_key",
 		"sms_template_sync_locks",
@@ -47,11 +48,16 @@ func TestSMSPhase2MigrationContract(t *testing.T) {
 		"uk_sms_send_logs_idempotency",
 		"sms_template_sync_locks",
 		"DROP COLUMN variables_json",
+		"DROP COLUMN retry_after_seconds",
 		"group_ref.permission_code = permission.code",
+		"group_ref.id IS NOT NULL",
 	} {
 		if !strings.Contains(downSQL, required) {
 			t.Fatalf("阶段 2 down migration 缺少安全回滚契约 %q", required)
 		}
+	}
+	if strings.Contains(downSQL, "group_ref.permission_id") {
+		t.Fatal("group_permissions 不含 permission_id，阶段 2 down 禁止引用不存在的列")
 	}
 	if strings.Contains(upSQL, "SMS_TEMPLATE_CODE_") {
 		t.Fatal("阶段 2 migration 禁止引入模板编码环境变量")

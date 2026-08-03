@@ -128,6 +128,7 @@ type SendLog struct {
 	ProviderCode            *string    `gorm:"size:64" json:"provider_code"`
 	SubmitStatus            string     `gorm:"size:32;not null;index" json:"submit_status"`
 	FailureSummary          *string    `gorm:"size:255" json:"failure_summary"`
+	RetryAfterSeconds       *int64     `json:"-"`
 	SubmittedAt             time.Time  `json:"submitted_at"`
 	CompletedAt             *time.Time `json:"completed_at"`
 	CreatedAt               time.Time  `json:"-"`

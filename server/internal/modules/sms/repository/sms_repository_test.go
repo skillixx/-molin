@@ -134,6 +134,25 @@ func TestReserveTestSendRejectsSameAdminKeyWithChangedRequest(t *testing.T) {
 	}
 }
 
+func TestCompleteTestSendPersistsRetryAfterForIdempotentReplay(t *testing.T) {
+	repo, mock, closeDB := newSMSRepositoryMock(t)
+	defer closeDB()
+	retryAfter := int64(27)
+	mock.ExpectBegin()
+	mock.ExpectExec("UPDATE `sms_send_logs` SET .*`retry_after_seconds`=\\?.* WHERE id = \\? AND submit_status = \\?").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	if err := repo.CompleteTestSend(context.Background(), 8, "failed", nil, nil, stringPointerForRepositoryTest("测试发送频率超限"), &retryAfter, time.Now().UTC()); err != nil {
+		t.Fatalf("持久化限流恢复秒数失败: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("限流恢复秒数仓储写入不符合预期: %v", err)
+	}
+}
+
+func stringPointerForRepositoryTest(value string) *string { return &value }
+
 func TestListAdminSendLogsNeverPublishesPendingRows(t *testing.T) {
 	repo, mock, closeDB := newSMSRepositoryMock(t)
 	defer closeDB()

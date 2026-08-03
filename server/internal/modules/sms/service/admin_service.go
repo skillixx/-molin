@@ -66,7 +66,7 @@ type smsAdminQueryRepository interface {
 
 type smsAdminTestSendRepository interface {
 	ReserveTestSend(ctx context.Context, log *model.SendLog) (*model.SendLog, bool, error)
-	CompleteTestSend(ctx context.Context, id uint64, status string, providerRequestID, providerCode, failureSummary *string, completedAt time.Time) error
+	CompleteTestSend(ctx context.Context, id uint64, status string, providerRequestID, providerCode, failureSummary *string, retryAfterSeconds *int64, completedAt time.Time) error
 }
 
 type smsTestDispatcher interface {
@@ -275,12 +275,12 @@ func (s *SMSAdminService) TestSend(ctx context.Context, adminID, templateID uint
 	allowed, retryAfter, err := s.testLimiter.Allow(ctx, adminID, phoneDigest)
 	if err != nil {
 		reason := "测试发送限流服务不可用"
-		_ = s.testSendRepo.CompleteTestSend(context.WithoutCancel(ctx), reserved.ID, "failed", nil, nil, &reason, s.now().UTC())
+		_ = s.testSendRepo.CompleteTestSend(context.WithoutCancel(ctx), reserved.ID, "failed", nil, nil, &reason, nil, s.now().UTC())
 		return TestSendResult{}, ErrSMSTestSendUnavailable
 	}
 	if !allowed {
 		reason := "测试发送频率超限"
-		_ = s.testSendRepo.CompleteTestSend(context.WithoutCancel(ctx), reserved.ID, "failed", nil, nil, &reason, s.now().UTC())
+		_ = s.testSendRepo.CompleteTestSend(context.WithoutCancel(ctx), reserved.ID, "failed", nil, nil, &reason, &retryAfter, s.now().UTC())
 		return TestSendResult{RetryAfterSeconds: retryAfter}, ErrSMSTestSendRateLimited
 	}
 	providerResult, sendErr := s.testDispatcher.SendProvider(ctx, plan, phone, code, businessID)
@@ -301,7 +301,7 @@ func (s *SMSAdminService) TestSend(ctx context.Context, adminID, templateID uint
 		}
 		failure = &safe
 	}
-	if err := s.testSendRepo.CompleteTestSend(context.WithoutCancel(ctx), reserved.ID, status, providerRequestID, providerCode, failure, s.now().UTC()); err != nil {
+	if err := s.testSendRepo.CompleteTestSend(context.WithoutCancel(ctx), reserved.ID, status, providerRequestID, providerCode, failure, nil, s.now().UTC()); err != nil {
 		return TestSendResult{}, err
 	}
 	if sendErr != nil {
@@ -316,7 +316,11 @@ func replayTestSend(log *model.SendLog) (TestSendResult, error) {
 	}
 	if log.SubmitStatus == "failed" {
 		if log.FailureSummary != nil && *log.FailureSummary == "测试发送频率超限" {
-			return TestSendResult{}, ErrSMSTestSendRateLimited
+			result := TestSendResult{}
+			if log.RetryAfterSeconds != nil {
+				result.RetryAfterSeconds = *log.RetryAfterSeconds
+			}
+			return result, ErrSMSTestSendRateLimited
 		}
 		if log.FailureSummary != nil && *log.FailureSummary == "测试发送限流服务不可用" {
 			return TestSendResult{}, ErrSMSTestSendUnavailable

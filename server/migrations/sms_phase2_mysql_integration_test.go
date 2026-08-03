@@ -132,7 +132,7 @@ func assertSMSPhase2MySQLState(t *testing.T, db *sql.DB) {
 		{"sms_templates", "template_type"}, {"sms_templates", "variables_json"}, {"sms_templates", "rejection_reason"}, {"sms_templates", "provider_updated_at"},
 		{"sms_scene_bindings", "created_by"}, {"sms_send_logs", "purpose"}, {"sms_send_logs", "idempotency_scope"},
 		{"sms_send_logs", "idempotency_key_hash"}, {"sms_send_logs", "idempotency_owner_key_hash"}, {"sms_send_logs", "request_fingerprint"},
-		{"sms_send_logs", "submitted_at"}, {"sms_send_logs", "completed_at"}, {"sms_template_sync_locks", "last_synced_at"},
+		{"sms_send_logs", "retry_after_seconds"}, {"sms_send_logs", "submitted_at"}, {"sms_send_logs", "completed_at"}, {"sms_template_sync_locks", "last_synced_at"},
 	} {
 		assertSchemaCount(t, db, "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=? AND column_name=?", []any{column.table, column.name}, 1)
 	}

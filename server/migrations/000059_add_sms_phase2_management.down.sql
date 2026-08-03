@@ -16,7 +16,7 @@ LEFT JOIN role_permissions role_ref
 LEFT JOIN user_permission_overrides user_ref ON user_ref.permission_id = permission.id
 LEFT JOIN group_permissions group_ref ON group_ref.permission_code = permission.code
 WHERE ownership.permission_created = 1
-  AND (role_ref.permission_id IS NOT NULL OR user_ref.permission_id IS NOT NULL OR group_ref.permission_id IS NOT NULL);
+  AND (role_ref.permission_id IS NOT NULL OR user_ref.permission_id IS NOT NULL OR group_ref.id IS NOT NULL);
 
 DELETE role_permission
 FROM role_permissions role_permission
@@ -43,6 +43,7 @@ ALTER TABLE sms_send_logs
   DROP INDEX uk_sms_send_logs_owner_key,
   DROP COLUMN completed_at,
   DROP COLUMN submitted_at,
+  DROP COLUMN retry_after_seconds,
   DROP COLUMN request_fingerprint,
   DROP COLUMN idempotency_key_hash,
   DROP COLUMN idempotency_owner_key_hash,

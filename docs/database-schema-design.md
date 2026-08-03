@@ -622,7 +622,7 @@ MYSQL_PASSWORD
 
 - `sms_templates` 新增模板类型、变量 JSON、拒绝原因和供应商更新时间；同步以 `(provider, template_code)` 唯一约束保证幂等。
 - `sms_scene_bindings` 新增创建人，并继续以 `scene` 唯一约束保护五个固定场景；所有更新使用 `version` 乐观锁。
-- `sms_send_logs` 新增 `purpose=otp/test`、提交/完成时间及测试发送幂等摘要。`(idempotency_scope, idempotency_key_hash)` 固定业务请求，`idempotency_owner_key_hash` 额外保证同一管理员复用同一 key 修改参数时发生冲突；两者都不保存幂等键明文、验证码或完整手机号。
+- `sms_send_logs` 新增 `purpose=otp/test`、提交/完成时间、内部 `retry_after_seconds` 及测试发送幂等摘要。`(idempotency_scope, idempotency_key_hash)` 固定业务请求，`idempotency_owner_key_hash` 额外保证同一管理员复用同一 key 修改参数时发生冲突；恢复秒数仅用于精确重放首次 429，不对管理列表公开；这些字段都不保存幂等键明文、验证码或完整手机号。
 - `sms_template_sync_locks` 仅保存阿里云模板同步单例锁。供应商查询必须在事务外全部完成，事务内取得行锁后一次应用完整快照。
 - `sms_phase2_permission_ownership` 记录 migration 新增权限及 admin 绑定的所有权，使 down 只删除本 migration 创建且未被其他主体引用的数据。
 

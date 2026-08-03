@@ -42,7 +42,7 @@ func (r *concurrentTestSendRepository) ReserveTestSend(_ context.Context, log *m
 	return &copyLog, true, nil
 }
 
-func (r *concurrentTestSendRepository) CompleteTestSend(_ context.Context, id uint64, status string, providerRequestID, providerCode, failureSummary *string, completedAt time.Time) error {
+func (r *concurrentTestSendRepository) CompleteTestSend(_ context.Context, id uint64, status string, providerRequestID, providerCode, failureSummary *string, retryAfterSeconds *int64, completedAt time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, log := range r.byOwner {
@@ -53,6 +53,7 @@ func (r *concurrentTestSendRepository) CompleteTestSend(_ context.Context, id ui
 		log.ProviderRequestID = providerRequestID
 		log.ProviderCode = providerCode
 		log.FailureSummary = failureSummary
+		log.RetryAfterSeconds = retryAfterSeconds
 		log.CompletedAt = &completedAt
 		return nil
 	}
@@ -217,7 +218,8 @@ func TestAdminTestSendWhitelistAndLimiterRejectBeforeProvider(t *testing.T) {
 		if dispatcher.sendCalls.Load() != 0 {
 			t.Fatal("限流拒绝不得调用供应商")
 		}
-		if _, replayErr := svc.TestSend(context.Background(), 10, 7, "register", "phone-test-a", "limited-key"); !errors.Is(replayErr, ErrSMSTestSendRateLimited) {
+		replayed, replayErr := svc.TestSend(context.Background(), 10, 7, "register", "phone-test-a", "limited-key")
+		if !errors.Is(replayErr, ErrSMSTestSendRateLimited) || replayed.RetryAfterSeconds != 30 {
 			t.Fatalf("限流结果必须幂等重放: %v", replayErr)
 		}
 		if limiter.calls.Load() != 1 {

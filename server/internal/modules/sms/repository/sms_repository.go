@@ -43,10 +43,10 @@ func (r *SMSRepository) ReserveTestSend(ctx context.Context, log *model.SendLog)
 	return &existing, false, nil
 }
 
-func (r *SMSRepository) CompleteTestSend(ctx context.Context, id uint64, status string, providerRequestID, providerCode, failureSummary *string, completedAt time.Time) error {
+func (r *SMSRepository) CompleteTestSend(ctx context.Context, id uint64, status string, providerRequestID, providerCode, failureSummary *string, retryAfterSeconds *int64, completedAt time.Time) error {
 	result := r.db.WithContext(ctx).Model(&model.SendLog{}).Where("id = ? AND submit_status = ?", id, "pending").Updates(map[string]any{
 		"submit_status": status, "provider_request_id": providerRequestID, "provider_code": providerCode,
-		"failure_summary": failureSummary, "completed_at": completedAt,
+		"failure_summary": failureSummary, "retry_after_seconds": retryAfterSeconds, "completed_at": completedAt,
 	})
 	if result.Error != nil {
 		return result.Error

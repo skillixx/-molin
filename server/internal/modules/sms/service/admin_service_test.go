@@ -32,7 +32,7 @@ func (f *fakeTestSendRepo) ReserveTestSend(_ context.Context, log *model.SendLog
 	log.ID = 9
 	return log, true, nil
 }
-func (f *fakeTestSendRepo) CompleteTestSend(_ context.Context, _ uint64, _ string, _, _, _ *string, _ time.Time) error {
+func (f *fakeTestSendRepo) CompleteTestSend(_ context.Context, _ uint64, _ string, _, _, _ *string, _ *int64, _ time.Time) error {
 	f.completeCalls++
 	return nil
 }
