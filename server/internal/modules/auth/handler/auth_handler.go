@@ -29,6 +29,16 @@ func NewAuthHandler(authSvc *service.AuthService, verifySvc *service.Verificatio
 	return &AuthHandler{authSvc: authSvc, verifySvc: verifySvc, cfg: cfg}
 }
 
+// phoneSendResponse 仅返回平台安全追踪字段，不暴露验证码或供应商原始响应。
+func phoneSendResponse(result service.VerificationSendResult) map[string]any {
+	return map[string]any{
+		"sent":                result.Sent,
+		"expires_in":          result.ExpiresIn,
+		"business_request_id": result.BusinessRequestID,
+		"submit_status":       result.SubmitStatus,
+	}
+}
+
 // 密码长度限制：最少 6 位，最多 72 位。
 // 上限来自 bcrypt 对输入长度的硬限制（72 字节），超长密码会导致
 // bcrypt.GenerateFromPassword 返回 error，若不前置校验会被透传为 500。
@@ -67,8 +77,7 @@ func (h *AuthHandler) SendEmailCode(w http.ResponseWriter, r *http.Request) {
 		handleAuthError(w, err)
 		return
 	}
-	// 非生产环境在响应中返回明文验证码，方便本地调试；
-	// 判断依据为服务端 config.AppEnv，完全忽略客户端请求头（防止绕过生产保护）
+	// 非生产环境在响应中返回邮箱验证码，保持现有邮件调试流程；生产环境始终不返回。
 	data := map[string]string{}
 	if h.cfg.AppEnv != "production" {
 		data["code"] = code
@@ -88,18 +97,13 @@ func (h *AuthHandler) SendPhoneCode(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "phone 和 scene 为必填字段")
 		return
 	}
-	code, err := h.authSvc.SendCode(r.Context(), "phone", req.Phone, req.Scene)
+	result, err := h.authSvc.SendCodeDetailed(r.Context(), "phone", req.Phone, req.Scene)
 	if err != nil {
 		handleAuthError(w, err)
 		return
 	}
-	// 非生产环境在响应中返回明文验证码，方便本地调试；
-	// 判断依据为服务端 config.AppEnv，完全忽略客户端请求头（防止绕过生产保护）
-	data := map[string]string{}
-	if h.cfg.AppEnv != "production" {
-		data["code"] = code
-	}
-	response.JSON(w, http.StatusOK, data)
+	// 手机验证码明文已经交给短信 Sender，任何环境都不得通过 HTTP 响应返回。
+	response.JSON(w, http.StatusOK, phoneSendResponse(result))
 }
 
 // SendBindPhoneCode POST /api/me/verification-codes/phone — D-96：已登录用户更换手机号前发送验证码（scene=bind_phone）
@@ -113,18 +117,12 @@ func (h *AuthHandler) SendBindPhoneCode(w http.ResponseWriter, r *http.Request) 
 		response.Error(w, http.StatusBadRequest, 40000, "phone 为必填字段")
 		return
 	}
-	code, err := h.authSvc.SendBindPhoneCode(r.Context(), req.Phone)
+	result, err := h.authSvc.SendBindPhoneCodeDetailed(r.Context(), req.Phone)
 	if err != nil {
 		handleAuthError(w, err)
 		return
 	}
-	// 非生产环境在响应中返回明文验证码，方便本地调试；
-	// 判断依据为服务端 config.AppEnv，完全忽略客户端请求头（防止绕过生产保护）
-	data := map[string]string{}
-	if h.cfg.AppEnv != "production" {
-		data["code"] = code
-	}
-	response.JSON(w, http.StatusOK, data)
+	response.JSON(w, http.StatusOK, phoneSendResponse(result))
 }
 
 // SendBindEmailCode POST /api/me/verification-codes/email — D-96：已登录用户更换邮箱前发送验证码（scene=bind_email）
@@ -155,18 +153,13 @@ func (h *AuthHandler) SendBindEmailCode(w http.ResponseWriter, r *http.Request) 
 // SendAdminVerifyPhoneCode POST /api/admin/auth/verification-codes/phone — D-96：管理员双重认证发送手机验证码（scene=admin_verify）
 func (h *AuthHandler) SendAdminVerifyPhoneCode(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
-	code, err := h.authSvc.SendAdminVerifyPhoneCode(r.Context(), userID)
+	result, err := h.authSvc.SendAdminVerifyPhoneCodeDetailed(r.Context(), userID)
 	if err != nil {
 		handleAuthError(w, err)
 		return
 	}
-	// 非生产环境在响应中返回明文验证码，方便本地调试；
-	// 判断依据为服务端 config.AppEnv，完全忽略客户端请求头（防止绕过生产保护）
-	data := map[string]string{}
-	if h.cfg.AppEnv != "production" {
-		data["code"] = code
-	}
-	response.JSON(w, http.StatusOK, data)
+	// 管理员手机验证码同样禁止返回明文，避免高权限场景在测试环境泄露。
+	response.JSON(w, http.StatusOK, phoneSendResponse(result))
 }
 
 // SendAdminVerifyEmailCode POST /api/admin/auth/verification-codes/email — D-96：管理员双重认证发送邮箱验证码（scene=admin_verify）
@@ -702,6 +695,10 @@ func handleAuthError(w http.ResponseWriter, err error) {
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 	case service.ErrInvalidScene:
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
+	case service.ErrSMSUnavailable:
+		response.Error(w, http.StatusServiceUnavailable, 50300, err.Error())
+	case service.ErrSMSSendFailed:
+		response.Error(w, http.StatusBadGateway, 50200, err.Error())
 	case service.ErrAdminPhoneNotVerified:
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 	// D-96：管理员双重认证发码时账号未绑定手机号/邮箱

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -38,6 +39,19 @@ type Config struct {
 
 	// 管理员双重认证有效期（小时），超时后需重新认证
 	AdminVerifyExpireHours int
+
+	// 阿里云短信配置。功能默认关闭，开启时必须通过 ValidateSMS 完整校验。
+	SMSEnabled               bool
+	SMSProvider              string
+	SMSAliyunAccessKeyID     string
+	SMSAliyunAccessKeySecret string
+	SMSAliyunSignName        string
+	SMSAliyunEndpoint        string
+	SMSPhoneHMACSecret       string
+	SMSTestMode              bool
+	SMSTestPhoneWhitelist    []string
+	// SMSLegacyConfigPresent 只标识旧键是否仍存在，不保存或输出旧配置值。
+	SMSLegacyConfigPresent bool
 
 	// 支付回调报文加密密钥（32 字节，AES-256-GCM），未配置时记录 warn 并降级为明文
 	NotifyBodyKey string
@@ -115,6 +129,17 @@ func Load() Config {
 
 		AdminVerifyExpireHours: getenvInt("ADMIN_VERIFY_EXPIRE_HOURS", 24),
 
+		SMSEnabled:               getenvBool("SMS_ENABLED", false),
+		SMSProvider:              strings.ToLower(strings.TrimSpace(getenv("SMS_PROVIDER", ""))),
+		SMSAliyunAccessKeyID:     strings.TrimSpace(getenv("SMS_ALIYUN_ACCESS_KEY_ID", "")),
+		SMSAliyunAccessKeySecret: strings.TrimSpace(getenv("SMS_ALIYUN_ACCESS_KEY_SECRET", "")),
+		SMSAliyunSignName:        strings.TrimSpace(getenv("SMS_ALIYUN_SIGN_NAME", "")),
+		SMSAliyunEndpoint:        strings.TrimSpace(getenv("SMS_ALIYUN_ENDPOINT", "dysmsapi.aliyuncs.com")),
+		SMSPhoneHMACSecret:       getenv("SMS_PHONE_HMAC_SECRET", ""),
+		SMSTestMode:              getenvBool("SMS_TEST_MODE", true),
+		SMSTestPhoneWhitelist:    splitCSV(getenv("SMS_TEST_PHONE_WHITELIST", "")),
+		SMSLegacyConfigPresent:   hasAnyEnvKey("SMS_ACCESS_KEY", "SMS_ACCESS_SECRET", "SMS_SIGN_NAME"),
+
 		NotifyBodyKey: getenv("NOTIFY_BODY_KEY", ""),
 
 		TokenProviderKey: getenv("TOKEN_PROVIDER_KEY", ""),
@@ -135,6 +160,45 @@ func Load() Config {
 
 		TrustInternalOutbound: getenvBool("TRUST_INTERNAL_OUTBOUND", false),
 	}
+}
+
+// ValidateSMS 对启用状态下的短信配置执行 fail-closed 校验。
+// 错误仅包含缺失的配置键名，不包含任何密钥或签名值。
+func (c Config) ValidateSMS() error {
+	if !c.SMSEnabled {
+		return nil
+	}
+	if c.SMSProvider != "aliyun" {
+		return fmt.Errorf("SMS_PROVIDER 必须为 aliyun")
+	}
+	if c.SMSLegacyConfigPresent {
+		return fmt.Errorf("检测到旧短信配置键，请迁移到 SMS_ALIYUN_* 配置")
+	}
+	required := []struct {
+		name  string
+		value string
+	}{
+		{name: "SMS_ALIYUN_ACCESS_KEY_ID", value: c.SMSAliyunAccessKeyID},
+		{name: "SMS_ALIYUN_ACCESS_KEY_SECRET", value: c.SMSAliyunAccessKeySecret},
+		{name: "SMS_ALIYUN_SIGN_NAME", value: c.SMSAliyunSignName},
+		{name: "SMS_ALIYUN_ENDPOINT", value: c.SMSAliyunEndpoint},
+		{name: "SMS_PHONE_HMAC_SECRET", value: c.SMSPhoneHMACSecret},
+	}
+	for _, item := range required {
+		if strings.TrimSpace(item.value) == "" {
+			return fmt.Errorf("%s 未配置", item.name)
+		}
+	}
+	if strings.Contains(c.SMSAliyunEndpoint, "://") || strings.ContainsAny(c.SMSAliyunEndpoint, "/ ") {
+		return fmt.Errorf("SMS_ALIYUN_ENDPOINT 只能填写服务域名")
+	}
+	if len(c.SMSPhoneHMACSecret) < 32 {
+		return fmt.Errorf("SMS_PHONE_HMAC_SECRET 长度不能少于 32 字节")
+	}
+	if c.SMSTestMode && len(c.SMSTestPhoneWhitelist) == 0 {
+		return fmt.Errorf("SMS_TEST_PHONE_WHITELIST 在测试模式下不能为空")
+	}
+	return nil
 }
 
 // splitCSV 解析逗号分隔配置为去空白的非空切片（空输入返回 nil）。
@@ -184,4 +248,14 @@ func getenvInt(key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+// hasAnyEnvKey 只检查旧环境变量键是否存在，不读取或传播私密内容。
+func hasAnyEnvKey(keys ...string) bool {
+	for _, key := range keys {
+		if _, exists := os.LookupEnv(key); exists {
+			return true
+		}
+	}
+	return false
 }

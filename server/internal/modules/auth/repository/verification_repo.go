@@ -28,9 +28,13 @@ func (r *VerificationRepository) Create(ctx context.Context, v *model.Verificati
 // FindValid 查询未使用且未过期的最新验证码（仅用于只读"查看"场景，不标记使用）。
 func (r *VerificationRepository) FindValid(ctx context.Context, targetType, targetValue, scene string) (*model.VerificationCode, error) {
 	var v model.VerificationCode
-	err := r.db.WithContext(ctx).
+	query := r.db.WithContext(ctx).
 		Where("target_type = ? AND target_value = ? AND scene = ? AND used_at IS NULL AND expires_at > ?",
-			targetType, targetValue, scene, time.Now()).
+			targetType, targetValue, scene, time.Now())
+	if targetType == "phone" {
+		query = query.Where("send_status = ?", "sent")
+	}
+	err := query.
 		Order("created_at DESC").
 		First(&v).Error
 	if err != nil {
@@ -54,10 +58,42 @@ func (r *VerificationRepository) MarkUsed(ctx context.Context, id uint64) error 
 //
 // 避免高并发下同一 OTP 被多个请求同时通过校验（TOCTOU 竞态）。
 func (r *VerificationRepository) CheckAndMarkUsed(ctx context.Context, targetType, targetValue, scene, codeHash string) error {
-	result := r.db.WithContext(ctx).Model(&model.VerificationCode{}).
+	query := r.db.WithContext(ctx).Model(&model.VerificationCode{}).
 		Where("target_type = ? AND target_value = ? AND scene = ? AND code = ? AND used_at IS NULL AND expires_at > ?",
-			targetType, targetValue, scene, codeHash, time.Now()).
+			targetType, targetValue, scene, codeHash, time.Now())
+	// 手机验证码必须经过供应商受理；邮箱继续使用 not_applicable 历史兼容逻辑。
+	if targetType == "phone" {
+		query = query.Where("send_status = ?", "sent")
+	}
+	result := query.
 		Update("used_at", time.Now())
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrVerificationNotFound
+	}
+	return nil
+}
+
+// UpdateSendState 只允许 pending 记录进入 sent 或 failed，避免重复回调覆盖终态。
+func (r *VerificationRepository) UpdateSendState(ctx context.Context, id uint64, status string, sentAt *time.Time, provider, providerRequestID string) error {
+	if status != "sent" && status != "failed" {
+		return errors.New("验证码发送终态不合法")
+	}
+	updates := map[string]interface{}{"send_status": status}
+	if sentAt != nil {
+		updates["sent_at"] = sentAt
+	}
+	if provider != "" {
+		updates["provider"] = provider
+	}
+	if providerRequestID != "" {
+		updates["provider_request_id"] = providerRequestID
+	}
+	result := r.db.WithContext(ctx).Model(&model.VerificationCode{}).
+		Where("id = ? AND send_status = ?", id, "pending").
+		Updates(updates)
 	if result.Error != nil {
 		return result.Error
 	}

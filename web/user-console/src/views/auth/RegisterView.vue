@@ -9,6 +9,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { sendEmailCode, sendPhoneCode, register } from '@/api/auth'
+import { getSmsSendErrorMessage } from '@/utils/sms'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -147,6 +148,8 @@ async function sendPhoneVerifyCode() {
     await sendPhoneCode(form.phone, 'register')
     ElMessage.success('验证码已发送，请查收短信')
     startCountdown(phoneCountdown, (t) => { phoneTimer = t })
+  } catch (err: unknown) {
+    ElMessage.error(getSmsSendErrorMessage(err))
   } finally {
     sendingPhoneCode.value = false
   }

@@ -40,10 +40,13 @@
 | 40004 | 404  | 资源不存在 |
 | 40031 | 403  | 管理员未完成双重认证（手机+邮箱），需先调用 verify-phone 和 verify-email |
 | 40101 | 401  | 账号已被封禁 |
+| 40400 | 404  | 通用资源不存在（包括短信模板或场景绑定不存在） |
 | 40404 | 404  | 账号未注册，请先注册（登录发码时账号不存在；`/api/auth/login/phone`、`/api/auth/login/email` 本身对未注册账号也返回此码，见 §1.3） |
 | 40900 | 409  | 账号已注册（注册发码时账号已存在） |
 | 42900 | 429  | 请求频率超限 |
 | 50000 | 500  | 服务器内部错误 |
+| 50200 | 502  | 上游服务失败（包括阿里云短信查询或提交失败） |
+| 50300 | 503  | 服务或渠道不可用（包括短信功能关闭、配置缺失或场景未绑定） |
 | 60001 | 400  | 余额不足（钱包） |
 | 60005 | 400  | 权益额度不足（含预付 token 套餐额度耗尽，第二阶段复用此码；勿用 60002，那是「重复支付」） |
 | 70001 | 400  | 需要先完成实名认证 |
@@ -87,7 +90,7 @@
 请求体：
 ```json
 {
-  "phone": "13812345678",
+  "phone": "<从安全测试配置注入>",
   "scene": "register"
 }
 ```
@@ -108,7 +111,35 @@
 > - 换绑邮箱发码：`POST /api/me/verification-codes/email`（需登录，§1.8.1）
 > - 管理员双重认证发码：`POST /api/admin/auth/verification-codes/{phone,email}`（需 user:manage 权限，§1.9）
 
-响应：`data: null`（成功即可）；测试环境响应体包含明文 `code` 字段
+邮箱验证码成功响应：
+
+```json
+{
+  "sent": true,
+  "expires_in": 600
+}
+```
+
+手机短信成功响应（阶段 1）：
+
+```json
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "sent": true,
+    "expires_in": 600,
+    "business_request_id": "<平台业务请求标识>",
+    "submit_status": "accepted"
+  }
+}
+```
+
+手机号验证码在任何环境都不返回 `code` 明文。`business_request_id` 是平台生成的安全业务追踪标识，不是阿里云供应商请求标识；供应商请求标识仅保存在脱敏发送日志中。`SMS_ENABLED=false`、必要配置缺失或场景未绑定时返回 HTTP `503` / code=`50300`，且不会创建可校验验证码或调用阿里云。
+
+`accepted` 只表示阿里云受理，不表示运营商送达。手机验证码明文只在服务端进程内短暂传给 Sender，任何环境的 HTTP 响应都不得返回 `code`。
+
+> 以上是阶段 1 的正式响应契约。前端只有在完整校验 `sent/expires_in/business_request_id/submit_status` 后才能进入倒计时；HTTP 200 空对象不得视为发送成功。
 
 ---
 
@@ -121,7 +152,7 @@
 ```json
 {
   "username": "张三",
-  "phone": "13812345678",
+  "phone": "<从安全测试配置注入>",
   "email": "user@example.com",
   "password": "Test1234!",
   "phone_code": "123456",
@@ -183,7 +214,7 @@
 ```json
 // POST /api/auth/verification-codes/phone
 {
-  "phone": "13812345678",
+  "phone": "<从安全测试配置注入>",
   "scene": "login"
 }
 ```
@@ -192,7 +223,7 @@
 
 ```json
 {
-  "phone": "13812345678",
+  "phone": "<从安全测试配置注入>",
   "code": "123456"
 }
 ```
@@ -297,7 +328,7 @@
 
 **PATCH** `/api/me/phone` *(需登录)*
 ```json
-{ "phone": "13912345678", "code": "123456" }
+{ "phone": "<从安全测试配置注入>", "code": "<验证码>" }
 ```
 
 > 调用前须先通过 `POST /api/me/verification-codes/phone` 向新手机号发送验证码（§1.8.1）。
@@ -320,8 +351,10 @@
 **POST** `/api/me/verification-codes/phone` — 向新手机号发送换绑验证码
 
 ```json
-{ "phone": "13912345678" }
+{ "phone": "<从安全测试配置注入>" }
 ```
+
+成功响应统一使用本章 §1.1 手机短信契约：`{sent,expires_in,business_request_id,submit_status}`。
 
 **POST** `/api/me/verification-codes/email` — 向新邮箱发送换绑验证码
 
@@ -329,7 +362,9 @@
 { "email": "new@example.com" }
 ```
 
-响应：`data: null`；测试环境响应体包含明文 `code` 字段。
+成功响应统一使用本章 §1.1 邮箱验证码契约：`{sent,expires_in}`。
+
+邮箱端点仅在明确的本地测试模式且未连接真实邮件供应商时允许额外返回 `code`；手机端点在任何环境都不得返回验证码明文。
 
 错误：
 - `phone`/`email` 缺失 → `400 40000`
@@ -406,11 +441,13 @@
 
 **POST** `/api/admin/auth/verification-codes/phone` *(需登录 + user:manage 权限)* — 向当前管理员绑定的手机号发送验证码
 
-响应：`data: null`；测试环境包含明文 `code`。
+成功响应统一使用 §1.1 手机短信契约：`{sent,expires_in,business_request_id,submit_status}`。
 
 **POST** `/api/admin/auth/verification-codes/email` *(需登录 + user:manage 权限)* — 向当前管理员绑定的邮箱发送验证码
 
-响应：`data: null`；测试环境包含明文 `code`。
+成功响应统一使用 §1.1 邮箱验证码契约：`{sent,expires_in}`。
+
+邮箱端点仅在明确的本地测试模式且未连接真实邮件供应商时允许额外返回 `code`；手机端点在任何环境都不得返回验证码明文。
 
 **POST** `/api/admin/auth/verify-phone` *(需登录 + user:manage 权限)*
 ```json
@@ -472,7 +509,7 @@ Query 参数：
 {
   "id": 1,
   "email": "zh***@example.com",
-  "phone": "138****5678",
+  "phone": "<从安全测试配置注入>",
   "status": "active",
   "real_name_status": "verified",
   "roles": [{ "id": 2, "code": "vip", "name": "VIP会员" }],
@@ -890,6 +927,207 @@ Query 参数：
 | `invite_code.status` | `active` / `disabled` |
 
 ---
+
+## 五之二、短信模板管理（后端甲，阶段 0 正式契约）
+
+> 首期只支持阿里云中国大陆验证码短信。所有接口均需登录、管理员双重认证及对应权限。阿里云模板正文和审核状态只读；后台只允许同步、本地启停、场景绑定和测试发送。列表统一返回 D-95 扁平分页 `{items,page,page_size,total}`。
+
+### 5.2.1 权限与固定场景
+
+| 权限码 | 前端能力 |
+|---|---|
+| `sms:template:view` | 进入页面，查看模板、场景和脱敏记录 |
+| `sms:template:manage` | 启停模板、更新场景绑定 |
+| `sms:template:sync` | 显示并使用“同步阿里云模板”按钮 |
+| `sms:template:test` | 显示并使用“测试发送”按钮 |
+
+固定短信场景：`register`（注册）、`login`（登录）、`reset_password`（找回密码）、`bind_phone`（换绑手机）、`admin_verify`（管理员二次验证）。邮箱验证码不属于短信模板管理。
+
+短信签名首期由后端固定读取 `SMS_ALIYUN_SIGN_NAME`，前端只读展示接口返回的 `sign_name`，不提供自由输入或编辑入口。
+
+### 5.2.2 概览
+
+**GET** `/api/admin/sms/summary` — 页面顶部统计，需 `sms:template:view`。
+
+```json
+{
+  "template_total": 10,
+  "approved_total": 8,
+  "local_enabled_total": 5,
+  "scene_total": 5,
+  "unbound_scene_total": 1,
+  "last_synced_at": null
+}
+```
+
+从未同步时 `last_synced_at=null`。前端应使用此接口一次获取全局统计，不要下载多页模板后自行聚合。
+
+`unbound_scene_total` 包含未配置绑定、绑定已停用或绑定模板已不可用的场景。
+
+### 5.2.3 模板列表与详情
+
+**GET** `/api/admin/sms/templates` — 模板列表，需 `sms:template:view`。
+
+查询参数：`page`、`page_size`（最大 100）、`keyword`、`provider_audit_status`、`local_enabled`、`scene`。
+
+响应 `data`：
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "provider": "aliyun",
+      "template_code": "SMS_000000001",
+      "template_name": "用户注册验证码",
+      "template_type": "verification_code",
+      "template_content": "您正在注册墨灵平台，验证码为${code}，请勿泄露。",
+      "variables": ["code"],
+      "provider_audit_status": "approved",
+      "provider_reject_reason": null,
+      "provider_updated_at": null,
+      "local_enabled": true,
+      "version": 1,
+      "bound_scenes": ["register"],
+      "last_synced_at": "2026-07-22T10:05:00+08:00",
+      "created_at": "2026-07-22T10:05:00+08:00",
+      "updated_at": "2026-07-22T10:05:00+08:00"
+    }
+  ],
+  "page": 1,
+  "page_size": 20,
+  "total": 1
+}
+```
+
+**GET** `/api/admin/sms/templates/{id}` — 模板详情，需 `sms:template:view`，字段与列表项相同；不存在返回 `404/40400`。
+
+`provider_reject_reason/provider_updated_at` 允许为 `null`；模板创建后 `last_synced_at/created_at/updated_at` 必须非空。
+
+### 5.2.4 同步模板
+
+**POST** `/api/admin/sms/templates/sync` — 从阿里云幂等同步模板，需 `sms:template:sync`，无请求体。
+
+响应：
+
+```json
+{
+  "created_count": 2,
+  "updated_count": 3,
+  "unchanged_count": 5,
+  "synced_at": "2026-07-22T10:05:00+08:00"
+}
+```
+
+同步只更新本地快照，不会在阿里云创建、修改或删除模板。阿里云查询失败返回 `502/50200`，前端不得显示“同步成功”。
+
+同步接口同步执行，后端总截止时间为 10 秒且失败不写部分快照。前端必须为该接口单独设置不少于 15 秒的超时，不能沿用短于 10 秒的通用超时。
+
+### 5.2.5 场景绑定
+
+**GET** `/api/admin/sms/scenes` — 查询五个固定场景，需 `sms:template:view`；支持通用 `page/page_size`，响应仍为 D-95。
+
+场景项：
+
+```json
+{
+  "scene": "register",
+  "scene_name": "用户注册",
+  "enabled": true,
+  "sign_name": "墨灵平台",
+  "template": {
+    "id": 1,
+    "template_code": "SMS_000000001",
+    "template_name": "用户注册验证码",
+    "provider_audit_status": "approved",
+    "local_enabled": true
+  },
+  "version": 1,
+  "updated_by": 10001,
+  "updated_at": "2026-07-22T10:10:00+08:00"
+}
+```
+
+未绑定场景的 `template/sign_name/updated_by/updated_at` 为 `null`，`enabled=false`、`version=0`。
+
+**PUT** `/api/admin/sms/scenes/{scene}` — 更新绑定，需 `sms:template:manage`。
+
+```json
+{
+  "template_id": 1,
+  "enabled": true,
+  "version": 0
+}
+```
+
+首次配置传 `version=0`，后续必须回传当前版本。`sign_name` 由后端固定配置注入，前端不得提交。模板必须已审核通过、本地启用且包含 `code` 变量；版本或状态冲突返回 `409/40900`。成功返回更新后的场景项。
+
+### 5.2.6 本地启停
+
+**PATCH** `/api/admin/sms/templates/{id}/status` — 需 `sms:template:manage`。
+
+```json
+{
+  "enabled": false,
+  "version": 1
+}
+```
+
+未审核通过的模板不能启用；仍被已启用场景引用的模板不能停用，返回 `409/40900`，前端应引导先停用或改绑场景。成功返回更新后的模板对象。
+
+### 5.2.7 测试发送
+
+**POST** `/api/admin/sms/templates/{id}/test-send` — 需 `sms:template:test`、管理员双重认证，且手机号必须在后端白名单内。必须发送 `Idempotency-Key`；同一管理员、相同 Key 和相同请求体重试返回首次结果且不再次提交，相同 Key 配不同请求体返回 `409/40900`。
+
+```json
+{
+  "phone": "<从安全测试配置注入>",
+  "scene": "register"
+}
+```
+
+`scene` 必须属于该模板当前已启用的 `bound_scenes`；未绑定或绑定停用返回 `409/40900`。
+
+响应：
+
+```json
+{
+  "business_request_id": "sms_req_xxx",
+  "provider_request_id": null,
+  "submit_status": "accepted",
+  "submitted_at": "2026-07-22T10:15:00+08:00"
+}
+```
+
+`provider_request_id` 允许为 `null`。`accepted` 的页面文案必须是“提交成功”，不得显示“发送成功”“送达成功”或“用户已收到”。前端应防重复点击，但限流与安全校验以后端为准。响应不含验证码。
+
+超限时响应头包含 `Retry-After`，响应 `data` 为 `{ "retry_after_seconds": 30 }`，两者值一致。前端按钮倒计时结束前不得自动重试；幂等重放不产生新短信，也不消耗新的限流次数。
+
+### 5.2.8 脱敏发送记录
+
+**GET** `/api/admin/sms/send-logs` — 需 `sms:template:view`。
+
+查询参数：`page`、`page_size`、`template_id`、`scene`、`submit_status`、`started_at`、`ended_at`。时间必须为带时区偏移的 RFC3339；必须满足 `started_at <= ended_at`，后端转 UTC 后按闭区间 `[started_at, ended_at]` 查询，单次最大 31 天。
+
+响应为 D-95；每项字段为 `id`、`scene`、`phone_masked`、`template_id`、`template_code`、`sign_name`、`provider`、`business_request_id`、`provider_request_id`、`provider_code`、`submit_status`、`failure_summary`、`submitted_at`。`provider_request_id/provider_code/failure_summary` 均可为 `null`。接口永不返回完整手机号、手机号 HMAC、验证码、AccessKey、签名原文或供应商原始响应。
+
+### 5.2.9 错误处理
+
+| code | HTTP | 前端处理 |
+|---|---:|---|
+| 40000 | 400 | 展示参数、场景、模板变量或测试白名单错误 |
+| 40001 | 401 | 进入现有登录失效流程 |
+| 40003 | 403 | 显示无权限态 |
+| 40031 | 403 | 进入现有管理员双重认证流程 |
+| 40400 | 404 | 提示模板或绑定已不存在并刷新数据 |
+| 40900 | 409 | 提示版本/状态冲突并重新加载最新数据 |
+| 42900 | 429 | 读取 `Retry-After` / `data.retry_after_seconds`，倒计时后再允许重试 |
+| 50200 | 502 | 提示阿里云请求失败，不得标记成功 |
+| 50300 | 503 | 提示短信服务未启用或当前场景未配置 |
+
+### 5.2.10 现有验证码接口兼容要求
+
+现有五个手机验证码业务入口及请求字段保持不变。只有手机号验证码要求供应商受理并标记 `sent` 后才可校验；提交失败记录必须为 `failed` 且不可校验。邮箱验证码继续走现有链路，使用 `send_status=not_applicable`，校验时不得强制 `sent`，也不得调用短信适配器。生产接口不得返回验证码。
 
 ## 六、商品模块（后端乙）
 
@@ -2009,6 +2247,10 @@ Wechatpay-Nonce: <随机串>
 | `agent:manage` | Agent（官方预设）管理 + skill/插件绑定（后端丁，需管理员双重认证） |
 | `skill:manage` | Skill 内置能力管理（后端丁，需管理员双重认证） |
 | `plugin:manage` | 外部插件管理 + **MCP server 管理**（第二种工具源，复用同权限码，后端丁，需管理员双重认证） |
+| `sms:template:view` | 查看短信模板、场景绑定和脱敏发送记录（后端甲，需管理员双重认证） |
+| `sms:template:manage` | 短信模板本地启停和场景绑定（后端甲，需管理员双重认证） |
+| `sms:template:sync` | 从阿里云同步短信模板快照（后端甲，需管理员双重认证） |
+| `sms:template:test` | 白名单测试手机号短信提交（后端甲，需管理员双重认证） |
 
 ### 枚举值汇总
 
@@ -2045,4 +2287,7 @@ Wechatpay-Nonce: <随机串>
 | `agent.status` / `skill.status` / `plugin.status` / `mcp_server.status` | `active` / `inactive`（mcp_server 新建默认 `inactive`） |
 | `mcp_server_tool.enabled` | `true`（审核通过，暴露给编排）/ `false`（待审/停用，定义变更自动置 false） |
 | `tool_daily_call_logs.tool_type` | `plugin` / `mcp`（通用工具每用户每日限流维度，收口替代 plugin_daily_call_logs） |
+| `sms_template.provider_audit_status` | `pending` / `approved` / `rejected` / `disabled` |
+| `sms_send_log.submit_status` | `pending` / `accepted` / `failed`（`accepted` 仅代表阿里云受理） |
+| `sms_scene_binding.scene` | `register` / `login` / `reset_password` / `bind_phone` / `admin_verify` |
 | `entitlement_type`（token 套餐） | `token_quota`（quota_unit=tokens，预付额度） |

@@ -507,8 +507,8 @@ go get github.com/google/uuid
 
 ```text
 -- 无需鉴权 --
-POST /api/auth/verification-codes/email    -- 发送邮箱验证码（scene: register/reset_password/bind_email/admin_verify）
-POST /api/auth/verification-codes/phone    -- 发送短信验证码（scene: register/reset_password/bind_phone/admin_verify）
+POST /api/auth/verification-codes/email    -- 发送邮箱验证码（公开 scene 仅 register/login/reset_password）
+POST /api/auth/verification-codes/phone    -- 发送短信验证码（公开 scene 仅 register/login/reset_password）
 POST /api/auth/register                   -- 唯一注册入口：手机号+邮箱必须同时提交，需双重 OTP 验证码（phone_code + email_code）；可选 invite_code 落组（详见下方「注册落组」）
 POST /api/auth/login/email                -- 邮箱登录
 POST /api/auth/login/phone                -- 手机号登录
@@ -570,3 +570,56 @@ POST /api/admin/auth/verification-codes/email  -- D-96：向当前管理员自�
 | 40900 | 邮箱/手机号/用户名已被注册 |
 | 40000 | 验证码错误或已过期 |
 | 42900 | 请求频率超限 |
+
+## 阿里云短信与模板管理扩展（阶段 0 待验收契约）
+
+本扩展仍属于 auth 模块，由后端甲负责。实施前必须以以下权威文档为准：
+
+- `docs/full-api-design.md` 的“3.19 短信模板管理”章节。
+- `docs/frontend-api-reference.md` 的“五之二、短信模板管理”章节。
+- `docs/database-schema-design.md` 的“3.1.1 阿里云短信与模板管理概念表设计”章节。
+
+### 职责与边界
+
+- 首期只接入阿里云中国大陆验证码短信，不提前实现多供应商路由。
+- 手机短信和邮箱验证码必须保持独立；只有 `target_type=phone` 才能调用短信发送端口。
+- 保持现有注册、登录、找回密码、换绑手机和管理员二次验证接口路径不变。
+- 公开发码只接受 `register/login/reset_password`；`bind_phone` 和 `admin_verify` 必须继续使用认证态专属入口。
+- 平台只能同步阿里云模板快照、配置本地启停和业务场景绑定，不提供阿里云模板申请、修改或删除接口。
+- `SendSms` 返回 `Code=OK` 只表示阿里云受理，禁止表述为运营商送达或用户已收到。
+
+### 内部发送端口与验证码状态
+
+业务服务只能依赖内部短信发送接口，不得直接调用阿里云 SDK。端口至少需要接收：标准化手机号、业务场景、验证码明文和业务请求 ID；返回供应商请求 ID、供应商返回码和提交状态。验证码明文只允许存在于当前调用栈，不得进入数据库、日志、审计或错误响应。
+
+手机验证码状态流转：
+
+```text
+pending → 阿里云受理 → sent → 允许校验
+        → 提交失败   → failed → 禁止校验
+```
+
+`CheckAndMarkUsed` 必须按 `target_type` 区分：手机号增加 `send_status='sent'` 条件；邮箱保持现有链路并使用 `send_status='not_applicable'`，不得调用短信适配器或被无条件的 `sent` 条件误伤。两者都继续原子校验验证码哈希、有效期和 `used_at IS NULL`。`code` 字段必须扩为 `CHAR(64)` 以完整保存 SHA-256 十六进制值。
+
+迁移时先停止新手机号发码并等待现有 10 分钟 OTP 窗口耗尽，再新增 `send_status NOT NULL DEFAULT 'not_applicable'`；历史手机号记录不得回填为 `sent`，新手机号记录显式写 `pending`，邮箱记录保持 `not_applicable`。
+
+### 管理接口与权限
+
+管理接口包括模板列表/详情、阿里云同步、场景列表、场景绑定、本地启停、测试发送和脱敏发送记录。全部要求管理员双重认证，并按接口检查：
+
+- `sms:template:view`
+- `sms:template:manage`
+- `sms:template:sync`
+- `sms:template:test`
+
+四个权限码必须由新的 seed migration 创建并绑定管理员角色。所有列表遵守 D-95。写操作必须写审计日志；测试发送还必须执行手机号白名单、按管理员和手机号双维度限流及重复点击保护。
+
+首期签名只从后端 `SMS_ALIYUN_SIGN_NAME` 固定配置读取，场景绑定请求不接收 `sign_name`。测试发送的 `scene` 必须是目标模板当前已启用的绑定场景，并强制 `Idempotency-Key`：相同管理员、相同 Key、相同请求体返回首次结果且不重复提交；同 Key 不同请求体返回冲突。429 响应必须同时给出一致的 `Retry-After` 与 `data.retry_after_seconds`。
+
+### 安全红线
+
+- AccessKey 只允许通过环境变量或密钥管理服务注入，不得硬编码或入库。
+- 发送日志只保存脱敏手机号与使用独立密钥计算的手机号 HMAC，不保存完整手机号。
+- 生产环境不得返回验证码，也不得在阿里云异常时回退到模拟短信或固定验证码。
+- 供应商错误必须清洗后映射为统一错误码，禁止返回内部堆栈、签名原文、密钥或完整原始响应。
+- 同步、绑定、启停和测试发送均必须记录操作人、目标、结果和 Request ID，但审计摘要不得包含验证码或完整手机号。

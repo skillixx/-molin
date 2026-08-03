@@ -10,6 +10,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { sendPhoneCode } from '@/api/auth'
+import { getSmsSendErrorMessage } from '@/utils/sms'
 
 const router = useRouter()
 const route = useRoute()
@@ -140,7 +141,8 @@ async function sendLoginCode() {
       countdown.value--
       if (countdown.value <= 0) clearInterval(countdownTimer)
     }, 1000)
-  } catch {
+  } catch (err: unknown) {
+    ElMessage.error(getSmsSendErrorMessage(err))
     refreshCaptcha()
   } finally {
     sendingCode.value = false

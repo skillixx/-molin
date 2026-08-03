@@ -288,9 +288,15 @@ var allowedPublicScenes = map[string]bool{
 // 1. D-52：校验 scene 是否在公开白名单内，防止未登录调用方触发高权限场景验证码
 // 2. 根据 scene 做账号状态前置校验
 func (s *AuthService) SendCode(ctx context.Context, targetType, targetValue, scene string) (string, error) {
+	result, err := s.SendCodeDetailed(ctx, targetType, targetValue, scene)
+	return result.Code, err
+}
+
+// SendCodeDetailed 在保留原有业务预检查的同时返回手机短信的安全追踪字段。
+func (s *AuthService) SendCodeDetailed(ctx context.Context, targetType, targetValue, scene string) (VerificationSendResult, error) {
 	// D-52：scene 白名单校验，拒绝 bind_phone / bind_email / admin_verify 等高权限场景
 	if !allowedPublicScenes[scene] {
-		return "", ErrInvalidScene
+		return VerificationSendResult{}, ErrInvalidScene
 	}
 	switch scene {
 	case "register":
@@ -299,19 +305,19 @@ func (s *AuthService) SendCode(ctx context.Context, targetType, targetValue, sce
 			targetValue = normalizePhone(targetValue)
 			exists, err := s.userRepo.ExistsByPhone(ctx, targetValue)
 			if err != nil {
-				return "", err
+				return VerificationSendResult{}, err
 			}
 			if exists {
-				return "", ErrPhoneAlreadyExists
+				return VerificationSendResult{}, ErrPhoneAlreadyExists
 			}
 		case "email":
 			targetValue = normalizeEmail(targetValue)
 			exists, err := s.userRepo.ExistsByEmail(ctx, targetValue)
 			if err != nil {
-				return "", err
+				return VerificationSendResult{}, err
 			}
 			if exists {
-				return "", ErrEmailAlreadyExists
+				return VerificationSendResult{}, ErrEmailAlreadyExists
 			}
 		}
 	case "login":
@@ -320,38 +326,44 @@ func (s *AuthService) SendCode(ctx context.Context, targetType, targetValue, sce
 			targetValue = normalizePhone(targetValue)
 			exists, err := s.userRepo.ExistsByPhone(ctx, targetValue)
 			if err != nil {
-				return "", err
+				return VerificationSendResult{}, err
 			}
 			if !exists {
-				return "", ErrPhoneNotRegistered
+				return VerificationSendResult{}, ErrPhoneNotRegistered
 			}
 		case "email":
 			targetValue = normalizeEmail(targetValue)
 			exists, err := s.userRepo.ExistsByEmail(ctx, targetValue)
 			if err != nil {
-				return "", err
+				return VerificationSendResult{}, err
 			}
 			if !exists {
-				return "", ErrEmailNotRegistered
+				return VerificationSendResult{}, ErrEmailNotRegistered
 			}
 		}
 	}
-	return s.verifySvc.Send(ctx, targetType, targetValue, scene)
+	return s.verifySvc.SendDetailed(ctx, targetType, targetValue, scene)
 }
 
 // SendBindPhoneCode D-96：已登录用户更换手机号前，向新手机号发送验证码（scene=bind_phone）。
 // 复用与 SendCode 中 register 场景一致的唯一性预检查：新手机号已被占用时直接返回 ErrPhoneAlreadyExists，
 // 避免用户收到验证码后在 UpdatePhone 提交时才发现手机号冲突。
 func (s *AuthService) SendBindPhoneCode(ctx context.Context, newPhone string) (string, error) {
+	result, err := s.SendBindPhoneCodeDetailed(ctx, newPhone)
+	return result.Code, err
+}
+
+// SendBindPhoneCodeDetailed 返回换绑手机号发码的安全追踪字段。
+func (s *AuthService) SendBindPhoneCodeDetailed(ctx context.Context, newPhone string) (VerificationSendResult, error) {
 	newPhone = normalizePhone(newPhone)
 	exists, err := s.userRepo.ExistsByPhone(ctx, newPhone)
 	if err != nil {
-		return "", err
+		return VerificationSendResult{}, err
 	}
 	if exists {
-		return "", ErrPhoneAlreadyExists
+		return VerificationSendResult{}, ErrPhoneAlreadyExists
 	}
-	return s.verifySvc.Send(ctx, "phone", newPhone, "bind_phone")
+	return s.verifySvc.SendDetailed(ctx, "phone", newPhone, "bind_phone")
 }
 
 // SendBindEmailCode D-96：已登录用户更换邮箱前，向新邮箱发送验证码（scene=bind_email）。
@@ -369,14 +381,20 @@ func (s *AuthService) SendBindEmailCode(ctx context.Context, newEmail string) (s
 
 // SendAdminVerifyPhoneCode D-96：管理员双重认证 —— 向当前用户自己的手机号发送验证码（scene=admin_verify）。
 func (s *AuthService) SendAdminVerifyPhoneCode(ctx context.Context, userID uint64) (string, error) {
+	result, err := s.SendAdminVerifyPhoneCodeDetailed(ctx, userID)
+	return result.Code, err
+}
+
+// SendAdminVerifyPhoneCodeDetailed 返回管理员手机二次验证发码的安全追踪字段。
+func (s *AuthService) SendAdminVerifyPhoneCodeDetailed(ctx context.Context, userID uint64) (VerificationSendResult, error) {
 	user, err := s.userRepo.FindByID(ctx, userID)
 	if err != nil {
-		return "", ErrUnauthorized
+		return VerificationSendResult{}, ErrUnauthorized
 	}
 	if user.Phone == nil {
-		return "", ErrPhoneNotBound
+		return VerificationSendResult{}, ErrPhoneNotBound
 	}
-	return s.verifySvc.Send(ctx, "phone", *user.Phone, "admin_verify")
+	return s.verifySvc.SendDetailed(ctx, "phone", *user.Phone, "admin_verify")
 }
 
 // SendAdminVerifyEmailCode D-96：管理员双重认证 —— 向当前用户自己的邮箱发送验证码（scene=admin_verify）。

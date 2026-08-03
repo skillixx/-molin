@@ -10,6 +10,8 @@ import { useRouter } from 'vue-router'
 import type { FormInstance, FormRules } from 'element-plus'
 import { ElMessage } from 'element-plus'
 import { sendPhoneCode, sendEmailCode, resetPassword } from '@/api/auth'
+import { maskPhone } from '@/utils/privacy'
+import { getSmsSendErrorMessage } from '@/utils/sms'
 
 const router = useRouter()
 
@@ -21,6 +23,11 @@ const targetType = ref<'phone' | 'email'>('phone')
 
 // 第一步：目标输入
 const targetValue = ref('')
+
+// 手机号在发送成功后的确认区域只显示脱敏值，邮箱保持原有展示。
+const maskedTargetValue = computed(() => (
+  targetType.value === 'phone' ? maskPhone(targetValue.value) : targetValue.value
+))
 
 // 第二步：验证码 + 新密码
 const step2Form = reactive({
@@ -88,6 +95,22 @@ const step2Rules: FormRules = {
   ],
 }
 
+// 首次发送和重新发送共用错误提示，避免两个流程后续出现行为差异。
+function showSendCodeError(error: unknown) {
+  if (targetType.value === 'phone') {
+    ElMessage.error(getSmsSendErrorMessage(error))
+    return
+  }
+  const code = (error as { response?: { data?: { code?: number } } })?.response?.data?.code
+  if (code === 42900) {
+    ElMessage.error('发送频率超限，请稍后再试')
+  } else if (code === 40404 || code === 40400) {
+    ElMessage.error('该邮箱未注册')
+  } else {
+    ElMessage.error('发送失败，请稍后重试')
+  }
+}
+
 // =================== 步骤一：发送验证码 ===================
 
 async function sendCode() {
@@ -111,14 +134,7 @@ async function sendCode() {
       if (countdown.value <= 0) clearInterval(countdownTimer)
     }, 1000)
   } catch (err: unknown) {
-    const code = (err as { response?: { data?: { code?: number } } })?.response?.data?.code
-    if (code === 42900) {
-      ElMessage.error('发送频率超限，请稍后再试')
-    } else if (code === 40404) {
-      ElMessage.error('该手机号/邮箱未注册')
-    } else {
-      ElMessage.error('发送失败，请稍后重试')
-    }
+    showSendCodeError(err)
   } finally {
     sendingCode.value = false
   }
@@ -141,12 +157,7 @@ async function resendCode() {
       if (countdown.value <= 0) clearInterval(countdownTimer)
     }, 1000)
   } catch (err: unknown) {
-    const code = (err as { response?: { data?: { code?: number } } })?.response?.data?.code
-    if (code === 42900) {
-      ElMessage.error('发送频率超限，请稍后再试')
-    } else {
-      ElMessage.error('发送失败，请稍后重试')
-    }
+    showSendCodeError(err)
   } finally {
     sendingCode.value = false
   }
@@ -293,7 +304,7 @@ onUnmounted(() => clearInterval(countdownTimer))
         <div v-else class="step-content">
           <p class="step2-hint">
             验证码已发送至
-            <span class="hint-target">{{ targetValue }}</span>
+            <span class="hint-target">{{ maskedTargetValue }}</span>
           </p>
 
           <el-form

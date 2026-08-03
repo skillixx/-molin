@@ -40,7 +40,7 @@ Idempotency-Key: idem_xxx
 
 - `Authorization`：需要登录的接口必须传。
 - `X-Request-ID`：可选，不传则后端生成。
-- `Idempotency-Key`：购买、支付、充值、按量计费、资产开通等关键写操作必须传。
+- `Idempotency-Key`：购买、支付、充值、按量计费、资产开通、短信测试发送等关键写操作必须传。
 
 ### 1.4 限流策略
 
@@ -86,12 +86,13 @@ X-RateLimit-Reset: 1748000000
 40000  请求参数错误
 40001  未登录
 40003  无权限
+40031  管理员未完成双重认证
 40400  资源不存在
 40404  账号未注册（登录/发验证码接口对未注册手机号或邮箱返回此码，提示先注册）
 40900  数据冲突
 50000  系统内部错误
-50200  上游模型服务失败（HTTP 502，token_gateway 透传上游失败）
-50300  渠道不可用（HTTP 503，token_gateway 未配置可用渠道 / 渠道停用）
+50200  上游服务失败（HTTP 502；包括 token_gateway 上游失败、阿里云短信查询或提交失败）
+50300  服务或渠道不可用（HTTP 503；包括 token_gateway 无可用渠道、短信功能关闭/配置缺失/场景未绑定）
 50301  系统繁忙/可重试（HTTP 503，token_gateway 乐观锁冲突重试耗尽，可重试；D-M2-02，区别于 60001 余额不足）
 60001  余额不足
 60002  重复支付
@@ -144,6 +145,12 @@ Body 参数：
 |---|---|---|
 | sent | boolean | 是否发送成功 |
 | expires_in | integer | 有效秒数 |
+| business_request_id | string | 平台短信请求标识，用于排障 |
+| submit_status | string | 固定为 `accepted`；仅表示阿里云受理 |
+
+> 手机短信在任何环境的成功响应中都不得包含验证码；验证码明文只在服务端进程内短暂传给 Sender。`sent=true` / `submit_status=accepted` 均只表示提交成功，不代表送达。
+>
+> 本表是短信阶段 1 的正式响应契约；客户端必须校验完整成功字段，HTTP 200 空对象不得视为发送成功。
 
 > ⚠️ **D-96（2026-06-15）**：换绑/管理员认证发码已迁移到专属认证态端点，公开端点不再接受对应 scene：
 > - 换绑手机/邮箱：`POST /api/me/verification-codes/{phone,email}`（需登录）
@@ -421,7 +428,7 @@ Body 参数：
 
 D-96：获取 `scene=admin_verify` 验证码请调用 `POST /api/admin/auth/verification-codes/phone`（需 Bearer Token + `user:manage` 权限，无请求体），
 验证码发送至当前登录管理员自己绑定的手机号；若该账号未绑定手机号则返回 400（错误码 40000）。
-返回 data 非生产环境含 `code` 字段（明文验证码，便于调试），生产环境为 `{}`。
+成功响应统一遵循 §2.2 手机短信契约：`{sent,expires_in,business_request_id,submit_status}`。
 
 ### 2.15 管理员邮箱双重认证
 
@@ -443,7 +450,7 @@ Body 参数：
 
 D-96：获取 `scene=admin_verify` 验证码请调用 `POST /api/admin/auth/verification-codes/email`（需 Bearer Token + `user:manage` 权限，无请求体），
 验证码发送至当前登录管理员自己绑定的邮箱；若该账号未绑定邮箱则返回 400（错误码 40000）。
-返回 data 非生产环境含 `code` 字段（明文验证码，便于调试），生产环境为 `{}`。
+成功响应统一遵循 §2.1 邮箱验证码契约：`{sent,expires_in}`。
 
 ### 2.16 修改用户名
 
@@ -470,7 +477,7 @@ PATCH /api/me/phone
 需要：Bearer Token。先向新手机号发送验证码（scene=bind_phone），再提交本接口。
 
 D-96：发送验证码请调用 `POST /api/me/verification-codes/phone`（需 Bearer Token），body 为 `{"phone": "<新手机号>"}`；
-若新手机号已被其他账号注册则返回 409（错误码 40900）。返回 data 非生产环境含 `code` 字段（明文验证码，便于调试），生产环境为 `{}`。
+若新手机号已被其他账号注册则返回 409（错误码 40900）。成功响应统一遵循 §2.2 手机短信契约：`{sent,expires_in,business_request_id,submit_status}`。
 
 Body 参数：
 
@@ -490,7 +497,7 @@ PATCH /api/me/email
 需要：Bearer Token。先向新邮箱发送验证码（scene=bind_email），再提交本接口。
 
 D-96：发送验证码请调用 `POST /api/me/verification-codes/email`（需 Bearer Token），body 为 `{"email": "<新邮箱>"}`；
-若新邮箱已被其他账号注册则返回 409（错误码 40900）。返回 data 非生产环境含 `code` 字段（明文验证码，便于调试），生产环境为 `{}`。
+若新邮箱已被其他账号注册则返回 409（错误码 40900）。成功响应统一遵循 §2.1 邮箱验证码契约：`{sent,expires_in}`。
 
 Body 参数：
 
@@ -1196,6 +1203,309 @@ GET /api/admin/users/:id/effective-permissions
 `/api/admin/users/{id}/...` 接口——如 3.6 用户角色、用户权限覆盖等——保持一致，IAM 模块
 不持有用户表，无法做存在性校验）。若 `:id` 不存在，`permissions` 和 `overrides` 均返回
 空数组 `[]`，HTTP 状态码仍为 `200`，**不会**返回 404。
+
+### 3.19 短信模板管理（阿里云短信，分阶段正式契约）
+
+> 本节是短信模板管理的后端与前端对接权威契约。首期只支持中国大陆验证码短信和阿里云单供应商；阿里云侧模板正文、模板编码和审核状态只读，平台只维护本地启停与业务场景绑定。
+>
+> 所有接口均需要 Bearer Token 和管理员双重认证。列表接口严格使用 D-95 扁平分页结构 `{items,page,page_size,total}`。同步、绑定、启停、测试发送必须写入审计日志。
+
+> 实现状态（2026-08-03）：阶段 1 仅落地 `000058` 数据基础、现有手机号发码关闭态链路、Sender/阿里云适配器、Mock 和脱敏日志；本节 `/api/admin/sms/*` 管理接口仍属于阶段 2，当前未注册路由，不得按已上线能力对接。
+
+权限码：
+
+| 权限码 | 能力 |
+|---|---|
+| `sms:template:view` | 查看模板、场景绑定和脱敏发送记录 |
+| `sms:template:manage` | 修改模板本地状态和场景绑定 |
+| `sms:template:sync` | 从阿里云同步模板快照 |
+| `sms:template:test` | 向配置的测试白名单手机号提交测试短信 |
+
+短信业务场景固定为：`register`、`login`、`reset_password`、`bind_phone`、`admin_verify`。邮箱验证码场景不使用本模块。
+
+短信签名首期固定由后端安全配置 `SMS_ALIYUN_SIGN_NAME` 读取。管理接口只读返回 `sign_name`，前端不得提交或编辑签名；更换签名属于运维配置变更，必须先确认阿里云审核状态并重新发布后端。
+
+#### 3.19.1 短信管理概览
+
+```text
+GET /api/admin/sms/summary
+```
+
+权限：`sms:template:view`。返回 `data`：
+
+```json
+{
+  "template_total": 10,
+  "approved_total": 8,
+  "local_enabled_total": 5,
+  "scene_total": 5,
+  "unbound_scene_total": 1,
+  "last_synced_at": "2026-07-22T10:05:00+08:00"
+}
+```
+
+从未同步过模板时 `last_synced_at=null`。该接口用于页面顶部概览，避免前端通过多次列表请求和客户端聚合推导全局统计。
+
+`unbound_scene_total` 统计没有有效绑定的场景，即不存在绑定、`enabled=false`，或绑定模板已不可用的场景。
+
+#### 3.19.2 模板列表
+
+```text
+GET /api/admin/sms/templates
+```
+
+权限：`sms:template:view`。
+
+查询参数：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| page | integer | 否 | 默认 1 |
+| page_size | integer | 否 | 默认 20，最大 100 |
+| keyword | string | 否 | 按模板名称或模板编码模糊搜索 |
+| provider_audit_status | string | 否 | `pending` / `approved` / `rejected` / `disabled` |
+| local_enabled | boolean | 否 | 本地启用状态 |
+| scene | string | 否 | 五个固定短信场景之一 |
+
+返回 `data`：
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "provider": "aliyun",
+      "template_code": "SMS_000000001",
+      "template_name": "用户注册验证码",
+      "template_type": "verification_code",
+      "template_content": "您正在注册墨灵平台，验证码为${code}，请勿泄露。",
+      "variables": ["code"],
+      "provider_audit_status": "approved",
+      "provider_reject_reason": null,
+      "provider_updated_at": null,
+      "local_enabled": true,
+      "version": 1,
+      "bound_scenes": ["register"],
+      "last_synced_at": "2026-07-22T10:05:00+08:00",
+      "created_at": "2026-07-22T10:05:00+08:00",
+      "updated_at": "2026-07-22T10:05:00+08:00"
+    }
+  ],
+  "page": 1,
+  "page_size": 20,
+  "total": 1
+}
+```
+
+`provider_reject_reason`、`provider_updated_at` 允许为 `null`；模板一旦由同步创建，`last_synced_at/created_at/updated_at` 必须非空。
+
+#### 3.19.3 模板详情
+
+```text
+GET /api/admin/sms/templates/:id
+```
+
+权限：`sms:template:view`。返回字段与列表项一致；不存在返回 `404/40400`。
+
+#### 3.19.4 同步阿里云模板
+
+```text
+POST /api/admin/sms/templates/sync
+```
+
+权限：`sms:template:sync`。无请求体。按 `(provider, template_code)` 幂等写入或更新本地快照，不在阿里云侧创建、修改或删除模板。
+
+返回 `data`：
+
+```json
+{
+  "created_count": 2,
+  "updated_count": 3,
+  "unchanged_count": 5,
+  "synced_at": "2026-07-22T10:05:00+08:00"
+}
+```
+
+阿里云查询失败时整个同步请求失败并返回 `502/50200`，不得把不完整结果描述为同步成功；重复同步不得产生重复模板。
+
+同步接口采用同步执行，后端总截止时间为 10 秒；前端应为该接口单独配置不少于 15 秒的请求超时。10 秒内未完成时返回 `502/50200`，且本次不得写入部分模板快照。若未来模板规模无法满足该上限，再通过新版本契约升级为异步任务，首期不混用两种语义。
+
+#### 3.19.5 场景绑定列表
+
+```text
+GET /api/admin/sms/scenes
+```
+
+权限：`sms:template:view`。支持通用 `page/page_size`，固定返回五个场景并遵守 D-95：
+
+```json
+{
+  "items": [
+    {
+      "scene": "register",
+      "scene_name": "用户注册",
+      "enabled": true,
+      "sign_name": "墨灵平台",
+      "template": {
+        "id": 1,
+        "template_code": "SMS_000000001",
+        "template_name": "用户注册验证码",
+        "provider_audit_status": "approved",
+        "local_enabled": true
+      },
+      "version": 1,
+      "updated_by": 10001,
+      "updated_at": "2026-07-22T10:10:00+08:00"
+    }
+  ],
+  "page": 1,
+  "page_size": 20,
+  "total": 5
+}
+```
+
+未绑定时 `template`、`sign_name`、`updated_by`、`updated_at` 为 `null`，`enabled=false`、`version=0`。
+
+#### 3.19.6 更新场景绑定
+
+```text
+PUT /api/admin/sms/scenes/:scene
+```
+
+权限：`sms:template:manage`。
+
+Body：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| template_id | integer | 是 | 本地模板 ID |
+| enabled | boolean | 是 | 是否允许该场景提交短信 |
+| version | integer | 是 | 当前绑定版本；首次配置传 0，防止并发覆盖 |
+
+`sign_name` 由后端从 `SMS_ALIYUN_SIGN_NAME` 读取并保存为绑定快照，不接受请求体传入。模板必须 `provider_audit_status=approved`、`local_enabled=true`，且变量必须准确包含 `code`；同一场景只有一个当前绑定。版本冲突、绑定不合规模板返回 `409/40900`。返回更新后的场景对象。
+
+#### 3.19.7 修改模板本地状态
+
+```text
+PATCH /api/admin/sms/templates/:id/status
+```
+
+权限：`sms:template:manage`。
+
+Body：
+
+```json
+{
+  "enabled": false,
+  "version": 1
+}
+```
+
+只有阿里云审核通过的模板可以启用。仍被已启用场景引用的模板不能直接停用，返回 `409/40900`，管理员应先停用或改绑对应场景。版本冲突返回 `409/40900`。返回更新后的模板对象。
+
+#### 3.19.8 测试提交短信
+
+```text
+POST /api/admin/sms/templates/:id/test-send
+```
+
+权限：`sms:template:test`，同时要求管理员双重认证、测试手机号白名单、按管理员与手机号双维度限流。必须携带 `Idempotency-Key` 请求头；同一管理员使用相同 Key 和相同请求体重试时返回首次业务请求结果且不再次提交短信，相同 Key 携带不同请求体返回 `409/40900`。
+
+Body：
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---:|---|
+| phone | string | 是 | 仅允许运维配置的测试白名单手机号；不持久化完整值 |
+| scene | string | 是 | 必须是该模板当前已启用的 `bound_scenes` 之一；未绑定或绑定已停用返回 `409/40900` |
+
+返回 `data`：
+
+```json
+{
+  "business_request_id": "sms_req_xxx",
+  "provider_request_id": "aliyun_request_xxx",
+  "submit_status": "accepted",
+  "submitted_at": "2026-07-22T10:15:00+08:00"
+}
+```
+
+`provider_request_id` 在阿里云未返回请求标识时允许为 `null`。`accepted` 仅表示阿里云已受理，不代表运营商送达或用户已收到。响应不得返回验证码。
+
+超限返回 `429/42900`，同时返回 HTTP `Retry-After: <秒>` 和 `data.retry_after_seconds`；两者值必须一致。前端在倒计时结束前不得自动重试。幂等重放返回首次结果，不消耗新的限流次数。
+
+#### 3.19.9 脱敏发送记录
+
+```text
+GET /api/admin/sms/send-logs
+```
+
+权限：`sms:template:view`。
+
+查询参数：`page`、`page_size`、`template_id`、`scene`、`submit_status`（`pending/accepted/failed`）、`started_at`、`ended_at`。时间参数必须使用带时区偏移的 RFC3339；后端统一转换为 UTC 查询，区间为闭区间 `[started_at, ended_at]`，`started_at` 不得晚于 `ended_at`，单次跨度最大 31 天。
+
+返回 `data` 使用 D-95，`items` 单条结构：
+
+```json
+{
+  "id": 1,
+  "scene": "register",
+  "phone_masked": "138****5678",
+  "template_id": 1,
+  "template_code": "SMS_000000001",
+  "sign_name": "墨灵平台",
+  "provider": "aliyun",
+  "business_request_id": "sms_req_xxx",
+  "provider_request_id": null,
+  "provider_code": null,
+  "submit_status": "accepted",
+  "failure_summary": null,
+  "submitted_at": "2026-07-22T10:15:00+08:00"
+}
+```
+
+`provider_request_id`、`provider_code`、`failure_summary` 均允许为 `null`：请求尚未完成或供应商未返回对应字段时为 `null`；只有失败且存在安全摘要时 `failure_summary` 才非空。不得返回完整手机号、手机号 HMAC、验证码、AccessKey、请求签名原文或供应商原始响应。
+
+#### 3.19.10 短信管理错误码与安全语义
+
+| 错误码 | HTTP | 适用场景 |
+|---|---:|---|
+| 40000 | 400 | 参数、场景、手机号或模板变量不合法；测试手机号不在白名单 |
+| 40001 | 401 | 未登录或 Token 无效 |
+| 40003 | 403 | 缺少对应短信权限 |
+| 40031 | 403 | 管理员未完成双重认证 |
+| 40400 | 404 | 模板或场景绑定不存在 |
+| 40900 | 409 | 版本冲突、模板状态冲突、已启用绑定阻止停用 |
+| 42900 | 429 | 同步或测试发送频率超限 |
+| 50200 | 502 | 阿里云拒绝、超时或上游查询/提交失败 |
+| 50300 | 503 | 短信功能关闭、必要配置缺失或无可用场景绑定 |
+
+供应商错误只允许映射为清洗后的中文摘要，不能向客户端暴露内部堆栈、密钥、签名原文或完整供应商请求。生产环境禁止回退到模拟短信。
+
+429 响应示例：
+
+```json
+{
+  "code": 42900,
+  "message": "请求过于频繁，请稍后重试",
+  "data": { "retry_after_seconds": 30 },
+  "request_id": "req_xxx"
+}
+```
+
+#### 3.19.11 现有验证码发送状态约束
+
+现有验证码接口路径和请求字段保持不变。只有 `target_type=phone` 的验证码强制执行供应商发送状态，流程如下：
+
+```text
+创建 pending 验证码 → 调用阿里云 → accepted：标记 sent，可校验
+                                   → 失败：标记 failed，不可校验
+```
+
+手机号验证码校验只接受 `send_status=sent`、未使用且未过期的记录。`target_type=email` 继续沿用现有邮箱链路，不调用短信适配器，也不以阿里云受理为校验条件；数据库中使用 `send_status=not_applicable` 明确表示短信发送状态不适用。验证码有效期仍为 10 分钟，消费时继续原子写入 `used_at`。
+
+迁移时 `send_status` 新增为 `NOT NULL DEFAULT 'not_applicable'`：历史邮箱记录保持 `not_applicable` 并按原条件校验；历史手机号记录不得回填为 `sent`，上线前等待现有 10 分钟 OTP 窗口耗尽，之后新手机号记录显式写 `pending`。校验逻辑按 `target_type` 分支，禁止无条件增加 `send_status='sent'` 导致邮箱验证码失效。生产响应和所有日志不得出现明文验证码。
+
+阶段 1 手机发码成功时遵循 §2.2 统一响应 `{sent,expires_in,business_request_id,submit_status}`，不返回验证码或供应商原始响应。关闭开关、配置不完整或无有效数据库绑定时返回 `503/50300`；供应商提交失败返回清洗后的 `502/50200`。邮箱发码保持原有非生产调试行为，不进入短信 Sender。
 
 ## 4. 商品、订单、钱包和计费接口
 

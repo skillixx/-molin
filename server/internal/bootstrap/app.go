@@ -50,6 +50,9 @@ import (
 	provisionmod "molin/server/internal/modules/provision"
 	provisionhandler "molin/server/internal/modules/provision/handler"
 	provisionsvc "molin/server/internal/modules/provision/service"
+	smsrepo "molin/server/internal/modules/sms/repository"
+	smssender "molin/server/internal/modules/sms/sender"
+	smsservice "molin/server/internal/modules/sms/service"
 	tokengatewaymod "molin/server/internal/modules/token_gateway"
 	tokenclient "molin/server/internal/modules/token_gateway/client"
 	tokengatewaysvc "molin/server/internal/modules/token_gateway/service"
@@ -515,6 +518,10 @@ func (a *orderBillingAdapter) DeductTx(tx *gorm.DB, userID uint64, amount decima
 // NewApp 初始化所有基础设施和模块，完成依赖注入，返回可启动的 App。
 func NewApp() (*App, error) {
 	cfg := config.Load()
+	// 短信关闭时不要求供应商配置；一旦开启则启动前完整校验，禁止带病运行或回退 Mock。
+	if err := cfg.ValidateSMS(); err != nil {
+		return nil, fmt.Errorf("短信配置校验失败: %w", err)
+	}
 
 	// 自建可信开关：注入工作台 SSRF 校验包，开启后对外链接放开 http 与内网/IP（MCP/插件/Skill/应用入口）。
 	wbsecurity.Configure(cfg.TrustInternalOutbound)
@@ -574,6 +581,17 @@ func NewApp() (*App, error) {
 	verificationRepo := authrep.NewVerificationRepository(gormDB)
 	loginLogRepo := authrep.NewLoginLogRepository(gormDB)
 	verifySvc := authsvc.NewVerificationService(verificationRepo)
+	// 阶段 1 默认关闭短信。只有显式开启且配置完整时才构造真实阿里云 Sender；Mock 仅能由测试注入。
+	smsRepo := smsrepo.NewSMSRepository(gormDB)
+	var smsSender smssender.Sender
+	if cfg.SMSEnabled {
+		aliyunSender, err := smssender.NewAliyunSender(cfg.SMSAliyunAccessKeyID, cfg.SMSAliyunAccessKeySecret, cfg.SMSAliyunEndpoint)
+		if err != nil {
+			return nil, err
+		}
+		smsSender = aliyunSender
+	}
+	verifySvc.SetSMSDispatcher(smsservice.NewDispatcher(cfg, smsRepo, smsSender))
 	// 传入 redisClient，用于封禁用户黑名单（P1-01 修复）；传入 auditSvc 用于封禁/解封审计记录（A-05）；
 	// 传入 iamService 作为 PermissionResolver，用于 GET /api/me/permissions（A-10）
 	authService := authsvc.NewAuthService(userRepo, sessionRepo, verifySvc, loginLogRepo, cfg, redisClient, auditSvc, iamService, gormDB)
