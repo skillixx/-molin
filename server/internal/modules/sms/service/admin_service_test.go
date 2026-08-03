@@ -110,6 +110,13 @@ func (f fakeTemplateProvider) ListTemplates(context.Context) ([]sender.TemplateS
 	return f.items, f.err
 }
 
+type blockingTemplateProvider struct{ released <-chan struct{} }
+
+func (f blockingTemplateProvider) ListTemplates(context.Context) ([]sender.TemplateSnapshot, error) {
+	<-f.released
+	return nil, nil
+}
+
 type fakeSyncRepository struct {
 	called int
 	items  []model.TemplateSnapshot
@@ -130,6 +137,24 @@ func TestSyncTemplatesDoesNotWriteWhenProviderQueryFails(t *testing.T) {
 	_, err := svc.SyncTemplates(context.Background())
 	if !errors.Is(err, ErrSMSTemplateSyncFailed) || repo.called != 0 {
 		t.Fatalf("供应商查询失败不得写入，err=%v called=%d", err, repo.called)
+	}
+}
+
+func TestSyncTemplatesHonorsContextDeadlineWhenProviderIgnoresCancellation(t *testing.T) {
+	repo := &fakeSyncRepository{}
+	released := make(chan struct{})
+	svc := NewSMSAdminService(repo)
+	svc.ConfigureTemplateSync(blockingTemplateProvider{released: released}, "固定签名")
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	startedAt := time.Now()
+	_, err := svc.SyncTemplates(ctx)
+	close(released)
+	if !errors.Is(err, ErrSMSTemplateSyncFailed) || repo.called != 0 {
+		t.Fatalf("供应商忽略取消时必须按总截止失败且零写入: err=%v called=%d", err, repo.called)
+	}
+	if elapsed := time.Since(startedAt); elapsed > 500*time.Millisecond {
+		t.Fatalf("同步总截止未生效: elapsed=%s", elapsed)
 	}
 }
 
@@ -235,6 +260,7 @@ func TestSMSAdminServiceRejectsEnablingUnapprovedTemplate(t *testing.T) {
 		Version:             2,
 	}}
 	svc := NewSMSAdminService(repo)
+	svc.fixedSignName = "固定签名"
 
 	_, err := svc.SetTemplateStatus(context.Background(), 7, 2, true)
 	if !errors.Is(err, ErrSMSTemplateNotApproved) {
@@ -254,6 +280,7 @@ func TestSMSAdminServiceUpdatesApprovedTemplateWithVersion(t *testing.T) {
 		Version:             2,
 	}}
 	svc := NewSMSAdminService(repo)
+	svc.fixedSignName = "固定签名"
 
 	got, err := svc.SetTemplateStatus(context.Background(), 7, 2, true)
 	if err != nil {
@@ -264,5 +291,15 @@ func TestSMSAdminServiceUpdatesApprovedTemplateWithVersion(t *testing.T) {
 	}
 	if !got.LocalEnabled || got.Version != 3 {
 		t.Fatalf("返回的新版本状态错误: %#v", got)
+	}
+}
+
+func TestSMSAdminServiceRejectsEnablingTemplateWithoutFixedSign(t *testing.T) {
+	repo := &fakeSMSAdminTemplateRepository{template: &model.Template{ID: 7, ProviderAuditStatus: "approved", TemplateType: "verification", Content: "验证码 ${code}", Version: 2}}
+	svc := NewSMSAdminService(repo)
+
+	_, err := svc.SetTemplateStatus(context.Background(), 7, 2, true)
+	if !errors.Is(err, ErrSMSAdminUnavailable) || repo.updateCalls != 0 {
+		t.Fatalf("固定签名缺失时不得启用模板: err=%v calls=%d", err, repo.updateCalls)
 	}
 }

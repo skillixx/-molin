@@ -133,6 +133,21 @@ func TestSMSAdminTemplateStatusMapsAuditConflict(t *testing.T) {
 	}
 }
 
+func TestSMSAdminTemplateStatusMapsMissingFixedSignToUnavailable(t *testing.T) {
+	app := &fakeSMSAdminApplication{statusErr: service.ErrSMSAdminUnavailable}
+	h := NewSMSAdminHandler(app)
+	req := httptest.NewRequest(http.MethodPatch, "/api/admin/sms/templates/7/status", bytes.NewBufferString(`{"enabled":true,"version":1}`))
+	req.SetPathValue("id", "7")
+	recorder := httptest.NewRecorder()
+
+	h.SetTemplateStatus(recorder, req)
+
+	var body response.Body
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil || recorder.Code != http.StatusServiceUnavailable || body.Code != 50300 {
+		t.Fatalf("固定签名缺失必须失败关闭为 503/50300: status=%d body=%s err=%v", recorder.Code, recorder.Body.String(), err)
+	}
+}
+
 func TestSMSAdminWriteEndpointsRecordSanitizedAudit(t *testing.T) {
 	app := &fakeSMSAdminApplication{
 		syncResult:     model.TemplateSyncResult{TotalCount: 1},

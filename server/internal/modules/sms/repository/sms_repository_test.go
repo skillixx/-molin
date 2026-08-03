@@ -86,6 +86,39 @@ func TestGetAdminSummaryUsesSingleDatabaseAggregate(t *testing.T) {
 	}
 }
 
+func TestListAdminTemplatesLoadsBoundScenesInOneQuery(t *testing.T) {
+	repo, mock, closeDB := newSMSRepositoryMock(t)
+	defer closeDB()
+	now := time.Now().UTC()
+	mock.ExpectQuery("SELECT count\\(\\*\\) FROM `sms_templates`").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+	mock.ExpectQuery("SELECT \\* FROM `sms_templates` ORDER BY sms_templates.id DESC LIMIT \\?").
+		WithArgs(20).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "provider", "template_code", "template_name", "template_type", "provider_audit_status", "content", "variables_json", "local_enabled", "version", "last_synced_at", "created_at", "updated_at"}).
+			AddRow(9, "aliyun", "SMS_NINE", "模板九", "verification", "approved", "验证码 ${code}", []byte(`["code"]`), true, 1, now, now, now).
+			AddRow(7, "aliyun", "SMS_SEVEN", "模板七", "verification", "approved", "验证码 ${code}", []byte(`["code"]`), true, 1, now, now, now))
+	mock.ExpectQuery("SELECT template_id, scene FROM `sms_scene_bindings` WHERE template_id IN \\(\\?,\\?\\) AND enabled = \\? ORDER BY template_id ASC, scene ASC").
+		WithArgs(uint64(9), uint64(7), true).
+		WillReturnRows(sqlmock.NewRows([]string{"template_id", "scene"}).
+			AddRow(7, "login").
+			AddRow(9, "admin_verify").
+			AddRow(9, "register"))
+
+	items, total, err := repo.ListAdminTemplates(context.Background(), model.TemplateListFilter{Limit: 20})
+	if err != nil || total != 2 || len(items) != 2 {
+		t.Fatalf("模板列表批量加载失败: total=%d items=%#v err=%v", total, items, err)
+	}
+	if got := items[0].BoundScenes; len(got) != 2 || got[0] != "admin_verify" || got[1] != "register" {
+		t.Fatalf("模板九绑定场景错误: %#v", got)
+	}
+	if got := items[1].BoundScenes; len(got) != 1 || got[0] != "login" {
+		t.Fatalf("模板七绑定场景错误: %#v", got)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("模板列表必须只执行一次场景批量查询: %v", err)
+	}
+}
+
 func TestUpdateAdminTemplateStatusUsesVersionAndActiveBindingGuard(t *testing.T) {
 	repo, mock, closeDB := newSMSRepositoryMock(t)
 	defer closeDB()

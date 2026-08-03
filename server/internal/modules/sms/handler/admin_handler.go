@@ -352,7 +352,7 @@ func smsAdminError(w http.ResponseWriter, err error) {
 		response.Error(w, http.StatusBadRequest, 40000, "短信场景或请求参数不合法")
 	case errors.Is(err, service.ErrSMSSceneTemplateInvalid), errors.Is(err, service.ErrSMSSceneVersionConflict):
 		response.Error(w, http.StatusConflict, 40900, "配置已被其他管理员修改或模板不可用，请刷新后重试")
-	case errors.Is(err, service.ErrSMSTemplateProviderUnavailable):
+	case errors.Is(err, service.ErrSMSAdminUnavailable), errors.Is(err, service.ErrSMSTemplateProviderUnavailable):
 		response.Error(w, http.StatusServiceUnavailable, 50300, "短信模板同步配置未就绪")
 	case errors.Is(err, service.ErrSMSTemplateSyncFailed):
 		response.Error(w, http.StatusBadGateway, 50200, "阿里云短信模板同步失败")

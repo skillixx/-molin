@@ -649,31 +649,31 @@ server/internal/modules/asset/
 
 九个管理接口必须逐项覆盖：
 
-> 开发自测快照（2026-08-03）：九条路由及最小权限映射、九接口 401/403/MFA 矩阵、模板适配器、同步失败零写入、20 路同步去重、模板启停 CAS、固定五场景、两路同版本场景冲突、16 路测试发送并发单外呼、幂等隔离与冲突、白名单、双维限流失败关闭、审计/响应脱敏、全库 Go 测试、vet、依赖校验和敏感扫描已通过。MySQL 8 `1→59→58→59`、真实 Redis 双维 Lua 和 Linux race 已固化到 CI，但尚未远程执行。下表“待执行”专指独立 QA 的 HTTP、真实 MySQL 8、真实 Redis 与获批真实阿里云验证，开发自测不能代替验收签字。
+> 开发及 CI 快照（2026-08-03）：九条路由及最小权限映射、九接口 401/403/MFA 矩阵、模板适配器、同步失败零写入与总截止、同步去重、模板启停 CAS、固定五场景、同版本场景冲突、测试发送并发单外呼、幂等隔离与冲突、白名单、双维限流失败关闭、审计/响应脱敏、全库 Go 测试、vet、依赖校验和敏感扫描已通过。PR #315 的 GitHub Actions 运行 #371 已在 MySQL 8、Redis 7 和 Linux race 环境通过。下表状态仍明确保留独立 QA HTTP 验收及获批真实阿里云验证，自动化不能代替验收签字。
 
 | 编号 | 方法与路径 | 权限 | 核心检查 | 当前状态 |
 |---|---|---|---|---|
-| SMS-A01 | `GET /api/admin/sms/summary` | `sms:template:view` | 统计口径正确；从未同步时 `last_synced_at=null`；无客户端多页聚合假设 | 待执行 |
-| SMS-A02 | `GET /api/admin/sms/templates` | `sms:template:view` | 筛选、边界分页、空列表及 D-95 `{items,page,page_size,total}` | 待执行 |
-| SMS-A03 | `GET /api/admin/sms/templates/{id}` | `sms:template:view` | 完整字段、可空字段、404/40400 和敏感信息边界 | 待执行 |
-| SMS-A04 | `POST /api/admin/sms/templates/sync` | `sms:template:sync` | 无 body；幂等计数；供应商失败无部分写；后端总截止 10 秒 | 待执行 |
-| SMS-A05 | `GET /api/admin/sms/scenes` | `sms:template:view` | 固定五场景、D-95；未绑定字段为 `null`、`enabled=false`、`version=0` | 待执行 |
-| SMS-A06 | `PUT /api/admin/sms/scenes/{scene}` | `sms:template:manage` | 只接收 `template_id/enabled/version`；不接收 `sign_name`；版本冲突返回 409/40900 | 待执行 |
-| SMS-A07 | `PATCH /api/admin/sms/templates/{id}/status` | `sms:template:manage` | 乐观锁、审核状态约束及有效绑定阻止停用 | 待执行 |
-| SMS-A08 | `POST /api/admin/sms/templates/{id}/test-send` | `sms:template:test` | 白名单、场景绑定、`Idempotency-Key`、双维度限流和受理语义 | 待执行 |
-| SMS-A09 | `GET /api/admin/sms/send-logs` | `sms:template:view` | D-95、筛选、可空字段、RFC3339 闭区间、开始不晚于结束、最大 31 天及脱敏 | 待执行 |
+| SMS-A01 | `GET /api/admin/sms/summary` | `sms:template:view` | 统计口径正确；从未同步时 `last_synced_at=null`；无客户端多页聚合假设 | 自动化通过；QA HTTP 待验收 |
+| SMS-A02 | `GET /api/admin/sms/templates` | `sms:template:view` | 筛选、边界分页、空列表及 D-95 `{items,page,page_size,total}` | 自动化通过；QA HTTP 待验收 |
+| SMS-A03 | `GET /api/admin/sms/templates/{id}` | `sms:template:view` | 完整字段、可空字段、404/40400 和敏感信息边界 | 自动化通过；QA HTTP 待验收 |
+| SMS-A04 | `POST /api/admin/sms/templates/sync` | `sms:template:sync` | 无 body；幂等计数；供应商失败无部分写；后端总截止 10 秒 | 自动化通过；真实阿里云待授权 |
+| SMS-A05 | `GET /api/admin/sms/scenes` | `sms:template:view` | 固定五场景、D-95；未绑定字段为 `null`、`enabled=false`、`version=0` | 自动化通过；QA HTTP 待验收 |
+| SMS-A06 | `PUT /api/admin/sms/scenes/{scene}` | `sms:template:manage` | 只接收 `template_id/enabled/version`；不接收 `sign_name`；版本冲突返回 409/40900 | 自动化通过；QA HTTP 待验收 |
+| SMS-A07 | `PATCH /api/admin/sms/templates/{id}/status` | `sms:template:manage` | 乐观锁、审核状态约束及有效绑定阻止停用 | 自动化通过；QA HTTP 待验收 |
+| SMS-A08 | `POST /api/admin/sms/templates/{id}/test-send` | `sms:template:test` | 白名单、场景绑定、`Idempotency-Key`、双维度限流和受理语义 | 自动化通过；真实发送待授权 |
+| SMS-A09 | `GET /api/admin/sms/send-logs` | `sms:template:view` | D-95、筛选、可空字段、RFC3339 闭区间、开始不晚于结束、最大 31 天及脱敏 | 自动化通过；QA HTTP 待验收 |
 
 四个权限必须分别创建最小权限管理员测试，不能只用超级管理员覆盖：
 
 | 权限测试 | 期望结果 | 当前状态 |
 |---|---|---|
-| 无 Token 调用任一短信管理接口 | `401/40001` | 待执行 |
-| 已登录但未完成管理员双重认证 | `403/40031` | 待执行 |
-| 仅有 `sms:template:view` | 只允许 A01/A02/A03/A05/A09；写接口返回 `403/40003` | 待执行 |
-| 仅追加 `sms:template:manage` | 允许 A06/A07，不获得同步和测试发送能力 | 待执行 |
-| 仅追加 `sms:template:sync` | 只新增 A04 能力 | 待执行 |
-| 仅追加 `sms:template:test` | 只新增 A08 能力 | 待执行 |
-| 权限 seed 重复执行 | 不产生重复权限或重复角色绑定 | 待执行 |
+| 无 Token 调用任一短信管理接口 | `401/40001` | 自动化通过；QA 待复核 |
+| 已登录但未完成管理员双重认证 | `403/40031` | 自动化通过；QA 待复核 |
+| 仅有 `sms:template:view` | 只允许 A01/A02/A03/A05/A09；写接口返回 `403/40003` | 自动化通过；QA 待复核 |
+| 仅追加 `sms:template:manage` | 允许 A06/A07，不获得同步和测试发送能力 | 自动化通过；QA 待复核 |
+| 仅追加 `sms:template:sync` | 只新增 A04 能力 | 自动化通过；QA 待复核 |
+| 仅追加 `sms:template:test` | 只新增 A08 能力 | 自动化通过；QA 待复核 |
+| 权限 seed 重复执行 | 不产生重复权限或重复角色绑定 | MySQL 8 CI 通过；QA 待复核 |
 
 同步、绑定和测试发送必须补充以下并发与幂等用例：
 

@@ -28,6 +28,9 @@ ALTER TABLE sms_send_logs
   ADD KEY idx_sms_send_logs_template_status (template_id, submit_status),
   ADD CONSTRAINT chk_sms_send_logs_purpose CHECK (purpose IN ('otp', 'test'));
 
+-- 升级前的阶段 1 日志没有 submitted_at，必须沿用原 created_at，不能误记为本次 migration 时间。
+UPDATE sms_send_logs SET submitted_at = created_at;
+
 -- 单例行只用于在数据库事务内串行应用完整模板快照；供应商查询在取得锁前完成，避免长事务外呼。
 CREATE TABLE sms_template_sync_locks (
   lock_name VARCHAR(32) NOT NULL,

@@ -72,10 +72,27 @@ func TestSMSPhase2FullMySQL8Matrix(t *testing.T) {
 		t.Fatalf("阶段 2 down 失败: %v", err)
 	}
 	assertSMSPhase2DownPreservesPhase1(t, db)
+	// 模拟阶段 1 已存在的历史日志，第二次 up 必须把 submitted_at 回填为原 created_at。
+	historicalCreatedAt := "2025-01-02 03:04:05"
+	if _, err := db.Exec("UPDATE sms_send_logs SET created_at = ?", historicalCreatedAt); err != nil {
+		t.Fatalf("准备阶段 1 历史短信日志失败: %v", err)
+	}
 	if _, err := db.Exec(readMigration(t, "000059_add_sms_phase2_management.up.sql")); err != nil {
 		t.Fatalf("阶段 2第二次 up 失败: %v", err)
 	}
 	assertSMSPhase2MySQLState(t, db)
+	assertSMSPhase2HistoricalSubmittedAt(t, db, historicalCreatedAt)
+}
+
+func assertSMSPhase2HistoricalSubmittedAt(t *testing.T, db *sql.DB, want string) {
+	t.Helper()
+	var createdAt, submittedAt string
+	if err := db.QueryRow("SELECT DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s'), DATE_FORMAT(submitted_at, '%Y-%m-%d %H:%i:%s') FROM sms_send_logs LIMIT 1").Scan(&createdAt, &submittedAt); err != nil {
+		t.Fatalf("读取阶段 2 历史日志回填结果失败: %v", err)
+	}
+	if createdAt != want || submittedAt != want {
+		t.Fatalf("历史日志 submitted_at 必须沿用 created_at: created_at=%s submitted_at=%s want=%s", createdAt, submittedAt, want)
+	}
 }
 
 func assertMySQL8(t *testing.T, db *sql.DB) {

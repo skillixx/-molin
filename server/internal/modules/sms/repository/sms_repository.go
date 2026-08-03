@@ -80,14 +80,38 @@ func (r *SMSRepository) ListAdminTemplates(ctx context.Context, filter model.Tem
 	if err := query.Order("sms_templates.id DESC").Offset(filter.Offset).Limit(filter.Limit).Find(&items).Error; err != nil {
 		return nil, 0, err
 	}
+	templateIDs := make([]uint64, 0, len(items))
 	for i := range items {
+		templateIDs = append(templateIDs, items[i].ID)
 		if items[i].Variables == nil {
 			items[i].Variables = []string{}
 		}
-		if err := r.db.WithContext(ctx).Model(&model.SceneBinding{}).Where("template_id = ? AND enabled = ?", items[i].ID, true).Order("scene ASC").Pluck("scene", &items[i].BoundScenes).Error; err != nil {
-			return nil, 0, err
+		items[i].BoundScenes = []string{}
+	}
+	if len(templateIDs) == 0 {
+		return items, total, nil
+	}
+	// 一次查询加载当前页全部启用场景，避免模板列表随 page_size 产生 N+1 数据库往返。
+	var sceneRows []struct {
+		TemplateID uint64
+		Scene      string
+	}
+	if err := r.db.WithContext(ctx).Model(&model.SceneBinding{}).
+		Select("template_id, scene").
+		Where("template_id IN ? AND enabled = ?", templateIDs, true).
+		Order("template_id ASC, scene ASC").Scan(&sceneRows).Error; err != nil {
+		return nil, 0, err
+	}
+	byTemplate := make(map[uint64][]string, len(items))
+	for _, row := range sceneRows {
+		byTemplate[row.TemplateID] = append(byTemplate[row.TemplateID], row.Scene)
+	}
+	for i := range items {
+		if scenes := byTemplate[items[i].ID]; len(scenes) > 0 {
+			items[i].BoundScenes = scenes
 		}
 		if items[i].BoundScenes == nil {
+			// JSON 契约固定返回空数组，禁止因数据库无绑定退化为 null。
 			items[i].BoundScenes = []string{}
 		}
 	}

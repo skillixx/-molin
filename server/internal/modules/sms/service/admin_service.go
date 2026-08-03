@@ -385,8 +385,27 @@ func (s *SMSAdminService) SyncTemplates(ctx context.Context) (model.TemplateSync
 	if s == nil || s.syncRepo == nil || s.templateProvider == nil || s.fixedSignName == "" {
 		return model.TemplateSyncResult{}, ErrSMSTemplateProviderUnavailable
 	}
-	providerSnapshots, err := s.templateProvider.ListTemplates(ctx)
-	if err != nil {
+	type providerResult struct {
+		items []sender.TemplateSnapshot
+		err   error
+	}
+	providerResults := make(chan providerResult, 1)
+	go func() {
+		items, err := s.templateProvider.ListTemplates(ctx)
+		providerResults <- providerResult{items: items, err: err}
+	}()
+	var providerSnapshots []sender.TemplateSnapshot
+	select {
+	case <-ctx.Done():
+		// 部分 SDK 调用无法直接绑定 context；缓冲通道保证迟到结果退出时不会阻塞协程。
+		return model.TemplateSyncResult{}, ErrSMSTemplateSyncFailed
+	case result := <-providerResults:
+		if result.err != nil {
+			return model.TemplateSyncResult{}, ErrSMSTemplateSyncFailed
+		}
+		providerSnapshots = result.items
+	}
+	if err := ctx.Err(); err != nil {
 		return model.TemplateSyncResult{}, ErrSMSTemplateSyncFailed
 	}
 	snapshots := make([]model.TemplateSnapshot, 0, len(providerSnapshots))
@@ -445,7 +464,7 @@ func (s *SMSAdminService) Summary(ctx context.Context) (SMSAdminSummary, error) 
 
 // SetTemplateStatus 校验供应商审核快照后执行乐观锁更新。
 func (s *SMSAdminService) SetTemplateStatus(ctx context.Context, id, version uint64, enabled bool) (*model.Template, error) {
-	if s == nil || s.templateRepo == nil {
+	if s == nil || s.templateRepo == nil || (enabled && s.fixedSignName == "") {
 		return nil, ErrSMSAdminUnavailable
 	}
 	template, err := s.templateRepo.GetAdminTemplate(ctx, id)
