@@ -134,6 +134,27 @@ func TestReserveTestSendRejectsSameAdminKeyWithChangedRequest(t *testing.T) {
 	}
 }
 
+func TestListAdminSendLogsNeverPublishesPendingRows(t *testing.T) {
+	repo, mock, closeDB := newSMSRepositoryMock(t)
+	defer closeDB()
+	now := time.Now().UTC()
+	mock.ExpectQuery("SELECT count\\(\\*\\) FROM `sms_send_logs` WHERE submit_status <> \\?").
+		WithArgs("pending").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery("SELECT \\* FROM `sms_send_logs` WHERE submit_status <> \\? ORDER BY id DESC LIMIT \\?").
+		WithArgs("pending", 20).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "purpose", "scene", "phone_masked", "template_code", "sign_name", "provider", "business_request_id", "submit_status", "submitted_at", "created_at"}).
+			AddRow(1, "test", "register", "pho****st-a", "SMS_SAFE", "固定签名", "aliyun", "sms_safe", "accepted", now, now))
+
+	items, total, err := repo.ListAdminSendLogs(context.Background(), model.SendLogListFilter{Limit: 20})
+	if err != nil || total != 1 || len(items) != 1 || items[0].SubmitStatus != "accepted" {
+		t.Fatalf("发送记录终态查询错误: total=%d items=%#v err=%v", total, items, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("发送记录查询必须固定排除 pending: %v", err)
+	}
+}
+
 func newSMSRepositoryMock(t *testing.T) (*SMSRepository, sqlmock.Sqlmock, func()) {
 	t.Helper()
 	sqlDB, mock, err := sqlmock.New()

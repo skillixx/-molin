@@ -14,7 +14,7 @@ jobs:
         image: mysql:8.0
         env:
           MYSQL_ROOT_PASSWORD: root_password
-          MYSQL_DATABASE: molin_test
+          MYSQL_DATABASE: molin_sms_test_ci
           MYSQL_USER: molin
           MYSQL_PASSWORD: molin_password
         ports: ["3306:3306"]
@@ -37,6 +37,10 @@ jobs:
         working-directory: server
         run: go mod download
 
+      - name: 校验模块依赖
+        working-directory: server
+        run: go mod verify
+
       - name: 代码检查（go vet）
         working-directory: server
         run: go vet ./...
@@ -47,13 +51,14 @@ jobs:
           APP_ENV: test
           MYSQL_HOST: 127.0.0.1
           MYSQL_PORT: 3306
-          MYSQL_DATABASE: molin_test
+          MYSQL_DATABASE: molin_sms_test_ci
           MYSQL_USER: molin
           MYSQL_PASSWORD: molin_password
           REDIS_ADDR: 127.0.0.1:6379
           JWT_SECRET: test_jwt_secret_for_ci_only_32chars
           REFRESH_TOKEN_SECRET: test_refresh_secret_for_ci_32chars
           ID_CARD_HMAC_SECRET: test_hmac_secret_for_ci_only_32c
+          SMS_MIGRATION_TEST_DSN: "molin:molin_password@tcp(127.0.0.1:3306)/molin_sms_test_ci?parseTime=true&multiStatements=true"
         run: go test -v -race -count=1 ./...
 
       - name: 构建确认

@@ -348,7 +348,11 @@ func randomSMSCode() (string, error) {
 	return fmt.Sprintf("%06d", value.Int64()), nil
 }
 
-type redisSMSAdminTestLimiter struct{ client *redis.Client }
+type redisSMSEvaluator interface {
+	Eval(ctx context.Context, script string, keys []string, args ...interface{}) *redis.Cmd
+}
+
+type redisSMSAdminTestLimiter struct{ client redisSMSEvaluator }
 
 func (l *redisSMSAdminTestLimiter) Allow(ctx context.Context, adminID uint64, phoneDigest string) (bool, int64, error) {
 	const script = `local a=tonumber(redis.call('GET',KEYS[1]) or '0'); local p=tonumber(redis.call('GET',KEYS[2]) or '0'); if a>=10 or p>=10 then local t=math.max(redis.call('TTL',KEYS[1]),redis.call('TTL',KEYS[2])); if t<1 then t=60 end; return {0,t} end; local na=redis.call('INCR',KEYS[1]); local np=redis.call('INCR',KEYS[2]); if na==1 then redis.call('EXPIRE',KEYS[1],60) end; if np==1 then redis.call('EXPIRE',KEYS[2],60) end; return {1,0}`
@@ -383,12 +387,22 @@ func (s *SMSAdminService) SyncTemplates(ctx context.Context) (model.TemplateSync
 	}
 	snapshots := make([]model.TemplateSnapshot, 0, len(providerSnapshots))
 	ignoredCount := int64(0)
+	seenTemplates := make(map[string]struct{}, len(providerSnapshots))
 	for _, item := range providerSnapshots {
+		if item.Provider != "aliyun" || strings.TrimSpace(item.TemplateCode) == "" || (item.AuditStatus != "pending" && item.AuditStatus != "approved" && item.AuditStatus != "rejected") {
+			return model.TemplateSyncResult{}, ErrSMSTemplateSyncFailed
+		}
 		// 只同步固定签名下含 ${code} 的验证码模板，其他供应商资源不进入本地控制面。
 		if item.SignName != s.fixedSignName || item.TemplateType != "verification" || !strings.Contains(item.Content, "${code}") {
 			ignoredCount++
 			continue
 		}
+		key := item.Provider + "|" + item.TemplateCode
+		if _, exists := seenTemplates[key]; exists {
+			ignoredCount++
+			continue
+		}
+		seenTemplates[key] = struct{}{}
 		var rejectionReason *string
 		if value := strings.TrimSpace(item.RejectionReason); value != "" {
 			rejectionReason = &value

@@ -117,3 +117,59 @@ func TestSMSAdminSummaryRouteEnforcesAuthPermissionAndMFA(t *testing.T) {
 		})
 	}
 }
+
+func TestAllSMSAdminRoutesRejectAuthPermissionAndMFABypass(t *testing.T) {
+	const secret = "sms-phase2-security-matrix-secret"
+	token, err := pkgjwt.Generate(9, "admin@example.test", secret, 600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	routes := []struct{ method, path, body string }{
+		{http.MethodGet, "/api/admin/sms/summary", ""},
+		{http.MethodGet, "/api/admin/sms/templates", ""},
+		{http.MethodGet, "/api/admin/sms/templates/1", ""},
+		{http.MethodPost, "/api/admin/sms/templates/sync", ""},
+		{http.MethodGet, "/api/admin/sms/scenes", ""},
+		{http.MethodPut, "/api/admin/sms/scenes/register", `{"template_id":1,"enabled":true,"version":0}`},
+		{http.MethodPatch, "/api/admin/sms/templates/1/status", `{"enabled":true,"version":1}`},
+		{http.MethodPost, "/api/admin/sms/templates/1/test-send", `{"scene":"register","phone":"phone-test-a"}`},
+		{http.MethodGet, "/api/admin/sms/send-logs", ""},
+	}
+	gates := []struct {
+		name       string
+		withToken  bool
+		permission bool
+		verified   bool
+		wantHTTP   int
+		wantCode   int
+	}{
+		{name: "未登录", wantHTTP: http.StatusUnauthorized, wantCode: 40001},
+		{name: "缺少权限", withToken: true, verified: true, wantHTTP: http.StatusForbidden, wantCode: 40003},
+		{name: "未完成双重认证", withToken: true, permission: true, wantHTTP: http.StatusForbidden, wantCode: 40031},
+	}
+	for _, route := range routes {
+		for _, gate := range gates {
+			t.Run(gate.name+" "+route.method+" "+route.path, func(t *testing.T) {
+				security := &routeSecurityStub{permission: gate.permission, verified: gate.verified}
+				mux := http.NewServeMux()
+				RegisterAdminRoutes(mux, service.NewSMSAdminService(routeSummaryRepository{}), config.Config{JWTSecret: secret}, security, security)
+				req := httptest.NewRequest(route.method, route.path, bytes.NewBufferString(route.body))
+				if gate.withToken {
+					req.Header.Set("Authorization", "Bearer "+token)
+				}
+				if strings.Contains(route.path, "test-send") {
+					req.Header.Set("Idempotency-Key", "security-matrix-key")
+				}
+				rec := httptest.NewRecorder()
+				mux.ServeHTTP(rec, req)
+				if rec.Code != gate.wantHTTP {
+					t.Fatalf("安全门 HTTP 错误: got=%d want=%d body=%s", rec.Code, gate.wantHTTP, rec.Body.String())
+				}
+				var body response.Body
+				if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body.Code != gate.wantCode {
+					t.Fatalf("安全门业务码错误: got=%d want=%d err=%v body=%s", body.Code, gate.wantCode, err, rec.Body.String())
+				}
+			})
+		}
+	}
+}

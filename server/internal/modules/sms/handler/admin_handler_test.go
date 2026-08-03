@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"molin/server/internal/modules/sms/model"
@@ -19,28 +21,48 @@ type fakeSMSAdminApplication struct {
 	statusTemplate *model.Template
 	statusErr      error
 	statusCalls    int
+	syncResult     model.TemplateSyncResult
+	sceneResult    *model.AdminScene
+	testResult     service.TestSendResult
+	templateItems  []model.Template
+	sendLogItems   []model.SendLog
 }
 
 func (f *fakeSMSAdminApplication) ListTemplates(context.Context, model.TemplateListFilter) ([]model.Template, int64, error) {
-	return nil, 0, nil
+	return f.templateItems, int64(len(f.templateItems)), nil
 }
 func (f *fakeSMSAdminApplication) GetTemplate(context.Context, uint64) (*model.Template, error) {
 	return nil, service.ErrSMSTemplateNotFound
 }
 func (f *fakeSMSAdminApplication) SyncTemplates(context.Context) (model.TemplateSyncResult, error) {
-	return model.TemplateSyncResult{}, nil
+	return f.syncResult, nil
 }
 func (f *fakeSMSAdminApplication) ListScenes(context.Context) ([]model.AdminScene, error) {
 	return nil, nil
 }
 func (f *fakeSMSAdminApplication) SetScene(context.Context, string, uint64, uint64, uint64, bool) (*model.AdminScene, error) {
-	return nil, nil
+	return f.sceneResult, nil
 }
 func (f *fakeSMSAdminApplication) ListSendLogs(context.Context, model.SendLogListFilter) ([]model.SendLog, int64, error) {
-	return nil, 0, nil
+	return f.sendLogItems, int64(len(f.sendLogItems)), nil
 }
 func (f *fakeSMSAdminApplication) TestSend(context.Context, uint64, uint64, string, string, string) (service.TestSendResult, error) {
-	return service.TestSendResult{}, nil
+	return f.testResult, nil
+}
+
+type auditRecord struct {
+	action  string
+	summary any
+}
+
+type fakeSMSAuditRecorder struct{ records []auditRecord }
+
+func (f *fakeSMSAuditRecorder) Record(_ context.Context, _ *uint64, module, action string, _, _ *string, _ string, summary any) error {
+	if module != "sms" {
+		return errors.New("审计模块错误")
+	}
+	f.records = append(f.records, auditRecord{action: action, summary: summary})
+	return nil
 }
 
 func (f *fakeSMSAdminApplication) Summary(context.Context) (service.SMSAdminSummary, error) {
@@ -106,5 +128,128 @@ func TestSMSAdminTemplateStatusMapsAuditConflict(t *testing.T) {
 
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("未审核模板应映射为 409: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSMSAdminWriteEndpointsRecordSanitizedAudit(t *testing.T) {
+	app := &fakeSMSAdminApplication{
+		syncResult:     model.TemplateSyncResult{TotalCount: 1},
+		sceneResult:    &model.AdminScene{Scene: "register", Version: 1},
+		statusTemplate: &model.Template{ID: 7, LocalEnabled: true, Version: 2},
+		testResult:     service.TestSendResult{BusinessRequestID: "sms_safe", SubmitStatus: "accepted", TemplateCode: "SMS_SAFE", PhoneMasked: "pho****st-a"},
+	}
+	audit := &fakeSMSAuditRecorder{}
+	h := NewSMSAdminHandler(app, audit)
+
+	requests := []struct {
+		call func(http.ResponseWriter, *http.Request)
+		req  *http.Request
+	}{
+		{call: h.SyncTemplates, req: httptest.NewRequest(http.MethodPost, "/api/admin/sms/templates/sync", nil)},
+		{call: h.SetScene, req: httptest.NewRequest(http.MethodPut, "/api/admin/sms/scenes/register", bytes.NewBufferString(`{"template_id":7,"enabled":true,"version":0}`))},
+		{call: h.SetTemplateStatus, req: httptest.NewRequest(http.MethodPatch, "/api/admin/sms/templates/7/status", bytes.NewBufferString(`{"enabled":true,"version":1}`))},
+		{call: h.TestSend, req: httptest.NewRequest(http.MethodPost, "/api/admin/sms/templates/7/test-send", bytes.NewBufferString(`{"scene":"register","phone":"phone-test-a"}`))},
+	}
+	requests[1].req.SetPathValue("scene", "register")
+	requests[2].req.SetPathValue("id", "7")
+	requests[3].req.SetPathValue("id", "7")
+	requests[3].req.Header.Set("Idempotency-Key", "private-idempotency-key")
+	for _, item := range requests {
+		recorder := httptest.NewRecorder()
+		item.call(recorder, item.req)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("写接口应成功并审计: status=%d body=%s", recorder.Code, recorder.Body.String())
+		}
+	}
+	if len(audit.records) != 4 {
+		t.Fatalf("四类写操作必须各有审计: %#v", audit.records)
+	}
+	wantActions := []string{"template_sync", "scene_binding_update", "template_status_update", "template_test_send"}
+	for index, record := range audit.records {
+		if record.action != wantActions[index] {
+			t.Fatalf("审计动作错误: got=%s want=%s", record.action, wantActions[index])
+		}
+		raw, err := json.Marshal(record.summary)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(raw)
+		if strings.Contains(text, "phone-test-a") || strings.Contains(text, "private-idempotency-key") {
+			t.Fatalf("审计摘要不得包含完整测试目标或幂等键: %s", text)
+		}
+	}
+}
+
+func TestSMSAdminListsUseFlatPaginationAndHideInternalDigests(t *testing.T) {
+	t.Run("模板空列表", func(t *testing.T) {
+		h := NewSMSAdminHandler(&fakeSMSAdminApplication{})
+		recorder := httptest.NewRecorder()
+		h.ListTemplates(recorder, httptest.NewRequest(http.MethodGet, "/api/admin/sms/templates?page=2&page_size=10", nil))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("模板列表失败: %s", recorder.Body.String())
+		}
+		var envelope struct {
+			Data struct {
+				Items    []model.Template `json:"items"`
+				Page     int              `json:"page"`
+				PageSize int              `json:"page_size"`
+				Total    int64            `json:"total"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil || envelope.Data.Items == nil || envelope.Data.Page != 2 || envelope.Data.PageSize != 10 || envelope.Data.Total != 0 {
+			t.Fatalf("模板 D-95 契约错误: envelope=%#v err=%v", envelope, err)
+		}
+	})
+
+	t.Run("发送记录脱敏", func(t *testing.T) {
+		scope, keyHash, ownerHash, fingerprint := "private-scope", "private-key-hash", "private-owner-hash", "private-fingerprint"
+		app := &fakeSMSAdminApplication{sendLogItems: []model.SendLog{{
+			ID: 1, Purpose: "test", Scene: "register", PhoneMasked: "pho****st-a", PhoneHMAC: "private-phone-hmac",
+			TemplateCode: "SMS_SAFE", SignName: "固定签名", Provider: "aliyun", BusinessRequestID: "sms_safe",
+			IdempotencyScope: &scope, IdempotencyKeyHash: &keyHash, IdempotencyOwnerKeyHash: &ownerHash,
+			RequestFingerprint: &fingerprint, SubmitStatus: "accepted",
+		}}}
+		h := NewSMSAdminHandler(app)
+		recorder := httptest.NewRecorder()
+		h.ListSendLogs(recorder, httptest.NewRequest(http.MethodGet, "/api/admin/sms/send-logs", nil))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("发送记录列表失败: %s", recorder.Body.String())
+		}
+		body := recorder.Body.String()
+		for _, forbidden := range []string{"private-phone-hmac", "private-scope", "private-key-hash", "private-owner-hash", "private-fingerprint"} {
+			if strings.Contains(body, forbidden) {
+				t.Fatalf("发送记录响应泄露内部摘要 %q: %s", forbidden, body)
+			}
+		}
+		if !strings.Contains(body, `"items":[`) || !strings.Contains(body, `"page":1`) || !strings.Contains(body, `"page_size":20`) || !strings.Contains(body, `"total":1`) {
+			t.Fatalf("发送记录 D-95 契约错误: %s", body)
+		}
+	})
+}
+
+func TestSMSAdminRejectsInvalidFiltersAndInjectedSign(t *testing.T) {
+	app := &fakeSMSAdminApplication{sceneResult: &model.AdminScene{}}
+	h := NewSMSAdminHandler(app)
+	cases := []struct {
+		name string
+		call func(http.ResponseWriter, *http.Request)
+		req  *http.Request
+	}{
+		{name: "非法模板审核状态", call: h.ListTemplates, req: httptest.NewRequest(http.MethodGet, "/api/admin/sms/templates?audit_status=unknown", nil)},
+		{name: "非法模板场景", call: h.ListTemplates, req: httptest.NewRequest(http.MethodGet, "/api/admin/sms/templates?scene=marketing", nil)},
+		{name: "非法日志状态", call: h.ListSendLogs, req: httptest.NewRequest(http.MethodGet, "/api/admin/sms/send-logs?status=pending", nil)},
+		{name: "日志时间倒置", call: h.ListSendLogs, req: httptest.NewRequest(http.MethodGet, "/api/admin/sms/send-logs?start_time=2026-08-03T12:00:00Z&end_time=2026-08-02T12:00:00Z", nil)},
+		{name: "日志跨度超过31天", call: h.ListSendLogs, req: httptest.NewRequest(http.MethodGet, "/api/admin/sms/send-logs?start_time=2026-06-01T00:00:00Z&end_time=2026-08-03T00:00:00Z", nil)},
+		{name: "场景签名注入", call: h.SetScene, req: httptest.NewRequest(http.MethodPut, "/api/admin/sms/scenes/register", bytes.NewBufferString(`{"template_id":7,"enabled":true,"version":0,"sign_name":"禁止注入"}`))},
+	}
+	cases[5].req.SetPathValue("scene", "register")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			tc.call(recorder, tc.req)
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("非法参数必须返回 400: status=%d body=%s", recorder.Code, recorder.Body.String())
+			}
+		})
 	}
 }

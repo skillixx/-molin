@@ -111,6 +111,9 @@ func (h *SMSAdminHandler) ListTemplates(w http.ResponseWriter, r *http.Request) 
 		smsAdminError(w, err)
 		return
 	}
+	if items == nil {
+		items = []model.Template{}
+	}
 	response.JSON(w, http.StatusOK, smsPageResponse{Items: items, Page: page, PageSize: pageSize, Total: total})
 }
 
@@ -196,6 +199,9 @@ func (h *SMSAdminHandler) ListSendLogs(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		smsAdminError(w, err)
 		return
+	}
+	if items == nil {
+		items = []model.SendLog{}
 	}
 	response.JSON(w, http.StatusOK, smsPageResponse{Items: items, Page: page, PageSize: pageSize, Total: total})
 }

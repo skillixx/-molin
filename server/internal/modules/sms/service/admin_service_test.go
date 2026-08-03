@@ -148,6 +148,35 @@ func TestSyncTemplatesFiltersFixedSignAndVerificationCode(t *testing.T) {
 	}
 }
 
+func TestSyncTemplatesDeduplicatesProviderRowsAndPreservesAuditState(t *testing.T) {
+	repo := &fakeSyncRepository{}
+	svc := NewSMSAdminService(repo)
+	svc.ConfigureTemplateSync(fakeTemplateProvider{items: []sender.TemplateSnapshot{
+		{Provider: "aliyun", TemplateCode: "SMS_DUP", TemplateName: "待审核", TemplateType: "verification", Content: "验证码 ${code}", AuditStatus: "pending", SignName: "固定签名"},
+		{Provider: "aliyun", TemplateCode: "SMS_DUP", TemplateName: "重复行", TemplateType: "verification", Content: "验证码 ${code}", AuditStatus: "pending", SignName: "固定签名"},
+		{Provider: "aliyun", TemplateCode: "SMS_REJECTED", TemplateName: "已驳回", TemplateType: "verification", Content: "验证码 ${code}", AuditStatus: "rejected", RejectionReason: "安全驳回原因", SignName: "固定签名"},
+	}}, "固定签名")
+
+	result, err := svc.SyncTemplates(context.Background())
+	if err != nil || len(repo.items) != 2 || result.TotalCount != 3 || result.IgnoredCount != 1 {
+		t.Fatalf("重复模板同步结果错误: result=%#v items=%#v err=%v", result, repo.items, err)
+	}
+	if repo.items[0].ProviderAuditStatus != "pending" || repo.items[1].ProviderAuditStatus != "rejected" || repo.items[1].RejectionReason == nil {
+		t.Fatalf("审核状态或驳回原因未保存: %#v", repo.items)
+	}
+}
+
+func TestSyncTemplatesRejectsMalformedProviderSnapshotBeforeWrite(t *testing.T) {
+	repo := &fakeSyncRepository{}
+	svc := NewSMSAdminService(repo)
+	svc.ConfigureTemplateSync(fakeTemplateProvider{items: []sender.TemplateSnapshot{{Provider: "aliyun", TemplateCode: "", TemplateType: "verification", Content: "验证码 ${code}", AuditStatus: "approved", SignName: "固定签名"}}}, "固定签名")
+
+	_, err := svc.SyncTemplates(context.Background())
+	if !errors.Is(err, ErrSMSTemplateSyncFailed) || repo.called != 0 {
+		t.Fatalf("畸形供应商快照必须零写入失败: err=%v called=%d", err, repo.called)
+	}
+}
+
 func (f *fakeSMSAdminSummaryRepository) GetAdminSummary(context.Context) (SMSAdminSummary, error) {
 	return f.summary, f.err
 }

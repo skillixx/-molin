@@ -37,6 +37,10 @@
 cd server
 go test ./... -count=1
 go vet ./...
+go mod verify
+go test ./migrations -run TestSMSPhase2FullMySQL8Matrix -count=1 -v
 ```
 
-当前开发机没有 Docker/MySQL 客户端，因此 MySQL 8 全迁移/回滚矩阵仍是 QA 前置门禁。真实短信测试、远程推送、PR、合并和部署均需项目负责人另行授权。
+最后一条迁移测试只有在显式配置 `SMS_MIGRATION_TEST_DSN`、目标库名以 `molin_sms_test_` 开头且服务端确认为 MySQL 8 时才执行；否则安全跳过，不能计为数据库通过。CI 已配置隔离 MySQL 8 数据库并执行全库 Linux race，但远程流水线尚未运行，所以当前仍没有 MySQL 8 或 race 的 PASS 证据。
+
+当前开发机没有 Docker/MySQL 客户端，也没有可复用的隔离 Redis；MySQL 8 全迁移/回滚矩阵和真实 Redis 7 限流恢复周期仍是 QA 前置门禁。真实短信测试、远程推送、PR、合并和部署均需项目负责人另行授权。
