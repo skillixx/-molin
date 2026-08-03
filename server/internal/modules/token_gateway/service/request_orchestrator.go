@@ -34,7 +34,7 @@ var (
 	ErrPreparedRequestMissing = errors.New("请求执行上下文不存在")
 )
 
-// RequestOrchestrator 是唯一允许推动 ai_requests 状态的 G2 应用服务。
+// RequestOrchestrator 是唯一允许推动 ai_requests 执行状态的应用服务；G3 财务状态由注入的单一计费服务原子推进。
 type RequestOrchestrator interface {
 	Prepare(ctx context.Context, cmd PrepareCommand) (*PreparedRequest, error)
 	Execute(ctx context.Context, requestID string, sink StreamSink) error
@@ -67,13 +67,24 @@ type PreparedRequest struct {
 	Existing        bool   `json:"existing"`
 	ProjectID       uint64 `json:"project_id,omitempty"`
 
-	command      PrepareCommand
-	tokenModel   model.TokenModel
-	providerCode string
-	endpointCode string
-	baseURL      string
-	apiKey       string
-	driver       ExecutionDriver
+	command              PrepareCommand
+	tokenModel           model.TokenModel
+	providerCode         string
+	endpointCode         string
+	baseURL              string
+	apiKey               string
+	driver               ExecutionDriver
+	retrySourceRequestID string
+}
+
+// RequestBillingStatus 是客户端按 request_id 查询的最小可恢复状态，不包含提示词、成本价或内部路由。
+type RequestBillingStatus struct {
+	RequestID       string  `json:"request_id"`
+	ExecutionStatus string  `json:"execution_status"`
+	BillingStatus   string  `json:"billing_status"`
+	QuotedAmount    *string `json:"quoted_amount,omitempty"`
+	HeldAmount      *string `json:"held_amount,omitempty"`
+	SettledAmount   *string `json:"settled_amount,omitempty"`
 }
 
 type ExecutionResult struct {
@@ -91,7 +102,14 @@ type RequestOrchestratorService struct {
 	cipher         *crypto.AESGCM
 	driverSelector ExecutionDriverSelector
 	visibility     modelVisibilityChecker
+	billing        *AIBillingService
 	prepared       sync.Map
+}
+
+// WithBillingService 启用 G3 正式报价、钱包预占和一次终态结算链路。
+func (s *RequestOrchestratorService) WithBillingService(billing *AIBillingService) *RequestOrchestratorService {
+	s.billing = billing
+	return s
 }
 
 type orchestratorStore interface {
@@ -205,8 +223,12 @@ func (s *RequestOrchestratorService) Prepare(ctx context.Context, cmd PrepareCom
 		return nil, ErrChannelUnavailable
 	}
 
+	var retrySourceRequestID string
 	if existing, existingErr := s.findExisting(ctx, cmd, projectID, fingerprint); existingErr != nil || existing != nil {
-		return existing, existingErr
+		if existingErr != nil || existing == nil || existing.retrySourceRequestID == "" {
+			return existing, existingErr
+		}
+		retrySourceRequestID = existing.retrySourceRequestID
 	}
 	driver, err := s.driverSelector.Select(cmd.LogicalModel)
 	if err != nil {
@@ -228,15 +250,41 @@ func (s *RequestOrchestratorService) Prepare(ctx context.Context, cmd PrepareCom
 		ModerationStatus: model.AIModerationPending, ExecutionStatus: model.AIExecutionPending,
 		BillingStatus: model.AIBillingUnquoted, VersionNo: 1,
 	}
-	if err := s.repo.CreateRequest(ctx, request); err != nil {
+	billingStatus := model.AIBillingUnquoted
+	var createErr error
+	if s.billing != nil {
+		var preparation *BillingPreparation
+		var err error
+		if retrySourceRequestID != "" {
+			preparation, err = s.billing.PrepareRetryRequest(ctx, retrySourceRequestID, request, cmd.Body)
+		} else {
+			preparation, err = s.billing.PrepareRequest(ctx, request, cmd.Body)
+		}
+		if err == nil {
+			billingStatus = preparation.BillingStatus
+			if _, exists := cmd.Body["max_tokens"]; !exists {
+				// 缺省上限不仅用于冻结，还必须写入实际上游请求，保证生成量不会突破预占口径。
+				bodyCopy := make(map[string]interface{}, len(cmd.Body)+1)
+				for key, value := range cmd.Body {
+					bodyCopy[key] = value
+				}
+				bodyCopy["max_tokens"] = preparation.MaxTokens
+				cmd.Body = bodyCopy
+			}
+		}
+		createErr = err
+	} else {
+		createErr = s.repo.CreateRequest(ctx, request)
+	}
+	if createErr != nil {
 		// 并发命中唯一索引时重新读取赢家，禁止第二次调用上游。
 		if existing, existingErr := s.findExisting(ctx, cmd, projectID, fingerprint); existing != nil || existingErr != nil {
 			return existing, existingErr
 		}
-		return nil, err
+		return nil, createErr
 	}
 	prepared := &PreparedRequest{
-		RequestID: cmd.RequestID, ExecutionStatus: model.AIExecutionPending, BillingStatus: model.AIBillingUnquoted,
+		RequestID: cmd.RequestID, ExecutionStatus: model.AIExecutionPending, BillingStatus: billingStatus,
 		ProjectID: projectID, command: cmd, tokenModel: tokenModel,
 		providerCode: channel.Code, endpointCode: channel.Code, baseURL: channel.BaseURL, apiKey: apiKey, driver: driver,
 	}
@@ -264,10 +312,38 @@ func (s *RequestOrchestratorService) findExisting(ctx context.Context, cmd Prepa
 	if existing.RequestFingerprint == nil || *existing.RequestFingerprint != fingerprint {
 		return nil, ErrIdempotencyConflict
 	}
+	if s.billing != nil && existing.BillingStatus == model.AIBillingReleased &&
+		existing.ExecutionStatus == model.AIExecutionFailed && pointerValue(existing.ErrorCode) == "request_not_sent" {
+		return &PreparedRequest{retrySourceRequestID: existing.RequestID}, nil
+	}
 	return &PreparedRequest{
 		RequestID: existing.RequestID, ExecutionStatus: existing.ExecutionStatus,
 		BillingStatus: existing.BillingStatus, Existing: true, ProjectID: projectID,
 	}, nil
+}
+
+// GetRequestStatus 仅允许原 Project SK 查询自己的请求，不泄露其他租户请求是否存在。
+func (s *RequestOrchestratorService) GetRequestStatus(ctx context.Context, requestID string, userID, apiKeyID uint64) (*RequestBillingStatus, error) {
+	if strings.TrimSpace(requestID) == "" || userID == 0 || apiKeyID == 0 {
+		return nil, ErrProjectKeyRequired
+	}
+	request, err := s.repo.FindRequestByIdentity(ctx, requestID)
+	if err != nil || request.UserID != userID || request.APIKeyID == nil || *request.APIKeyID != apiKeyID {
+		return nil, ErrProjectAccessDenied
+	}
+	return &RequestBillingStatus{
+		RequestID: request.RequestID, ExecutionStatus: request.ExecutionStatus, BillingStatus: request.BillingStatus,
+		QuotedAmount: decimalStatusValue(request.QuotedAmount), HeldAmount: decimalStatusValue(request.HeldAmount),
+		SettledAmount: decimalStatusValue(request.SettledAmount),
+	}, nil
+}
+
+func decimalStatusValue(value *decimal.Decimal) *string {
+	if value == nil {
+		return nil
+	}
+	text := value.StringFixed(8)
+	return &text
 }
 
 func (s *RequestOrchestratorService) Execute(ctx context.Context, requestID string, sink StreamSink) error {
@@ -314,7 +390,11 @@ func (s *RequestOrchestratorService) Execute(ctx context.Context, requestID stri
 			attempt.ErrorClass = executionNetworkErrorClass(err)
 			attempt.ResultUnknown = true
 		}
-		if finalizeErr := s.Finalize(executionCtx, requestID, ExecutionResult{Attempt: attempt, ErrorCode: "upstream_execution_error"}); finalizeErr != nil {
+		errorCode := "upstream_execution_error"
+		if attempt.ErrorClass == "request_not_sent" && !attempt.ResultUnknown {
+			errorCode = "request_not_sent"
+		}
+		if finalizeErr := s.Finalize(executionCtx, requestID, ExecutionResult{Attempt: attempt, ErrorCode: errorCode}); finalizeErr != nil {
 			return finalizeErr
 		}
 		return ErrUpstream
@@ -371,16 +451,17 @@ func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink Str
 	for scanner.Scan() {
 		line := append([]byte(nil), scanner.Bytes()...)
 		chunk, err := driver.NormalizeStreamLine(line, logicalModel)
+		if chunk.Usage.Present {
+			usage = chunk.Usage
+		}
 		if err != nil {
 			executed.Attempt = failedAttempt(executed.Attempt, "invalid_stream_response", true)
 			break
 		}
-		if chunk.Usage.Present {
-			usage = chunk.Usage
-		}
 		if chunk.Done {
 			doneLine = append(append([]byte(nil), chunk.PublicLine...), '\n', '\n')
-			continue
+			// [DONE] 是 SSE 响应的协议终态，收到后立即停止读取，不能等待上游主动关闭连接。
+			break
 		}
 		if len(chunk.PublicLine) > 0 && !clientDisconnected {
 			payload := append(append([]byte(nil), chunk.PublicLine...), '\n')
@@ -401,6 +482,9 @@ func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink Str
 	}
 	result := ExecutionResult{Attempt: executed.Attempt, Usage: usage, ClientDisconnected: clientDisconnected}
 	if err := s.Finalize(ctx, requestID, result); err != nil {
+		if !clientDisconnected {
+			_ = writeStreamBillingStatus(sink, requestID, err)
+		}
 		return err
 	}
 	if !clientDisconnected && len(doneLine) > 0 {
@@ -411,7 +495,30 @@ func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink Str
 	return nil
 }
 
+func writeStreamBillingStatus(sink StreamSink, requestID string, err error) error {
+	errorType := ""
+	if errors.Is(err, ErrSettlementPending) {
+		errorType = "settlement_pending"
+	} else if errors.Is(err, ErrBillingException) || errors.Is(err, ErrBillingAmountException) {
+		errorType = "billing_exception"
+	}
+	if errorType == "" {
+		return nil
+	}
+	payload, marshalErr := json.Marshal(map[string]string{"request_id": requestID, "error": errorType})
+	if marshalErr != nil {
+		return marshalErr
+	}
+	if writeErr := sink.Write([]byte("event: molin.status\ndata: " + string(payload) + "\n\n")); writeErr != nil {
+		return writeErr
+	}
+	return sink.Flush()
+}
+
 func (s *RequestOrchestratorService) Finalize(ctx context.Context, requestID string, result ExecutionResult) error {
+	if s.billing != nil {
+		return s.billing.FinalizeRequest(ctx, requestID, result)
+	}
 	ledgerAttempt := result.Attempt.ToLedgerModel(requestID, result.Usage)
 	usage := usageModels(requestID, result.Usage)
 	var errorClass *string

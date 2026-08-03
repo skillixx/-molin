@@ -1,6 +1,6 @@
 # 前端接口参考文档
 
-> Token 文字模型执行层：前端继续调用既有 `/api/token/chat/completions` 或 `/v1/chat/completions`，无需感知 Native/Bifrost。公开响应不包含 Bifrost `extra_fields`、路由信息、供应商响应头或内部 Key 名称。成功响应缺少 Usage 时，后台记录为 `pending_reconcile`，前端不得自行使用 `max_tokens` 估算已扣金额。
+> Token 文字模型执行层：前端继续调用既有 `/api/token/chat/completions` 或 `/v1/chat/completions`，无需感知 Native/Bifrost。公开响应不包含 Bifrost `extra_fields`、路由信息、供应商响应头或内部 Key 名称。成功响应缺少 Usage 时，后台记录为 `settlement_pending`，前端不得自行使用 `max_tokens` 估算已扣金额。
 
 > G0/G1 说明：`000058` 新商业账本是后端 Expand Schema，当前不改变前端请求和用量查询。G2 切换新读写前，前端不得依赖 `ai_requests`、`ai_usage_items` 或执行模型内部字段；阶段契约见 [`ai-gateway-g0-g1-contract.md`](./ai-gateway-g0-g1-contract.md)。
 
@@ -2073,7 +2073,7 @@ Wechatpay-Nonce: <随机串>
 > 计费口径（2026-06-21 决策）：**按量（token 数）+ 按次（调用次数）+ 套餐（预付 token 额度）三种并存**；按量/按次为后付扣钱包，套餐为预付扣 entitlement 额度。Agent/Skill/插件均免费，唯一收费点是模型 token 调用。
 > 状态标记：✅ 已实现并合并 main ｜ 🔜 待实现（含归属）。前端按状态决定可对接时间。
 > 站内聊天工作台的 Agent 对话端点（tool-use 编排）契约见 §14.8（待实现）。
-> G2 增量：公开 `/api/token/chat/completions` 与 `/v1/chat/completions` 已切换到 Project SK + RequestOrchestrator 的无收费正式账本链路。G2 不扣钱包、不扣套餐、不返回金额；旧计费说明仅描述历史接口和 G3 目标，不适用于 G2 公开 Chat 链。
+> G3 增量：公开 `/api/token/chat/completions` 与 `/v1/chat/completions` 已在 Project SK + RequestOrchestrator 上启用人民币钱包按量计费。`max_tokens` 可选；缺省时后端使用平台兜底上限与模型上限的较小值报价和预占，再执行并按可信 Usage 一次结算。G3 只允许单候选 `n=1`，`n>1` 在调用上游前拒绝。G3 不使用积分或套餐额度。
 
 ### 本模块专用错误码（chat 转发）
 
@@ -2087,6 +2087,12 @@ Wechatpay-Nonce: <随机串>
 | 50300 | 503 | 上游渠道不可用（未配置可用渠道 / 渠道停用） |
 | 50301 | 503 | 系统繁忙，请稍后重试（高并发钱包乐观锁冲突重试耗尽，**可重试**；D-M2-02，区别于 60001 余额不足） |
 | 40901 | 409 | 相同 Idempotency-Key 对应的请求内容不一致 |
+| 40010 | 400 | 显式 `max_tokens` 非法、超过模型上限、`n` 不为 1 或无法计算最大费用 |
+| 20201 | 202 | 结果正在结算，保留 request_id 继续查询 |
+| 50010 | 500 | 计费异常，已进入人工对账 |
+| 50310 | 503 | 无有效价格或成本过期 |
+| 50311 | 503 | 毛利保护暂停接单 |
+| 50312 | 503 | 钱包预占事务失败，可稍后重试 |
 
 ### 鉴权说明（双模式）
 
@@ -2118,20 +2124,25 @@ Wechatpay-Nonce: <随机串>
 
 ### 14.2 OpenAI 兼容对话转发（用户端）✅
 
-- **POST** `/api/token/chat/completions` 或 `/v1/chat/completions` *(G2：Project SK)*
+- **POST** `/api/token/chat/completions` 或 `/v1/chat/completions` *(G3：Project SK + 人民币钱包)*
+- **GET** `/api/token/requests/{request_id}` 或 `/v1/requests/{request_id}` *(G3：查询当前请求执行与计费状态，只允许原 Project SK)*
 - Header 可带一个 `Idempotency-Key`。重复 Header、逗号多值、空值或超过 191 字节返回 `400/40000`；相同 Key、相同请求指纹返回 HTTP 202 和已有 `{request_id,execution_status,billing_status,existing:true}`，不重复调用上游；不同指纹返回 `409/40901`。
-- 请求体 = 标准 OpenAI Chat Completions 报文，门面近似纯透传，**`model` 与至少一条非空文字 `messages` 必填**（`model` 填 14.1 的 `logical_model_code`）；G2 拒绝图片、音频等多模态消息，`stream=true` 时走 SSE。
+- 若服务端已确认请求在网络失败前从未写出上游并释放资金，客户端复用同一 `Idempotency-Key` 会创建新的 `request_id` 并安全重试；请求是否已发出不明确时仍只返回原状态。
+- 请求体 = 标准 OpenAI Chat Completions 报文，门面近似纯透传，**`model` 与至少一条非空文字 `messages` 必填**（`model` 填 14.1 的 `logical_model_code`）；`max_tokens` 可选，缺省由服务端采用保守兜底值；G3 只允许 `n=1`；G2 拒绝图片、音频等多模态消息，`stream=true` 时走 SSE。
   ```json
   {
     "model": "deepseek-chat",
     "messages": [{ "role": "user", "content": "你好" }],
+    "max_tokens": 1024,
     "stream": true
   }
   ```
 - **非流式**（`stream=false`/缺省）：原样透传上游 OpenAI 响应体（`choices`/`usage` 等），HTTP 200。
 - **流式**（`stream=true`）：`Content-Type: text/event-stream`，逐 chunk SSE 输出；账本 Finalize 成功后才发送 `data: [DONE]`。客户端断连后后台继续读取可确定的尾部 Usage。
-- **前置错误**（尚未开始透传时）：返回统一 JSON `{code,message,data}`。G2 使用 `40000`（请求参数）、`40001`（未登录/非 Project SK）、`70001`（未实名）、`40300`（Project/SK/模型权限）、`50200`（上游失败）和 `50300`（渠道不可用）；历史计费错误不适用于 G2 公开 Chat 链。
-- G2 计量：完整 Usage 写入正式账本；缺失时不估算。`billing_status=unquoted`，不扣钱包或套餐；**对话内容不落明文日志**。
+- **前置错误**（尚未开始透传时）：返回统一 JSON `{code,error,message,data}`。`error` 为 G3 稳定字符串分类；既有非财务错误可能省略该字段。
+- G3 计量：确定结果且完整一致的 Usage 按价格快照结算；缺失、不一致、结果未知或 SSE 未正常结束时返回 202 或已有待结算状态，即使已看到中间 Usage 也不实扣。`billing_status` 可能为 `held/settlement_pending/settled/released/exception`；**对话内容不落明文日志**。
+- SSE 已开始后，待结算或异常通过 `event: molin.status` 通知，`data` 包含 `request_id` 与 `error`。前端收到后停止展示“已完成”，并调用请求状态接口刷新；不得把 `settlement_pending` 显示为免费或已退款。
+- G3 暂不提供人工对账 UI；后台已提供 `POST /api/admin/token/billing/exceptions/{request_id}/resolve`，后续管理页面只能在 `token:manage` 和管理员二次认证通过后调用。
 
 ### 14.3 我的用量（用户端）🔜（后端丁）
 

@@ -2203,6 +2203,10 @@ Skill 版本 Body 参数：version、manifest_json、package_url、changelog、s
 ```text
 GET   /api/token/models
 POST  /api/token/chat/completions
+GET   /api/token/requests/{request_id}
+GET   /v1/models
+POST  /v1/chat/completions
+GET   /v1/requests/{request_id}
 GET   /api/token/usage
 POST  /api/token/projects
 GET   /api/token/projects
@@ -2222,11 +2226,12 @@ GET   /api/admin/token/routes
 POST  /api/admin/token/routes
 PATCH /api/admin/token/routes/:id
 GET   /api/admin/token/usage
+POST  /api/admin/token/billing/exceptions/{request_id}/resolve
 ```
 
 > G2 文字执行契约：公开 Chat Completions 要求 Project SK，在用户状态/实名、Project、SK、显式模型权限、用户分组/角色可见性和模型发布状态通过后调用唯一 `RequestOrchestrator`，再进入统一 `ExecutionDriver`。部署默认 `native`，可显式切换 `bifrost`。Bifrost 响应会移除 `extra_fields`、路由信息、供应商响应头和内部 Key 名称；HTTP 200 业务错误仍按失败处理。Usage 缺失不生成计量行，禁止按 `max_tokens` 猜测。
 
-> G0/G1 商业账本契约：`request_id`、Project、SK、逻辑模型、执行模型、三类正交状态、标准 Usage 和执行尝试见 [`ai-gateway-g0-g1-contract.md`](./ai-gateway-g0-g1-contract.md)。G2 已启用 RequestOrchestrator 和新账本写入，但 `billing_status` 固定为 `unquoted`，不代表价格、钱包预占、扣费或结算已经启用。
+> G0/G1 商业账本契约：`request_id`、Project、SK、逻辑模型、执行模型、三类正交状态、标准 Usage 和执行尝试见 [`ai-gateway-g0-g1-contract.md`](./ai-gateway-g0-g1-contract.md)。G3 已在 G2 RequestOrchestrator 上启用价格快照、钱包预占和一次终态结算；公开 Chat 不再使用 G2 的 `unquoted` 规则。
 
 > Request ID 与幂等：`X-Request-ID` 由墨灵生成，并由 Token Handler、执行驱动和账本共用。客户端重放可使用单值 `Idempotency-Key`；重复、逗号多值、空值或超过 191 字节在写账本前返回 400/40000。同用户、Project、SK、请求指纹返回已有状态，不同指纹返回 HTTP 409/code 40901。
 
@@ -2271,15 +2276,35 @@ Chat 请求 Body 参数：
 | messages | array | 是 | 消息列表，兼容 OpenAI messages 格式 |
 | stream | boolean | 否 | 是否流式返回，默认 false |
 | temperature | number | 否 | 采样温度 |
-| max_tokens | integer | 否 | 最大输出 Token 数 |
+| max_tokens | integer | 否 | G3 最大输出 Token 数；缺省采用平台兜底上限与模型上限的较小值，显式非法或超过模型上限时拒绝报价 |
+| n | integer | 否 | G3 仅允许 JSON 整数 `1`；字符串、浮点、指数写法或多候选值均在预占和上游调用前拒绝 |
 
 说明：
 
 - `stream = true` 时响应使用 Server-Sent Events（SSE）格式，`Content-Type: text/event-stream`。
 - 网关层不缓冲完整流式响应；每个 SSE `data:` 事件由当前执行驱动校验和脱敏后立即写出，Bifrost 扩展元数据不对外透传。`[DONE]` 只在请求、attempt 和 Usage 成功持久化后发送。
 - 当前一次请求只选择一个执行驱动。Native 使用模型绑定的活动渠道与 `upstream_model`；Bifrost 使用冻结的显式 Provider 模型映射。结果未知或已经输出 SSE 后禁止自动切换供应商，本阶段不启用加权随机和透明熔断回退。
-- G2 成功和失败请求均写 `ai_requests`、`ai_execution_attempts`；Usage 完整时写 `ai_usage_items`。所有请求保持 `billing_status=unquoted`，金额字段为空，不写旧 `token_usage_logs`。
+- G3 在上游调用前写不可变价格快照并创建钱包 hold。JSON 或正常结束 SSE 的可信 Usage 完整时，无论执行成功或明确失败都按四类 SKU 汇总一次金额并 settle；成功且存在正用量时才应用最低收费。只有确认未产生成本且无 Usage 时 release；Usage 缺失、不一致、结果未知或 SSE 未正常结束时，即使已经取得中间 Usage 也返回 `202/settlement_pending` 并保留 hold。Settlement Worker 对遗留 held/pending 请求按相同规则收敛，超过期限进入人工异常。正式链路不写旧 `token_usage_logs`。
+- 请求状态可通过 `GET /api/token/requests/{request_id}` 或 OpenAI 兼容入口 `GET /v1/requests/{request_id}` 查询；必须使用原 Project SK，跨用户或跨 SK 统一拒绝且不泄露请求是否存在。
 - `messages` 必须包含至少一条非空文字内容；G2 对图片、音频等多模态消息在写账本和调用上游前返回 400/40000。未实名返回 400/70001，渠道不可用返回 503/50300。
 - 周期恢复扫描先找候选，再在事务锁内重新校验状态和截止时间，只把仍超过安全窗口的 pending/running 请求收敛为 `unknown`，不重放上游。Project SK 创建、轮换和吊销写脱敏审计摘要；审计持久化失败沿用平台 best-effort 语义，必须输出脱敏告警但不反转已经生效的密钥操作。
 
 返回 data：模型列表、OpenAI 兼容响应、Token 用量统计。
+
+G3 前置或结算错误继续返回平台数字 `code`，并新增稳定字符串 `error`：
+
+| HTTP | code | error | 说明 |
+|---:|---:|---|---|
+| 503 | 50310 | `pricing_unavailable` / `price_expired` | 无有效价格或成本过期 |
+| 503 | 50311 | `margin_below_minimum` | 毛利低于发布下限 |
+| 400 | 40010 | `unquotable_request` | 显式 `max_tokens` 非法、超过模型上限、`n` 不为 1 或无法证明最大费用 |
+| 402 | 60001 | `insufficient_balance` | 钱包可用余额不足，上游未调用 |
+| 503 | 50312 | `wallet_hold_failed` | 预占事务失败且整体回滚 |
+| 202 | 20201 | `settlement_pending` | 结果或 Usage 待确认，hold 保留 |
+| 500 | 50010 | `billing_exception` | 超额或人工对账异常 |
+
+相同 `Idempotency-Key` 重放通常返回已有 `request_id`、`execution_status` 和 `billing_status`，不重复调用上游或扣费；只有服务端确认请求从未写出上游且已释放 hold 时，才允许该幂等键原子转移到一个新请求并再次执行。SSE 已开始后不能改写 HTTP 状态；结算待确认或计费异常时发送 `event: molin.status`，其 `data` 只包含 `request_id` 和稳定 `error`，客户端随后调用请求状态接口查询。
+
+**POST** `/api/admin/token/billing/exceptions/{request_id}/resolve` *(需 `token:manage` + 管理员二次认证)*
+
+Body 使用 `resolution=release|settle`；`settle` 时同时提交 `prompt_tokens`、`completion_tokens`、`cached_tokens` 和 `reasoning_tokens`，且输入与输出合计必须大于 0；确认零成本必须使用 `release`。接口在资金操作前写包含核定用量的审计，审计失败则拒绝操作；原始 Provider Usage 与人工核定的 `reconciled` Usage 分别留存。Project/SK 越权统一返回 HTTP 403 + `40003`。

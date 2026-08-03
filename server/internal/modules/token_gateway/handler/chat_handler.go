@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -15,6 +16,11 @@ import (
 // 安全约定：请求/响应中的对话内容绝不落明文日志；渠道 api_key 绝不出现在响应。
 type ChatHandler struct {
 	orchestrator service.RequestOrchestrator
+	statusReader requestStatusReader
+}
+
+type requestStatusReader interface {
+	GetRequestStatus(ctx context.Context, requestID string, userID, apiKeyID uint64) (*service.RequestBillingStatus, error)
 }
 
 // NewChatHandler 创建对话转发 handler。
@@ -25,7 +31,25 @@ func NewChatHandler(_ *service.ForwardService) *ChatHandler {
 // WithOrchestrator 为公开文字接口装配 G2 唯一编排器；旧 ForwardService 仅保留给工作台内部调用。
 func (h *ChatHandler) WithOrchestrator(orchestrator service.RequestOrchestrator) *ChatHandler {
 	h.orchestrator = orchestrator
+	if reader, ok := orchestrator.(requestStatusReader); ok {
+		h.statusReader = reader
+	}
 	return h
+}
+
+// RequestStatus GET /v1/requests/{request_id}，供 202 待结算请求查询财务状态。
+func (h *ChatHandler) RequestStatus(w http.ResponseWriter, r *http.Request) {
+	if h.statusReader == nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "AI 请求状态服务未装配")
+		return
+	}
+	result, err := h.statusReader.GetRequestStatus(r.Context(), r.PathValue("request_id"),
+		middleware.UserIDFromContext(r.Context()), middleware.APIKeyIDFromContext(r.Context()))
+	if err != nil {
+		writeOrchestratorError(w, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, result)
 }
 
 // ChatCompletions POST /api/token/chat/completions
@@ -47,7 +71,9 @@ func (h *ChatHandler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	// 以 map 原样解析请求体（薄转发器，近似纯透传，仅改写 model / stream_options）。
 	var body map[string]interface{}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.UseNumber()
+	if err := decoder.Decode(&body); err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, "请求体不是合法 JSON")
 		return
 	}
@@ -169,6 +195,11 @@ func (s *httpStreamSink) Flush() error {
 }
 
 func writeOrchestratorError(w http.ResponseWriter, err error) {
+	requestID := ""
+	var statusErr *service.BillingStatusError
+	if errors.As(err, &statusErr) {
+		requestID = statusErr.RequestID
+	}
 	switch {
 	case errors.Is(err, service.ErrProjectKeyRequired):
 		response.Error(w, http.StatusUnauthorized, 40001, "请使用有效的 Project SK 调用")
@@ -177,13 +208,31 @@ func writeOrchestratorError(w http.ResponseWriter, err error) {
 	case errors.Is(err, service.ErrRealNameRequired):
 		response.Error(w, http.StatusBadRequest, 70001, "请先完成实名认证")
 	case errors.Is(err, service.ErrProjectAccessDenied):
-		response.Error(w, http.StatusForbidden, 40300, "Project 或 SK 不可用")
+		response.Error(w, http.StatusForbidden, 40003, "Project 或 SK 不可用")
 	case errors.Is(err, service.ErrG2ModelNotAllowed):
-		response.Error(w, http.StatusForbidden, 40300, "该 Project SK 未授权调用此模型")
+		response.Error(w, http.StatusForbidden, 40003, "该 Project SK 未授权调用此模型")
 	case errors.Is(err, service.ErrG2ModelUnavailable), errors.Is(err, service.ErrModelNotConfigured):
 		response.Error(w, http.StatusBadRequest, 40000, "模型不可用或未配置")
 	case errors.Is(err, service.ErrIdempotencyConflict):
 		response.Error(w, http.StatusConflict, 40901, "幂等键对应的请求内容不一致")
+	case errors.Is(err, service.ErrPriceUnavailable):
+		response.ErrorWithType(w, http.StatusServiceUnavailable, 50310, "pricing_unavailable", "模型价格暂不可用")
+	case errors.Is(err, service.ErrPriceExpired):
+		response.ErrorWithType(w, http.StatusServiceUnavailable, 50310, "price_expired", "模型价格暂不可用")
+	case errors.Is(err, service.ErrMarginBelowMinimum):
+		response.ErrorWithType(w, http.StatusServiceUnavailable, 50311, "margin_below_minimum", "模型价格暂不可用")
+	case errors.Is(err, service.ErrUnquotableRequest):
+		response.ErrorWithType(w, http.StatusBadRequest, 40010, "unquotable_request", "无法计算请求最大费用，请检查 max_tokens 和 n")
+	case errors.Is(err, service.ErrWalletInsufficient):
+		response.ErrorWithType(w, http.StatusPaymentRequired, 60001, "insufficient_balance", "钱包余额不足")
+	case errors.Is(err, service.ErrWalletHoldFailed):
+		response.ErrorWithType(w, http.StatusServiceUnavailable, 50312, "wallet_hold_failed", "钱包预占失败，请稍后重试")
+	case errors.Is(err, service.ErrSettlementPending):
+		response.ErrorWithTypeAndRequestID(w, http.StatusAccepted, 20201, "settlement_pending", "请求结果正在结算", requestID)
+	case errors.Is(err, service.ErrBillingException), errors.Is(err, service.ErrBillingAmountException):
+		response.ErrorWithTypeAndRequestID(w, http.StatusInternalServerError, 50010, "billing_exception", "请求计费异常，已进入对账", requestID)
+	case errors.Is(err, service.ErrOutboxPending):
+		response.ErrorWithType(w, http.StatusAccepted, 20202, "outbox_pending", "财务事件正在同步")
 	case errors.Is(err, service.ErrUpstream):
 		response.Error(w, http.StatusBadGateway, 50200, "上游服务调用失败")
 	case errors.Is(err, service.ErrChannelUnavailable):

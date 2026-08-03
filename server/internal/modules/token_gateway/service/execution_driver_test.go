@@ -108,6 +108,41 @@ func TestBifrostDriver_UsageMissingIsExplicit(t *testing.T) {
 	}
 }
 
+func TestBifrostDriverPreservesUsageFromErrorResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = io.WriteString(w, `{"error":{"message":"provider rejected"},"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`)
+	}))
+	defer server.Close()
+	driver := NewBifrostDriver(BifrostDriverConfig{BaseURL: server.URL, InternalToken: "token", HTTPClient: server.Client()})
+	result, err := driver.ChatCompletion(context.Background(), ExecutionRequest{LogicalModel: "molin/qwen-turbo", Body: map[string]interface{}{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Attempt.Outcome != "failed" || !result.Usage.Present || result.Usage.PromptTokens != 10 || result.Usage.CompletionTokens != 5 {
+		t.Fatalf("错误响应中的可信 Usage 必须保留: %+v", result)
+	}
+}
+
+func TestBifrostDriverPreservesUsageFromSSEErrorEvent(t *testing.T) {
+	driver := NewBifrostDriver(BifrostDriverConfig{BaseURL: "http://unused", InternalToken: "token"})
+	chunk, err := driver.NormalizeStreamLine([]byte(`data: {"error":{"message":"provider rejected"},"usage":{"prompt_tokens":10,"completion_tokens":5}}`), "molin/qwen-turbo")
+	if err == nil || !chunk.Usage.Present || chunk.Usage.PromptTokens != 10 || chunk.Usage.CompletionTokens != 5 {
+		t.Fatalf("SSE 错误事件中的可信 Usage 必须随错误返回: chunk=%+v err=%v", chunk, err)
+	}
+}
+
+func TestExecutionUsageRejectsInconsistentBreakdown(t *testing.T) {
+	usage := parseExecutionUsage([]byte(`{"usage":{"prompt_tokens":10,"completion_tokens":5,"cached_tokens":11,"reasoning_tokens":6}}`))
+	if usage.Present {
+		t.Fatalf("缓存或推理数量超过总量时不得视为可信 Usage: %+v", usage)
+	}
+	usage = parseExecutionUsage([]byte(`{"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":16}}`))
+	if usage.Present {
+		t.Fatalf("total_tokens 与输入输出合计不一致时不得视为可信 Usage: %+v", usage)
+	}
+}
+
 func TestBifrostDriver_ChatCompletionStreamInjectsUsageAndReadsSSE(t *testing.T) {
 	var includeUsage bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -179,6 +214,32 @@ func TestBifrostDriver_TimeoutAndNoAutomaticFallback(t *testing.T) {
 	_, err = driver.ChatCompletion(context.Background(), ExecutionRequest{LogicalModel: "unknown/model", Body: map[string]interface{}{}})
 	if err == nil {
 		t.Fatal("未映射模型必须拒绝，不能自动解析 provider")
+	}
+}
+
+type failingRoundTripper struct{}
+
+func (failingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("连接前失败")
+}
+
+func TestExecutionDriversReleaseWhenRequestWasNotSent(t *testing.T) {
+	client := &http.Client{Transport: failingRoundTripper{}}
+	tests := []ExecutionDriver{
+		NewNativeOpenAICompatibleDriver(client),
+		NewBifrostDriver(BifrostDriverConfig{BaseURL: "http://unreachable.invalid", InternalToken: "test-token", HTTPClient: client}),
+	}
+	for _, driver := range tests {
+		result, err := driver.ChatCompletion(context.Background(), ExecutionRequest{
+			RequestID: "req-not-sent", LogicalModel: "molin/qwen-turbo", ProviderModel: "qwen-turbo",
+			BaseURL: "http://unreachable.invalid", APIKey: "test-key", Body: map[string]interface{}{},
+		})
+		if err == nil || result == nil {
+			t.Fatalf("%s 应返回建连前失败", driver.Name())
+		}
+		if result.Attempt.ResultUnknown || result.Attempt.ErrorClass != "request_not_sent" {
+			t.Fatalf("%s 建连前失败必须可安全释放: %+v", driver.Name(), result.Attempt)
+		}
 	}
 }
 

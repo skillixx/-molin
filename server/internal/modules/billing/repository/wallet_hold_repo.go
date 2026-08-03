@@ -42,6 +42,16 @@ func (r *WalletHoldRepository) FindByIDForUpdate(tx *gorm.DB, id uint64) (*model
 	return &hold, nil
 }
 
+// FindByIdempotencyKeyForUpdate 在调用方事务内锁定幂等预占，供跨模块原子创建请求和 hold。
+func (r *WalletHoldRepository) FindByIdempotencyKeyForUpdate(tx *gorm.DB, key string) (*model.WalletHold, error) {
+	var hold model.WalletHold
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("idempotency_key = ?", key).First(&hold).Error; err != nil {
+		return nil, err
+	}
+	return &hold, nil
+}
+
 // Create 在事务内创建一条 hold 记录（gorm 回填自增 ID）。
 func (r *WalletHoldRepository) Create(tx *gorm.DB, hold *model.WalletHold) error {
 	return tx.Create(hold).Error

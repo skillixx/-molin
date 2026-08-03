@@ -22,7 +22,7 @@ Week 4（2026-06-07 验收通过）：
 
 AI 网关 Phase 1：
 - G0/G1 已完成并签收：商业请求账本 Expand Schema、Native/Bifrost 执行契约和双上游 POC。
-- G2 开发分支已实现 Project、Project SK、显式模型权限、RequestOrchestrator 和无收费 JSON/SSE 正式计量链；本地全量测试、隔离 MySQL 8、测试 Linux 全量 race、独立 QA 和产品验收已通过。当前仅允许提交并推送 G2 功能分支，不代表可进入 G3、合并 `main` 或生产部署。
+- G3 功能分支已实现价格快照、最坏成本报价、钱包 hold、一次终态结算、Outbox 和异常对账；本地全量测试、隔离 MySQL/RabbitMQ 与测试 Linux race 已通过，2026-08-03 独立 QA 和产品经理以 P0=0、P1=0 双签通过，证据见 `docs/ai-gateway-g3-acceptance.md`。不代表允许合并 `main`、生产部署或进入 G4。
 
 > **第一阶段（Week 1-4：平台底座 + 应用售卖闭环）已于 2026-06-07 正式验收通过，并于 2026-06-08 完成最终收尾确认 ✅**
 > 端到端验收 16/16 核心用例、37/37 全部用例通过（通过率 100%）。

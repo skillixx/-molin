@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -103,7 +104,7 @@ func (s *memoryOrchestratorStore) StartRequest(_ context.Context, requestID stri
 	s.attempts[requestID] = *attempt
 	return nil
 }
-func (s *memoryOrchestratorStore) FinalizeRequest(_ context.Context, requestID string, attempt model.AIExecutionAttempt, usage []model.AIUsageItem, disconnected bool, _, _ *string) error {
+func (s *memoryOrchestratorStore) FinalizeRequest(_ context.Context, requestID string, attempt model.AIExecutionAttempt, usage []model.AIUsageItem, disconnected bool, errorClass, errorCode *string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	request := s.requests[requestID]
@@ -118,6 +119,7 @@ func (s *memoryOrchestratorStore) FinalizeRequest(_ context.Context, requestID s
 	}
 	s.attempts[requestID] = attempt
 	s.usage[requestID] = append([]model.AIUsageItem(nil), usage...)
+	request.ErrorClass, request.ErrorCode = errorClass, errorCode
 	request.ClientDisconnected = disconnected
 	request.ExecutionStatus = model.AIExecutionFailed
 	if attempt.ResultUnknown || attempt.Status == "unknown" || attempt.Status == "timeout" {
@@ -181,14 +183,21 @@ func (f fakeVisibilityChecker) VisibleToUser(context.Context, uint64, string) (b
 }
 
 type fakeOrchestratorDriver struct {
-	executeErr bool
-	incomplete bool
+	executeErr     bool
+	incomplete     bool
+	requestNotSent bool
+	streamBody     io.ReadCloser
+	lastRequest    ExecutionRequest
 }
 
 func (f *fakeOrchestratorDriver) Name() string { return "bifrost" }
 func (f *fakeOrchestratorDriver) ChatCompletion(_ context.Context, req ExecutionRequest) (*ExecutionResponse, error) {
+	f.lastRequest = req
 	now := time.Now()
 	if f.executeErr {
+		if f.requestNotSent {
+			return &ExecutionResponse{Attempt: ExecutionAttempt{AttemptNo: 1, Driver: "bifrost", ProviderCode: "bailian", ProviderModel: "bailian/qwen-turbo", StartedAt: now.Add(-time.Millisecond), FinishedAt: now, Outcome: "failed", ErrorClass: "request_not_sent", ResultUnknown: false}}, errors.New("连接前失败")
+		}
 		return &ExecutionResponse{Attempt: ExecutionAttempt{AttemptNo: 1, Driver: "bifrost", ProviderCode: "bailian", ProviderModel: "bailian/qwen-turbo", StartedAt: now.Add(-time.Millisecond), FinishedAt: now, Outcome: "timeout", ErrorClass: "network_timeout", ResultUnknown: true}}, context.DeadlineExceeded
 	}
 	return &ExecutionResponse{
@@ -205,8 +214,12 @@ func (f *fakeOrchestratorDriver) ChatCompletionStream(_ context.Context, _ Execu
 	if f.incomplete {
 		body = "data: {\"id\":\"1\",\"choices\":[{\"delta\":{\"content\":\"O\"}}]}\n\n"
 	}
+	responseBody := io.ReadCloser(io.NopCloser(bytes.NewBufferString(body)))
+	if f.streamBody != nil {
+		responseBody = f.streamBody
+	}
 	return &ExecutionResponse{
-		Response: &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(bytes.NewBufferString(body))},
+		Response: &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: responseBody},
 		Attempt:  ExecutionAttempt{AttemptNo: 1, Driver: "bifrost", ProviderCode: "bailian", EndpointCode: "bailian", ProviderModel: "bailian/qwen-turbo", StartedAt: now, Outcome: "success"},
 	}, nil
 }
@@ -352,6 +365,45 @@ func TestRequestOrchestratorSameRequestIDDifferentOwnerIsDenied(t *testing.T) {
 	}
 }
 
+func TestRequestOrchestratorStatusQueryIsTenantBound(t *testing.T) {
+	store := newMemoryOrchestratorStore()
+	orchestrator := newTestOrchestrator(store)
+	prepared := prepareTestRequest(t, orchestrator, "req-status", "idem-status", map[string]interface{}{"model": "molin/qwen-turbo"})
+	status, err := orchestrator.GetRequestStatus(context.Background(), prepared.RequestID, 3, 7)
+	if err != nil || status.RequestID != prepared.RequestID || status.BillingStatus != model.AIBillingUnquoted {
+		t.Fatalf("原 Project SK 应可查询请求状态: status=%+v err=%v", status, err)
+	}
+	if _, err := orchestrator.GetRequestStatus(context.Background(), prepared.RequestID, 3, 8); !errors.Is(err, ErrProjectAccessDenied) {
+		t.Fatalf("其他 SK 不得查询请求状态: %v", err)
+	}
+}
+
+func TestFindExistingMarksRequestNotSentAsRetryable(t *testing.T) {
+	store := newMemoryOrchestratorStore()
+	orchestrator := newTestOrchestrator(store)
+	body := map[string]interface{}{"model": "molin/qwen-turbo", "max_tokens": float64(10)}
+	orchestrator.SetExecutionDriverSelector(staticExecutionDriverSelector{driver: &fakeOrchestratorDriver{executeErr: true, requestNotSent: true}})
+	prepared := prepareTestRequest(t, orchestrator, "req-old", "idem-retry", body)
+	if err := orchestrator.Execute(context.Background(), prepared.RequestID, &memorySink{}); !errors.Is(err, ErrUpstream) {
+		t.Fatalf("连接前失败应返回统一上游错误: %v", err)
+	}
+	request := store.requests[prepared.RequestID]
+	if request.ErrorCode == nil || *request.ErrorCode != "request_not_sent" || request.ExecutionStatus != model.AIExecutionFailed {
+		t.Fatalf("正式执行链必须保留 request_not_sent: %+v", request)
+	}
+	// 内存仓储不执行钱包逻辑，此处只补齐真实计费服务会写入的 released 状态，再验证重试门禁。
+	request.BillingStatus = model.AIBillingReleased
+	orchestrator.billing = &AIBillingService{}
+	fingerprint, err := requestFingerprint(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retry, err := orchestrator.findExisting(context.Background(), PrepareCommand{UserID: 3, APIKeyID: 7, IdempotencyKey: "idem-retry"}, 8, fingerprint)
+	if err != nil || retry == nil || retry.retrySourceRequestID != "req-old" || retry.Existing {
+		t.Fatalf("明确未发出的失败请求应允许同幂等键创建新请求: prepared=%+v err=%v", retry, err)
+	}
+}
+
 func TestRequestOrchestratorJSONPersistsBeforeSuccessAndKeepsUnquoted(t *testing.T) {
 	store := newMemoryOrchestratorStore()
 	orchestrator := newTestOrchestrator(store)
@@ -429,6 +481,53 @@ func TestRequestOrchestratorSSEDisconnectStillPersistsUsage(t *testing.T) {
 	}
 }
 
+func TestRequestOrchestratorSSEDoneDoesNotWaitForUpstreamClose(t *testing.T) {
+	store := newMemoryOrchestratorStore()
+	orchestrator := newTestOrchestrator(store)
+	reader, writer := io.Pipe()
+	driver := &fakeOrchestratorDriver{streamBody: reader}
+	orchestrator.SetExecutionDriverSelector(staticExecutionDriverSelector{driver: driver})
+	prepared, err := orchestrator.Prepare(context.Background(), PrepareCommand{
+		RequestID: "req-sse-done-open", UserID: 3, APIKeyID: 7, LogicalModel: "molin/qwen-turbo", Stream: true,
+		Body: map[string]interface{}{"model": "molin/qwen-turbo", "stream": true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeDone := make(chan error, 1)
+	go func() {
+		_, writeErr := writer.Write([]byte("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}\n\ndata: [DONE]\n\n"))
+		writeDone <- writeErr
+	}()
+	executeDone := make(chan error, 1)
+	sink := &memorySink{}
+	go func() {
+		executeDone <- orchestrator.Execute(context.Background(), prepared.RequestID, sink)
+	}()
+
+	select {
+	case err := <-executeDone:
+		if err != nil {
+			t.Fatalf("收到 [DONE] 后应立即完成结算: %v", err)
+		}
+	case <-time.After(time.Second):
+		_ = writer.Close()
+		t.Fatal("收到 [DONE] 后不得等待上游关闭连接")
+	}
+	_ = writer.Close()
+	if err := <-writeDone; err != nil && !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("写入测试 SSE 失败: %v", err)
+	}
+	request := store.requests[prepared.RequestID]
+	if request.ExecutionStatus != model.AIExecutionSucceeded || len(store.usage[prepared.RequestID]) != 3 {
+		t.Fatalf("SSE 终态持久化错误 request=%+v usage=%d", request, len(store.usage[prepared.RequestID]))
+	}
+	if !bytes.Contains(sink.body.Bytes(), []byte("[DONE]")) {
+		t.Fatal("客户端必须及时收到 SSE 终止符")
+	}
+}
+
 func TestRequestOrchestratorUnknownFailureAndIncompleteSSEDoNotFallback(t *testing.T) {
 	store := newMemoryOrchestratorStore()
 	orchestrator := newTestOrchestrator(store)
@@ -454,6 +553,22 @@ func TestRequestOrchestratorUnknownFailureAndIncompleteSSEDoNotFallback(t *testi
 	}
 	if store.requests[prepared.RequestID].ExecutionStatus != model.AIExecutionUnknown || bytes.Contains(sink.body.Bytes(), []byte("[DONE]")) {
 		t.Fatal("缺少 [DONE] 的 SSE 必须进入 unknown，且不能向客户端伪造成功终止符")
+	}
+}
+
+func TestWriteStreamBillingStatusEmitsMachineReadableEvent(t *testing.T) {
+	sink := &memorySink{}
+	if err := writeStreamBillingStatus(sink, "req-settlement-pending", ErrSettlementPending); err != nil {
+		t.Fatal(err)
+	}
+	body := sink.body.String()
+	if !strings.Contains(body, "event: molin.status") ||
+		!strings.Contains(body, `"request_id":"req-settlement-pending"`) ||
+		!strings.Contains(body, `"error":"settlement_pending"`) {
+		t.Fatalf("流式结算状态事件不完整: %s", body)
+	}
+	if strings.Contains(body, "wallet") || strings.Contains(body, "database") {
+		t.Fatalf("流式状态事件不得泄露内部实现: %s", body)
 	}
 }
 

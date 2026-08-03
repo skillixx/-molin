@@ -60,6 +60,18 @@ jobs:
         working-directory: server
         run: go build -o /dev/null ./cmd/api
 
+  gateway-g3:
+    name: AI 网关 G3 财务与消息验收
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 隔离验证 MySQL 8 与 RabbitMQ 恢复
+        env:
+          AI_GATEWAY_G3_MYSQL_APPROVED: "YES"
+          G3_DOCKER_PULL_POLICY: missing
+        run: bash infra/scripts/verify-ai-gateway-migration-000060.sh
+
   # ---- 前端 CI ----
   frontend-admin:
     name: 管理后台构建

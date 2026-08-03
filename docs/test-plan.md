@@ -833,3 +833,39 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - Finalize 重试不重复 attempt 或 Usage；周期恢复扫描只选择超过安全窗口的遗留请求，并在事务锁内重查状态与截止时间，Reconcile 同时收敛请求与运行中的 attempt。
 - `billing_status=unquoted`；不得生成价格、钱包 hold、settled、released、Outbox 或旧 `token_usage_logs` 双写。
 - `infra/scripts/verify-ai-gateway-migration-000059.sh` 只在无网络、无端口、tmpfs 的隔离 MySQL 8 容器执行，验证首次 up、保留式 down、re-up、allowlist 和三元租户外键；禁止连接项目数据库。
+
+### G3 自动化与阶段门禁
+
+- Decimal 金样覆盖四类 Token、多 SKU、极小金额、八位舍入、最低收费、大数量和 uint64 边界。
+- 价格发布拒绝未审批、人民币汇率不为 1、SKU 不完整、币种/数值非法、低于最低毛利和生效区间重叠；逐请求快照不受后续活动价格变化影响。
+- 同一逻辑模型的两个已审批版本并发发布只能一个成功，数据库中只保留一个 active 版本。
+- 余额不足在上游前拒绝；100 并发竞争钱包不得产生负余额。
+- 20 并发相同请求只形成一个请求和 hold；G2 编排幂等保证只有事务赢家持有执行上下文。
+- 重复 settle、settle/release 竞争和 Worker 重放只允许一个财务终态。
+- 强制结算最后一步 Outbox 写失败时，请求、Usage、钱包、hold 和流水全部回滚。
+- Usage 缺失进入 `settlement_pending`，不产生 consume 流水；超过对账期限转人工异常并保留 hold。
+- 失败响应携带完整可信 Usage 时仍须 settled；失败 attempt 在对账中发现完整 Usage 时同样 settled，只有明确零成本且无 Usage 才 released。
+- 正式 HTTP 驱动必须保留错误响应内的可信 Usage；请求已发出但错误响应无 Usage 时保持 hold 并进入 `settlement_pending`。
+- 明确 JSON 失败响应携带可信 Usage 时必须 settled；SSE 错误事件、缺少 `[DONE]` 或读取失败导致结果未知时，即使携带 Usage 也必须保持 hold 并进入待对账。
+- 缓存/推理拆分超过输入/输出总量，或 `total_tokens != prompt_tokens + completion_tokens` 时视为不可信并进入待对账。
+- 既有客户端不传 `max_tokens` 时采用配置兜底值完成报价；显式零值、非法值或超过模型上限仍在调用上游前拒绝。
+- 缺省 `max_tokens` 必须写入实际发往上游的请求体，保证执行输出上限与预占口径一致。
+- `n` 缺省或 JSON 整数 1 时允许报价；字符串、浮点、指数写法、`n>1` 或其他非法值必须在预占和上游调用前返回 `unquotable_request`。
+- 人工零用量 `settle` 必须拒绝并保持 exception/holding，确认零成本只能显式 `release`；Project/SK 越权统一为 HTTP 403 + `40003`。
+- 人工 `release` 携带任何正用量必须优先按矛盾输入返回 `40010` 并保留审计；没有矛盾输入但与已有终态操作不一致时返回 409。
+- 原始 Provider Usage 使用稳定序号 0，计费拆分使用序号 1；补价只更新数量一致行的空单价和金额，数量不一致必须冲突且不得改写原始事实。
+- 正常成功、明确失败、待对账和超额异常都必须保存 sequence 0 原始 Usage；价格发布 CLI 在 `APP_ENV` 缺失、未知或生产值时必须在连接数据库前拒绝。
+- 失败请求不得应用成功最低收费；人工终结重复调用只有与真实终态一致时才可幂等成功。
+- 人工异常终结接口必须经过 `token:manage`、管理员二次认证和前置审计；审计失败时不得调用资金服务。
+- SSE 结算待确认或异常必须输出 `molin.status` 事件；状态查询必须绑定原用户和 Project SK。
+- 请求尚未写出时的网络失败释放 hold；已写出但结果未知时保留 hold。
+- Bifrost 模型映射缺失等 HTTP 构造前失败统一归类 `request_not_sent`，立即释放 hold 且不产生消费流水。
+- 单条损坏对账记录不得阻塞批次后续请求；人工核定释放或结算只能产生一个财务终态。
+- 客户端断连后按可信 Usage 结算，freeze/unfreeze/consume 的 `balance_after` 可连续还原。
+- `actual > held` 进入 exception、暂停价格、写 P0 Outbox，不静默封顶或补扣。
+- RabbitMQ URL 未配置时不启动 Worker，Outbox 保持 pending；已配置但 Broker 临时停机时增加重试，恢复后必须 broker confirm，并从持久绑定队列读取相同 Message ID。
+- Outbox 锁超时重领使用 `locked_at` 租约 CAS，旧 Worker 不得覆盖新拥有者。
+- Outbox 退避重试覆盖至少 2 小时 Broker 故障，单次发布必须有限超时；同聚合前序失败时不得投递后序事件，dead 事件受控重新入队后按原 `event_id` 有序恢复。
+- `infra/scripts/verify-ai-gateway-migration-000060.sh` 只使用隔离临时 MySQL/RabbitMQ 网络，验证首次/重复 up、保留 down/re-up、真实并发和 Broker 恢复。
+- 必须通过 `go test -count=1 ./...`、`go vet ./...`、测试 Linux `go test -race -count=1 ./...` 和 `git diff --check`。
+- 静态和 staged diff 必须扫描真实 SK、密码、Token、HMAC Secret、RabbitMQ URL 和上游密钥；测试凭据只能在临时环境生成。

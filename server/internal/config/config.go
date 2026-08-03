@@ -30,6 +30,10 @@ type Config struct {
 	RedisPassword string
 	RedisDB       int
 
+	// RabbitMQ 仅用于发布事务 Outbox；连接不可用时事件保留在 MySQL 并重试。
+	RabbitMQURL      string
+	AIOutboxExchange string
+
 	// JWT
 	JWTSecret        string
 	JWTExpireSeconds int64
@@ -151,6 +155,9 @@ func Load() Config {
 		RedisAddr:     getenv("REDIS_ADDR", "127.0.0.1:16379"),
 		RedisPassword: getenv("REDIS_PASSWORD", ""),
 		RedisDB:       getenvInt("REDIS_DB", 0),
+
+		RabbitMQURL:      getenv("RABBITMQ_URL", ""),
+		AIOutboxExchange: getenv("AI_OUTBOX_EXCHANGE", "molin.ai.billing"),
 
 		JWTSecret:        getenv("JWT_SECRET", ""),
 		JWTExpireSeconds: int64(getenvInt("JWT_EXPIRE_SECONDS", 7200)),

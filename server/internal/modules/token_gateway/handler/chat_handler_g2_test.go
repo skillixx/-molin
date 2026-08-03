@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"molin/server/internal/middleware"
@@ -152,6 +153,41 @@ func TestChatHandlerG2MapsRealNameAndChannelErrors(t *testing.T) {
 		decodeErr := json.Unmarshal(recorder.Body.Bytes(), &body)
 		if recorder.Code != testCase.wantHTTP || decodeErr != nil || body.Code != testCase.wantCode {
 			t.Fatalf("错误映射不符合契约: err=%v status=%d body=%s", testCase.err, recorder.Code, recorder.Body.String())
+		}
+	}
+}
+
+func TestChatHandlerG3MapsStableBillingErrors(t *testing.T) {
+	tests := []struct {
+		err       error
+		wantHTTP  int
+		wantCode  int
+		wantError string
+	}{
+		{service.ErrPriceUnavailable, http.StatusServiceUnavailable, 50310, "pricing_unavailable"},
+		{service.ErrPriceExpired, http.StatusServiceUnavailable, 50310, "price_expired"},
+		{service.ErrMarginBelowMinimum, http.StatusServiceUnavailable, 50311, "margin_below_minimum"},
+		{service.ErrUnquotableRequest, http.StatusBadRequest, 40010, "unquotable_request"},
+		{service.ErrWalletInsufficient, http.StatusPaymentRequired, 60001, "insufficient_balance"},
+		{service.ErrWalletHoldFailed, http.StatusServiceUnavailable, 50312, "wallet_hold_failed"},
+		{&service.BillingStatusError{RequestID: "req-pending", Cause: service.ErrSettlementPending}, http.StatusAccepted, 20201, "settlement_pending"},
+		{service.ErrBillingException, http.StatusInternalServerError, 50010, "billing_exception"},
+	}
+	for _, testCase := range tests {
+		recorder := httptest.NewRecorder()
+		writeOrchestratorError(recorder, testCase.err)
+		var body response.Body
+		if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		if recorder.Code != testCase.wantHTTP || body.Code != testCase.wantCode || body.ErrorType != testCase.wantError {
+			t.Fatalf("G3 错误映射不符: err=%v status=%d body=%+v", testCase.err, recorder.Code, body)
+		}
+		if errors.Is(testCase.err, service.ErrUnquotableRequest) && !strings.Contains(body.Message, "max_tokens 和 n") {
+			t.Fatalf("无法报价提示必须指出两个受限参数: %+v", body)
+		}
+		if errors.Is(testCase.err, service.ErrSettlementPending) && body.RequestID != "req-pending" {
+			t.Fatalf("待结算响应必须返回 request_id: %+v", body)
 		}
 	}
 }

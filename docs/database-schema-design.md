@@ -418,6 +418,20 @@ G2 正式写入 `ai_requests`、`ai_execution_attempts` 和 `ai_usage_items`；`
 
 Project 预算合法组合固定为：`disabled + monthly_budget=NULL`，或 `soft/hard + monthly_budget>0`。`soft` 超限仅告警并继续，`hard` 在预计消费越限时于上游调用前拒绝；月周期按 Project 的 IANA 时区从当地月初计算。G1 只冻结约束，准确预占、并发控制和拒绝逻辑在 G3/G4 实现。
 
+#### 3.5.3 AI 网关 Phase 1 G3 价格与可靠结算
+
+Migration `000060_create_ai_gateway_g3_billing` 新增：
+
+- `ai_price_versions`：逻辑模型价格版本、审批/发布时间、生效区间、成本有效期、最低毛利、汇率、取整和失败收费规则。
+- `ai_price_model_locks`：每个逻辑模型一行的并发发布互斥锁，避免两个已审批版本同时通过重叠检查。
+- `ai_price_skus`：输入、输出、缓存、推理四类成本价与销售价；唯一键 `(price_version_id,meter_type,variant_hash)`。
+- `ai_request_wallet_links`：请求与唯一 hold、freeze/settle/release 流水及报价、预占、实结金额的关联。
+- `ai_outbox_events`：事务事件、重试次数、下次时间、租约、处理时间和脱敏错误分类。
+
+`wallets`、`wallet_transactions`、`wallet_holds` 金额扩为 `DECIMAL(20,8)`；数据库 CHECK 保证钱包可用/冻结余额非负及结算金额不超过 hold。请求 ID、hold 和三类钱包流水在关联表中唯一，防止重复财务终态。
+
+价格发布使用逻辑模型共享行锁校验审批、四 SKU 和时间区间重叠；报价读取价格与 SKU 使用同一一致性事务。已发布版本不提供原地改价接口，只能暂停或创建新版本。000060 down 保留所有财务表和事实，不执行 DROP 或数据删除。
+
 完整字段与状态契约见 [`ai-gateway-g0-g1-contract.md`](./ai-gateway-g0-g1-contract.md)。
 
 ## 4. 关键状态

@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"molin/server/internal/middleware"
+	auditservice "molin/server/internal/modules/audit/service"
 	"molin/server/internal/modules/token_gateway/handler"
 	"molin/server/internal/modules/token_gateway/service"
 )
@@ -21,6 +22,8 @@ func RegisterRoutes(
 	channelSvc *service.ChannelService,
 	catalogSvc *service.CatalogService,
 	usageSvc *service.UsageService,
+	billingSvc *service.AIBillingService,
+	auditSvc *auditservice.AuditService,
 	jwtSecret string,
 	iamChecker middleware.IAMChecker,
 	banChecker middleware.BanChecker,
@@ -29,6 +32,7 @@ func RegisterRoutes(
 	ch := handler.NewChannelHandler(channelSvc)
 	mh := handler.NewModelHandler(catalogSvc)
 	uh := handler.NewUsageHandler(usageSvc)
+	bh := handler.NewBillingHandler(billingSvc, auditSvc)
 
 	// 管理端中间件链：登录 + token:manage + 管理员双重认证
 	admin := func(next http.HandlerFunc) http.Handler {
@@ -53,11 +57,13 @@ func RegisterRoutes(
 
 	// 全量用量流水（S2-丁2，§14.7）：可按 user_id/api_key_id/model/start/end 筛选。
 	mux.Handle("GET /api/admin/token/usage", admin(uh.ListAll))
+	// 人工异常终结是高风险资金操作，必须经过 token:manage、管理员二次认证和前置审计。
+	mux.Handle("POST /api/admin/token/billing/exceptions/{request_id}/resolve", admin(bh.ResolveException))
 }
 
 // RegisterUserRoutes 注册 token_gateway 用户端路由（Project SK + 网页登录态）。
 // Project 管理接口使用 JWT；模型目录兼容 JWT 与 Project SK；公开对话接口必须使用 Project SK。
-// G2 对话由 RequestOrchestrator 统一执行权限校验、上游调用和无收费账本写入，计费状态保持 unquoted。
+// G3 对话由 RequestOrchestrator 统一执行权限校验、上游调用、价格快照、钱包预占和可靠结算。
 //   - forwardSvc：仅保留构造兼容性，公开对话不会回退到旧转发链路
 //   - jwtSecret：JWT 校验密钥
 //   - banChecker：封禁/吊销黑名单检查
@@ -107,6 +113,7 @@ func RegisterUserRoutes(
 	mux.Handle("GET /api/token/models", user(modelH.ListPublic))
 	// OpenAI 兼容对话转发（仅 Project SK，支持非流式 + SSE 流式）。
 	mux.Handle("POST /api/token/chat/completions", user(chatH.ChatCompletions))
+	mux.Handle("GET /api/token/requests/{request_id}", user(chatH.RequestStatus))
 	// 我的用量流水（S2-丁1，§14.3）：仅查本人，可选筛选 model/start/end。
 	// 双模式：sk 调用按 sk 绑定的 user_id 过滤（与登录态一致只查本人）。
 	mux.Handle("GET /api/token/usage", user(usageH.ListMine))
@@ -114,9 +121,10 @@ func RegisterUserRoutes(
 	// ---- OpenAI 兼容别名层（/v1/*）----
 	// 让 Cline / Cherry Studio 等「OpenAI 兼容」客户端把 Base URL 填为 https://<域名>/v1，
 	// 凭 Project SK 直接接入；复用同一套鉴权和模型权限校验，并由 RequestOrchestrator
-	// 写入 ai_requests、ai_execution_attempts 与 ai_usage_items；G2 不执行钱包或价格结算。
+	// 写入请求、执行、Usage 与财务事实；G3 先预占人民币钱包，再按可信 Usage 一次终态结算。
 	// POST /v1/chat/completions：纯别名，复用现有 ChatCompletions handler（含 SSE 流式透传）。
 	mux.Handle("POST /v1/chat/completions", user(chatH.ChatCompletions))
+	mux.Handle("GET /v1/requests/{request_id}", user(chatH.RequestStatus))
 	// GET /v1/models：返回 OpenAI 标准格式，供客户端自动拉取模型下拉列表。
 	mux.Handle("GET /v1/models", user(modelH.ListOpenAIModels))
 }

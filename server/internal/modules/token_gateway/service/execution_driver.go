@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"strings"
 	"time"
 
@@ -185,6 +186,23 @@ type ExecutionDriver interface {
 	NormalizeStreamLine(line []byte, logicalModel string) (ExecutionStreamChunk, error)
 }
 
+type executionTransportError struct {
+	cause       error
+	requestSent bool
+}
+
+func (e *executionTransportError) Error() string { return e.cause.Error() }
+func (e *executionTransportError) Unwrap() error { return e.cause }
+
+func executionResultUnknown(err error) bool {
+	var transportErr *executionTransportError
+	if errors.As(err, &transportErr) {
+		return transportErr.requestSent
+	}
+	// 非统一执行器产生的网络错误无法证明未发送，必须保守进入待对账。
+	return true
+}
+
 // ExecutionDriverSelector 支持全局默认值，并为后续按模型选择驱动保留稳定扩展点。
 type ExecutionDriverSelector interface {
 	Select(logicalModel string) (ExecutionDriver, error)
@@ -238,7 +256,10 @@ func (d *NativeOpenAICompatibleDriver) execute(ctx context.Context, in Execution
 		attempt.FinishedAt = time.Now()
 		attempt.Outcome = statusFromErr(err)
 		attempt.ErrorClass = executionNetworkErrorClass(err)
-		attempt.ResultUnknown = true
+		attempt.ResultUnknown = executionResultUnknown(err)
+		if !attempt.ResultUnknown {
+			attempt.ErrorClass = "request_not_sent"
+		}
 		return &ExecutionResponse{Attempt: attempt}, err
 	}
 	if stream && resp.StatusCode >= 200 && resp.StatusCode < 300 {
@@ -342,7 +363,9 @@ func (d *BifrostDriver) execute(ctx context.Context, in ExecutionRequest, stream
 		attempt := newExecutionAttempt(d.Name(), in, providerModel, started)
 		attempt.FinishedAt = time.Now()
 		attempt.Outcome = "failed"
-		attempt.ErrorClass = "model_mapping_error"
+		// 映射校验发生在构造 HTTP 请求前，可确定未产生上游成本，统一进入安全释放分类。
+		attempt.ErrorClass = "request_not_sent"
+		attempt.ResultUnknown = false
 		return &ExecutionResponse{Attempt: attempt}, fmt.Errorf("Bifrost 模型未显式映射: %s", in.LogicalModel)
 	}
 	body := cloneExecutionBody(in.Body)
@@ -360,7 +383,10 @@ func (d *BifrostDriver) execute(ctx context.Context, in ExecutionRequest, stream
 		attempt.FinishedAt = time.Now()
 		attempt.Outcome = statusFromErr(err)
 		attempt.ErrorClass = executionNetworkErrorClass(err)
-		attempt.ResultUnknown = true
+		attempt.ResultUnknown = executionResultUnknown(err)
+		if !attempt.ResultUnknown {
+			attempt.ErrorClass = "request_not_sent"
+		}
 		return &ExecutionResponse{Attempt: attempt}, err
 	}
 	if stream && resp.StatusCode >= 200 && resp.StatusCode < 300 {
@@ -424,7 +450,7 @@ func normalizeExecutionStreamLine(line []byte, logicalModel string) (ExecutionSt
 	}
 	public, usage, valid := normalizeExecutionJSON(data, true, true, logicalModel)
 	if !valid {
-		return ExecutionStreamChunk{}, errors.New("执行驱动 SSE 返回业务错误或非法数据")
+		return ExecutionStreamChunk{Usage: usage}, errors.New("执行驱动 SSE 返回业务错误或非法数据")
 	}
 	return ExecutionStreamChunk{PublicLine: append(append([]byte("data: "), public...), '\n'), Usage: usage}, nil
 }
@@ -432,11 +458,11 @@ func normalizeExecutionStreamLine(line []byte, logicalModel string) (ExecutionSt
 func executeHTTPRequest(ctx context.Context, client *http.Client, url, token, requestID string, body map[string]interface{}, stream bool) (*http.Response, error) {
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return nil, fmt.Errorf("请求体序列化失败: %w", err)
+		return nil, &executionTransportError{cause: fmt.Errorf("请求体序列化失败: %w", err)}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
-		return nil, fmt.Errorf("构造上游请求失败: %w", err)
+		return nil, &executionTransportError{cause: fmt.Errorf("构造上游请求失败: %w", err)}
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -446,7 +472,13 @@ func executeHTTPRequest(ctx context.Context, client *http.Client, url, token, re
 	if stream {
 		req.Header.Set("Accept", "text/event-stream")
 	}
-	return client.Do(req)
+	requestSent := false
+	trace := &httptrace.ClientTrace{WroteRequest: func(httptrace.WroteRequestInfo) { requestSent = true }}
+	resp, err := client.Do(req.WithContext(httptrace.WithClientTrace(req.Context(), trace)))
+	if err != nil {
+		return nil, &executionTransportError{cause: err, requestSent: requestSent}
+	}
+	return resp, nil
 }
 
 // newStreamHTTPClient 只限制建连、TLS 和响应头等待，不对整个 SSE 响应体设置 http.Client.Timeout。
@@ -470,10 +502,11 @@ func normalizeExecutionJSON(raw []byte, requireChoices, allowUsageOnly bool, log
 	if json.Unmarshal(raw, &value) != nil {
 		return nil, ExecutionUsage{}, false
 	}
-	if hasExecutionError(value) {
-		return nil, ExecutionUsage{}, false
-	}
 	usage := parseExecutionUsage(raw)
+	if hasExecutionError(value) {
+		// 业务错误不能抹掉供应商同时返回的可信 Usage，结算层仍需按真实成本收费。
+		return nil, usage, false
+	}
 	choices, choicesPresent := value["choices"]
 	if requireChoices && (!choicesPresent || emptyJSONList(choices)) && !(allowUsageOnly && usage.Present) {
 		return nil, usage, false
@@ -561,7 +594,7 @@ func parseExecutionUsage(raw []byte) ExecutionUsage {
 	}
 	total := *u.PromptTokens + *u.CompletionTokens
 	if u.TotalTokens != nil {
-		if *u.TotalTokens < 0 {
+		if *u.TotalTokens < 0 || *u.TotalTokens != total {
 			return ExecutionUsage{}
 		}
 		total = *u.TotalTokens
@@ -573,6 +606,9 @@ func parseExecutionUsage(raw []byte) ExecutionUsage {
 	cached := u.CachedTokens
 	if cached == 0 {
 		cached = u.PromptDetails.CachedTokens
+	}
+	if cached < 0 || reasoning < 0 || cached > *u.PromptTokens || reasoning > *u.CompletionTokens {
+		return ExecutionUsage{}
 	}
 	return ExecutionUsage{PromptTokens: *u.PromptTokens, CompletionTokens: *u.CompletionTokens, TotalTokens: total, ReasoningTokens: reasoning, CachedTokens: cached, Present: true}
 }

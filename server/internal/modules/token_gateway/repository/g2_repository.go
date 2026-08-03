@@ -249,7 +249,7 @@ func (r *G2Repository) CreateRequest(ctx context.Context, request *model.AIReque
 func (r *G2Repository) StartRequest(ctx context.Context, requestID string, attempt *model.AIExecutionAttempt) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&model.AIRequest{}).
-			Where("request_id = ? AND execution_status = ?", requestID, model.AIExecutionPending).
+			Where("request_id = ? AND execution_status = ? AND billing_status IN ?", requestID, model.AIExecutionPending, []string{model.AIBillingUnquoted, model.AIBillingHeld}).
 			Updates(map[string]interface{}{"execution_status": model.AIExecutionRunning, "started_at": attempt.StartedAt, "version_no": gorm.Expr("version_no + 1")})
 		if result.Error != nil {
 			return result.Error

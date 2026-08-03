@@ -19,6 +19,27 @@ var ErrHoldNotFound = errors.New("预扣保证金记录不存在")
 // ErrInvalidAmount 金额非法（负数）。
 var ErrInvalidAmount = errors.New("金额非法")
 
+// ErrActualExceedsHold 表示报价上限失效；正式 AI 结算必须进入财务异常，禁止静默封顶。
+var ErrActualExceedsHold = errors.New("实际金额超过预占金额")
+
+// ErrHoldIdempotencyConflict 表示同一幂等键试图绑定不同用户或金额。
+var ErrHoldIdempotencyConflict = errors.New("预占幂等键冲突")
+
+// HoldTxResult 返回事务内预占形成的全部财务关联，供业务账本在同一事务写入。
+type HoldTxResult struct {
+	HoldID            uint64
+	WalletID          uint64
+	FreezeTransaction uint64
+}
+
+// SettleTxResult 返回事务内唯一终态及对应流水；ReleaseTransaction 是解冻流水。
+type SettleTxResult struct {
+	Status             string
+	SettledAmount      decimal.Decimal
+	SettleTransaction  *uint64
+	ReleaseTransaction uint64
+}
+
 // WalletHoldService 钱包预扣保证金（hold）服务。
 //
 // S2-乙0：为 D1「token 网关 postpaid 预扣保证金」提供 billing 侧能力，供 token_gateway 门面内部调用。
@@ -153,6 +174,144 @@ func (s *WalletHoldService) freezeHoldOnce(ctx context.Context, userID uint64, a
 		return nil
 	})
 	return newHoldID, err
+}
+
+// CreateHoldTx 在调用方事务中创建严格钱包预占，不自行提交事务。
+// 调用方必须先锁定业务请求，再调用本方法锁定钱包，以维持全链路固定锁顺序。
+func (s *WalletHoldService) CreateHoldTx(tx *gorm.DB, userID uint64, amount decimal.Decimal, idempotencyKey, remark string) (*HoldTxResult, error) {
+	if tx == nil || userID == 0 || amount.LessThanOrEqual(decimal.Zero) || strings.TrimSpace(idempotencyKey) == "" {
+		return nil, ErrInvalidAmount
+	}
+	if existing, err := s.holdRepo.FindByIdempotencyKeyForUpdate(tx, idempotencyKey); err == nil {
+		if existing.UserID != userID || !existing.HoldAmount.Equal(amount) || existing.FreezeTxnID == nil {
+			return nil, ErrHoldIdempotencyConflict
+		}
+		return &HoldTxResult{HoldID: existing.ID, WalletID: existing.WalletID, FreezeTransaction: *existing.FreezeTxnID}, nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	wallet, err := s.walletRepo.GetForUpdate(tx, userID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrInsufficientBalance
+		}
+		return nil, err
+	}
+	if wallet.Currency != "CNY" || wallet.BalanceAmount.LessThan(amount) || wallet.FrozenAmount.LessThan(decimal.Zero) {
+		return nil, ErrInsufficientBalance
+	}
+	rows, err := s.walletRepo.UpdateWithOptimisticLock(tx, int64(wallet.ID), wallet.Version, map[string]interface{}{
+		"balance_amount": gorm.Expr("balance_amount - ?", amount),
+		"frozen_amount":  gorm.Expr("frozen_amount + ?", amount),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if rows != 1 {
+		return nil, ErrConcurrentUpdate
+	}
+	freeze := &model.WalletTransaction{
+		WalletID: wallet.ID, UserID: userID, Type: "freeze", Direction: "out",
+		Amount: amount, BalanceAfter: wallet.BalanceAmount.Sub(amount), Remark: remark,
+	}
+	if err := s.txRepo.Create(tx, freeze); err != nil {
+		return nil, err
+	}
+	hold := &model.WalletHold{
+		WalletID: wallet.ID, UserID: userID, HoldAmount: amount, Status: model.HoldStatusHolding,
+		IdempotencyKey: idempotencyKey, FreezeTxnID: &freeze.ID, Remark: remark,
+	}
+	if err := s.holdRepo.Create(tx, hold); err != nil {
+		return nil, err
+	}
+	return &HoldTxResult{HoldID: hold.ID, WalletID: wallet.ID, FreezeTransaction: freeze.ID}, nil
+}
+
+// SettleHoldTx 在调用方事务内完成严格结算。actual 超过 hold 时返回错误且不修改钱包。
+func (s *WalletHoldService) SettleHoldTx(tx *gorm.DB, holdID uint64, actual decimal.Decimal, idempotencyKey string) (*SettleTxResult, error) {
+	return s.settleHoldTx(tx, holdID, actual, idempotencyKey, model.HoldStatusSettled)
+}
+
+// settleHoldTx 通过 zeroStatus 区分零金额结算与明确释放，避免两种财务语义共享错误终态。
+func (s *WalletHoldService) settleHoldTx(tx *gorm.DB, holdID uint64, actual decimal.Decimal, idempotencyKey, zeroStatus string) (*SettleTxResult, error) {
+	if tx == nil || holdID == 0 || actual.LessThan(decimal.Zero) || strings.TrimSpace(idempotencyKey) == "" {
+		return nil, ErrInvalidAmount
+	}
+	hold, err := s.holdRepo.FindByIDForUpdate(tx, holdID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrHoldNotFound
+		}
+		return nil, err
+	}
+	if hold.Status != model.HoldStatusHolding {
+		settled := decimal.Zero
+		if hold.SettledAmount != nil {
+			settled = *hold.SettledAmount
+		}
+		return &SettleTxResult{Status: hold.Status, SettledAmount: settled, SettleTransaction: hold.SettleTxnID}, nil
+	}
+	if actual.GreaterThan(hold.HoldAmount) {
+		return nil, ErrActualExceedsHold
+	}
+	wallet, err := s.walletRepo.GetForUpdate(tx, hold.UserID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrWalletNotFound
+		}
+		return nil, err
+	}
+	if wallet.FrozenAmount.LessThan(hold.HoldAmount) || wallet.BalanceAmount.LessThan(decimal.Zero) {
+		return nil, errors.New("钱包冻结金额与 hold 不一致")
+	}
+	refund := hold.HoldAmount.Sub(actual)
+	rows, err := s.walletRepo.UpdateWithOptimisticLock(tx, int64(wallet.ID), wallet.Version, map[string]interface{}{
+		"frozen_amount":  gorm.Expr("frozen_amount - ?", hold.HoldAmount),
+		"balance_amount": gorm.Expr("balance_amount + ?", refund),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if rows != 1 {
+		return nil, ErrConcurrentUpdate
+	}
+	// 冻结流水先完整解冻，再由消费流水扣除 actual；两条 balance_after 必须可按顺序还原钱包。
+	unfreezeBalanceAfter := wallet.BalanceAmount.Add(hold.HoldAmount)
+	consumeBalanceAfter := unfreezeBalanceAfter.Sub(actual)
+	unfreeze := &model.WalletTransaction{
+		WalletID: wallet.ID, UserID: hold.UserID, Type: "unfreeze", Direction: "in",
+		Amount: hold.HoldAmount, BalanceAfter: unfreezeBalanceAfter, Remark: hold.Remark,
+	}
+	if err := s.txRepo.Create(tx, unfreeze); err != nil {
+		return nil, err
+	}
+	var settleID *uint64
+	status := zeroStatus
+	if actual.GreaterThan(decimal.Zero) {
+		consume := &model.WalletTransaction{
+			WalletID: wallet.ID, UserID: hold.UserID, Type: "consume", Direction: "out",
+			Amount: actual, BalanceAfter: consumeBalanceAfter, Remark: hold.Remark,
+		}
+		if err := s.txRepo.Create(tx, consume); err != nil {
+			return nil, err
+		}
+		settleID = &consume.ID
+		status = model.HoldStatusSettled
+	}
+	now := time.Now()
+	if err := s.holdRepo.UpdateFields(tx, hold.ID, map[string]interface{}{
+		"settled_amount": actual, "status": status, "settle_txn_id": settleID, "settled_at": &now,
+	}); err != nil {
+		return nil, err
+	}
+	return &SettleTxResult{
+		Status: status, SettledAmount: actual, SettleTransaction: settleID, ReleaseTransaction: unfreeze.ID,
+	}, nil
+}
+
+// ReleaseHoldTx 在调用方事务内全额释放，和严格结算共享同一幂等终态方法。
+func (s *WalletHoldService) ReleaseHoldTx(tx *gorm.DB, holdID uint64, idempotencyKey string) (*SettleTxResult, error) {
+	return s.settleHoldTx(tx, holdID, decimal.Zero, idempotencyKey, model.HoldStatusReleased)
 }
 
 // SettleHold 结算一笔预扣保证金：解冻该 hold 的全额保证金，再按实际金额 actual 实扣（多退少补）。

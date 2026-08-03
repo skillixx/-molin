@@ -32,6 +32,7 @@ func TestRegisterUserRoutes_OpenAIAlias(t *testing.T) {
 		wantPattern string
 	}{
 		{"v1 chat 别名", http.MethodPost, "/v1/chat/completions", "POST /v1/chat/completions"},
+		{"v1 请求状态", http.MethodGet, "/v1/requests/req-test", "GET /v1/requests/{request_id}"},
 		{"v1 models 别名", http.MethodGet, "/v1/models", "GET /v1/models"},
 		{"原 chat 路由保留", http.MethodPost, "/api/token/chat/completions", "POST /api/token/chat/completions"},
 		{"原 models 路由保留", http.MethodGet, "/api/token/models", "GET /api/token/models"},
