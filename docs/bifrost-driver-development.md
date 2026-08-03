@@ -4,7 +4,7 @@
 
 本阶段只把现有文字 `Chat Completions` 上游调用抽象为统一执行驱动。它不新增商业请求账本、价格引擎、钱包计费、Project、内容审核、并发限流或图片/音视频能力，也不会自动启用 Bifrost。
 
-后续 G0/G1 增量已通过 `000058_create_ai_gateway_ledger_expand` 新增商业请求账本 Schema 和 Go 模型，但仍未把现有调用链切换为新账本写入。执行驱动契约见本文，账本与阶段出口见 `docs/ai-gateway-g0-g1-contract.md`；两者都不代表 G2 RequestOrchestrator 已实现。
+后续 G0/G1 增量已通过 `000059_create_ai_gateway_ledger_expand` 新增商业请求账本 Schema 和 Go 模型，但仍未把现有调用链切换为新账本写入。执行驱动契约见本文，账本与阶段出口见 `docs/ai-gateway-g0-g1-contract.md`；两者都不代表 G2 RequestOrchestrator 已实现。
 
 ```text
 现有 Handler
@@ -69,7 +69,7 @@ Usage 缺失时记录 `pending_reconcile / usage_missing`，并由原有 defer �
 - 默认 Native；切换 Bifrost 必须通过环境变量和部署变更完成。
 - 当前不实现请求内自动重试或跨供应商 fallback。
 - 已发送请求但结果未知、SSE 已输出、SSE 中途错误时均禁止自动切换。
-- 每次调用生成独立 `ExecutionAttempt` 元数据；G0/G1 的 `000058` 已冻结 `ai_execution_attempts` 持久化表，但当前驱动尚不写入该表，正式落库由 G2 RequestOrchestrator 负责。
+- 每次调用生成独立 `ExecutionAttempt` 元数据；G0/G1 的 `000059` 已冻结 `ai_execution_attempts` 持久化表，但当前驱动尚不写入该表，正式落库由 G2 RequestOrchestrator 负责。
 
 ## 9. 测试方式
 

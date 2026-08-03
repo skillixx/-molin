@@ -76,7 +76,7 @@ Usage 缺失或不完整时不得形成已知结算金额。运行态整数 Toke
 
 ## 5. 商业请求账本
 
-Migration `000058_create_ai_gateway_ledger_expand` 新建：
+Migration `000059_create_ai_gateway_ledger_expand` 新建：
 
 | 表 | G1 责任 |
 |---|---|
@@ -107,7 +107,7 @@ G1 创建四张新表，并为现有 `api_keys` 增加 `(id,user_id)` 非业务�
 
 只有以下全部成立，才允许宣布 G1 通过：
 
-1. `000058` 静态契约、Go 模型、全仓测试和敏感扫描通过。
+1. `000059` 静态契约、Go 模型、全仓测试和敏感扫描通过。
 2. Native/Bifrost 普通响应、SSE、五类 Usage、错误和脱敏契约通过。
 3. 测试 Linux 的固定 Bifrost 版本、配置摘要、双节点健康和内部鉴权通过。
 4. 百炼与 OpenRouter 各完成最小普通请求和 SSE，取得 Usage，不使用真实用户流量。

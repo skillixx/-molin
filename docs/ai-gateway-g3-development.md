@@ -22,7 +22,7 @@ Project SK 鉴权 -> 价格快照 -> 请求 + wallet hold + Outbox（同事务�
 | `repository/g3_outbox_repository.go` | 批量认领、锁超时、租约 CAS、重试和 dead 状态 |
 | `service/outbox_worker.go` | Outbox 与 Settlement 周期 Worker |
 | `service/rabbitmq_publisher.go` | 持久 Exchange/Queue、mandatory 路由和 broker confirm |
-| `migration 000060` | 价格、模型级发布锁、请求钱包关联、Outbox 与钱包 Decimal/非负约束 |
+| `migration 000061` | 价格、模型级发布锁、请求钱包关联、Outbox 与钱包 Decimal/非负约束 |
 
 ## 3. 价格与快照
 
@@ -59,10 +59,10 @@ AI_OUTBOX_EXCHANGE=molin.ai.billing
 
 `RABBITMQ_URL` 为空时不启动 Outbox Worker，事件保持 `pending`，避免空地址重试耗尽为 `dead`；配置恢复并重启服务后继续发布。已启动后 Broker 临时不可用则按退避策略重试。
 
-`000060` 可重复 up。down 只执行保留式空操作，不删除价格、请求、钱包、流水或 Outbox 事实。隔离验证：
+`000061` 可重复 up。down 只执行保留式空操作，不删除价格、请求、钱包、流水或 Outbox 事实。隔离验证：
 
 ```bash
-AI_GATEWAY_G3_MYSQL_APPROVED=YES bash infra/scripts/verify-ai-gateway-migration-000060.sh
+AI_GATEWAY_G3_MYSQL_APPROVED=YES bash infra/scripts/verify-ai-gateway-migration-000061.sh
 ```
 
 脚本只连接无宿主端口的临时 MySQL/RabbitMQ 网络；测试机默认 `--pull=never`，CI 显式使用 `G3_DOCKER_PULL_POLICY=missing`。

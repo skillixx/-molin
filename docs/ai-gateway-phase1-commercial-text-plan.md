@@ -10,7 +10,7 @@
 
 > 2026-08-03 执行层增量：已实现 `ExecutionDriver`、Native 默认驱动和 Bifrost 文字驱动，并使用 Fake Bifrost 完成契约测试。该增量只替换鉴权后上游执行层，不代表商业账本、价格引擎、内容审核、限流或生产 Bifrost 已完成；详见 `docs/bifrost-driver-development.md`。
 
-> G0/G1 增量：`000058` 已冻结 `ai_projects`、`ai_requests`、`ai_usage_items`、`ai_execution_attempts` 的 Expand Schema 与 Go 模型，并补充 Native/Bifrost 等价和双上游配置契约。新表尚未接入现有转发读写，真实 Linux 双上游 POC 仍以 `docs/ai-gateway-g1-poc-report.md` 为准；未关闭前不得进入 G2。
+> G0/G1 增量：`000059` 已冻结 `ai_projects`、`ai_requests`、`ai_usage_items`、`ai_execution_attempts` 的 Expand Schema 与 Go 模型，并补充 Native/Bifrost 等价和双上游配置契约。新表尚未接入现有转发读写，真实 Linux 双上游 POC 仍以 `docs/ai-gateway-g1-poc-report.md` 为准；未关闭前不得进入 G2。
 >
 > Phase 0 冻结依据：[`ai-gateway-phase0-freeze-record.md`](./ai-gateway-phase0-freeze-record.md)。
 

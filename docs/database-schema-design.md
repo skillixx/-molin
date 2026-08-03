@@ -397,7 +397,7 @@ created 标记对象均已清理，才删除 `migration_000055_permission_owners
 
 #### 3.5.1 AI 网关 Phase 1 G0/G1 Expand Schema
 
-Migration `000058_create_ai_gateway_ledger_expand` 新增以下商业请求账本表，但不切换旧 `token_usage_logs` 读写：
+Migration `000059_create_ai_gateway_ledger_expand` 新增以下商业请求账本表，但不切换旧 `token_usage_logs` 读写：
 
 - `ai_projects`：用户与 Project 的消费归集边界，冻结预算模式、月预算和 IANA 时区。
 - `ai_requests`：请求主记录，保存 request_id、Project、SK、逻辑/执行模型及审核、执行、计费三个正交状态。
@@ -410,17 +410,17 @@ Migration `000058_create_ai_gateway_ledger_expand` 新增以下商业请求账�
 
 #### 3.5.2 AI 网关 Phase 1 G2 Project SK Expand Schema
 
-Migration `000059_add_ai_gateway_g2_projects_keys` 为 `api_keys` 增加 `project_id`、`scope_mode`、`expires_at` 和 `rotated_from_id`，并新增 `api_key_model_scopes`。新 Project SK 默认 `scope_mode=allowlist`，空表记录表示拒绝全部；只有显式选择才使用 `all`。旧 SK 标记为 `legacy_all`，保留旧 `model_scope` 行为。
+Migration `000060_add_ai_gateway_g2_projects_keys` 为 `api_keys` 增加 `project_id`、`scope_mode`、`expires_at` 和 `rotated_from_id`，并新增 `api_key_model_scopes`。新 Project SK 默认 `scope_mode=allowlist`，空表记录表示拒绝全部；只有显式选择才使用 `all`。旧 SK 标记为 `legacy_all`，保留旧 `model_scope` 行为。
 
 数据库使用 `(id,project_id,user_id)`、`(project_id,user_id)` 和 `(api_key_id,project_id,user_id)` 复合唯一键/外键，强制 Project、SK、权限行和 `ai_requests` 属于同一用户。轮换通过 `rotated_from_id` 保留内部追踪，但任何表都不保存 SK 明文。
 
-G2 正式写入 `ai_requests`、`ai_execution_attempts` 和 `ai_usage_items`；`billing_status` 固定为 `unquoted`，所有价格和金额字段为空。000059 down 保留 Project SK、权限和请求审计事实，物理清理需单独审批。
+G2 正式写入 `ai_requests`、`ai_execution_attempts` 和 `ai_usage_items`；`billing_status` 固定为 `unquoted`，所有价格和金额字段为空。000060 down 保留 Project SK、权限和请求审计事实，物理清理需单独审批。
 
 Project 预算合法组合固定为：`disabled + monthly_budget=NULL`，或 `soft/hard + monthly_budget>0`。`soft` 超限仅告警并继续，`hard` 在预计消费越限时于上游调用前拒绝；月周期按 Project 的 IANA 时区从当地月初计算。G1 只冻结约束，准确预占、并发控制和拒绝逻辑在 G3/G4 实现。
 
 #### 3.5.3 AI 网关 Phase 1 G3 价格与可靠结算
 
-Migration `000060_create_ai_gateway_g3_billing` 新增：
+Migration `000061_create_ai_gateway_g3_billing` 新增：
 
 - `ai_price_versions`：逻辑模型价格版本、审批/发布时间、生效区间、成本有效期、最低毛利、汇率、取整和失败收费规则。
 - `ai_price_model_locks`：每个逻辑模型一行的并发发布互斥锁，避免两个已审批版本同时通过重叠检查。
@@ -430,13 +430,13 @@ Migration `000060_create_ai_gateway_g3_billing` 新增：
 
 `wallets`、`wallet_transactions`、`wallet_holds` 金额扩为 `DECIMAL(20,8)`；数据库 CHECK 保证钱包可用/冻结余额非负及结算金额不超过 hold。请求 ID、hold 和三类钱包流水在关联表中唯一，防止重复财务终态。
 
-价格发布使用逻辑模型共享行锁校验审批、四 SKU 和时间区间重叠；报价读取价格与 SKU 使用同一一致性事务。已发布版本不提供原地改价接口，只能暂停或创建新版本。000060 down 保留所有财务表和事实，不执行 DROP 或数据删除。
+价格发布使用逻辑模型共享行锁校验审批、四 SKU 和时间区间重叠；报价读取价格与 SKU 使用同一一致性事务。已发布版本不提供原地改价接口，只能暂停或创建新版本。000061 down 保留所有财务表和事实，不执行 DROP 或数据删除。
 
 完整字段与状态契约见 [`ai-gateway-g0-g1-contract.md`](./ai-gateway-g0-g1-contract.md)。
 
 #### 3.5.4 AI 网关 Phase 1 G4 内容安全与资源治理
 
-Migration `000061_create_ai_gateway_g4_governance` 新增以下 expand 表：
+Migration `000062_create_ai_gateway_g4_governance` 新增以下 expand 表：
 
 | 表 | 事实与约束 |
 |---|---|
@@ -451,7 +451,7 @@ Migration `000061_create_ai_gateway_g4_governance` 新增以下 expand 表：
 | `ai_budget_alerts` | 主体、周期、80/90/100 阈值唯一提醒事实 |
 | `ai_compensation_tasks` | pending/running/retry/dead/manual_review 幂等补偿任务 |
 
-预算预留不是第二套财务账本：reserved_amount 来自 G3 报价快照，settled_amount 只读取 G3 终态。Redis 不保存预算金额，只保存带 TTL 的并发与速率状态。000061 down 为事实保留型 no-op，应用回滚不得删除安全、预算和补偿记录。
+预算预留不是第二套财务账本：reserved_amount 来自 G3 报价快照，settled_amount 只读取 G3 终态。Redis 不保存预算金额，只保存带 TTL 的并发与速率状态。000062 down 为事实保留型 no-op，应用回滚不得删除安全、预算和补偿记录。
 
 ## 4. 关键状态
 
@@ -665,3 +665,12 @@ MYSQL_PASSWORD
 41. help_categories
 42. help_articles（依赖 help_categories）
 ```
+
+## 阿里云短信验证码阶段 1 增量
+
+阶段 1 migration `000058` 建立 `sms_templates`、`sms_scene_bindings`、`sms_send_logs` 三张表。短信与 DirectMail 共用 `verification_codes` 的 `code_hash`、`send_status`、`accepted_at` 和 `business_request_no`；`000058` 只增加 `provider`、`provider_request_id` 以及短信查询索引，禁止重复创建或在回滚时删除 `000055` 的邮件基础字段。
+
+- `sms_templates`：阿里云模板只读快照，`provider + template_code` 唯一。
+- `sms_scene_bindings`：五个短信场景唯一绑定模板与签名，默认关闭。
+- `sms_send_logs`：只保存脱敏手机号、独立 HMAC、模板/签名快照和平台/供应商请求标识，不保存验证码或完整手机号。
+- 手机验证码状态复用 `pending → accepted/failed`；只有 `accepted`、未使用且未过期的记录可以被消费。

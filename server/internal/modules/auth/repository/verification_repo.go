@@ -208,3 +208,29 @@ func (r *VerificationRepository) FinalizeEmailSend(ctx context.Context, verifica
 		return nil
 	})
 }
+
+// UpdateSMSSendState 只允许短信验证码从 pending 进入 accepted 或 failed，避免重复提交覆盖终态。
+func (r *VerificationRepository) UpdateSMSSendState(ctx context.Context, id uint64, status string, acceptedAt *time.Time, provider, providerRequestID string) error {
+	if status != "accepted" && status != "failed" {
+		return errors.New("短信验证码发送终态不合法")
+	}
+	updates := map[string]any{
+		"send_status": status,
+		"accepted_at": databaseWriteDatetimeUTCPointer(acceptedAt),
+	}
+	if provider != "" {
+		updates["provider"] = provider
+	}
+	if providerRequestID != "" {
+		updates["provider_request_id"] = providerRequestID
+	}
+	result := r.db.WithContext(ctx).Model(&model.VerificationCode{}).
+		Where("id = ? AND send_status = ?", id, "pending").Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrVerificationNotFound
+	}
+	return nil
+}

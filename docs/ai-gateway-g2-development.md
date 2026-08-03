@@ -26,8 +26,8 @@ G2 把公开文字调用从旧 `ForwardService + token_usage_logs + 钱包/套�
 | `server/internal/modules/token_gateway/service/project_service.go` | Project CRUD、Project SK 创建/轮换/吊销、显式模型权限 |
 | `server/internal/modules/token_gateway/handler/project_handler.go` | 登录态 Project 与 SK 管理接口 |
 | `server/internal/modules/token_gateway/handler/chat_handler.go` | OpenAI 请求解析、编排调用和 JSON/SSE 输出适配 |
-| `server/migrations/000059_add_ai_gateway_g2_projects_keys.*.sql` | API Key Project 归属、权限表、过期/轮换和复合外键 |
-| `infra/scripts/verify-ai-gateway-migration-000059.sh` | 隔离 MySQL 8 首次 up、保留式 down、re-up 和租户约束验证 |
+| `server/migrations/000060_add_ai_gateway_g2_projects_keys.*.sql` | API Key Project 归属、权限表、过期/轮换和复合外键 |
+| `infra/scripts/verify-ai-gateway-migration-000060.sh` | 隔离 MySQL 8 首次 up、保留式 down、re-up 和租户约束验证 |
 
 ## 3. Project 与 Project SK
 

@@ -2357,3 +2357,17 @@ G3 前置或结算错误继续返回平台数字 `code`，并新增稳定字符�
 **POST** `/api/admin/token/billing/exceptions/{request_id}/resolve` *(需 `token:manage` + 管理员二次认证)*
 
 Body 使用 `resolution=release|settle`；`settle` 时同时提交 `prompt_tokens`、`completion_tokens`、`cached_tokens` 和 `reasoning_tokens`，且输入与输出合计必须大于 0；确认零成本必须使用 `release`。接口在资金操作前写包含核定用量的审计，审计失败则拒绝操作；原始 Provider Usage 与人工核定的 `reconciled` Usage 分别留存。Project/SK 越权统一返回 HTTP 403 + `40003`。
+
+---
+
+## 阿里云短信验证码阶段 1 契约
+
+现有五个手机验证码入口覆盖 `register`、`login`、`reset_password`、`bind_phone`、`admin_verify`。成功响应统一为：
+
+```json
+{"code":0,"message":"ok","data":{"sent":true,"expires_in":600,"business_request_id":"平台业务请求标识","submit_status":"accepted"}}
+```
+
+手机号验证码在任何环境都不得返回明文 `code`。`business_request_id` 是平台追踪标识，不是阿里云原始请求标识。`SMS_ENABLED=false`、配置不完整、白名单不通过或场景没有有效数据库绑定时返回 HTTP `503`、业务码 `50300`；供应商提交失败返回 HTTP `502`、业务码 `50200`。`accepted` 只表示供应商受理，不代表运营商最终送达。
+
+阶段 1 不提供 `/api/admin/sms/*` 管理接口；模板同步、绑定管理和测试发送属于后续阶段。

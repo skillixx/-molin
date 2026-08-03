@@ -324,7 +324,7 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 
 	t.Run("输出审核拦截保留上游成本但不向用户扣费", func(t *testing.T) {
 		if !supportsProviderCostSource(t, db) {
-			t.Skip("仅在 000061 已应用的 G4 隔离数据库验证平台成本事实")
+			t.Skip("仅在 000062 已应用的 G4 隔离数据库验证平台成本事实")
 		}
 		request := integrationRequest("g4-content-policy-waived", 16)
 		if _, err := billing.PrepareRequest(ctx, request, map[string]interface{}{"max_tokens": "100"}); err != nil {
@@ -356,7 +356,7 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 
 	t.Run("输出审核拦截缺失 Usage 时保持预占并在补录后零扣费收敛", func(t *testing.T) {
 		if !supportsProviderCostSource(t, db) {
-			t.Skip("仅在 000061 已应用的 G4 隔离数据库验证平台成本对账")
+			t.Skip("仅在 000062 已应用的 G4 隔离数据库验证平台成本对账")
 		}
 		request := integrationRequest("g4-content-policy-reconcile", 17)
 		if _, err := billing.PrepareRequest(ctx, request, map[string]interface{}{"max_tokens": "100"}); err != nil {
@@ -390,7 +390,7 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 
 	t.Run("输出审核缺失 Usage 超期转人工异常后仍可受控补录", func(t *testing.T) {
 		if !supportsProviderCostSource(t, db) {
-			t.Skip("仅在 000061 已应用的 G4 隔离数据库验证人工异常收敛")
+			t.Skip("仅在 000062 已应用的 G4 隔离数据库验证人工异常收敛")
 		}
 		request := integrationRequest("g4-content-policy-exception-reconcile", 18)
 		if _, err := billing.PrepareRequest(ctx, request, map[string]interface{}{"max_tokens": "100"}); err != nil {

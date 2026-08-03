@@ -11,7 +11,7 @@
 | `server/internal/modules/token_gateway/repository/g4_governance_repository.go` | MySQL 策略、预算预留、事件和乐观锁 |
 | `server/internal/modules/token_gateway/service/request_orchestrator.go` | G2/G3/G4 唯一请求链路和 SSE 输出审核 |
 | `server/internal/modules/token_gateway/handler/governance_handler.go` | 管理端和用户申诉 HTTP 契约、前置审计 |
-| `server/migrations/000061_*` | G4 expand migration；down 保留事实表 |
+| `server/migrations/000062_*` | G4 expand migration；down 保留事实表 |
 | `infra/scripts/verify-ai-gateway-g4-governance.sh` | 远程 Linux 临时容器隔离验收 |
 
 ## 2. 数据一致性

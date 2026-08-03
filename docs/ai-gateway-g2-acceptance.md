@@ -19,7 +19,7 @@
 | 中断恢复扫描 | 超过安全窗口后事务锁内重查，再收敛 unknown |
 | Project SK 审计 | 创建/轮换/吊销脱敏记录，失败输出脱敏告警 |
 | 租户、Project、SK 归属 | 应用测试与 MySQL 复合外键通过 |
-| Migration 000059 | 隔离 MySQL 8 首次 up、保留式 down、re-up 通过 |
+| Migration 000060 | 隔离 MySQL 8 首次 up、保留式 down、re-up 通过 |
 | G3 事实扫描 | 未发现钱包、hold、settled、released 或旧用量双写 |
 | 敏感信息扫描 | 未发现真实 SK、HMAC Secret 或 Bifrost 内部 Token |
 | Linux race | 通过：测试 Linux 临时 `golang:1.25` 容器执行 `go test -race -count=1 ./...` |

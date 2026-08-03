@@ -34,11 +34,11 @@ go vet ./internal/modules/token_gateway/...                 PASS
 infra/bifrost/config.json JSON 解析                          PASS
 infra/scripts/*.sh Bash 语法（10/10）                       PASS
 git diff --check                                            PASS
-000058 忽略注释后的破坏性语句、唯一键、外键和索引静态检查  PASS
+000059 忽略注释后的破坏性语句、唯一键、外键和索引静态检查  PASS
 本 Goal 变更文件敏感模式扫描                                PASS（37 个文件，提交前复核暂存区）
 ```
 
-`000058` 仍是不会切换现有读写的 Expand Migration；除静态契约和 Go/GORM 字段映射外，本轮已在无端口、tmpfs 数据盘的隔离 MySQL 8 临时容器完成真实验收，未连接项目测试数据库。
+`000059` 仍是不会切换现有读写的 Expand Migration；除静态契约和 Go/GORM 字段映射外，本轮已在无端口、tmpfs 数据盘的隔离 MySQL 8 临时容器完成真实验收，未连接项目测试数据库。
 
 ## 3. 测试 Linux 历史证据
 
@@ -82,9 +82,9 @@ BIFROST_INTERNAL_TOKEN=missing
 
 Nginx 当前配置只有 `proxy_pass`，未发现内部 Authorization 映射、401 拒绝或转发前清除 Authorization。结论：双节点基础设施健康，但服务器仍运行旧配置；必须先备份当前配置、生成并安全注入内部 Token、部署当前 Nginx 模板和 Bifrost 配置，再执行 G1 真实 POC。以上属于测试环境凭据与配置变更，未在本轮只读检查中擅自执行。
 
-同日再次只读复核：`bifrost-1/2` 仍为 `running/healthy`，统一入口 `/health=200`；负载均衡仍挂载历史 `nginx.conf`。服务器已有 `mysql:8.0` 镜像，可在负责人批准后使用独立临时容器验证 `000058`，无需写入项目测试数据库。
+同日再次只读复核：`bifrost-1/2` 仍为 `running/healthy`，统一入口 `/health=200`；负载均衡仍挂载历史 `nginx.conf`。服务器已有 `mysql:8.0` 镜像，可在负责人批准后使用独立临时容器验证 `000059`，无需写入项目测试数据库。
 
-隔离数据库验收使用 `infra/scripts/verify-ai-gateway-migration-000058.sh`。该脚本默认退出码 3；授权后只创建无端口、tmpfs 数据盘、随机精确名称的临时 MySQL 8 容器，验证首次 up、保留结构 down、re-up、版本/dirty、租户外键、预算 CHECK、用量幂等约束，并在独立漂移库确认同名错误索引会失败关闭。退出时删除自己创建的容器，禁止连接项目测试数据库。
+隔离数据库验收使用 `infra/scripts/verify-ai-gateway-migration-000059.sh`。该脚本默认退出码 3；授权后只创建无端口、tmpfs 数据盘、随机精确名称的临时 MySQL 8 容器，验证首次 up、保留结构 down、re-up、版本/dirty、租户外键、预算 CHECK、用量幂等约束，并在独立漂移库确认同名错误索引会失败关闭。退出时删除自己创建的容器，禁止连接项目测试数据库。
 
 ### 4.2 2026-08-03 真实验收结果
 

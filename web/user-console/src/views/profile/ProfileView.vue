@@ -19,6 +19,8 @@ import {
   sendBindPhoneCode,
   sendBindEmailCode,
 } from '@/api/auth'
+import { maskPhone } from '@/utils/privacy'
+import { getSmsSendErrorMessage } from '@/utils/sms'
 
 const authStore = useAuthStore()
 
@@ -123,10 +125,7 @@ async function sendPhoneVerifyCode() {
       if (phoneCountdown.value <= 0) clearInterval(phoneTimer)
     }, 1000)
   } catch (err: unknown) {
-    const code = (err as { response?: { data?: { code?: number } } })?.response?.data?.code
-    if (code === 42900) {
-      ElMessage.error('发送频率超限，请稍后再试')
-    }
+    ElMessage.error(getSmsSendErrorMessage(err))
   } finally {
     phoneSending.value = false
   }
@@ -529,7 +528,7 @@ onUnmounted(() => {
             <!-- Step 2：输入验证码 -->
             <template v-else>
               <p class="step-hint">
-                验证码已发送至 <span class="accent">{{ phoneForm.phone }}</span>
+                验证码已发送至 <span class="accent">{{ maskPhone(phoneForm.phone) }}</span>
                 <el-link class="change-link" @click="resetPhoneStep">更换号码</el-link>
               </p>
               <el-form-item label="验证码" prop="code">

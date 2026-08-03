@@ -11,7 +11,7 @@
 | Go 全量测试 | `go test -count=1 ./...` 通过 |
 | Go 静态检查 | `go vet ./...` 通过 |
 | Linux race | `go test -race -count=1 ./...` 通过 |
-| Migration 000060 | 首次 up、重复 up、保留 down、re-up 通过 |
+| Migration 000061 | 首次 up、重复 up、保留 down、re-up 通过 |
 | 钱包并发 | 100 请求竞争同一钱包，无负余额 |
 | 请求幂等 | 20 并发同请求只形成一个请求和 hold |
 | 终态竞争 | settle/release/重复 settle 只形成一个终态 |

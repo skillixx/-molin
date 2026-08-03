@@ -60,6 +60,16 @@ func verificationCodeResponse(cfg config.Config, sent service.VerificationSendRe
 	return data
 }
 
+// phoneSendResponse 只返回平台安全追踪字段，任何环境都不得暴露手机验证码明文。
+func phoneSendResponse(result service.VerificationSendResult) map[string]any {
+	return map[string]any{
+		"sent":                result.Sent,
+		"expires_in":          result.ExpiresIn,
+		"business_request_id": result.BusinessRequestID,
+		"submit_status":       result.SubmitStatus,
+	}
+}
+
 // SendEmailCode POST /api/auth/verification-codes/email
 func (h *AuthHandler) SendEmailCode(w http.ResponseWriter, r *http.Request) {
 	var req dto.SendEmailCodeReq
@@ -98,8 +108,8 @@ func (h *AuthHandler) SendPhoneCode(w http.ResponseWriter, r *http.Request) {
 		handleAuthError(w, err)
 		return
 	}
-	// 仅显式安全非生产环境且 EMAIL_DEBUG_RETURN_CODE=true 时允许调试回码；生产及未知环境失败关闭。
-	response.JSON(w, http.StatusOK, verificationCodeResponse(h.cfg, sent))
+	// 手机验证码明文已经交给短信 Sender，任何环境都不得通过 HTTP 响应返回。
+	response.JSON(w, http.StatusOK, phoneSendResponse(sent))
 }
 
 // SendBindPhoneCode POST /api/me/verification-codes/phone — D-96：已登录用户更换手机号前发送验证码（scene=bind_phone）
@@ -118,8 +128,8 @@ func (h *AuthHandler) SendBindPhoneCode(w http.ResponseWriter, r *http.Request) 
 		handleAuthError(w, err)
 		return
 	}
-	// 仅显式安全非生产环境且 EMAIL_DEBUG_RETURN_CODE=true 时允许调试回码；生产及未知环境失败关闭。
-	response.JSON(w, http.StatusOK, verificationCodeResponse(h.cfg, sent))
+	// 手机验证码明文已经交给短信 Sender，任何环境都不得通过 HTTP 响应返回。
+	response.JSON(w, http.StatusOK, phoneSendResponse(sent))
 }
 
 // SendBindEmailCode POST /api/me/verification-codes/email — D-96：已登录用户更换邮箱前发送验证码（scene=bind_email）
@@ -151,8 +161,8 @@ func (h *AuthHandler) SendAdminVerifyPhoneCode(w http.ResponseWriter, r *http.Re
 		handleAuthError(w, err)
 		return
 	}
-	// 仅显式安全非生产环境且 EMAIL_DEBUG_RETURN_CODE=true 时允许调试回码；生产及未知环境失败关闭。
-	response.JSON(w, http.StatusOK, verificationCodeResponse(h.cfg, sent))
+	// 管理员手机验证码同样禁止返回明文，避免高权限场景泄露。
+	response.JSON(w, http.StatusOK, phoneSendResponse(sent))
 }
 
 // SendAdminVerifyEmailCode POST /api/admin/auth/verification-codes/email — D-96：管理员双重认证发送邮箱验证码（scene=admin_verify）
@@ -725,6 +735,10 @@ func handleAuthError(w http.ResponseWriter, err error) {
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 	case service.ErrInvalidScene:
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
+	case service.ErrSMSUnavailable:
+		response.Error(w, http.StatusServiceUnavailable, 50300, err.Error())
+	case service.ErrSMSSendFailed:
+		response.Error(w, http.StatusBadGateway, 50200, err.Error())
 	case service.ErrEmailVariables:
 		response.Error(w, http.StatusUnprocessableEntity, 51001, err.Error())
 	case service.ErrEmailOutcomeUnknown:

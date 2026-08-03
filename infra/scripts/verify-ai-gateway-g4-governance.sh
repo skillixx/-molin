@@ -11,8 +11,8 @@ command -v docker >/dev/null 2>&1 || { echo "G4_VERIFY=FAILED reason=docker_miss
 command -v openssl >/dev/null 2>&1 || { echo "G4_VERIFY=FAILED reason=openssl_missing"; exit 2; }
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-g4_up="${repo_root}/server/migrations/000061_create_ai_gateway_g4_governance.up.sql"
-g4_down="${repo_root}/server/migrations/000061_create_ai_gateway_g4_governance.down.sql"
+g4_up="${repo_root}/server/migrations/000062_create_ai_gateway_g4_governance.up.sql"
+g4_down="${repo_root}/server/migrations/000062_create_ai_gateway_g4_governance.down.sql"
 test -f "${g4_up}" && test -f "${g4_down}" || { echo "G4_VERIFY=FAILED reason=migration_missing"; exit 2; }
 
 suffix="${RANDOM}-$$"
@@ -111,7 +111,7 @@ assert_scalar() {
 assert_scalar "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('ai_safety_policy_versions','ai_safety_events','ai_safety_subject_actions','ai_safety_appeals','ai_resource_policies','ai_budget_policies','ai_budget_overrides','ai_budget_reservations','ai_budget_alerts','ai_compensation_tasks')" "10" "g4_table_count"
 assert_scalar "SELECT COUNT(*) FROM information_schema.check_constraints WHERE constraint_schema=DATABASE() AND constraint_name='chk_ai_usage_source' AND check_clause LIKE '%provider_cost%'" "1" "provider_cost_source_constraint"
 
-# 在 000061 约束和最小 G4 fixture 下只运行内容审核财务子用例。
+# 在 000062 约束和最小 G4 fixture 下只运行内容审核财务子用例。
 docker run --rm --network "${network}" -v "${repo_root}:/src:ro" -v molin-g4-go-mod-cache:/go/pkg/mod -v molin-g4-go-build-cache:/root/.cache/go-build \
   -w /src/server -e GOPROXY=https://goproxy.cn,direct -e G3_ISOLATED_TEST=YES \
   -e "G3_MYSQL_DSN=root:${mysql_password}@tcp(mysql:3306)/${database}?parseTime=true&charset=utf8mb4" \

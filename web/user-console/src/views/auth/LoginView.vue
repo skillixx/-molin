@@ -11,6 +11,7 @@ import { ElMessage } from 'element-plus'
 import axios from 'axios'
 import { useAuthStore } from '@/stores/auth'
 import { sendEmailCode, sendPhoneCode } from '@/api/auth'
+import { getSmsSendErrorMessage } from '@/utils/sms'
 
 const router = useRouter()
 const route = useRoute()
@@ -187,7 +188,8 @@ async function sendLoginCode() {
     ElMessage.success('验证码已发送，请查收')
     startCountdown(phoneCountdown, 'phone')
   } catch (error) {
-    loginFeedback.value = toLoginFeedback(error)
+    loginFeedback.value = { type: 'error', message: getSmsSendErrorMessage(error) }
+    ElMessage.error(getSmsSendErrorMessage(error))
     refreshCaptcha()
   } finally {
     sendingCode.value = false
