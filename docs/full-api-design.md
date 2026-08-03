@@ -569,7 +569,7 @@ Body 参数：
 | phone | string | 是 | 新手机号 |
 | code | string | 是 | 新手机号收到的验证码（scene=bind_phone） |
 
-返回 data：`null`（HTTP 200 表示修改成功，phone_verified 自动置为 true）。
+返回 data：`null`（HTTP 200 表示修改成功，`phone_verified` 自动置为 true）。如果目标账号是管理员，服务端必须在同一条更新中把 `admin_phone_verified_at` 清空；新手机号不得继承旧手机号的管理员 MFA，管理员须向新手机号重新发送 `admin_verify` 验证码并完成认证。
 
 ### 2.18 修改邮箱
 
@@ -593,7 +593,7 @@ Body 参数：
 | email | string | 是 | 新邮箱地址 |
 | code | string | 是 | 新邮箱收到的验证码（scene=bind_email） |
 
-返回 data：`null`（HTTP 200 表示修改成功，email_verified 自动置为 true）。
+返回 data：`null`（HTTP 200 表示修改成功，`email_verified` 自动置为 true）。如果目标账号是管理员，服务端必须在同一条更新中把 `admin_email_verified_at` 清空；新邮箱不得继承旧邮箱的管理员 MFA，管理员须使用新邮箱重新完成认证。
 
 ### 2.19 当前用户最终生效权限码
 
@@ -705,11 +705,11 @@ Body 参数：
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---:|---|
-| email | string | 否 | 邮箱 |
-| phone | string | 否 | 手机号 |
+| email | string | 否 | 邮箱；修改时清空目标账号 `admin_email_verified_at` |
+| phone | string | 否 | 手机号；修改时清空目标账号 `admin_phone_verified_at` |
 | status | string | 否 | 用户状态 |
 
-返回 data：`updated`。
+返回 data：`updated`。管理员编辑联系方式虽跳过普通用户 OTP，但不得继承旧联系方式的管理员 MFA；目标账号必须使用新联系方式重新完成对应管理员认证。
 
 ### 3.5 修改用户状态
 

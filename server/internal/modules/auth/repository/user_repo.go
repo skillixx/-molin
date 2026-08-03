@@ -153,26 +153,29 @@ func (r *UserRepository) UpdateUsername(ctx context.Context, userID uint64, user
 	return nil
 }
 
-// UpdatePhoneAndVerified 单条 UPDATE 同时更新手机号并标记已验证（D-14：避免两步独立操作产生的非原子窗口）。
-// 验证码已在调用前校验通过，故此处直接将 phone_verified 置为 true。
+// UpdatePhoneAndVerified 单条 UPDATE 同时更新手机号、标记基础验证并清空管理员手机 MFA。
+// 验证码只证明新号码属于当前用户，不能继承旧号码的管理员二次认证时间戳；
+// 三个字段必须在同一条 SQL 中更新，避免换绑后短暂沿用旧 MFA 的权限窗口。
 func (r *UserRepository) UpdatePhoneAndVerified(ctx context.Context, userID uint64, phone string) error {
 	err := r.db.WithContext(ctx).Model(&model.User{}).
 		Where("id = ?", userID).
 		Updates(map[string]interface{}{
-			"phone":          phone,
-			"phone_verified": true,
+			"phone":                   phone,
+			"phone_verified":          true,
+			"admin_phone_verified_at": nil,
 		}).Error
 	return mapUserDuplicateError(err)
 }
 
-// UpdateEmailAndVerified 单条 UPDATE 同时更新邮箱并标记已验证（D-14：避免两步独立操作产生的非原子窗口）。
-// 验证码已在调用前校验通过，故此处直接将 email_verified 置为 true。
+// UpdateEmailAndVerified 单条 UPDATE 同时更新邮箱、标记基础验证并清空管理员邮箱 MFA。
+// 新邮箱验证码不能继承旧邮箱的管理员二次认证时间戳，换绑后必须重新完成管理员邮箱认证。
 func (r *UserRepository) UpdateEmailAndVerified(ctx context.Context, userID uint64, email string) error {
 	err := r.db.WithContext(ctx).Model(&model.User{}).
 		Where("id = ?", userID).
 		Updates(map[string]interface{}{
-			"email":          email,
-			"email_verified": true,
+			"email":                   email,
+			"email_verified":          true,
+			"admin_email_verified_at": nil,
 		}).Error
 	return mapUserDuplicateError(err)
 }
@@ -202,11 +205,23 @@ func (r *UserRepository) UpdateProfile(ctx context.Context, userID uint64, field
 }
 
 // UpdateAdminUser A-29：管理员修改用户字段（PATCH 语义），对唯一键冲突做语义映射。
-// fields 的 key 为列名（snake_case），value 为新值；rowsAffected==0 时返回 ErrUserNotFound。
+// 管理员修改联系方式同样不得继承目标账号旧联系方式的 MFA；仓储边界强制追加 NULL，
+// 防止未来新增调用方遗漏该安全不变量。rowsAffected==0 时返回 ErrUserNotFound。
 func (r *UserRepository) UpdateAdminUser(ctx context.Context, userID uint64, fields map[string]interface{}) error {
+	// 复制调用方字段，避免仓储层追加安全字段时反向修改服务层持有的 map。
+	safeFields := make(map[string]interface{}, len(fields)+2)
+	for field, value := range fields {
+		safeFields[field] = value
+	}
+	if _, changingPhone := safeFields["phone"]; changingPhone {
+		safeFields["admin_phone_verified_at"] = nil
+	}
+	if _, changingEmail := safeFields["email"]; changingEmail {
+		safeFields["admin_email_verified_at"] = nil
+	}
 	result := r.db.WithContext(ctx).Model(&model.User{}).
 		Where("id = ?", userID).
-		Updates(fields)
+		Updates(safeFields)
 	if result.Error != nil {
 		return mapUserDuplicateError(result.Error)
 	}

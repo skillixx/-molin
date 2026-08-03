@@ -336,14 +336,14 @@ MFA 状态，也不能绕过管理接口的双重认证。`POST /api/auth/login/
 { "phone": "13912345678", "code": "123456" }
 ```
 
-> 调用前须先通过 `POST /api/me/verification-codes/phone` 向新手机号发送验证码（§1.8.1）。
+> 调用前须先通过 `POST /api/me/verification-codes/phone` 向新手机号发送验证码（§1.8.1）。成功换绑会把 `phone_verified` 置为 true，并清空旧号码的 `admin_phone_verified_at`；管理员必须使用新手机号重新完成手机 MFA。
 
 **PATCH** `/api/me/email` *(需登录)*
 ```json
 { "email": "new@example.com", "code": "123456" }
 ```
 
-> 调用前须先通过 `POST /api/me/verification-codes/email` 向新邮箱发送验证码（§1.8.1）。
+> 调用前须先通过 `POST /api/me/verification-codes/email` 向新邮箱发送验证码（§1.8.1）。成功换绑会把 `email_verified` 置为 true，并清空旧邮箱的 `admin_email_verified_at`；管理员必须使用新邮箱重新完成邮箱 MFA。
 
 响应：`data: null`
 
@@ -519,6 +519,18 @@ Query 参数：
   "created_at": "2026-01-01T00:00:00Z"
 }
 ```
+
+---
+
+### 3.0c 管理员修改用户
+
+**PATCH** `/api/admin/users/{id}` *(需登录 + `user:manage` 权限 + 管理员双重认证)*
+
+```json
+{ "email": "new@example.com", "phone": "13912345678", "status": "active" }
+```
+
+字段均为可选；提交手机号或邮箱时，管理员编辑接口仍沿用既有“基础 verified 自动置为 true”的管理规则，但服务端必须清空目标账号对应的 `admin_phone_verified_at` 或 `admin_email_verified_at`。目标管理员不得继承旧联系方式的 MFA，必须使用新联系方式重新认证。响应 `data` 为字符串 `updated`。
 
 ---
 
