@@ -2265,3 +2265,144 @@ Chat 请求 Body 参数：
 手机号验证码在任何环境都不得返回明文 `code`。`business_request_id` 是平台追踪标识，不是阿里云原始请求标识。`SMS_ENABLED=false`、配置不完整、白名单不通过或场景没有有效数据库绑定时返回 HTTP `503`、业务码 `50300`；供应商提交失败返回 HTTP `502`、业务码 `50200`。`accepted` 只表示供应商受理，不代表运营商最终送达。
 
 阶段 1 不提供 `/api/admin/sms/*` 管理接口；模板同步、绑定管理和测试发送属于后续阶段。
+
+## 阿里云短信验证码阶段 2 管理 API 契约
+
+阶段 2 的九个接口统一要求 Bearer Token、对应短信权限及有效的管理员手机和邮箱双重认证。鉴权失败使用 `401/40001`，权限不足使用 `403/40003`，双重认证未完成使用 `403/40031`。所有写操作记录 `sms` 模块审计日志，响应、日志、审计和数据库均不得出现 AccessKey、验证码明文或完整手机号。
+
+权限码：
+
+| 权限码 | 接口范围 |
+|---|---|
+| `sms:template:view` | 概览、模板列表/详情、场景列表和发送记录 |
+| `sms:template:manage` | 场景绑定和模板本地启停 |
+| `sms:template:sync` | 阿里云模板只读同步 |
+| `sms:template:test` | 白名单测试提交 |
+
+列表接口使用 D-95 扁平分页：`data={items,page,page_size,total}`。`page` 默认 1，`page_size` 默认 20、最大 100。
+
+### 1. `GET /api/admin/sms/summary`
+
+权限：`sms:template:view`。返回：
+
+```json
+{
+  "template_total": 5,
+  "approved_total": 5,
+  "enabled_total": 5,
+  "bound_scene_total": 5,
+  "unbound_scene_total": 0,
+  "last_synced_at": "2026-08-03T12:00:00Z"
+}
+```
+
+从未同步时 `last_synced_at=null`。统计必须由后端一次查询完成，客户端不得通过拉取多页模板自行聚合。
+
+### 2. `GET /api/admin/sms/templates`
+
+权限：`sms:template:view`。查询参数：`page`、`page_size`、`keyword`、`audit_status`、`enabled`、`scene`。单条模板字段：
+
+```json
+{
+  "id": 1,
+  "provider": "aliyun",
+  "template_code": "SMS_******",
+  "template_name": "注册验证码",
+  "template_type": "verification",
+  "content": "验证码为 ${code}",
+  "variables": ["code"],
+  "provider_audit_status": "approved",
+  "rejection_reason": null,
+  "provider_updated_at": null,
+  "local_enabled": true,
+  "bound_scenes": ["register"],
+  "version": 2,
+  "last_synced_at": "2026-08-03T12:00:00Z",
+  "created_at": "2026-08-03T12:00:00Z",
+  "updated_at": "2026-08-03T12:00:00Z"
+}
+```
+
+`provider_audit_status` 只允许 `pending/approved/rejected`。只有验证码类型、包含 `${code}`、审核通过且固定签名匹配的模板可以本地启用。
+
+### 3. `GET /api/admin/sms/templates/{id}`
+
+权限：`sms:template:view`。返回字段与模板列表单条一致。模板不存在返回 `404/40400「短信模板不存在」`。
+
+### 4. `POST /api/admin/sms/templates/sync`
+
+权限：`sms:template:sync`。请求必须无 body。服务端使用阿里云 `QuerySmsTemplateList` 分页读取账号下模板，只保存只读快照；不得调用创建、修改或删除模板/签名的接口。同步必须先完整取得供应商结果，再在数据库事务内串行应用，失败不得留下本轮部分快照。
+
+```json
+{
+  "created_count": 1,
+  "updated_count": 1,
+  "unchanged_count": 3,
+  "ignored_count": 0,
+  "total_count": 5,
+  "last_synced_at": "2026-08-03T12:00:00Z"
+}
+```
+
+重复同步不得产生重复 `(provider,template_code)`，供应商异常返回 `502/50200`，总截止时间 10 秒。
+
+### 5. `GET /api/admin/sms/scenes`
+
+权限：`sms:template:view`。固定返回五个场景并使用 D-95。未绑定项返回 `template_id/template_code/template_name/provider_audit_status/sign_name/updated_by/updated_at=null`、`enabled=false`、`version=0`。
+
+### 6. `PUT /api/admin/sms/scenes/{scene}`
+
+权限：`sms:template:manage`。`scene` 只允许 `register/login/reset_password/bind_phone/admin_verify`。严格请求体：
+
+```json
+{"template_id":1,"enabled":true,"version":0}
+```
+
+不接受 `sign_name`。签名只能读取服务端 `SMS_ALIYUN_SIGN_NAME`。模板必须审核通过、类型为验证码、包含 `${code}` 且本地启用。`version` 必须与当前值一致；并发冲突返回 `409/40900「配置已被其他管理员修改，请刷新后重试」`。
+
+### 7. `PATCH /api/admin/sms/templates/{id}/status`
+
+权限：`sms:template:manage`。严格请求体：`{"enabled":true,"version":1}`。启用必须满足审核、类型、变量和签名约束；存在启用场景绑定时禁止停用，返回 `409/40900`。版本冲突同样返回 `409/40900`。
+
+### 8. `POST /api/admin/sms/templates/{id}/test-send`
+
+权限：`sms:template:test`，并强制管理员双重认证、`SMS_ENABLED=true`、`SMS_TEST_MODE=true` 和非空白名单。Header 必须包含 1～128 字节 `Idempotency-Key`；请求体严格为：
+
+```json
+{"scene":"register","phone":"<白名单手机号>"}
+```
+
+服务端校验目标模板正被该启用场景绑定、模板审核通过且本地启用。签名不接受客户端输入。幂等 scope 固定包含管理员、模板、场景和手机号 HMAC；同一管理员相同 key 与相同请求重放首次结果且不再次调用阿里云，相同 key 修改任一业务参数返回 `409/40900`，不同管理员互不串单。管理员和手机号两个维度分别限流；超限返回 `429/42900`，`Retry-After` 与 `data.retry_after_seconds` 一致。幂等重放不消耗新限流次数。
+
+受理响应：
+
+```json
+{
+  "business_request_id": "sms_******",
+  "submit_status": "accepted",
+  "idempotent": false,
+  "template_code": "SMS_******",
+  "phone_masked": "138****5678",
+  "submitted_at": "2026-08-03T12:00:00Z"
+}
+```
+
+`accepted` 只表示阿里云受理，不代表运营商送达或用户收到。供应商拒绝返回 `502/50200`，对应验证码或测试记录不可被当成成功结果。
+
+### 9. `GET /api/admin/sms/send-logs`
+
+权限：`sms:template:view`。支持 `page/page_size/scene/status/template_id/business_request_id/start_time/end_time`。时间为 RFC3339 闭区间，开始不得晚于结束，跨度最大 31 天。单条字段：`id/purpose/scene/phone_masked/template_id/template_code/sign_name/provider/business_request_id/provider_request_id/provider_code/submit_status/failure_summary/submitted_at/completed_at`。不返回手机号 HMAC、幂等摘要、请求指纹、验证码或供应商原始响应。
+
+### 阶段 2 错误码
+
+| HTTP/业务码 | 固定语义 |
+|---|---|
+| `400/40000` | 参数、分页、时间范围或 `Idempotency-Key` 不合法 |
+| `401/40001` | 未登录或 Token 无效 |
+| `403/40003` | 缺少对应短信权限 |
+| `403/40031` | 未完成管理员双重认证 |
+| `404/40400` | 模板不存在 |
+| `409/40900` | 审核/绑定/启停/版本/幂等冲突 |
+| `429/42900` | 管理员或手机号维度频率超限 |
+| `502/50200` | 阿里云拒绝、超时、网络或未知供应商错误 |
+| `503/50300` | 短信关闭、测试模式/白名单或运行配置不完整 |

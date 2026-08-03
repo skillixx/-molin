@@ -1248,6 +1248,28 @@ Redis 分布式锁是发布必需依赖；只有未取得锁或外呼开始前�
 
 该 delta 已落档 QA 阻断修订，尚待 QA/PM 书面复签，且没有完成实现或环境验收；不得据此标记前端、后端或监控接入完成。
 
+### 5.3 短信模板管理（阶段 2 后端契约，阶段 3 前端暂不开发）
+
+阶段 2 只交付后端 API，管理后台页面、菜单、路由和交互属于阶段 3。前端后续必须以 `docs/full-api-design.md` 的“阿里云短信验证码阶段 2 管理 API 契约”为 SSOT，不得从环境变量读取或硬编码模板编码、签名、白名单和 AccessKey。
+
+九个接口：
+
+| 方法 | 路径 | 权限 |
+|---|---|---|
+| GET | `/api/admin/sms/summary` | `sms:template:view` |
+| GET | `/api/admin/sms/templates` | `sms:template:view` |
+| GET | `/api/admin/sms/templates/{id}` | `sms:template:view` |
+| POST | `/api/admin/sms/templates/sync` | `sms:template:sync` |
+| GET | `/api/admin/sms/scenes` | `sms:template:view` |
+| PUT | `/api/admin/sms/scenes/{scene}` | `sms:template:manage` |
+| PATCH | `/api/admin/sms/templates/{id}/status` | `sms:template:manage` |
+| POST | `/api/admin/sms/templates/{id}/test-send` | `sms:template:test` |
+| GET | `/api/admin/sms/send-logs` | `sms:template:view` |
+
+全部接口需要管理员登录和有效的手机+邮箱双重认证。列表遵循 D-95 `{items,page,page_size,total}`。场景更新只提交 `{template_id,enabled,version}`，模板启停只提交 `{enabled,version}`，禁止提交 `sign_name`。测试发送请求体为 `{scene,phone}`，并必须携带 `Idempotency-Key`；完整手机号只能存在于单次请求内存中，页面不得缓存、日志或埋点记录。
+
+`submit_status=accepted` 的界面语义固定为“供应商已受理/提交成功”，不得显示“发送成功”“送达成功”或“用户已收到”。阶段 3 对接时必须分别处理 `40000/40001/40003/40031/40400/40900/42900/50200/50300`，其中版本冲突应刷新最新配置，频率限制按 `Retry-After` 展示剩余时间。
+
 ---
 
 ## 六、商品模块（后端乙）

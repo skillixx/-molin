@@ -649,6 +649,8 @@ server/internal/modules/asset/
 
 九个管理接口必须逐项覆盖：
 
+> 开发自测快照（2026-08-03）：九条路由及最小权限映射、模板适配器、同步失败零写入、模板启停 CAS、固定五场景、测试发送关闭态/首次提交/accepted 重放、全库 Go 测试和 vet 已通过。下表“待执行”专指独立 QA 的 HTTP、MySQL 8、真实 Redis 与获批真实阿里云验证，开发自测不能代替验收签字。
+
 | 编号 | 方法与路径 | 权限 | 核心检查 | 当前状态 |
 |---|---|---|---|---|
 | SMS-A01 | `GET /api/admin/sms/summary` | `sms:template:view` | 统计口径正确；从未同步时 `last_synced_at=null`；无客户端多页聚合假设 | 待执行 |

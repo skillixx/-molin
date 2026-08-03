@@ -615,4 +615,16 @@ MYSQL_PASSWORD
 - `sms_templates`：阿里云模板只读快照，`provider + template_code` 唯一。
 - `sms_scene_bindings`：五个短信场景唯一绑定模板与签名，默认关闭。
 - `sms_send_logs`：只保存脱敏手机号、独立 HMAC、模板/签名快照和平台/供应商请求标识，不保存验证码或完整手机号。
+
+## 阿里云短信验证码阶段 2 增量
+
+阶段 2 migration `000059` 在阶段 1 三张短信表上扩展管理控制面，不修改 `verification_codes` 的统一 OTP 状态机。
+
+- `sms_templates` 新增模板类型、变量 JSON、拒绝原因和供应商更新时间；同步以 `(provider, template_code)` 唯一约束保证幂等。
+- `sms_scene_bindings` 新增创建人，并继续以 `scene` 唯一约束保护五个固定场景；所有更新使用 `version` 乐观锁。
+- `sms_send_logs` 新增 `purpose=otp/test`、提交/完成时间及测试发送幂等摘要。`(idempotency_scope, idempotency_key_hash)` 固定业务请求，`idempotency_owner_key_hash` 额外保证同一管理员复用同一 key 修改参数时发生冲突；两者都不保存幂等键明文、验证码或完整手机号。
+- `sms_template_sync_locks` 仅保存阿里云模板同步单例锁。供应商查询必须在事务外全部完成，事务内取得行锁后一次应用完整快照。
+- `sms_phase2_permission_ownership` 记录 migration 新增权限及 admin 绑定的所有权，使 down 只删除本 migration 创建且未被其他主体引用的数据。
+
+新增权限为 `sms:template:view`、`sms:template:manage`、`sms:template:sync`、`sms:template:test`。生产迁移前必须在 MySQL 8 隔离库验证 `1→59` 与 `58→59→58→59`；本地无 MySQL/Docker 时，静态契约测试不能替代该门禁。
 - 手机验证码状态复用 `pending → accepted/failed`；只有 `accepted`、未使用且未过期的记录可以被消费。

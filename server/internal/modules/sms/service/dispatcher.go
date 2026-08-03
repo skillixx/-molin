@@ -116,28 +116,13 @@ func (d *Dispatcher) Prepare(ctx context.Context, scene, phone string) (Prepared
 }
 
 func (d *Dispatcher) Submit(ctx context.Context, plan PreparedSend, phone, rawCode, businessRequestID string) (DispatchResult, error) {
-	params, err := json.Marshal(map[string]string{"code": rawCode})
-	if err != nil {
-		return DispatchResult{}, err
-	}
-	result, sendErr := d.sender.Send(ctx, sender.Request{
-		Phone:             phone,
-		SignName:          plan.SignName,
-		TemplateCode:      plan.TemplateCode,
-		TemplateParamJSON: string(params),
-		BusinessRequestID: businessRequestID,
-		Timeout:           5 * time.Second,
-	})
+	result, sendErr := d.SendProvider(ctx, plan, phone, rawCode, businessRequestID)
 	logEntry := &model.SendLog{
-		Scene:             plan.Scene,
-		PhoneMasked:       maskPhone(phone),
-		PhoneHMAC:         phoneHMAC(phone, d.cfg.SMSPhoneHMACSecret),
-		TemplateID:        &plan.TemplateID,
-		TemplateCode:      plan.TemplateCode,
-		SignName:          plan.SignName,
-		Provider:          plan.Provider,
-		BusinessRequestID: businessRequestID,
-		SubmitStatus:      "accepted",
+		Purpose:     "otp",
+		Scene:       plan.Scene,
+		PhoneMasked: maskPhone(phone), PhoneHMAC: phoneHMAC(phone, d.cfg.SMSPhoneHMACSecret),
+		TemplateID: &plan.TemplateID, TemplateCode: plan.TemplateCode, SignName: plan.SignName, Provider: plan.Provider,
+		BusinessRequestID: businessRequestID, SubmitStatus: "accepted", SubmittedAt: time.Now().UTC(),
 	}
 	if result.ProviderRequestID != "" {
 		logEntry.ProviderRequestID = stringPointer(result.ProviderRequestID)
@@ -157,13 +142,33 @@ func (d *Dispatcher) Submit(ctx context.Context, plan PreparedSend, phone, rawCo
 			logEntry.FailureSummary = stringPointer("短信供应商请求失败")
 		}
 	}
-	// 即使供应商失败也必须保留脱敏排障记录；日志写入失败时优先返回日志错误。
-	// 客户端取消请求后仍需尽力完成终态日志，避免留下无法追踪的供应商结果。
+	completedAt := time.Now().UTC()
+	logEntry.CompletedAt = &completedAt
 	logCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
 	if err := d.repo.CreateSendLog(logCtx, logEntry); err != nil {
 		return DispatchResult{}, err
 	}
+	if sendErr != nil {
+		return result, sendErr
+	}
+	return result, nil
+}
+
+// SendProvider 只执行供应商提交，测试发送由调用方在提交前完成幂等抢占并负责终态日志。
+func (d *Dispatcher) SendProvider(ctx context.Context, plan PreparedSend, phone, rawCode, businessRequestID string) (DispatchResult, error) {
+	params, err := json.Marshal(map[string]string{"code": rawCode})
+	if err != nil {
+		return DispatchResult{}, err
+	}
+	result, sendErr := d.sender.Send(ctx, sender.Request{
+		Phone:             phone,
+		SignName:          plan.SignName,
+		TemplateCode:      plan.TemplateCode,
+		TemplateParamJSON: string(params),
+		BusinessRequestID: businessRequestID,
+		Timeout:           5 * time.Second,
+	})
 	if sendErr != nil {
 		d.failed.Add(1)
 		return DispatchResult{ProviderRequestID: result.ProviderRequestID, ProviderCode: result.ProviderCode}, sendErr
@@ -171,6 +176,9 @@ func (d *Dispatcher) Submit(ctx context.Context, plan PreparedSend, phone, rawCo
 	d.accepted.Add(1)
 	return DispatchResult{Accepted: true, ProviderRequestID: result.ProviderRequestID, ProviderCode: result.ProviderCode}, nil
 }
+
+func MaskSMSPhone(phone string) string         { return maskPhone(phone) }
+func SMSPhoneHMAC(phone, secret string) string { return phoneHMAC(phone, secret) }
 
 func maskPhone(phone string) string {
 	if len(phone) < 7 {
