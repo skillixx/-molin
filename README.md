@@ -252,7 +252,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | 数据范围中间件（组管理员仅可见本组用户，超管 `scope:all` 不受限，已接入管理员用户列表/详情） | `server/internal/middleware/scope.go`、`modules/iam/service/scope_service.go`、`modules/auth/handler/auth_handler.go` | ✅ 已完成 |
 | Migration 000015（用户分组基础表 ×4）、000016（`group:manage`/`scope:all` 权限码 seed） | `server/migrations/` | ✅ 已完成 |
 | 阿里云短信验证码阶段 1（数据基础、Sender 适配、五场景关闭态与前端容错） | `modules/sms/`、`modules/auth/`、`web/user-console/`、`server/migrations/000058*` | ✅ PR #314 已合并，阶段 1 正式闭环（`main` 提交 `3aa8f3e`） |
-| 阿里云短信验证码阶段 2（模板同步、场景绑定、9 个管理 API 与安全测试发送） | `modules/sms/`、`modules/auth/`、`modules/iam/`、`server/migrations/000059*` | 🟡 PR #315 已完成五独立模板同步和绑定；本轮 6 条短信均实际收件，统一签名及六条文案人工核验正确，历史单模板 P1 已关闭。PM 业务复验通过，QA 为 P0=0/P1=0/P2=2；最新部署态九 API HTTP、三条公开业务消费 E2E、正式评审与合并仍待完成，暂不进入阶段 3 |
+| 阿里云短信验证码阶段 2（模板同步、场景绑定、9 个管理 API 与安全测试发送） | `modules/sms/`、`modules/auth/`、`modules/iam/`、`server/migrations/000059*` | 🟡 PR #315 已完成五独立模板同步和绑定；本轮 6 条短信均实际收件，统一签名及六条文案人工核验正确，历史单模板 P1 已关闭。PM 业务复验通过，QA 为 P0=0/P1=0/P2=2；两轴评审发现的精确变量和结果审计语义已在本地修复，仍待复审、新 CI、最新部署态九 API HTTP、三条公开业务消费 E2E与合并，暂不进入阶段 3 |
 
 ### 后端 B（product / order / billing / finance_consumer）
 
