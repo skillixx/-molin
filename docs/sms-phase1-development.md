@@ -9,12 +9,12 @@
 | `server/internal/modules/sms/repository` | 有效数据库绑定查询和发送日志写入 |
 | `server/internal/modules/sms/sender` | 稳定 Sender 端口、Mock 和阿里云 V2 Go SDK 适配器 |
 | `server/internal/modules/sms/service` | 配置/白名单/绑定校验、提交和日志编排 |
-| `server/internal/modules/auth/service/verification_service.go` | 手机验证码 `pending → sent/failed` 状态机 |
+| `server/internal/modules/auth/service/verification_service.go` | 手机验证码 `pending → accepted/failed` 状态机 |
 | `server/internal/config/config.go` | 短信配置加载与启动前 fail-closed 校验 |
 
 ## 2. 数据库变更
 
-`verification_codes.code` 扩为 `CHAR(64)`，新增 `send_status`、`sent_at`、`provider`、`provider_request_id` 和 `business_request_id`。历史邮箱和手机记录都保持 `not_applicable`，历史手机记录不会被误标为 `sent`。
+`000055` 已提供统一的 `code_hash CHAR(64)`、`send_status`、`accepted_at` 和 `business_request_no`。`000058` 只新增短信专属的 `provider`、`provider_request_id` 和查询索引，短信与邮件统一使用 `pending → accepted/failed`，避免形成两套验证码消费规则。
 
 新建：
 
@@ -22,7 +22,7 @@
 - `sms_scene_bindings`：五个固定场景的唯一绑定。
 - `sms_send_logs`：只保存脱敏手机号、独立 HMAC、模板/签名快照、请求标识、提交终态和安全失败摘要。
 
-migration 同时提供 up/down。down 会删除阶段 1 新列和三张短信表，但有意保留 `code CHAR(64)`：缩回 16 位会截断已经写入的 SHA-256，64 位列又能兼容旧短值，因此保留扩容是无损安全回滚。集成测试要求 `SMS_MIGRATION_TEST_DSN` 指向名称以 `molin_sms_test_` 开头的隔离 MySQL 数据库，防止误操作共享测试库或生产库。
+migration 同时提供 up/down。down 只删除短信专属字段、索引和三张短信表，必须保留归属 `000055` 的邮件验证码基础字段与约束。集成测试要求 `SMS_MIGRATION_TEST_DSN` 指向名称以 `molin_sms_test_` 开头的隔离 MySQL 数据库，防止误操作共享测试库或生产库。
 
 ## 3. 配置契约
 
@@ -60,7 +60,7 @@ go vet ./...
 
 第二条命令在未配置隔离 DSN 时会明确跳过，不能登记为 migration 已通过。Windows 当前 `CGO_ENABLED=0`，`go test -race` 无法执行，应交由带 CGO/C 工具链的 Linux CI 补跑。
 
-2026-08-03 已使用 SHA-256 校验通过的 MySQL 8.0.46 官方免安装包，在系统临时目录创建仅监听 `127.0.0.1` 的一次性实例和 `molin_sms_test_` 前缀数据库；`000058` up/down、历史记录、64 位哈希、三张短信表、唯一约束、并发重复写入及非 `sent`/过期验证码不可消费全部通过。测试实例、数据库、解压目录和下载 ZIP 已在测试后关闭并删除，未连接项目现有数据库。
+2026-08-03 已使用 SHA-256 校验通过的 MySQL 8.0.46 官方免安装包，在系统临时目录创建仅监听 `127.0.0.1` 的一次性实例和 `molin_sms_test_` 前缀数据库；`000058` up/down、64 位哈希、三张短信表、唯一约束、并发重复写入及非 `accepted`/过期验证码不可消费全部通过。测试服务结束后关闭，临时目录未纳入仓库，也未连接项目现有数据库。
 
 ## 6. 阶段门禁
 
@@ -68,6 +68,6 @@ go vet ./...
 
 ## 7. 当前验收状态
 
-2026-08-03，提交 `274184b` 与迁移修复提交 `c5cba96` 已完成本地隔离验收：全量测试、全新数据库 migration、`000058` up/down/up、五类手机验证码关闭态、五类邮箱验证码回归、数据库敏感数据检查以及桌面/移动端浏览器验证均通过。测试工程师复核和产品经理本地业务确认均通过，详见 `docs/sms-phase1-acceptance-report.md`。
+2026-08-03，短信阶段 1 已在最新 `origin/main` 上形成集成提交 `71018e9`：保留 DirectMail 的统一 `code_hash` 与 `pending → accepted/failed` 安全模型，短信复用同一消费状态机。全量测试、71 张表的全新数据库 migration、`000058` up/down/up、五类手机验证码关闭态、五类邮箱验证码回归、数据库敏感数据检查以及桌面/移动端浏览器验证均通过。测试工程师复核和产品经理本地业务确认均通过，详见 `docs/sms-phase1-acceptance-report.md`。
 
 当前仍未创建远端 PR、执行远端 CI 或合并分支，所以阶段 1 的 Git 流程尚未闭环；`SMS_ENABLED` 必须继续保持 `false`，不得据此表述为已部署或生产可用，也不得在合并门禁前进入阶段 2。

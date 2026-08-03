@@ -251,7 +251,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | 分组邀请码管理（生成/查询/停用 `/api/admin/user-groups/{id}/invite-codes*`，尚未接入注册流程） | `modules/iam/handler/group_handler.go`、`repository/group_repo.go` | ✅ 已完成 |
 | 数据范围中间件（组管理员仅可见本组用户，超管 `scope:all` 不受限，已接入管理员用户列表/详情） | `server/internal/middleware/scope.go`、`modules/iam/service/scope_service.go`、`modules/auth/handler/auth_handler.go` | ✅ 已完成 |
 | Migration 000015（用户分组基础表 ×4）、000016（`group:manage`/`scope:all` 权限码 seed） | `server/migrations/` | ✅ 已完成 |
-| 阿里云短信验证码阶段 1（数据基础、Sender 适配、五场景关闭态与前端容错） | `modules/sms/`、`modules/auth/`、`web/user-console/`、`server/migrations/000058*` | ✅ 本地开发验收通过（提交 `274184b`、`c5cba96`；待 PR/CI/合并） |
+| 阿里云短信验证码阶段 1（数据基础、Sender 适配、五场景关闭态与前端容错） | `modules/sms/`、`modules/auth/`、`web/user-console/`、`server/migrations/000058*` | ✅ 本地开发验收通过（集成提交 `71018e9`；待 PR/CI/合并） |
 
 ### 后端 B（product / order / billing / finance_consumer）
 

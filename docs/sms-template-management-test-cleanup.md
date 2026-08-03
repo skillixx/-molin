@@ -41,7 +41,7 @@
 - 修正认证 API 冒烟工具和人工手册中的 `phone/email` 发码字段。
 - 增加公开端点拒绝 `bind_phone/bind_email/admin_verify` 的 D-96 回归。
 - 增加专属换绑与管理员发码入口的鉴权、请求体和邮箱回归测试。
-- 增加手机 `pending/sent/failed`、失败不可校验、邮箱 `not_applicable` 和 `SMS_ENABLED=false` 测试。
+- 增加手机 `pending/accepted/failed`、失败不可校验、邮箱 DirectMail 独立链路和 `SMS_ENABLED=false` 测试。
 
 ### 阶段 2
 

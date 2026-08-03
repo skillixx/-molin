@@ -632,11 +632,11 @@ server/internal/modules/asset/
 
 | 编号 | 测试项 | 测试方法 | 期望结果 | 当前状态 |
 |---|---|---|---|---|
-| SMS-S1-01 | `verification_codes.code` 扩容 | migration 升级、降级及边界值测试 | SHA-256 十六进制哈希可完整保存 64 字符；升级不截断数据 | 隔离 MySQL 8.0.46 up/down 通过（2026-08-03） |
-| SMS-S1-02 | 历史记录迁移 | 构造历史手机、历史邮箱和已过期记录后执行 migration | `send_status` 默认 `not_applicable`；历史手机号不回填为 `sent`；迁移前等待旧 10 分钟 OTP 窗口耗尽 | 隔离 MySQL 8.0.46 fixture 通过（2026-08-03） |
-| SMS-S1-03 | 新手机验证码状态机 | 使用供应商 Mock 分别返回受理、拒绝、超时和网络错误 | 新记录先为 `pending`；仅受理后转为 `sent`；失败转为 `failed` | 本地单测通过 |
-| SMS-S1-04 | 手机发送失败不可校验 | Mock 返回失败后提交正确验证码 | `failed` 或非 `sent` 手机记录均无法通过校验，且不可被原子消费 | 本地单测及隔离 MySQL 的 `pending/not_applicable/过期 sent` 用例通过 |
-| SMS-S1-05 | 邮箱回归 | 执行注册、登录、重置密码、换绑邮箱和管理员邮箱验证 | 邮箱保持 `not_applicable`，不调用短信适配器，原有校验和单次消费行为不受影响 | 服务/仓储单测通过；全业务回归待 QA |
+| SMS-S1-01 | 统一验证码结构兼容 | migration 升级、降级及边界值测试 | 复用 `000055` 的 `code_hash` 64 字符；`000058` 不覆盖或删除邮件基础字段 | 隔离 MySQL 8.0.46 up/down 通过（2026-08-03） |
+| SMS-S1-02 | 全新数据库顺序迁移 | 从空库顺序执行 `000001` 到 `000058` | 邮件与短信结构同时存在，无重复列、索引或 CHECK | 71 张表全量迁移通过（2026-08-03） |
+| SMS-S1-03 | 新手机验证码状态机 | 使用供应商 Mock 分别返回受理、拒绝、超时和网络错误 | 新记录先为 `pending`；仅受理后转为 `accepted`；失败转为 `failed` | 本地单测通过 |
+| SMS-S1-04 | 手机发送失败不可校验 | Mock 返回失败后提交正确验证码 | `failed`、`pending` 或过期的手机记录均无法通过校验，且不可被原子消费 | 本地单测及隔离 MySQL 用例通过 |
+| SMS-S1-05 | 邮箱回归 | 执行注册、登录、重置密码、换绑邮箱和管理员邮箱验证 | 邮箱继续使用 DirectMail 独立 Sender 和 `accepted/failed` 状态，单次消费行为不受影响 | 服务/仓储单测与原始隔离 HTTP 回归通过 |
 | SMS-S1-06 | 五场景模板选择 | 使用数据库 fixture 配置 `register/login/reset_password/bind_phone/admin_verify` | 每个场景只读取自身数据库绑定，不读取 `SMS_TEMPLATE_CODE_*`，不串用模板 | 本地 fixture + Mock 通过 |
 | SMS-S1-07 | 三张短信表与仓储约束 | migration 升降级、唯一索引和外键/并发测试 | `sms_templates`、`sms_scene_bindings`、`sms_send_logs` 可升降级；模板编码、场景和业务请求标识满足唯一性约束 | 仓储单测及隔离 MySQL 约束/并发通过（2026-08-03） |
 | SMS-S1-08 | 功能开关关闭 | 保持 `SMS_ENABLED=false` 调用全部手机发码入口 | 返回 `503/50300`；不调用真实阿里云；不产生可校验手机验证码；邮箱链路仍可用 | 服务与错误映射单测通过；HTTP 全入口待 QA |
