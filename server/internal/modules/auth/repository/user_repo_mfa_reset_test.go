@@ -17,10 +17,10 @@ func TestUpdatePhoneAndVerifiedClearsAdminPhoneMFA(t *testing.T) {
 	defer closeDB()
 
 	mock.ExpectExec(regexp.QuoteMeta("UPDATE `users` SET `admin_phone_verified_at`=?,`phone`=?,`phone_verified`=?,`updated_at`=? WHERE id = ?")).
-		WithArgs(nil, "13900000000", true, sqlmock.AnyArg(), uint64(259)).
+		WithArgs(nil, "phone-new-value", true, sqlmock.AnyArg(), uint64(259)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	if err := repo.UpdatePhoneAndVerified(context.Background(), 259, "13900000000"); err != nil {
+	if err := repo.UpdatePhoneAndVerified(context.Background(), 259, "phone-new-value"); err != nil {
 		t.Fatalf("换绑手机号并清空管理员手机 MFA 失败: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -53,9 +53,9 @@ func TestUpdateAdminUserClearsChangedContactMFA(t *testing.T) {
 	}{
 		{
 			name:   "管理员修改手机号",
-			fields: map[string]interface{}{"phone": "13900000000", "phone_verified": true},
+			fields: map[string]interface{}{"phone": "phone-new-value", "phone_verified": true},
 			query:  "UPDATE `users` SET `admin_phone_verified_at`=?,`phone`=?,`phone_verified`=?,`updated_at`=? WHERE id = ?",
-			args:   []driver.Value{nil, "13900000000", true, sqlmock.AnyArg(), uint64(259)},
+			args:   []driver.Value{nil, "phone-new-value", true, sqlmock.AnyArg(), uint64(259)},
 		},
 		{
 			name:   "管理员修改邮箱",

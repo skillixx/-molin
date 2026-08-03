@@ -527,7 +527,7 @@ Query 参数：
 **PATCH** `/api/admin/users/{id}` *(需登录 + `user:manage` 权限 + 管理员双重认证)*
 
 ```json
-{ "email": "new@example.com", "phone": "13912345678", "status": "active" }
+{ "email": "new@example.com", "phone": "<新手机号>", "status": "active" }
 ```
 
 字段均为可选；提交手机号或邮箱时，管理员编辑接口仍沿用既有“基础 verified 自动置为 true”的管理规则，但服务端必须清空目标账号对应的 `admin_phone_verified_at` 或 `admin_email_verified_at`。目标管理员不得继承旧联系方式的 MFA，必须使用新联系方式重新认证。响应 `data` 为字符串 `updated`。
