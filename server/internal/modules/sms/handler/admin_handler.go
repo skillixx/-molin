@@ -91,7 +91,7 @@ func (h *SMSAdminHandler) ListTemplates(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	filter := model.TemplateListFilter{Keyword: strings.TrimSpace(r.URL.Query().Get("keyword")), AuditStatus: strings.TrimSpace(r.URL.Query().Get("audit_status")), Scene: strings.TrimSpace(r.URL.Query().Get("scene")), Offset: (page - 1) * pageSize, Limit: pageSize}
-	if filter.Scene != "" && !validSMSScene(filter.Scene) {
+	if filter.Scene != "" && !model.IsFixedScene(filter.Scene) {
 		smsAdminError(w, service.ErrSMSInvalidRequest)
 		return
 	}
@@ -191,7 +191,7 @@ func (h *SMSAdminHandler) ListSendLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filter := model.SendLogListFilter{Scene: strings.TrimSpace(r.URL.Query().Get("scene")), Status: strings.TrimSpace(r.URL.Query().Get("status")), BusinessRequestID: strings.TrimSpace(r.URL.Query().Get("business_request_id")), Offset: (page - 1) * pageSize, Limit: pageSize}
-	if (filter.Scene != "" && !validSMSScene(filter.Scene)) || (filter.Status != "" && filter.Status != "accepted" && filter.Status != "failed") {
+	if (filter.Scene != "" && !model.IsFixedScene(filter.Scene)) || (filter.Status != "" && filter.Status != "accepted" && filter.Status != "failed") {
 		smsAdminError(w, service.ErrSMSInvalidRequest)
 		return
 	}
@@ -276,15 +276,6 @@ func parseSMSPage(r *http.Request) (int, int, bool) {
 	}
 	valid := page > 0 && pageSize > 0 && pageSize <= 100 && page <= int(^uint(0)>>1)/pageSize
 	return page, pageSize, valid
-}
-
-func validSMSScene(scene string) bool {
-	switch scene {
-	case "register", "login", "reset_password", "bind_phone", "admin_verify":
-		return true
-	default:
-		return false
-	}
 }
 
 func smsRequestBodyEmpty(r *http.Request) bool {

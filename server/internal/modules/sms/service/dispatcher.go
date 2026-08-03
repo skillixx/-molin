@@ -23,14 +23,6 @@ var (
 	ErrPhoneNotAllowed = errors.New("测试手机号不在白名单")
 )
 
-var allowedScenes = map[string]bool{
-	"register":       true,
-	"login":          true,
-	"reset_password": true,
-	"bind_phone":     true,
-	"admin_verify":   true,
-}
-
 type smsRepository interface {
 	FindActiveBinding(ctx context.Context, scene string) (*model.SceneBinding, error)
 	CreateSendLog(ctx context.Context, log *model.SendLog) error
@@ -86,7 +78,7 @@ func (d *Dispatcher) Prepare(ctx context.Context, scene, phone string) (Prepared
 	if err := d.cfg.ValidateSMS(); err != nil {
 		return PreparedSend{}, ErrSMSUnavailable
 	}
-	if !allowedScenes[scene] {
+	if !model.IsFixedScene(scene) {
 		return PreparedSend{}, ErrSceneNotBound
 	}
 	if d.cfg.SMSTestMode && !contains(d.cfg.SMSTestPhoneWhitelist, phone) {

@@ -2,6 +2,25 @@ package model
 
 import "testing"
 
+func TestFixedScenes(t *testing.T) {
+	scenes := FixedScenes()
+	if len(scenes) != 5 {
+		t.Fatalf("固定短信场景数量错误: %v", scenes)
+	}
+	for _, scene := range scenes {
+		if !IsFixedScene(scene) {
+			t.Fatalf("权威场景必须通过统一校验: %s", scene)
+		}
+	}
+	if IsFixedScene("marketing") || IsFixedScene("") {
+		t.Fatal("非验证码固定场景不得通过统一校验")
+	}
+	scenes[0] = "tampered"
+	if !IsFixedScene("register") {
+		t.Fatal("调用方修改返回副本不得污染权威场景集合")
+	}
+}
+
 func TestHasExactCodeVariable(t *testing.T) {
 	tests := []struct {
 		name      string

@@ -19,8 +19,6 @@ import (
 	"molin/server/internal/modules/sms/sender"
 )
 
-const smsFixedSceneCount int64 = 5
-
 var (
 	ErrSMSInvalidRequest              = errors.New("短信管理请求参数错误")
 	ErrSMSAdminUnavailable            = errors.New("短信管理服务未就绪")
@@ -39,8 +37,6 @@ var (
 	ErrSMSTestSendRateLimited         = errors.New("短信测试发送频率超限")
 	ErrSMSTestSendProviderFailed      = errors.New("短信供应商拒绝测试发送")
 )
-
-var fixedSMSScenes = []string{"register", "login", "reset_password", "bind_phone", "admin_verify"}
 
 // SMSAdminSummary 保留服务层稳定命名，底层数据结构由短信领域模型定义。
 type SMSAdminSummary = model.AdminSummary
@@ -144,8 +140,9 @@ func (s *SMSAdminService) ListScenes(ctx context.Context) ([]model.AdminScene, e
 	for _, binding := range bindings {
 		byScene[binding.Scene] = binding
 	}
-	items := make([]model.AdminScene, 0, len(fixedSMSScenes))
-	for _, scene := range fixedSMSScenes {
+	fixedScenes := model.FixedScenes()
+	items := make([]model.AdminScene, 0, len(fixedScenes))
+	for _, scene := range fixedScenes {
 		view := model.AdminScene{Scene: scene}
 		if binding, ok := byScene[scene]; ok {
 			view.TemplateID, view.SignName, view.UpdatedBy = &binding.TemplateID, &binding.SignName, binding.UpdatedBy
@@ -165,7 +162,7 @@ func (s *SMSAdminService) SetScene(ctx context.Context, scene string, templateID
 	if s == nil || s.queryRepo == nil || s.templateRepo == nil || s.fixedSignName == "" {
 		return nil, ErrSMSAdminUnavailable
 	}
-	if !isFixedSMSScene(scene) || templateID == 0 || operatorID == 0 {
+	if !model.IsFixedScene(scene) || templateID == 0 || operatorID == 0 {
 		return nil, ErrSMSSceneInvalid
 	}
 	template, err := s.templateRepo.GetAdminTemplate(ctx, templateID)
@@ -204,15 +201,6 @@ func (s *SMSAdminService) ListSendLogs(ctx context.Context, filter model.SendLog
 	return s.queryRepo.ListAdminSendLogs(ctx, filter)
 }
 
-func isFixedSMSScene(scene string) bool {
-	for _, allowed := range fixedSMSScenes {
-		if scene == allowed {
-			return true
-		}
-	}
-	return false
-}
-
 // ConfigureTestSend 注入真实发送器和 Redis 限流器；任一依赖缺失时测试发送失败关闭。
 func (s *SMSAdminService) ConfigureTestSend(cfg config.Config, dispatcher smsTestDispatcher, redisClient *redis.Client) {
 	s.testConfig, s.testDispatcher = cfg, dispatcher
@@ -235,7 +223,7 @@ func (s *SMSAdminService) TestSend(ctx context.Context, adminID, templateID uint
 	if s == nil || s.testSendRepo == nil || s.testDispatcher == nil || s.testLimiter == nil || !s.testConfig.SMSEnabled || !s.testConfig.SMSTestMode || len(s.testConfig.SMSTestPhoneWhitelist) == 0 {
 		return TestSendResult{}, ErrSMSTestSendUnavailable
 	}
-	if adminID == 0 || templateID == 0 || !isFixedSMSScene(scene) || len(idempotencyKey) < 1 || len(idempotencyKey) > 128 || strings.TrimSpace(phone) == "" {
+	if adminID == 0 || templateID == 0 || !model.IsFixedScene(scene) || len(idempotencyKey) < 1 || len(idempotencyKey) > 128 || strings.TrimSpace(phone) == "" {
 		return TestSendResult{}, ErrSMSInvalidRequest
 	}
 	plan, err := s.testDispatcher.Prepare(ctx, scene, phone)
@@ -459,7 +447,7 @@ func (s *SMSAdminService) Summary(ctx context.Context) (SMSAdminSummary, error) 
 	if err != nil {
 		return SMSAdminSummary{}, err
 	}
-	summary.UnboundSceneTotal = smsFixedSceneCount - summary.BoundSceneTotal
+	summary.UnboundSceneTotal = int64(len(model.FixedScenes())) - summary.BoundSceneTotal
 	if summary.UnboundSceneTotal < 0 {
 		summary.UnboundSceneTotal = 0
 	}

@@ -5,6 +5,21 @@ import (
 	"time"
 )
 
+// FixedScenes 返回短信验证码支持的固定业务场景副本，调用方不能修改领域内的权威集合。
+func FixedScenes() []string {
+	return []string{"register", "login", "reset_password", "bind_phone", "admin_verify"}
+}
+
+// IsFixedScene 统一校验业务场景，避免 Handler、管理服务和 Dispatcher 各自维护白名单。
+func IsFixedScene(scene string) bool {
+	for _, allowed := range FixedScenes() {
+		if scene == allowed {
+			return true
+		}
+	}
+	return false
+}
+
 // HasExactCodeVariable 校验模板只包含 code 变量，避免发送端仅传 code 时遗漏供应商要求的其他参数。
 // 历史快照可能没有 variables_json，此时仍以正文占位符为准；新同步快照还会交叉核对变量数组。
 func HasExactCodeVariable(content string, variables []string) bool {
