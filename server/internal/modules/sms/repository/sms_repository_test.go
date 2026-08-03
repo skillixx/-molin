@@ -113,6 +113,27 @@ func TestUpsertAdminSceneBindingRejectsTemplateUsedByAnotherEnabledScene(t *test
 	}
 }
 
+func TestUpsertAdminSceneBindingRejectsTemplateWithExtraVariable(t *testing.T) {
+	repo, mock, closeDB := newSMSRepositoryMock(t)
+	defer closeDB()
+	now := time.Now().UTC()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT \\* FROM `sms_templates` WHERE `sms_templates`.`id` = \\? ORDER BY `sms_templates`.`id` LIMIT \\? FOR UPDATE").
+		WithArgs(uint64(7), 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "provider", "template_code", "template_name", "template_type", "provider_audit_status", "content", "variables_json", "local_enabled", "version", "created_at", "updated_at"}).
+			AddRow(7, "aliyun", "SMS_EXTRA", "额外变量模板", "verification", "approved", "${name} 的验证码 ${code}", []byte(`["name","code"]`), true, 1, now, now))
+	mock.ExpectRollback()
+
+	_, err := repo.UpsertAdminSceneBinding(context.Background(), "login", "固定签名", 7, 0, 10, true)
+	if !errors.Is(err, ErrAdminSceneTemplateInvalid) {
+		t.Fatalf("含额外变量的模板不得在仓储层绑定: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("额外变量模板仓储检查不符合预期: %v", err)
+	}
+}
+
 func TestListAdminTemplatesLoadsBoundScenesInOneQuery(t *testing.T) {
 	repo, mock, closeDB := newSMSRepositoryMock(t)
 	defer closeDB()

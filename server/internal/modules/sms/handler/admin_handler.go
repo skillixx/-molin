@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -144,17 +145,11 @@ func (h *SMSAdminHandler) SyncTemplates(w http.ResponseWriter, r *http.Request) 
 	defer cancel()
 	result, err := h.svc.SyncTemplates(ctx)
 	if err != nil {
-		if auditErr := h.recordAudit(r, "template_sync", "template", "aliyun", map[string]any{"outcome": "failed"}); auditErr != nil {
-			smsAuditError(w)
-			return
-		}
+		h.recordResultAudit(r, "template_sync", "template", "aliyun", map[string]any{"outcome": "failed"})
 		smsAdminError(w, err)
 		return
 	}
-	if err := h.recordAudit(r, "template_sync", "template", "aliyun", map[string]any{"outcome": "succeeded", "total_count": result.TotalCount}); err != nil {
-		smsAuditError(w)
-		return
-	}
+	h.recordResultAudit(r, "template_sync", "template", "aliyun", map[string]any{"outcome": "succeeded", "total_count": result.TotalCount})
 	response.JSON(w, http.StatusOK, result)
 }
 
@@ -180,18 +175,12 @@ func (h *SMSAdminHandler) SetScene(w http.ResponseWriter, r *http.Request) {
 	}
 	item, err := h.svc.SetScene(r.Context(), r.PathValue("scene"), request.TemplateID, request.Version, middleware.UserIDFromContext(r.Context()), *request.Enabled)
 	if err != nil {
-		if auditErr := h.recordAudit(r, "scene_binding_update", "scene", r.PathValue("scene"), mergeSMSAuditOutcome(auditSummary, "failed")); auditErr != nil {
-			smsAuditError(w)
-			return
-		}
+		h.recordResultAudit(r, "scene_binding_update", "scene", r.PathValue("scene"), mergeSMSAuditOutcome(auditSummary, "failed"))
 		smsAdminError(w, err)
 		return
 	}
 	auditSummary["version"] = item.Version
-	if err := h.recordAudit(r, "scene_binding_update", "scene", r.PathValue("scene"), mergeSMSAuditOutcome(auditSummary, "succeeded")); err != nil {
-		smsAuditError(w)
-		return
-	}
+	h.recordResultAudit(r, "scene_binding_update", "scene", r.PathValue("scene"), mergeSMSAuditOutcome(auditSummary, "succeeded"))
 	response.JSON(w, http.StatusOK, item)
 }
 
@@ -248,10 +237,7 @@ func (h *SMSAdminHandler) TestSend(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.svc.TestSend(r.Context(), middleware.UserIDFromContext(r.Context()), id, request.Scene, request.Phone, key)
 	if errors.Is(err, service.ErrSMSTestSendRateLimited) {
-		if auditErr := h.recordAudit(r, "template_test_send", "template", strconv.FormatUint(id, 10), mergeSMSAuditOutcome(auditSummary, "rate_limited")); auditErr != nil {
-			smsAuditError(w)
-			return
-		}
+		h.recordResultAudit(r, "template_test_send", "template", strconv.FormatUint(id, 10), mergeSMSAuditOutcome(auditSummary, "rate_limited"))
 		retry := result.RetryAfterSeconds
 		if retry < 1 {
 			retry = 60
@@ -263,19 +249,13 @@ func (h *SMSAdminHandler) TestSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		if auditErr := h.recordAudit(r, "template_test_send", "template", strconv.FormatUint(id, 10), mergeSMSAuditOutcome(auditSummary, "failed")); auditErr != nil {
-			smsAuditError(w)
-			return
-		}
+		h.recordResultAudit(r, "template_test_send", "template", strconv.FormatUint(id, 10), mergeSMSAuditOutcome(auditSummary, "failed"))
 		smsAdminError(w, err)
 		return
 	}
 	auditSummary["business_request_id"] = result.BusinessRequestID
 	auditSummary["idempotent"] = result.Idempotent
-	if err := h.recordAudit(r, "template_test_send", "template", strconv.FormatUint(id, 10), mergeSMSAuditOutcome(auditSummary, "accepted")); err != nil {
-		smsAuditError(w)
-		return
-	}
+	h.recordResultAudit(r, "template_test_send", "template", strconv.FormatUint(id, 10), mergeSMSAuditOutcome(auditSummary, "accepted"))
 	response.JSON(w, http.StatusOK, result)
 }
 
@@ -352,18 +332,12 @@ func (h *SMSAdminHandler) SetTemplateStatus(w http.ResponseWriter, r *http.Reque
 	}
 	template, err := h.svc.SetTemplateStatus(r.Context(), id, request.Version, *request.Enabled)
 	if err != nil {
-		if auditErr := h.recordAudit(r, "template_status_update", "template", strconv.FormatUint(id, 10), mergeSMSAuditOutcome(auditSummary, "failed")); auditErr != nil {
-			smsAuditError(w)
-			return
-		}
+		h.recordResultAudit(r, "template_status_update", "template", strconv.FormatUint(id, 10), mergeSMSAuditOutcome(auditSummary, "failed"))
 		smsAdminError(w, err)
 		return
 	}
 	auditSummary["version"] = template.Version
-	if err := h.recordAudit(r, "template_status_update", "template", strconv.FormatUint(id, 10), mergeSMSAuditOutcome(auditSummary, "succeeded")); err != nil {
-		smsAuditError(w)
-		return
-	}
+	h.recordResultAudit(r, "template_status_update", "template", strconv.FormatUint(id, 10), mergeSMSAuditOutcome(auditSummary, "succeeded"))
 	response.JSON(w, http.StatusOK, smsTemplateStatusResponse{ID: template.ID, LocalEnabled: template.LocalEnabled, Version: template.Version})
 }
 
@@ -373,6 +347,14 @@ func (h *SMSAdminHandler) recordAudit(r *http.Request, action, targetType, targe
 	}
 	operatorID := middleware.UserIDFromContext(r.Context())
 	return h.audit.Record(r.Context(), &operatorID, "sms", action, &targetType, &targetID, r.RemoteAddr, summary)
+}
+
+// recordResultAudit 在业务副作用完成后补记结果；写入异常只记录安全告警，不能把已完成操作误报为失败。
+// 请求审计仍在业务调用前失败关闭，因此审计服务完全不可用时不会发生配置变更或真实发送。
+func (h *SMSAdminHandler) recordResultAudit(r *http.Request, action, targetType, targetID string, summary any) {
+	if err := h.recordAudit(r, action, targetType, targetID, summary); err != nil {
+		log.Printf("[sms] 结果审计写入失败: action=%s", action)
+	}
 }
 
 // mergeSMSAuditOutcome 为每次审计创建独立摘要，避免后续修改污染已经序列化前的记录。

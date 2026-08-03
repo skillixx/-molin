@@ -1,6 +1,36 @@
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
+
+// HasExactCodeVariable 校验模板只包含 code 变量，避免发送端仅传 code 时遗漏供应商要求的其他参数。
+// 历史快照可能没有 variables_json，此时仍以正文占位符为准；新同步快照还会交叉核对变量数组。
+func HasExactCodeVariable(content string, variables []string) bool {
+	rest := content
+	foundCode := false
+	for {
+		start := strings.Index(rest, "${")
+		if start < 0 {
+			break
+		}
+		rest = rest[start+2:]
+		end := strings.IndexByte(rest, '}')
+		if end < 0 {
+			return false
+		}
+		if rest[:end] != "code" {
+			return false
+		}
+		foundCode = true
+		rest = rest[end+1:]
+	}
+	if !foundCode {
+		return false
+	}
+	return len(variables) == 0 || (len(variables) == 1 && variables[0] == "code")
+}
 
 // AdminSummary 是短信管理概览的一次数据库聚合结果。
 type AdminSummary struct {

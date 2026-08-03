@@ -60,10 +60,13 @@ type auditRecord struct {
 type fakeSMSAuditRecorder struct {
 	records []auditRecord
 	err     error
+	failAt  int
+	calls   int
 }
 
 func (f *fakeSMSAuditRecorder) Record(_ context.Context, _ *uint64, module, action string, _, _ *string, _ string, summary any) error {
-	if f.err != nil {
+	f.calls++
+	if f.err != nil && (f.failAt == 0 || f.calls == f.failAt) {
 		return f.err
 	}
 	if module != "sms" {
@@ -138,6 +141,36 @@ func TestSMSAdminTemplateStatusFailsClosedBeforeBusinessWhenAuditUnavailable(t *
 		if rec.Code != http.StatusInternalServerError || app.statusCalls != 0 {
 			t.Fatalf("审计不可用时必须在业务写入前失败关闭: status=%d calls=%d body=%s", rec.Code, app.statusCalls, rec.Body.String())
 		}
+	}
+}
+
+func TestSMSAdminTemplateStatusDoesNotMisreportCompletedWriteWhenResultAuditFails(t *testing.T) {
+	app := &fakeSMSAdminApplication{statusTemplate: &model.Template{ID: 7, LocalEnabled: true, Version: 2}}
+	audit := &fakeSMSAuditRecorder{err: errors.New("结果审计存储不可用"), failAt: 2}
+	h := NewSMSAdminHandler(app, audit)
+	req := httptest.NewRequest(http.MethodPatch, "/api/admin/sms/templates/7/status", bytes.NewBufferString(`{"enabled":true,"version":1}`))
+	req.SetPathValue("id", "7")
+	rec := httptest.NewRecorder()
+
+	h.SetTemplateStatus(rec, req)
+
+	if rec.Code != http.StatusOK || app.statusCalls != 1 || audit.calls != 2 {
+		t.Fatalf("业务已完成时结果审计失败不得误报业务失败: status=%d calls=%d audit_calls=%d body=%s", rec.Code, app.statusCalls, audit.calls, rec.Body.String())
+	}
+}
+
+func TestSMSAdminTemplateStatusPreservesBusinessErrorWhenResultAuditFails(t *testing.T) {
+	app := &fakeSMSAdminApplication{statusErr: service.ErrSMSTemplateNotApproved}
+	audit := &fakeSMSAuditRecorder{err: errors.New("结果审计存储不可用"), failAt: 2}
+	h := NewSMSAdminHandler(app, audit)
+	req := httptest.NewRequest(http.MethodPatch, "/api/admin/sms/templates/7/status", bytes.NewBufferString(`{"enabled":true,"version":1}`))
+	req.SetPathValue("id", "7")
+	rec := httptest.NewRecorder()
+
+	h.SetTemplateStatus(rec, req)
+
+	if rec.Code != http.StatusConflict || app.statusCalls != 1 || audit.calls != 2 {
+		t.Fatalf("结果审计失败不得覆盖业务错误: status=%d calls=%d audit_calls=%d body=%s", rec.Code, app.statusCalls, audit.calls, rec.Body.String())
 	}
 }
 

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
-	"strings"
 	"time"
 
 	mysqlDriver "github.com/go-sql-driver/mysql"
@@ -137,7 +136,7 @@ func (r *SMSRepository) UpsertAdminSceneBinding(ctx context.Context, scene, sign
 			}
 			return err
 		}
-		if !template.LocalEnabled || template.ProviderAuditStatus != "approved" || template.TemplateType != "verification" || !strings.Contains(template.Content, "${code}") {
+		if !template.LocalEnabled || template.ProviderAuditStatus != "approved" || template.TemplateType != "verification" || !model.HasExactCodeVariable(template.Content, template.Variables) {
 			return ErrAdminSceneTemplateInvalid
 		}
 		var existing model.SceneBinding

@@ -103,7 +103,7 @@ func (d *Dispatcher) Prepare(ctx context.Context, scene, phone string) (Prepared
 	if binding.Scene != scene || !binding.Enabled || binding.SignName != d.cfg.SMSAliyunSignName ||
 		binding.Template.Provider != d.cfg.SMSProvider || !binding.Template.LocalEnabled ||
 		binding.Template.ProviderAuditStatus != "approved" || binding.Template.TemplateCode == "" ||
-		!strings.Contains(binding.Template.Content, "${code}") {
+		!model.HasExactCodeVariable(binding.Template.Content, binding.Template.Variables) {
 		return PreparedSend{}, ErrSceneNotBound
 	}
 	return PreparedSend{

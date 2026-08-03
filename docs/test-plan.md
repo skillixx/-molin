@@ -663,6 +663,8 @@ server/internal/modules/asset/
 | SMS-A08 | `POST /api/admin/sms/templates/{id}/test-send` | `sms:template:test` | 白名单、场景绑定、`Idempotency-Key`、双维度限流和受理语义 | 自动化通过；真实发送已受理且原白名单手机确认收件；QA HTTP 待复核 |
 | SMS-A09 | `GET /api/admin/sms/send-logs` | `sms:template:view` | D-95、筛选、可空字段、RFC3339 闭区间、开始不晚于结束、最大 31 天及脱敏 | 自动化通过；QA HTTP 待验收 |
 
+模板同步、启用、绑定和运行时选模均须拒绝含额外变量的模板，只允许变量集合精确为 `code`。四类管理写操作的请求审计失败必须在业务调用前返回 `500/50000` 且零副作用；业务完成后的结果审计失败必须记录安全 warning 并返回真实业务结果，不得用 500 诱导客户端重复改绑或重复发送。
+
 四个权限必须分别创建最小权限管理员测试，不能只用超级管理员覆盖：
 
 | 权限测试 | 期望结果 | 当前状态 |

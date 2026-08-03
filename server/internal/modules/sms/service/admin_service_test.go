@@ -162,13 +162,14 @@ func TestSyncTemplatesFiltersFixedSignAndVerificationCode(t *testing.T) {
 	repo := &fakeSyncRepository{result: model.TemplateSyncResult{CreatedCount: 1, TotalCount: 1}}
 	svc := NewSMSAdminService(repo)
 	svc.ConfigureTemplateSync(fakeTemplateProvider{items: []sender.TemplateSnapshot{
-		{Provider: "aliyun", TemplateCode: "SMS_OK", TemplateName: "注册", TemplateType: "verification", Content: "验证码 ${code}", AuditStatus: "approved", SignName: "固定签名"},
+		{Provider: "aliyun", TemplateCode: "SMS_OK", TemplateName: "注册", TemplateType: "verification", Content: "验证码 ${code}", Variables: []string{"code"}, AuditStatus: "approved", SignName: "固定签名"},
 		{Provider: "aliyun", TemplateCode: "SMS_OTHER", TemplateType: "verification", Content: "验证码 ${code}", AuditStatus: "approved", SignName: "其他签名"},
 		{Provider: "aliyun", TemplateCode: "SMS_NOTICE", TemplateType: "other", Content: "通知 ${name}", AuditStatus: "approved", SignName: "固定签名"},
+		{Provider: "aliyun", TemplateCode: "SMS_EXTRA", TemplateType: "verification", Content: "${name} 的验证码 ${code}", Variables: []string{"name", "code"}, AuditStatus: "approved", SignName: "固定签名"},
 	}}, "固定签名")
 
 	result, err := svc.SyncTemplates(context.Background())
-	if err != nil || result.CreatedCount != 1 || result.IgnoredCount != 2 || result.TotalCount != 3 || len(repo.items) != 1 || repo.items[0].TemplateCode != "SMS_OK" {
+	if err != nil || result.CreatedCount != 1 || result.IgnoredCount != 3 || result.TotalCount != 4 || len(repo.items) != 1 || repo.items[0].TemplateCode != "SMS_OK" {
 		t.Fatalf("同步过滤错误: result=%#v items=%#v err=%v", result, repo.items, err)
 	}
 }
@@ -268,6 +269,20 @@ func TestSMSAdminServiceRejectsEnablingUnapprovedTemplate(t *testing.T) {
 	}
 	if repo.updateCalls != 0 {
 		t.Fatal("业务校验失败时不得执行状态更新")
+	}
+}
+
+func TestSMSAdminServiceRejectsEnablingTemplateWithExtraVariable(t *testing.T) {
+	repo := &fakeSMSAdminTemplateRepository{template: &model.Template{
+		ID: 7, ProviderAuditStatus: "approved", TemplateType: "verification",
+		Content: "${name} 的验证码 ${code}", Variables: []string{"name", "code"}, Version: 2,
+	}}
+	svc := NewSMSAdminService(repo)
+	svc.fixedSignName = "固定签名"
+
+	_, err := svc.SetTemplateStatus(context.Background(), 7, 2, true)
+	if !errors.Is(err, ErrSMSTemplateNotApproved) || repo.updateCalls != 0 {
+		t.Fatalf("含额外变量的模板不得启用: err=%v calls=%d", err, repo.updateCalls)
 	}
 }
 

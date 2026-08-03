@@ -175,7 +175,7 @@ func (s *SMSAdminService) SetScene(ctx context.Context, scene string, templateID
 	if err != nil {
 		return nil, err
 	}
-	if !template.LocalEnabled || template.ProviderAuditStatus != "approved" || template.TemplateType != "verification" || !strings.Contains(template.Content, "${code}") {
+	if !template.LocalEnabled || template.ProviderAuditStatus != "approved" || template.TemplateType != "verification" || !model.HasExactCodeVariable(template.Content, template.Variables) {
 		return nil, ErrSMSSceneTemplateInvalid
 	}
 	binding, err := s.queryRepo.UpsertAdminSceneBinding(ctx, scene, s.fixedSignName, templateID, version, operatorID, enabled)
@@ -419,8 +419,8 @@ func (s *SMSAdminService) SyncTemplates(ctx context.Context) (model.TemplateSync
 		if item.Provider != "aliyun" || strings.TrimSpace(item.TemplateCode) == "" || (item.AuditStatus != "pending" && item.AuditStatus != "approved" && item.AuditStatus != "rejected") {
 			return model.TemplateSyncResult{}, ErrSMSTemplateSyncFailed
 		}
-		// 只同步固定签名下含 ${code} 的验证码模板，其他供应商资源不进入本地控制面。
-		if item.SignName != s.fixedSignName || item.TemplateType != "verification" || !strings.Contains(item.Content, "${code}") {
+		// 只同步固定签名下且变量集合精确为 code 的验证码模板，避免发送时缺少额外变量参数。
+		if item.SignName != s.fixedSignName || item.TemplateType != "verification" || !model.HasExactCodeVariable(item.Content, item.Variables) {
 			ignoredCount++
 			continue
 		}
@@ -484,7 +484,7 @@ func (s *SMSAdminService) SetTemplateStatus(ctx context.Context, id, version uin
 	if version == 0 || template.Version != version {
 		return nil, ErrSMSTemplateVersionConflict
 	}
-	if enabled && (template.ProviderAuditStatus != "approved" || template.TemplateType != "verification" || !strings.Contains(template.Content, "${code}")) {
+	if enabled && (template.ProviderAuditStatus != "approved" || template.TemplateType != "verification" || !model.HasExactCodeVariable(template.Content, template.Variables)) {
 		return nil, ErrSMSTemplateNotApproved
 	}
 	if err := s.templateRepo.UpdateAdminTemplateStatus(ctx, id, version, enabled); err != nil {
