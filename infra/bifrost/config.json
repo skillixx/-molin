@@ -1,0 +1,54 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+  "encryption_key": "env.BIFROST_ENCRYPTION_KEY",
+  "client": {
+    "drop_excess_requests": true,
+    "enable_logging": false
+  },
+  "providers": {
+    "openrouter": {
+      "keys": [
+        {
+          "name": "openrouter-main",
+          "value": "env.OPENROUTER_API_KEY",
+          "models": [
+            "*"
+          ],
+          "weight": 1
+        }
+      ]
+    },
+    "bailian": {
+      "keys": [
+        {
+          "name": "bailian-main",
+          "value": "env.BAILIAN_API_KEY",
+          "models": [
+            "qwen-turbo",
+            "qwen3.7-flash-2026-07-15"
+          ],
+          "weight": 1
+        }
+      ],
+      "network_config": {
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode",
+        "default_request_timeout_in_seconds": 60,
+        "max_retries": 1
+      },
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "allowed_requests": {
+          "chat_completion": true,
+          "chat_completion_stream": true
+        },
+        "request_path_overrides": {
+          "chat_completion": "/v1/chat/completions",
+          "chat_completion_stream": "/v1/chat/completions"
+        }
+      }
+    }
+  },
+  "config_store": {
+    "enabled": false
+  }
+}

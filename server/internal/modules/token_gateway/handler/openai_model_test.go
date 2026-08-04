@@ -17,6 +17,12 @@ type fakeVisibleLister struct {
 	gotUserID   uint64
 }
 
+type fakeModelAccess struct{ allowed map[string]bool }
+
+func (f fakeModelAccess) ModelAllowed(_ context.Context, _, _ uint64, modelCode string) bool {
+	return f.allowed[modelCode]
+}
+
 func (f *fakeVisibleLister) ListVisible(_ context.Context, userID uint64, modality string, _, _ int) ([]dto.ModelResp, int64, error) {
 	f.gotModality = modality
 	f.gotUserID = userID
@@ -123,5 +129,17 @@ func TestBuildOpenAIModelList_Empty(t *testing.T) {
 	const want = `{"object":"list","data":[]}`
 	if string(b) != want {
 		t.Errorf("空列表序列化期望 %s，实际 %s", want, string(b))
+	}
+}
+
+func TestFilterModelsByKeyAccess_EmptyAllowlistDeniesAll(t *testing.T) {
+	items := []dto.ModelResp{{LogicalModelCode: "molin/qwen-turbo"}, {LogicalModelCode: "molin/deepseek-v4-flash"}}
+	filtered := filterModelsByKeyAccess(context.Background(), fakeModelAccess{allowed: map[string]bool{}}, 3, 7, items)
+	if len(filtered) != 0 {
+		t.Fatalf("空 allowlist 的 Project SK 不得看到任何模型: %+v", filtered)
+	}
+	filtered = filterModelsByKeyAccess(context.Background(), fakeModelAccess{allowed: map[string]bool{"molin/qwen-turbo": true}}, 3, 7, items)
+	if len(filtered) != 1 || filtered[0].LogicalModelCode != "molin/qwen-turbo" {
+		t.Fatalf("模型列表必须与 Project SK 权限一致: %+v", filtered)
 	}
 }

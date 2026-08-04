@@ -395,6 +395,64 @@ created 标记对象均已清理，才删除 `migration_000055_permission_owners
 - `token_usage_logs`
 - `token_quota_accounts`
 
+#### 3.5.1 AI 网关 Phase 1 G0/G1 Expand Schema
+
+Migration `000060_create_ai_gateway_ledger_expand` 新增以下商业请求账本表，但不切换旧 `token_usage_logs` 读写：
+
+- `ai_projects`：用户与 Project 的消费归集边界，冻结预算模式、月预算和 IANA 时区。
+- `ai_requests`：请求主记录，保存 request_id、Project、SK、逻辑/执行模型及审核、执行、计费三个正交状态。
+- `ai_usage_items`：标准化 Usage 与不可变计费行，数量为 `DECIMAL(30,10)`，单价和金额为 `DECIMAL(20,8)`；`source=provider_cost` 专门保存输出审核拒绝时的平台成本，不得进入用户销售额汇总。
+- `ai_execution_attempts`：Native/Bifrost 的执行尝试、Provider、内部端点、上游请求 ID、耗时和 Usage 摘要。
+
+关键唯一约束：`ai_requests.request_id`、`(user_id,idempotency_key)`、`(request_id,meter_type,source,sequence_no)`、`(request_id,attempt_no)`。新表禁止保存提示词、响应正文和明文密钥。G1 应用回滚保留 Expand Schema 与审计记录，物理清理由后续单独审批的 Contract Migration 承担。
+
+`ai_projects` 和现有 `api_keys` 分别增加 `(id,user_id)` 复合唯一键，`ai_requests` 通过对应复合外键保证 Project、SK 和请求用户属于同一租户。
+
+#### 3.5.2 AI 网关 Phase 1 G2 Project SK Expand Schema
+
+Migration `000061_add_ai_gateway_g2_projects_keys` 为 `api_keys` 增加 `project_id`、`scope_mode`、`expires_at` 和 `rotated_from_id`，并新增 `api_key_model_scopes`。新 Project SK 默认 `scope_mode=allowlist`，空表记录表示拒绝全部；只有显式选择才使用 `all`。旧 SK 标记为 `legacy_all`，保留旧 `model_scope` 行为。
+
+数据库使用 `(id,project_id,user_id)`、`(project_id,user_id)` 和 `(api_key_id,project_id,user_id)` 复合唯一键/外键，强制 Project、SK、权限行和 `ai_requests` 属于同一用户。轮换通过 `rotated_from_id` 保留内部追踪，但任何表都不保存 SK 明文。
+
+G2 正式写入 `ai_requests`、`ai_execution_attempts` 和 `ai_usage_items`；`billing_status` 固定为 `unquoted`，所有价格和金额字段为空。000061 down 保留 Project SK、权限和请求审计事实，物理清理需单独审批。
+
+Project 预算合法组合固定为：`disabled + monthly_budget=NULL`，或 `soft/hard + monthly_budget>0`。`soft` 超限仅告警并继续，`hard` 在预计消费越限时于上游调用前拒绝；月周期按 Project 的 IANA 时区从当地月初计算。G1 只冻结约束，准确预占、并发控制和拒绝逻辑在 G3/G4 实现。
+
+#### 3.5.3 AI 网关 Phase 1 G3 价格与可靠结算
+
+Migration `000062_create_ai_gateway_g3_billing` 新增：
+
+- `ai_price_versions`：逻辑模型价格版本、审批/发布时间、生效区间、成本有效期、最低毛利、汇率、取整和失败收费规则。
+- `ai_price_model_locks`：每个逻辑模型一行的并发发布互斥锁，避免两个已审批版本同时通过重叠检查。
+- `ai_price_skus`：输入、输出、缓存、推理四类成本价与销售价；唯一键 `(price_version_id,meter_type,variant_hash)`。
+- `ai_request_wallet_links`：请求与唯一 hold、freeze/settle/release 流水及报价、预占、实结金额的关联。
+- `ai_outbox_events`：事务事件、重试次数、下次时间、租约、处理时间和脱敏错误分类。
+
+`wallets`、`wallet_transactions`、`wallet_holds` 金额扩为 `DECIMAL(20,8)`；数据库 CHECK 保证钱包可用/冻结余额非负及结算金额不超过 hold。请求 ID、hold 和三类钱包流水在关联表中唯一，防止重复财务终态。
+
+价格发布使用逻辑模型共享行锁校验审批、四 SKU 和时间区间重叠；报价读取价格与 SKU 使用同一一致性事务。已发布版本不提供原地改价接口，只能暂停或创建新版本。000062 down 保留所有财务表和事实，不执行 DROP 或数据删除。
+
+完整字段与状态契约见 [`ai-gateway-g0-g1-contract.md`](./ai-gateway-g0-g1-contract.md)。
+
+#### 3.5.4 AI 网关 Phase 1 G4 内容安全与资源治理
+
+Migration `000063_create_ai_gateway_g4_governance` 新增以下 expand 表：
+
+| 表 | 事实与约束 |
+|---|---|
+| `ai_safety_policy_versions` | 不可变安全策略版本，draft/active/retired |
+| `ai_safety_events` | 只存摘要、分类、规则和处置，不存原始内容 |
+| `ai_safety_subject_actions` | 用户或 SK 暂停、撤销和过期事实 |
+| `ai_safety_appeals` | 每用户每事件唯一申诉及乐观锁版本 |
+| `ai_resource_policies` | user/project/api_key/model 四层并发、RPM、TPM 覆盖 |
+| `ai_budget_policies` | Project/SK disabled/soft/hard 日月预算 |
+| `ai_budget_overrides` | 有原因、操作人和有效期的临时增额 |
+| `ai_budget_reservations` | request_id 唯一的 held/settled/released/expired 预算预留 |
+| `ai_budget_alerts` | 主体、周期、80/90/100 阈值唯一提醒事实 |
+| `ai_compensation_tasks` | pending/running/retry/completed/dead/manual_review 幂等补偿任务 |
+
+预算预留不是第二套财务账本：reserved_amount 来自 G3 报价快照，settled_amount 只读取 G3 终态；日/月归属以准入时固化的 `daily_period_start/monthly_period_start` 为准，跨午夜结算不改变周期。Redis 不保存预算金额，只保存带 TTL 的并发与速率状态。000063 down 为事实保留型 no-op，应用回滚不得删除安全、预算和补偿记录。
+
 ## 4. 关键状态
 
 用户状态：

@@ -894,3 +894,103 @@ INSERT INTO user_roles (user_id, role_id)
 - 优先级：P0（生产阻断）/ P1（核心功能缺陷）/ P2（一般缺陷）/ P3（体验问题）。
 - P0、P1 缺陷必须在下一个迭代前修复，不得上线。
 - 每个缺陷 Issue 必须包含：复现步骤、期望结果、实际结果、截图或日志。
+## AI 网关 Phase 1 G0/G1 验收
+
+### G0 证据
+
+- `tests/audit-stage1-final.md`：核心商业闭环 37/37 通过。
+- `tests/audit-stage1-closing-confirm.md`：阶段收尾确认通过。
+- `docs/frontend-acceptance-stage1-pm-review.md`：产品经理前端业务验收通过；完整核心闭环产品复核必须另行签收。
+- `docs/ai-gateway-g0-g1-acceptance.md`：产品经理采纳 37/37 QA、权限收口和前端证据，G0 完整核心闭环产品验收通过。
+
+### G1 自动化矩阵
+
+- `go test -count=1 ./internal/modules/token_gateway/...`。
+- Native/Bifrost 标准响应与 input/output/reasoning/cached/total Usage 等价。
+- 非流式、SSE、`include_usage`、`[DONE]`、断连、超时和结果未知。
+- 401、429、500、HTTP 200 业务错误、非法 JSON、缺少 choices。
+- 禁止自动 fallback；公开响应和日志不泄露内部 Token、路由、Key 名称和供应商错误正文。
+- 内部入口缺失/错误 Token 固定 401；重复 Authorization 在上游前以 Nginx 400 或鉴权 401 拒绝。
+- `000060` 必须包含四张 Expand 表、正交状态、唯一约束和 Decimal 精度，且 down 不执行破坏性删除。
+- Bifrost 配置必须同时包含百炼和 OpenRouter，并且 Key 只能引用环境变量。
+
+### G1 Linux POC
+
+必须在固定 Bifrost 镜像上复验两个上游的普通响应、SSE、Usage、错误、内部鉴权、单节点退出、恢复和配置/镜像回滚。产生费用的真实调用需要负责人明确授权；Fake 通过不得替代真实 POC。证据统一写入 `docs/ai-gateway-g1-poc-report.md`。
+
+性能测试分为两种不可混用的模式。`real_upstream_observation` 使用真实百炼做端到端观察，不判定纯网关开销；`controlled` 使用 `infra/testsupport/fixed-openai-upstream/main.go` 提供固定 JSON、SSE、Usage 和分片，Native/Bifrost 指向同一实例，不连接外网。受控模式先执行 5 组等量预热，再执行 20 组交替顺序的正式配对样本，共 80 次；每组按 `Bifrost - Native` 计算，所有请求及协议检查必须成功，非流式差值 P95 不超过 20ms，流式 TTFT 差值 P95 不超过 30ms。
+
+`infra/scripts/run-bifrost-g1-benchmark.sh` 必须显式接收模式，保存权限 `0600` 的独立 TSV，记录模式、顺序、原始耗时和差值并输出 SHA256。失败文件不得覆盖或删除。真实调用授权与 4 次最小 POC 授权相互独立；受控模式不得携带真实上游 SK。
+
+Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration-000060.sh` 在隔离临时 MySQL 8 容器验证，必须确认项目数据库未被连接，并取得首次 up、保留结构 down、re-up 后 `60/dirty=0` 及租户/预算/幂等约束证据。
+
+### G2 自动化与阶段门禁
+
+- `go test ./...`，远程 Linux CI 必须执行 `go test -v -race -count=1 ./...`。
+- Project CRUD、停用/归档、单用户租户隔离。
+- Project SK 默认空 allowlist、显式 all、创建、列表、轮换、吊销和过期。
+- 定向模型必须同时通过用户分组/角色可见性，不能只凭 Project SK allowlist 绕过。
+- 空 messages、多模态内容、多值/逗号 Idempotency-Key 在写请求账本前返回 400；未实名为 70001，渠道不可用为 50300。
+- Project SK 创建、轮换和吊销审计完整，摘要不含明文 SK、HMAC Secret 或上游凭据；审计写入失败必须输出脱敏告警，不能静默丢失。
+- Key 明文只返回一次且响应 `no-store`，数据库/日志/错误不含明文或 HMAC Secret。
+- 普通 JSON 与 SSE 共用 RequestOrchestrator；SSE 只在 Finalize 成功后发送 `[DONE]`。
+- 公开 Chat 未装配 RequestOrchestrator 时失败关闭，不得回落旧 ForwardService、钱包或 `token_usage_logs`。
+- 同 Idempotency-Key 相同指纹返回已有状态；不同指纹 409；并发重复请求只调用一次上游。
+- 同 request_id 换用户、Project 或 SK 拒绝且不泄露原请求。
+- 断连继续读取尾部 Usage；超时、流不完整和结果未知进入 `unknown`，禁止 fallback。
+- Usage 缺失不生成计量行，不按 `max_tokens` 估算。
+- Finalize 重试不重复 attempt 或 Usage；周期恢复扫描只选择超过安全窗口的遗留请求，并在事务锁内重查状态与截止时间，Reconcile 同时收敛请求与运行中的 attempt。
+- `billing_status=unquoted`；不得生成价格、钱包 hold、settled、released、Outbox 或旧 `token_usage_logs` 双写。
+- `infra/scripts/verify-ai-gateway-migration-000061.sh` 只在无网络、无端口、tmpfs 的隔离 MySQL 8 容器执行，验证首次 up、保留式 down、re-up、allowlist 和三元租户外键；禁止连接项目数据库。
+
+### G3 自动化与阶段门禁
+
+- Decimal 金样覆盖四类 Token、多 SKU、极小金额、八位舍入、最低收费、大数量和 uint64 边界。
+- 价格发布拒绝未审批、人民币汇率不为 1、SKU 不完整、币种/数值非法、低于最低毛利和生效区间重叠；逐请求快照不受后续活动价格变化影响。
+- 同一逻辑模型的两个已审批版本并发发布只能一个成功，数据库中只保留一个 active 版本。
+- 余额不足在上游前拒绝；100 并发竞争钱包不得产生负余额。
+- 20 并发相同请求只形成一个请求和 hold；G2 编排幂等保证只有事务赢家持有执行上下文。
+- 重复 settle、settle/release 竞争和 Worker 重放只允许一个财务终态。
+- 强制结算最后一步 Outbox 写失败时，请求、Usage、钱包、hold 和流水全部回滚。
+- Usage 缺失进入 `settlement_pending`，不产生 consume 流水；超过对账期限转人工异常并保留 hold。
+- 失败响应携带完整可信 Usage 时仍须 settled；失败 attempt 在对账中发现完整 Usage 时同样 settled，只有明确零成本且无 Usage 才 released。
+- 正式 HTTP 驱动必须保留错误响应内的可信 Usage；请求已发出但错误响应无 Usage 时保持 hold 并进入 `settlement_pending`。
+- 明确 JSON 失败响应携带可信 Usage 时必须 settled；SSE 错误事件、缺少 `[DONE]` 或读取失败导致结果未知时，即使携带 Usage 也必须保持 hold 并进入待对账。
+- 缓存/推理拆分超过输入/输出总量，或 `total_tokens != prompt_tokens + completion_tokens` 时视为不可信并进入待对账。
+- 既有客户端不传 `max_tokens` 时采用配置兜底值完成报价；显式零值、非法值或超过模型上限仍在调用上游前拒绝。
+- 缺省 `max_tokens` 必须写入实际发往上游的请求体，保证执行输出上限与预占口径一致。
+- `n` 缺省或 JSON 整数 1 时允许报价；字符串、浮点、指数写法、`n>1` 或其他非法值必须在预占和上游调用前返回 `unquotable_request`。
+- 人工零用量 `settle` 必须拒绝并保持 exception/holding，确认零成本只能显式 `release`；Project/SK 越权统一为 HTTP 403 + `40003`。
+- 人工 `release` 携带任何正用量必须优先按矛盾输入返回 `40010` 并保留审计；没有矛盾输入但与已有终态操作不一致时返回 409。
+- 原始 Provider Usage 使用稳定序号 0，计费拆分使用序号 1；补价只更新数量一致行的空单价和金额，数量不一致必须冲突且不得改写原始事实。
+- 正常成功、明确失败、待对账和超额异常都必须保存 sequence 0 原始 Usage；价格发布 CLI 在 `APP_ENV` 缺失、未知或生产值时必须在连接数据库前拒绝。
+- 失败请求不得应用成功最低收费；人工终结重复调用只有与真实终态一致时才可幂等成功。
+- 人工异常终结接口必须经过 `token:manage`、管理员二次认证和前置审计；审计失败时不得调用资金服务。
+- SSE 结算待确认或异常必须输出 `molin.status` 事件；状态查询必须绑定原用户和 Project SK。
+- 请求尚未写出时的网络失败释放 hold；已写出但结果未知时保留 hold。
+- Bifrost 模型映射缺失等 HTTP 构造前失败统一归类 `request_not_sent`，立即释放 hold 且不产生消费流水。
+- 单条损坏对账记录不得阻塞批次后续请求；人工核定释放或结算只能产生一个财务终态。
+- 客户端断连后按可信 Usage 结算，freeze/unfreeze/consume 的 `balance_after` 可连续还原。
+- `actual > held` 进入 exception、暂停价格、写 P0 Outbox，不静默封顶或补扣。
+- RabbitMQ URL 未配置时不启动 Worker，Outbox 保持 pending；已配置但 Broker 临时停机时增加重试，恢复后必须 broker confirm，并从持久绑定队列读取相同 Message ID。
+- Outbox 锁超时重领使用 `locked_at` 租约 CAS，旧 Worker 不得覆盖新拥有者。
+- Outbox 退避重试覆盖至少 2 小时 Broker 故障，单次发布必须有限超时；同聚合前序失败时不得投递后序事件，dead 事件受控重新入队后按原 `event_id` 有序恢复。
+- `infra/scripts/verify-ai-gateway-migration-000062.sh` 只使用隔离临时 MySQL/RabbitMQ 网络，验证首次/重复 up、保留 down/re-up、真实并发和 Broker 恢复。
+- 必须通过 `go test -count=1 ./...`、`go vet ./...`、测试 Linux `go test -race -count=1 ./...` 和 `git diff --check`。
+- 静态和 staged diff 必须扫描真实 SK、密码、Token、HMAC Secret、RabbitMQ URL 和上游密钥；测试凭据只能在临时环境生成。
+
+## AI 网关 Phase 1 G4 验收
+
+- 输入违规必须在报价、预算、钱包 hold 和上游调用前拒绝，返回 40310 与稳定文案。
+- JSON 违规输出不得返回正文；SSE 违规分段不得外泄；所有实际透传字符串字段（含 legacy functions、工具定义及 tool_calls arguments）均必须审核。可信 Usage、冻结成本单价和平台成本金额以 `provider_cost` 行保留，用户钱包 hold 释放且消费为 0；Usage 暂缺时保持待对账，只能由具备 `ai_gateway:reconcile_manage` 和管理员二次认证的受控接口补录。验收必须覆盖前置审计失败不执行、相同 Usage 幂等、冲突 Usage 返回 409、平台成本入账、用户消费为 0、hold 释放和唯一 Outbox；禁止直接改库作为业务验收路径。
+- 安全策略缺失或数据库异常返回 50320，不允许绕过。
+- Redis 四层并发、RPM、TPM 任一超限返回 42921/42922、Retry-After、request_id 和脱敏 scope。
+- Redis 停止时返回 50321；恢复后租约可重新准入，不存在永久计数或幽灵租约。
+- 100 个并发、两个 SK、同一 Project hard 预算不得超卖；累计值精确等于限额时允许，只有超过限额才拒绝；soft 预算不阻断。
+- 80/90/100 阈值按主体和周期幂等；日/月周期按 Project IANA 时区。
+- 预算预留只能按 G3 settled/released 同步；没有 G3 请求的过期预留才可 expired。
+- 释放或同步失败形成的补偿任务在 `next_retry_at` 到期后立即重试；持久化成功的明确释放失败在无 G3 请求事实时直接释放，不等待 24 小时。补偿事实也无法写入时保持 held 到自然过期并记录错误，不允许固定时间提前释放。成功任务进入 completed；连续八次失败进入 dead，可用乐观锁转 retry/manual_review；completed/dead/manual_review 不会被后到失败记录覆盖，只有显式 retry 恢复；坏任务不阻塞批次。
+- 管理写接口必须先审计，具备 JWT、对应 `ai_gateway:*_manage` 细粒度权限和管理员双重认证；用户事件与申诉只允许 JWT 且响应最小化。
+- 000063 up 可重复执行；down/re-up 保留治理事实；不得写旧 `token_usage_logs`。
+- 必须执行本地全量测试、Linux `go test -race -count=1 ./...`、G3 回归和 `verify-ai-gateway-g4-governance.sh`。
+- 独立 QA 与产品经理均需给出 P0/P1/P2；P0/P1 为 0 才允许提交阶段完成结论。

@@ -30,6 +30,10 @@ type Config struct {
 	RedisPassword string
 	RedisDB       int
 
+	// RabbitMQ 仅用于发布事务 Outbox；连接不可用时事件保留在 MySQL 并重试。
+	RabbitMQURL      string
+	AIOutboxExchange string
+
 	// JWT
 	JWTSecret        string
 	JWTExpireSeconds int64
@@ -78,6 +82,10 @@ type Config struct {
 	// Token 网关上游渠道 api_key 加密密钥（32 字节，AES-256-GCM）
 	// 用于 token_channels.api_key_encrypted 加解密；通过 TOKEN_PROVIDER_KEY 注入。
 	TokenProviderKey string
+	// TokenExecutionDriver 选择文字模型执行层，默认 native；Bifrost 配置仅在显式启用时生效。
+	TokenExecutionDriver string
+	BifrostBaseURL       string
+	BifrostInternalToken string
 
 	// 平台 API Key（sk）HMAC 密钥（S2-甲5）。
 	// DB 只存 HMAC-SHA256(sk 明文, APIKeyHMACSecret)，明文只在签发时返回一次。
@@ -106,6 +114,20 @@ type Config struct {
 	// postpaid 预扣保证金兜底 max_tokens（S2-丁5）。
 	// 请求未带 max_tokens 时按此上限冻结；通过 TOKEN_HOLD_DEFAULT_MAX_TOKENS 注入。
 	TokenHoldDefaultMaxTokens int
+
+	// AI 网关 G4 四层资源默认值可由环境变量覆盖；数据库策略可进一步按主体覆盖。
+	AIGatewayUserConcurrency    int
+	AIGatewayUserRPM            int
+	AIGatewayUserTPM            int
+	AIGatewayProjectConcurrency int
+	AIGatewayProjectRPM         int
+	AIGatewayProjectTPM         int
+	AIGatewayKeyConcurrency     int
+	AIGatewayKeyRPM             int
+	AIGatewayKeyTPM             int
+	AIGatewayModelConcurrency   int
+	AIGatewayModelRPM           int
+	AIGatewayModelTPM           int
 
 	// 工作台插件凭证（plugins.auth_config_encrypted）加密密钥（32 字节，AES-256-GCM，S2-丁7 / 契约 §5）。
 	// 通过 PLUGIN_SECRET_KEY 注入；未配置时回退复用 TOKEN_PROVIDER_KEY（契约允许复用）。
@@ -161,6 +183,9 @@ func Load() Config {
 		RedisPassword: getenv("REDIS_PASSWORD", ""),
 		RedisDB:       getenvInt("REDIS_DB", 0),
 
+		RabbitMQURL:      getenv("RABBITMQ_URL", ""),
+		AIOutboxExchange: getenv("AI_OUTBOX_EXCHANGE", "molin.ai.billing"),
+
 		JWTSecret:        getenv("JWT_SECRET", ""),
 		JWTExpireSeconds: int64(getenvInt("JWT_EXPIRE_SECONDS", 7200)),
 
@@ -195,7 +220,10 @@ func Load() Config {
 
 		NotifyBodyKey: getenv("NOTIFY_BODY_KEY", ""),
 
-		TokenProviderKey: getenv("TOKEN_PROVIDER_KEY", ""),
+		TokenProviderKey:     getenv("TOKEN_PROVIDER_KEY", ""),
+		TokenExecutionDriver: strings.ToLower(strings.TrimSpace(getenv("TOKEN_EXECUTION_DRIVER", "native"))),
+		BifrostBaseURL:       getenv("BIFROST_BASE_URL", "http://127.0.0.1:18080"),
+		BifrostInternalToken: getenv("BIFROST_INTERNAL_TOKEN", ""),
 
 		APIKeyHMACSecret: getenv("API_KEY_HMAC_SECRET", ""),
 
@@ -205,8 +233,20 @@ func Load() Config {
 		TrustedProxyIPs:         os.Getenv("TRUSTED_PROXY_IPS"),
 		AssetInternalBaseURL:    getenv("ASSET_INTERNAL_BASE_URL", "http://127.0.0.1:8080"),
 		// 兜底单价默认 0.00002 CNY/token（约 ¥0.02/千 token，保守上限；运营按真实档位下调）。
-		TokenHoldUnitPrice:        getenv("TOKEN_HOLD_UNIT_PRICE", "0.00002"),
-		TokenHoldDefaultMaxTokens: getenvInt("TOKEN_HOLD_DEFAULT_MAX_TOKENS", 4096),
+		TokenHoldUnitPrice:          getenv("TOKEN_HOLD_UNIT_PRICE", "0.00002"),
+		TokenHoldDefaultMaxTokens:   getenvInt("TOKEN_HOLD_DEFAULT_MAX_TOKENS", 4096),
+		AIGatewayUserConcurrency:    getenvInt("AI_GATEWAY_USER_CONCURRENCY", 100),
+		AIGatewayUserRPM:            getenvInt("AI_GATEWAY_USER_RPM", 600),
+		AIGatewayUserTPM:            getenvInt("AI_GATEWAY_USER_TPM", 2000000),
+		AIGatewayProjectConcurrency: getenvInt("AI_GATEWAY_PROJECT_CONCURRENCY", 100),
+		AIGatewayProjectRPM:         getenvInt("AI_GATEWAY_PROJECT_RPM", 600),
+		AIGatewayProjectTPM:         getenvInt("AI_GATEWAY_PROJECT_TPM", 2000000),
+		AIGatewayKeyConcurrency:     getenvInt("AI_GATEWAY_KEY_CONCURRENCY", 50),
+		AIGatewayKeyRPM:             getenvInt("AI_GATEWAY_KEY_RPM", 300),
+		AIGatewayKeyTPM:             getenvInt("AI_GATEWAY_KEY_TPM", 1000000),
+		AIGatewayModelConcurrency:   getenvInt("AI_GATEWAY_MODEL_CONCURRENCY", 500),
+		AIGatewayModelRPM:           getenvInt("AI_GATEWAY_MODEL_RPM", 3000),
+		AIGatewayModelTPM:           getenvInt("AI_GATEWAY_MODEL_TPM", 10000000),
 
 		// 插件凭证密钥：优先 PLUGIN_SECRET_KEY，未配置时回退复用 TOKEN_PROVIDER_KEY（契约 §5 允许）。
 		PluginSecretKey: getenv("PLUGIN_SECRET_KEY", getenv("TOKEN_PROVIDER_KEY", "")),
@@ -223,6 +263,22 @@ func Load() Config {
 func (c Config) ValidateAdminVerifyConfig() error {
 	if c.AdminVerifyExpireHours < 0 {
 		return fmt.Errorf("ADMIN_VERIFY_EXPIRE_HOURS 不得小于 0")
+	}
+	return nil
+}
+
+// ValidateAIGatewayGovernanceConfig 拒绝零值或负值，避免错误配置把治理退化为无上限或整数溢出。
+func (c Config) ValidateAIGatewayGovernanceConfig() error {
+	values := map[string]int{
+		"AI_GATEWAY_USER_CONCURRENCY": c.AIGatewayUserConcurrency, "AI_GATEWAY_USER_RPM": c.AIGatewayUserRPM, "AI_GATEWAY_USER_TPM": c.AIGatewayUserTPM,
+		"AI_GATEWAY_PROJECT_CONCURRENCY": c.AIGatewayProjectConcurrency, "AI_GATEWAY_PROJECT_RPM": c.AIGatewayProjectRPM, "AI_GATEWAY_PROJECT_TPM": c.AIGatewayProjectTPM,
+		"AI_GATEWAY_KEY_CONCURRENCY": c.AIGatewayKeyConcurrency, "AI_GATEWAY_KEY_RPM": c.AIGatewayKeyRPM, "AI_GATEWAY_KEY_TPM": c.AIGatewayKeyTPM,
+		"AI_GATEWAY_MODEL_CONCURRENCY": c.AIGatewayModelConcurrency, "AI_GATEWAY_MODEL_RPM": c.AIGatewayModelRPM, "AI_GATEWAY_MODEL_TPM": c.AIGatewayModelTPM,
+	}
+	for key, value := range values {
+		if value <= 0 {
+			return fmt.Errorf("%s 必须大于 0", key)
+		}
 	}
 	return nil
 }

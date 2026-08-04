@@ -2203,7 +2203,19 @@ Skill 版本 Body 参数：version、manifest_json、package_url、changelog、s
 ```text
 GET   /api/token/models
 POST  /api/token/chat/completions
+GET   /api/token/requests/{request_id}
+GET   /v1/models
+POST  /v1/chat/completions
+GET   /v1/requests/{request_id}
 GET   /api/token/usage
+POST  /api/token/projects
+GET   /api/token/projects
+GET   /api/token/projects/{id}
+PATCH /api/token/projects/{id}
+POST  /api/token/projects/{id}/keys
+GET   /api/token/projects/{id}/keys
+POST  /api/token/projects/{id}/keys/{key_id}/rotate
+DELETE /api/token/projects/{id}/keys/{key_id}
 GET   /api/admin/token/providers
 POST  /api/admin/token/providers
 PATCH /api/admin/token/providers/:id
@@ -2214,7 +2226,46 @@ GET   /api/admin/token/routes
 POST  /api/admin/token/routes
 PATCH /api/admin/token/routes/:id
 GET   /api/admin/token/usage
+POST  /api/admin/token/billing/exceptions/{request_id}/resolve
 ```
+
+> G2 文字执行契约：公开 Chat Completions 要求 Project SK，在用户状态/实名、Project、SK、显式模型权限、用户分组/角色可见性和模型发布状态通过后调用唯一 `RequestOrchestrator`，再进入统一 `ExecutionDriver`。部署默认 `native`，可显式切换 `bifrost`。Bifrost 响应会移除 `extra_fields`、路由信息、供应商响应头和内部 Key 名称；HTTP 200 业务错误仍按失败处理。Usage 缺失不生成计量行，禁止按 `max_tokens` 猜测。
+
+> G4 治理契约：通过上述检查后，调用顺序固定为输入审核、G3 报价、MySQL 预算预留、Redis 四层资源准入、G3 钱包 hold、上游执行、输出审核、G3 结算与治理回收。安全、预算或 Redis 依赖异常均失败关闭。SSE 违规分段不得外泄，但必须继续收集可信 Usage；原始 Usage 使用 `provider` 行，冻结成本单价和平台成本金额使用独立 `provider_cost` 行，用户钱包 hold 全额释放、销售金额为 0，并写入 `billing_content_policy_waived` Outbox 事件。Usage 暂缺时保持 `settlement_pending` 与 hold，只能通过下述受控管理接口补录，不允许直接修改数据库。
+
+**POST** `/api/admin/token/billing/content-policy/{request_id}/resolve` *(需 `ai_gateway:reconcile_manage` + 管理员二次认证)*
+
+用于为 `error_code=output_moderation_blocked` 且处于 `settlement_pending` 或 `billing_exception` 的请求补录可信 Provider Usage。Body：
+
+```json
+{
+  "prompt_tokens": 10,
+  "completion_tokens": 5,
+  "cached_tokens": 0,
+  "reasoning_tokens": 0
+}
+```
+
+接口先写管理员操作审计，再在单个 MySQL 事务中写入 `provider` 原始 Usage、按请求冻结价格快照计算 `provider_cost`、释放钱包 hold、将用户销售金额固定为 0，并写入 `billing_content_policy_waived` Outbox。相同 Usage 重放返回成功；已补录 Usage、请求状态或错误类型不一致返回 HTTP 409 + `40900`。该接口不接受正文、关键词证据或上游密钥，也不能对普通计费异常免单。
+
+> G0/G1 商业账本契约：`request_id`、Project、SK、逻辑模型、执行模型、三类正交状态、标准 Usage 和执行尝试见 [`ai-gateway-g0-g1-contract.md`](./ai-gateway-g0-g1-contract.md)。G3 已在 G2 RequestOrchestrator 上启用价格快照、钱包预占和一次终态结算；公开 Chat 不再使用 G2 的 `unquoted` 规则。
+
+> Request ID 与幂等：`X-Request-ID` 由墨灵生成，并由 Token Handler、执行驱动和账本共用。客户端重放可使用单值 `Idempotency-Key`；重复、逗号多值、空值或超过 191 字节在写账本前返回 400/40000。同用户、Project、SK、请求指纹返回已有状态，不同指纹返回 HTTP 409/code 40901。
+
+Project 管理使用登录态 JWT，不能使用 SK 自助扩大权限。创建 body 为 `{name,timezone?}`；更新 body 可包含 `name`、`status=active|suspended|archived` 和 `timezone`。时区必须是有效 IANA 标识（如 `Asia/Shanghai`），创建时缺省为 `Asia/Shanghai`，禁止使用依赖宿主机的 `Local`。列表为扁平分页 `{items,page,page_size,total}`。
+
+Project SK 创建 body：
+
+```json
+{
+  "name": "生产服务",
+  "scope_mode": "allowlist",
+  "model_codes": ["molin/qwen-turbo"],
+  "expires_at": "2026-12-31T16:00:00Z"
+}
+```
+
+新 Key 默认 `allowlist`，空 allowlist 拒绝全部模型；`all` 必须显式选择且不能同时提交 `model_codes`。创建和轮换响应包含一次性 `secret_key` 并设置 `Cache-Control: no-store`；列表只返回 prefix、状态、权限和时间。停用 Project、吊销或过期 Key 均在上游调用前拒绝。
 
 供应商 Body 参数：
 
@@ -2242,15 +2293,71 @@ Chat 请求 Body 参数：
 | messages | array | 是 | 消息列表，兼容 OpenAI messages 格式 |
 | stream | boolean | 否 | 是否流式返回，默认 false |
 | temperature | number | 否 | 采样温度 |
-| max_tokens | integer | 否 | 最大输出 Token 数 |
+| max_tokens | integer | 否 | G3 最大输出 Token 数；缺省采用平台兜底上限与模型上限的较小值，显式非法或超过模型上限时拒绝报价 |
+| n | integer | 否 | G3 仅允许 JSON 整数 `1`；字符串、浮点、指数写法或多候选值均在预占和上游调用前拒绝 |
 
 说明：
 
 - `stream = true` 时响应使用 Server-Sent Events（SSE）格式，`Content-Type: text/event-stream`。
-- 网关层不缓冲流式响应 body，直接透传上游 SSE 数据；确认所有中间件（Logger、Recovery）不会缓冲响应 body。
-- 路由选择：根据 `logical_model_code` 查找 `token_model_routes`，按 `weight` 加权随机选择上游；若选中的上游断路器熔断，按 `priority` 升序取下一个。
+- 网关不缓冲完整流式响应，但会按不超过 2 MiB 的有界段执行输出审核；段内公开字段和跨段增量生成文字均通过后才写出。空白、标点、斜杠和零宽格式字符不能用于拆分关键词。Bifrost 扩展元数据不对外透传，`[DONE]` 只在请求、attempt 和 Usage 成功持久化后发送。
+- 当前一次请求只选择一个执行驱动。Native 使用模型绑定的活动渠道与 `upstream_model`；Bifrost 使用冻结的显式 Provider 模型映射。结果未知或已经输出 SSE 后禁止自动切换供应商，本阶段不启用加权随机和透明熔断回退。
+
+### G4 内容安全、资源和预算治理接口
+
+除用户事件和申诉外，以下接口统一要求 JWT 和管理员双重认证；治理列表统一使用 `ai_gateway:view`，只返回治理元数据且不返回提示词或模型正文。安全治理写操作使用 `ai_gateway:safety_manage`，资源治理写操作使用 `ai_gateway:resource_manage`，预算治理写操作使用 `ai_gateway:budget_manage`，补偿任务写操作使用 `ai_gateway:reconcile_manage`。所有写操作先写审计，失败时不执行变更。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/admin/token/safety/policies` | 策略版本列表 |
+| POST | `/api/admin/token/safety/policies` | 创建 draft；body 只包含 rules，拒绝文案由平台固定且不可自定义 |
+| POST | `/api/admin/token/safety/policies/{id}/publish` | 按 version_no 发布并退休旧 active |
+| POST | `/api/admin/token/safety/policies/{id}/rollback` | 复制历史规则为新 active 版本 |
+| GET | `/api/admin/token/safety/events` | 扁平分页安全事件 |
+| GET | `/api/admin/token/safety/actions` | 扁平分页主体处置 |
+| POST | `/api/admin/token/safety/actions` | 暂停 user 或 api_key |
+| POST | `/api/admin/token/safety/actions/{id}/revoke` | 按 version_no 撤销处置 |
+| GET | `/api/token/safety/events` | JWT 用户扁平分页查询本人事件 |
+| POST | `/api/token/safety/appeals` | JWT 用户提交事件申诉 |
+| GET | `/api/admin/token/safety/appeals` | 扁平分页申诉 |
+| POST | `/api/admin/token/safety/appeals/{id}/resolve` | 按 version_no approved/rejected |
+| GET | `/api/admin/token/resource-policies` | 扁平分页资源策略 |
+| PUT | `/api/admin/token/resource-policies` | 乐观锁更新四层并发/RPM/TPM |
+| GET | `/api/admin/token/budget-policies` | 扁平分页预算策略 |
+| PUT | `/api/admin/token/budget-policies` | 乐观锁更新 Project/SK 日月预算 |
+| GET | `/api/admin/token/budget-overrides` | 扁平分页临时增额 |
+| POST | `/api/admin/token/budget-overrides` | 创建有有效期的临时增额 |
+| GET | `/api/admin/token/budget-alerts` | 扁平分页预算阈值事件 |
+| GET | `/api/admin/token/compensation-tasks` | 扁平分页补偿任务 |
+| POST | `/api/admin/token/compensation-tasks/{id}/resolve` | 按 updated_at 转 retry/manual_review |
+| POST | `/api/admin/token/outbox-events/{event_id}/requeue` | 按原 event_id 重试 dead 事件，请求体必须包含 `reason` |
+
+策略规则项结构为 `{code,category,keywords}`；每个可发布版本必须完整覆盖 illegal、sexual、gambling、drugs、terror、hate、self_harm 七类，规范化后的单个关键词最长 256 字符。列表统一返回 `{items,page,page_size,total}`。用户事件接口只返回当前 JWT 用户的最小化事件，申诉时仓储层再次校验 event_id 归属。资源策略 scope_type 为 user/project/api_key/model，预算 scope_type 为 project/api_key；每个非空日/月限额都必须大于 0。Outbox 重试要求 `ai_gateway:reconcile_manage`、管理员二次认证、非空原因和前置审计，只允许 dead 状态按原 event_id 重排，重复或状态冲突返回 409。
+
+G4 错误码：40310 内容违规、40311 主体暂停、42920 hard 预算、42921 RPM/TPM、42922 并发、50320 审核不可用、50321 治理不可用。42921/42922 包含 `Retry-After`、`request_id` 和公开 `limit_scope`。
+- G3 在上游调用前写不可变价格快照并创建钱包 hold。JSON 或正常结束 SSE 的可信 Usage 完整时，无论执行成功或明确失败都按四类 SKU 汇总一次金额并 settle；成功且存在正用量时才应用最低收费。只有确认未产生成本且无 Usage 时 release；Usage 缺失、不一致、结果未知或 SSE 未正常结束时，即使已经取得中间 Usage 也返回 `202/settlement_pending` 并保留 hold。Settlement Worker 对遗留 held/pending 请求按相同规则收敛，超过期限进入人工异常。正式链路不写旧 `token_usage_logs`。
+- 请求状态可通过 `GET /api/token/requests/{request_id}` 或 OpenAI 兼容入口 `GET /v1/requests/{request_id}` 查询；必须使用原 Project SK，跨用户或跨 SK 统一拒绝且不泄露请求是否存在。
+- `messages` 必须包含至少一条非空文字内容；G2 对图片、音频等多模态消息在写账本和调用上游前返回 400/40000。未实名返回 400/70001，渠道不可用返回 503/50300。
+- 周期恢复扫描先找候选，再在事务锁内重新校验状态和截止时间，只把仍超过安全窗口的 pending/running 请求收敛为 `unknown`，不重放上游。Project SK 创建、轮换和吊销写脱敏审计摘要；审计持久化失败沿用平台 best-effort 语义，必须输出脱敏告警但不反转已经生效的密钥操作。
 
 返回 data：模型列表、OpenAI 兼容响应、Token 用量统计。
+
+G3 前置或结算错误继续返回平台数字 `code`，并新增稳定字符串 `error`：
+
+| HTTP | code | error | 说明 |
+|---:|---:|---|---|
+| 503 | 50310 | `pricing_unavailable` / `price_expired` | 无有效价格或成本过期 |
+| 503 | 50311 | `margin_below_minimum` | 毛利低于发布下限 |
+| 400 | 40010 | `unquotable_request` | 显式 `max_tokens` 非法、超过模型上限、`n` 不为 1 或无法证明最大费用 |
+| 402 | 60001 | `insufficient_balance` | 钱包可用余额不足，上游未调用 |
+| 503 | 50312 | `wallet_hold_failed` | 预占事务失败且整体回滚 |
+| 202 | 20201 | `settlement_pending` | 结果或 Usage 待确认，hold 保留 |
+| 500 | 50010 | `billing_exception` | 超额或人工对账异常 |
+
+相同 `Idempotency-Key` 重放通常返回已有 `request_id`、`execution_status` 和 `billing_status`，不重复调用上游或扣费；只有服务端确认请求从未写出上游且已释放 hold 时，才允许该幂等键原子转移到一个新请求并再次执行。SSE 已开始后不能改写 HTTP 状态；结算待确认或计费异常时发送 `event: molin.status`，其 `data` 只包含 `request_id` 和稳定 `error`，客户端随后调用请求状态接口查询。
+
+**POST** `/api/admin/token/billing/exceptions/{request_id}/resolve` *(需 `token:manage` + 管理员二次认证)*
+
+Body 使用 `resolution=release|settle`；`settle` 时同时提交 `prompt_tokens`、`completion_tokens`、`cached_tokens` 和 `reasoning_tokens`，且输入与输出合计必须大于 0；确认零成本必须使用 `release`。接口在资金操作前写包含核定用量的审计，审计失败则拒绝操作；原始 Provider Usage 与人工核定的 `reconciled` Usage 分别留存。Project/SK 越权统一返回 HTTP 403 + `40003`。
 
 ---
 

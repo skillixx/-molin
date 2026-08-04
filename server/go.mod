@@ -10,9 +10,11 @@ require (
 	github.com/alibabacloud-go/tea-utils/v2 v2.0.9
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/rabbitmq/amqp091-go v1.13.0
 	github.com/redis/go-redis/v9 v9.20.0
 	github.com/shopspring/decimal v1.4.0
 	golang.org/x/crypto v0.52.0
+	golang.org/x/text v0.37.0
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/gorm v1.31.1
 )
@@ -35,6 +37,5 @@ require (
 	github.com/tjfoc/gmsm v1.4.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/net v0.54.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 )

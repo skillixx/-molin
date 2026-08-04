@@ -2,9 +2,7 @@ package service
 
 import (
 	"bufio"
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -52,6 +50,20 @@ type UsageReporter interface {
 // 由 *repository.UsageLogRepository 满足；抽出接口便于结算逻辑单测注入内存桩。
 type saleAmountWriter interface {
 	UpdateSaleAmountByRequestID(ctx context.Context, requestID string, saleAmount decimal.Decimal) error
+}
+
+// usageLogWriter 抽出用量日志最小写接口，便于验证流式断连和待对账路径而不依赖真实数据库。
+type usageLogWriter interface {
+	Create(ctx context.Context, usageLog *model.TokenUsageLog) error
+}
+
+// tokenModelReader 和 tokenChannelReader 抽出转发前置查询的最小接口，便于验证鉴权门禁始终早于执行驱动。
+type tokenModelReader interface {
+	FindByCode(ctx context.Context, code string) (*model.TokenModel, error)
+}
+
+type tokenChannelReader interface {
+	FindByID(ctx context.Context, id uint64) (*model.TokenChannel, error)
 }
 
 // BillingResolver 按 api_key_id 解析 sk 的计费模式与套餐来源（S2-丁5，sk 契约 §5）。
@@ -177,15 +189,19 @@ const (
 	billingModePrepaid  = "prepaid"  // 预付·套餐 entitlement，扣额度不走钱包
 )
 
-// 默认上游调用超时（非流式整体超时；流式仅作用于建连+首字节阶段，由 http.Client.Timeout 控制连接建立）。
-const defaultUpstreamTimeout = 120 * time.Second
+const (
+	// 非流式请求使用整体超时；流式请求使用无整体 Timeout 的专用客户端和独立最长执行期限。
+	defaultUpstreamTimeout        = 120 * time.Second
+	defaultStreamExecutionTimeout = 15 * time.Minute
+	detachedLogTimeout            = 10 * time.Second
+)
 
 // ForwardService Token 网关核心转发器：鉴权后的门禁 + 选渠道 + 转发上游 + 读 usage + 写日志 + 计费编排。
 // 自写薄转发器（v3）：三家上游均 OpenAI 兼容，近似纯透传，仅改 body.model 为上游模型名 + 换渠道 key。
 type ForwardService struct {
-	modelRepo     *repository.TokenModelRepository
-	channelRepo   *repository.ChannelRepository
-	usageRepo     *repository.UsageLogRepository
+	modelRepo     tokenModelReader
+	channelRepo   tokenChannelReader
+	usageRepo     usageLogWriter
 	cipher        *crypto.AESGCM
 	assetGate     AssetGate
 	reporter      UsageReporter
@@ -206,7 +222,8 @@ type ForwardService struct {
 	groupResolver GroupResolver
 	roleResolver  RoleResolver
 
-	httpClient *http.Client
+	httpClient     *http.Client
+	driverSelector ExecutionDriverSelector
 }
 
 // WithResolvers 注入定向可见性解析器（bootstrap 装配时调用），供转发前置闸判定模型可见性。
@@ -240,17 +257,57 @@ func NewForwardService(
 	reporter UsageReporter,
 	scopeResolver ModelScopeResolver,
 ) *ForwardService {
+	httpClient := &http.Client{Timeout: defaultUpstreamTimeout}
 	return &ForwardService{
-		modelRepo:     modelRepo,
-		channelRepo:   channelRepo,
-		usageRepo:     usageRepo,
-		cipher:        cipher,
-		assetGate:     assetGate,
-		reporter:      reporter,
-		scopeResolver: scopeResolver,
-		saleWriter:    usageRepo, // 默认用真实仓库回填 sale_amount
-		httpClient:    &http.Client{Timeout: defaultUpstreamTimeout},
+		modelRepo:      modelRepo,
+		channelRepo:    channelRepo,
+		usageRepo:      usageRepo,
+		cipher:         cipher,
+		assetGate:      assetGate,
+		reporter:       reporter,
+		scopeResolver:  scopeResolver,
+		saleWriter:     usageRepo, // 默认用真实仓库回填 sale_amount
+		httpClient:     httpClient,
+		driverSelector: staticExecutionDriverSelector{driver: NewNativeOpenAICompatibleDriver(httpClient)},
 	}
+}
+
+// ConfigureExecutionDriver 配置全局执行驱动。默认值必须是 native，避免部署后自动切换生产流量。
+func (s *ForwardService) ConfigureExecutionDriver(name, bifrostBaseURL, bifrostInternalToken string) error {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "", "native":
+		s.driverSelector = staticExecutionDriverSelector{driver: NewNativeOpenAICompatibleDriver(s.httpClient)}
+		return nil
+	case "bifrost":
+		if strings.TrimSpace(bifrostBaseURL) == "" || !validBifrostInternalToken(bifrostInternalToken) {
+			return errors.New("启用 Bifrost 驱动时必须配置 BIFROST_BASE_URL 和不少于 32 位的安全 BIFROST_INTERNAL_TOKEN")
+		}
+		s.driverSelector = staticExecutionDriverSelector{driver: NewBifrostDriver(BifrostDriverConfig{
+			BaseURL: bifrostBaseURL, InternalToken: bifrostInternalToken, HTTPClient: s.httpClient,
+		})}
+		return nil
+	default:
+		return fmt.Errorf("不支持的 TOKEN_EXECUTION_DRIVER: %s", name)
+	}
+}
+
+// validBifrostInternalToken 限制为可安全注入 Nginx 精确匹配模板的高强度 ASCII 字符集。
+func validBifrostInternalToken(token string) bool {
+	if len(token) < 32 || strings.TrimSpace(token) != token {
+		return false
+	}
+	for _, char := range token {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || strings.ContainsRune("-_.~+/=", char) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// SetExecutionDriverSelector 仅用于测试和后续按模型路由装配，不对外暴露供应商密钥。
+func (s *ForwardService) SetExecutionDriverSelector(selector ExecutionDriverSelector) {
+	s.driverSelector = selector
 }
 
 // SetBillingDeps 注入计费路由依赖（S2-丁5）。bootstrap 在 Module.New 后调用；各字段可为 nil。
@@ -285,7 +342,7 @@ type upstreamUsage struct {
 type billDecision struct {
 	mode      string // postpaid / prepaid
 	sourceID  uint64 // prepaid=entitlement_id；postpaid=0
-	maxTokens int64  // 本次预估上限（postpaid 预扣 / prepaid 预占 / R5 兜底计费用）
+	maxTokens int64  // 本次预估上限，仅用于 postpaid 预扣或 prepaid 预占，不作为 Usage 缺失时的结算量
 	holdID    uint64 // postpaid 已冻结的保证金 holdID / prepaid 已预占额度的 holdID（方案 B）；0=未冻结/未预占
 	settled   bool   // 结算阶段已接管该 hold（已 settle/release）；用于 Forward 的 defer 兜底释放判定
 
@@ -413,7 +470,7 @@ func (s *ForwardService) Forward(ctx context.Context, w http.ResponseWriter, in 
 		}
 	}()
 
-	// ③ 选渠道并解密 key。
+	// ③ 校验模型绑定渠道；只有 Native 驱动需要解密真实上游 key。
 	ch, err := s.channelRepo.FindByID(ctx, *tm.ChannelID)
 	if err != nil {
 		return ErrChannelUnavailable
@@ -421,40 +478,44 @@ func (s *ForwardService) Forward(ctx context.Context, w http.ResponseWriter, in 
 	if ch.Status != "active" {
 		return ErrChannelUnavailable
 	}
-	apiKey, err := s.cipher.Decrypt(ch.APIKeyEncrypted)
-	if err != nil {
-		return ErrChannelUnavailable
-	}
-
-	// ④ 改写请求体：model → 上游真实模型名；流式补 stream_options.include_usage=true 以拿到末尾 usage。
-	in.Body["model"] = *tm.UpstreamModel
-	if in.Stream {
-		injectStreamUsage(in.Body)
-	}
-	payload, err := json.Marshal(in.Body)
-	if err != nil {
-		return fmt.Errorf("请求体序列化失败: %w", err)
-	}
-
-	upstreamURL := buildChatURL(ch.BaseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, upstreamURL, bytes.NewReader(payload))
-	if err != nil {
-		return fmt.Errorf("构造上游请求失败: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	if in.Stream {
-		req.Header.Set("Accept", "text/event-stream")
-	}
-
 	requestID := in.RequestID
+	driver, err := s.driverSelector.Select(in.Model)
+	if err != nil {
+		s.logUsage(ctx, requestID, in, tm, 0, 0, "failed", errCodePtr("execution_driver_unavailable"))
+		return ErrUpstream
+	}
+	apiKey := ""
+	if driver.Name() == "native" {
+		apiKey, err = s.cipher.Decrypt(ch.APIKeyEncrypted)
+		if err != nil {
+			return ErrChannelUnavailable
+		}
+	}
+	executionRequest := ExecutionRequest{
+		RequestID: requestID, LogicalModel: in.Model, ProviderModel: *tm.UpstreamModel,
+		ProviderCode: ch.Code, EndpointCode: ch.Code, AttemptNo: 1,
+		BaseURL: ch.BaseURL, APIKey: apiKey, Body: in.Body,
+	}
 
-	// ⑤ 发起上游调用（超时 + 失败兜底）。
-	resp, err := s.httpClient.Do(req)
+	// ⑤ 通过统一驱动执行。一次请求只选择一个驱动，结果未知或 SSE 已输出后绝不自动 fallback。
+	var executed *ExecutionResponse
+	if in.Stream {
+		if ctx.Err() != nil {
+			return ErrUpstream
+		}
+		// 客户端断开后继续读取上游尾部 Usage；独立期限防止失联请求无限占用连接。
+		streamCtx, cancelStream := context.WithTimeout(context.WithoutCancel(ctx), defaultStreamExecutionTimeout)
+		defer cancelStream()
+		executed, err = driver.ChatCompletionStream(streamCtx, executionRequest)
+		ctx = streamCtx
+	} else {
+		executed, err = driver.ChatCompletion(ctx, executionRequest)
+	}
 	if err != nil {
 		s.logUsage(ctx, requestID, in, tm, 0, 0, statusFromErr(err), errCodePtr("upstream_error"))
 		return ErrUpstream
 	}
+	resp := executed.Response
 	defer resp.Body.Close()
 
 	// 上游非 2xx：把状态码与 body 透传给用户（不缓冲解析；不落对话明文，仅记状态）。
@@ -467,9 +528,9 @@ func (s *ForwardService) Forward(ctx context.Context, w http.ResponseWriter, in 
 	}
 
 	if in.Stream {
-		return s.forwardStream(ctx, w, resp, in, tm, requestID, &bill)
+		return s.forwardStream(ctx, w, resp, driver, &executed.Attempt, in, tm, requestID, &bill)
 	}
-	return s.forwardJSON(ctx, w, resp, in, tm, requestID, &bill)
+	return s.forwardJSON(ctx, w, resp, executed.Usage, in, tm, requestID, &bill)
 }
 
 // checkModelScope 校验 sk 调用是否被授权调用该 model（S2-丁4b）。
@@ -567,27 +628,31 @@ func (s *ForwardService) reservePrepaid(ctx context.Context, in ForwardInput, bi
 }
 
 // forwardJSON 非流式：读取完整响应回写，解析 usage 落库 + 计费。
-func (s *ForwardService) forwardJSON(ctx context.Context, w http.ResponseWriter, resp *http.Response, in ForwardInput, tm *model.TokenModel, requestID string, bill *billDecision) error {
+func (s *ForwardService) forwardJSON(_ context.Context, w http.ResponseWriter, resp *http.Response, usage ExecutionUsage, in ForwardInput, tm *model.TokenModel, requestID string, bill *billDecision) error {
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		s.logUsage(ctx, requestID, in, tm, 0, 0, "failed", errCodePtr("upstream_read_error"))
+		_ = s.logUsageDetached(requestID, in, tm, 0, 0, "failed", errCodePtr("upstream_read_error"))
 		return ErrUpstream
 	}
-	// 先把上游响应原样回写给用户（用户优先拿到结果）。
+	if !usage.Present {
+		if err := s.logUsageDetached(requestID, in, tm, 0, 0, "pending_reconcile", errCodePtr("usage_missing")); err != nil {
+			return ErrUpstream
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(raw)
+		return nil
+	}
+	// 用量终态必须先可靠记录，再向用户提交成功响应和进入结算，避免“已扣费但无消费记录”。
+	if err := s.logUsageDetached(requestID, in, tm, usage.PromptTokens, usage.CompletionTokens, "success", nil); err != nil {
+		return ErrUpstream
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(raw)
-
-	// 解析 usage（仅取元数据，不记对话内容）。
-	var parsed struct {
-		Usage upstreamUsage `json:"usage"`
-	}
-	_ = json.Unmarshal(raw, &parsed)
-	u := parsed.Usage
-	s.logUsage(ctx, requestID, in, tm, u.PromptTokens, u.CompletionTokens, "success", nil)
 	// 结算：postpaid 实扣 + 解冻保证金 / prepaid 扣套餐额度；回填 sale_amount。
 	// 用独立 context：即使请求 ctx 已随响应结束被取消，结算（含解冻保证金）仍须完成。
-	s.settle(context.Background(), requestID, in, tm, u.PromptTokens, u.CompletionTokens, bill)
+	s.settle(context.Background(), requestID, in, tm, usage.PromptTokens, usage.CompletionTokens, bill)
 	return nil
 }
 
@@ -595,24 +660,39 @@ func (s *ForwardService) forwardJSON(ctx context.Context, w http.ResponseWriter,
 //
 // R5 兜底：客户端中断（写 w 失败）后，服务端必须继续读完上游流以拿到末尾 usage 再结算，
 // 否则会漏计费 / 保证金无法按实扣解冻。因此客户端断开仅停止「透传」，不停止「读上游」。
-func (s *ForwardService) forwardStream(ctx context.Context, w http.ResponseWriter, resp *http.Response, in ForwardInput, tm *model.TokenModel, requestID string, bill *billDecision) error {
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.WriteHeader(http.StatusOK)
-
+func (s *ForwardService) forwardStream(_ context.Context, w http.ResponseWriter, resp *http.Response, driver ExecutionDriver, attempt *ExecutionAttempt, in ForwardInput, tm *model.TokenModel, requestID string, bill *billDecision) error {
 	flusher, _ := w.(http.Flusher)
 	reader := bufio.NewReader(resp.Body)
 
-	var usage upstreamUsage
-	clientGone := false // 客户端已断开：停止透传，但继续读上游拿 usage（R5）
-	streamErr := false  // 上游中途出错
+	var usage ExecutionUsage
+	clientGone := false    // 客户端已断开：停止透传，但继续读上游拿 usage（R5）
+	streamErr := false     // 上游中途出错
+	streamDone := false    // 只有收到 [DONE] 才能证明流正常结束；仅 EOF 属于结果未知
+	streamStarted := false // 首个合法公开事件写出后才提交 HTTP 200，允许首事件业务错误走统一 502
 	for {
 		line, err := reader.ReadBytes('\n')
 		if len(line) > 0 {
-			if !clientGone {
+			chunk, normalizeErr := driver.NormalizeStreamLine(line, in.Model)
+			if normalizeErr != nil {
+				attempt.FinishedAt = time.Now()
+				attempt.Outcome = "failed"
+				attempt.ResultUnknown = streamStarted
+				s.logUsageDetached(requestID, in, tm, usage.PromptTokens, usage.CompletionTokens, "failed", errCodePtr("upstream_stream_protocol_error"))
+				if !streamStarted {
+					return ErrUpstream
+				}
+				return nil
+			}
+			if !clientGone && len(chunk.PublicLine) > 0 {
+				if !streamStarted {
+					w.Header().Set("Content-Type", "text/event-stream")
+					w.Header().Set("Cache-Control", "no-cache")
+					w.Header().Set("Connection", "keep-alive")
+					w.WriteHeader(http.StatusOK)
+					streamStarted = true
+				}
 				// 直接透传该行（不缓冲整体 body），立即 flush 保证实时性。
-				if _, werr := w.Write(line); werr != nil {
+				if _, werr := w.Write(chunk.PublicLine); werr != nil {
 					// 客户端断开：标记后继续读上游（R5），不再向 w 写。
 					clientGone = true
 				} else if flusher != nil {
@@ -620,8 +700,12 @@ func (s *ForwardService) forwardStream(ctx context.Context, w http.ResponseWrite
 				}
 			}
 			// 无论是否已断开，都继续嗅探 usage（OpenAI 末尾 chunk，data: {...,"usage":{...}}）。
-			if u, ok := parseSSEUsage(line); ok {
-				usage = u
+			if chunk.Usage.Present {
+				usage = chunk.Usage
+			}
+			if chunk.Done {
+				streamDone = true
+				break
 			}
 		}
 		if err != nil {
@@ -633,20 +717,58 @@ func (s *ForwardService) forwardStream(ctx context.Context, w http.ResponseWrite
 	}
 
 	if streamErr {
-		// 上游中途出错：已开始透传无法回退错误码，记 failed。
-		// 仍按已知 usage 结算（可能为 0）；postpaid 的保证金由 settle 解冻，杜绝锁死。
-		s.logUsage(ctx, requestID, in, tm, usage.PromptTokens, usage.CompletionTokens, "failed", errCodePtr("upstream_stream_error"))
-		s.settle(context.Background(), requestID, in, tm, usage.PromptTokens, usage.CompletionTokens, bill)
+		attempt.FinishedAt = time.Now()
+		attempt.Outcome = "pending_reconcile"
+		attempt.ResultUnknown = true
+		// 网络读取中断无法证明上游是否完成，必须待对账且释放预占，不能按已知片段直接结算。
+		s.logUsageDetached(requestID, in, tm, usage.PromptTokens, usage.CompletionTokens, "pending_reconcile", errCodePtr("upstream_stream_interrupted"))
+		if !streamStarted {
+			return ErrUpstream
+		}
+		return nil
+	}
+	if !streamDone {
+		attempt.FinishedAt = time.Now()
+		attempt.Outcome = "pending_reconcile"
+		attempt.ResultUnknown = true
+		s.logUsageDetached(requestID, in, tm, usage.PromptTokens, usage.CompletionTokens, "pending_reconcile", errCodePtr("upstream_stream_incomplete"))
+		if !streamStarted {
+			return ErrUpstream
+		}
 		return nil
 	}
 
-	s.logUsage(ctx, requestID, in, tm, usage.PromptTokens, usage.CompletionTokens, "success", nil)
+	if !usage.Present {
+		attempt.FinishedAt = time.Now()
+		attempt.Outcome = "pending_reconcile"
+		attempt.ResultUnknown = true
+		s.logUsageDetached(requestID, in, tm, 0, 0, "pending_reconcile", errCodePtr("usage_missing"))
+		return nil
+	}
+	// 流式响应已经提交后无法再改写 HTTP 状态；终态日志写入失败时转为待对账并停止结算，
+	// 避免用户余额已扣减但消费记录缺失。后续由对账任务根据 request_id 人工或自动补偿。
+	if err := s.logUsageDetached(requestID, in, tm, usage.PromptTokens, usage.CompletionTokens, "success", nil); err != nil {
+		attempt.FinishedAt = time.Now()
+		attempt.Outcome = "pending_reconcile"
+		attempt.ResultUnknown = false
+		log.Printf("[token_gateway] 流式终态日志写入失败，停止结算 request_id=%s: %v", requestID, err)
+		return nil
+	}
+	attempt.FinishedAt = time.Now()
+	attempt.Outcome = "success"
 	s.settle(context.Background(), requestID, in, tm, usage.PromptTokens, usage.CompletionTokens, bill)
 	return nil
 }
 
+// logUsageDetached 确保客户端取消或流式执行期限到期后，终态日志仍有独立的短超时窗口。
+func (s *ForwardService) logUsageDetached(requestID string, in ForwardInput, tm *model.TokenModel, inputTok, outputTok int64, status string, errCode *string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), detachedLogTimeout)
+	defer cancel()
+	return s.logUsage(ctx, requestID, in, tm, inputTok, outputTok, status, errCode)
+}
+
 // logUsage 写一条 token_usage_logs（仅 tokens/状态元数据，绝不落对话内容明文）。best-effort。
-func (s *ForwardService) logUsage(ctx context.Context, requestID string, in ForwardInput, tm *model.TokenModel, inputTok, outputTok int64, status string, errCode *string) {
+func (s *ForwardService) logUsage(ctx context.Context, requestID string, in ForwardInput, tm *model.TokenModel, inputTok, outputTok int64, status string, errCode *string) error {
 	// api_key_id：sk 调用落对应 id；登录态调用为 0，存 nil（便于按 sk 维度聚合用量）。
 	var apiKeyID *uint64
 	if in.APIKeyID != 0 {
@@ -668,13 +790,14 @@ func (s *ForwardService) logUsage(ctx context.Context, requestID string, in Forw
 	}
 	if err := s.usageRepo.Create(ctx, logEntry); err != nil {
 		log.Printf("[token_gateway] 写用量日志失败 request_id=%s: %v", requestID, err)
+		return err
 	}
+	return nil
 }
 
 // settle 结算一次成功调用（S2-丁5 计费路由总入口）。在拿到 usage 后调用，best-effort。
 //
-// R5 兜底：成功调用但 usage 缺失（上游未回 usage 或客户端中断未取到末尾 chunk）时，
-// 按 max_tokens 兜底计 output_tokens（宁多计不漏计），避免漏计费 / 保证金无法按实扣解冻。
+// Usage 缺失时调用方不得进入本函数，必须记录 pending_reconcile 并释放预占，禁止按 max_tokens 猜测扣费。
 //
 // 分流：
 //   - postpaid：按量 input/output（+calls）上报 finance_consumer 实扣钱包；
@@ -683,11 +806,6 @@ func (s *ForwardService) logUsage(ctx context.Context, requestID string, in Forw
 //   - prepaid：不走钱包、不上报 product-usage-events；调 entitlement-settle 按实际消耗结算预占（多退少补，1:1）；
 //     sale_amount = 实际计入 quota_used 的净额（settle 返回值）。
 func (s *ForwardService) settle(ctx context.Context, requestID string, in ForwardInput, tm *model.TokenModel, inputTok, outputTok int64, bill *billDecision) {
-	// R5：成功调用却无 usage → 按 max_tokens 兜底（计入 output，保守宁多勿漏）。
-	if inputTok == 0 && outputTok == 0 && bill.maxTokens > 0 {
-		outputTok = bill.maxTokens
-	}
-
 	if bill.mode == billingModePrepaid {
 		s.settlePrepaid(ctx, requestID, in.UserID, bill, inputTok, outputTok)
 		return
@@ -831,25 +949,6 @@ func buildChatURL(baseURL string) string {
 		return b + "/chat/completions"
 	}
 	return b + "/v1/chat/completions"
-}
-
-// parseSSEUsage 从一行 SSE（data: {...}）中嗅探 usage；非 usage 行返回 false。
-func parseSSEUsage(line []byte) (upstreamUsage, bool) {
-	trimmed := bytes.TrimSpace(line)
-	if !bytes.HasPrefix(trimmed, []byte("data:")) {
-		return upstreamUsage{}, false
-	}
-	data := bytes.TrimSpace(bytes.TrimPrefix(trimmed, []byte("data:")))
-	if len(data) == 0 || bytes.Equal(data, []byte("[DONE]")) {
-		return upstreamUsage{}, false
-	}
-	var chunk struct {
-		Usage *upstreamUsage `json:"usage"`
-	}
-	if err := json.Unmarshal(data, &chunk); err != nil || chunk.Usage == nil {
-		return upstreamUsage{}, false
-	}
-	return *chunk.Usage, true
 }
 
 // errCodePtr 构造错误码指针。

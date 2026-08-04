@@ -46,6 +46,7 @@ type issueKeyResp struct {
 	BillingMode string   `json:"billing_mode"`
 	SourceID    *uint64  `json:"source_id,omitempty"`
 	ModelScope  []string `json:"model_scope"`
+	ScopeMode   string   `json:"scope_mode"`
 	Status      string   `json:"status"`
 	CreatedAt   string   `json:"created_at"`
 }
@@ -83,6 +84,7 @@ func (h *APIKeyHandler) IssueKey(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
 	response.JSON(w, http.StatusCreated, issueKeyResp{
 		ID:          view.ID,
 		Name:        view.Name,
@@ -91,6 +93,7 @@ func (h *APIKeyHandler) IssueKey(w http.ResponseWriter, r *http.Request) {
 		BillingMode: view.BillingMode,
 		SourceID:    view.SourceID,
 		ModelScope:  view.ModelScope,
+		ScopeMode:   view.ScopeMode,
 		Status:      view.Status,
 		CreatedAt:   view.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	})

@@ -1,5 +1,24 @@
 # AGENTS.md
 
+## Token 网关独立工作区约束
+
+本 worktree 专用于 Molin Token 网关、Bifrost 聚合、模型目录、平台 SK、用量账本、计费结算、内容安全、并发控制和多模态网关开发。
+
+项目负责人已授权 Codex 在本 worktree 承担产品、前端、后端、数据库、测试、运维脚本和文档的全栈开发。本节是 Token 网关任务的优先执行规则；与下方旧版“Codex 只负责前端”等历史分工冲突时，以本节和项目负责人当前指令为准。
+
+执行 Token 网关相关任务时必须遵守：
+
+1. 唯一开发目录为 `D:\molingproject\molin-gateway-worktree`。
+2. `feature/bifrost-ai-gateway-v2` 是 G0/G1 基线分支；阶段 Goal 明确指定子分支时必须使用该子分支。当前 G2 唯一分支为 `feature/bifrost-ai-gateway-g2`，执行修改前必须用 `git branch --show-current` 再次确认。
+3. 不得在 `D:\molingproject\molin` 中开发 Token 网关；该目录保留给短信及其他既有任务。
+4. 不得修改 `D:\molingproject\molin-email-worktree`；该目录和邮件分支独立运行。
+5. 本地 Windows 负责代码编写、Go 单元测试、前端检查和构建；MySQL、Redis、RabbitMQ、MinIO、Bifrost 和集成验收运行在测试 Linux。
+6. 真实上游 SK、数据库密码和其他凭据只能保存在测试 Linux 的受限环境文件中，禁止写入源码、文档、日志、Git 提交或聊天内容。
+7. 部署、migration、钱包计费和远程服务重建前必须先核对测试环境状态，并保留回滚方案；生产环境操作仍需项目负责人单独授权。
+8. 共享测试 Linux 时需要避免覆盖邮件、短信和其他应用正在使用的 API、数据库迁移、端口及环境文件。
+
+详细流程见 `docs/token-gateway-worktree-development-guide.md`。
+
 ## AI 协作分工原则（Claude 后端 / Codex 前端）
 
 明确人机分工，两者职责互斥，每次输出前先确认本次内容属于自己的范围。

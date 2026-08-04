@@ -1,13 +1,11 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 
 	"github.com/shopspring/decimal"
 )
@@ -114,38 +112,36 @@ func (s *ForwardService) ChatOnce(ctx context.Context, oin ChatOnceInput) (*Chat
 		}
 	}()
 
-	// ③ 选渠道并解密 key。
+	// ③ 校验模型绑定渠道；只有 Native 驱动需要解密真实上游 key。
 	ch, err := s.channelRepo.FindByID(ctx, *tm.ChannelID)
 	if err != nil || ch.Status != "active" {
 		return nil, ErrChannelUnavailable
 	}
-	apiKey, err := s.cipher.Decrypt(ch.APIKeyEncrypted)
-	if err != nil {
-		return nil, ErrChannelUnavailable
-	}
-
-	// ④ 改写请求体：model → 上游真实模型名；强制非流式（编排需解析 tool_calls）。
-	in.Body["model"] = *tm.UpstreamModel
+	// ④ 强制非流式（编排需解析 tool_calls），模型改写交给统一执行驱动。
 	delete(in.Body, "stream")
 	delete(in.Body, "stream_options")
-	payload, err := json.Marshal(in.Body)
+	driver, err := s.driverSelector.Select(in.Model)
 	if err != nil {
-		return nil, fmt.Errorf("请求体序列化失败: %w", err)
+		return nil, ErrUpstream
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, buildChatURL(ch.BaseURL), bytes.NewReader(payload))
-	if err != nil {
-		return nil, fmt.Errorf("构造上游请求失败: %w", err)
+	apiKey := ""
+	if driver.Name() == "native" {
+		apiKey, err = s.cipher.Decrypt(ch.APIKeyEncrypted)
+		if err != nil {
+			return nil, ErrChannelUnavailable
+		}
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-
-	// ⑤ 发起上游调用。
-	resp, err := s.httpClient.Do(req)
+	// ⑤ 通过统一驱动发起上游调用；单次执行不进行隐式跨供应商 fallback。
+	executed, err := driver.ChatCompletion(ctx, ExecutionRequest{
+		RequestID: in.RequestID, LogicalModel: in.Model, ProviderModel: *tm.UpstreamModel,
+		ProviderCode: ch.Code, EndpointCode: ch.Code, AttemptNo: 1,
+		BaseURL: ch.BaseURL, APIKey: apiKey, Body: in.Body,
+	})
 	if err != nil {
 		s.logUsage(ctx, in.RequestID, in, tm, 0, 0, statusFromErr(err), errCodePtr("upstream_error"))
 		return nil, ErrUpstream
 	}
+	resp := executed.Response
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(resp.Body)
@@ -165,8 +161,18 @@ func (s *ForwardService) ChatOnce(ctx context.Context, oin ChatOnceInput) (*Chat
 		return nil, ErrUpstream
 	}
 
+	if !executed.Usage.Present {
+		if err := s.logUsageDetached(in.RequestID, in, tm, 0, 0, "pending_reconcile", errCodePtr("usage_missing")); err != nil {
+			return nil, ErrUpstream
+		}
+		return result, nil
+	}
+	result.InputTokens = executed.Usage.PromptTokens
+	result.OutputTokens = executed.Usage.CompletionTokens
 	// ⑦ 记用量 + 结算（每轮计 token；calls 仅首轮）。
-	s.logUsage(ctx, in.RequestID, in, tm, result.InputTokens, result.OutputTokens, "success", nil)
+	if err := s.logUsageDetached(in.RequestID, in, tm, result.InputTokens, result.OutputTokens, "success", nil); err != nil {
+		return nil, ErrUpstream
+	}
 	s.settle(context.Background(), in.RequestID, in, tm, result.InputTokens, result.OutputTokens, &bill)
 	return result, nil
 }

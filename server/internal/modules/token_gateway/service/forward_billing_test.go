@@ -233,15 +233,15 @@ func TestSettlePrepaid_QuotaExhaustedNoSaleAmount(t *testing.T) {
 	}
 }
 
-// TestSettle_R5FallbackOnMissingUsage 验证 R5：成功调用但无 usage 时按 max_tokens 兜底计费（计入 output）。
-func TestSettle_R5FallbackOnMissingUsage(t *testing.T) {
+// TestSettle_DoesNotFallbackOnMissingUsage 验证 usage 缺失时禁止按 max_tokens 猜测扣费。
+func TestSettle_DoesNotFallbackOnMissingUsage(t *testing.T) {
 	ent := &fakeEntConsumer{}
 	s := &ForwardService{entConsumer: ent, saleWriter: &fakeSaleWriter{}}
 	bill := &billDecision{mode: billingModePrepaid, sourceID: 88, maxTokens: 512}
-	// usage 全 0 → 应按 maxTokens=512 兜底（prepaid 1:1 → amount=512）。
+	// 调用方正常会进入 pending_reconcile；即使误传全 0，结算层也不得产生 max_tokens 扣费。
 	s.settle(context.Background(), "req-5", ForwardInput{UserID: 3}, &model.TokenModel{}, 0, 0, bill)
-	if ent.calls != 1 || !ent.lastAmt.Equal(decimal.NewFromInt(512)) {
-		t.Fatalf("R5 兜底应按 max_tokens=512 扣额度，实际 calls=%d amt=%s", ent.calls, ent.lastAmt)
+	if ent.calls != 0 {
+		t.Fatalf("usage 缺失时不应扣额度，实际 calls=%d amt=%s", ent.calls, ent.lastAmt)
 	}
 }
 

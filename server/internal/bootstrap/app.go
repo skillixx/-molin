@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -526,6 +527,9 @@ func NewApp() (*App, error) {
 	if err := cfg.ValidateAdminVerifyConfig(); err != nil {
 		return nil, fmt.Errorf("管理员认证配置无效: %w", err)
 	}
+	if err := cfg.ValidateAIGatewayGovernanceConfig(); err != nil {
+		return nil, fmt.Errorf("AI 网关治理配置无效: %w", err)
+	}
 	emailBootstrapCfg, err := config.LoadEmailAdminVerifyBootstrapConfig()
 	if err != nil {
 		return nil, fmt.Errorf("管理员邮箱认证 bootstrap 配置无效: %w", err)
@@ -812,9 +816,33 @@ func NewApp() (*App, error) {
 			tokenScopeResolver = &modelScopeResolverAdapter{svc: apiKeyService}
 		}
 
-		if tokenGatewayModule, tgErr := tokengatewaymod.New(gormDB, cfg.TokenProviderKey, assetService, tokenReporter, tokenScopeResolver); tgErr != nil {
+		outboxPublisher := tokengatewaysvc.NewRabbitMQPublisher(cfg.RabbitMQURL, cfg.AIOutboxExchange)
+		var g3DefaultMaxTokens uint64
+		if cfg.TokenHoldDefaultMaxTokens > 0 {
+			g3DefaultMaxTokens = uint64(cfg.TokenHoldDefaultMaxTokens)
+		}
+		resourceDefaults := tokengatewaysvc.ResourceDefaults{
+			User:    tokengatewaysvc.ResourceLimits{Concurrency: uint64(cfg.AIGatewayUserConcurrency), RPM: uint64(cfg.AIGatewayUserRPM), TPM: uint64(cfg.AIGatewayUserTPM)},
+			Project: tokengatewaysvc.ResourceLimits{Concurrency: uint64(cfg.AIGatewayProjectConcurrency), RPM: uint64(cfg.AIGatewayProjectRPM), TPM: uint64(cfg.AIGatewayProjectTPM)},
+			APIKey:  tokengatewaysvc.ResourceLimits{Concurrency: uint64(cfg.AIGatewayKeyConcurrency), RPM: uint64(cfg.AIGatewayKeyRPM), TPM: uint64(cfg.AIGatewayKeyTPM)},
+			Model:   tokengatewaysvc.ResourceLimits{Concurrency: uint64(cfg.AIGatewayModelConcurrency), RPM: uint64(cfg.AIGatewayModelRPM), TPM: uint64(cfg.AIGatewayModelTPM)},
+		}
+		if tokenGatewayModule, tgErr := tokengatewaymod.New(gormDB, redisClient, cfg.TokenProviderKey, cfg.APIKeyHMACSecret, assetService, tokenReporter, tokenScopeResolver, walletHoldService, outboxPublisher, g3DefaultMaxTokens, resourceDefaults); tgErr != nil {
 			log.Printf("[token_gateway] 初始化失败，管理端/用户端未启用: %v", tgErr)
 		} else {
+			// 执行层默认继续使用原生 Go 转发器；只有显式配置 bifrost 且内部鉴权完整时才切换。
+			if driverErr := tokenGatewayModule.ForwardService.ConfigureExecutionDriver(
+				cfg.TokenExecutionDriver, cfg.BifrostBaseURL, cfg.BifrostInternalToken,
+			); driverErr != nil {
+				log.Printf("[token_gateway] 执行驱动配置失败，应用拒绝启动: %v", driverErr)
+				return nil, driverErr
+			}
+			if driverErr := tokenGatewayModule.Orchestrator.ConfigureExecutionDriver(
+				cfg.TokenExecutionDriver, cfg.BifrostBaseURL, cfg.BifrostInternalToken,
+			); driverErr != nil {
+				log.Printf("[token_gateway] G2 编排执行驱动配置失败，应用拒绝启动: %v", driverErr)
+				return nil, driverErr
+			}
 			// S2-丁5：注入计费路由依赖（postpaid 预扣保证金 / prepaid 扣套餐额度）。
 			// 兜底单价非法时退化为 0（门面据此跳过预扣，仅按 product-usage-events 实扣，不阻断调用）。
 			holdUnitPrice, perr := decimal.NewFromString(cfg.TokenHoldUnitPrice)
@@ -839,10 +867,23 @@ func NewApp() (*App, error) {
 			modelRoleResolver := &roleResolverAdapter{getter: iamRoleGetter, db: gormDB}
 			tokenGatewayModule.CatalogService.WithResolvers(modelGroupResolver, modelRoleResolver)
 			tokenGatewayModule.ForwardService.WithResolvers(modelGroupResolver, modelRoleResolver)
+			if tokenGatewayModule.ProjectService != nil {
+				tokenGatewayModule.ProjectService.WithAuditRecorder(auditSvc)
+			}
+			// 周期收敛进程中断后遗留的请求，不重放上游，也不生成任何计费事实。
+			go tokenGatewayModule.Orchestrator.StartRecoveryLoop(context.Background(), time.Minute)
+			go tokenGatewayModule.SettlementWorker.Start(context.Background(), time.Minute)
+			go tokenGatewayModule.GovernanceService.StartRecoveryLoop(context.Background(), time.Minute)
+			if strings.TrimSpace(cfg.RabbitMQURL) != "" {
+				go tokenGatewayModule.OutboxWorker.Start(context.Background(), 5*time.Second)
+			} else {
+				// RabbitMQ 未配置时保留 pending 事件，禁止空地址重试把可恢复事件耗尽为 dead。
+				log.Printf("[token_gateway] RABBITMQ_URL 未配置，G3 Outbox 发布器未启动")
+			}
 
 			// 管理端：渠道 / 模型目录 / 全量用量（token:manage + 管理员双重认证）。
 			tokengatewaymod.RegisterRoutes(mux, tokenGatewayModule.ChannelService, tokenGatewayModule.CatalogService,
-				tokenGatewayModule.UsageService, cfg.JWTSecret, iamService, authService, authService)
+				tokenGatewayModule.UsageService, tokenGatewayModule.BillingService, tokenGatewayModule.GovernanceAdmin, auditSvc, cfg.JWTSecret, iamService, authService, authService)
 			// 用户端：列模型 + OpenAI 兼容 chat 转发 + 我的用量（双模式鉴权：sk + 登录态）。
 			// nil 接口陷阱：仅在 apiKeyService 非 nil 时构造适配器并传入；否则传字面 nil 接口，
 			// 使中间件 apiKeyResolver==nil 判断生效、对 sk 调用安全退化为「sk 鉴权未启用」而非 panic。
@@ -850,8 +891,8 @@ func NewApp() (*App, error) {
 			if apiKeyService != nil {
 				tokenAPIKeyResolver = &apiKeyResolverAdapter{svc: apiKeyService}
 			}
-			tokengatewaymod.RegisterUserRoutes(mux, tokenGatewayModule.ForwardService, tokenGatewayModule.CatalogService,
-				tokenGatewayModule.UsageService, cfg.JWTSecret, authService, tokenAPIKeyResolver)
+			tokengatewaymod.RegisterUserRoutes(mux, tokenGatewayModule.ForwardService, tokenGatewayModule.Orchestrator, tokenGatewayModule.ProjectService, tokenGatewayModule.CatalogService,
+				tokenGatewayModule.UsageService, tokenGatewayModule.GovernanceAdmin, auditSvc, cfg.JWTSecret, authService, tokenAPIKeyResolver)
 			// 供 workbench 编排端点复用单轮转发（ChatOnce 含门禁/选渠道/计费）。
 			tokenForwardSvc = tokenGatewayModule.ForwardService
 		}

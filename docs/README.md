@@ -55,6 +55,19 @@
 | [backend-chat-workbench-contract.md](./backend-chat-workbench-contract.md) | 聊天工作台契约 |
 | [cloud-resource-app-marketplace-mvp.md](./cloud-resource-app-marketplace-mvp.md) | 云资源应用市场 MVP |
 
+## AI 网关 Phase 1
+
+| 文档 | 说明 |
+|---|---|
+| [ai-gateway-phase0-freeze-record.md](./ai-gateway-phase0-freeze-record.md) | 分支基线、首批模型、成本与销售价格冻结记录 |
+| [ai-gateway-phase1-commercial-text-plan.md](./ai-gateway-phase1-commercial-text-plan.md) | Phase 1 文字模型商业闭环唯一执行计划 |
+| [multimodal-ai-gateway-implementation-plan.md](./multimodal-ai-gateway-implementation-plan.md) | 图片、音频和视频长期蓝图，不作为 Phase 1 排期依据 |
+| [bifrost-docker-deployment-guide.md](./bifrost-docker-deployment-guide.md) | Bifrost 双节点 Docker 部署、验证与回滚 |
+| [token-gateway-worktree-development-guide.md](./token-gateway-worktree-development-guide.md) | Token 网关独立工作区开发规范 |
+| [ai-upstream-test-account-requirements.md](./ai-upstream-test-account-requirements.md) | 上游测试账号、模型权限和计量验收要求 |
+| [ai-upstream-sk-access-form.md](./ai-upstream-sk-access-form.md) | 上游 SK 安全配置登记表，不保存密钥明文 |
+| [test-environment-backup-checklist.md](./test-environment-backup-checklist.md) | 测试环境数据库、对象存储和配置备份清单 |
+
 ## 后端模块开发计划
 
 | 文档 | 说明 |
