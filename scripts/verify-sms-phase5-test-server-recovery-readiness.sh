@@ -43,16 +43,126 @@ actual_files="$(find "$backup" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sor
 [ "$(sha256sum "$backup/SHA256SUMS" | awk '{print $1}')" = "$expected_manifest_sha256" ] || fail backup_manifest_anchor
 (cd "$backup" && sha256sum -c SHA256SUMS >/dev/null) || fail backup_manifest
 
-# 三份 inspect 必须仍是有效 JSON；这里只解析结构，不输出容器环境或其他原始内容。
-python3 - "$backup/molin-admin.inspect.json" "$backup/molin-prometheus.inspect.json" "$backup/molin-user.inspect.json" <<'PY' >/dev/null || fail inspect_json
+# 仅输出恢复相关布尔状态；禁止输出环境变量值、容器命令、挂载内容或镜像详情。
+restore_static_status="$(python3 - "$backup/env.test" "$backup/molin-admin.inspect.json" "$backup/molin-user.inspect.json" "$backup/molin-prometheus.inspect.json" <<'PY'
 import json
+import re
+import subprocess
 import sys
-for path in sys.argv[1:]:
+
+
+def parse_env(path):
+    values = {}
+    syntax_valid = True
+    with open(path, "r", encoding="utf-8") as stream:
+        for raw_line in stream:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            match = re.fullmatch(r"(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)", line)
+            if match is None or match.group(1) in values:
+                syntax_valid = False
+                continue
+            value = match.group(2).strip()
+            if len(value) not in (0, 1) and value[0] == value[-1] and value[0] in "'\"":
+                value = value[1:-1]
+            values[match.group(1)] = value
+    return syntax_valid, values
+
+
+env_syntax_valid, env_values = parse_env(sys.argv[1])
+base_keys = {
+    "APP_ENV", "API_HOST", "API_PORT", "MYSQL_HOST", "MYSQL_PORT", "MYSQL_DATABASE",
+    "MYSQL_USER", "MYSQL_PASSWORD", "REDIS_ADDR", "JWT_SECRET", "REFRESH_TOKEN_SECRET",
+    "SMS_ENABLED", "SMS_TEST_MODE",
+}
+sms_closed = (
+    env_values.get("SMS_ENABLED", "").strip().lower() == "false"
+    and env_values.get("SMS_TEST_MODE", "").strip().lower() == "true"
+)
+trusted_items = {
+    item.strip() for item in env_values.get("TRUSTED_PROXY_IPS", "").split(",") if item.strip()
+}
+fixed_proxy_compatible = (
+    "172.20.250.0/28" in trusted_items
+    or {"172.20.250.2", "172.20.250.3"} <= trusted_items
+)
+legacy_template_keys_present = any(
+    key.startswith("SMS_TEMPLATE_CODE_") for key in env_values
+)
+
+container_specs_verified = True
+container_images_present = True
+for path in sys.argv[2:]:
     with open(path, "r", encoding="utf-8") as stream:
         value = json.load(stream)
-    if not isinstance(value, (list, dict)):
-        raise SystemExit(2)
+    item = value[0] if isinstance(value, list) and len(value) == 1 else value
+    structure_valid = (
+        isinstance(item, dict)
+        and isinstance(item.get("Id"), str)
+        and isinstance(item.get("Image"), str)
+        and isinstance(item.get("Config"), dict)
+        and isinstance(item.get("HostConfig"), dict)
+        and isinstance(item.get("NetworkSettings"), dict)
+        and isinstance(item.get("Config", {}).get("Image"), str)
+        and isinstance(item.get("HostConfig", {}).get("RestartPolicy"), dict)
+        and isinstance(item.get("NetworkSettings", {}).get("Networks"), dict)
+    )
+    container_specs_verified = container_specs_verified and structure_valid
+    image_id = item.get("Image", "") if isinstance(item, dict) else ""
+    image_id_valid = re.fullmatch(r"sha256:[a-f0-9]{64}", image_id) is not None
+    image_present = image_id_valid and subprocess.run(
+        ["docker", "image", "inspect", image_id],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    ).returncode == 0
+    container_images_present = container_images_present and image_present
+
+print(f"environment_syntax={str(env_syntax_valid).lower()}")
+print(f"environment_base_keys={str(base_keys <= env_values.keys()).lower()}")
+print(f"environment_sms_closed={str(sms_closed).lower()}")
+print(f"environment_fixed_proxy_compatible={str(fixed_proxy_compatible).lower()}")
+print(f"environment_legacy_template_keys_present={str(legacy_template_keys_present).lower()}")
+print(f"container_specs={str(container_specs_verified).lower()}")
+print(f"container_images={str(container_images_present).lower()}")
 PY
+ )" || fail restore_static_parse
+
+marker_value() {
+  printf '%s\n' "$restore_static_status" | awk -F= -v marker="$1" '$1 == marker {print $2}'
+}
+rollback_environment_syntax_verified="$(marker_value environment_syntax)"
+rollback_environment_base_keys_verified="$(marker_value environment_base_keys)"
+rollback_environment_sms_closed_verified="$(marker_value environment_sms_closed)"
+rollback_environment_fixed_proxy_compatible="$(marker_value environment_fixed_proxy_compatible)"
+rollback_environment_legacy_template_keys_present="$(marker_value environment_legacy_template_keys_present)"
+rollback_container_specs_verified="$(marker_value container_specs)"
+rollback_container_images_present="$(marker_value container_images)"
+
+rollback_static_prerequisites_verified=false
+rollback_static_blocker=none
+rollback_environment_wholesale_restore_allowed=false
+rollback_environment_restore_strategy=current_env_preserve_proxy_no_legacy_template_keys
+if [ "$rollback_environment_syntax_verified" != true ]; then
+  rollback_static_blocker=backup_env_syntax_invalid
+elif [ "$rollback_environment_base_keys_verified" != true ]; then
+  rollback_static_blocker=backup_env_base_keys_missing
+elif [ "$rollback_environment_sms_closed_verified" != true ]; then
+  rollback_static_blocker=backup_env_sms_not_closed
+elif [ "$rollback_environment_fixed_proxy_compatible" != true ]; then
+  rollback_static_blocker=backup_env_missing_fixed_proxy_trust
+elif [ "$rollback_environment_legacy_template_keys_present" = true ]; then
+  rollback_static_blocker=backup_env_contains_legacy_template_keys
+elif [ "$rollback_container_specs_verified" != true ]; then
+  rollback_static_blocker=backup_container_specs_invalid
+elif [ "$rollback_container_images_present" != true ]; then
+  rollback_static_blocker=backup_container_images_missing
+else
+  rollback_static_prerequisites_verified=true
+  rollback_environment_wholesale_restore_allowed=true
+  rollback_environment_restore_strategy=backup_env_verified
+fi
 
 mapfile -t api_pids < <(pgrep -f "^${api_path}$" || true)
 [ "${#api_pids[@]}" -eq 1 ] || fail current_api_process
@@ -118,6 +228,17 @@ printf 'current_api_listener_owner_verified=true\n'
 printf 'old_current_arch_compatible=true\n'
 printf 'current_health_ready=200:200\n'
 printf 'rollback_materials_verified=true\n'
+printf 'rollback_environment_syntax_verified=%s\n' "$rollback_environment_syntax_verified"
+printf 'rollback_environment_base_keys_verified=%s\n' "$rollback_environment_base_keys_verified"
+printf 'rollback_environment_sms_closed_verified=%s\n' "$rollback_environment_sms_closed_verified"
+printf 'rollback_environment_fixed_proxy_compatible=%s\n' "$rollback_environment_fixed_proxy_compatible"
+printf 'rollback_environment_legacy_template_keys_present=%s\n' "$rollback_environment_legacy_template_keys_present"
+printf 'rollback_environment_wholesale_restore_allowed=%s\n' "$rollback_environment_wholesale_restore_allowed"
+printf 'rollback_environment_restore_strategy=%s\n' "$rollback_environment_restore_strategy"
+printf 'rollback_container_specs_verified=%s\n' "$rollback_container_specs_verified"
+printf 'rollback_container_images_present=%s\n' "$rollback_container_images_present"
+printf 'rollback_static_prerequisites_verified=%s\n' "$rollback_static_prerequisites_verified"
+printf 'rollback_static_blocker=%s\n' "$rollback_static_blocker"
 printf 'rollback_restore_runtime_verified=false\n'
 printf 'actual_rollback_authorization_required=true\n'
 printf 'prometheus_sms_rules=%s\n' "$prometheus_sms_rules"

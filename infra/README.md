@@ -49,6 +49,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 VPC 全网段或 `0.0.0.0/0` 作为快捷配置。详细计划和回滚见 `docs/sms-phase5-deployment-plan.md`、
 `docs/sms-phase5-reverse-proxy-report.md` 和 `docs/sms-phase5-rollback-runbook.md`。
 
+Alertmanager 接收渠道尚未选择，禁止提交带真实接收地址或 Secret 的配置。后续必须按
+`docs/sms-phase5-alertmanager-change-runbook.md` 分别完成渠道决策、离线配置校验、关闭态部署和合成告警演练授权；
+任何一步都不得调用真实短信接口。
+
 ## 邮件 Phase 4 测试环境监控
 
 本节只描述测试环境运行方式，不授权执行数据库 migration、远程部署或真实邮件发送。Prometheus 直接抓取宿主机 API 的

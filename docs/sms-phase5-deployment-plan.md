@@ -15,6 +15,8 @@
 
 当前测试服只具备 Prometheus 规则计算，没有 Alertmanager 配置引用或运行实例。通知接收渠道、值班人、Secret 注入、
 Alertmanager 关闭态部署和后续触发演练必须作为独立变更审批，不能把 4 条规则已加载写成通知链已完成。
+渠道中立的审批字段、离线 `amtool` 校验、关闭态部署和单次合成演练顺序见
+`docs/sms-phase5-alertmanager-change-runbook.md`；该手册不包含任何接收渠道值或 Secret。
 
 ## 3. 测试服顺序
 
@@ -42,8 +44,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-pr
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-recovery-readiness.ps1
 ```
 
-当前回滚材料完整性预检通过，但恢复运行时未验证；通知链为 `receiver_configuration_required`。该入口不会执行
-回滚或触发告警，但 SSH 与 HTTP GET 可能增加系统访问和审计日志。
+当前回滚材料完整性预检通过，三份容器快照引用的旧镜像仍存在；但旧环境缺少固定代理信任且包含废弃的
+`SMS_TEMPLATE_CODE_*` 键，禁止整份恢复。实际回滚候选必须从当前环境生成，保留固定代理信任、保持
+`SMS_ENABLED=false`/`SMS_TEST_MODE=true` 并排除废弃模板键；该候选及旧二进制运行时仍需在独立授权窗口验证。
+通知链为 `receiver_configuration_required`。该入口不会执行回滚或触发告警，但 SSH 与 HTTP GET 可能增加系统访问和审计日志。
 
 手动前端部署工作流已同步使用 `molin-sms-proxy`、`172.20.250.0/28`、管理端 `.2`、用户端 `.3` 和宿主网关
 `.1`。工作流会在删除旧容器前保存真实运行镜像，检查宿主路由和全部 Docker 网络重叠，并在部署或健康检查失败时

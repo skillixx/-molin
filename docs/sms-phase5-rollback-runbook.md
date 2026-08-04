@@ -56,10 +56,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 
 该入口只读取固定备份、当前 API、Prometheus 和 Alertmanager 运行态，不复制文件、不改权限、不重启、不 reload、
 不触发告警、不连接短信供应商；SSH 与 HTTP GET 仍可能增加系统访问和审计日志。2026-08-04 正式结果为：11 个
-固定文件、外部固定清单摘要、权限、无符号链接、新旧 API 及运行 PID 哈希、x86-64 架构和当前 health/ready
-全部通过，输出 `rollback_materials_verified=true`、`rollback_restore_runtime_verified=false`。该结论只证明恢复
-材料完整和当前版本健康，不证明旧环境配置可解析、旧镜像仍存在或旧 API 能够启动。真正替换二进制、恢复配置
-或重启 API 会改变测试服服务状态，必须取得独立授权。
+固定文件、外部固定清单摘要、权限、无符号链接、新旧 API 及运行 PID/监听、x86-64 架构和当前 health/ready
+全部通过；三份容器快照结构有效，其精确镜像 ID 在测试服仍可读取。旧环境语法、基础键和短信关闭态也通过，但
+缺少当前固定代理信任，且含 `SMS_TEMPLATE_CODE_LOGIN`、`SMS_TEMPLATE_CODE_REGISTER` 两项已废弃键。固定输出为：
+
+```text
+rollback_materials_verified=true
+rollback_environment_wholesale_restore_allowed=false
+rollback_environment_restore_strategy=current_env_preserve_proxy_no_legacy_template_keys
+rollback_static_prerequisites_verified=false
+rollback_static_blocker=backup_env_missing_fixed_proxy_trust
+rollback_restore_runtime_verified=false
+```
+
+因此 `env.test` 备份只能用于对账，禁止整份覆盖当前配置。实际回滚候选必须基于当前受控环境文件生成，保留
+`TRUSTED_PROXY_IPS` 和其他当前安全边界，保持 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`，并确保不存在任何
+`SMS_TEMPLATE_CODE_*`。候选文件不得输出值，必须另存到 600 权限的受控临时路径，经人工逐键确认后才能在已授权
+窗口替换旧二进制并重启。该流程尚未执行；真正替换二进制、恢复配置或重启 API 会改变测试服服务状态，必须取得独立授权。
 
 同一预检确认 Alertmanager 引用、容器、进程和 9093 监听均为 0，状态为
 `receiver_configuration_required`。必须先明确接收渠道、值班人和 Secret 注入方式并取得部署授权，之后才能另行批准
