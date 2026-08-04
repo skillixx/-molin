@@ -337,6 +337,49 @@ func (s *AIBillingService) FinalizeRequest(ctx context.Context, requestID string
 	return nil
 }
 
+// AbortBeforeExecution 在上游尚未发送、pending -> running 失败时原子释放钱包预占。
+// 此路径不依赖 running attempt，避免启动事务失败后留下永久冻结金额。
+func (s *AIBillingService) AbortBeforeExecution(ctx context.Context, requestID string, attempt ExecutionAttempt) error {
+	if s == nil || s.db == nil || s.walletHolds == nil {
+		return ErrBillingException
+	}
+	attempt.FinishedAt = s.now()
+	attempt.Outcome = "failed"
+	attempt.ErrorClass = "request_not_sent"
+	attempt.ResultUnknown = false
+	return retryFinancialTransaction(context.WithoutCancel(ctx), func() error {
+		return s.db.WithContext(context.WithoutCancel(ctx)).Transaction(func(tx *gorm.DB) error {
+			request, link, err := lockRequestAndLink(tx, requestID)
+			if err != nil {
+				return err
+			}
+			if isBillingTerminal(request.BillingStatus) {
+				return nil
+			}
+			if request.ExecutionStatus != model.AIExecutionPending || request.BillingStatus != model.AIBillingHeld {
+				return repository.ErrRequestStateConflict
+			}
+			ledgerAttempt := attempt.ToLedgerModel(requestID, ExecutionUsage{})
+			if err := tx.Create(&ledgerAttempt).Error; err != nil {
+				return err
+			}
+			released, err := s.walletHolds.ReleaseHoldTx(tx, link.WalletHoldID, requestID+":release")
+			if err != nil {
+				return err
+			}
+			if err := updateWalletLinkTx(tx, link, released); err != nil {
+				return err
+			}
+			zero := decimal.Zero
+			errorClass := stringPointer("request_not_sent")
+			if err := updateRequestBillingTx(tx, request, model.AIExecutionFailed, model.AIBillingReleased, false, &zero, errorClass, errorClass, ledgerAttempt.ExecutionModelCode, s.now()); err != nil {
+				return err
+			}
+			return createOutboxTx(tx, requestID, "billing_released", model.AIBillingReleased, zero, s.now())
+		})
+	})
+}
+
 // ReconcileInterrupted 收敛持有资金但进程中断的请求，不会重放任何上游调用。
 func (s *AIBillingService) ReconcileInterrupted(ctx context.Context, limit int) (int, error) {
 	if limit <= 0 {

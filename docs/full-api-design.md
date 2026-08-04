@@ -2299,7 +2299,7 @@ Chat 请求 Body 参数：
 说明：
 
 - `stream = true` 时响应使用 Server-Sent Events（SSE）格式，`Content-Type: text/event-stream`。
-- 网关层不缓冲完整流式响应；每个 SSE `data:` 事件由当前执行驱动校验和脱敏后立即写出，Bifrost 扩展元数据不对外透传。`[DONE]` 只在请求、attempt 和 Usage 成功持久化后发送。
+- 网关不缓冲完整流式响应，但会按不超过 2 MiB 的有界段执行输出审核；段内公开字段和跨段增量生成文字均通过后才写出。空白、标点、斜杠和零宽格式字符不能用于拆分关键词。Bifrost 扩展元数据不对外透传，`[DONE]` 只在请求、attempt 和 Usage 成功持久化后发送。
 - 当前一次请求只选择一个执行驱动。Native 使用模型绑定的活动渠道与 `upstream_model`；Bifrost 使用冻结的显式 Provider 模型映射。结果未知或已经输出 SSE 后禁止自动切换供应商，本阶段不启用加权随机和透明熔断回退。
 
 ### G4 内容安全、资源和预算治理接口
@@ -2329,8 +2329,9 @@ Chat 请求 Body 参数：
 | GET | `/api/admin/token/budget-alerts` | 扁平分页预算阈值事件 |
 | GET | `/api/admin/token/compensation-tasks` | 扁平分页补偿任务 |
 | POST | `/api/admin/token/compensation-tasks/{id}/resolve` | 按 updated_at 转 retry/manual_review |
+| POST | `/api/admin/token/outbox-events/{event_id}/requeue` | 按原 event_id 重试 dead 事件，请求体必须包含 `reason` |
 
-策略规则项结构为 `{code,category,keywords}`；category 仅允许 illegal、sexual、gambling、drugs、terror、hate、self_harm。列表统一返回 `{items,page,page_size,total}`。用户事件接口只返回当前 JWT 用户的最小化事件，申诉时仓储层再次校验 event_id 归属。资源策略 scope_type 为 user/project/api_key/model，预算 scope_type 为 project/api_key。
+策略规则项结构为 `{code,category,keywords}`；每个可发布版本必须完整覆盖 illegal、sexual、gambling、drugs、terror、hate、self_harm 七类，规范化后的单个关键词最长 256 字符。列表统一返回 `{items,page,page_size,total}`。用户事件接口只返回当前 JWT 用户的最小化事件，申诉时仓储层再次校验 event_id 归属。资源策略 scope_type 为 user/project/api_key/model，预算 scope_type 为 project/api_key；每个非空日/月限额都必须大于 0。Outbox 重试要求 `ai_gateway:reconcile_manage`、管理员二次认证、非空原因和前置审计，只允许 dead 状态按原 event_id 重排，重复或状态冲突返回 409。
 
 G4 错误码：40310 内容违规、40311 主体暂停、42920 hard 预算、42921 RPM/TPM、42922 并发、50320 审核不可用、50321 治理不可用。42921/42922 包含 `Retry-After`、`request_id` 和公开 `limit_scope`。
 - G3 在上游调用前写不可变价格快照并创建钱包 hold。JSON 或正常结束 SSE 的可信 Usage 完整时，无论执行成功或明确失败都按四类 SKU 汇总一次金额并 settle；成功且存在正用量时才应用最低收费。只有确认未产生成本且无 Usage 时 release；Usage 缺失、不一致、结果未知或 SSE 未正常结束时，即使已经取得中间 Usage 也返回 `202/settlement_pending` 并保留 hold。Settlement Worker 对遗留 held/pending 请求按相同规则收敛，超过期限进入人工异常。正式链路不写旧 `token_usage_logs`。

@@ -1,4 +1,4 @@
--- 000060 AI 网关 G3 价格、钱包关联和事务 Outbox。
+-- 000062 AI 网关 G3 价格、钱包关联和事务 Outbox。
 -- 金额统一扩展为 DECIMAL(20,8)，扩精度不会截断历史钱包事实；负余额检查失败时 migration 必须停止。
 
 ALTER TABLE wallets

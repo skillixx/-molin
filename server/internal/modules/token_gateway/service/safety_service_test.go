@@ -78,6 +78,15 @@ func TestSafetyServiceRejectsNormalizedInputWithoutPersistingRawContent(t *testi
 	}
 }
 
+func TestSafetyServiceRejectsSlashAndZeroWidthKeywordSplitting(t *testing.T) {
+	repo := &memorySafetyRepository{policy: testSafetyPolicy(t)}
+	svc := NewSafetyService(repo, "0123456789abcdef0123456789abcdef")
+	body := map[string]interface{}{"messages": []interface{}{map[string]interface{}{"role": "user", "content": "网/络\u200b赌/博推广"}}}
+	if _, err := svc.ModerateInput(context.Background(), SafetySubject{RequestID: "req-safe-separator", UserID: 1, ProjectID: 2, APIKeyID: 3}, body); !errors.Is(err, ErrContentPolicyViolation) {
+		t.Fatalf("斜杠和零宽字符不得绕过关键词审核: %v", err)
+	}
+}
+
 func TestSafetyServiceFailsClosedWhenPolicyOrSubjectCheckUnavailable(t *testing.T) {
 	svc := NewSafetyService(&memorySafetyRepository{err: errors.New("db down")}, "0123456789abcdef0123456789abcdef")
 	_, err := svc.ModerateInput(context.Background(), SafetySubject{RequestID: "req-safe-2", UserID: 1, ProjectID: 2, APIKeyID: 3}, map[string]interface{}{"messages": []interface{}{}})

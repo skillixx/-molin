@@ -1,4 +1,4 @@
--- 000058 AI 网关 G0/G1 商业请求账本 Expand Migration。
+-- 000060 AI 网关 G0/G1 商业请求账本 Expand Migration。
 -- 本迁移创建四张新表，并为 api_keys 增加租户归属复合索引；不切换旧 token_usage_logs 读写，也不触发钱包、上游或用户数据变更。
 -- 为避免回滚时丢失已形成的审计记录，应用回滚保留这些表，物理清理由后续 Contract Migration 单独审批。
 

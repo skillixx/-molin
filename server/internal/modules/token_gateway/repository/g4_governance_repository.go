@@ -147,7 +147,7 @@ func (r *G4GovernanceRepository) ReserveBudget(ctx context.Context, req BudgetRe
 					return err
 				}
 				limit = limit.Add(override)
-				settled, held, err := r.budgetUsage(tx, policy.ScopeType, policy.ScopeID, period.start)
+				settled, held, err := r.budgetUsage(tx, policy.ScopeType, policy.ScopeID, period.kind, period.start)
 				if err != nil {
 					return err
 				}
@@ -194,36 +194,35 @@ func (r *G4GovernanceRepository) activeOverrideAmount(tx *gorm.DB, scopeType str
 	return amount, err
 }
 
-func (r *G4GovernanceRepository) budgetUsage(tx *gorm.DB, scopeType string, scopeID uint64, periodStart time.Time) (decimal.Decimal, decimal.Decimal, error) {
+func (r *G4GovernanceRepository) budgetUsage(tx *gorm.DB, scopeType string, scopeID uint64, periodType string, periodStart time.Time) (decimal.Decimal, decimal.Decimal, error) {
 	column := "project_id"
 	if scopeType == "api_key" {
 		column = "api_key_id"
 	}
-	var settledRows []struct {
-		Amount *decimal.Decimal `gorm:"column:settled_amount"`
+	periodColumn := "daily_period_start"
+	if periodType == "monthly" {
+		periodColumn = "monthly_period_start"
 	}
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Model(&model.AIRequest{}).Select("settled_amount").
-		Where(column+" = ? AND billing_status = ? AND completed_at >= ?", scopeID, model.AIBillingSettled, periodStart).
-		Find(&settledRows).Error; err != nil {
+	var rows []struct {
+		Status         string           `gorm:"column:status"`
+		ReservedAmount decimal.Decimal  `gorm:"column:reserved_amount"`
+		SettledAmount  *decimal.Decimal `gorm:"column:settled_amount"`
+	}
+	// 预算归属在准入时固化，跨午夜完成的请求仍计入原周期，不能按 completed_at 漂移到新周期。
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Model(&model.AIBudgetReservation{}).
+		Select("status, reserved_amount, settled_amount").
+		Where(column+" = ? AND "+periodColumn+" = ? AND status IN ?", scopeID, periodStart, []string{model.AIBudgetHeld, model.AIBudgetSettled}).
+		Find(&rows).Error; err != nil {
 		return decimal.Zero, decimal.Zero, err
 	}
 	settled := decimal.Zero
-	for _, row := range settledRows {
-		if row.Amount != nil {
-			settled = settled.Add(*row.Amount)
-		}
-	}
-	var heldRows []struct {
-		Amount decimal.Decimal `gorm:"column:reserved_amount"`
-	}
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Model(&model.AIBudgetReservation{}).Select("reserved_amount").
-		Where(column+" = ? AND status = ? AND created_at >= ?", scopeID, model.AIBudgetHeld, periodStart).
-		Find(&heldRows).Error; err != nil {
-		return decimal.Zero, decimal.Zero, err
-	}
 	held := decimal.Zero
-	for _, row := range heldRows {
-		held = held.Add(row.Amount)
+	for _, row := range rows {
+		if row.Status == model.AIBudgetHeld {
+			held = held.Add(row.ReservedAmount)
+		} else if row.SettledAmount != nil {
+			settled = settled.Add(*row.SettledAmount)
+		}
 	}
 	return settled, held, nil
 }
@@ -382,6 +381,14 @@ func (r *G4GovernanceRepository) ListSafetyPolicies(ctx context.Context, offset,
 	}
 	err := query.Order("version_no DESC").Offset(offset).Limit(limit).Find(&items).Error
 	return items, total, err
+}
+
+func (r *G4GovernanceRepository) GetSafetyPolicy(ctx context.Context, id uint64) (*model.AISafetyPolicyVersion, error) {
+	var policy model.AISafetyPolicyVersion
+	if err := r.db.WithContext(ctx).First(&policy, id).Error; err != nil {
+		return nil, err
+	}
+	return &policy, nil
 }
 
 func (r *G4GovernanceRepository) CreateSafetyPolicy(ctx context.Context, policy *model.AISafetyPolicyVersion) error {

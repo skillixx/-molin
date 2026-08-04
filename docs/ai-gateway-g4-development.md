@@ -26,7 +26,7 @@ G4 不修改 G3 的钱包流水或销售 Outbox 金额语义。预算金额来�
 
 ## 4. SSE 安全
 
-SSE 扫描器最大单行 2 MiB。公开事件暂存在有界段内，遇到句末、换行、512 字符或流结束时审核；审核通过才写出该段。保留前 128 字符尾部参与下一段审核，降低关键词跨片段绕过。审核递归覆盖正文、工具定义、工具调用名称与 arguments。违规时丢弃当前段，但继续解析 Usage 和 `[DONE]`；账本保存 Provider Usage 与平台成本，释放用户钱包 hold，不生成销售计费行，并写 `billing_content_policy_waived` Outbox 后再发送墨灵安全终止事件。
+SSE 扫描器最大单行 2 MiB。公开事件暂存在有界段内，遇到句末、换行、512 字符或流结束时审核；审核通过才写出该段。每个段审核全部公开字段，同时对 `content/text/tool_calls` 等增量生成字段维护规范化连续视图，剔除空白、标点和零宽格式字符，并保留最长 256 字符关键词所需的 255 字符重叠区；每段重复的 model/id/usage 元数据不能打断跨段匹配。安全策略关键词规范化后不得超过 256 字符。审核递归覆盖正文、工具定义、工具调用名称与 arguments。违规时丢弃当前段，但继续解析 Usage 和 `[DONE]`；账本保存 Provider Usage 与平台成本，释放用户钱包 hold，不生成销售计费行，并写 `billing_content_policy_waived` Outbox 后再发送墨灵安全终止事件。
 
 ## 5. 并发与故障恢复
 
@@ -34,6 +34,8 @@ SSE 扫描器最大单行 2 MiB。公开事件暂存在有界段内，遇到句�
 - 客户端断开不取消已经形成的上游事实和结算。
 - 没有可信 Usage 时继续遵守 G3 settlement_pending，不猜测消费量。
 - 预算同步失败写补偿任务，`next_retry_at` 到期即重新扫描，不等待预算预留自身过期；八次后进入 dead 并退出自动扫描，manual_review 也不会被恢复任务覆盖。管理员使用 `updated_at` 乐观锁显式转 retry 后才恢复扫描。
+- 日/月预算归属在准入时固化到 `daily_period_start/monthly_period_start`；held 和 settled 都从同一预算预留表按该周期汇总，跨午夜完成不会漂移到新周期。
+- Outbox dead 事件只能由具有 `ai_gateway:reconcile_manage` 且完成管理员二次认证的人员按原 event_id 重试；必须填写原因并在执行前记录审计，非 dead 状态返回冲突。
 - migration down 只执行 no-op，不删除安全、预算或补偿审计事实。
 
 ## 6. 扩展边界

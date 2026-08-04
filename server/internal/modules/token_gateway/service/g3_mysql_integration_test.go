@@ -56,6 +56,28 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 		assertCount(t, db, "wallet_holds", "idempotency_key = ?", request.RequestID+":hold", 0)
 	})
 
+	t.Run("执行启动失败前原子释放钱包预占", func(t *testing.T) {
+		request := integrationRequest("g3-start-failed-release", 13)
+		if _, err := billing.PrepareRequest(ctx, request, map[string]interface{}{"max_tokens": 10}); err != nil {
+			t.Fatal(err)
+		}
+		attempt := ExecutionAttempt{
+			AttemptNo: 1, Driver: "bifrost", ProviderCode: "bailian", EndpointCode: "bailian",
+			ProviderModel: "qwen-plus", StartedAt: time.Now(), Outcome: "running",
+		}
+		if err := billing.AbortBeforeExecution(ctx, request.RequestID, attempt); err != nil {
+			t.Fatal(err)
+		}
+		assertRequestAndHoldStatus(t, db, request.RequestID, model.AIBillingReleased, "released")
+		var executionStatus, errorCode string
+		if err := db.Model(&model.AIRequest{}).Select("execution_status, error_code").Where("request_id = ?", request.RequestID).Row().Scan(&executionStatus, &errorCode); err != nil {
+			t.Fatal(err)
+		}
+		if executionStatus != model.AIExecutionFailed || errorCode != "request_not_sent" {
+			t.Fatalf("启动失败终态不正确: execution=%s error=%s", executionStatus, errorCode)
+		}
+	})
+
 	t.Run("价格发布拒绝重叠区间和已发布版本", func(t *testing.T) {
 		now := time.Now()
 		approvedBy := uint64(1)

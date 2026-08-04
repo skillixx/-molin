@@ -1,5 +1,19 @@
 # AI 网关 G4 验收记录
 
+## 0. PR 独立评审整改候选（2026-08-04）
+
+PR #316 在合并前独立评审发现的阻断项已经形成代码和测试候选，但在新 commit 的 G3/G4 隔离 CI、QA 和产品复验完成前，本节不把候选误写为最终通过：
+
+- SSE 使用“全公开字段段审核 + 增量生成字段连续视图”，新增跨段、300 组斜杠/零宽字符绕过测试，违规后段不外泄。
+- 管理端创建、发布和回滚安全策略都要求完整覆盖 illegal、sexual、gambling、drugs、terror、hate、self_harm，关键词规范化长度不超过 256。
+- 预算 held/settled 统一按预留时固化的日/月周期归集，新增跨午夜隔离 MySQL 用例。
+- 预算释放失败立即登记 `budget_release_failed` 补偿；终态同步未收敛也进入补偿。
+- pending -> running 启动失败新增原子 `request_not_sent` 终结，释放钱包 hold，并在 G3 隔离 MySQL 中核对请求与 hold 终态。
+- Outbox dead 新增受 `ai_gateway:reconcile_manage`、管理员二次认证、非空原因和前置审计保护的重试入口；只按原 event_id 重排。
+- 日/月限额逐项要求正数，钱包 GORM 金额精度同步为 `DECIMAL(20,8)`，治理 JSON 拒绝尾随文档。
+
+本地已完成 `go test -count=1 ./...`、`go vet ./...`、`go mod verify`、管理端和用户端 type-check/lint/契约测试/build。当前 Windows 环境无 Docker CLI，新增隔离 MySQL 用例必须以推送后 `gateway-g3`、`gateway-g4` CI 结果为准；CI 未绿、独立复评 P0/P1 未清零前禁止合并和部署。
+
 ## 1. 验收范围
 
 验收对象为 `feature/bifrost-ai-gateway-g4` 当前候选代码，包括内容安全、四层资源限制、Project/SK 预算、补偿任务、管理接口、migration 和文档。结论不代表已合并 main、已部署测试环境、已接入真实用户或已进入 G5。

@@ -451,7 +451,7 @@ Migration `000063_create_ai_gateway_g4_governance` 新增以下 expand 表：
 | `ai_budget_alerts` | 主体、周期、80/90/100 阈值唯一提醒事实 |
 | `ai_compensation_tasks` | pending/running/retry/dead/manual_review 幂等补偿任务 |
 
-预算预留不是第二套财务账本：reserved_amount 来自 G3 报价快照，settled_amount 只读取 G3 终态。Redis 不保存预算金额，只保存带 TTL 的并发与速率状态。000063 down 为事实保留型 no-op，应用回滚不得删除安全、预算和补偿记录。
+预算预留不是第二套财务账本：reserved_amount 来自 G3 报价快照，settled_amount 只读取 G3 终态；日/月归属以准入时固化的 `daily_period_start/monthly_period_start` 为准，跨午夜结算不改变周期。Redis 不保存预算金额，只保存带 TTL 的并发与速率状态。000063 down 为事实保留型 no-op，应用回滚不得删除安全、预算和补偿记录。
 
 ## 4. 关键状态
 

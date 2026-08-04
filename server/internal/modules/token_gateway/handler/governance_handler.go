@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -423,6 +424,25 @@ func (h *GovernanceHandler) ResolveCompensationTask(w http.ResponseWriter, r *ht
 	response.JSON(w, http.StatusOK, map[string]bool{"updated": true})
 }
 
+func (h *GovernanceHandler) RequeueDeadOutbox(w http.ResponseWriter, r *http.Request) {
+	eventID := strings.TrimSpace(r.PathValue("event_id"))
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if !decodeGovernanceJSON(w, r, &req) {
+		return
+	}
+	operatorID := middleware.UserIDFromContext(r.Context())
+	if !h.auditBeforeWrite(w, r, operatorID, "outbox.dead.requeue", "outbox_event", eventID, map[string]int{"reason_length": len(strings.TrimSpace(req.Reason))}) {
+		return
+	}
+	if err := h.service.RequeueDeadOutbox(r.Context(), eventID, req.Reason); err != nil {
+		writeGovernanceError(w, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]bool{"requeued": true})
+}
+
 func (h *GovernanceHandler) auditBeforeWrite(w http.ResponseWriter, r *http.Request, operatorID uint64, action, targetType, targetID string, summary any) bool {
 	if h.audit == nil || h.audit.Record(r.Context(), &operatorID, "token_gateway", action, &targetType, &targetID, r.RemoteAddr, summary) != nil {
 		response.Error(w, http.StatusInternalServerError, 50000, "审计记录失败，操作未执行")
@@ -435,6 +455,10 @@ func decodeGovernanceJSON(w http.ResponseWriter, r *http.Request, target interfa
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数不合法")
+		return false
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数不合法")
 		return false
 	}
@@ -479,7 +503,7 @@ func writeGovernanceError(w http.ResponseWriter, err error) {
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		response.Error(w, http.StatusNotFound, 40400, "记录不存在")
-	case errors.Is(err, repository.ErrRequestStateConflict), repository.IsDuplicateKeyForHandler(err):
+	case errors.Is(err, repository.ErrRequestStateConflict), errors.Is(err, repository.ErrOutboxLeaseLost), repository.IsDuplicateKeyForHandler(err):
 		response.Error(w, http.StatusConflict, 40900, "版本冲突或记录已存在")
 	default:
 		response.Error(w, http.StatusInternalServerError, 50000, "AI 网关治理操作失败")

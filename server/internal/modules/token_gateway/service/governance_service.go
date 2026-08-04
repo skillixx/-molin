@@ -95,14 +95,14 @@ func (s *GovernanceService) AdmitAfterSafety(ctx context.Context, subject Safety
 	reservedTokens, err := conservativeTokenReservation(body, quote.MaxTokens)
 	if err != nil {
 		if reservation != nil {
-			_ = s.budget.ReleaseBudget(context.WithoutCancel(ctx), subject.RequestID)
+			s.releaseBudgetOrCompensate(ctx, subject.RequestID)
 		}
 		return nil, ErrResourceUnavailable
 	}
 	resource, err := s.limiter.Acquire(ctx, subject.RequestID, subject.UserID, subject.ProjectID, subject.APIKeyID, quote.Snapshot.LogicalModelCode, reservedTokens)
 	if err != nil {
 		if reservation != nil {
-			_ = s.budget.ReleaseBudget(context.WithoutCancel(ctx), subject.RequestID)
+			s.releaseBudgetOrCompensate(ctx, subject.RequestID)
 		}
 		return nil, err
 	}
@@ -119,7 +119,7 @@ func (s *GovernanceService) AbortBeforeUpstream(ctx context.Context, ticket *Gov
 	}
 	_ = s.limiter.Release(context.WithoutCancel(ctx), ticket.Resource)
 	if ticket.BudgetReserved {
-		_ = s.budget.ReleaseBudget(context.WithoutCancel(ctx), ticket.Subject.RequestID)
+		s.releaseBudgetOrCompensate(ctx, ticket.Subject.RequestID)
 	}
 }
 
@@ -133,9 +133,15 @@ func (s *GovernanceService) FinishExecution(ctx context.Context, ticket *Governa
 	}
 	_ = s.limiter.Release(context.WithoutCancel(ctx), ticket.Resource)
 	if ticket.BudgetReserved {
-		if _, err := s.budget.SyncBudgetFromRequest(context.WithoutCancel(ctx), ticket.Subject.RequestID); err != nil {
+		if synced, err := s.budget.SyncBudgetFromRequest(context.WithoutCancel(ctx), ticket.Subject.RequestID); err != nil || !synced {
 			_ = s.budget.RecordCompensationFailure(context.WithoutCancel(ctx), ticket.Subject.RequestID, "budget_sync_failed")
 		}
+	}
+}
+
+func (s *GovernanceService) releaseBudgetOrCompensate(ctx context.Context, requestID string) {
+	if err := s.budget.ReleaseBudget(context.WithoutCancel(ctx), requestID); err != nil {
+		_ = s.budget.RecordCompensationFailure(context.WithoutCancel(ctx), requestID, "budget_release_failed")
 	}
 }
 

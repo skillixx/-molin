@@ -47,6 +47,53 @@ func TestG4MySQLBudgetIntegration(t *testing.T) {
 		t.Fatalf("预算策略写入后必须可读: policy=%+v err=%v", loadedPolicy, err)
 	}
 
+	t.Run("跨午夜结算仍归属预留时的原日周期", func(t *testing.T) {
+		apiKeyPolicy := model.AIBudgetPolicy{
+			ScopeType: "api_key", ScopeID: 1, Mode: model.AIBudgetHard,
+			DailyLimit: decimalPointerForG4(decimal.NewFromInt(5)), VersionNo: 1, UpdatedBy: 1,
+		}
+		if err := db.Create(&apiKeyPolicy).Error; err != nil {
+			t.Fatal(err)
+		}
+		projectID, keyID := uint64(1), uint64(1)
+		settledAmount := decimal.NewFromInt(5)
+		completedAt := now
+		oldRequest := model.AIRequest{
+			RequestID: "g4-cross-period-settled", UserID: 1, ProjectID: &projectID, APIKeyID: &keyID,
+			LogicalModelCode: "qwen-plus", Modality: "chat", ModerationStatus: model.AIModerationPassed,
+			ExecutionStatus: model.AIExecutionSucceeded, BillingStatus: model.AIBillingSettled,
+			SettledAmount: &settledAmount, CompletedAt: &completedAt, VersionNo: 1,
+		}
+		if err := db.Create(&oldRequest).Error; err != nil {
+			t.Fatal(err)
+		}
+		oldDaily := daily.Add(-24 * time.Hour)
+		oldReservation := model.AIBudgetReservation{
+			RequestID: oldRequest.RequestID, UserID: 1, ProjectID: 1, APIKeyID: 1,
+			ReservedAmount: settledAmount, SettledAmount: &settledAmount, Status: model.AIBudgetSettled,
+			DailyPeriodStart: oldDaily, MonthlyPeriodStart: monthly, ExpiresAt: now.Add(time.Hour), ReleasedAt: &completedAt,
+		}
+		if err := db.Create(&oldReservation).Error; err != nil {
+			t.Fatal(err)
+		}
+		current, err := repo.ReserveBudget(ctx, repository.BudgetReservationRequest{
+			RequestID: "g4-cross-period-current", UserID: 1, ProjectID: 1, APIKeyID: 1,
+			Amount: decimal.NewFromInt(5), DailyPeriodStart: daily, MonthlyPeriodStart: monthly, ExpiresAt: now.Add(time.Hour),
+		})
+		if err != nil || current == nil {
+			t.Fatalf("前一日预留在今日完成不能占用今日预算: reservation=%+v err=%v", current, err)
+		}
+		if err := db.Where("request_id IN ?", []string{oldRequest.RequestID, "g4-cross-period-current"}).Delete(&model.AIBudgetReservation{}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Delete(&oldRequest).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Delete(&apiKeyPolicy).Error; err != nil {
+			t.Fatal(err)
+		}
+	})
+
 	t.Run("多SK并发共享Project硬预算且阈值幂等", func(t *testing.T) {
 		var admitted atomic.Int64
 		var rejected atomic.Int64

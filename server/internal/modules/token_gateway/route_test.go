@@ -89,6 +89,7 @@ func TestRegisterRoutes_G4PermissionMatrix(t *testing.T) {
 		{http.MethodPut, "/api/admin/token/resource-policies", "ai_gateway:resource_manage"},
 		{http.MethodPut, "/api/admin/token/budget-policies", "ai_gateway:budget_manage"},
 		{http.MethodPost, "/api/admin/token/compensation-tasks/1/resolve", "ai_gateway:reconcile_manage"},
+		{http.MethodPost, "/api/admin/token/outbox-events/req-1%3Abilling/requeue", "ai_gateway:reconcile_manage"},
 		{http.MethodPost, "/api/admin/token/billing/content-policy/req-1/resolve", "ai_gateway:reconcile_manage"},
 	}
 	for _, test := range cases {

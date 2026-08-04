@@ -1,4 +1,4 @@
--- 000061 AI 网关 G4 内容安全、资源治理、预算与补偿事实表。
+-- 000063 AI 网关 G4 内容安全、资源治理、预算与补偿事实表。
 -- Redis 只保存短期并发与速率租约；MySQL 保存策略版本、审计事实和预算预留，避免形成第二套财务账本。
 
 CREATE TABLE IF NOT EXISTS ai_safety_policy_versions (
@@ -127,7 +127,8 @@ CREATE TABLE IF NOT EXISTS ai_budget_policies (
   CONSTRAINT chk_ai_budget_mode CHECK (mode IN ('disabled','soft','hard')),
   CONSTRAINT chk_ai_budget_limits CHECK (
     (mode = 'disabled' AND daily_limit IS NULL AND monthly_limit IS NULL) OR
-    (mode IN ('soft','hard') AND ((daily_limit IS NOT NULL AND daily_limit > 0) OR (monthly_limit IS NOT NULL AND monthly_limit > 0)))
+    (mode IN ('soft','hard') AND (daily_limit IS NOT NULL OR monthly_limit IS NOT NULL)
+      AND (daily_limit IS NULL OR daily_limit > 0) AND (monthly_limit IS NULL OR monthly_limit > 0))
   )
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI Project 与 SK 日月预算策略';
 

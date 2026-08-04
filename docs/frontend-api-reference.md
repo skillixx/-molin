@@ -2107,7 +2107,7 @@ Wechatpay-Nonce: <随机串>
 
 ### G4 管理页面接口规划
 
-管理后台新增“安全治理”“资源策略”“预算策略”“补偿任务”四个页面；页面和列表读取统一要求 `ai_gateway:view`，写按钮再分别检查 `ai_gateway:safety_manage`、`ai_gateway:resource_manage`、`ai_gateway:budget_manage`、`ai_gateway:reconcile_manage`。接口清单和字段以 `docs/full-api-design.md` 的 G4 节为准；所有列表使用 `{items,page,page_size,total}`。策略创建只提交 `rules`，不得显示可编辑的拒绝文案。策略、处置、预算和补偿写操作必须展示提交中、成功、失败和 409 冲突状态；409 后重新拉取记录，不能覆盖更新。
+管理后台新增“安全治理”“资源策略”“预算策略”“补偿任务”四个页面；页面和列表读取统一要求 `ai_gateway:view`，写按钮再分别检查 `ai_gateway:safety_manage`、`ai_gateway:resource_manage`、`ai_gateway:budget_manage`、`ai_gateway:reconcile_manage`。接口清单和字段以 `docs/full-api-design.md` 的 G4 节为准；所有列表使用 `{items,page,page_size,total}`。策略创建只提交 `rules`，必须提示并校验七类安全底线完整覆盖，不得显示可编辑的拒绝文案。补偿页允许有权限人员对 Outbox dead 事件填写原因后按原 event_id 重试。策略、处置、预算和补偿写操作必须展示提交中、成功、失败和 409 冲突状态；409 后重新拉取记录，不能覆盖更新。
 
 输出审核阻断且 Usage 暂缺时，对账详情页使用 `POST /api/admin/token/billing/content-policy/{request_id}/resolve` 补录四类 Token Usage。按钮只对 `ai_gateway:reconcile_manage` 且已完成管理员二次认证的人员显示；确认框明确展示“用户消费 0 元、平台承担上游成本”。成功后刷新请求、钱包 hold、Usage 和 Outbox 状态，409 时禁止覆盖提交。G4 当前只交付该接口契约，Vue 页面仍属后续前端阶段。
 
@@ -2184,7 +2184,7 @@ Wechatpay-Nonce: <随机串>
   }
   ```
 - **非流式**（`stream=false`/缺省）：原样透传上游 OpenAI 响应体（`choices`/`usage` 等），HTTP 200。
-- **流式**（`stream=true`）：`Content-Type: text/event-stream`，逐 chunk SSE 输出；账本 Finalize 成功后才发送 `data: [DONE]`。客户端断连后后台继续读取可确定的尾部 Usage。
+- **流式**（`stream=true`）：`Content-Type: text/event-stream`，服务端按有界审核段输出，不保证上游单个 chunk 立即透传；账本 Finalize 成功后才发送 `data: [DONE]`。客户端断连后后台继续读取可确定的尾部 Usage。
 - **前置错误**（尚未开始透传时）：返回统一 JSON `{code,error,message,data}`。`error` 为 G3 稳定字符串分类；既有非财务错误可能省略该字段。
 - G3 计量：确定结果且完整一致的 Usage 按价格快照结算；缺失、不一致、结果未知或 SSE 未正常结束时返回 202 或已有待结算状态，即使已看到中间 Usage 也不实扣。`billing_status` 可能为 `held/settlement_pending/settled/released/exception`；**对话内容不落明文日志**。
 - SSE 已开始后，待结算或异常通过 `event: molin.status` 通知，`data` 包含 `request_id` 与 `error`。前端收到后停止展示“已完成”，并调用请求状态接口刷新；不得把 `settlement_pending` 显示为免费或已退款。

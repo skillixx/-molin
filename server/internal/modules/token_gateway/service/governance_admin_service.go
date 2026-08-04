@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 
 type governanceAdminRepository interface {
 	ListSafetyPolicies(context.Context, int, int) ([]model.AISafetyPolicyVersion, int64, error)
+	GetSafetyPolicy(context.Context, uint64) (*model.AISafetyPolicyVersion, error)
 	CreateSafetyPolicy(context.Context, *model.AISafetyPolicyVersion) error
 	PublishSafetyPolicy(context.Context, uint64, uint64, uint64) error
 	RollbackSafetyPolicy(context.Context, uint64, uint64) (*model.AISafetyPolicyVersion, error)
@@ -36,12 +38,23 @@ type governanceAdminRepository interface {
 }
 
 type GovernanceAdminService struct {
-	repo governanceAdminRepository
-	now  func() time.Time
+	repo   governanceAdminRepository
+	outbox outboxDeadRequeuer
+	now    func() time.Time
+}
+
+type outboxDeadRequeuer interface {
+	RequeueDead(context.Context, string, time.Time) error
 }
 
 func NewGovernanceAdminService(repo governanceAdminRepository) *GovernanceAdminService {
 	return &GovernanceAdminService{repo: repo, now: time.Now}
+}
+
+// WithOutboxDeadRequeuer 注入仅允许受控管理员调用的 Outbox 死信重试能力。
+func (s *GovernanceAdminService) WithOutboxDeadRequeuer(outbox outboxDeadRequeuer) *GovernanceAdminService {
+	s.outbox = outbox
+	return s
 }
 
 func (s *GovernanceAdminService) ListPolicies(ctx context.Context, page, pageSize int) ([]model.AISafetyPolicyVersion, int64, error) {
@@ -78,28 +91,46 @@ func validSafetyRules(raw json.RawMessage) bool {
 	}
 	allowed := map[string]bool{"illegal": true, "sexual": true, "gambling": true, "drugs": true, "terror": true, "hate": true, "self_harm": true}
 	seen := map[string]bool{}
+	categories := map[string]bool{}
 	for _, rule := range rules {
 		if strings.TrimSpace(rule.Code) == "" || seen[rule.Code] || !allowed[rule.Category] || len(rule.Keywords) == 0 {
 			return false
 		}
 		seen[rule.Code] = true
+		categories[rule.Category] = true
 		for _, keyword := range rule.Keywords {
-			if strings.TrimSpace(keyword) == "" {
+			normalized := normalizeModerationText(keyword)
+			if normalized == "" || len([]rune(normalized)) > maxSafetyKeywordRunes {
 				return false
 			}
 		}
 	}
-	return true
+	// 发布策略必须覆盖七类平台底线，避免遗漏某一类别后仍被误认为完整策略。
+	return len(categories) == len(allowed)
 }
 
 func (s *GovernanceAdminService) PublishPolicy(ctx context.Context, id, expectedVersion, operatorID uint64) error {
 	if id == 0 || expectedVersion == 0 {
 		return newValidation("策略 ID 和版本号不能为空")
 	}
+	policy, err := s.repo.GetSafetyPolicy(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !validSafetyRules(policy.RulesJSON) {
+		return newValidation("安全策略必须完整覆盖七类底线且关键词合法")
+	}
 	return s.repo.PublishSafetyPolicy(ctx, id, expectedVersion, operatorID)
 }
 
 func (s *GovernanceAdminService) RollbackPolicy(ctx context.Context, id, operatorID uint64) (*model.AISafetyPolicyVersion, error) {
+	policy, err := s.repo.GetSafetyPolicy(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !validSafetyRules(policy.RulesJSON) {
+		return nil, newValidation("历史安全策略不满足当前七类底线，不能直接回滚")
+	}
 	return s.repo.RollbackSafetyPolicy(ctx, id, operatorID)
 }
 
@@ -189,8 +220,10 @@ func (s *GovernanceAdminService) PutBudgetPolicy(ctx context.Context, operatorID
 	}
 	if policy.Mode == model.AIBudgetDisabled {
 		policy.DailyLimit, policy.MonthlyLimit = nil, nil
-	} else if (policy.DailyLimit == nil || policy.DailyLimit.LessThanOrEqual(decimal.Zero)) && (policy.MonthlyLimit == nil || policy.MonthlyLimit.LessThanOrEqual(decimal.Zero)) {
-		return newValidation("启用预算时至少配置一个正数限额")
+	} else if (policy.DailyLimit == nil && policy.MonthlyLimit == nil) ||
+		(policy.DailyLimit != nil && policy.DailyLimit.LessThanOrEqual(decimal.Zero)) ||
+		(policy.MonthlyLimit != nil && policy.MonthlyLimit.LessThanOrEqual(decimal.Zero)) {
+		return newValidation("启用预算时至少配置一个限额，且每个限额必须为正数")
 	}
 	policy.UpdatedBy = operatorID
 	return s.repo.UpsertBudgetPolicy(ctx, &policy, expectedVersion)
@@ -234,6 +267,22 @@ func (s *GovernanceAdminService) ResolveCompensationTask(ctx context.Context, id
 		return newValidation("补偿任务处置参数不合法")
 	}
 	return s.repo.ResolveCompensationTask(ctx, id, expectedUpdatedAt, status)
+}
+
+// RequeueDeadOutbox 将单个 dead 事件按原 event_id 重新排队，消费者继续依赖 event_id 保证幂等。
+func (s *GovernanceAdminService) RequeueDeadOutbox(ctx context.Context, eventID, reason string) error {
+	eventID = strings.TrimSpace(eventID)
+	reason = strings.TrimSpace(reason)
+	if eventID == "" || len(eventID) > 191 {
+		return newValidation("Outbox 事件标识不合法")
+	}
+	if reason == "" || len(reason) > 255 {
+		return newValidation("Outbox 重试原因不合法")
+	}
+	if s == nil || s.outbox == nil {
+		return errors.New("Outbox 重试服务不可用")
+	}
+	return s.outbox.RequeueDead(ctx, eventID, s.now())
 }
 
 func normalizePage(page, pageSize int) (int, int) {

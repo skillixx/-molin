@@ -9,6 +9,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"unicode"
 
 	"golang.org/x/text/unicode/norm"
 
@@ -16,7 +17,11 @@ import (
 	"molin/server/pkg/idgen"
 )
 
-const DefaultSafetyRefusal = "请求内容违反中国大陆相关法律法规或平台安全规范，无法继续处理。"
+const (
+	DefaultSafetyRefusal    = "请求内容违反中国大陆相关法律法规或平台安全规范，无法继续处理。"
+	maxSafetyKeywordRunes   = 256
+	streamSafetyOverlapSize = maxSafetyKeywordRunes - 1
+)
 
 var (
 	ErrContentPolicyViolation = errors.New("内容违反安全策略")
@@ -146,8 +151,13 @@ func (s *SafetyService) digest(content string) string {
 
 func normalizeModerationText(value string) string {
 	normalized := strings.ToLower(norm.NFKC.String(value))
-	replacer := strings.NewReplacer(" ", "", "\t", "", "\r", "", "\n", "", "-", "", "_", "", ".", "", "，", "", "。", "")
-	return replacer.Replace(normalized)
+	return strings.Map(func(char rune) rune {
+		// 空白、标点和不可见格式字符都不参与匹配，防止通过斜杠或零宽字符拆分关键词。
+		if unicode.IsSpace(char) || unicode.IsPunct(char) || unicode.Is(unicode.Cf, char) {
+			return -1
+		}
+		return char
+	}, normalized)
 }
 
 func extractRequestText(body map[string]interface{}) string {
@@ -193,6 +203,39 @@ func extractSSEText(line []byte) string {
 	}
 	var builder strings.Builder
 	appendModerationStrings(&builder, payload)
+	return builder.String()
+}
+
+// extractSSEContinuityText 只提取会跨 chunk 增量拼接的生成字段。
+// model、id、usage 等每段重复元数据仍由 extractSSEText 审核，但不能插入生成文字之间破坏连续匹配。
+func extractSSEContinuityText(line []byte) string {
+	trimmed := strings.TrimSpace(string(line))
+	if !strings.HasPrefix(trimmed, "data:") {
+		return trimmed
+	}
+	data := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
+	if data == "" || data == "[DONE]" {
+		return ""
+	}
+	var payload map[string]interface{}
+	if json.Unmarshal([]byte(data), &payload) != nil {
+		return ""
+	}
+	var builder strings.Builder
+	if choices, ok := payload["choices"].([]interface{}); ok {
+		for _, rawChoice := range choices {
+			choice, ok := rawChoice.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			for _, key := range []string{"delta", "message", "text"} {
+				appendModerationStrings(&builder, choice[key])
+			}
+		}
+	}
+	for _, key := range []string{"content", "output", "output_text", "response", "text"} {
+		appendModerationStrings(&builder, payload[key])
+	}
 	return builder.String()
 }
 

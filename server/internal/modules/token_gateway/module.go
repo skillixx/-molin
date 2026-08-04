@@ -68,7 +68,7 @@ func New(db *gorm.DB, redisClient redis.UniversalClient, tokenProviderKey, apiKe
 		OutboxWorker:      service.NewOutboxWorker(outboxRepo, outboxPublisher),
 		SettlementWorker:  service.NewSettlementWorker(billingService),
 		GovernanceService: governanceService,
-		GovernanceAdmin:   service.NewGovernanceAdminService(governanceRepo),
+		GovernanceAdmin:   service.NewGovernanceAdminService(governanceRepo).WithOutboxDeadRequeuer(outboxRepo),
 	}
 	// 未配置 HMAC 密钥时不注册 Project SK 管理能力，防止生成不可安全校验的密钥。
 	if apiKeyHMACSecret != "" {

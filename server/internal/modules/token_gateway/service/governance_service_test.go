@@ -15,6 +15,7 @@ import (
 type memoryBudgetRepository struct {
 	steps       *[]string
 	reserveErr  error
+	releaseErr  error
 	reserved    bool
 	released    int
 	synced      int
@@ -35,7 +36,18 @@ func (r *memoryBudgetRepository) ReserveBudget(_ context.Context, _ repository.B
 }
 func (r *memoryBudgetRepository) ReleaseBudget(context.Context, string) error {
 	r.released++
-	return nil
+	return r.releaseErr
+}
+
+func TestGovernanceRecordsCompensationWhenBudgetReleaseFails(t *testing.T) {
+	budget := &memoryBudgetRepository{reserved: true, releaseErr: errors.New("db down")}
+	governance := NewGovernanceService(nil, budget, &memoryResourceLimiter{})
+	governance.AbortBeforeUpstream(context.Background(), &GovernanceTicket{
+		Subject: SafetySubject{RequestID: "req-budget-release-failed"}, Resource: &ResourceTicket{}, BudgetReserved: true,
+	})
+	if budget.released != 1 || budget.compensated != 1 {
+		t.Fatalf("预算释放失败必须进入补偿: released=%d compensated=%d", budget.released, budget.compensated)
+	}
 }
 func (r *memoryBudgetRepository) SyncBudgetFromRequest(context.Context, string) (bool, error) {
 	r.synced++

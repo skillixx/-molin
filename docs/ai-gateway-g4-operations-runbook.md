@@ -63,6 +63,8 @@ AI_GATEWAY_MODEL_TPM=10000000
 | SSE 内容违规 | 当前违规段不外泄；保留上游 Usage/成本，用户扣费为 0 | 通过 request_id 查安全事件、钱包 hold 释放和 `billing_content_policy_waived` 事件，不重放上游 |
 | RabbitMQ 不可用 | G3 Outbox 保留 | 恢复 RabbitMQ，按 G3 手册重放，不改 G4 预算金额 |
 
+Outbox 进入 dead 后，先按 event_id 核对请求、钱包、Usage 与既有消费事件，确认原事件仍可按消费者幂等键安全重放，再调用 `POST /api/admin/token/outbox-events/{event_id}/requeue`，请求体为 `{"reason":"核对结论和重试原因"}`。接口要求 `ai_gateway:reconcile_manage`、管理员二次认证和前置审计；非 dead 事件返回 409。禁止直接 SQL 改状态或生成新 event_id。
+
 ## 6. 只读排查 SQL
 
 ```sql

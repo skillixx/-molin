@@ -1,4 +1,4 @@
--- 000059 AI 网关 G2 Project、Project SK 与显式模型权限 Expand Migration。
+-- 000061 AI 网关 G2 Project、Project SK 与显式模型权限 Expand Migration。
 -- 本迁移只扩展鉴权和归属结构，不启用价格、钱包预占、扣费、结算或旧用量双写。
 
 SET @g2_add_project_id = (

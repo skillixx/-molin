@@ -413,6 +413,15 @@ func (s *RequestOrchestratorService) Execute(ctx context.Context, requestID stri
 		StartedAt: started, Outcome: "running",
 	}
 	if err := s.repo.StartRequest(context.WithoutCancel(ctx), requestID, ptrAttempt(running.ToLedgerModel(requestID, ExecutionUsage{}))); err != nil {
+		// 上游尚未调用；若 G3 已完成钱包预占，必须形成 request_not_sent 终态并原子释放冻结金额。
+		if s.billing != nil {
+			abortCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultFinalizationTimeout)
+			abortErr := s.billing.AbortBeforeExecution(abortCtx, requestID, running)
+			cancel()
+			if abortErr != nil {
+				return errors.Join(err, abortErr)
+			}
+		}
 		return err
 	}
 	executionRequest := ExecutionRequest{
@@ -547,7 +556,8 @@ func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink Str
 	ticket := s.activeGovernanceTicket(requestID)
 	var pendingPayload bytes.Buffer
 	var pendingText strings.Builder
-	var safeTail string
+	var pendingContinuityText strings.Builder
+	var normalizedSafeTail string
 	var moderationErr error
 	outputBlocked := false
 	flushSegment := func(force bool) {
@@ -556,7 +566,13 @@ func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink Str
 		}
 		segment := pendingText.String()
 		if ticket != nil && strings.TrimSpace(segment) != "" && moderationErr == nil {
-			_, err := s.governance.safety.ModerateOutput(context.WithoutCancel(ctx), ticket.Subject, safeTail+segment)
+			continuityText := normalizeModerationText(pendingContinuityText.String())
+			// 当前段审核所有公开字段；额外追加纯生成内容连续视图，避免每段重复的 model/id 元数据打断跨段关键词。
+			moderationText := segment
+			if continuityText != "" {
+				moderationText += "\n" + normalizedSafeTail + continuityText
+			}
+			_, err := s.governance.safety.ModerateOutput(context.WithoutCancel(ctx), ticket.Subject, moderationText)
 			if err != nil {
 				moderationErr = err
 				outputBlocked = true
@@ -566,7 +582,10 @@ func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink Str
 				}
 				_ = s.governance.safety.MarkRequest(context.WithoutCancel(ctx), requestID, status)
 			} else {
-				safeTail = trailingText(safeTail+segment, 128)
+				// 保留规范化后的最大关键词重叠区，原始分隔符再多也不能把跨段关键词挤出窗口。
+				if continuityText != "" {
+					normalizedSafeTail = trailingText(normalizedSafeTail+continuityText, streamSafetyOverlapSize)
+				}
 			}
 		}
 		if !outputBlocked && !clientDisconnected {
@@ -576,6 +595,7 @@ func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink Str
 		}
 		pendingPayload.Reset()
 		pendingText.Reset()
+		pendingContinuityText.Reset()
 	}
 	for scanner.Scan() {
 		line := append([]byte(nil), scanner.Bytes()...)
@@ -601,6 +621,7 @@ func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink Str
 			pendingPayload.Write(chunk.PublicLine)
 			pendingPayload.WriteByte('\n')
 			pendingText.WriteString(extractSSEText(chunk.PublicLine))
+			pendingContinuityText.WriteString(extractSSEContinuityText(chunk.PublicLine))
 			flushSegment(pendingPayload.Len() >= maxModerationSegmentBytes)
 		}
 	}

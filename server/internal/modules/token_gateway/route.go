@@ -89,6 +89,7 @@ func RegisterRoutes(
 	mux.Handle("GET /api/admin/token/budget-alerts", governanceAdmin("ai_gateway:view", gh.ListBudgetAlerts))
 	mux.Handle("GET /api/admin/token/compensation-tasks", governanceAdmin("ai_gateway:view", gh.ListCompensationTasks))
 	mux.Handle("POST /api/admin/token/compensation-tasks/{id}/resolve", governanceAdmin("ai_gateway:reconcile_manage", gh.ResolveCompensationTask))
+	mux.Handle("POST /api/admin/token/outbox-events/{event_id}/requeue", governanceAdmin("ai_gateway:reconcile_manage", gh.RequeueDeadOutbox))
 }
 
 // RegisterUserRoutes 注册 token_gateway 用户端路由（Project SK + 网页登录态）。

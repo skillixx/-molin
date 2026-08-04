@@ -620,6 +620,33 @@ func TestRequestOrchestratorSSEBlocksViolatingSegmentWithoutLeakAndPersistsUsage
 	}
 }
 
+func TestRequestOrchestratorSSEBlocksNormalizedKeywordAcrossSegments(t *testing.T) {
+	store := newMemoryOrchestratorStore()
+	orchestrator := newTestOrchestrator(store)
+	separators := strings.Repeat("/\u200b", 300)
+	stream := "data: {\"choices\":[{\"delta\":{\"content\":\"网。\"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{\"content\":\"" + separators + "络赌博推广。\"}}]}\n\n" +
+		"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}\n\n" +
+		"data: [DONE]\n\n"
+	orchestrator.SetExecutionDriverSelector(staticExecutionDriverSelector{driver: &fakeOrchestratorDriver{streamBody: io.NopCloser(strings.NewReader(stream))}})
+	prepared, err := orchestrator.Prepare(context.Background(), PrepareCommand{RequestID: "req-sse-cross-segment", UserID: 3, APIKeyID: 7, LogicalModel: "molin/qwen-turbo", Stream: true, Body: map[string]interface{}{"model": "molin/qwen-turbo", "stream": true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules, _ := json.Marshal([]safetyRule{{Code: "gambling-001", Category: "gambling", Keywords: []string{"网络赌博"}}})
+	safetyRepo := &memorySafetyRepository{policy: &model.AISafetyPolicyVersion{ID: 1, VersionNo: 1, Status: model.AISafetyPolicyActive, RefusalMessage: DefaultSafetyRefusal, RulesJSON: rules}}
+	orchestrator.governance = NewGovernanceService(NewSafetyService(safetyRepo, "0123456789abcdef0123456789abcdef"), &memoryBudgetRepository{}, &memoryResourceLimiter{})
+	orchestrator.activeTickets.Store(prepared.RequestID, &GovernanceTicket{Subject: SafetySubject{RequestID: prepared.RequestID, UserID: 3, ProjectID: 8, APIKeyID: 7}, Resource: &ResourceTicket{}})
+	defer orchestrator.activeTickets.Delete(prepared.RequestID)
+	sink := &memorySink{}
+	if err := orchestrator.Execute(context.Background(), prepared.RequestID, sink); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(sink.body.String(), "络赌博推广") || !strings.Contains(sink.body.String(), "molin.content_policy") {
+		t.Fatalf("跨段且含大量可删除字符的违规内容不得泄漏: %s", sink.body.String())
+	}
+}
+
 func TestRequestOrchestratorSSEBlocksViolatingToolArguments(t *testing.T) {
 	store := newMemoryOrchestratorStore()
 	orchestrator := newTestOrchestrator(store)
