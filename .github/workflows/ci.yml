@@ -86,6 +86,12 @@ jobs:
         shell: pwsh
         run: ./scripts/verify-sms-phase5-proxy-network-plan.ps1 -SelfTest
 
+      - name: 校验测试服回滚点与告警通知只读预检资产
+        shell: pwsh
+        run: |
+          python tests/sms/phase5_recovery_notification_preflight_contract.py
+          ./scripts/verify-sms-phase5-test-server-recovery-readiness.ps1 -SelfTest
+
       # 测试服只读审计依赖专用 SSH 凭据，不在不可信 PR 上自动连接外部环境；部署窗口由运维手工执行对应脚本。
 
       - name: 使用 promtool 校验告警规则

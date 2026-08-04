@@ -112,7 +112,9 @@ $requiredFiles = @(
     "server\migrations\000059_add_sms_phase2_management.up.sql",
     "infra\nginx\verify_forwarded_headers.py",
     "infra\prometheus\email-alerts.yml",
-    "scripts\verify-sms-phase5-proxy-network-plan.ps1"
+    "scripts\verify-sms-phase5-proxy-network-plan.ps1",
+    "scripts\verify-sms-phase5-test-server-recovery-readiness.ps1",
+    "scripts\verify-sms-phase5-test-server-recovery-readiness.sh"
 )
 foreach ($relative in $requiredFiles) {
     if (-not (Test-Path -LiteralPath (Join-Path $root $relative) -PathType Leaf)) {
