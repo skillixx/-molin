@@ -261,7 +261,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | 阿里云短信验证码阶段 2（模板同步、场景绑定、9 个管理 API 与安全测试发送） | `modules/sms/`、`modules/auth/`、`modules/iam/`、`server/migrations/000059*` | ✅ PR #315 已于 2026-08-04 Squash 合并至 `main`（`9e50ee1`）；五独立模板同步/绑定、6 条真实收件、九 API、QA、产品及正式评审均通过，P0/P1/P2/P3 均为 0，阶段 2 正式闭环 |
 | 阿里云短信验证码阶段 3（管理后台模板页面） | `web/admin-console/src/views/sms/`、`src/api/sms.ts`、`src/types/sms.ts` | ✅ PR #317 已采用 Squash and merge 合并至 `main`（`e7f29d5`），阶段 3 正式闭环 |
 | 阿里云短信验证码阶段 4（五场景全链路验收） | `modules/auth/`、`modules/sms/`、`web/admin-console/`、`web/user-console/`、`docs/sms-phase4-*` | ✅ PR #320 已采用 Merge commit 合并至 `main`（`c9b4783`），阶段 4 正式闭环；阶段 4 自身未部署、未连接阿里云、未发送真实短信 |
-| 阿里云短信验证码阶段 5（灰度部署、代理核验与观察） | `modules/sms/`、内部 metrics、`infra/nginx/`、`infra/prometheus/`、`docs/sms-phase5-*` | 🟡 阶段 5A 进行中：已完成主线与测试服只读审计、短信低基数指标、并发测试、告警规则、CI 发布安全门禁、四档浏览器检查和回滚 Dry Run；测试服 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`，但 `TRUSTED_PROXY_IPS` 为空，端到端代理来源链未通过；尚未部署、未执行 migration、未发短信、未进入生产灰度 |
+| 阿里云短信验证码阶段 5（灰度部署、代理核验与观察） | `modules/sms/`、内部 metrics、`infra/nginx/`、`infra/prometheus/`、`docs/sms-phase5-*` | 🟡 阶段 5A 关闭态部署已完成：分支已同步 `origin/main@60b569f`，测试服已部署固定代理专网、可信代理配置、新后端和 4 条短信告警；health/ready、双代理 `503/50300`、40+5+5 指标序列、Prometheus 抓取、备份完整性均通过，数据库和 Provider 调用零增量、真实短信 0 条。真实 Canary、生产发布、24 小时观察、QA/产品验收及 PR/CI/合并仍待独立门禁 |
 
 ### 后端 B（product / order / billing / finance_consumer）
 

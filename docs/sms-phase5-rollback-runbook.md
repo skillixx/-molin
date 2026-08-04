@@ -38,3 +38,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-ro
 ```
 
 两次均输出 `rollback_dry_run=passed`，远端连接、配置写入、重启、migration 和真实短信均为 0。
+
+## 5. 测试服实备份点
+
+2026-08-04 关闭态部署前已建立 `/home/pc/molin/backups/sms-phase5-20260804T120056Z`。目录权限 700、文件权限
+600，`SHA256SUMS` 全量校验通过；旧 API SHA-256 为
+`c18aa8d0efe51e2b9cccf924b275983741dcd5194fa3bb25e1d292888b926cc9`。本轮后端与 Prometheus 部署脚本均带
+自动恢复路径；一次监控验证条件写错时已实际触发规则文件回滚并确认 Prometheus 恢复就绪，修正验证条件后再部署成功。
