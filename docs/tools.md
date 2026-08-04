@@ -480,10 +480,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 | **使用者** | 运维 / 测试 / 产品经理 |
 | **涉及模块** | 测试服回滚、固定代理、journald、告警通知链 |
 | **涉及功能** | 回滚材料只读预检、安全回滚候选、日志留存策略只读审计与获批后受控变更 |
-| **代码位置** | `scripts/verify-sms-phase5-test-server-recovery-readiness.ps1`、`scripts/prepare-sms-phase5-test-server-rollback-candidate.ps1`、`scripts/verify-sms-phase5-test-server-log-retention.ps1`、`scripts/apply-sms-phase5-test-server-log-retention.ps1` 及各自 Bash payload |
+| **代码位置** | `scripts/sms-phase5-test-server-ssh.ps1`、`scripts/verify-sms-phase5-test-server-recovery-readiness.ps1`、`scripts/prepare-sms-phase5-test-server-rollback-candidate.ps1`、`scripts/verify-sms-phase5-test-server-log-retention.ps1`、`scripts/apply-sms-phase5-test-server-log-retention.ps1` 及各自 Bash payload |
 
 **作用：** 将“材料存在”“候选可生成”“配置完整”“运行时已验证”拆成独立证据，禁止用旧环境整份覆盖当前固定代理配置，
-也禁止把 journald 配置存在误报为策略已批准。三个入口都支持或配有离线安全契约；真实候选生成会写远端文件，必须单独授权。
+也禁止把 journald 配置存在误报为策略已批准。五个阶段 5 远端包装器统一调用共享 SSH 目标与 ED25519 指纹校验，避免固定身份规则分叉；各入口都支持或配有离线安全契约，真实候选生成会写远端文件，必须单独授权。
 
 ```powershell
 # 本地离线检查，不连接测试服

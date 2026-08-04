@@ -12,6 +12,8 @@
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "sms-phase5-test-server-ssh.ps1")
+Assert-SmsPhase5FixedTestServerTarget -ServerHost $ServerHost -SSHPort $SSHPort -SSHUser $SSHUser
 
 # 本变更资产只允许固定测试服；生产环境和其他账号必须另建审批与脚本。
 if ($ServerHost -cne "8.130.9.163" -or $SSHUser -cne "pc" -or $SSHPort -ne 10003) {
@@ -85,42 +87,8 @@ if ($Authorization -cne "APPROVE_TEST_JOURNALD_RETENTION") {
     throw "远端变更必须同时提供固定授权短语"
 }
 
-# 只有双门禁通过后才读取固定 SSH 身份，避免计划模式产生任何远端或身份副作用。
-$knownHostsPath = [IO.Path]::GetFullPath((Join-Path $env:USERPROFILE ".ssh\known_hosts"))
-if (-not (Test-Path -LiteralPath $knownHostsPath -PathType Leaf) -or
-    ([IO.FileInfo]$knownHostsPath).Attributes.HasFlag([IO.FileAttributes]::ReparsePoint)) {
-    throw "固定 known_hosts 文件不存在或属于重解析路径"
-}
-$knownHostLines = @(& ssh-keygen -F "[8.130.9.163]:10003" -f $knownHostsPath)
-if ($LASTEXITCODE -ne 0) {
-    throw "known_hosts 中缺少固定测试服身份"
-}
-$ed25519Keys = @()
-foreach ($line in $knownHostLines) {
-    $trimmed = $line.Trim()
-    if ($trimmed.Length -eq 0 -or $trimmed.StartsWith("#")) {
-        continue
-    }
-    $parts = @($trimmed -split '\s+')
-    if ($parts.Count -ge 3 -and $parts[1] -ceq "ssh-ed25519") {
-        $ed25519Keys += $parts[2]
-    }
-}
-if ($ed25519Keys.Count -ne 1) {
-    throw "固定测试服 ED25519 公钥数量异常"
-}
-$sha256 = [Security.Cryptography.SHA256]::Create()
-try {
-    $fingerprint = "SHA256:" + [Convert]::ToBase64String(
-        $sha256.ComputeHash([Convert]::FromBase64String($ed25519Keys[0]))
-    ).TrimEnd('=')
-}
-finally {
-    $sha256.Dispose()
-}
-if ($fingerprint -cne "SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I") {
-    throw "固定测试服 ED25519 公钥指纹不匹配"
-}
+# 只有双门禁通过后才读取 known_hosts，计划模式不会读取 SSH 身份或连接远端。
+$knownHostsPath = Assert-SmsPhase5FixedTestServerIdentity -ServerHost $ServerHost -SSHPort $SSHPort -SSHUser $SSHUser
 
 $replacements = [ordered]@{
     "__SYSTEM_MAX_USE__" = $SystemMaxUse

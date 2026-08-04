@@ -6,6 +6,8 @@
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "sms-phase5-test-server-ssh.ps1")
+Assert-SmsPhase5FixedTestServerTarget -ServerHost $ServerHost -SSHPort $SSHPort -SSHUser $SSHUser
 $payloadPath = Join-Path $PSScriptRoot "verify-sms-phase5-test-server-log-retention.sh"
 $payload = Get-Content -LiteralPath $payloadPath -Raw -Encoding UTF8
 
@@ -46,47 +48,8 @@ if ($SelfTest) {
     exit 0
 }
 
-# 该只读授权仅适用于阶段 5 固定测试服，禁止转向其他主机、账号或端口。
-if ($ServerHost -cne "8.130.9.163" -or $SSHUser -cne "pc" -or $SSHPort -ne 10003) {
-    throw "SSH target must be the fixed phase 5 test server"
-}
-
-# 固定 known_hosts 普通文件并核对唯一 ED25519 指纹，避免地址被劫持后泄露运行状态。
-$knownHostsPath = [IO.Path]::GetFullPath((Join-Path $env:USERPROFILE ".ssh\known_hosts"))
-if (-not (Test-Path -LiteralPath $knownHostsPath -PathType Leaf) -or
-    ([IO.FileInfo]$knownHostsPath).Attributes.HasFlag([IO.FileAttributes]::ReparsePoint)) {
-    throw "Fixed known_hosts file is missing or is a reparse path"
-}
-$knownHostLines = @(& ssh-keygen -F "[8.130.9.163]:10003" -f $knownHostsPath)
-if ($LASTEXITCODE -ne 0) {
-    throw "Fixed test server identity is missing from known_hosts"
-}
-$ed25519Keys = @()
-foreach ($line in $knownHostLines) {
-    $trimmed = $line.Trim()
-    if ($trimmed.Length -eq 0 -or $trimmed.StartsWith("#")) {
-        continue
-    }
-    $parts = @($trimmed -split '\s+')
-    if ($parts.Count -ge 3 -and $parts[1] -ceq "ssh-ed25519") {
-        $ed25519Keys += $parts[2]
-    }
-}
-if ($ed25519Keys.Count -ne 1) {
-    throw "Fixed test server ED25519 key count is invalid"
-}
-$sha256 = [Security.Cryptography.SHA256]::Create()
-try {
-    $fingerprint = "SHA256:" + [Convert]::ToBase64String(
-        $sha256.ComputeHash([Convert]::FromBase64String($ed25519Keys[0]))
-    ).TrimEnd('=')
-}
-finally {
-    $sha256.Dispose()
-}
-if ($fingerprint -cne "SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I") {
-    throw "Fixed test server ED25519 fingerprint does not match"
-}
+# 只读执行前统一核对固定测试服与唯一 ED25519 指纹。
+$knownHostsPath = Assert-SmsPhase5FixedTestServerIdentity -ServerHost $ServerHost -SSHPort $SSHPort -SSHUser $SSHUser
 
 $payload = $payload -replace "`r`n", "`n"
 $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payload))

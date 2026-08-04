@@ -12,6 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 POWERSHELL = ROOT / "scripts" / "verify-sms-phase5-test-server-log-retention.ps1"
+SSH_HELPER = ROOT / "scripts" / "sms-phase5-test-server-ssh.ps1"
 PAYLOAD = ROOT / "scripts" / "verify-sms-phase5-test-server-log-retention.sh"
 READINESS = ROOT / "scripts" / "verify-sms-phase5-readiness.ps1"
 CI = ROOT / ".github" / "workflows" / "ci.yml"
@@ -22,7 +23,9 @@ class LogRetentionPreflightContractTest(unittest.TestCase):
     """保证日志留存审计保持只读，并清楚区分运行状态与策略证据。"""
 
     def setUp(self) -> None:
-        self.ps = POWERSHELL.read_text(encoding="utf-8-sig")
+        self.ps = POWERSHELL.read_text(encoding="utf-8-sig") + SSH_HELPER.read_text(
+            encoding="utf-8-sig"
+        )
         self.sh = PAYLOAD.read_text(encoding="utf-8")
         self.readiness = READINESS.read_text(encoding="utf-8-sig")
         self.ci = CI.read_text(encoding="utf-8")

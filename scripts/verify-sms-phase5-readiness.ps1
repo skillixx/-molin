@@ -113,6 +113,7 @@ $requiredFiles = @(
     "infra\nginx\verify_forwarded_headers.py",
     "infra\prometheus\email-alerts.yml",
     "scripts\verify-sms-phase5-proxy-network-plan.ps1",
+    "scripts\sms-phase5-test-server-ssh.ps1",
     "scripts\verify-sms-phase5-test-server-readonly.ps1",
     "scripts\verify-sms-phase5-test-server-readonly.sh",
     "scripts\verify-sms-phase5-test-server-recovery-readiness.ps1",

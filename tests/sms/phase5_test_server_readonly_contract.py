@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 POWERSHELL = ROOT / "scripts" / "verify-sms-phase5-test-server-readonly.ps1"
+SSH_HELPER = ROOT / "scripts" / "sms-phase5-test-server-ssh.ps1"
 PAYLOAD = ROOT / "scripts" / "verify-sms-phase5-test-server-readonly.sh"
 READINESS = ROOT / "scripts" / "verify-sms-phase5-readiness.ps1"
 CI = ROOT / ".github" / "workflows" / "ci.yml"
@@ -19,7 +20,9 @@ class TestServerReadonlyContractTest(unittest.TestCase):
     """锁定关闭态审计的目标身份、只读边界和证据口径。"""
 
     def setUp(self) -> None:
-        self.ps = POWERSHELL.read_text(encoding="utf-8-sig")
+        self.ps = POWERSHELL.read_text(encoding="utf-8-sig") + SSH_HELPER.read_text(
+            encoding="utf-8-sig"
+        )
         self.sh = PAYLOAD.read_text(encoding="utf-8")
         self.readiness = READINESS.read_text(encoding="utf-8-sig")
         self.ci = CI.read_text(encoding="utf-8")

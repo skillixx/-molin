@@ -19,12 +19,10 @@
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "sms-phase5-test-server-ssh.ps1")
+Assert-SmsPhase5FixedTestServerTarget -ServerHost $ServerHost -SSHPort $SSHPort -SSHUser $SSHUser
 
 # 关闭态只读批准仅适用于固定测试服，参数转向其他目标时失败关闭。
-if ($ServerHost -cne "8.130.9.163" -or $SSHUser -cne "pc" -or $SSHPort -ne 10003) {
-    throw "SSH 目标必须固定为阶段 5 测试服务器"
-}
-
 # 所有替换值先限定为数字、规范网络标识或哈希，避免参数进入远端 Bash 源码后产生命令注入。
 foreach ($port in @($PrometheusPort, $AdminPort, $UserPort)) {
     if ($port -lt 1 -or $port -gt 65535) {
@@ -93,42 +91,8 @@ if ($SelfTest) {
     exit 0
 }
 
-# 固定 known_hosts 普通文件并核对唯一 ED25519 指纹，避免审计连接到错误目标。
-$knownHostsPath = [IO.Path]::GetFullPath((Join-Path $env:USERPROFILE ".ssh\known_hosts"))
-if (-not (Test-Path -LiteralPath $knownHostsPath -PathType Leaf) -or
-    ([IO.FileInfo]$knownHostsPath).Attributes.HasFlag([IO.FileAttributes]::ReparsePoint)) {
-    throw "固定 known_hosts 文件不存在或属于重解析路径"
-}
-$knownHostLines = @(& ssh-keygen -F "[8.130.9.163]:10003" -f $knownHostsPath)
-if ($LASTEXITCODE -ne 0) {
-    throw "known_hosts 中缺少固定测试服身份"
-}
-$ed25519Keys = @()
-foreach ($line in $knownHostLines) {
-    $trimmed = $line.Trim()
-    if ($trimmed.Length -eq 0 -or $trimmed.StartsWith("#")) {
-        continue
-    }
-    $parts = @($trimmed -split '\s+')
-    if ($parts.Count -ge 3 -and $parts[1] -ceq "ssh-ed25519") {
-        $ed25519Keys += $parts[2]
-    }
-}
-if ($ed25519Keys.Count -ne 1) {
-    throw "固定测试服 ED25519 公钥数量异常"
-}
-$sha256 = [Security.Cryptography.SHA256]::Create()
-try {
-    $fingerprint = "SHA256:" + [Convert]::ToBase64String(
-        $sha256.ComputeHash([Convert]::FromBase64String($ed25519Keys[0]))
-    ).TrimEnd('=')
-}
-finally {
-    $sha256.Dispose()
-}
-if ($fingerprint -cne "SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I") {
-    throw "固定测试服 ED25519 公钥指纹不匹配"
-}
+# 只读执行前统一核对固定测试服与唯一 ED25519 指纹。
+$knownHostsPath = Assert-SmsPhase5FixedTestServerIdentity -ServerHost $ServerHost -SSHPort $SSHPort -SSHUser $SSHUser
 
 $replacements = [ordered]@{
     "__PROMETHEUS_PORT__" = $PrometheusPort.ToString()

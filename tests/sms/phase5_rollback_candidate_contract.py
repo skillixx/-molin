@@ -14,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 POWERSHELL = ROOT / "scripts" / "prepare-sms-phase5-test-server-rollback-candidate.ps1"
+SSH_HELPER = ROOT / "scripts" / "sms-phase5-test-server-ssh.ps1"
 PAYLOAD = ROOT / "scripts" / "prepare-sms-phase5-test-server-rollback-candidate.sh"
 READINESS = ROOT / "scripts" / "verify-sms-phase5-readiness.ps1"
 CI = ROOT / ".github" / "workflows" / "ci.yml"
@@ -23,7 +24,9 @@ class RollbackCandidateContractTest(unittest.TestCase):
     """确保默认执行不会连接远端，真实写入必须经过双重人工门禁。"""
 
     def setUp(self) -> None:
-        self.ps = POWERSHELL.read_text(encoding="utf-8-sig")
+        self.ps = POWERSHELL.read_text(encoding="utf-8-sig") + SSH_HELPER.read_text(
+            encoding="utf-8-sig"
+        )
         self.sh = PAYLOAD.read_text(encoding="utf-8")
         self.readiness = READINESS.read_text(encoding="utf-8-sig")
         self.ci = CI.read_text(encoding="utf-8")

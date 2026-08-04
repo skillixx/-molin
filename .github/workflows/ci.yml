@@ -91,6 +91,9 @@ jobs:
           python tests/sms/phase5_recovery_notification_preflight_contract.py
           bash -n scripts/verify-sms-phase5-test-server-recovery-readiness.sh
 
+      - name: 校验阶段 5 固定测试服 SSH 身份共享契约
+        run: python tests/sms/phase5_ssh_identity_contract.py
+
       - name: 校验测试服关闭态只读审计资产
         run: |
           python tests/sms/phase5_test_server_readonly_contract.py
