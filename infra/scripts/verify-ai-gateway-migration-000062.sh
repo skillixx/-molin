@@ -290,10 +290,17 @@ docker run --rm --network "${network_name}" \
   golang:1.25 \
   go test -count=1 ./internal/modules/token_gateway/service -run '^TestG3RabbitMQOutboxIntegration$'
 
+# 在 down 前记录集成测试生成的全部请求事实；后续只验证迁移不会丢失事实，避免新增合法用例时维护脆弱的固定总数。
+retained_requests_before="$(mysql_exec -e "SELECT COUNT(*) FROM ai_requests WHERE request_id LIKE 'g3-%'")"
+if [[ ! "${retained_requests_before}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "G3_MYSQL=FAILED reason=pre_down_fact_count_invalid actual=${retained_requests_before}"
+  exit 2
+fi
+
 apply_file "$(basename "${g3_down}")"
 apply_file "$(basename "${g3_up}")"
-# 全链路当前生成 32 条请求事实，包含缺省 max_tokens、请求前映射失败释放、零金额结算和损坏 attempt 转人工异常用例。
-assert_scalar "SELECT COUNT(*) FROM ai_requests WHERE request_id LIKE 'g3-%'" "32" "down_reup_fact_retention"
+# down/re-up 后请求事实总数必须与执行前完全一致，证明扩展迁移不会删除财务事实。
+assert_scalar "SELECT COUNT(*) FROM ai_requests WHERE request_id LIKE 'g3-%'" "${retained_requests_before}" "down_reup_fact_retention"
 assert_scalar "SELECT COUNT(*) FROM ai_price_versions WHERE id=1 AND status='suspended'" "1" "price_fact_retention"
 assert_scalar "SELECT COUNT(*) FROM wallets WHERE balance_amount < 0 OR frozen_amount < 0" "0" "non_negative_wallets"
 assert_scalar "SELECT COUNT(*) FROM token_usage_logs" "0" "legacy_ledger_not_written"
