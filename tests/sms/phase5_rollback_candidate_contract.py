@@ -35,6 +35,12 @@ class RollbackCandidateContractTest(unittest.TestCase):
         self.assertIn("必须显式使用 -SelfTest 或 -Execute", self.ps)
         self.assertIn("BatchMode=yes", self.ps)
         self.assertIn("StrictHostKeyChecking=yes", self.ps)
+        self.assertIn('$ServerHost -cne "8.130.9.163"', self.ps)
+        self.assertIn('$SSHUser -cne "pc"', self.ps)
+        self.assertIn("$SSHPort -ne 10003", self.ps)
+        self.assertIn("HostKeyAlgorithms=ssh-ed25519", self.ps)
+        self.assertIn("UserKnownHostsFile=", self.ps)
+        self.assertIn("SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I", self.ps)
         self.assertIn("remote_connections=0", self.ps)
         self.assertIn("remote_files_written=0", self.ps)
 
@@ -58,6 +64,8 @@ class RollbackCandidateContractTest(unittest.TestCase):
         self.assertIn("O_DIRECTORY", self.sh)
         self.assertIn("dir_fd", self.sh)
         self.assertIn("follow_symlinks=False", self.sh)
+        self.assertIn('trusted_items == {"172.20.250.0/28"}', self.sh)
+        self.assertNotIn('{"172.20.250.2", "172.20.250.3"}.issubset(trusted_items)', self.sh)
         self.assertNotIn("SMS_ENABLED=true", self.sh)
         self.assertNotRegex(self.sh, r"(?m)^\s*(?:source|\.)\s+")
         self.assertNotRegex(self.sh, r"(?m)^\s*(?:systemctl|docker|curl|wget|mysql|redis-cli)\b")
@@ -148,6 +156,31 @@ class RollbackCandidateContractTest(unittest.TestCase):
             )
             self.assertNotEqual(invalid.returncode, 0)
             self.assertFalse(invalid_candidate.exists())
+
+            mixed_source = temporary_path / ".env.mixed"
+            mixed_source.write_text(
+                generated.replace(
+                    "TRUSTED_PROXY_IPS=172.20.250.0/28",
+                    "TRUSTED_PROXY_IPS=172.20.250.0/28,0.0.0.0/0",
+                ),
+                encoding="utf-8",
+            )
+            mixed_candidate = root / "candidate-20260804T150002Z.env"
+            mixed = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    code,
+                    mixed_source.as_posix(),
+                    root.as_posix(),
+                    mixed_candidate.as_posix(),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(mixed.returncode, 0)
+            self.assertFalse(mixed_candidate.exists())
 
     def test_assets_are_part_of_readiness_and_ci(self) -> None:
         self.assertIn(POWERSHELL.name, self.readiness)

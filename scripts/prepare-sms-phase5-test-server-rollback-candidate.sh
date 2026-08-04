@@ -78,8 +78,8 @@ if not required_keys.issubset(seen_keys):
 
 trusted_items = {item.strip() for item in values["TRUSTED_PROXY_IPS"].split(",") if item.strip()}
 fixed_proxy_compatible = (
-    "172.20.250.0/28" in trusted_items
-    or {"172.20.250.2", "172.20.250.3"}.issubset(trusted_items)
+    trusted_items == {"172.20.250.0/28"}
+    or trusted_items == {"172.20.250.2", "172.20.250.3"}
 )
 if not fixed_proxy_compatible:
     raise SystemExit(2)
@@ -158,11 +158,17 @@ try:
     )
     mode = stat.S_IMODE(candidate_stat.st_mode)
     mode_valid = mode == 0o600 if os.name != "nt" else True
-    if not mode_valid or not stat.S_ISREG(candidate_stat.st_mode):
+    owner_valid = candidate_stat.st_uid == os.getuid() if hasattr(os, "getuid") else True
+    if not mode_valid or not owner_valid or not stat.S_ISREG(candidate_stat.st_mode):
         raise OSError("候选配置权限异常")
+    if root_descriptor is not None:
+        os.fsync(root_descriptor)
 except BaseException:
     if descriptor is not None:
-        os.close(descriptor)
+        try:
+            os.close(descriptor)
+        except OSError:
+            pass
     if created:
         try:
             if os.name == "nt":
@@ -174,9 +180,15 @@ except BaseException:
     raise
 finally:
     if root_descriptor is not None:
-        os.close(root_descriptor)
+        try:
+            os.close(root_descriptor)
+        except OSError:
+            pass
     if parent_descriptor is not None:
-        os.close(parent_descriptor)
+        try:
+            os.close(parent_descriptor)
+        except OSError:
+            pass
 PY
 
 printf 'rollback_candidate=passed\n'

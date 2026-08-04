@@ -19,11 +19,9 @@ if ($SelfTest -and $Execute) {
 if (-not $SelfTest -and -not $Execute) {
     throw "必须显式使用 -SelfTest 或 -Execute"
 }
-if ($ServerHost -notmatch '^[A-Za-z0-9.-]+$' -or $SSHUser -notmatch '^[A-Za-z0-9._-]+$') {
-    throw "SSH 目标格式无效"
-}
-if ($SSHPort -lt 1 -or $SSHPort -gt 65535) {
-    throw "SSH 端口必须位于 1-65535"
+# 该批准口令只适用于当前测试服，禁止把同一写入能力转向其他主机、账号或端口。
+if ($ServerHost -cne "8.130.9.163" -or $SSHUser -cne "pc" -or $SSHPort -ne 10003) {
+    throw "SSH 目标必须固定为阶段 5 测试服务器"
 }
 if ($CurrentEnvironmentPath -cne "/home/pc/molin/infra/.env.test") {
     throw "当前环境文件必须使用测试服固定路径"
@@ -71,6 +69,43 @@ if ($ChangeId -notmatch '^[0-9]{8}T[0-9]{6}Z$') {
     throw "ChangeId 必须为 UTC 时间格式 YYYYMMDDTHHMMSSZ"
 }
 
+# 除固定地址外再冻结 ED25519 公钥指纹，防止本地 known_hosts 被替换后把写入能力导向错误主机。
+$knownHostsPath = [IO.Path]::GetFullPath((Join-Path $env:USERPROFILE ".ssh\known_hosts"))
+if (-not (Test-Path -LiteralPath $knownHostsPath -PathType Leaf) -or
+    ([IO.FileInfo]$knownHostsPath).Attributes.HasFlag([IO.FileAttributes]::ReparsePoint)) {
+    throw "固定 known_hosts 文件不存在或属于重解析路径"
+}
+$knownHostLines = @(& ssh-keygen -F "[8.130.9.163]:10003" -f $knownHostsPath)
+if ($LASTEXITCODE -ne 0) {
+    throw "known_hosts 中缺少固定测试服身份"
+}
+$ed25519Keys = @()
+foreach ($line in $knownHostLines) {
+    $trimmed = $line.Trim()
+    if ($trimmed.Length -eq 0 -or $trimmed.StartsWith("#")) {
+        continue
+    }
+    $parts = @($trimmed -split '\s+')
+    if ($parts.Count -ge 3 -and $parts[1] -ceq "ssh-ed25519") {
+        $ed25519Keys += $parts[2]
+    }
+}
+if ($ed25519Keys.Count -ne 1) {
+    throw "固定测试服 ED25519 公钥数量异常"
+}
+$sha256 = [Security.Cryptography.SHA256]::Create()
+try {
+    $fingerprint = "SHA256:" + [Convert]::ToBase64String(
+        $sha256.ComputeHash([Convert]::FromBase64String($ed25519Keys[0]))
+    ).TrimEnd('=')
+}
+finally {
+    $sha256.Dispose()
+}
+if ($fingerprint -cne "SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I") {
+    throw "固定测试服 ED25519 公钥指纹不匹配"
+}
+
 $candidatePath = "/home/pc/molin/rollback/sms-phase5/candidate-$ChangeId.env"
 $payload = $payload.Replace("__CURRENT_ENVIRONMENT_PATH__", $CurrentEnvironmentPath)
 $payload = $payload.Replace("__CANDIDATE_PATH__", $candidatePath)
@@ -83,6 +118,8 @@ $sshArguments = @(
     "-o", "BatchMode=yes",
     "-o", "ConnectTimeout=8",
     "-o", "StrictHostKeyChecking=yes",
+    "-o", "HostKeyAlgorithms=ssh-ed25519",
+    "-o", "UserKnownHostsFile=$knownHostsPath",
     $destination,
     "printf '%s' '$encoded' | base64 -d | bash"
 )

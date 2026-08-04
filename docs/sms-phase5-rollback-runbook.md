@@ -81,7 +81,7 @@ rollback_restore_runtime_verified=false
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-sms-phase5-test-server-rollback-candidate.ps1 -SelfTest
 ```
 
-真实模式必须同时提供 `-Execute`、精确批准口令和 UTC `ChangeId`，并通过固定 SSH 主机校验；远端使用排他创建，候选
+真实模式必须同时提供 `-Execute`、精确批准口令和 UTC `ChangeId`，并通过固定 SSH 主机、账号、端口及 ED25519 公钥指纹校验；远端使用排他创建，候选
 已存在时拒绝覆盖，目标目录/文件权限固定为 700/600。生成器只创建候选，不替换当前环境、不重启服务。当前尚未批准
 真实生成，因此测试服候选文件创建数仍为 0。
 
