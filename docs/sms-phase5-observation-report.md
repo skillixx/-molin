@@ -26,6 +26,10 @@ SSH/API 访问审计日志，业务配置修改、服务重启和短信发送操
 
 2026-08-05 刷新的日志留存只读审计确认：journald 服务正常、持久目录存在，journal 目录约 2.97GB；文件系统总量约 982.24GB、可用约 354.74GB。`8G/50G/14day/1day` 已获测试服短信关闭态部署授权，但首次受控执行在任何配置写入或服务重启前因 `sudo_unavailable` 失败；固定账号的 `sudo -n -l` 同样确认需要密码。四项显式配置仍全部缺失，固定结论继续为 `log_retention_configuration_complete=false` 与 `log_retention_policy_verified=false`。失败后 journald、API、代理、Prometheus 和短信关闭态复验正常，发送摘要与 Provider 指标继续零增量。现已在仓库外生成绑定测试服 machine-id 摘要、拒绝覆盖并输出可复核 SHA-256 的离线运维交接包；同一渲染文件经固定身份 SSH 送入测试服 `bash --self-test`，已有/无原配置恢复、错误与三类信号、安装/重启失败及回滚失败码 90 全部通过，自测业务配置写入 0、服务重启 0、短信发送 0。随后只读复验继续确认短信关闭、Provider 零增量、API/代理/Prometheus 正常；四项 journald 策略仍缺失。下一次执行仍需由运维提供受控非交互提权入口，或由有权限运维在同一获批测试服本地终端执行，交接资产与 Linux 自测均不代表已部署。
 
+在用户要求继续完成未完成项后，使用同一获批参数再次执行真实入口。脚本先通过目标主机摘要核验，随后仍以
+`failure_stage=sudo_unavailable` 在配置写入和服务重启之前失败。紧接着的只读复验确认 journald active、四项显式配置仍全部缺失、
+API 单进程与 health/ready 正常、短信保持关闭、发送摘要仍为 `13:13:0`、Provider 指标仍为 0；本次没有部分部署或短信发送。
+
 ## 2. 指标口径
 
 - `sms_provider_calls_total{scene,result}`：五固定场景、八固定结果；`accepted` 只表示供应商受理。
