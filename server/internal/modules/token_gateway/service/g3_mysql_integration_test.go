@@ -194,18 +194,19 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 		}
 		outbox := repository.NewG3OutboxRepository(db)
 		claimed, err := outbox.ClaimBatch(ctx, now, now.Add(-time.Minute), 10)
-		if err != nil || len(claimed) != 1 || claimed[0].EventID != events[0].EventID {
+		claimedForOrder := filterIntegrationOutboxByAggregate(claimed, "g3-order")
+		if err != nil || len(claimedForOrder) != 1 || claimedForOrder[0].EventID != events[0].EventID {
 			t.Fatalf("只能认领同聚合最早事件: claimed=%+v err=%v", claimed, err)
 		}
 		wrongLease := now.Add(-time.Second)
-		if err := outbox.MarkPublished(ctx, claimed[0].ID, wrongLease, now); !errors.Is(err, repository.ErrOutboxLeaseLost) {
+		if err := outbox.MarkPublished(ctx, claimedForOrder[0].ID, wrongLease, now); !errors.Is(err, repository.ErrOutboxLeaseLost) {
 			t.Fatalf("旧租约不得覆盖当前拥有者: %v", err)
 		}
-		if err := outbox.MarkRetry(ctx, claimed[0].ID, *claimed[0].LockedAt, now, "test_dead", true); err != nil {
+		if err := outbox.MarkRetry(ctx, claimedForOrder[0].ID, *claimedForOrder[0].LockedAt, now, "test_dead", true); err != nil {
 			t.Fatal(err)
 		}
 		blocked, err := outbox.ClaimBatch(ctx, now, now.Add(-time.Minute), 10)
-		if err != nil || len(blocked) != 0 {
+		if err != nil || len(filterIntegrationOutboxByAggregate(blocked, "g3-order")) != 0 {
 			t.Fatalf("前序 dead 时后续事件必须阻塞: claimed=%+v err=%v", blocked, err)
 		}
 		if err := outbox.RequeueDead(ctx, events[0].EventID, now); err != nil {
@@ -213,10 +214,11 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 		}
 		for _, expected := range events {
 			claimed, err = outbox.ClaimBatch(ctx, now, now.Add(-time.Minute), 10)
-			if err != nil || len(claimed) != 1 || claimed[0].EventID != expected.EventID {
+			claimedForOrder = filterIntegrationOutboxByAggregate(claimed, "g3-order")
+			if err != nil || len(claimedForOrder) != 1 || claimedForOrder[0].EventID != expected.EventID {
 				t.Fatalf("重入后必须按顺序认领: want=%s claimed=%+v err=%v", expected.EventID, claimed, err)
 			}
-			if err := outbox.MarkPublished(ctx, claimed[0].ID, *claimed[0].LockedAt, now); err != nil {
+			if err := outbox.MarkPublished(ctx, claimedForOrder[0].ID, *claimedForOrder[0].LockedAt, now); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -1047,6 +1049,16 @@ func (s *g3IntegrationOrchestratorStore) LoadAccessSnapshot(_ context.Context, u
 	}
 	snapshot := s.snapshot
 	return &snapshot, nil
+}
+
+func filterIntegrationOutboxByAggregate(events []model.AIOutboxEvent, aggregateID string) []model.AIOutboxEvent {
+	filtered := make([]model.AIOutboxEvent, 0, len(events))
+	for _, event := range events {
+		if event.AggregateID == aggregateID {
+			filtered = append(filtered, event)
+		}
+	}
+	return filtered
 }
 
 func assertCount(t *testing.T, db *gorm.DB, table, where string, arg interface{}, want int64) {
