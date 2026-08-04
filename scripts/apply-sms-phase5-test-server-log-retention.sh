@@ -37,16 +37,37 @@ read_env() {
   tr '\0' '\n' < "/proc/$pid/environ" | sed -n "s/^${key}=//p" | tail -n 1
 }
 
-read_provider_total() {
+read_provider_snapshot() {
   local token="$1"
   printf 'X-Internal-Token: %s\n' "$token" |
     curl -fsS --max-time 5 -H @- http://127.0.0.1:8080/api/internal/metrics 2>/dev/null |
-    awk '/^sms_provider_calls_total\{/{sum += $NF} END{printf "%.0f", sum + 0}'
+    awk '/^sms_provider_calls_total\{/{series += 1; sum += $NF} END{printf "%d:%.0f", series, sum + 0}'
 }
 
 read_prometheus_target_health() {
   curl -fsS --max-time 5 "http://127.0.0.1:${prometheus_port}/api/v1/targets" 2>/dev/null |
     python3 -c 'import json,sys; d=json.load(sys.stdin); x=[t for t in d.get("data",{}).get("activeTargets",[]) if t.get("labels",{}).get("job")=="molin-email-adapter"]; print("missing" if not x else ",".join(sorted(set(t.get("health","") for t in x))))'
+}
+
+read_prometheus_provider_snapshot() {
+  local count_response
+  local sum_response
+  count_response="$(curl -fsS --max-time 5 --get --data-urlencode 'query=count(sms_provider_calls_total)' "http://127.0.0.1:${prometheus_port}/api/v1/query")" || return 1
+  sum_response="$(curl -fsS --max-time 5 --get --data-urlencode 'query=sum(sms_provider_calls_total)' "http://127.0.0.1:${prometheus_port}/api/v1/query")" || return 1
+  python3 - "$count_response" "$sum_response" <<'PY'
+import json
+import sys
+
+def scalar(payload):
+    result = json.loads(payload).get("data", {}).get("result", [])
+    if len(result) != 1:
+        raise SystemExit(1)
+    return result[0]["value"][1]
+
+count = scalar(sys.argv[1])
+total = scalar(sys.argv[2])
+print(f"{count}:{total}")
+PY
 }
 
 verify_api_closed() {
@@ -248,16 +269,31 @@ run_payload_self_test() {
   cmp -s "$target" "$backup_dir/previous.conf"
   printf 'error_path_rollback=passed\n'
 
-  printf 'new\n' > "$target"
-  rollback_armed=true
-  set +e
-  (on_signal TERM 143) >/dev/null
-  local signal_status=$?
-  set -e
-  printf 'signal_path_status=%s\n' "$signal_status"
-  [ "$signal_status" = 143 ]
-  cmp -s "$target" "$backup_dir/previous.conf"
-  printf 'signal_path_rollback=passed\n'
+  # 在受控子 shell 中实际投递三类信号，逐一验证 trap、退出码和文件恢复。
+  local signal_name
+  local expected_status
+  for signal_name in HUP INT TERM; do
+    case "$signal_name" in
+      HUP) expected_status=129 ;;
+      INT) expected_status=130 ;;
+      TERM) expected_status=143 ;;
+    esac
+    printf 'new\n' > "$target"
+    rollback_armed=true
+    set +e
+    (
+      trap 'on_signal HUP 129' HUP
+      trap 'on_signal INT 130' INT
+      trap 'on_signal TERM 143' TERM
+      kill -s "$signal_name" "$BASHPID"
+      exit 99
+    ) >/dev/null
+    local signal_status=$?
+    set -e
+    [ "$signal_status" = "$expected_status" ]
+    cmp -s "$target" "$backup_dir/previous.conf"
+    printf 'signal_%s_rollback=passed\n' "$signal_name"
+  done
 
   sudo() { return 1; }
   printf 'new\n' > "$target"
@@ -344,10 +380,12 @@ verify_api_closed "$api_pid" || fail sms_closed_before
 printf 'sms_closed_before=true\n'
 internal_token="$(read_env "$api_pid" INTERNAL_API_TOKEN)"
 [ -n "$internal_token" ] || fail internal_metrics_token
-provider_total_before="$(read_provider_total "$internal_token")"
-[[ "$provider_total_before" =~ ^[0-9]+$ ]] || fail provider_metrics_before
+provider_snapshot_before="$(read_provider_snapshot "$internal_token")"
+[[ "$provider_snapshot_before" =~ ^40:[0-9]+$ ]] || fail provider_metrics_before
 [ "$(curl -sS --max-time 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:${prometheus_port}/-/ready" || true)" = 200 ] || fail prometheus_before
 [ "$(read_prometheus_target_health)" = up ] || fail prometheus_target_before
+prometheus_provider_snapshot_before="$(read_prometheus_provider_snapshot)"
+[[ "$prometheus_provider_snapshot_before" =~ ^40([.]0+)?:[0-9]+([.]0+)?$ ]] || fail prometheus_provider_metrics_before
 
 # 容量门禁防止候选值小于当前 journal 占用，或把保留空间设置到当前可用空间以上。
 read -r disk_total disk_available < <(df -B1 -P /var/log/journal | awk 'NR == 2 {print $2, $4}')
@@ -408,7 +446,8 @@ printf 'health_http=%s\nready_http=%s\n' \
   "$(curl -sS --max-time 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/health || true)" \
   "$(curl -sS --max-time 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/ready || true)" \
   > "$backup_dir/api-health.txt"
-printf 'prometheus_ready_http=200\nprometheus_target_health=up\nprovider_total=%s\n' "$provider_total_before" \
+printf 'prometheus_ready_http=200\nprometheus_target_health=up\nprovider_snapshot=%s\nprometheus_provider_snapshot=%s\n' \
+  "$provider_snapshot_before" "$prometheus_provider_snapshot_before" \
   > "$backup_dir/monitoring-health.txt"
 chmod 600 "$backup_dir/merged-config.sha256" "$backup_dir/journald-active.txt" "$backup_dir/api-health.txt" "$backup_dir/monitoring-health.txt"
 candidate="$(mktemp)"
@@ -428,11 +467,14 @@ install_candidate_and_restart
 verify_installed_values
 verify_api_closed "$api_pid"
 printf 'sms_closed_after=true\n'
-provider_total_after="$(read_provider_total "$internal_token")"
-[ "$provider_total_after" = "$provider_total_before" ]
+provider_snapshot_after="$(read_provider_snapshot "$internal_token")"
+[ "$provider_snapshot_after" = "$provider_snapshot_before" ]
 [ "$(curl -sS --max-time 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:${prometheus_port}/-/ready" || true)" = 200 ]
 [ "$(read_prometheus_target_health)" = up ]
+prometheus_provider_snapshot_after="$(read_prometheus_provider_snapshot)"
+[ "$prometheus_provider_snapshot_after" = "$prometheus_provider_snapshot_before" ]
 printf 'provider_metric_delta_zero=true\n'
+printf 'prometheus_provider_metric_delta_zero=true\n'
 printf 'prometheus_postcheck=true\n'
 rollback_armed=false
 trap - ERR HUP INT TERM
