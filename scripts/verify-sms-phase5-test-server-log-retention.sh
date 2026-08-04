@@ -8,7 +8,7 @@ fail() {
   printf 'failure_stage=%s\n' "$1"
   printf 'business_configuration_mutations=0\n'
   printf 'access_audit_logs_may_increase=true\n'
-  printf 'real_sms_sent=0\n'
+  printf 'real_sms_delivery_not_verified=true\n'
   exit 2
 }
 
@@ -118,4 +118,4 @@ printf 'log_retention_policy_verified=%s\n' "$log_retention_policy_verified"
 printf 'log_retention_change_authorization_required=%s\n' "$log_retention_change_authorization_required"
 printf 'business_configuration_mutations=0\n'
 printf 'access_audit_logs_may_increase=true\n'
-printf 'real_sms_sent=0\n'
+printf 'real_sms_delivery_not_verified=true\n'

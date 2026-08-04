@@ -120,7 +120,8 @@ class RecoveryNotificationPreflightContractTest(unittest.TestCase):
         self.assertIn("business_configuration_mutations=0", self.sh)
         self.assertIn("access_audit_logs_may_increase=true", self.sh)
         self.assertNotIn("remote_mutations=0", self.sh)
-        self.assertIn("real_sms_sent=0", self.sh)
+        self.assertIn("real_sms_delivery_not_verified=true", self.sh)
+        self.assertNotIn("real_sms_sent=0", self.sh)
 
     def test_offline_contract_is_part_of_readiness_and_ci(self) -> None:
         self.assertIn(POWERSHELL.name, self.readiness)

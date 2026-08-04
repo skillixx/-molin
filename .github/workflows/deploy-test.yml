@@ -150,28 +150,18 @@ jobs:
               done
               [ "$fail" = 0 ] || return 1
 
-              mapfile -t api_pids < <(pgrep -f '^/home/pc/molin/molin-api$' 2>/dev/null || true)
-              [ "${#api_pids[@]}" = 1 ] || return 1
+              mapfile -t api_pids_before < <(pgrep -f '^/home/pc/molin/molin-api$' 2>/dev/null || true)
+              [ "${#api_pids_before[@]}" = 1 ] || return 1
+              local api_pid=${api_pids_before[0]}
               local sms_enabled
-              sms_enabled=$(tr '\0' '\n' < "/proc/${api_pids[0]}/environ" | sed -n 's/^SMS_ENABLED=//p' | tail -n 1)
+              sms_enabled=$(tr '\0' '\n' < "/proc/${api_pid}/environ" | sed -n 's/^SMS_ENABLED=//p' | tail -n 1)
+              [ "$sms_enabled" = false ] || return 1
+              mapfile -t api_pids_after < <(pgrep -f '^/home/pc/molin/molin-api$' 2>/dev/null || true)
+              [ "${#api_pids_after[@]}" = 1 ] && [ "${api_pids_after[0]}" = "$api_pid" ] || return 1
+              sms_enabled=$(tr '\0' '\n' < "/proc/${api_pid}/environ" | sed -n 's/^SMS_ENABLED=//p' | tail -n 1)
               [ "$sms_enabled" = false ] || return 1
               echo "sms_closed_state_env_verified=true"
-
-              # 先确认进程环境为关闭态，再用一次合成号码验证公开发码入口固定拒绝；响应正文不输出。
-              local synthetic_phone
-              local sms_response
-              local sms_http
-              local sms_body
-              synthetic_phone="199$(date +%s | cut -c3-10)"
-              sms_response=$(curl -sS --max-time 5 -w '\n__HTTP_STATUS__:%{http_code}\n' \
-                -H 'Content-Type: application/json' \
-                --data "{\"phone\":\"${synthetic_phone}\",\"scene\":\"register\"}" \
-                http://localhost:3000/api/auth/verification-codes/phone || true)
-              sms_http=$(printf '%s\n' "$sms_response" | sed -n 's/^__HTTP_STATUS__://p' | tail -n 1)
-              sms_body=$(printf '%s\n' "$sms_response" | sed '/^__HTTP_STATUS__:/d')
-              [ "$sms_http" = 503 ] || return 1
-              printf '%s' "$sms_body" | python3 -c 'import json,sys; raise SystemExit(0 if json.load(sys.stdin).get("code") == 50300 else 1)' || return 1
-              echo "sms_closed_state_endpoint_verified=true"
+              echo "sms_closed_state_business_probe_skipped=true"
             }
 
             rollback_frontend() {
@@ -212,7 +202,7 @@ jobs:
               --network "$PROXY_NETWORK" --ip "$USER_PROXY_IP" \
               -p 3000:80 --add-host "api:$PROXY_GATEWAY" molin-user:latest
 
-            echo "=== 复验固定代理、健康接口与短信关闭态 ==="
+            echo "=== 复验固定代理、健康接口与同一 API 进程短信关闭态 ==="
             verify_frontend_runtime
             rollback_armed=false
             trap - ERR

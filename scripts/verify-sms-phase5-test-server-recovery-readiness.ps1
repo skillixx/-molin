@@ -67,7 +67,7 @@ if ($SelfTest) {
     Write-Output "remote_connections=0"
     Write-Output "business_configuration_mutations=0"
     Write-Output "access_audit_logs_may_increase=false"
-    Write-Output "real_sms_sent=0"
+    Write-Output "real_sms_delivery_not_verified=true"
     exit 0
 }
 

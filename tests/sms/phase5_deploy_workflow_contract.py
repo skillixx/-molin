@@ -39,11 +39,14 @@ class DeployWorkflowContractTest(unittest.TestCase):
         self.assertIn("rollback_frontend_verified", self.workflow)
         self.assertNotIn("set +e", self.workflow)
 
-    def test_deploy_requires_sms_closed_state_and_endpoint_rejection(self) -> None:
+    def test_deploy_requires_stable_sms_closed_state_without_business_writes(self) -> None:
         self.assertIn("SMS_ENABLED", self.workflow)
         self.assertIn("sms_closed_state_env_verified", self.workflow)
-        self.assertIn("/api/auth/verification-codes/phone", self.workflow)
-        self.assertIn("50300", self.workflow)
+        self.assertIn("api_pids_before", self.workflow)
+        self.assertIn("api_pids_after", self.workflow)
+        self.assertIn('"${api_pids_after[0]}" = "$api_pid"', self.workflow)
+        self.assertIn("sms_closed_state_business_probe_skipped=true", self.workflow)
+        self.assertNotIn("/api/auth/verification-codes/phone", self.workflow)
         self.assertNotIn("SMS_ENABLED=true", self.workflow)
 
     def test_contract_runs_in_ci(self) -> None:

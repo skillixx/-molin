@@ -53,7 +53,7 @@ class LogRetentionPreflightContractTest(unittest.TestCase):
             "log_retention_change_authorization_required",
             "business_configuration_mutations=0",
             "access_audit_logs_may_increase=true",
-            "real_sms_sent=0",
+            "real_sms_delivery_not_verified=true",
         ):
             self.assertIn(marker, self.sh)
         for setting in (
@@ -66,6 +66,7 @@ class LogRetentionPreflightContractTest(unittest.TestCase):
             self.assertIn(setting, self.sh)
         self.assertIn("systemd-analyze cat-config systemd/journald.conf", self.sh)
         self.assertNotIn("SMS_ENABLED=true", self.sh)
+        self.assertNotIn("real_sms_sent=0", self.sh)
         self.assertNotIn("log_retention_policy_verified=true", self.sh)
         self.assertNotIn("log_retention_change_authorization_required=false", self.sh)
 
@@ -160,7 +161,8 @@ MaxFileSec=1day
         self.assertIn(f"./scripts/{POWERSHELL.name} -SelfTest", self.ci)
         self.assertIn("未配置不等于默认值已获批准", self.runbook)
         self.assertIn("日志配置变更必须单独授权", self.runbook)
-        self.assertIn("真实短信发送数为 0", self.runbook)
+        self.assertIn("real_sms_delivery_not_verified=true", self.runbook)
+        self.assertIn("不得执行任何短信发送操作", self.runbook)
 
 
 if __name__ == "__main__":

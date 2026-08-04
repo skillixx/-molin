@@ -21,7 +21,7 @@ docker compose -f infra/docker-compose.yml up -d
 
 - 操作路径：GitHub 仓库 → Actions → 选择「部署测试环境（前端）」工作流 → Run workflow（分支选 main）。
 - 对应工作流文件：`.github/workflows/deploy-test.yml`（`workflow_dispatch`）。
-- **范围：仅前端**。在 runner 上构建 `molin-admin` / `molin-user` 镜像 → 传到测试服务器 → 在固定 `molin-sms-proxy` 专网和固定 `.2/.3` 地址重建容器；nginx 经专网网关 `.1` 把 `/api` 代理到宿主机 `molin-api`。部署和自动回滚都会复验容器、固定 IP、首页、`/api/health`、`SMS_ENABLED=false` 以及公开手机发码入口 `503/50300`。
+- **范围：仅前端**。在 runner 上构建 `molin-admin` / `molin-user` 镜像 → 传到测试服务器 → 在固定 `molin-sms-proxy` 专网和固定 `.2/.3` 地址重建容器；nginx 经专网网关 `.1` 把 `/api` 代理到宿主机 `molin-api`。部署和自动回滚都会复验容器、固定 IP、首页、`/api/health`，并在同一 API PID 前后两次确认 `SMS_ENABLED=false`。工作流不 POST 发码入口，避免写入 Redis 限流桶；`503/50300` 由 CI 契约和独立验收窗口验证。
 - **需配置 Secrets**（Settings → Secrets and variables → Actions）：`TEST_SERVER_HOST`、`TEST_SERVER_USER`、`TEST_SERVER_PASSWORD`（本服务器为密码认证，SSH 端口 10003）。
 - **后端不在本工作流内**：测试服 `molin-api` 是宿主机二进制（非容器），构建/重启见 `infra/CLAUDE.md` 的「测试服务器」一节，需单独执行。
 - DirectMail 完整配置、端口选择、Migration、模板初始化、生产 Compose 和回滚流程见 `docs/directmail-configuration-deployment-guide.md`。
