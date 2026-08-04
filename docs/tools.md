@@ -473,6 +473,33 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 
 ---
 
+### 短信阶段 5 回滚与日志留存门禁
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维 / 测试 / 产品经理 |
+| **涉及模块** | 测试服回滚、固定代理、journald、告警通知链 |
+| **涉及功能** | 回滚材料只读预检、安全回滚候选、日志留存策略只读审计 |
+| **代码位置** | `scripts/verify-sms-phase5-test-server-recovery-readiness.ps1`、`scripts/prepare-sms-phase5-test-server-rollback-candidate.ps1`、`scripts/verify-sms-phase5-test-server-log-retention.ps1` 及各自 Bash payload |
+
+**作用：** 将“材料存在”“候选可生成”“配置完整”“运行时已验证”拆成独立证据，禁止用旧环境整份覆盖当前固定代理配置，
+也禁止把 journald 配置存在误报为策略已批准。三个入口都支持或配有离线安全契约；真实候选生成会写远端文件，必须单独授权。
+
+```powershell
+# 本地离线检查，不连接测试服
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-recovery-readiness.ps1 -SelfTest
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-sms-phase5-test-server-rollback-candidate.ps1 -SelfTest
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-log-retention.ps1 -SelfTest
+
+# 已获只读测试服审计授权时使用；可能增加 SSH 访问审计日志，但不修改业务配置或发送短信
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-recovery-readiness.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-log-retention.ps1
+```
+
+实际回滚、候选生成、journald 配置变更或重载、Alertmanager 部署/演练、短信开关及真实发送均不属于只读工具权限。
+
+---
+
 ### MySQL
 
 | 项目 | 说明 |

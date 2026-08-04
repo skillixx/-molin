@@ -56,6 +56,11 @@ Alertmanager 接收渠道尚未选择，禁止提交带真实接收地址或 Sec
 测试服回滚候选只允许使用 `scripts/prepare-sms-phase5-test-server-rollback-candidate.ps1` 生成。先执行 `-SelfTest`；
 真实模式会写入 600 权限候选文件，必须另行批准，且生成后仍不得替换当前环境或重启 API。
 
+测试服 journald 留存状态使用 `scripts/verify-sms-phase5-test-server-log-retention.ps1` 只读审计。该脚本只报告服务、
+持久化和策略完整性，不输出日志正文或配置值，也不会把“配置存在”推定为“已经批准并在运行时生效”。当前四项显式策略
+均缺失，配置变更、journald reload/restart、轮转或 vacuum 均需独立授权；详见
+`docs/sms-phase5-log-retention-runbook.md`。
+
 ## 邮件 Phase 4 测试环境监控
 
 本节只描述测试环境运行方式，不授权执行数据库 migration、远程部署或真实邮件发送。Prometheus 直接抓取宿主机 API 的
