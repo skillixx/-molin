@@ -10,7 +10,8 @@
     "preview": "vite preview --host 0.0.0.0 --port 4174",
     "type-check": "vue-tsc --noEmit",
     "lint": "eslint .",
-    "test:sms": "node --experimental-strip-types --test tests/privacy.test.ts tests/sms.test.ts"
+    "test:sms": "node --experimental-strip-types --test tests/privacy.test.ts tests/sms.test.ts",
+    "test:vite-isolation": "node --test tests/vite-proxy-isolation.test.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.0",

@@ -190,8 +190,19 @@ Body 参数：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| sent | boolean | 是否发送成功 |
-| expires_in | integer | 有效秒数 |
+| sent | boolean | 是否已被短信供应商受理；固定为 `true` |
+| expires_in | integer | 验证码有效秒数 |
+| business_request_id | string | 平台业务请求标识，不是供应商原始请求标识 |
+| submit_status | string | 固定为 `accepted`；只表示供应商受理，不表示送达 |
+
+手机发码除入口 IP/用户限流外，还按“手机号 HMAC + scene”执行 Redis 原子 60 秒冷却；超限返回
+`429/42900「操作过于频繁，请稍后再试」`，且不得生成验证码、写入发送记录或调用供应商。Redis
+门禁不可用时失败关闭为 `503/50300`。同一手机号与场景连续五次校验失败后，在十分钟窗口内继续统一返回
+`400/40000「验证码错误或已过期」`；成功消费后清除该场景的失败计数。限流键只保存手机号 HMAC，禁止保存完整手机号。
+公开手机发码及密码重置的 IP 限流必须使用全局 `TRUSTED_PROXY_IPS` 来源解析器：非可信连接只认
+`RemoteAddr`，忽略 `X-Real-IP`、`X-Forwarded-For` 和 `Forwarded`；可信代理只接受单值合法
+`X-Real-IP`。可信代理来源头异常返回 `403/40003`，解析器不可用返回 `503/50300「验证码服务当前不可用」`，
+均不得进入限流计数或业务处理。
 
 > ⚠️ **D-96（2026-06-15）**：换绑/管理员认证发码已迁移到专属认证态端点，公开端点不再接受对应 scene：
 > - 换绑手机/邮箱：`POST /api/me/verification-codes/{phone,email}`（需登录）
@@ -798,7 +809,8 @@ GET /api/admin/users/:id/login-logs
 
 Query 参数：page、page_size。
 
-返回 data.items：登录时间、登录方式、账号、IP、User-Agent、状态。
+返回 data.items：登录时间、登录方式、脱敏账号、IP、User-Agent、状态。手机号和邮箱账号在写入
+`user_login_logs.login_account` 前即脱敏，新写入记录和响应均不得出现完整登录账号。历史数据治理需在单独维护窗执行。
 
 ### 3.9 用户实名信息
 
@@ -1638,19 +1650,21 @@ up 前 receipt/000056 ownership 两表都必须不存在；任一同名表、权
 
 down 的第一道断言是 receipt 行数必须为 0。随后仅当 `admin_binding_created=1` 才删除记录的精确 admin role_permission，仅当 `permission_created=1` 且不存在其他 role_permissions、user_permission_overrides、group_permissions 引用时才删除权限；预存权限/绑定必须保留。写后断言通过才删除 receipt 空表和 000056 ownership。成功 receipt 是安全凭据：一旦存在，常规 down 必须在任何删除前失败关闭。应用回滚应关闭 bootstrap 配置并保留 schema 56 与 receipt；如确需移除，必须另行审批、备份恢复验证和不可变审计留存，禁止 migration `force` 绕过。
 
-### 3.19.13 公开邮件发码来源 IP（Phase 1 delta，待 QA/PM 签署）
+### 3.19.13 公开验证码来源 IP（Phase 1/短信 Phase 4 delta）
 
-本节适用于公开邮件验证码端点的 IP 限流与安全判定。新增全局 `TRUSTED_PROXY_IPS`，仅描述面向公开流量的可信反向代理；它与内部 metrics 专用的 `INTERNAL_TRUSTED_PROXY_IPS` 独立配置、独立校验，禁止互相回退或合并。
+本节适用于公开邮件/手机验证码端点及密码重置入口的 IP 限流与安全判定。全局 `TRUSTED_PROXY_IPS`
+仅描述面向公开流量的可信反向代理；它与内部 metrics 专用的 `INTERNAL_TRUSTED_PROXY_IPS` 独立配置、独立校验，禁止互相回退或合并。
 
 - `TRUSTED_PROXY_IPS` 为空是合法的直连模式：应用只使用 `RemoteAddr` 解析出的 IP，忽略所有来源 Header。
-- 非空值是逗号分隔的精确 IP 或 CIDR 列表，每项先 trim 再严格解析；拒绝空项、非法 IP/CIDR 与带 IPv6 zone 的地址。非空配置任一项非法时应用启动失败，或至少 `/api/ready` 不通过且不得承载公开邮件发码流量。
+- 非空值是逗号分隔的精确 IP 或 CIDR 列表，每项先 trim 再严格解析；拒绝空项、非法 IP/CIDR 与带 IPv6 zone 的地址。非空配置任一项非法时应用启动失败，或至少 `/api/ready` 不通过且不得承载公开验证码与密码重置流量。
 - 每个请求先解析 `RemoteAddr`。当其不命中 `TRUSTED_PROXY_IPS`（包括列表为空）时，最终来源只能是 `RemoteAddr`；`X-Real-IP`、`X-Forwarded-For`、`Forwarded` 均不得改变结果。
 - 仅当 `RemoteAddr` 命中 trusted proxy 时，才要求并信任代理覆盖写入的恰好一个 `X-Real-IP` 单值。该值必须是无逗号的合法 IP；缺失、空值、非法值、逗号多值或重复 Header 均固定返回 `403/40003「无权限」`，不得透露具体原因。
-- 上述 trusted proxy Header 拒绝发生在限流计数与业务服务之前：不递增 IP/账号发码计数，不创建验证码或发送记录，不取得发送锁，不进入邮件服务，Adapter 调用增量固定为 0。
-- 应用永远不得把 `X-Forwarded-For` 用于安全判定。运行期间来源解析器不可用或无法执行安全判定时失败关闭，固定返回 `503/51003「邮件发送服务未就绪」`，同样不计数、不进入业务服务且 Adapter 增量为 0。
-- Nginx 只能从约定公开入口代理发码路径，必须覆盖 `X-Real-IP=$remote_addr`，删除而非透传 `X-Forwarded-For` 与 `Forwarded`，并确保其连接应用所用地址显式配置在 `TRUSTED_PROXY_IPS`。网络位置不能替代应用判定。
+- 上述 trusted proxy Header 拒绝发生在限流计数与业务服务之前：不递增 IP/账号发码计数，不创建验证码或发送记录，不取得发送锁，不进入邮件或短信服务，外部 Sender 调用增量固定为 0。
+- 应用永远不得把 `X-Forwarded-For` 用于安全判定。运行期间来源解析器不可用或无法执行安全判定时失败关闭：邮件发码返回 `503/51003「邮件发送服务未就绪」`；手机发码与密码重置返回 `503/50300「验证码服务当前不可用」`。两者均不计数、不进入业务服务且外部 Sender 增量为 0。
+- Nginx 只能从约定公开入口代理验证码与密码重置路径，必须覆盖 `X-Real-IP=$remote_addr`，删除而非透传 `X-Forwarded-For` 与 `Forwarded`，并确保其连接应用所用地址显式配置在 `TRUSTED_PROXY_IPS`。网络位置不能替代应用判定。
 
-该 delta 仅冻结契约与验收口径，尚待 QA/PM 书面签署；不代表 Go、Nginx、限流器、DirectMail 或 E2E 实现通过。
+邮件入口已按该契约实现并完成既有验收；短信阶段 4 将同一解析器接入手机发码和密码重置。阶段 4 本地单测通过，
+真实 Redis、HTTP 和 Linux race 仍以 PR CI 为准；本文件不代表 Nginx 部署配置已经复核。
 
 ### 3.20 内部邮件 Adapter 指标（Phase 1 metrics delta，待 QA/PM 复签）
 

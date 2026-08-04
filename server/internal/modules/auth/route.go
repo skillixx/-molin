@@ -33,7 +33,7 @@ func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc 
 	const sendCodeIPLimit = 10
 	const sendCodeIPWindow = time.Minute
 	rateLimitByIP := func(next http.HandlerFunc) http.Handler {
-		return middleware.RateLimitByIP(redisClient, "send_code", sendCodeIPLimit, sendCodeIPWindow, http.HandlerFunc(next))
+		return middleware.RateLimitVerificationByIP(redisClient, publicSourceIP, "send_code", sendCodeIPLimit, sendCodeIPWindow, http.HandlerFunc(next))
 	}
 	rateLimitEmailByIP := func(next http.Handler) http.Handler {
 		return middleware.RateLimitEmailByIP(redisClient, publicSourceIP, "send_email_code", sendCodeIPLimit, sendCodeIPWindow, next)

@@ -129,3 +129,72 @@ func TestEmailIPRateLimitEleventhRequestAndXFFBypass(t *testing.T) {
 		t.Fatalf("XFF 或 X-Real-IP 伪造不得拆分直连限流桶: service=%d buckets=%d", serviceCalls, len(counts))
 	}
 }
+
+func TestVerificationIPRateLimitEleventhRequestIgnoresForgedHeaders(t *testing.T) {
+	counts := map[string]int{}
+	counter := func(_ context.Context, key string, limit int, _ time.Duration) (bool, error) {
+		counts[key]++
+		return counts[key] <= limit, nil
+	}
+	serviceCalls := 0
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		serviceCalls++
+		w.WriteHeader(http.StatusNoContent)
+	})
+	handler := rateLimitVerificationByIP(publicSourceTestResolver(t), counter, "send_code", 10, time.Minute, next)
+	for attempt := 1; attempt <= 11; attempt++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/verification-codes/phone", nil)
+		req.RemoteAddr = "203.0.113.18:443"
+		// 攻击者即使轮换常见转发头，非可信直连仍必须落入同一个真实来源桶。
+		req.Header.Set("X-Forwarded-For", netip.AddrFrom4([4]byte{192, 0, 2, byte(attempt)}).String())
+		req.Header.Set("X-Real-IP", netip.AddrFrom4([4]byte{198, 51, 100, byte(attempt)}).String())
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		if attempt <= 10 && recorder.Code != http.StatusNoContent {
+			t.Fatalf("第 %d 次验证码请求应放行: %d %s", attempt, recorder.Code, recorder.Body.String())
+		}
+		if attempt == 11 && (recorder.Code != http.StatusTooManyRequests || !strings.Contains(recorder.Body.String(), `"code":42900`)) {
+			t.Fatalf("轮换伪造转发头后的第十一次请求必须限流: %d %s", recorder.Code, recorder.Body.String())
+		}
+	}
+	if serviceCalls != 10 || len(counts) != 1 {
+		t.Fatalf("伪造来源头不得拆分验证码限流桶: service=%d buckets=%d", serviceCalls, len(counts))
+	}
+}
+
+func TestVerificationIPRateLimitSourceFailuresStopBeforeCounterAndService(t *testing.T) {
+	tests := []struct {
+		name       string
+		resolver   PublicSourceIPResolver
+		remote     string
+		wantStatus int
+		wantCode   string
+	}{
+		{name: "解析器缺失", resolver: nil, remote: "203.0.113.18:443", wantStatus: http.StatusServiceUnavailable, wantCode: `"code":50300`},
+		{name: "可信代理缺少真实来源", resolver: publicSourceTestResolver(t, "198.51.100.7"), remote: "198.51.100.7:443", wantStatus: http.StatusForbidden, wantCode: `"code":40003`},
+		{name: "远端地址非法", resolver: publicSourceTestResolver(t), remote: "not-an-ip", wantStatus: http.StatusServiceUnavailable, wantCode: `"code":50300`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			counterCalls, serviceCalls := 0, 0
+			counter := func(_ context.Context, _ string, _ int, _ time.Duration) (bool, error) {
+				counterCalls++
+				return true, nil
+			}
+			next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				serviceCalls++
+				w.WriteHeader(http.StatusNoContent)
+			})
+			req := httptest.NewRequest(http.MethodPost, "/api/auth/verification-codes/phone", nil)
+			req.RemoteAddr = test.remote
+			recorder := httptest.NewRecorder()
+			rateLimitVerificationByIP(test.resolver, counter, "send_code", 10, time.Minute, next).ServeHTTP(recorder, req)
+			if recorder.Code != test.wantStatus || !strings.Contains(recorder.Body.String(), test.wantCode) {
+				t.Fatalf("来源失败契约错误: status=%d body=%s", recorder.Code, recorder.Body.String())
+			}
+			if counterCalls != 0 || serviceCalls != 0 {
+				t.Fatalf("来源失败不得产生限流或业务副作用: counter=%d service=%d", counterCalls, serviceCalls)
+			}
+		})
+	}
+}

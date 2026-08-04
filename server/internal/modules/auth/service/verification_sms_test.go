@@ -130,6 +130,10 @@ func TestPhoneCodeFailureRemainsUnusable(t *testing.T) {
 	}{
 		{name: "供应商拒绝", err: smssender.NewProviderError(smssender.ErrorKindRejected, "REJECTED", errors.New("raw"))},
 		{name: "超时", err: smssender.NewProviderError(smssender.ErrorKindTimeout, "", context.DeadlineExceeded)},
+		{name: "供应商限流", err: smssender.NewProviderError(smssender.ErrorKindRateLimit, "isv.BUSINESS_LIMIT_CONTROL", errors.New("raw"))},
+		{name: "签名错误", err: smssender.NewProviderError(smssender.ErrorKindSignature, "isv.SMS_SIGNATURE_ILLEGAL", errors.New("raw"))},
+		{name: "模板错误", err: smssender.NewProviderError(smssender.ErrorKindTemplate, "isv.TEMPLATE_MISSING", errors.New("raw"))},
+		{name: "账户异常", err: smssender.NewProviderError(smssender.ErrorKindArrears, "isv.AMOUNT_NOT_ENOUGH", errors.New("raw"))},
 		{name: "网络异常", err: smssender.NewProviderError(smssender.ErrorKindNetwork, "", errors.New("network"))},
 	}
 	for _, tc := range cases {

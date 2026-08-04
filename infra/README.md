@@ -46,7 +46,7 @@ docker compose -f infra/docker-compose.yml up -d
 - Prometheus：`PROMETHEUS_CONTAINER_IP`、`PROMETHEUS_SUBNET`、`PROMETHEUS_PORT`。
 
 `INTERNAL_ALLOWED_IPS` 必须精确包含 `PROMETHEUS_CONTAINER_IP`。Prometheus 是直接抓取客户端，不是可信代理，禁止把它加入
-`INTERNAL_TRUSTED_PROXY_IPS`；后者只填写真实连接 API 的监控反向代理地址或网段。`TRUSTED_PROXY_IPS` 仅用于公开邮件发码来源，
+`INTERNAL_TRUSTED_PROXY_IPS`；后者只填写真实连接 API 的监控反向代理地址或网段。`TRUSTED_PROXY_IPS` 用于公开邮件/手机验证码发码及密码重置来源，
 必须与内部 metrics 配置分离。监控网段还必须先与服务器现有 Docker/VPC 网段核对，发生冲突时先调整两项 Prometheus 地址配置。
 
 ### 安全配置向导

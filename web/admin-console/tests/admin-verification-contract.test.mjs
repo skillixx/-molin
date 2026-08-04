@@ -11,6 +11,7 @@ import {
   writeStoredAccessToken,
 } from '../src/stores/token-storage.ts'
 import { resolveAuthFailure } from '../src/api/auth-failure-policy.ts'
+import { assertSmsSendAccepted } from '../src/api/sms-send-contract.ts'
 
 const authApiSource = await readFile(new URL('../src/api/auth.ts', import.meta.url), 'utf8')
 const adminVerifyViewSource = await readFile(
@@ -28,9 +29,25 @@ test('管理员手机和邮箱发码请求不得携带 JSON Body', () => {
   assert.ok(functionSource, '应存在管理员验证码发送函数')
   assert.match(
     functionSource,
-    /http\.post<unknown, null>\(`\/admin\/auth\/verification-codes\/\$\{targetType}`,\s*undefined\)/,
+    /http\.post<unknown, SmsSendResult \| null>\(\s*`\/admin\/auth\/verification-codes\/\$\{targetType}`,\s*undefined/,
   )
   assert.doesNotMatch(functionSource, /,\s*\{\s*}\s*\)/)
+})
+
+test('管理员手机发码必须验证四字段受理契约后才能进入倒计时', () => {
+  assert.match(authApiSource, /targetType === 'phone' \? assertSmsSendAccepted\(result\) : null/)
+  assert.match(adminVerifyViewSource, /await sendAdminVerificationCode\('phone'\)/)
+  assert.match(authApiSource, /import \{ assertSmsSendAccepted, type SmsSendResult \}/)
+  const valid = {
+    sent: true,
+    expires_in: 600,
+    business_request_id: 'masked-business-request',
+    submit_status: 'accepted',
+  }
+  assert.deepEqual(assertSmsSendAccepted(valid), valid)
+  for (const invalid of [null, {}, { ...valid, sent: false }, { ...valid, expires_in: 0 }, { ...valid, business_request_id: '' }, { ...valid, submit_status: 'failed' }]) {
+    assert.throws(() => assertSmsSendAccepted(invalid), /短信服务返回异常/)
+  }
 })
 
 test('管理员认证页面不得对同一个接口错误重复弹窗', () => {

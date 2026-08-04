@@ -17,6 +17,7 @@ var (
 	ErrInvalidCode    = errors.New("验证码错误或已过期")
 	ErrSMSUnavailable = errors.New("短信功能当前不可用")
 	ErrSMSSendFailed  = errors.New("短信提交失败")
+	ErrSMSRateLimited = errors.New("操作过于频繁，请稍后再试")
 )
 
 // VerificationService 负责验证码的生成、发送和校验。
@@ -25,6 +26,15 @@ type VerificationService struct {
 	emailSender   EmailOTPSender
 	emailKeyer    EmailTargetKeyer
 	smsDispatcher *smsservice.Dispatcher
+	smsGuard      SMSVerificationGuard
+}
+
+// SMSVerificationGuard 在短信供应商调用前限制手机号+场景发码，并限制错误验证码尝试次数。
+// 实现只能使用手机号 HMAC 作为键，禁止把完整手机号写入 Redis、日志或错误响应。
+type SMSVerificationGuard interface {
+	AllowSend(ctx context.Context, phone, scene string) (bool, error)
+	AllowCheckAttempt(ctx context.Context, phone, scene string) (bool, error)
+	ClearCheckFailures(ctx context.Context, phone, scene string) error
 }
 
 type verificationRepository interface {
@@ -66,6 +76,11 @@ func (s *VerificationService) SetEmailTargetKeyer(keyer EmailTargetKeyer) { s.em
 // SetSMSDispatcher 注入短信发送编排器；未注入时手机号发码必须失败关闭。
 func (s *VerificationService) SetSMSDispatcher(dispatcher *smsservice.Dispatcher) {
 	s.smsDispatcher = dispatcher
+}
+
+// SetSMSVerificationGuard 注入短信验证码的服务层限流与错误次数门禁。
+func (s *VerificationService) SetSMSVerificationGuard(guard SMSVerificationGuard) {
+	s.smsGuard = guard
 }
 
 // Send 保留 auth 服务现有调用契约，并把详细结果交给统一实现生成。
@@ -140,6 +155,17 @@ func (s *VerificationService) sendPhoneCode(ctx context.Context, phone, scene st
 		}
 		return VerificationSendResult{}, err
 	}
+	// 只有短信开关、白名单和模板绑定均通过后才占用发码窗口；被限流时不得生成 OTP、落库或调用供应商。
+	if s.smsGuard != nil {
+		allowed, guardErr := s.smsGuard.AllowSend(ctx, phone, scene)
+		if guardErr != nil {
+			// Redis 门禁异常时关闭失败，避免故障期间绕过成本和轰炸保护。
+			return VerificationSendResult{}, ErrSMSUnavailable
+		}
+		if !allowed {
+			return VerificationSendResult{}, ErrSMSRateLimited
+		}
+	}
 	rawCode, err := generateCode(6)
 	if err != nil {
 		return VerificationSendResult{}, errors.New("验证码生成失败")
@@ -177,6 +203,10 @@ func (s *VerificationService) sendPhoneCode(ctx context.Context, phone, scene st
 	if err := s.repo.UpdateSMSSendState(terminalCtx, v.ID, "accepted", &acceptedAt, plan.Provider, result.ProviderRequestID); err != nil {
 		return VerificationSendResult{}, err
 	}
+	if s.smsGuard != nil {
+		// 新验证码受理后清除上一批次遗留的错误次数，避免旧验证码重放影响新验证码。
+		_ = s.smsGuard.ClearCheckFailures(terminalCtx, phone, scene)
+	}
 	// 明文验证码已经提交给 Sender，禁止继续返回给 handler 或日志。
 	return VerificationSendResult{
 		Sent:              true,
@@ -191,6 +221,13 @@ func (s *VerificationService) sendPhoneCode(ctx context.Context, phone, scene st
 // 避免高并发下同一 OTP 被多个请求同时通过校验（FindValid→MarkUsed 的 TOCTOU 竞态）。
 func (s *VerificationService) Check(ctx context.Context, targetType, targetValue, scene, code string) error {
 	targetValue = normalizeVerificationTarget(targetType, targetValue)
+	if targetType == "phone" && s.smsGuard != nil {
+		allowed, err := s.smsGuard.AllowCheckAttempt(ctx, targetValue, scene)
+		if err != nil || !allowed {
+			// 错误次数存储不可用或已达上限时统一返回验证码错误，避免泄露锁定状态。
+			return ErrInvalidCode
+		}
+	}
 	if targetType == "email" {
 		if s.emailKeyer == nil {
 			return ErrInvalidCode
@@ -205,6 +242,10 @@ func (s *VerificationService) Check(ctx context.Context, targetType, targetValue
 	codeHash := crypto.SHA256Hex(code)
 	if err := s.repo.CheckAndMarkUsed(ctx, targetType, targetValue, scene, codeHash); err != nil {
 		return ErrInvalidCode
+	}
+	if targetType == "phone" && s.smsGuard != nil {
+		// 成功消费后清除当前手机号+场景的错误次数；清理失败不撤销已完成的原子消费。
+		_ = s.smsGuard.ClearCheckFailures(ctx, targetValue, scene)
 	}
 	return nil
 }

@@ -104,6 +104,15 @@ jobs:
         working-directory: web/admin-console
         run: npm install
 
+      - name: 管理后台阶段 4 契约测试
+        working-directory: web/admin-console
+        run: |
+          npm run test:sms-management
+          npm run test:admin-verification
+          npm run test:email-management
+          npm run test:vite-isolation
+          npm run test:outbound-url
+
       - name: TypeScript 类型检查
         working-directory: web/admin-console
         run: npm run type-check
@@ -128,6 +137,13 @@ jobs:
       - name: 安装依赖
         working-directory: web/user-console
         run: npm install
+
+      - name: 用户控制台阶段 4 契约测试
+        working-directory: web/user-console
+        run: |
+          npm run test:sms
+          npm run test:email-otp
+          npm run test:vite-isolation
 
       - name: TypeScript 类型检查
         working-directory: web/user-console

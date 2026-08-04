@@ -1,5 +1,6 @@
 // 认证相关接口：登录/登出/刷新 Token/获取当前用户
 import http from './http'
+import { assertSmsSendAccepted, type SmsSendResult } from './sms-send-contract'
 import type { LoginResponse, MePermissionsResponse, User } from '@/types/user'
 
 /** 邮箱登录 */
@@ -56,7 +57,11 @@ export function sendVerificationCode(
  */
 export function sendAdminVerificationCode(targetType: 'phone' | 'email') {
   // 后端对管理员发码接口执行严格空 Body 校验，空对象也会被视为非法请求参数。
-  return http.post<unknown, null>(`/admin/auth/verification-codes/${targetType}`, undefined)
+  return http.post<unknown, SmsSendResult | null>(
+    `/admin/auth/verification-codes/${targetType}`,
+    undefined,
+  )
+    .then((result) => (targetType === 'phone' ? assertSmsSendAccepted(result) : null))
 }
 
 /** 管理员手机双重认证（需先调用 sendAdminVerificationCode('phone') 发码）*/
