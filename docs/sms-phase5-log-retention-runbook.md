@@ -2,7 +2,7 @@
 
 ## 1. 当前证据
 
-2026-08-04 最新只读检查确认测试服 `systemd-journald` 正常运行，`/var/log/journal` 持久目录存在。journal 所在文件系统总量为 `982240026624` 字节、可用 `354741370880` 字节，journal 目录聚合占用 `2969567232` 字节，约占文件系统总量 `0.30%`。合并后的 `journald.conf` 没有显式启用 `SystemMaxUse`、`SystemKeepFree`、`MaxRetentionSec` 和 `MaxFileSec`。
+2026-08-05 最新只读检查确认测试服 `systemd-journald` 正常运行，`/var/log/journal` 持久目录存在。journal 所在文件系统总量为 `982240026624` 字节、可用 `354741161984` 字节，journal 目录聚合占用 `2969567232` 字节，约占文件系统总量 `0.30%`。合并后的 `journald.conf` 没有显式启用 `SystemMaxUse`、`SystemKeepFree`、`MaxRetentionSec` 和 `MaxFileSec`。
 
 因此只能证明日志正在持久保存，不能证明容量上限、磁盘保留空间、最长留存时间或单文件轮转周期满足阶段 5 运维要求。未配置不等于默认值已获批准，当前固定结论为 `log_retention_policy_verified=false`。
 
@@ -31,8 +31,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 
 不得由开发脚本猜测具体容量或天数，也不得把测试服策略直接复制到生产环境。
 
-基于当前容量和阶段 5 至少 24 小时观察需求，可提交以下**测试服候选值**供运维、产品和安全负责人审批；它们不是
-已批准值，也没有增长率证据支撑生产使用：
+基于当前容量和阶段 5 至少 24 小时观察需求，以下数值已于 2026-08-05 获项目负责人明确批准用于**测试服短信关闭态**；
+该授权不适用于生产环境，也没有增长率证据支撑生产使用：
 
 | 配置 | 候选值 | 依据与限制 |
 |---|---:|---|
@@ -41,12 +41,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 | `MaxRetentionSec` | `14day` | 覆盖 24 小时观察和后续复盘窗口；容量上限可能更早淘汰旧日志 |
 | `MaxFileSec` | `1day` | 形成每日轮转上限，便于阶段证据管理；不等同于日志保留 1 天 |
 
-审批时必须逐项确认或替换，不得因本表存在就自动生成配置。若批准后部署前磁盘可用空间显著下降，或 24 小时增长率
+若部署前磁盘可用空间显著下降，或 24 小时增长率
 显示 `8G` 无法覆盖获批留存期，应停止变更并重新评估。
 
 变更入口已经固化为 `scripts/apply-sms-phase5-test-server-log-retention.ps1`。默认模式不连接测试服，只输出四项非敏感
 计划值；`-SelfTest` 同样保持远端连接、配置写入和服务重启均为 0。只有参数值获批后，才允许在独立窗口同时提供
-`-Apply` 和固定授权短语 `APPROVE_TEST_JOURNALD_RETENTION`。示例仅说明门禁形态，不代表本轮已获授权：
+`-Apply` 和固定授权短语 `APPROVE_TEST_JOURNALD_RETENTION`。2026-08-05 已按批准值执行该入口：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/apply-sms-phase5-test-server-log-retention.ps1 `
@@ -57,6 +57,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/apply-sms-phase5-tes
 再备份已有 drop-in、严格校验候选值并原子安装。重启 journald 后再次核对合并配置、服务状态和同一 API PID 关闭态。
 任一安装、重启或复验失败都会恢复原 drop-in 并再次重启 journald；回滚也失败时固定以退出码 90 暴露高优先级故障。
 脚本不执行 vacuum/rotate/flush，不读取日志正文，不调用短信接口，也不删除备份。
+
+### 3.1 2026-08-05 首次获批执行结果
+
+首次执行在任何配置写入或服务重启之前失败，固定输出 `log_retention_change_applied=false` 与
+`failure_stage=sudo_unavailable`。随后通过固定 SSH 身份执行 `sudo -n -l`，系统明确返回“需要密码”，证明当前 `pc`
+账号没有可用于自动化窗口的非交互 sudo 权限。立即复跑只读审计后，四项显式策略仍全部缺失，journald 保持 active；
+关闭态核验继续为 `SMS_ENABLED=false`、health/ready `200/200`、发送摘要 `13:13:0`、Provider 指标 0。
+
+不得把批准口令等同于系统提权能力，也不得索取、输出或通过命令参数传递 sudo 密码。下一次执行必须由运维提供受控的
+非交互提权入口，或由具备权限的运维人员在测试服本地执行同一冻结资产；执行后仍须完整通过本手册第 4 节复验。
 
 Linux/CI 行为自测会在随机临时目录覆盖已有配置恢复、原配置不存在、普通复验失败、`HUP/INT/TERM` 中断、安装失败、
 journald 重启失败和回滚失败退出码 90；自测通过时固定输出 `system_paths_written=0`、`service_restarts=0`。该自测不替代

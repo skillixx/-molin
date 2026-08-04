@@ -24,7 +24,7 @@ SSH/API 访问审计日志，业务配置修改、服务重启和短信发送操
 确定接收渠道与值班人，以 Secret 方式部署 Alertmanager 并把 Prometheus 指向它；这些均是外部通知和服务配置变更，
 需要独立授权。配置完成后还需在 `SMS_ENABLED=false` 下用合成指标或专用测试规则演练，不得通过真实短信故障触发。
 
-2026-08-05 刷新的日志留存只读审计确认：journald 服务正常、持久目录存在，journal 目录约 2.97GB；文件系统总量约 982.24GB、可用约 354.74GB。容量上限、磁盘保留空间、最长留存时间和单文件轮转周期四项显式配置仍全部缺失，固定结论继续为 `log_retention_configuration_complete=false` 与 `log_retention_policy_verified=false`。SSH 审计可能增加访问日志，但不会修改业务配置。这不会影响关闭态 Provider 零调用证据；真实 Canary 前必须由运维、产品和安全负责人确定策略，单独批准配置变更，并补充获批值比对与运行时重载证据。
+2026-08-05 刷新的日志留存只读审计确认：journald 服务正常、持久目录存在，journal 目录约 2.97GB；文件系统总量约 982.24GB、可用约 354.74GB。`8G/50G/14day/1day` 已获测试服短信关闭态部署授权，但首次受控执行在任何配置写入或服务重启前因 `sudo_unavailable` 失败；固定账号的 `sudo -n -l` 同样确认需要密码。四项显式配置仍全部缺失，固定结论继续为 `log_retention_configuration_complete=false` 与 `log_retention_policy_verified=false`。失败后 journald、API、代理、Prometheus 和短信关闭态复验正常，发送摘要与 Provider 指标继续零增量；下一次执行需要受控非交互提权入口。
 
 ## 2. 指标口径
 
