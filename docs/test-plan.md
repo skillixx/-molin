@@ -694,18 +694,19 @@ server/internal/modules/asset/
 
 | 场景 | 发码入口 | 后续业务 | 必须验证 | 当前状态 |
 |---|---|---|---|---|
-| `register` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 统一注册 | 独立注册模板、正确签名、验证码可单次消费 | 本地 HTTP+Mock 用例已实现；隔离 MySQL/Redis CI 待执行 |
-| `login` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 手机验证码登录 | 独立登录模板，不可与注册验证码串用 | 本地 HTTP+Mock 用例已实现；隔离 MySQL/Redis CI 待执行 |
-| `reset_password` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 重置密码 | 独立重置模板、成功后旧会话失效 | 本地 HTTP+Mock 用例已实现；隔离 MySQL/Redis CI 待执行 |
-| `bind_phone` | `POST /api/me/verification-codes/phone`，body 仅含新 `phone` | 换绑手机号 | 必须登录；公开端点传该 scene 被拒；成功后手机号更新 | 本地 HTTP+Mock 用例已实现；隔离 MySQL/Redis CI 待执行 |
-| `admin_verify` | `POST /api/admin/auth/verification-codes/phone`，无 body | 管理员手机双重认证 | 发往当前管理员绑定手机号；公开端点传该 scene 被拒 | 本地 HTTP+Mock 用例已实现；隔离 MySQL/Redis CI 待执行 |
+| `register` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 统一注册 | 独立注册模板、正确签名、验证码可单次消费 | 本地 HTTP+Mock 与隔离 MySQL/Redis CI 通过 |
+| `login` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 手机验证码登录 | 独立登录模板，不可与注册验证码串用 | 本地 HTTP+Mock 与隔离 MySQL/Redis CI 通过 |
+| `reset_password` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 重置密码 | 独立重置模板、成功后旧会话失效 | 本地 HTTP+Mock 与隔离 MySQL/Redis CI 通过 |
+| `bind_phone` | `POST /api/me/verification-codes/phone`，body 仅含新 `phone` | 换绑手机号 | 必须登录；公开端点传该 scene 被拒；成功后手机号更新 | 本地 HTTP+Mock 与隔离 MySQL/Redis CI 通过 |
+| `admin_verify` | `POST /api/admin/auth/verification-codes/phone`，无 body | 管理员手机双重认证 | 发往当前管理员绑定手机号；公开端点传该 scene 被拒 | 本地 HTTP+Mock 与隔离 MySQL/Redis CI 通过 |
 
 阶段 4 新增以下统一安全回归：手机号与场景 60 秒 Redis 原子冷却、手机号与场景十分钟最多五次校验尝试且
 并发请求不能越过硬边界、新验证码受理或成功消费后清除旧计数、Redis 故障失败关闭、同一验证码 MySQL 并发消费
 恰好一次成功、七类供应商错误安全归一化、公开手机发码/密码重置使用可信来源解析器且轮换伪造 XFF 仍共享同一
 IP 限流桶、两个控制台开发代理默认本机。
-本机缺少隔离 MySQL/Redis 且 Windows Go 为 `CGO_ENABLED=0`，因此真实数据库、真实 Redis 与 `-race` 结果只能由
-CI 提供；本地跳过不得写成通过。阶段 4 未获真实短信授权，不连接阿里云、不发送短信。
+本机缺少隔离 MySQL/Redis 且 Windows Go 为 `CGO_ENABLED=0`，因此真实数据库、真实 Redis 与 `-race` 结果由
+PR #320 GitHub Actions run `30891459024` 提供并已通过；没有用本地跳过替代 CI。阶段 4 未获真实短信授权，
+不连接阿里云、不发送短信。
 
 邮箱注册、登录、重置密码、`POST /api/me/verification-codes/email` 换绑邮箱及
 `POST /api/admin/auth/verification-codes/email` 管理员邮箱验证必须全量回归，证明短信改造未将邮箱接入短信适配器，也未错误要求 `send_status=sent`。

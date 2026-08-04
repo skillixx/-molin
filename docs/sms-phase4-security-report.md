@@ -6,7 +6,7 @@
 发码/密码重置的 IP 桶曾信任可伪造的 `X-Forwarded-For`。
 另修复管理后台本地开发默认连接共享测试服务器的环境隔离缺陷。
 
-截至当前未发现 P0/P1 残留；最终结论仍需 CI 与独立审查确认。
+CI 后独立复核未发现 P0/P1 残留；GitHub Actions run `30891459024` 的五个 Job 全部通过。
 
 ## 2. 安全控制
 
@@ -41,13 +41,13 @@
 测试数据和临时令牌；CLI 生成的临时快照、日志和截图在验收后已整目录删除。
 
 当前工作树已执行 Git 差异敏感词、完整大陆手机号、AccessKey、Bearer 值和 JWT 形态扫描，新增/修改内容均为
-0 命中；`git diff --check`、Go 模块校验、两端契约测试、类型检查、Lint 和生产构建均通过。PR 创建后仍需由
-CI 在 Linux 隔离环境重复执行，不能以本地扫描替代 CI。
+0 命中；`git diff --check`、Go 模块校验、两端契约测试、类型检查、Lint 和生产构建均通过。PR #320 已由
+GitHub Actions 在 Linux 隔离环境重复执行并通过，且没有以本地扫描替代 CI。
 
 ## 5. 残余风险
 
-1. Windows 本机无法执行 Go race；由 Linux CI 覆盖。
-2. 本机无隔离 MySQL/Redis；真实并发约束和 TTL 由 CI 服务容器覆盖。
+1. Windows 本机无法执行 Go race；已由 GitHub Actions Linux CI 覆盖。
+2. 本机无隔离 MySQL/Redis；真实并发约束和 TTL 已由 CI 服务容器覆盖。
 3. 仓库前端依赖审计存在既有 moderate/high 项，需要独立供应链升级计划。
 4. 阶段 4 未部署和未发送真实短信，不能证明本次提交在部署态的阿里云受理或真实收件。
 5. auth 模块现行兼容契约要求手机验证码行继续使用 `verification_codes.target_value`；短信发送日志、Redis key、
