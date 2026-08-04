@@ -74,6 +74,17 @@ rollback_restore_runtime_verified=false
 `SMS_TEMPLATE_CODE_*`。候选文件不得输出值，必须另存到 600 权限的受控临时路径，经人工逐键确认后才能在已授权
 窗口替换旧二进制并重启。该流程尚未执行；真正替换二进制、恢复配置或重启 API 会改变测试服服务状态，必须取得独立授权。
 
+候选生成器已固化为 `scripts/prepare-sms-phase5-test-server-rollback-candidate.ps1` 与同名 Bash payload。默认不执行任何
+动作，离线检查命令为：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-sms-phase5-test-server-rollback-candidate.ps1 -SelfTest
+```
+
+真实模式必须同时提供 `-Execute`、精确批准口令和 UTC `ChangeId`，并通过固定 SSH 主机校验；远端使用排他创建，候选
+已存在时拒绝覆盖，目标目录/文件权限固定为 700/600。生成器只创建候选，不替换当前环境、不重启服务。当前尚未批准
+真实生成，因此测试服候选文件创建数仍为 0。
+
 同一预检确认 Alertmanager 引用、容器、进程和 9093 监听均为 0，状态为
 `receiver_configuration_required`。必须先明确接收渠道、值班人和 Secret 注入方式并取得部署授权，之后才能另行批准
 关闭态通知演练；禁止用制造真实短信失败的方式验证通知。

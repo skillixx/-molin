@@ -47,6 +47,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 当前回滚材料完整性预检通过，三份容器快照引用的旧镜像仍存在；但旧环境缺少固定代理信任且包含废弃的
 `SMS_TEMPLATE_CODE_*` 键，禁止整份恢复。实际回滚候选必须从当前环境生成，保留固定代理信任、保持
 `SMS_ENABLED=false`/`SMS_TEST_MODE=true` 并排除废弃模板键；该候选及旧二进制运行时仍需在独立授权窗口验证。
+候选生成器代码、行为契约和 CI SelfTest 已完成，但真实模式具有远端文件写入，当前未执行，不能记为候选已生成。
 通知链为 `receiver_configuration_required`。该入口不会执行回滚或触发告警，但 SSH 与 HTTP GET 可能增加系统访问和审计日志。
 
 手动前端部署工作流已同步使用 `molin-sms-proxy`、`172.20.250.0/28`、管理端 `.2`、用户端 `.3` 和宿主网关

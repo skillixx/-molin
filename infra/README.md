@@ -53,6 +53,9 @@ Alertmanager 接收渠道尚未选择，禁止提交带真实接收地址或 Sec
 `docs/sms-phase5-alertmanager-change-runbook.md` 分别完成渠道决策、离线配置校验、关闭态部署和合成告警演练授权；
 任何一步都不得调用真实短信接口。
 
+测试服回滚候选只允许使用 `scripts/prepare-sms-phase5-test-server-rollback-candidate.ps1` 生成。先执行 `-SelfTest`；
+真实模式会写入 600 权限候选文件，必须另行批准，且生成后仍不得替换当前环境或重启 API。
+
 ## 邮件 Phase 4 测试环境监控
 
 本节只描述测试环境运行方式，不授权执行数据库 migration、远程部署或真实邮件发送。Prometheus 直接抓取宿主机 API 的
