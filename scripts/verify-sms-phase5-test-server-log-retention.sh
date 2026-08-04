@@ -30,6 +30,30 @@ else
   journal_disk_usage_observed=false
 fi
 
+# 只输出文件系统总量、可用量和 journal 目录聚合占用，不读取或输出任何日志正文。
+journal_disk_total_bytes=0
+journal_disk_available_bytes=0
+journal_directory_usage_bytes=0
+journal_directory_usage_percent=0
+journal_filesystem_capacity_observed=false
+disk_summary="$(df -B1 -P /var/log/journal 2>/dev/null | awk 'NR == 2 {print $2 ":" $4}')" || true
+journal_directory_usage_bytes="$(du -sb /var/log/journal 2>/dev/null | awk 'NR == 1 {print $1}')" || true
+if [[ "$disk_summary" =~ ^([1-9][0-9]*):([0-9]+)$ ]] \
+  && [[ "$journal_directory_usage_bytes" =~ ^[0-9]+$ ]]; then
+  journal_disk_total_bytes="${disk_summary%%:*}"
+  journal_disk_available_bytes="${disk_summary#*:}"
+  journal_directory_usage_percent="$(python3 - "$journal_directory_usage_bytes" "$journal_disk_total_bytes" <<'PY'
+from decimal import Decimal, ROUND_HALF_UP
+import sys
+
+used = Decimal(sys.argv[1])
+total = Decimal(sys.argv[2])
+print((used * 100 / total).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+PY
+)"
+  journal_filesystem_capacity_observed=true
+fi
+
 # systemd-analyze 会按 systemd 实际加载顺序合并主配置与 drop-in；这里只输出设置是否存在，不输出配置值。
 merged_config="$(systemd-analyze cat-config systemd/journald.conf)" || fail merged_config
 policy_status="$(printf '%s\n' "$merged_config" | python3 -c '
@@ -108,6 +132,11 @@ printf 'journald_active=%s\n' "$journald_active"
 printf 'journald_persistent_storage_present=%s\n' "$journald_persistent_storage_present"
 printf 'journald_storage_mode_persistent=%s\n' "$journald_storage_mode_persistent"
 printf 'journal_disk_usage_observed=%s\n' "$journal_disk_usage_observed"
+printf 'journal_filesystem_capacity_observed=%s\n' "$journal_filesystem_capacity_observed"
+printf 'journal_disk_total_bytes=%s\n' "$journal_disk_total_bytes"
+printf 'journal_disk_available_bytes=%s\n' "$journal_disk_available_bytes"
+printf 'journal_directory_usage_bytes=%s\n' "$journal_directory_usage_bytes"
+printf 'journal_directory_usage_percent=%s\n' "$journal_directory_usage_percent"
 printf 'journald_capacity_limit_configured=%s\n' "$journald_capacity_limit_configured"
 printf 'journald_keep_free_configured=%s\n' "$journald_keep_free_configured"
 printf 'journald_retention_limit_configured=%s\n' "$journald_retention_limit_configured"

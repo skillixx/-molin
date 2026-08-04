@@ -43,6 +43,11 @@ class LogRetentionPreflightContractTest(unittest.TestCase):
             "journald_active",
             "journald_persistent_storage_present",
             "journald_storage_mode_persistent",
+            "journal_filesystem_capacity_observed",
+            "journal_disk_total_bytes",
+            "journal_disk_available_bytes",
+            "journal_directory_usage_bytes",
+            "journal_directory_usage_percent",
             "journald_capacity_limit_configured",
             "journald_keep_free_configured",
             "journald_retention_limit_configured",
@@ -65,6 +70,8 @@ class LogRetentionPreflightContractTest(unittest.TestCase):
         ):
             self.assertIn(setting, self.sh)
         self.assertIn("systemd-analyze cat-config systemd/journald.conf", self.sh)
+        self.assertIn("df -B1 -P /var/log/journal", self.sh)
+        self.assertIn("du -sb /var/log/journal", self.sh)
         self.assertNotIn("SMS_ENABLED=true", self.sh)
         self.assertNotIn("real_sms_sent=0", self.sh)
         self.assertNotIn("log_retention_policy_verified=true", self.sh)

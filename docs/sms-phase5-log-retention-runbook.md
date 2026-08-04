@@ -2,7 +2,7 @@
 
 ## 1. 当前证据
 
-2026-08-04 只读检查确认测试服 `systemd-journald` 正常运行，`/var/log/journal` 持久目录存在，日志占用约 2.3G。合并后的 `journald.conf` 没有显式启用 `SystemMaxUse`、`SystemKeepFree`、`MaxRetentionSec` 和 `MaxFileSec`。
+2026-08-04 最新只读检查确认测试服 `systemd-journald` 正常运行，`/var/log/journal` 持久目录存在。journal 所在文件系统总量为 `982240026624` 字节、可用 `354741370880` 字节，journal 目录聚合占用 `2969567232` 字节，约占文件系统总量 `0.30%`。合并后的 `journald.conf` 没有显式启用 `SystemMaxUse`、`SystemKeepFree`、`MaxRetentionSec` 和 `MaxFileSec`。
 
 因此只能证明日志正在持久保存，不能证明容量上限、磁盘保留空间、最长留存时间或单文件轮转周期满足阶段 5 运维要求。未配置不等于默认值已获批准，当前固定结论为 `log_retention_policy_verified=false`。
 
@@ -30,6 +30,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 - 日志中出现手机号、验证码、Token 或密钥痕迹时的立即停止与处置流程。
 
 不得由开发脚本猜测具体容量或天数，也不得把测试服策略直接复制到生产环境。
+
+基于当前容量和阶段 5 至少 24 小时观察需求，可提交以下**测试服候选值**供运维、产品和安全负责人审批；它们不是
+已批准值，也没有增长率证据支撑生产使用：
+
+| 配置 | 候选值 | 依据与限制 |
+|---|---:|---|
+| `SystemMaxUse` | `8G` | 高于当前约 2.97GB 占用并限制 journal 总量；实际可保留天数仍取决于后续增长率 |
+| `SystemKeepFree` | `50G` | 当前可用约 354.74GB，预留固定磁盘安全边界；部署前必须重新读取可用空间 |
+| `MaxRetentionSec` | `14day` | 覆盖 24 小时观察和后续复盘窗口；容量上限可能更早淘汰旧日志 |
+| `MaxFileSec` | `1day` | 形成每日轮转上限，便于阶段证据管理；不等同于日志保留 1 天 |
+
+审批时必须逐项确认或替换，不得因本表存在就自动生成配置。若批准后部署前磁盘可用空间显著下降，或 24 小时增长率
+显示 `8G` 无法覆盖获批留存期，应停止变更并重新评估。
 
 ## 4. 关闭态变更与验证门禁
 
