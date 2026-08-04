@@ -148,7 +148,7 @@ func TestSMSPhase4FiveSceneBusinessE2E(t *testing.T) {
 	}
 	userID := registerResult.User.ID
 	shortEmail := "a" + "@" + "phase4.invalid"
-	phase4HTTPError(t, mux, http.MethodPost, "/api/auth/login/email", "", authdto.LoginEmailReq{Email: shortEmail, Password: initialPassword}, http.StatusUnauthorized, 40001)
+	phase4HTTPError(t, mux, http.MethodPost, "/api/auth/login/email", "", authdto.LoginEmailReq{Email: shortEmail, Password: initialPassword}, http.StatusNotFound, 40404)
 	phase4HTTPError(t, mux, http.MethodPost, "/api/auth/register", "", registerRequest, http.StatusBadRequest, 40000)
 
 	loginCode := sendPhase4PhoneCodeHTTP(t, mux, mockSender, registerPhone, "login", "")
