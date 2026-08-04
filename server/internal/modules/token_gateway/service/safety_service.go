@@ -43,10 +43,11 @@ type safetyRule struct {
 }
 
 type SafetySubject struct {
-	RequestID string
-	UserID    uint64
-	ProjectID uint64
-	APIKeyID  uint64
+	RequestID        string
+	UserID           uint64
+	ProjectID        uint64
+	APIKeyID         uint64
+	LogicalModelCode string
 }
 
 type SafetyDecision struct {

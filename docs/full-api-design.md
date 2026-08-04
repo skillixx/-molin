@@ -2527,3 +2527,31 @@ Body 使用 `resolution=release|settle`；`settle` 时同时提交 `prompt_token
 | `429/42900` | 管理员或手机号维度频率超限 |
 | `502/50200` | 阿里云拒绝、超时、网络或未知供应商错误 |
 | `503/50300` | 短信关闭、测试模式/白名单或运行配置不完整 |
+
+## AI 网关 G5 管理工作台接口
+
+所有接口要求管理员 JWT、有效双重认证和表中权限。写请求严格拒绝重复 JSON 键、未知字段和尾随文档；所有写操作先记录审计。
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/api/admin/token/overview` | `ai_gateway:view` | 模型、渠道、价格、路由和异常聚合 |
+| GET | `/api/admin/token/models/{id}/versions` | `ai_gateway:view` | 不可变模型发布版本 |
+| POST | `/api/admin/token/models/{id}/publish` | `ai_gateway:model_manage` | body：`{"reason":"..."}` |
+| POST | `/api/admin/token/models/{id}/unpublish` | `ai_gateway:model_manage` | 下架且退役当前快照 |
+| POST | `/api/admin/token/models/{id}/rollback` | `ai_gateway:model_manage` | body：`{"target_version_no":1,"reason":"..."}`；创建新发布版本 |
+| POST | `/api/admin/token/channels/{id}/health-check` | `ai_gateway:route_manage` | 只访问渠道根 `/health`，不携带密钥且不调用模型 |
+| GET/POST | `/api/admin/token/routes` | view / route_manage | Bifrost 路由列表与创建 |
+| PUT | `/api/admin/token/routes/{id}` | `ai_gateway:route_manage` | 全量提交路由及当前 `version_no` |
+| GET/POST | `/api/admin/token/prices` | view / price_manage | 价格版本列表与草稿创建 |
+| GET | `/api/admin/token/prices/{id}` | `ai_gateway:view` | 价格版本及四项 SKU |
+| POST | `/api/admin/token/prices/{id}/approve` | `ai_gateway:price_manage` | 草稿审批 |
+| POST | `/api/admin/token/prices/{id}/publish` | `ai_gateway:price_manage` | 发布已审批版本 |
+| POST | `/api/admin/token/prices/{id}/suspend` | `ai_gateway:price_manage` | body：`{"reason":"..."}` |
+| POST | `/api/admin/token/prices/{id}/retire` | `ai_gateway:price_manage` | 退役价格版本 |
+| POST | `/api/admin/token/prices/{id}/rollback` | `ai_gateway:price_manage` | 复制历史 SKU 为新草稿，必须重新审批发布 |
+
+`overview` 支持 `from/to/model/channel_id/status`，时间窗最大 90 天。金额字段均为人民币十进制字符串：销售额来自已结算请求，成本从请求不可变价格快照和计量事实反算，毛利为销售额减成本。治理拒绝来自脱敏拒绝事件，不保存提示词、响应内容或密钥。
+
+G5 路由仅在确认请求未发送时按 `max_retries` 重试；超时、结果未知、已收到 HTTP/SSE 数据均禁止重试。安全失败达到阈值后写入共享熔断表并开启 30 秒窗口，后续请求按优先级和回退顺序选择其他路由。
+
+新增权限：`ai_gateway:model_manage`、`ai_gateway:price_manage`、`ai_gateway:route_manage`。冲突统一返回 `409/40900`，不满足发布门禁返回 `409/40900`，参数错误返回 `400/40000`。

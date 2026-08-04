@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/url"
 	"strings"
 
 	"molin/server/internal/modules/token_gateway/dto"
@@ -94,6 +96,13 @@ func (s *CatalogService) Create(ctx context.Context, req dto.CreateModelReq) (*d
 	m := &model.TokenModel{
 		LogicalModelCode: code,
 		DisplayName:      req.DisplayName,
+		ProviderName:     strings.TrimSpace(req.ProviderName),
+		Description:      req.Description,
+		CapabilitiesJSON: req.Capabilities,
+		ContextWindow:    req.ContextWindow,
+		IntroURL:         req.IntroURL,
+		DocsURL:          req.DocsURL,
+		QuickStartURL:    req.QuickStartURL,
 		Modality:         modality,
 		ProductID:        req.ProductID,
 		ChannelID:        req.ChannelID,
@@ -102,6 +111,9 @@ func (s *CatalogService) Create(ctx context.Context, req dto.CreateModelReq) (*d
 		VisibleScope:     scope,
 		TargetAudience:   audience,
 		SortOrder:        req.SortOrder,
+	}
+	if err := validateModelMetadata(m.CapabilitiesJSON, m.IntroURL, m.DocsURL, m.QuickStartURL); err != nil {
+		return nil, err
 	}
 	if err := s.repo.Create(ctx, m); err != nil {
 		return nil, err
@@ -184,6 +196,30 @@ func (s *CatalogService) Update(ctx context.Context, id uint64, req dto.UpdateMo
 		}
 		updates["display_name"] = *req.DisplayName
 	}
+	if req.ProviderName != nil {
+		updates["provider_name"] = strings.TrimSpace(*req.ProviderName)
+	}
+	if req.Description != nil {
+		updates["description"] = strings.TrimSpace(*req.Description)
+	}
+	if len(req.Capabilities) > 0 {
+		if !json.Valid(req.Capabilities) {
+			return nil, newValidation("capabilities 必须是合法 JSON")
+		}
+		updates["capabilities_json"] = req.Capabilities
+	}
+	if req.ContextWindow != nil {
+		updates["context_window"] = *req.ContextWindow
+	}
+	for field, value := range map[string]*string{"intro_url": req.IntroURL, "docs_url": req.DocsURL, "quick_start_url": req.QuickStartURL} {
+		if value != nil {
+			trimmed := strings.TrimSpace(*value)
+			if trimmed != "" && !validDocumentationURL(trimmed) {
+				return nil, newValidation(field + " 必须是 HTTP/HTTPS 静态网页地址")
+			}
+			updates[field] = trimmed
+		}
+	}
 	if req.Modality != nil {
 		if !validModalities[*req.Modality] {
 			return nil, newValidation("modality 只能为 chat/image/audio/video")
@@ -247,6 +283,13 @@ func modelToResp(m *model.TokenModel) *dto.ModelResp {
 		ID:               m.ID,
 		LogicalModelCode: m.LogicalModelCode,
 		DisplayName:      m.DisplayName,
+		ProviderName:     m.ProviderName,
+		Description:      m.Description,
+		Capabilities:     m.CapabilitiesJSON,
+		ContextWindow:    m.ContextWindow,
+		IntroURL:         m.IntroURL,
+		DocsURL:          m.DocsURL,
+		QuickStartURL:    m.QuickStartURL,
 		Modality:         m.Modality,
 		ProductID:        m.ProductID,
 		ChannelID:        m.ChannelID,
@@ -255,9 +298,28 @@ func modelToResp(m *model.TokenModel) *dto.ModelResp {
 		VisibleScope:     scope,
 		TargetAudience:   audienceToDTO(scope, m.TargetAudience),
 		SortOrder:        m.SortOrder,
+		ReleaseVersionNo: m.ReleaseVersionNo,
+		PublishedAt:      m.PublishedAt,
 		CreatedAt:        m.CreatedAt,
 		UpdatedAt:        m.UpdatedAt,
 	}
+}
+
+func validateModelMetadata(capabilities json.RawMessage, urls ...*string) error {
+	if len(capabilities) > 0 && !json.Valid(capabilities) {
+		return newValidation("capabilities 必须是合法 JSON")
+	}
+	for _, value := range urls {
+		if value != nil && strings.TrimSpace(*value) != "" && !validDocumentationURL(strings.TrimSpace(*value)) {
+			return newValidation("模型文档地址必须使用 HTTP/HTTPS")
+		}
+	}
+	return nil
+}
+
+func validDocumentationURL(raw string) bool {
+	parsed, err := url.ParseRequestURI(raw)
+	return err == nil && parsed.Host != "" && (parsed.Scheme == "http" || parsed.Scheme == "https")
 }
 
 // audienceToDTO 把 target_audience_json 原文解析为响应 DTO（scope=all → nil）。

@@ -53,6 +53,51 @@ func TestBifrostDriver_NonStreamMappingAuthUsageAndRedaction(t *testing.T) {
 	}
 }
 
+func TestBifrostDriver_PrefersPublishedProviderModel(t *testing.T) {
+	var receivedModel string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		receivedModel, _ = body["model"].(string)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"ok","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
+	}))
+	defer server.Close()
+	driver := NewBifrostDriver(BifrostDriverConfig{BaseURL: server.URL, InternalToken: "internal", ModelMapping: map[string]string{"molin/demo": "legacy/old"}, HTTPClient: server.Client()})
+	resp, err := driver.ChatCompletion(context.Background(), ExecutionRequest{LogicalModel: "molin/demo", ProviderModel: "openrouter/new-model", EndpointCode: "route:88", Body: map[string]interface{}{"messages": []interface{}{}}})
+	if err != nil {
+		t.Fatalf("执行失败: %v", err)
+	}
+	defer resp.Response.Body.Close()
+	if receivedModel != "openrouter/new-model" {
+		t.Fatalf("期望数据库路由优先，实际 %q", receivedModel)
+	}
+}
+
+func TestBifrostDriver_LegacyModelKeepsFrozenMapping(t *testing.T) {
+	var receivedModel string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		receivedModel, _ = body["model"].(string)
+		_, _ = w.Write([]byte(`{"id":"ok","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
+	}))
+	defer server.Close()
+	driver := NewBifrostDriver(BifrostDriverConfig{BaseURL: server.URL, InternalToken: "internal", ModelMapping: map[string]string{"molin/demo": "legacy/frozen"}, HTTPClient: server.Client()})
+	resp, err := driver.ChatCompletion(context.Background(), ExecutionRequest{LogicalModel: "molin/demo", ProviderModel: "legacy-model-without-provider", EndpointCode: "legacy-channel", Body: map[string]interface{}{"messages": []interface{}{}}})
+	if err != nil {
+		t.Fatalf("旧模型映射执行失败: %v", err)
+	}
+	defer resp.Response.Body.Close()
+	if receivedModel != "legacy/frozen" {
+		t.Fatalf("旧链路必须保留冻结映射，实际 %q", receivedModel)
+	}
+}
+
 func TestBifrostDriver_RecognizesHTTPAndBodyErrors(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -496,6 +541,163 @@ func TestNativeDriver_RemovesUnknownChoiceFieldsFromSSE(t *testing.T) {
 	}
 	if bytes.Contains(chunk.PublicLine, []byte("vendor_text")) || bytes.Contains(chunk.PublicLine, []byte("网络赌博推广")) || !bytes.Contains(chunk.PublicLine, []byte(`"content":"OK"`)) {
 		t.Fatalf("SSE 只能公开兼容 choice 字段: %s", chunk.PublicLine)
+	}
+}
+
+func TestExecutionDriverFreezesNestedMessageAndDeltaFields(t *testing.T) {
+	driver := NewNativeOpenAICompatibleDriver(&http.Client{})
+	line := []byte(`data: {"choices":[{"index":0,"delta":{"role":"assistant","content":"OK","vendor_trace":"secret","tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"lookup","arguments":"{}","provider_id":"secret"},"provider_call":"secret"}]}}]}` + "\n")
+	chunk, err := driver.NormalizeStreamLine(line, "molin/qwen-turbo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range [][]byte{[]byte("vendor_trace"), []byte("provider_id"), []byte("provider_call"), []byte("secret")} {
+		if bytes.Contains(chunk.PublicLine, forbidden) {
+			t.Fatalf("SSE 嵌套私有字段不得公开: %s", chunk.PublicLine)
+		}
+	}
+	for _, required := range [][]byte{[]byte(`"content":"OK"`), []byte(`"name":"lookup"`), []byte(`"arguments":"{}"`)} {
+		if !bytes.Contains(chunk.PublicLine, required) {
+			t.Fatalf("标准嵌套字段必须保留: %s", chunk.PublicLine)
+		}
+	}
+
+	value := map[string]interface{}{
+		"choices": []interface{}{map[string]interface{}{
+			"message": map[string]interface{}{
+				"role": "assistant", "content": "OK", "private": "secret",
+				"annotations": []interface{}{map[string]interface{}{
+					"type": "url_citation", "private": "secret",
+					"url_citation": map[string]interface{}{"start_index": 0, "end_index": 2, "title": "文档", "url": "https://example.com", "provider_rank": 1},
+				}},
+			},
+		}},
+	}
+	sanitizeExecutionResponse(value, "molin/qwen-turbo")
+	raw, _ := json.Marshal(value)
+	if bytes.Contains(raw, []byte("private")) || bytes.Contains(raw, []byte("provider_rank")) || bytes.Contains(raw, []byte("secret")) {
+		t.Fatalf("非流式嵌套私有字段不得公开: %s", raw)
+	}
+	if !bytes.Contains(raw, []byte("url_citation")) || !bytes.Contains(raw, []byte("https://example.com")) {
+		t.Fatalf("标准 URL 引用字段必须保留: %s", raw)
+	}
+}
+
+func TestExecutionDriverFreezesUsageAndLogprobsFields(t *testing.T) {
+	value := map[string]interface{}{
+		"choices": []interface{}{map[string]interface{}{
+			"index": 0,
+			"logprobs": map[string]interface{}{
+				"provider_trace": "secret",
+				"content": []interface{}{map[string]interface{}{
+					"token": "OK", "logprob": -0.1, "bytes": []interface{}{79, 75}, "provider_rank": 1,
+					"top_logprobs": []interface{}{map[string]interface{}{"token": "OK", "logprob": -0.1, "bytes": []interface{}{79, 75}, "route": "secret"}},
+				}},
+			},
+		}},
+		"usage": map[string]interface{}{
+			"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3, "internal_route": "secret",
+			"prompt_tokens_details":     map[string]interface{}{"cached_tokens": 1, "provider_cache_id": "secret"},
+			"completion_tokens_details": map[string]interface{}{"reasoning_tokens": 1, "provider_cost": "secret"},
+		},
+	}
+	sanitizeExecutionResponse(value, "molin/qwen-turbo")
+	raw, _ := json.Marshal(value)
+	for _, forbidden := range [][]byte{[]byte("provider_trace"), []byte("provider_rank"), []byte("internal_route"), []byte("provider_cache_id"), []byte("provider_cost"), []byte("secret"), []byte(`"route"`)} {
+		if bytes.Contains(raw, forbidden) {
+			t.Fatalf("Usage 与 logprobs 私有字段不得公开: %s", raw)
+		}
+	}
+	for _, required := range [][]byte{[]byte(`"total_tokens":3`), []byte(`"cached_tokens":1`), []byte(`"reasoning_tokens":1`), []byte(`"token":"OK"`)} {
+		if !bytes.Contains(raw, required) {
+			t.Fatalf("冻结的兼容字段必须保留: %s", raw)
+		}
+	}
+}
+
+func TestExecutionDriverDropsMalformedUsageAndLogprobsTypes(t *testing.T) {
+	value := map[string]interface{}{
+		"choices": []interface{}{map[string]interface{}{
+			"message":  map[string]interface{}{"role": "assistant", "content": "OK"},
+			"logprobs": "provider-private-data",
+		}},
+		"usage": map[string]interface{}{
+			"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2,
+			"prompt_tokens_details":     "provider-private-data",
+			"completion_tokens_details": map[string]interface{}{"reasoning_tokens": map[string]interface{}{"trace": "private"}},
+		},
+	}
+	sanitizeExecutionResponse(value, "molin/qwen-turbo")
+	raw, _ := json.Marshal(value)
+	for _, forbidden := range [][]byte{[]byte("provider-private-data"), []byte("trace"), []byte("private"), []byte("logprobs"), []byte("prompt_tokens_details"), []byte("reasoning_tokens")} {
+		if bytes.Contains(raw, forbidden) {
+			t.Fatalf("异常类型不得绕过嵌套白名单: %s", raw)
+		}
+	}
+	if !bytes.Contains(raw, []byte(`"total_tokens":2`)) {
+		t.Fatalf("合法 Usage 标量应继续保留: %s", raw)
+	}
+
+	value["usage"] = "provider-private-data"
+	sanitizeExecutionResponse(value, "molin/qwen-turbo")
+	if _, exists := value["usage"]; exists {
+		t.Fatal("非对象 Usage 必须整体删除")
+	}
+}
+
+func TestExecutionDriverDropsMalformedNestedMessageAndLogprobsTypes(t *testing.T) {
+	value := map[string]interface{}{
+		"choices": []interface{}{map[string]interface{}{
+			"message": map[string]interface{}{
+				"role":        "assistant",
+				"content":     []interface{}{map[string]interface{}{"type": "text", "text": "OK"}, "provider-private-content"},
+				"tool_calls":  []interface{}{map[string]interface{}{"id": "call-1", "type": "function", "function": map[string]interface{}{"name": "ok", "arguments": "{}"}}, "provider-private-call"},
+				"annotations": []interface{}{map[string]interface{}{"type": "url_citation", "url_citation": "provider-private-citation"}},
+			},
+			"logprobs": map[string]interface{}{
+				"content": []interface{}{map[string]interface{}{"token": "OK", "logprob": -0.1}, "provider-private-logprob"},
+				"refusal": "provider-private-refusal",
+			},
+		}},
+	}
+	sanitizeExecutionResponse(value, "molin/qwen-turbo")
+	raw, _ := json.Marshal(value)
+	for _, forbidden := range [][]byte{[]byte("provider-private"), []byte(`"content"`), []byte(`"tool_calls"`), []byte(`"refusal"`)} {
+		if bytes.Contains(raw, forbidden) {
+			t.Fatalf("畸形深层结构必须整体丢弃对应字段: %s", raw)
+		}
+	}
+}
+
+func TestExecutionDriverDropsMalformedOuterResponseTypes(t *testing.T) {
+	value := map[string]interface{}{
+		"id":                 map[string]interface{}{"private": "provider-private-id"},
+		"created":            "provider-private-created",
+		"system_fingerprint": map[string]interface{}{"private": "provider-private-fingerprint"},
+		"service_tier":       []interface{}{"provider-private-tier"},
+		"choices": []interface{}{map[string]interface{}{
+			"index":         map[string]interface{}{"private": "provider-private-index"},
+			"text":          map[string]interface{}{"private": "provider-private-text"},
+			"finish_reason": []interface{}{"provider-private-finish"},
+			"message":       "provider-private-message",
+			"delta":         []interface{}{"provider-private-delta"},
+		}},
+	}
+	sanitizeExecutionResponse(value, "molin/qwen-turbo")
+	raw, _ := json.Marshal(value)
+	if bytes.Contains(raw, []byte("provider-private")) {
+		t.Fatalf("畸形外层与 choice 字段不得绕过响应白名单: %s", raw)
+	}
+	for _, key := range []string{"id", "created", "system_fingerprint", "service_tier"} {
+		if _, exists := value[key]; exists {
+			t.Fatalf("畸形顶层字段必须删除 key=%s raw=%s", key, raw)
+		}
+	}
+
+	value["choices"] = []interface{}{map[string]interface{}{"message": map[string]interface{}{"role": "assistant", "content": "OK"}}, "provider-private-choice"}
+	sanitizeExecutionResponse(value, "molin/qwen-turbo")
+	if _, exists := value["choices"]; exists {
+		t.Fatal("choices 含非对象元素时必须整体删除")
 	}
 }
 

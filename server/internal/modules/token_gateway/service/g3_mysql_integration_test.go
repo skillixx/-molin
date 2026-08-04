@@ -358,6 +358,7 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 		assertCount(t, db, "wallet_transactions", "user_id = ? AND type = 'consume'", 13, 1)
 		assertCount(t, db, "ai_usage_items", "request_id = ? AND source = 'provider' AND sequence_no = 0", request.RequestID, 3)
 		assertCount(t, db, "ai_usage_items", "request_id = ? AND source = 'provider' AND sequence_no = 1 AND unit_price IS NOT NULL AND amount IS NOT NULL", request.RequestID, 4)
+		assertCount(t, db, "ai_usage_items", "request_id = ? AND source = 'provider' AND sequence_no = 2 AND unit_price IS NOT NULL AND amount IS NOT NULL", request.RequestID, 4)
 	})
 
 	t.Run("输出审核拦截保留上游成本但不向用户扣费", func(t *testing.T) {
@@ -535,12 +536,13 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 		}
 		assertRequestAndHoldStatus(t, db, request.RequestID, model.AIBillingSettled, "settled")
 		assertCount(t, db, "wallet_transactions", "user_id = ? AND type = 'consume'", 14, 1)
-		assertCount(t, db, "ai_usage_items", "request_id = ? AND meter_type IN ('input_tokens','output_tokens','cached_tokens','reasoning_tokens') AND unit_price IS NOT NULL AND amount IS NOT NULL", request.RequestID, 4)
+		assertCount(t, db, "ai_usage_items", "request_id = ? AND source = 'provider' AND sequence_no = 1 AND meter_type IN ('input_tokens','output_tokens','cached_tokens','reasoning_tokens') AND unit_price IS NOT NULL AND amount IS NOT NULL", request.RequestID, 4)
+		assertCount(t, db, "ai_usage_items", "request_id = ? AND source = 'provider' AND sequence_no = 2 AND amount IS NOT NULL", request.RequestID, 4)
 		var settledAmount, itemAmount decimal.Decimal
 		if err := db.Raw("SELECT settled_amount FROM ai_requests WHERE request_id = ?", request.RequestID).Row().Scan(&settledAmount); err != nil {
 			t.Fatal(err)
 		}
-		if err := db.Raw("SELECT COALESCE(SUM(amount),0) FROM ai_usage_items WHERE request_id = ? AND meter_type IN ('input_tokens','output_tokens','cached_tokens','reasoning_tokens')", request.RequestID).Row().Scan(&itemAmount); err != nil {
+		if err := db.Raw("SELECT COALESCE(SUM(amount),0) FROM ai_usage_items WHERE request_id = ? AND source = 'provider' AND sequence_no = 1 AND meter_type IN ('input_tokens','output_tokens','cached_tokens','reasoning_tokens')", request.RequestID).Row().Scan(&itemAmount); err != nil {
 			t.Fatal(err)
 		}
 		if !settledAmount.Equal(itemAmount) {
@@ -751,8 +753,9 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 			t.Fatalf("可信全零 Usage 应完成零金额结算: %v", err)
 		}
 		assertRequestAndHoldStatus(t, db, request.RequestID, model.AIBillingSettled, "settled")
-		// 原始零 Usage 保留 input/output/total 三项，计费拆分保留四个 SKU，共七条事实。
-		assertCount(t, db, "ai_usage_items", "request_id = ?", request.RequestID, 7)
+		// 原始零 Usage 保留三项，销售拆分和成本拆分各保留四个 SKU，共十一条事实。
+		assertCount(t, db, "ai_usage_items", "request_id = ?", request.RequestID, 11)
+		assertCount(t, db, "ai_usage_items", "request_id = ? AND source = 'provider' AND sequence_no = 2 AND amount IS NOT NULL", request.RequestID, 4)
 		assertCount(t, db, "wallet_transactions", "user_id = ? AND type = 'consume'", 7, 1)
 	})
 

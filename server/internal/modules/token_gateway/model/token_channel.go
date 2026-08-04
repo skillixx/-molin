@@ -13,11 +13,14 @@ type TokenChannel struct {
 	// BaseURL 上游 API 基础地址，如 https://api.deepseek.com
 	BaseURL string `gorm:"size:512;not null" json:"base_url"`
 	// APIKeyEncrypted 上游 api_key 的 AES-256-GCM 密文；安全红线：禁止序列化到任何响应，故标 json:"-"
-	APIKeyEncrypted string    `gorm:"size:1024;not null" json:"-"`
-	Status          string    `gorm:"size:32;not null;default:active" json:"status"` // active 启用 / inactive 停用
-	Priority        int       `gorm:"not null;default:0" json:"priority"`            // 优先级，越大越优先
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	APIKeyEncrypted      string     `gorm:"size:1024;not null" json:"-"`
+	Status               string     `gorm:"size:32;not null;default:active" json:"status"` // active 启用 / inactive 停用
+	Priority             int        `gorm:"not null;default:0" json:"priority"`            // 优先级，越大越优先
+	HealthStatus         string     `gorm:"size:16;not null;default:unknown" json:"health_status"`
+	LastHealthCheckAt    *time.Time `json:"last_health_check_at,omitempty"`
+	LastHealthErrorClass *string    `gorm:"size:64" json:"last_health_error_class,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 // TableName 指定表名。

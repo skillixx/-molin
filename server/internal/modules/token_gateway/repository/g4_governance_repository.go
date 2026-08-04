@@ -31,6 +31,14 @@ func NewG4GovernanceRepository(db *gorm.DB) *G4GovernanceRepository {
 	return &G4GovernanceRepository{db: db, now: time.Now}
 }
 
+// RecordGatewayRejection 幂等记录前置治理拒绝，只保存统计所需的脱敏元数据。
+func (r *G4GovernanceRepository) RecordGatewayRejection(ctx context.Context, event *model.AIGatewayRejectionEvent) error {
+	if event == nil {
+		return errors.New("网关拒绝事件不能为空")
+	}
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "request_id"}, {Name: "reason_code"}}, DoNothing: true}).Create(event).Error
+}
+
 func (r *G4GovernanceRepository) ActiveSafetyPolicy(ctx context.Context) (*model.AISafetyPolicyVersion, error) {
 	var policy model.AISafetyPolicyVersion
 	err := r.db.WithContext(ctx).

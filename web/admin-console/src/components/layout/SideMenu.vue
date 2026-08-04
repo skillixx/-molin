@@ -133,20 +133,24 @@
       </el-menu-item>
     </el-sub-menu>
 
-    <el-sub-menu v-if="can('token:manage')" index="token">
+    <el-sub-menu v-if="can('token:manage') || can('ai_gateway:view')" index="token">
       <template #title>
         <el-icon><Cpu /></el-icon>
         <span>Token 网关</span>
       </template>
-      <el-menu-item index="/token/channels">
+      <el-menu-item v-if="can('ai_gateway:view')" index="/token/workbench">
+        <el-icon><DataAnalysis /></el-icon>
+        <template #title>AI 网关工作台</template>
+      </el-menu-item>
+      <el-menu-item v-if="can('token:manage')" index="/token/channels">
         <el-icon><Connection /></el-icon>
         <template #title>渠道管理</template>
       </el-menu-item>
-      <el-menu-item index="/token/models">
+      <el-menu-item v-if="can('token:manage')" index="/token/models">
         <el-icon><MagicStick /></el-icon>
         <template #title>模型目录</template>
       </el-menu-item>
-      <el-menu-item index="/token/usage">
+      <el-menu-item v-if="can('token:manage')" index="/token/usage">
         <el-icon><Tickets /></el-icon>
         <template #title>用量统计</template>
       </el-menu-item>

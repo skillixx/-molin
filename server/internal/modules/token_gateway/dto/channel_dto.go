@@ -29,14 +29,17 @@ type UpdateChannelReq struct {
 // ChannelResp 渠道响应体。
 // 安全红线：不含 api_key_plaintext / api_key_encrypted 任一字段；改用 HasAPIKey 表征是否已配置。
 type ChannelResp struct {
-	ID        uint64    `json:"id"`
-	Code      string    `json:"code"`
-	Name      string    `json:"name"`
-	Type      string    `json:"type"`
-	BaseURL   string    `json:"base_url"`
-	HasAPIKey bool      `json:"has_api_key"` // 是否已配置上游 api_key（不暴露 key 本身）
-	Status    string    `json:"status"`
-	Priority  int       `json:"priority"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID                   uint64     `json:"id"`
+	Code                 string     `json:"code"`
+	Name                 string     `json:"name"`
+	Type                 string     `json:"type"`
+	BaseURL              string     `json:"base_url"`
+	HasAPIKey            bool       `json:"has_api_key"` // 是否已配置上游 api_key（不暴露 key 本身）
+	Status               string     `json:"status"`
+	Priority             int        `json:"priority"`
+	HealthStatus         string     `json:"health_status"`
+	LastHealthCheckAt    *time.Time `json:"last_health_check_at,omitempty"`
+	LastHealthErrorClass *string    `json:"last_health_error_class,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }

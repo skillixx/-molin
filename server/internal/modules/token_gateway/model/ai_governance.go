@@ -193,3 +193,16 @@ type AICompensationTask struct {
 }
 
 func (AICompensationTask) TableName() string { return "ai_compensation_tasks" }
+
+// AIGatewayRejectionEvent 保存前置治理拒绝的脱敏事实，不记录提示词、响应正文或密钥。
+type AIGatewayRejectionEvent struct {
+	ID               uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
+	RequestID        string    `gorm:"size:128;not null;uniqueIndex:uk_ai_gateway_rejection_request_reason,priority:1" json:"request_id"`
+	LogicalModelCode string    `gorm:"size:128;not null" json:"logical_model_code"`
+	ReasonCode       string    `gorm:"size:64;not null;uniqueIndex:uk_ai_gateway_rejection_request_reason,priority:2" json:"reason_code"`
+	ScopeType        string    `gorm:"size:32;not null" json:"scope_type"`
+	ScopeID          string    `gorm:"size:191;not null" json:"scope_id"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
+func (AIGatewayRejectionEvent) TableName() string { return "ai_gateway_rejection_events" }

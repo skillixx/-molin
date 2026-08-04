@@ -458,13 +458,8 @@ func (h *GovernanceHandler) auditBeforeWrite(w http.ResponseWriter, r *http.Requ
 }
 
 func decodeGovernanceJSON(w http.ResponseWriter, r *http.Request, target interface{}) bool {
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		response.Error(w, http.StatusBadRequest, 40000, "请求参数不合法")
-		return false
-	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20+1))
+	if err != nil || len(raw) == 0 || len(raw) > 1<<20 || decodeStrictJSONObject(raw, target) != nil {
 		response.Error(w, http.StatusBadRequest, 40000, "请求参数不合法")
 		return false
 	}

@@ -3,7 +3,12 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	"molin/server/internal/modules/token_gateway/crypto"
 	"molin/server/internal/modules/token_gateway/dto"
@@ -34,11 +39,12 @@ var (
 type ChannelService struct {
 	repo   *repository.ChannelRepository
 	cipher *crypto.AESGCM
+	client *http.Client
 }
 
 // NewChannelService 创建渠道服务实例。cipher 用于 api_key 加解密。
 func NewChannelService(repo *repository.ChannelRepository, cipher *crypto.AESGCM) *ChannelService {
-	return &ChannelService{repo: repo, cipher: cipher}
+	return &ChannelService{repo: repo, cipher: cipher, client: &http.Client{Timeout: 5 * time.Second}}
 }
 
 // Create 创建渠道：校验 + 唯一性 + 加密 api_key 落库，返回脱敏 DTO。
@@ -169,18 +175,77 @@ func (s *ChannelService) Delete(ctx context.Context, id uint64) error {
 	return s.repo.Delete(ctx, id)
 }
 
+// CheckHealth 只请求渠道入口的公开 /health，不携带上游密钥，也不会产生模型调用费用。
+func (s *ChannelService) CheckHealth(ctx context.Context, id uint64) (*dto.ChannelResp, error) {
+	channel, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	status, errorClass := probeChannelHealth(ctx, s.client, channel.BaseURL)
+	now := time.Now().UTC()
+	if err := s.repo.Update(ctx, id, map[string]interface{}{"health_status": status, "last_health_check_at": now, "last_health_error_class": nullableHealthError(errorClass)}); err != nil {
+		return nil, err
+	}
+	return s.Get(ctx, id)
+}
+
+func probeChannelHealth(ctx context.Context, client *http.Client, baseURL string) (string, string) {
+	parsed, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil {
+		return "down", "invalid_base_url"
+	}
+	// 明确拒绝链路本地、未指定和组播字面地址，避免健康检测访问云元数据等特殊网络目标。
+	if ip := net.ParseIP(parsed.Hostname()); ip != nil && (ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast()) {
+		return "down", "restricted_address"
+	}
+	parsed.Path, parsed.RawPath, parsed.RawQuery, parsed.Fragment = "/health", "", "", ""
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return "down", "invalid_base_url"
+	}
+	probeClient := http.DefaultClient
+	if client != nil {
+		probeClient = client
+	}
+	clientCopy := *probeClient
+	// 健康入口必须由配置主机直接响应，禁止通过重定向把探测转向其他网络位置。
+	clientCopy.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	response, err := clientCopy.Do(request)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || strings.Contains(strings.ToLower(err.Error()), "timeout") {
+			return "down", "timeout"
+		}
+		return "down", "network_error"
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return "down", fmt.Sprintf("http_%d", response.StatusCode)
+	}
+	return "healthy", ""
+}
+
+func nullableHealthError(value string) interface{} {
+	if value == "" {
+		return nil
+	}
+	return value
+}
+
 // channelToResp 渠道实体 → 脱敏响应 DTO（不含明文/密文 key）。
 func channelToResp(c *model.TokenChannel) *dto.ChannelResp {
 	return &dto.ChannelResp{
-		ID:        c.ID,
-		Code:      c.Code,
-		Name:      c.Name,
-		Type:      c.Type,
-		BaseURL:   c.BaseURL,
-		HasAPIKey: c.APIKeyEncrypted != "",
-		Status:    c.Status,
-		Priority:  c.Priority,
-		CreatedAt: c.CreatedAt,
-		UpdatedAt: c.UpdatedAt,
+		ID:                   c.ID,
+		Code:                 c.Code,
+		Name:                 c.Name,
+		Type:                 c.Type,
+		BaseURL:              c.BaseURL,
+		HasAPIKey:            c.APIKeyEncrypted != "",
+		Status:               c.Status,
+		Priority:             c.Priority,
+		HealthStatus:         c.HealthStatus,
+		LastHealthCheckAt:    c.LastHealthCheckAt,
+		LastHealthErrorClass: c.LastHealthErrorClass,
+		CreatedAt:            c.CreatedAt,
+		UpdatedAt:            c.UpdatedAt,
 	}
 }

@@ -24,17 +24,19 @@ func RegisterRoutes(
 	usageSvc *service.UsageService,
 	billingSvc *service.AIBillingService,
 	governanceSvc *service.GovernanceAdminService,
+	g5AdminSvc *service.G5AdminService,
 	auditSvc *auditservice.AuditService,
 	jwtSecret string,
 	iamChecker middleware.IAMChecker,
 	banChecker middleware.BanChecker,
 	adminChecker middleware.AdminVerifiedChecker,
 ) {
-	ch := handler.NewChannelHandler(channelSvc)
-	mh := handler.NewModelHandler(catalogSvc)
+	ch := handler.NewChannelHandler(channelSvc).WithAudit(auditSvc)
+	mh := handler.NewModelHandler(catalogSvc).WithAudit(auditSvc)
 	uh := handler.NewUsageHandler(usageSvc)
 	bh := handler.NewBillingHandler(billingSvc, auditSvc)
 	gh := handler.NewGovernanceHandler(governanceSvc, auditSvc)
+	g5h := handler.NewG5AdminHandler(g5AdminSvc, auditSvc)
 
 	// 管理端中间件链：登录 + token:manage + 管理员双重认证
 	admin := func(next http.HandlerFunc) http.Handler {
@@ -47,18 +49,42 @@ func RegisterRoutes(
 			middleware.RequirePerm(iamChecker, permission,
 				middleware.RequireAdminVerified(adminChecker, http.HandlerFunc(next))))
 	}
+	readAdmin := func(next http.HandlerFunc) http.Handler {
+		return middleware.RequireAuth(jwtSecret, banChecker,
+			middleware.RequireAnyPerm(iamChecker, []string{"ai_gateway:view", "token:manage"},
+				middleware.RequireAdminVerified(adminChecker, http.HandlerFunc(next))))
+	}
+
+	// G5 管理工作台。读取使用 view 权限，发布类写操作按模型、价格和路由拆分权限。
+	mux.Handle("GET /api/admin/token/overview", governanceAdmin("ai_gateway:view", g5h.Dashboard))
+	mux.Handle("GET /api/admin/token/models/{id}/versions", governanceAdmin("ai_gateway:view", g5h.ListModelReleases))
+	mux.Handle("POST /api/admin/token/models/{id}/publish", governanceAdmin("ai_gateway:model_manage", g5h.PublishModel))
+	mux.Handle("POST /api/admin/token/models/{id}/unpublish", governanceAdmin("ai_gateway:model_manage", g5h.UnpublishModel))
+	mux.Handle("POST /api/admin/token/models/{id}/rollback", governanceAdmin("ai_gateway:model_manage", g5h.RollbackModel))
+	mux.Handle("GET /api/admin/token/routes", governanceAdmin("ai_gateway:view", g5h.ListRoutes))
+	mux.Handle("POST /api/admin/token/routes", governanceAdmin("ai_gateway:route_manage", g5h.CreateRoute))
+	mux.Handle("PUT /api/admin/token/routes/{id}", governanceAdmin("ai_gateway:route_manage", g5h.UpdateRoute))
+	mux.Handle("GET /api/admin/token/prices", governanceAdmin("ai_gateway:view", g5h.ListPrices))
+	mux.Handle("POST /api/admin/token/prices", governanceAdmin("ai_gateway:price_manage", g5h.CreatePrice))
+	mux.Handle("GET /api/admin/token/prices/{id}", governanceAdmin("ai_gateway:view", g5h.PriceDetail))
+	mux.Handle("POST /api/admin/token/prices/{id}/approve", governanceAdmin("ai_gateway:price_manage", g5h.ApprovePrice))
+	mux.Handle("POST /api/admin/token/prices/{id}/publish", governanceAdmin("ai_gateway:price_manage", g5h.PublishPrice))
+	mux.Handle("POST /api/admin/token/prices/{id}/suspend", governanceAdmin("ai_gateway:price_manage", g5h.SuspendPrice))
+	mux.Handle("POST /api/admin/token/prices/{id}/retire", governanceAdmin("ai_gateway:price_manage", g5h.RetirePrice))
+	mux.Handle("POST /api/admin/token/prices/{id}/rollback", governanceAdmin("ai_gateway:price_manage", g5h.RollbackPrice))
 
 	// 渠道管理
-	mux.Handle("GET /api/admin/token/channels", admin(ch.ListChannels))
+	mux.Handle("GET /api/admin/token/channels", readAdmin(ch.ListChannels))
 	mux.Handle("POST /api/admin/token/channels", admin(ch.CreateChannel))
-	mux.Handle("GET /api/admin/token/channels/{id}", admin(ch.GetChannel))
+	mux.Handle("GET /api/admin/token/channels/{id}", readAdmin(ch.GetChannel))
 	mux.Handle("PATCH /api/admin/token/channels/{id}", admin(ch.UpdateChannel))
+	mux.Handle("POST /api/admin/token/channels/{id}/health-check", governanceAdmin("ai_gateway:route_manage", ch.CheckChannelHealth))
 	mux.Handle("DELETE /api/admin/token/channels/{id}", admin(ch.DeleteChannel))
 
 	// 对外模型目录管理
-	mux.Handle("GET /api/admin/token/models", admin(mh.ListModels))
+	mux.Handle("GET /api/admin/token/models", readAdmin(mh.ListModels))
 	mux.Handle("POST /api/admin/token/models", admin(mh.CreateModel))
-	mux.Handle("GET /api/admin/token/models/{id}", admin(mh.GetModel))
+	mux.Handle("GET /api/admin/token/models/{id}", readAdmin(mh.GetModel))
 	mux.Handle("PATCH /api/admin/token/models/{id}", admin(mh.UpdateModel))
 	mux.Handle("DELETE /api/admin/token/models/{id}", admin(mh.DeleteModel))
 

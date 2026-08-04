@@ -1,13 +1,13 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 
 	"gorm.io/gorm"
 
+	"molin/server/internal/middleware"
 	"molin/server/internal/modules/token_gateway/dto"
 	"molin/server/internal/modules/token_gateway/repository"
 	"molin/server/internal/modules/token_gateway/service"
@@ -17,7 +17,13 @@ import (
 
 // ChannelHandler 处理 Token 网关渠道管理（管理端，需 token:manage + 管理员双重认证）。
 type ChannelHandler struct {
-	svc *service.ChannelService
+	svc   *service.ChannelService
+	audit governanceAuditRecorder
+}
+
+func (h *ChannelHandler) WithAudit(audit governanceAuditRecorder) *ChannelHandler {
+	h.audit = audit
+	return h
 }
 
 // NewChannelHandler 创建渠道管理 handler。
@@ -63,8 +69,10 @@ func (h *ChannelHandler) GetChannel(w http.ResponseWriter, r *http.Request) {
 // CreateChannel POST /api/admin/token/channels
 func (h *ChannelHandler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 	var req dto.CreateChannelReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+	if !decodeGovernanceJSON(w, r, &req) {
+		return
+	}
+	if !auditManagementWrite(w, r, h.audit, "channel.create", "token_channel", "new", map[string]interface{}{"code": req.Code, "type": req.Type, "has_api_key": req.APIKeyPlaintext != ""}) {
 		return
 	}
 	resp, err := h.svc.Create(r.Context(), req)
@@ -91,8 +99,10 @@ func (h *ChannelHandler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req dto.UpdateChannelReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+	if !decodeGovernanceJSON(w, r, &req) {
+		return
+	}
+	if !auditManagementWrite(w, r, h.audit, "channel.update", "token_channel", strconv.FormatUint(id, 10), map[string]interface{}{"updates_api_key": req.APIKeyPlaintext != nil && *req.APIKeyPlaintext != ""}) {
 		return
 	}
 	resp, err := h.svc.Update(r.Context(), id, req)
@@ -111,11 +121,45 @@ func (h *ChannelHandler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, resp)
 }
 
+// CheckChannelHealth 执行不携带密钥、不产生模型费用的 Bifrost 健康探测。
+func (h *ChannelHandler) CheckChannelHealth(w http.ResponseWriter, r *http.Request) {
+	id, err := pathUint64(r, "id")
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, 40000, "无效 ID")
+		return
+	}
+	if !auditManagementWrite(w, r, h.audit, "channel.health_check", "token_channel", strconv.FormatUint(id, 10), nil) {
+		return
+	}
+	item, err := h.svc.CheckHealth(r.Context(), id)
+	if err != nil {
+		if isNotFound(err) {
+			response.Error(w, http.StatusNotFound, 40400, "渠道不存在")
+			return
+		}
+		response.Error(w, http.StatusInternalServerError, 50000, "健康检测失败")
+		return
+	}
+	response.JSON(w, http.StatusOK, item)
+}
+
+func auditManagementWrite(w http.ResponseWriter, r *http.Request, audit governanceAuditRecorder, action, targetType, targetID string, summary interface{}) bool {
+	operatorID := middleware.UserIDFromContext(r.Context())
+	if audit == nil || audit.Record(r.Context(), &operatorID, "token_gateway", action, &targetType, &targetID, r.RemoteAddr, summary) != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "审计记录失败，操作未执行")
+		return false
+	}
+	return true
+}
+
 // DeleteChannel DELETE /api/admin/token/channels/{id}
 func (h *ChannelHandler) DeleteChannel(w http.ResponseWriter, r *http.Request) {
 	id, err := pathUint64(r, "id")
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, "无效 ID")
+		return
+	}
+	if !auditManagementWrite(w, r, h.audit, "channel.delete", "token_channel", strconv.FormatUint(id, 10), nil) {
 		return
 	}
 	if err := h.svc.Delete(r.Context(), id); err != nil {

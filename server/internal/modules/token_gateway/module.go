@@ -23,6 +23,7 @@ type Module struct {
 	SettlementWorker  *service.SettlementWorker
 	GovernanceService *service.GovernanceService
 	GovernanceAdmin   *service.GovernanceAdminService
+	G5Admin           *service.G5AdminService
 }
 
 // New 构造 token_gateway 模块依赖。
@@ -47,6 +48,7 @@ func New(db *gorm.DB, redisClient redis.UniversalClient, tokenProviderKey, apiKe
 	pricingRepo := repository.NewG3PricingRepository(db)
 	outboxRepo := repository.NewG3OutboxRepository(db)
 	governanceRepo := repository.NewG4GovernanceRepository(db)
+	g5AdminRepo := repository.NewG5AdminRepository(db)
 	catalogService := service.NewCatalogService(modelRepo)
 	pricingService := service.NewPricingService(pricingRepo, defaultMaxTokens)
 	billingService := service.NewAIBillingService(db, pricingService, pricingRepo, walletHolds)
@@ -56,7 +58,8 @@ func New(db *gorm.DB, redisClient redis.UniversalClient, tokenProviderKey, apiKe
 	orchestrator := service.NewRequestOrchestrator(g2Repo, channelRepo, cipher).
 		WithVisibilityChecker(catalogService).
 		WithBillingService(billingService).
-		WithGovernance(governanceService)
+		WithGovernance(governanceService).
+		WithRouteResolver(g5AdminRepo)
 
 	module := &Module{
 		ChannelService:    service.NewChannelService(channelRepo, cipher),
@@ -69,6 +72,7 @@ func New(db *gorm.DB, redisClient redis.UniversalClient, tokenProviderKey, apiKe
 		SettlementWorker:  service.NewSettlementWorker(billingService),
 		GovernanceService: governanceService,
 		GovernanceAdmin:   service.NewGovernanceAdminService(governanceRepo).WithOutboxDeadRequeuer(outboxRepo),
+		G5Admin:           service.NewG5AdminService(g5AdminRepo, pricingRepo),
 	}
 	// 未配置 HMAC 密钥时不注册 Project SK 管理能力，防止生成不可安全校验的密钥。
 	if apiKeyHMACSecret != "" {

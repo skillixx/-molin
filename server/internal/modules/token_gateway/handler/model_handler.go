@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"molin/server/internal/middleware"
 	"molin/server/internal/modules/token_gateway/dto"
@@ -17,6 +18,7 @@ import (
 type ModelHandler struct {
 	svc    *service.CatalogService
 	access ModelAccessChecker
+	audit  governanceAuditRecorder
 }
 
 // ModelAccessChecker 让模型目录复用 G2 的 Project SK 权限判定。
@@ -31,6 +33,11 @@ func NewModelHandler(svc *service.CatalogService) *ModelHandler {
 
 func (h *ModelHandler) WithAccess(access ModelAccessChecker) *ModelHandler {
 	h.access = access
+	return h
+}
+
+func (h *ModelHandler) WithAudit(audit governanceAuditRecorder) *ModelHandler {
+	h.audit = audit
 	return h
 }
 
@@ -92,6 +99,12 @@ func (h *ModelHandler) ListPublic(w http.ResponseWriter, r *http.Request) {
 			LogicalModelCode: items[i].LogicalModelCode,
 			DisplayName:      items[i].DisplayName,
 			Modality:         items[i].Modality,
+			ProviderName:     items[i].ProviderName,
+			Description:      items[i].Description,
+			ContextWindow:    items[i].ContextWindow,
+			IntroURL:         items[i].IntroURL,
+			DocsURL:          items[i].DocsURL,
+			QuickStartURL:    items[i].QuickStartURL,
 		}
 	}
 	response.JSON(w, http.StatusOK, dto.PagedResp{
@@ -197,8 +210,10 @@ func (h *ModelHandler) GetModel(w http.ResponseWriter, r *http.Request) {
 // CreateModel POST /api/admin/token/models
 func (h *ModelHandler) CreateModel(w http.ResponseWriter, r *http.Request) {
 	var req dto.CreateModelReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+	if !decodeGovernanceJSON(w, r, &req) {
+		return
+	}
+	if !auditManagementWrite(w, r, h.audit, "model.create", "token_model", "new", map[string]interface{}{"logical_model_code": req.LogicalModelCode, "modality": req.Modality}) {
 		return
 	}
 	resp, err := h.svc.Create(r.Context(), req)
@@ -225,8 +240,10 @@ func (h *ModelHandler) UpdateModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req dto.UpdateModelReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+	if !decodeGovernanceJSON(w, r, &req) {
+		return
+	}
+	if !auditManagementWrite(w, r, h.audit, "model.update", "token_model", strconv.FormatUint(id, 10), map[string]interface{}{"changes_visibility": req.VisibleScope != nil}) {
 		return
 	}
 	resp, err := h.svc.Update(r.Context(), id, req)
@@ -250,6 +267,10 @@ func (h *ModelHandler) DeleteModel(w http.ResponseWriter, r *http.Request) {
 	id, err := pathUint64(r, "id")
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, "无效 ID")
+		return
+	}
+	// 删除属于不可逆管理操作，必须在真正执行删除前完成审计，审计失败时不得修改模型。
+	if !auditManagementWrite(w, r, h.audit, "model.delete", "token_model", strconv.FormatUint(id, 10), nil) {
 		return
 	}
 	if err := h.svc.Delete(r.Context(), id); err != nil {

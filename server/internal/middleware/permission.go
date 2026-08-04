@@ -41,6 +41,20 @@ func RequirePerm(iamSvc IAMChecker, permCode string, next http.Handler) http.Han
 	})
 }
 
+// RequireAnyPerm 要求当前用户至少拥有一个候选权限，用于兼容只读工作台与历史管理权限。
+func RequireAnyPerm(iamSvc IAMChecker, permCodes []string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		userID := UserIDFromContext(r.Context())
+		for _, permCode := range permCodes {
+			if iamSvc.CheckPermission(r.Context(), userID, permCode) {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+		response.Error(w, http.StatusForbidden, 40003, "无操作权限")
+	})
+}
+
 // RequireEmailPerm 为邮件模块冻结独立权限文案，不改变全局 RequirePerm 的历史响应。
 func RequireEmailPerm(iamSvc IAMChecker, permCode string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

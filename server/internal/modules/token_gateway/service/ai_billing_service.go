@@ -283,6 +283,20 @@ func (s *AIBillingService) FinalizeRequest(ctx context.Context, requestID string
 			if err := createUsageTx(tx, usageModels(requestID, result.Usage)); err != nil {
 				return err
 			}
+			// 正常结算同样必须冻结平台上游成本事实，经营概览不得依赖可变的当前成本价反算历史请求。
+			costed, err := s.pricing.CalculateProviderCost(requestID, request.PriceSnapshotJSON, result.Usage)
+			if err != nil {
+				return err
+			}
+			for i := range costed.Items {
+				// 正常结算成本使用 G1 已支持的 provider 来源和独立 sequence=2，兼容 schema 60-62；
+				// G4 内容审核零扣费事实继续使用 provider_cost 来源，二者均由 meter_type 与金额明确表达成本语义。
+				costed.Items[i].Source = "provider"
+				costed.Items[i].SequenceNo = 2
+			}
+			if err := createUsageTx(tx, costed.Items); err != nil {
+				return err
+			}
 			if request.HeldAmount == nil || billed.FinalAmount.GreaterThan(*request.HeldAmount) {
 				var snapshot PriceSnapshot
 				_ = json.Unmarshal(request.PriceSnapshotJSON, &snapshot)

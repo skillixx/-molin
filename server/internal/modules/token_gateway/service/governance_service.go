@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strconv"
+	"strings"
 	"time"
 
 	"molin/server/internal/modules/token_gateway/model"
@@ -21,6 +23,10 @@ type budgetRepository interface {
 	SyncBudgetFromRequest(ctx context.Context, requestID string) (bool, error)
 	ListHeldBudgetRequestIDs(ctx context.Context, before time.Time, limit int) ([]string, error)
 	RecordCompensationFailure(ctx context.Context, requestID, class string) error
+}
+
+type gatewayRejectionRecorder interface {
+	RecordGatewayRejection(context.Context, *model.AIGatewayRejectionEvent) error
 }
 
 type resourceLimiter interface {
@@ -67,7 +73,11 @@ func (s *GovernanceService) CheckInput(ctx context.Context, subject SafetySubjec
 	if s == nil || s.safety == nil {
 		return nil, ErrModerationUnavailable
 	}
-	return s.safety.ModerateInput(ctx, subject, body)
+	decision, err := s.safety.ModerateInput(ctx, subject, body)
+	if errors.Is(err, ErrContentPolicyViolation) {
+		s.recordRejection(ctx, subject, "content_policy_violation", "user", strconv.FormatUint(subject.UserID, 10))
+	}
+	return decision, err
 }
 
 func (s *GovernanceService) AdmitAfterSafety(ctx context.Context, subject SafetySubject, timezone string, body map[string]interface{}, quote *PriceQuote, decision *SafetyDecision) (*GovernanceTicket, error) {
@@ -87,6 +97,7 @@ func (s *GovernanceService) AdmitAfterSafety(ctx context.Context, subject Safety
 		ExpiresAt: s.now().Add(24 * time.Hour),
 	})
 	if errors.Is(err, repository.ErrBudgetLimitExceeded) {
+		s.recordRejection(ctx, subject, "budget_limit_exceeded", "project", strconv.FormatUint(subject.ProjectID, 10))
 		return nil, ErrBudgetExceeded
 	}
 	if err != nil {
@@ -104,12 +115,43 @@ func (s *GovernanceService) AdmitAfterSafety(ctx context.Context, subject Safety
 		if reservation != nil {
 			s.releaseBudgetOrCompensate(ctx, subject.RequestID)
 		}
+		if limitErr, ok := err.(*ResourceLimitError); ok {
+			reason := "concurrency_limit_exceeded"
+			if limitErr.LimitType == "rpm" {
+				reason = "rpm_limit_exceeded"
+			}
+			if limitErr.LimitType == "tpm" {
+				reason = "tpm_limit_exceeded"
+			}
+			s.recordRejection(ctx, subject, reason, limitErr.LimitScope, rejectionScopeID(subject, limitErr.LimitScope))
+		}
 		return nil, err
 	}
 	return &GovernanceTicket{
 		Subject: subject, Resource: resource, BudgetReserved: reservation != nil,
 		SafetyPolicyID: decision.PolicyID, SafetyPolicyNo: decision.PolicyVersion, SafetyRefusalText: decision.RefusalMessage,
 	}, nil
+}
+
+func (s *GovernanceService) recordRejection(ctx context.Context, subject SafetySubject, reason, scopeType, scopeID string) {
+	recorder, ok := s.budget.(gatewayRejectionRecorder)
+	if !ok || strings.TrimSpace(subject.RequestID) == "" {
+		return
+	}
+	_ = recorder.RecordGatewayRejection(context.WithoutCancel(ctx), &model.AIGatewayRejectionEvent{RequestID: subject.RequestID, LogicalModelCode: subject.LogicalModelCode, ReasonCode: reason, ScopeType: scopeType, ScopeID: scopeID})
+}
+
+func rejectionScopeID(subject SafetySubject, scope string) string {
+	switch scope {
+	case "user":
+		return strconv.FormatUint(subject.UserID, 10)
+	case "project":
+		return strconv.FormatUint(subject.ProjectID, 10)
+	case "api_key":
+		return strconv.FormatUint(subject.APIKeyID, 10)
+	default:
+		return "global"
+	}
 }
 
 // AbortBeforeUpstream 回收钱包 hold 前失败路径的预算和并发租约；RPM/TPM 窗口事实按真实准入请求保留。
