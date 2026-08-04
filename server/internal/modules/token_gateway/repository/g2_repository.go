@@ -198,8 +198,21 @@ type G2AccessSnapshot struct {
 	TokenModel     model.TokenModel
 }
 
+// g2AccessSnapshotRow 只承接授权 SQL 的扁平字段，避免 GORM 将 TokenModel 误判为未声明的关联关系。
+// 模型实体在授权行确认存在后单独查询，再由仓储层组装为对外快照。
+type g2AccessSnapshotRow struct {
+	UserStatus     string
+	RealNameStatus string
+	ProjectStatus  string
+	KeyStatus      string
+	ScopeMode      string
+	KeyExpiresAt   *time.Time
+	Timezone       string
+	ModelAllowed   bool
+}
+
 func (r *G2Repository) LoadAccessSnapshot(ctx context.Context, userID, projectID, keyID uint64, modelCode string) (*G2AccessSnapshot, error) {
-	var snapshot G2AccessSnapshot
+	var row g2AccessSnapshotRow
 	err := r.db.WithContext(ctx).Raw(`
 		SELECT u.status AS user_status, u.real_name_status,
 		       p.status AS project_status, k.status AS key_status,
@@ -214,17 +227,24 @@ func (r *G2Repository) LoadAccessSnapshot(ctx context.Context, userID, projectID
 		JOIN ai_projects p ON p.user_id = u.id AND p.id = ?
 		JOIN api_keys k ON k.user_id = u.id AND k.project_id = p.id AND k.id = ?
 		LEFT JOIN api_key_model_scopes s ON s.api_key_id = k.id AND s.logical_model_code = ?
-		WHERE u.id = ?`, modelCode, projectID, keyID, modelCode, userID).Scan(&snapshot).Error
+		WHERE u.id = ?`, modelCode, projectID, keyID, modelCode, userID).Scan(&row).Error
 	if err != nil {
 		return nil, err
 	}
-	if snapshot.KeyStatus == "" {
+	if row.KeyStatus == "" {
 		return nil, ErrProjectKeyNotFound
 	}
-	if err := r.db.WithContext(ctx).Where("logical_model_code = ?", modelCode).First(&snapshot.TokenModel).Error; err != nil {
+	var tokenModel model.TokenModel
+	if err := r.db.WithContext(ctx).Where("logical_model_code = ?", modelCode).First(&tokenModel).Error; err != nil {
 		return nil, err
 	}
-	return &snapshot, nil
+	return &G2AccessSnapshot{
+		UserStatus: row.UserStatus, RealNameStatus: row.RealNameStatus,
+		ProjectStatus: row.ProjectStatus, KeyStatus: row.KeyStatus,
+		ScopeMode: row.ScopeMode, KeyExpiresAt: row.KeyExpiresAt,
+		Timezone: row.Timezone, ModelAllowed: row.ModelAllowed,
+		TokenModel: tokenModel,
+	}, nil
 }
 
 func (r *G2Repository) FindRequestByIdentity(ctx context.Context, requestID string) (*model.AIRequest, error) {
