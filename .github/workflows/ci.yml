@@ -91,6 +91,18 @@ jobs:
           python tests/sms/phase5_recovery_notification_preflight_contract.py
           bash -n scripts/verify-sms-phase5-test-server-recovery-readiness.sh
 
+      - name: 校验测试服关闭态只读审计资产
+        run: |
+          python tests/sms/phase5_test_server_readonly_contract.py
+          bash -n scripts/verify-sms-phase5-test-server-readonly.sh
+
+      - name: 离线校验测试服关闭态只读审计包装器
+        shell: pwsh
+        run: ./scripts/verify-sms-phase5-test-server-readonly.ps1 -SelfTest
+
+      - name: 校验测试服前端部署与自动回滚契约
+        run: python tests/sms/phase5_deploy_workflow_contract.py
+
       - name: 离线校验测试服回滚与通知预检包装器
         shell: pwsh
         run: ./scripts/verify-sms-phase5-test-server-recovery-readiness.ps1 -SelfTest

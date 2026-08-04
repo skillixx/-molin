@@ -172,7 +172,7 @@ services:
 
 - **触发方式：手动触发（workflow_dispatch）**。合并到 main **不会**自动部署测试环境。
 - 操作路径：GitHub 仓库 → Actions → 选择「部署测试环境（前端）」工作流 → Run workflow（分支选 main）。
-- **范围：仅前端**。在 runner 上构建 `molin-admin` / `molin-user` 镜像 → scp 到测试服务器 → `docker load` → 重建容器（保留 `--add-host api:host-gateway`，把 `/api` 代理到宿主机 `molin-api:8080`）→ 健康检查首页与 `/api/health`。
+- **范围：仅前端**。在 runner 上构建 `molin-admin` / `molin-user` 镜像 → scp 到测试服务器 → `docker load` → 在固定 `molin-sms-proxy` 专网和固定 `.2/.3` 地址重建容器，经专网网关 `.1` 代理宿主机 `molin-api:8080`。部署和自动回滚必须复验容器、固定 IP、首页、`/api/health`、`SMS_ENABLED=false` 以及公开手机发码入口 `503/50300`；任一失败均不得报告部署或回滚成功。
 - **需配置 Secrets**：`TEST_SERVER_HOST` / `TEST_SERVER_USER` / `TEST_SERVER_PASSWORD`（密码认证，端口 10003）。
 - **后端 API 不在本工作流内**：测试服 `molin-api` 是宿主机二进制（非容器、非 systemd），按上文「测试服务器」一节单独编译 scp + nohup 重启。早期工作流里的 `/opt/molin` + `git pull` + compose 构建 api 容器与现实不符，已废弃。
 

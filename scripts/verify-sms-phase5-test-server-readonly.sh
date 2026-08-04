@@ -12,14 +12,16 @@ expected_subnet='__EXPECTED_PROXY_SUBNET__'
 expected_admin_ip='__EXPECTED_ADMIN_IP__'
 expected_user_ip='__EXPECTED_USER_IP__'
 expected_binary_sha256='__EXPECTED_BINARY_SHA256__'
+expected_whitelist_count='__EXPECTED_WHITELIST_COUNT__'
 observation_seconds='__OBSERVATION_SECONDS__'
 
 mapfile -t api_pids < <(pgrep -f "^${api_path}$" 2>/dev/null || true)
 if [ "${#api_pids[@]}" -ne 1 ]; then
   printf 'api_process_count=%s\n' "${#api_pids[@]}"
   printf 'phase5_closed_state_release_ready=false\n'
-  printf 'remote_mutations=0\n'
-  printf 'real_sms_sent=0\n'
+  printf 'business_configuration_mutations=0\n'
+  printf 'access_audit_logs_may_increase=true\n'
+  printf 'real_sms_delivery_not_verified=true\n'
   exit 2
 fi
 pid="${api_pids[0]}"
@@ -31,9 +33,11 @@ read_env() {
 app_env="$(read_env APP_ENV)"
 sms_enabled="$(read_env SMS_ENABLED)"
 sms_test_mode="$(read_env SMS_TEST_MODE)"
+sms_test_whitelist="$(read_env SMS_TEST_PHONE_WHITELIST)"
 trusted_proxy="$(read_env TRUSTED_PROXY_IPS)"
 internal_token="$(read_env INTERNAL_API_TOKEN)"
 template_override_count="$(tr '\0' '\n' < "/proc/$pid/environ" | grep -c '^SMS_TEMPLATE_CODE_' || true)"
+sms_test_whitelist_count="$(python3 -c 'import sys; items = [item.strip() for item in sys.stdin.read().split(",") if item.strip()]; print(len(set(items)))' <<<"$sms_test_whitelist")"
 health_http="$(curl -sS --max-time 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/health 2>/dev/null || true)"
 ready_http="$(curl -sS --max-time 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/ready 2>/dev/null || true)"
 admin_health_http="$(curl -sS --max-time 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:${admin_port}/api/health" 2>/dev/null || true)"
@@ -45,6 +49,8 @@ printf 'api_pid_count=1\n'
 printf 'app_env=%s\n' "$app_env"
 printf 'sms_enabled=%s\n' "$sms_enabled"
 printf 'sms_test_mode=%s\n' "$sms_test_mode"
+printf 'sms_test_whitelist_count=%s\n' "$sms_test_whitelist_count"
+printf 'sms_test_whitelist_count_matches_expected=%s\n' "$([ "$sms_test_whitelist_count" = "$expected_whitelist_count" ] && printf true || printf false)"
 printf 'trusted_proxy_matches_expected=%s\n' "$([ "$trusted_proxy" = "$expected_trusted_proxy" ] && printf true || printf false)"
 printf 'template_env_override_count=%s\n' "$template_override_count"
 printf 'health_http=%s\n' "$health_http"
@@ -176,6 +182,7 @@ schema_version="${schema%%:*}"
 schema_dirty="${schema#*:}"
 release_ready=true
 if [ "$app_env" != test ] || [ "$sms_enabled" != false ] || [ "$sms_test_mode" != true ]; then release_ready=false; fi
+if [ "$sms_test_whitelist_count" != "$expected_whitelist_count" ]; then release_ready=false; fi
 if [ "$trusted_proxy" != "$expected_trusted_proxy" ] || [ "$template_override_count" != 0 ]; then release_ready=false; fi
 if [ "$health_http" != 200 ] || [ "$ready_http" != 200 ] || [ "$admin_health_http" != 200 ] || [ "$user_health_http" != 200 ]; then release_ready=false; fi
 if ! [[ "$schema_version" =~ ^[0-9]+$ ]] || [ "$schema_version" -lt 59 ] || [ "$schema_dirty" != 0 ]; then release_ready=false; fi
@@ -189,6 +196,7 @@ if [ "$send_summary_before" != "$send_summary_after" ] || [ "$provider_total_bef
 if [ -n "$expected_binary_sha256" ] && [ "$binary_sha256" != "$expected_binary_sha256" ]; then release_ready=false; fi
 
 printf 'phase5_closed_state_release_ready=%s\n' "$release_ready"
-printf 'remote_mutations=0\n'
-printf 'real_sms_sent=0\n'
+printf 'business_configuration_mutations=0\n'
+printf 'access_audit_logs_may_increase=true\n'
+printf 'real_sms_delivery_not_verified=true\n'
 if [ "$release_ready" != true ]; then exit 3; fi

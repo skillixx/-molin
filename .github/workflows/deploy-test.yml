@@ -15,6 +15,10 @@ name: 部署测试环境（前端）
 on:
   workflow_dispatch:
 
+concurrency:
+  group: molin-test-frontend-deploy
+  cancel-in-progress: false
+
 env:
   SSH_PORT: 10003
 
@@ -126,20 +130,77 @@ jobs:
             gunzip -c /tmp/molin-frontend.tar.gz | docker load
             rm -f /tmp/molin-frontend.tar.gz
 
+            verify_frontend_runtime() {
+              # 新版本和自动回滚均复用同一套固定 IP、健康接口与短信关闭态检查。
+              [ "$(docker inspect molin-admin --format '{{.State.Running}}')" = true ] || return 1
+              [ "$(docker inspect molin-user --format '{{.State.Running}}')" = true ] || return 1
+              [ "$(docker inspect molin-admin --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')" = "$ADMIN_PROXY_IP" ] || return 1
+              [ "$(docker inspect molin-user --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')" = "$USER_PROXY_IP" ] || return 1
+
+              local fail=0
+              for pair in "3001:admin" "3000:user"; do
+                local port=${pair%%:*}
+                local name=${pair##*:}
+                local home
+                local api
+                home=$(curl -sS --max-time 5 -o /dev/null -w "%{http_code}" "http://localhost:${port}/" || true)
+                api=$(curl -sS --max-time 5 -o /dev/null -w "%{http_code}" "http://localhost:${port}/api/health" || true)
+                echo "${name}: / -> ${home}, /api/health -> ${api}"
+                [ "$home" = 200 ] && [ "$api" = 200 ] || fail=1
+              done
+              [ "$fail" = 0 ] || return 1
+
+              mapfile -t api_pids < <(pgrep -f '^/home/pc/molin/molin-api$' 2>/dev/null || true)
+              [ "${#api_pids[@]}" = 1 ] || return 1
+              local sms_enabled
+              sms_enabled=$(tr '\0' '\n' < "/proc/${api_pids[0]}/environ" | sed -n 's/^SMS_ENABLED=//p' | tail -n 1)
+              [ "$sms_enabled" = false ] || return 1
+              echo "sms_closed_state_env_verified=true"
+
+              # 先确认进程环境为关闭态，再用一次合成号码验证公开发码入口固定拒绝；响应正文不输出。
+              local synthetic_phone
+              local sms_response
+              local sms_http
+              local sms_body
+              synthetic_phone="199$(date +%s | cut -c3-10)"
+              sms_response=$(curl -sS --max-time 5 -w '\n__HTTP_STATUS__:%{http_code}\n' \
+                -H 'Content-Type: application/json' \
+                --data "{\"phone\":\"${synthetic_phone}\",\"scene\":\"register\"}" \
+                http://localhost:3000/api/auth/verification-codes/phone || true)
+              sms_http=$(printf '%s\n' "$sms_response" | sed -n 's/^__HTTP_STATUS__://p' | tail -n 1)
+              sms_body=$(printf '%s\n' "$sms_response" | sed '/^__HTTP_STATUS__:/d')
+              [ "$sms_http" = 503 ] || return 1
+              printf '%s' "$sms_body" | python3 -c 'import json,sys; raise SystemExit(0 if json.load(sys.stdin).get("code") == 50300 else 1)' || return 1
+              echo "sms_closed_state_endpoint_verified=true"
+            }
+
             rollback_frontend() {
               echo "=== 部署失败，恢复部署前镜像 ==="
-              set +e
-              docker rm -f molin-admin molin-user >/dev/null 2>&1
+              local rollback_ok=true
+              docker rm -f molin-admin molin-user >/dev/null 2>&1 || rollback_ok=false
               docker run -d --name molin-admin --restart unless-stopped \
                 --network "$PROXY_NETWORK" --ip "$ADMIN_PROXY_IP" \
-                -p 3001:80 --add-host "api:$PROXY_GATEWAY" "$ADMIN_ROLLBACK_IMAGE"
+                -p 3001:80 --add-host "api:$PROXY_GATEWAY" "$ADMIN_ROLLBACK_IMAGE" || rollback_ok=false
               docker run -d --name molin-user --restart unless-stopped \
                 --network "$PROXY_NETWORK" --ip "$USER_PROXY_IP" \
-                -p 3000:80 --add-host "api:$PROXY_GATEWAY" "$USER_ROLLBACK_IMAGE"
-              set -e
+                -p 3000:80 --add-host "api:$PROXY_GATEWAY" "$USER_ROLLBACK_IMAGE" || rollback_ok=false
+              if [ "$rollback_ok" != true ] || ! verify_frontend_runtime; then
+                echo "rollback_frontend_failed=true"
+                return 1
+              fi
+              echo "rollback_frontend_verified=true"
             }
             rollback_armed=true
-            trap 'status=$?; if [ "$rollback_armed" = "true" ]; then rollback_frontend; fi; exit "$status"' ERR
+            handle_deploy_error() {
+              local status=$?
+              trap - ERR
+              if [ "$rollback_armed" = true ] && ! rollback_frontend; then
+                # 90 明确区分“原部署失败且自动回滚也未恢复”的高优先级故障。
+                exit 90
+              fi
+              exit "$status"
+            }
+            trap handle_deploy_error ERR
 
             echo "=== 在固定代理专网重建容器 ==="
             docker rm -f molin-admin
@@ -151,19 +212,8 @@ jobs:
               --network "$PROXY_NETWORK" --ip "$USER_PROXY_IP" \
               -p 3000:80 --add-host "api:$PROXY_GATEWAY" molin-user:latest
 
-            [ "$(docker inspect molin-admin --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')" = "$ADMIN_PROXY_IP" ]
-            [ "$(docker inspect molin-user --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')" = "$USER_PROXY_IP" ]
-
-            echo "=== 健康检查（首页 + 经 nginx 代理到宿主 API）==="
-            fail=0
-            for pair in "3001:admin" "3000:user"; do
-              port=${pair%%:*}; name=${pair##*:}
-              home=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${port}/")
-              api=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${port}/api/health")
-              echo "${name}: / -> ${home}, /api/health -> ${api}"
-              [ "$home" = "200" ] && [ "$api" = "200" ] || fail=1
-            done
-            [ "$fail" = "0" ]
+            echo "=== 复验固定代理、健康接口与短信关闭态 ==="
+            verify_frontend_runtime
             rollback_armed=false
             trap - ERR
 
