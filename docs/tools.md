@@ -445,6 +445,33 @@ proxy_read_timeout 300s;   # 长连接超时时间
 
 ---
 
+### 短信阶段 5 关闭态只读审计
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维 / 测试 / 产品经理 |
+| **涉及模块** | 短信、认证、Nginx、Docker 网络、Prometheus |
+| **涉及功能** | 测试服关闭态发布复核、零发送观察、部署漂移检测 |
+| **代码位置** | `scripts/verify-sms-phase5-test-server-readonly.ps1`、配套 `.sh` |
+
+**作用：** 通过 SSH 执行只读聚合检查，精确核对阶段 5 二进制、固定代理网络与 IP、模板/绑定、短信指标、
+Prometheus 告警与抓取状态，并比较观察窗口前后的发送日志和 Provider 调用总数。脚本不输出 Token、数据库密码、
+手机号或验证码；窗口结束会再次确认 API PID、短信开关、代理健康和 Prometheus 目标，任一安全条件不符合时返回失败。
+
+```powershell
+# 即时关闭态核验；建议锁定部署清单记录的二进制哈希
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-readonly.ps1 `
+  -ExpectedBinarySHA256 <已核验的64位SHA256>
+
+# 5 分钟只读观察；不会修改配置或发送短信
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-readonly.ps1 `
+  -ExpectedBinarySHA256 <已核验的64位SHA256> -ObservationSeconds 300
+```
+
+真实短信、开启 `SMS_ENABLED`、生产目标连接以及 Git 推送不属于该工具权限范围，仍需独立人工授权。
+
+---
+
 ### MySQL
 
 | 项目 | 说明 |
