@@ -71,7 +71,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/apply-sms-phase5-tes
 ### 3.2 离线运维交接包
 
 当前自动化账号没有非交互 sudo 时，可由已获本次变更授权的执行人，在受控本地目录导出冻结后的运维脚本。导出路径必须是
-执行人选择的绝对 `.sh` 路径，父目录必须已经存在且不能是重解析目录；目标文件已存在时脚本会拒绝覆盖。示例中的路径仅为
+执行人选择的本机绝对 `.sh` 路径，父目录必须已经存在，完整祖先链不能包含重解析点，也不能使用 UNC、设备或映射网络驱动器；目标文件已存在时脚本会拒绝覆盖。示例中的路径仅为
 占位，执行前必须换成实际受控目录：
 
 ```powershell
@@ -80,7 +80,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/apply-sms-phase5-tes
   -Authorization APPROVE_TEST_JOURNALD_RETENTION
 ```
 
-`-ExportOperatorPayload` 与 `-Apply` 互斥。导出模式不读取 `known_hosts`、不建立 SSH 连接、不写测试服配置、不重启服务，
+`-SelfTest`、`-ExportOperatorPayload` 与 `-Apply` 三种模式互斥。导出模式不读取 `known_hosts`、不建立 SSH 连接、不写测试服配置、不重启服务，
 只在指定本地路径创建一个 UTF-8、LF、无 BOM 的新文件，并输出 `operator_payload_sha256`。因此“导出成功”只表示交接资产
 已经生成，不能记为测试服已部署。脚本冻结 `8G/50G/14day/1day`，并以测试服 `/etc/machine-id` 的 SHA-256 摘要绑定
 目标主机；不记录或输出原始 machine-id。目标摘要不匹配时会在 sudo 与任何配置写入之前失败。

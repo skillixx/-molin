@@ -35,6 +35,15 @@ if ($SystemMaxUse -cne "8G" -or $SystemKeepFree -cne "50G" -or
 $payloadPath = Join-Path $PSScriptRoot "apply-sms-phase5-test-server-log-retention.sh"
 $payload = Get-Content -LiteralPath $payloadPath -Raw -Encoding UTF8
 $expectedMachineIdSHA256 = "b60555f0a2defd1c02b752b215989686592244e810e3d22c884ab5d5e8d578d4"
+$exportRequested = -not [string]::IsNullOrWhiteSpace($ExportOperatorPayload)
+
+# 三种模式严格互斥，避免 SelfTest 的成功结果掩盖真实执行或导出参数的授权错误。
+if ($SelfTest -and ($Apply -or $exportRequested)) {
+    throw "SelfTest、远端执行与运维脚本导出必须互斥"
+}
+if ($Apply -and $exportRequested) {
+    throw "远端执行与运维脚本导出不能同时启用"
+}
 
 if ($SelfTest) {
     # SelfTest 只检查冻结的本地资产，不读取 known_hosts，也不启动 ssh.exe。
@@ -72,11 +81,6 @@ if ($SelfTest) {
     exit 0
 }
 
-if ($Apply -and -not [string]::IsNullOrWhiteSpace($ExportOperatorPayload)) {
-    throw "远端执行与运维脚本导出不能同时启用"
-}
-$exportRequested = -not [string]::IsNullOrWhiteSpace($ExportOperatorPayload)
-
 if (-not $Apply -and -not $exportRequested) {
     # 默认仅展示非敏感计划，不读取 SSH 身份且不连接远端。
     Write-Output "apply_authorized=false"
@@ -110,15 +114,31 @@ if ($exportRequested) {
     if (-not [IO.Path]::IsPathRooted($ExportOperatorPayload)) {
         throw "运维脚本导出路径必须为绝对路径"
     }
+    if ($ExportOperatorPayload.StartsWith("\\") -or $ExportOperatorPayload.StartsWith("//")) {
+        throw "运维脚本导出路径不能使用 UNC、设备或网络路径"
+    }
     $exportPath = [IO.Path]::GetFullPath($ExportOperatorPayload)
     if ([IO.Path]::GetExtension($exportPath) -cne ".sh") {
         throw "运维脚本导出路径必须使用 .sh 扩展名"
     }
     $exportParent = [IO.Path]::GetDirectoryName($exportPath)
     if ([string]::IsNullOrWhiteSpace($exportParent) -or
-        -not (Test-Path -LiteralPath $exportParent -PathType Container) -or
-        ([IO.DirectoryInfo]$exportParent).Attributes.HasFlag([IO.FileAttributes]::ReparsePoint)) {
-        throw "运维脚本导出目录不存在或属于重解析路径"
+        -not (Test-Path -LiteralPath $exportParent -PathType Container)) {
+        throw "运维脚本导出目录不存在"
+    }
+    if ([IO.Path]::DirectorySeparatorChar -eq "\") {
+        $exportDrive = New-Object IO.DriveInfo([IO.Path]::GetPathRoot($exportPath))
+        if ($exportDrive.DriveType -eq [IO.DriveType]::Network) {
+            throw "运维脚本导出路径不能使用映射网络驱动器"
+        }
+    }
+    # 从直接父目录遍历至根目录，拒绝通过 junction 或符号链接把本地交接写入重定向到其他位置。
+    $currentExportParent = [IO.DirectoryInfo]$exportParent
+    while ($null -ne $currentExportParent) {
+        if ($currentExportParent.Attributes.HasFlag([IO.FileAttributes]::ReparsePoint)) {
+            throw "运维脚本导出目录或其祖先属于重解析路径"
+        }
+        $currentExportParent = $currentExportParent.Parent
     }
     if (Test-Path -LiteralPath $exportPath) {
         throw "运维脚本导出目标已存在，禁止覆盖"

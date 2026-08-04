@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import shutil
@@ -19,6 +20,7 @@ PAYLOAD = ROOT / "scripts" / "apply-sms-phase5-test-server-log-retention.sh"
 READINESS = ROOT / "scripts" / "verify-sms-phase5-readiness.ps1"
 CI = ROOT / ".github" / "workflows" / "ci.yml"
 RUNBOOK = ROOT / "docs" / "sms-phase5-log-retention-runbook.md"
+POWERSHELL_EXE = shutil.which("pwsh") or shutil.which("powershell")
 
 
 class LogRetentionChangeContractTest(unittest.TestCase):
@@ -33,10 +35,17 @@ class LogRetentionChangeContractTest(unittest.TestCase):
         self.ci = CI.read_text(encoding="utf-8")
         self.runbook = RUNBOOK.read_text(encoding="utf-8")
 
+    def require_powershell(self) -> str:
+        """动态契约优先使用跨平台 PowerShell，缺失时由其他静态契约继续检查。"""
+        if POWERSHELL_EXE is None:
+            self.skipTest("当前平台没有 pwsh/powershell，CI PowerShell 步骤负责执行")
+        return POWERSHELL_EXE
+
     def test_default_mode_and_self_test_never_connect(self) -> None:
+        powershell = self.require_powershell()
         completed = subprocess.run(
             [
-                "powershell",
+                powershell,
                 "-NoProfile",
                 "-ExecutionPolicy",
                 "Bypass",
@@ -57,7 +66,7 @@ class LogRetentionChangeContractTest(unittest.TestCase):
 
         planned = subprocess.run(
             [
-                "powershell",
+                powershell,
                 "-NoProfile",
                 "-ExecutionPolicy",
                 "Bypass",
@@ -92,10 +101,11 @@ class LogRetentionChangeContractTest(unittest.TestCase):
             self.assertIn(marker, self.ps)
 
     def test_authorized_operator_payload_export_is_offline_and_never_overwrites(self) -> None:
+        powershell = self.require_powershell()
         with tempfile.TemporaryDirectory() as temp_dir:
             output_path = Path(temp_dir) / "apply-journald-retention.sh"
             command = [
-                "powershell",
+                powershell,
                 "-NoProfile",
                 "-ExecutionPolicy",
                 "Bypass",
@@ -131,6 +141,13 @@ class LogRetentionChangeContractTest(unittest.TestCase):
             self.assertIn("local_operator_payload_writes=1", exported.stdout)
 
             payload = output_path.read_bytes()
+            hash_match = re.search(
+                r"^operator_payload_sha256=([0-9a-f]{64})$",
+                exported.stdout,
+                re.MULTILINE,
+            )
+            self.assertIsNotNone(hash_match)
+            self.assertEqual(hash_match.group(1), hashlib.sha256(payload).hexdigest())
             self.assertTrue(payload.startswith(b"#!/usr/bin/env bash\n"))
             self.assertNotIn(b"\r", payload)
             self.assertNotIn(b"\xef\xbb\xbf", payload)
@@ -176,6 +193,69 @@ class LogRetentionChangeContractTest(unittest.TestCase):
             )
             self.assertNotEqual(combined.returncode, 0)
             self.assertFalse(combined_path.exists())
+
+            for mixed_arguments in (
+                ["-SelfTest", "-Apply"],
+                ["-SelfTest", "-ExportOperatorPayload", str(combined_path)],
+            ):
+                mixed = subprocess.run(
+                    [
+                        powershell,
+                        "-NoProfile",
+                        "-ExecutionPolicy",
+                        "Bypass",
+                        "-File",
+                        str(POWERSHELL),
+                        *mixed_arguments,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    check=False,
+                )
+                self.assertNotEqual(mixed.returncode, 0)
+            self.assertFalse(combined_path.exists())
+
+            unc = subprocess.run(
+                command[:-1]
+                + [
+                    r"\\server\share\apply-journald-retention.sh",
+                    "-Authorization",
+                    "APPROVE_TEST_JOURNALD_RETENTION",
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+            self.assertNotEqual(unc.returncode, 0)
+
+            real_parent = Path(temp_dir) / "real-parent"
+            linked_parent = Path(temp_dir) / "linked-parent"
+            real_parent.mkdir()
+            try:
+                os.symlink(real_parent, linked_parent, target_is_directory=True)
+            except OSError:
+                self.assertIn("ReparsePoint", self.ps)
+                self.assertIn(".Parent", self.ps)
+            else:
+                linked_export = subprocess.run(
+                    command[:-1]
+                    + [
+                        str(linked_parent / "payload.sh"),
+                        "-Authorization",
+                        "APPROVE_TEST_JOURNALD_RETENTION",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    check=False,
+                )
+                self.assertNotEqual(linked_export.returncode, 0)
+                self.assertFalse((real_parent / "payload.sh").exists())
 
     def test_payload_preserves_sms_closed_state_and_rolls_back_failures(self) -> None:
         for marker in (
