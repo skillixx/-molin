@@ -33,7 +33,7 @@ SSE 扫描器最大单行 2 MiB。公开事件暂存在有界段内，遇到句�
 - 请求正常、失败、panic 可通过 defer 回收资源租约。
 - 客户端断开不取消已经形成的上游事实和结算。
 - 没有可信 Usage 时继续遵守 G3 settlement_pending，不猜测消费量。
-- 预算同步失败写补偿任务，`next_retry_at` 到期即重新扫描，不等待预算预留自身过期；八次后进入 dead 并退出自动扫描，manual_review 也不会被恢复任务覆盖。管理员使用 `updated_at` 乐观锁显式转 retry 后才恢复扫描。
+- 预算释放或终态同步失败写补偿任务，`next_retry_at` 到期即重新扫描；`budget_release_failed` 在确认没有 G3 请求事实后立即释放，补偿任务落库也失败时由“无 G3 请求且超过 5 分钟”的孤立扫描兜底，不等待 24 小时。成功收敛进入 completed；连续八次失败进入 dead，manual_review 不会被恢复任务覆盖，管理员使用 `updated_at` 乐观锁显式转 retry 后才恢复扫描。
 - 日/月预算归属在准入时固化到 `daily_period_start/monthly_period_start`；held 和 settled 都从同一预算预留表按该周期汇总，跨午夜完成不会漂移到新周期。
 - Outbox dead 事件只能由具有 `ai_gateway:reconcile_manage` 且完成管理员二次认证的人员按原 event_id 重试；必须填写原因并在执行前记录审计，非 dead 状态返回冲突。
 - migration down 只执行 no-op，不删除安全、预算或补偿审计事实。

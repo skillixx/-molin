@@ -21,6 +21,8 @@ var (
 	ErrBudgetLimitExceeded     = errors.New("预算已达到硬限制")
 )
 
+const orphanBudgetRecoveryGrace = 5 * time.Minute
+
 // G4GovernanceRepository 统一保存安全、预算和资源策略事实，不保存提示词或模型响应正文。
 type G4GovernanceRepository struct {
 	db  *gorm.DB
@@ -260,7 +262,8 @@ func (r *G4GovernanceRepository) ReleaseBudget(ctx context.Context, requestID st
 		Updates(map[string]interface{}{"status": model.AIBudgetReleased, "released_at": now}).Error
 }
 
-// SyncBudgetFromRequest 只读取 G3 终态，不创建金额事实，也不会重放上游调用。
+// SyncBudgetFromRequest 只读取 G3 终态和既有补偿事实，不创建金额事实，也不会重放上游调用。
+// 明确的释放失败可在补偿任务到期后立即重试；补偿任务自身未能落库时，孤立预留超过保护窗口也会安全释放。
 func (r *G4GovernanceRepository) SyncBudgetFromRequest(ctx context.Context, requestID string) (bool, error) {
 	returnStatus := false
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -271,19 +274,33 @@ func (r *G4GovernanceRepository) SyncBudgetFromRequest(ctx context.Context, requ
 			}
 			return err
 		}
+		var task model.AICompensationTask
+		taskErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("task_key = ?", "budget:"+requestID).First(&task).Error
+		if taskErr != nil && !errors.Is(taskErr, gorm.ErrRecordNotFound) {
+			return taskErr
+		}
+		hasTask := taskErr == nil
 		if reservation.Status != model.AIBudgetHeld {
 			returnStatus = true
-			return nil
+			return completeBudgetCompensationTx(tx, hasTask, task.ID, r.now())
 		}
 		var request model.AIRequest
 		if err := tx.Where("request_id = ?", requestID).First(&request).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				// 预算预留发生在钱包预占之前；若进程在创建 G3 请求前退出，过期后可确认没有上游执行事实并安全释放。
-				if !reservation.ExpiresAt.After(r.now()) {
+				now := r.now()
+				explicitRelease := hasTask && task.LastErrorClass != nil && *task.LastErrorClass == "budget_release_failed"
+				staleOrphan := !reservation.CreatedAt.After(now.Add(-orphanBudgetRecoveryGrace))
+				// 预算预留发生在钱包预占之前；明确释放失败或超过保护窗口仍无 G3 请求时，可以确认没有上游执行事实。
+				if explicitRelease || staleOrphan || !reservation.ExpiresAt.After(now) {
 					returnStatus = true
-					return tx.Model(&reservation).Updates(map[string]interface{}{
-						"status": model.AIBudgetExpired, "released_at": r.now(),
-					}).Error
+					status := model.AIBudgetReleased
+					if !explicitRelease && !staleOrphan {
+						status = model.AIBudgetExpired
+					}
+					if err := tx.Model(&reservation).Updates(map[string]interface{}{"status": status, "released_at": now}).Error; err != nil {
+						return err
+					}
+					return completeBudgetCompensationTx(tx, hasTask, task.ID, now)
 				}
 				return nil
 			}
@@ -297,14 +314,20 @@ func (r *G4GovernanceRepository) SyncBudgetFromRequest(ctx context.Context, requ
 				amount = *request.SettledAmount
 			}
 			returnStatus = true
-			return tx.Model(&reservation).Updates(map[string]interface{}{
+			if err := tx.Model(&reservation).Updates(map[string]interface{}{
 				"status": model.AIBudgetSettled, "settled_amount": amount, "released_at": now,
-			}).Error
+			}).Error; err != nil {
+				return err
+			}
+			return completeBudgetCompensationTx(tx, hasTask, task.ID, now)
 		case model.AIBillingReleased:
 			returnStatus = true
-			return tx.Model(&reservation).Updates(map[string]interface{}{
+			if err := tx.Model(&reservation).Updates(map[string]interface{}{
 				"status": model.AIBudgetReleased, "released_at": now,
-			}).Error
+			}).Error; err != nil {
+				return err
+			}
+			return completeBudgetCompensationTx(tx, hasTask, task.ID, now)
 		default:
 			return nil
 		}
@@ -312,14 +335,25 @@ func (r *G4GovernanceRepository) SyncBudgetFromRequest(ctx context.Context, requ
 	return returnStatus, err
 }
 
+func completeBudgetCompensationTx(tx *gorm.DB, exists bool, taskID uint64, now time.Time) error {
+	if !exists {
+		return nil
+	}
+	return tx.Model(&model.AICompensationTask{}).Where("id = ?", taskID).Updates(map[string]interface{}{
+		"status": "completed", "locked_at": nil, "next_retry_at": now,
+	}).Error
+}
+
 func (r *G4GovernanceRepository) ListHeldBudgetRequestIDs(ctx context.Context, before time.Time, limit int) ([]string, error) {
 	var ids []string
+	orphanBefore := before.Add(-orphanBudgetRecoveryGrace)
 	err := r.db.WithContext(ctx).Model(&model.AIBudgetReservation{}).
 		Where("status = ?", model.AIBudgetHeld).
 		Where(`(
-			(NOT EXISTS (SELECT 1 FROM ai_compensation_tasks t WHERE t.task_key = CONCAT('budget:', ai_budget_reservations.request_id)) AND expires_at <= ?)
+			(NOT EXISTS (SELECT 1 FROM ai_compensation_tasks t WHERE t.task_key = CONCAT('budget:', ai_budget_reservations.request_id))
+				AND (expires_at <= ? OR (created_at <= ? AND NOT EXISTS (SELECT 1 FROM ai_requests r WHERE r.request_id = ai_budget_reservations.request_id))))
 			OR EXISTS (SELECT 1 FROM ai_compensation_tasks t WHERE t.task_key = CONCAT('budget:', ai_budget_reservations.request_id) AND t.status IN ('pending','retry') AND t.next_retry_at <= ?)
-		)`, before, before).
+		)`, before, orphanBefore, before).
 		Order("id ASC").Limit(limit).Pluck("request_id", &ids).Error
 	return ids, err
 }
@@ -334,10 +368,10 @@ func (r *G4GovernanceRepository) RecordCompensationFailure(ctx context.Context, 
 		Columns: []clause.Column{{Name: "task_key"}},
 		// MySQL 按赋值顺序求值，必须先递增次数，再让状态表达式读取新次数。
 		DoUpdates: clause.Set{
-			{Column: clause.Column{Name: "retry_count"}, Value: gorm.Expr("IF(status IN ('dead','manual_review'), retry_count, retry_count + 1)")},
-			{Column: clause.Column{Name: "status"}, Value: gorm.Expr("IF(status IN ('dead','manual_review'), status, IF(retry_count >= 8, 'dead', 'retry'))")},
-			{Column: clause.Column{Name: "next_retry_at"}, Value: now.Add(time.Minute)},
-			{Column: clause.Column{Name: "last_error_class"}, Value: class},
+			{Column: clause.Column{Name: "retry_count"}, Value: gorm.Expr("IF(status IN ('completed','dead','manual_review'), retry_count, retry_count + 1)")},
+			{Column: clause.Column{Name: "status"}, Value: gorm.Expr("IF(status IN ('completed','dead','manual_review'), status, IF(retry_count >= 8, 'dead', 'retry'))")},
+			{Column: clause.Column{Name: "next_retry_at"}, Value: gorm.Expr("IF(status IN ('completed','dead','manual_review'), next_retry_at, ?)", now.Add(time.Minute))},
+			{Column: clause.Column{Name: "last_error_class"}, Value: gorm.Expr("IF(status IN ('completed','dead','manual_review'), last_error_class, ?)", class)},
 		},
 	}).Create(&task).Error
 }

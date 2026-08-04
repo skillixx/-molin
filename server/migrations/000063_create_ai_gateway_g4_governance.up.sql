@@ -205,7 +205,7 @@ CREATE TABLE IF NOT EXISTS ai_compensation_tasks (
   PRIMARY KEY (id),
   UNIQUE KEY uk_ai_compensation_task (task_key),
   KEY idx_ai_compensation_status_retry (status, next_retry_at),
-  CONSTRAINT chk_ai_compensation_status CHECK (status IN ('pending','running','retry','dead','manual_review'))
+  CONSTRAINT chk_ai_compensation_status CHECK (status IN ('pending','running','retry','completed','dead','manual_review'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI 网关幂等补偿任务';
 
 -- 安全策略必须由具备权限且完成二次认证的管理员通过发布接口创建和审批。

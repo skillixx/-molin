@@ -184,6 +184,43 @@ func TestG4MySQLBudgetIntegration(t *testing.T) {
 			t.Fatalf("过期预留状态错误: status=%s err=%v", status, err)
 		}
 
+		releaseReservation := model.AIBudgetReservation{
+			RequestID: "g4-release-failed", UserID: 1, ProjectID: 1, APIKeyID: 1,
+			ReservedAmount: decimal.NewFromInt(1), Status: model.AIBudgetHeld,
+			DailyPeriodStart: daily, MonthlyPeriodStart: monthly, ExpiresAt: now.Add(time.Hour),
+		}
+		if err := db.Create(&releaseReservation).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := repo.RecordCompensationFailure(ctx, releaseReservation.RequestID, "budget_release_failed"); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&model.AICompensationTask{}).Where("task_key = ?", "budget:"+releaseReservation.RequestID).Update("next_retry_at", now.Add(-time.Minute)).Error; err != nil {
+			t.Fatal(err)
+		}
+		governance := NewGovernanceService(nil, repo, &memoryResourceLimiter{})
+		completed, err := governance.ReconcileExpiredBudgets(ctx, 20)
+		if err != nil || completed == 0 {
+			t.Fatalf("明确的预算释放失败必须在下一轮补偿中收敛: completed=%d err=%v", completed, err)
+		}
+		var releaseStatus, taskStatus string
+		if err := db.Model(&model.AIBudgetReservation{}).Where("request_id = ?", releaseReservation.RequestID).Pluck("status", &releaseStatus).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&model.AICompensationTask{}).Where("task_key = ?", "budget:"+releaseReservation.RequestID).Pluck("status", &taskStatus).Error; err != nil {
+			t.Fatal(err)
+		}
+		if releaseStatus != model.AIBudgetReleased || taskStatus != "completed" {
+			t.Fatalf("预算释放补偿终态错误: reservation=%s task=%s", releaseStatus, taskStatus)
+		}
+		if err := repo.RecordCompensationFailure(ctx, releaseReservation.RequestID, "late_failure_must_not_reopen"); err != nil {
+			t.Fatal(err)
+		}
+		var completedTask model.AICompensationTask
+		if err := db.Where("task_key = ?", "budget:"+releaseReservation.RequestID).First(&completedTask).Error; err != nil || completedTask.Status != "completed" || completedTask.RetryCount != 1 || completedTask.LastErrorClass == nil || *completedTask.LastErrorClass != "budget_release_failed" {
+			t.Fatalf("后到失败记录不得修改已完成任务: task=%+v err=%v", completedTask, err)
+		}
+
 		brokenReservation := model.AIBudgetReservation{
 			RequestID: "g4-broken-request", UserID: 1, ProjectID: 1, APIKeyID: 1,
 			ReservedAmount: decimal.NewFromInt(1), Status: model.AIBudgetHeld,
@@ -215,22 +252,28 @@ func TestG4MySQLBudgetIntegration(t *testing.T) {
 			}
 		}
 		items, total, err := repo.ListCompensationTasks(ctx, 0, 20)
-		if err != nil || total != 1 || len(items) != 1 || items[0].Status != "dead" || items[0].RetryCount != 8 {
+		var brokenTask *model.AICompensationTask
+		for index := range items {
+			if items[index].TaskKey == "budget:g4-broken-request" {
+				brokenTask = &items[index]
+				break
+			}
+		}
+		if err != nil || total < 2 || brokenTask == nil || brokenTask.Status != "dead" || brokenTask.RetryCount != 8 {
 			t.Fatalf("达到重试上限后必须进入 dead: items=%+v total=%d err=%v", items, total, err)
 		}
-		staleUpdatedAt := items[0].UpdatedAt.Add(-time.Second)
-		if err := repo.ResolveCompensationTask(ctx, items[0].ID, staleUpdatedAt, "manual_review"); err != repository.ErrRequestStateConflict {
+		staleUpdatedAt := brokenTask.UpdatedAt.Add(-time.Second)
+		if err := repo.ResolveCompensationTask(ctx, brokenTask.ID, staleUpdatedAt, "manual_review"); err != repository.ErrRequestStateConflict {
 			t.Fatalf("过期乐观锁必须拒绝覆盖: %v", err)
 		}
-		if err := repo.ResolveCompensationTask(ctx, items[0].ID, items[0].UpdatedAt, "manual_review"); err != nil {
+		if err := repo.ResolveCompensationTask(ctx, brokenTask.ID, brokenTask.UpdatedAt, "manual_review"); err != nil {
 			t.Fatalf("dead 任务应可转人工处理: %v", err)
 		}
 		if err := repo.RecordCompensationFailure(ctx, "g4-broken-request", "budget_sync_failed"); err != nil {
 			t.Fatal(err)
 		}
-		items, _, err = repo.ListCompensationTasks(ctx, 0, 20)
-		if err != nil || items[0].Status != "manual_review" || items[0].RetryCount != 8 {
-			t.Fatalf("人工接管后自动失败记录不得覆盖状态或重试次数: items=%+v err=%v", items, err)
+		if err := db.Where("task_key = ?", "budget:g4-broken-request").First(brokenTask).Error; err != nil || brokenTask.Status != "manual_review" || brokenTask.RetryCount != 8 {
+			t.Fatalf("人工接管后自动失败记录不得覆盖状态或重试次数: task=%+v err=%v", brokenTask, err)
 		}
 		heldIDs, err := repo.ListHeldBudgetRequestIDs(ctx, now, 20)
 		if err != nil {

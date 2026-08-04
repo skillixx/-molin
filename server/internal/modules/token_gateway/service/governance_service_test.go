@@ -20,6 +20,9 @@ type memoryBudgetRepository struct {
 	released    int
 	synced      int
 	compensated int
+	heldIDs     []string
+	syncResult  bool
+	syncErr     error
 }
 
 func (r *memoryBudgetRepository) ReserveBudget(_ context.Context, _ repository.BudgetReservationRequest) (*model.AIBudgetReservation, error) {
@@ -51,10 +54,10 @@ func TestGovernanceRecordsCompensationWhenBudgetReleaseFails(t *testing.T) {
 }
 func (r *memoryBudgetRepository) SyncBudgetFromRequest(context.Context, string) (bool, error) {
 	r.synced++
-	return true, nil
+	return r.syncResult, r.syncErr
 }
 func (r *memoryBudgetRepository) ListHeldBudgetRequestIDs(context.Context, time.Time, int) ([]string, error) {
-	return nil, nil
+	return append([]string(nil), r.heldIDs...), nil
 }
 func (r *memoryBudgetRepository) RecordCompensationFailure(context.Context, string, string) error {
 	r.compensated++
@@ -142,12 +145,21 @@ func TestGovernanceHardBudgetStopsBeforeResource(t *testing.T) {
 }
 
 func TestGovernanceFinishReleasesLeaseAndSyncsBudget(t *testing.T) {
-	budget := &memoryBudgetRepository{reserved: true}
+	budget := &memoryBudgetRepository{reserved: true, syncResult: true}
 	limiter := &memoryResourceLimiter{}
 	governance := NewGovernanceService(nil, budget, limiter)
 	ticket := &GovernanceTicket{Subject: SafetySubject{RequestID: "req-governance-3"}, Resource: &ResourceTicket{}, BudgetReserved: true}
 	governance.FinishExecution(context.Background(), ticket, ExecutionUsage{Present: true, TotalTokens: 17})
 	if limiter.released != 1 || limiter.reconciled != 17 || budget.synced != 1 {
 		t.Fatalf("终态回收不完整: release=%d tokens=%d sync=%d", limiter.released, limiter.reconciled, budget.synced)
+	}
+}
+
+func TestGovernanceRecoveryCompletesDueBudgetCompensation(t *testing.T) {
+	budget := &memoryBudgetRepository{heldIDs: []string{"req-budget-recovery"}, syncResult: true}
+	governance := NewGovernanceService(nil, budget, &memoryResourceLimiter{})
+	completed, err := governance.ReconcileExpiredBudgets(context.Background(), 10)
+	if err != nil || completed != 1 || budget.synced != 1 || budget.compensated != 0 {
+		t.Fatalf("到期预算补偿必须在本轮收敛: completed=%d synced=%d compensated=%d err=%v", completed, budget.synced, budget.compensated, err)
 	}
 }

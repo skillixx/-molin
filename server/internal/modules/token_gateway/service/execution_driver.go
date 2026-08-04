@@ -547,7 +547,31 @@ func sanitizeExecutionResponse(value map[string]interface{}, logicalModel string
 	if logicalModel != "" {
 		value["model"] = logicalModel
 	}
+	sanitizeExecutionChoices(value["choices"])
 	redactExecutionInternalFields(value)
+}
+
+// sanitizeExecutionChoices 只公开 OpenAI 兼容的 choice 字段，避免供应商私有字符串绕过跨分块连续审核。
+// message、delta 和 tool_calls 内的兼容扩展仍会递归进入内容审核，不在此处截断其结构。
+func sanitizeExecutionChoices(value interface{}) {
+	choices, ok := value.([]interface{})
+	if !ok {
+		return
+	}
+	allowed := map[string]struct{}{
+		"index": {}, "message": {}, "delta": {}, "text": {}, "finish_reason": {}, "logprobs": {},
+	}
+	for _, rawChoice := range choices {
+		choice, ok := rawChoice.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for key := range choice {
+			if _, exists := allowed[key]; !exists {
+				delete(choice, key)
+			}
+		}
+	}
 }
 
 func redactExecutionInternalFields(value interface{}) {

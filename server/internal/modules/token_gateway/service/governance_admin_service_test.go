@@ -16,6 +16,38 @@ type memoryOutboxDeadRequeuer struct {
 	now     time.Time
 }
 
+type safetyPolicyAdminRepository struct {
+	governanceAdminRepository
+	policy        *model.AISafetyPolicyVersion
+	createCalls   int
+	publishCalls  int
+	rollbackCalls int
+}
+
+func (r *safetyPolicyAdminRepository) ListSafetyPolicies(context.Context, int, int) ([]model.AISafetyPolicyVersion, int64, error) {
+	return nil, 0, nil
+}
+
+func (r *safetyPolicyAdminRepository) GetSafetyPolicy(context.Context, uint64) (*model.AISafetyPolicyVersion, error) {
+	return r.policy, nil
+}
+
+func (r *safetyPolicyAdminRepository) CreateSafetyPolicy(_ context.Context, policy *model.AISafetyPolicyVersion) error {
+	r.createCalls++
+	r.policy = policy
+	return nil
+}
+
+func (r *safetyPolicyAdminRepository) PublishSafetyPolicy(context.Context, uint64, uint64, uint64) error {
+	r.publishCalls++
+	return nil
+}
+
+func (r *safetyPolicyAdminRepository) RollbackSafetyPolicy(context.Context, uint64, uint64) (*model.AISafetyPolicyVersion, error) {
+	r.rollbackCalls++
+	return r.policy, nil
+}
+
 func (r *memoryOutboxDeadRequeuer) RequeueDead(_ context.Context, eventID string, now time.Time) error {
 	r.eventID, r.now = eventID, now
 	return nil
@@ -39,6 +71,22 @@ func TestValidSafetyRulesRequiresAllCategoriesAndBoundedKeywords(t *testing.T) {
 	tooLong, _ := json.Marshal(rules)
 	if validSafetyRules(tooLong) {
 		t.Fatal("超过流式审核重叠上限的关键词不得创建")
+	}
+}
+
+func TestGovernanceAdminSafetyPolicyMethodsEnforceSevenCategories(t *testing.T) {
+	rules := []safetyRule{{Code: "illegal-001", Category: "illegal", Keywords: []string{"违法"}}}
+	incomplete, _ := json.Marshal(rules)
+	repo := &safetyPolicyAdminRepository{policy: &model.AISafetyPolicyVersion{ID: 1, VersionNo: 1, RulesJSON: incomplete}}
+	svc := NewGovernanceAdminService(repo)
+	if _, err := svc.CreatePolicy(context.Background(), 1, incomplete); !IsValidation(err) || repo.createCalls != 0 {
+		t.Fatalf("创建缺少类别的策略必须在写库前拒绝: err=%v calls=%d", err, repo.createCalls)
+	}
+	if err := svc.PublishPolicy(context.Background(), 1, 1, 1); !IsValidation(err) || repo.publishCalls != 0 {
+		t.Fatalf("发布缺少类别的策略必须在写库前拒绝: err=%v calls=%d", err, repo.publishCalls)
+	}
+	if _, err := svc.RollbackPolicy(context.Background(), 1, 1); !IsValidation(err) || repo.rollbackCalls != 0 {
+		t.Fatalf("回滚缺少类别的策略必须在写库前拒绝: err=%v calls=%d", err, repo.rollbackCalls)
 	}
 }
 

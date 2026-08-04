@@ -468,7 +468,7 @@ func TestBifrostDriver_ClientCancellationReturnsUnknownWithoutFallback(t *testin
 }
 
 func TestNativeDriver_PreservesCompatibleResponse(t *testing.T) {
-	upstream := `{"choices":[{"message":{"content":"OK"}}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3},"extra_fields":{"native":"internal"}}`
+	upstream := `{"choices":[{"message":{"content":"OK"},"vendor_text":"网络赌博推广"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3},"extra_fields":{"native":"internal"}}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer provider-key" {
 			t.Fatal("原生驱动未传递渠道密钥")
@@ -483,8 +483,19 @@ func TestNativeDriver_PreservesCompatibleResponse(t *testing.T) {
 	}
 	defer result.Response.Body.Close()
 	raw, _ := io.ReadAll(result.Response.Body)
-	if bytes.Contains(raw, []byte("extra_fields")) || bytes.Contains(raw, []byte("internal")) || !result.Usage.Present || result.Usage.TotalTokens != 3 {
+	if bytes.Contains(raw, []byte("extra_fields")) || bytes.Contains(raw, []byte("internal")) || bytes.Contains(raw, []byte("vendor_text")) || bytes.Contains(raw, []byte("网络赌博推广")) || !result.Usage.Present || result.Usage.TotalTokens != 3 {
 		t.Fatalf("原生兼容响应回归 raw=%s usage=%+v", raw, result.Usage)
+	}
+}
+
+func TestNativeDriver_RemovesUnknownChoiceFieldsFromSSE(t *testing.T) {
+	driver := NewNativeOpenAICompatibleDriver(&http.Client{})
+	chunk, err := driver.NormalizeStreamLine([]byte(`data: {"choices":[{"index":0,"delta":{"content":"OK"},"vendor_text":"网络赌博推广"}]}`+"\n"), "molin/qwen-turbo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(chunk.PublicLine, []byte("vendor_text")) || bytes.Contains(chunk.PublicLine, []byte("网络赌博推广")) || !bytes.Contains(chunk.PublicLine, []byte(`"content":"OK"`)) {
+		t.Fatalf("SSE 只能公开兼容 choice 字段: %s", chunk.PublicLine)
 	}
 }
 

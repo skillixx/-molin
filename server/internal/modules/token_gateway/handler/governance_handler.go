@@ -432,11 +432,12 @@ func (h *GovernanceHandler) RequeueDeadOutbox(w http.ResponseWriter, r *http.Req
 	if !decodeGovernanceJSON(w, r, &req) {
 		return
 	}
+	reason := strings.TrimSpace(req.Reason)
 	operatorID := middleware.UserIDFromContext(r.Context())
-	if !h.auditBeforeWrite(w, r, operatorID, "outbox.dead.requeue", "outbox_event", eventID, map[string]int{"reason_length": len(strings.TrimSpace(req.Reason))}) {
+	if !h.auditBeforeWrite(w, r, operatorID, "outbox.dead.requeue", "outbox_event", eventID, map[string]interface{}{"reason": reason, "reason_length": len(reason)}) {
 		return
 	}
-	if err := h.service.RequeueDeadOutbox(r.Context(), eventID, req.Reason); err != nil {
+	if err := h.service.RequeueDeadOutbox(r.Context(), eventID, reason); err != nil {
 		writeGovernanceError(w, err)
 		return
 	}
