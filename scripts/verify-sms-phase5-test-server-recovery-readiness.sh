@@ -84,8 +84,8 @@ trusted_items = {
     item.strip() for item in env_values.get("TRUSTED_PROXY_IPS", "").split(",") if item.strip()
 }
 fixed_proxy_compatible = (
-    "172.20.250.0/28" in trusted_items
-    or {"172.20.250.2", "172.20.250.3"} <= trusted_items
+    trusted_items == {"172.20.250.0/28"}
+    or trusted_items == {"172.20.250.2", "172.20.250.3"}
 )
 legacy_template_keys_present = any(
     key.startswith("SMS_TEMPLATE_CODE_") for key in env_values

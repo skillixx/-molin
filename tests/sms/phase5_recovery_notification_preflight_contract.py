@@ -31,6 +31,12 @@ class RecoveryNotificationPreflightContractTest(unittest.TestCase):
         self.assertIn("BatchMode=yes", self.ps)
         self.assertIn("StrictHostKeyChecking=yes", self.ps)
         self.assertIn("ConnectTimeout=8", self.ps)
+        self.assertIn('$ServerHost -cne "8.130.9.163"', self.ps)
+        self.assertIn('$SSHUser -cne "pc"', self.ps)
+        self.assertIn("$SSHPort -ne 10003", self.ps)
+        self.assertIn("HostKeyAlgorithms=ssh-ed25519", self.ps)
+        self.assertIn("UserKnownHostsFile=", self.ps)
+        self.assertIn("SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I", self.ps)
         self.assertIn("ToBase64String", self.ps)
         self.assertIn("remote_connections=0", self.ps)
 
@@ -80,6 +86,8 @@ class RecoveryNotificationPreflightContractTest(unittest.TestCase):
         self.assertIn("backup_env_missing_fixed_proxy_trust", self.sh)
         self.assertIn("backup_env_contains_legacy_template_keys", self.sh)
         self.assertIn("current_env_preserve_proxy_no_legacy_template_keys", self.sh)
+        self.assertIn('trusted_items == {"172.20.250.0/28"}', self.sh)
+        self.assertNotIn('{"172.20.250.2", "172.20.250.3"} <= trusted_items', self.sh)
 
     def test_payload_audits_runtime_notification_chain_without_triggering_it(self) -> None:
         for marker in (

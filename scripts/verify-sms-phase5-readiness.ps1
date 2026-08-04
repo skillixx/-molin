@@ -116,7 +116,9 @@ $requiredFiles = @(
     "scripts\verify-sms-phase5-test-server-recovery-readiness.ps1",
     "scripts\verify-sms-phase5-test-server-recovery-readiness.sh",
     "scripts\prepare-sms-phase5-test-server-rollback-candidate.ps1",
-    "scripts\prepare-sms-phase5-test-server-rollback-candidate.sh"
+    "scripts\prepare-sms-phase5-test-server-rollback-candidate.sh",
+    "scripts\verify-sms-phase5-test-server-log-retention.ps1",
+    "scripts\verify-sms-phase5-test-server-log-retention.sh"
 )
 foreach ($relative in $requiredFiles) {
     if (-not (Test-Path -LiteralPath (Join-Path $root $relative) -PathType Leaf)) {

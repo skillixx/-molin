@@ -12,12 +12,12 @@
 
 $ErrorActionPreference = "Stop"
 
-# 所有参数都先收敛为固定格式，避免替换到远端 Bash 后形成命令注入。
-if ($ServerHost -notmatch '^[A-Za-z0-9.-]+$' -or $SSHUser -notmatch '^[A-Za-z0-9._-]+$') {
-    throw "SSH 目标格式无效"
+# 只读批准仅适用于阶段 5 固定测试服，其他目标必须失败关闭。
+if ($ServerHost -cne "8.130.9.163" -or $SSHUser -cne "pc" -or $SSHPort -ne 10003) {
+    throw "SSH 目标必须固定为阶段 5 测试服务器"
 }
-if ($SSHPort -lt 1 -or $SSHPort -gt 65535 -or $PrometheusPort -lt 1 -or $PrometheusPort -gt 65535) {
-    throw "端口必须位于 1-65535"
+if ($PrometheusPort -lt 1 -or $PrometheusPort -gt 65535) {
+    throw "Prometheus 端口必须位于 1-65535"
 }
 if ($BackupPath -notmatch '^/home/pc/molin/backups/sms-phase5-[0-9]{8}T[0-9]{6}Z$') {
     throw "备份路径不符合阶段 5 固定格式"
@@ -71,6 +71,43 @@ if ($SelfTest) {
     exit 0
 }
 
+# 固定 known_hosts 普通文件和唯一 ED25519 指纹，避免只读审计连接到错误目标。
+$knownHostsPath = [IO.Path]::GetFullPath((Join-Path $env:USERPROFILE ".ssh\known_hosts"))
+if (-not (Test-Path -LiteralPath $knownHostsPath -PathType Leaf) -or
+    ([IO.FileInfo]$knownHostsPath).Attributes.HasFlag([IO.FileAttributes]::ReparsePoint)) {
+    throw "固定 known_hosts 文件不存在或属于重解析路径"
+}
+$knownHostLines = @(& ssh-keygen -F "[8.130.9.163]:10003" -f $knownHostsPath)
+if ($LASTEXITCODE -ne 0) {
+    throw "known_hosts 中缺少固定测试服身份"
+}
+$ed25519Keys = @()
+foreach ($line in $knownHostLines) {
+    $trimmed = $line.Trim()
+    if ($trimmed.Length -eq 0 -or $trimmed.StartsWith("#")) {
+        continue
+    }
+    $parts = @($trimmed -split '\s+')
+    if ($parts.Count -ge 3 -and $parts[1] -ceq "ssh-ed25519") {
+        $ed25519Keys += $parts[2]
+    }
+}
+if ($ed25519Keys.Count -ne 1) {
+    throw "固定测试服 ED25519 公钥数量异常"
+}
+$sha256 = [Security.Cryptography.SHA256]::Create()
+try {
+    $fingerprint = "SHA256:" + [Convert]::ToBase64String(
+        $sha256.ComputeHash([Convert]::FromBase64String($ed25519Keys[0]))
+    ).TrimEnd('=')
+}
+finally {
+    $sha256.Dispose()
+}
+if ($fingerprint -cne "SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I") {
+    throw "固定测试服 ED25519 公钥指纹不匹配"
+}
+
 $replacements = [ordered]@{
     "__BACKUP_PATH__" = $BackupPath
     "__EXPECTED_OLD_BINARY_SHA256__" = $ExpectedOldBinarySHA256.ToLowerInvariant()
@@ -89,6 +126,8 @@ $sshArguments = @(
     "-o", "BatchMode=yes",
     "-o", "ConnectTimeout=8",
     "-o", "StrictHostKeyChecking=yes",
+    "-o", "HostKeyAlgorithms=ssh-ed25519",
+    "-o", "UserKnownHostsFile=$knownHostsPath",
     $destination,
     "printf '%s' '$encoded' | base64 -d | bash"
 )

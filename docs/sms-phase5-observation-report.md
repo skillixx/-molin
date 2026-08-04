@@ -18,6 +18,8 @@
 确定接收渠道与值班人，以 Secret 方式部署 Alertmanager 并把 Prometheus 指向它；这些均是外部通知和服务配置变更，
 需要独立授权。配置完成后还需在 `SMS_ENABLED=false` 下用合成指标或专用测试规则演练，不得通过真实短信故障触发。
 
+同日新增日志留存只读审计：journald 服务正常、持久目录存在且磁盘用量可查询，但容量上限、磁盘保留空间、最长留存时间和单文件轮转周期四项显式配置均缺失，固定结论为 `log_retention_policy_verified=false`。这不会影响关闭态 Provider 零调用证据，但在真实 Canary 前必须由运维、产品和安全负责人确定策略，并单独批准配置变更。
+
 ## 2. 指标口径
 
 - `sms_provider_calls_total{scene,result}`：五固定场景、八固定结果；`accepted` 只表示供应商受理。
