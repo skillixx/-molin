@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+"""阶段 5 测试服 journald 留存策略变更资产契约。"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import unittest
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+POWERSHELL = ROOT / "scripts" / "apply-sms-phase5-test-server-log-retention.ps1"
+PAYLOAD = ROOT / "scripts" / "apply-sms-phase5-test-server-log-retention.sh"
+READINESS = ROOT / "scripts" / "verify-sms-phase5-readiness.ps1"
+CI = ROOT / ".github" / "workflows" / "ci.yml"
+RUNBOOK = ROOT / "docs" / "sms-phase5-log-retention-runbook.md"
+
+
+class LogRetentionChangeContractTest(unittest.TestCase):
+    """锁定默认无连接、显式授权、关闭态部署和失败回滚行为。"""
+
+    def setUp(self) -> None:
+        self.ps = POWERSHELL.read_text(encoding="utf-8-sig")
+        self.sh = PAYLOAD.read_text(encoding="utf-8")
+        self.readiness = READINESS.read_text(encoding="utf-8-sig")
+        self.ci = CI.read_text(encoding="utf-8")
+        self.runbook = RUNBOOK.read_text(encoding="utf-8")
+
+    def test_default_mode_and_self_test_never_connect(self) -> None:
+        completed = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(POWERSHELL),
+                "-SelfTest",
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=True,
+        )
+        self.assertIn("self_test=passed", completed.stdout)
+        self.assertIn("remote_connections=0", completed.stdout)
+        self.assertIn("configuration_writes=0", completed.stdout)
+        self.assertIn("service_restarts=0", completed.stdout)
+
+        planned = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(POWERSHELL),
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=True,
+        )
+        self.assertIn("apply_authorized=false", planned.stdout)
+        self.assertIn("remote_connections=0", planned.stdout)
+
+    def test_wrapper_locks_target_values_and_double_authorization(self) -> None:
+        for marker in (
+            '$ServerHost -cne "8.130.9.163"',
+            '$SSHUser -cne "pc"',
+            "$SSHPort -ne 10003",
+            "[switch]$Apply",
+            '"APPROVE_TEST_JOURNALD_RETENTION"',
+            'SystemMaxUse = "8G"',
+            'SystemKeepFree = "50G"',
+            'MaxRetentionSec = "14day"',
+            'MaxFileSec = "1day"',
+            "HostKeyAlgorithms=ssh-ed25519",
+            "SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I",
+        ):
+            self.assertIn(marker, self.ps)
+
+    def test_payload_preserves_sms_closed_state_and_rolls_back_failures(self) -> None:
+        for marker in (
+            "SMS_ENABLED",
+            "sms_closed_before=true",
+            "sms_closed_after=true",
+            "90-molin-sms-phase5-retention.conf",
+            "SystemMaxUse=__SYSTEM_MAX_USE__",
+            "SystemKeepFree=__SYSTEM_KEEP_FREE__",
+            "MaxRetentionSec=__MAX_RETENTION_SEC__",
+            "MaxFileSec=__MAX_FILE_SEC__",
+            "rollback_journald_configuration",
+            "journald_configuration_rollback_verified",
+            "unsafe_config_directory",
+            "unsafe_config_target",
+            "unsafe_backup_root",
+            "systemctl restart systemd-journald",
+            "log_retention_change_applied=true",
+            "real_sms_delivery_not_verified=true",
+        ):
+            self.assertIn(marker, self.sh)
+        self.assertNotIn("SMS_ENABLED=true", self.sh)
+        self.assertIn("test -L /etc/systemd/journald.conf.d", self.sh)
+        self.assertIn('test -L "$target"', self.sh)
+        self.assertNotRegex(self.sh, r"\bjournalctl\s+(?:--vacuum|--rotate|--flush)\b")
+
+    def test_assets_are_wired_into_readiness_ci_and_runbook(self) -> None:
+        self.assertIn(POWERSHELL.name, self.readiness)
+        self.assertIn(PAYLOAD.name, self.readiness)
+        self.assertIn("phase5_log_retention_change_contract.py", self.ci)
+        self.assertIn(f"./scripts/{POWERSHELL.name} -SelfTest", self.ci)
+        self.assertIn(f"bash -n scripts/{PAYLOAD.name}", self.ci)
+        self.assertIn(POWERSHELL.name, self.runbook)
+        self.assertIn("APPROVE_TEST_JOURNALD_RETENTION", self.runbook)
+        self.assertIn("默认模式不连接测试服", self.runbook)
+
+    def test_payload_does_not_embed_secrets_or_sms_operations(self) -> None:
+        for pattern in (
+            r"(?i)(access[_-]?key|secret|token)\s*[:=]\s*[^<\s`]+",
+            r"/api/auth/verification-codes/phone",
+            r"/api/admin/sms/.+test-send",
+        ):
+            self.assertIsNone(re.search(pattern, self.sh), pattern)
+
+
+if __name__ == "__main__":
+    unittest.main()

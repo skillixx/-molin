@@ -44,6 +44,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 审批时必须逐项确认或替换，不得因本表存在就自动生成配置。若批准后部署前磁盘可用空间显著下降，或 24 小时增长率
 显示 `8G` 无法覆盖获批留存期，应停止变更并重新评估。
 
+变更入口已经固化为 `scripts/apply-sms-phase5-test-server-log-retention.ps1`。默认模式不连接测试服，只输出四项非敏感
+计划值；`-SelfTest` 同样保持远端连接、配置写入和服务重启均为 0。只有参数值获批后，才允许在独立窗口同时提供
+`-Apply` 和固定授权短语 `APPROVE_TEST_JOURNALD_RETENTION`。示例仅说明门禁形态，不代表本轮已获授权：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/apply-sms-phase5-test-server-log-retention.ps1 `
+  -Apply -Authorization APPROVE_TEST_JOURNALD_RETENTION
+```
+
+真实模式固定主机、账号、端口和 ED25519 指纹；先确认同一 API PID 的 `SMS_ENABLED=false`、health/ready 和磁盘容量，
+再备份已有 drop-in、严格校验候选值并原子安装。重启 journald 后再次核对合并配置、服务状态和同一 API PID 关闭态。
+任一安装、重启或复验失败都会恢复原 drop-in 并再次重启 journald；回滚也失败时固定以退出码 90 暴露高优先级故障。
+脚本不执行 vacuum/rotate/flush，不读取日志正文，不调用短信接口，也不删除备份。
+
 ## 4. 关闭态变更与验证门禁
 
 取得独立授权后，变更必须始终保持 `SMS_ENABLED=false`，并按以下顺序执行：

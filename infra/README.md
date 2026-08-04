@@ -41,6 +41,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-ro
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-readonly.ps1
 ```
 
+测试服日志策略变更包装器默认只展示计划且不连接远端；只有四项参数另行获批后，才能按
+`docs/sms-phase5-log-retention-runbook.md` 同时使用 `-Apply` 与固定授权短语。不得把脚本存在视为部署授权。
+
 测试或生产环境文件可通过 `-EnvironmentFile` 做不回显值的检查，但目标文件必须已被 Git 忽略。测试服与生产均先保持
 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`。只有白名单 Canary、监控、QA 和产品批准完成后，才能分别授权变更生产开关。
 
