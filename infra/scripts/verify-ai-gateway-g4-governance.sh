@@ -146,7 +146,8 @@ docker exec "${rabbit_container}" rabbitmq-diagnostics -q check_running >/dev/nu
 
 # 只统计 100 并发 hard 场景，避免把后续 soft 和补偿故障用例的 held 事实混入超卖断言。
 assert_scalar "SELECT COUNT(*) FROM ai_budget_reservations WHERE request_id LIKE 'g4-budget-___' AND status IN ('held','released')" "10" "hard_budget_no_oversell"
-assert_scalar "SELECT COUNT(*) FROM ai_budget_alerts WHERE threshold_percent IN (80,90,100)" "3" "threshold_idempotency"
+# API Key 跨周期用例也会生成独立阈值事实；这里只验证 Project 1 的 80/90/100 各一次。
+assert_scalar "SELECT COUNT(*) FROM ai_budget_alerts WHERE scope_type='project' AND scope_id=1 AND threshold_percent IN (80,90,100)" "3" "threshold_idempotency"
 assert_scalar "SELECT COUNT(*) FROM token_usage_logs" "0" "legacy_ledger_not_written"
 
 echo "G4_VERIFY=PASS isolated=true migrations=up_repeated_down_reup_preserved redis_nodes=8 concurrency=100/20 redis_down_fail_closed=true redis_recovered=true budget_multi_sk=true thresholds=80_90_100 rabbit_recovered=true project_database=false"
