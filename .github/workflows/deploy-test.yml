@@ -4,8 +4,8 @@ name: 部署测试环境（前端）
 #
 # 说明：测试服务器为手工运维环境，与早期 compose/git 部署不符——
 #   - 后端 API 跑的是宿主机二进制 molin-api（非容器），有独立的构建/重启流程，不在本工作流范围内；
-#   - 前端 molin-admin / molin-user 是两个手工 docker run 容器，nginx 把 /api 经
-#     `--add-host api:host-gateway` 代理到宿主机上的 molin-api:8080（没有 api 容器）。
+#   - 前端 molin-admin / molin-user 是两个手工 docker run 容器，使用固定代理专网和 IP，
+#     nginx 把 /api 代理到该专网宿主网关上的 molin-api:8080（没有 api 容器）。
 #   本工作流只负责前端：在 runner 上构建镜像 → ship 到服务器 → 按原样重建容器。
 #
 # 需在仓库 Settings → Secrets and variables → Actions 配置：
@@ -57,22 +57,102 @@ jobs:
           script: |
             set -euo pipefail
             TS=$(date +%Y%m%d-%H%M%S)
+            PROXY_NETWORK=molin-sms-proxy
+            PROXY_SUBNET=172.20.250.0/28
+            PROXY_GATEWAY=172.20.250.1
+            ADMIN_PROXY_IP=172.20.250.2
+            USER_PROXY_IP=172.20.250.3
+            ADMIN_ROLLBACK_IMAGE=molin-admin:rollback-$TS
+            USER_ROLLBACK_IMAGE=molin-user:rollback-$TS
 
             echo "=== 备份当前镜像便于回滚 ==="
-            docker tag molin-admin:latest molin-admin:rollback-$TS || true
-            docker tag molin-user:latest  molin-user:rollback-$TS  || true
+            ADMIN_CURRENT_IMAGE=$(docker inspect molin-admin --format '{{.Image}}')
+            USER_CURRENT_IMAGE=$(docker inspect molin-user --format '{{.Image}}')
+            docker tag "$ADMIN_CURRENT_IMAGE" "$ADMIN_ROLLBACK_IMAGE"
+            docker tag "$USER_CURRENT_IMAGE" "$USER_ROLLBACK_IMAGE"
+
+            echo "=== 校验并创建固定代理专网 ==="
+            python3 - "$PROXY_NETWORK" "$PROXY_SUBNET" <<'PY'
+            import ipaddress
+            import json
+            import subprocess
+            import sys
+
+            network_name, candidate_text = sys.argv[1:]
+            candidate = ipaddress.ip_network(candidate_text, strict=True)
+
+            route_output = subprocess.run(
+                ["ip", "-4", "route", "show"], check=True, capture_output=True, text=True
+            ).stdout.splitlines()
+            for line in route_output:
+                first = line.split(maxsplit=1)[0]
+                if first == "default":
+                    continue
+                try:
+                    route = ipaddress.ip_network(first, strict=False)
+                except ValueError:
+                    continue
+                if candidate.overlaps(route) and first != candidate_text:
+                    raise SystemExit(f"候选代理网段与宿主路由重叠: {first}")
+
+            network_ids = subprocess.run(
+                ["docker", "network", "ls", "-q"], check=True, capture_output=True, text=True
+            ).stdout.split()
+            if network_ids:
+                networks = json.loads(subprocess.run(
+                    ["docker", "network", "inspect", *network_ids],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout)
+                for network in networks:
+                    if network.get("Name") == network_name:
+                        continue
+                    for config in ((network.get("IPAM") or {}).get("Config") or []):
+                        subnet_text = config.get("Subnet")
+                        if subnet_text and candidate.overlaps(ipaddress.ip_network(subnet_text, strict=False)):
+                            raise SystemExit(f"候选代理网段与 Docker 网络 {network.get('Name')} 重叠")
+            PY
+
+            if docker network inspect "$PROXY_NETWORK" >/dev/null 2>&1; then
+              ACTUAL_SUBNET=$(docker network inspect "$PROXY_NETWORK" --format '{{(index .IPAM.Config 0).Subnet}}')
+              ACTUAL_GATEWAY=$(docker network inspect "$PROXY_NETWORK" --format '{{(index .IPAM.Config 0).Gateway}}')
+              [ "$ACTUAL_SUBNET" = "$PROXY_SUBNET" ] && [ "$ACTUAL_GATEWAY" = "$PROXY_GATEWAY" ]
+            else
+              docker network create --driver bridge --subnet "$PROXY_SUBNET" --gateway "$PROXY_GATEWAY" "$PROXY_NETWORK"
+            fi
 
             echo "=== 加载新镜像 ==="
             gunzip -c /tmp/molin-frontend.tar.gz | docker load
             rm -f /tmp/molin-frontend.tar.gz
 
-            echo "=== 重建容器（保留 --add-host api:host-gateway 代理宿主 API）==="
+            rollback_frontend() {
+              echo "=== 部署失败，恢复部署前镜像 ==="
+              set +e
+              docker rm -f molin-admin molin-user >/dev/null 2>&1
+              docker run -d --name molin-admin --restart unless-stopped \
+                --network "$PROXY_NETWORK" --ip "$ADMIN_PROXY_IP" \
+                -p 3001:80 --add-host "api:$PROXY_GATEWAY" "$ADMIN_ROLLBACK_IMAGE"
+              docker run -d --name molin-user --restart unless-stopped \
+                --network "$PROXY_NETWORK" --ip "$USER_PROXY_IP" \
+                -p 3000:80 --add-host "api:$PROXY_GATEWAY" "$USER_ROLLBACK_IMAGE"
+              set -e
+            }
+            rollback_armed=true
+            trap 'status=$?; if [ "$rollback_armed" = "true" ]; then rollback_frontend; fi; exit "$status"' ERR
+
+            echo "=== 在固定代理专网重建容器 ==="
             docker rm -f molin-admin
             docker run -d --name molin-admin --restart unless-stopped \
-              -p 3001:80 --add-host api:host-gateway molin-admin:latest
+              --network "$PROXY_NETWORK" --ip "$ADMIN_PROXY_IP" \
+              -p 3001:80 --add-host "api:$PROXY_GATEWAY" molin-admin:latest
             docker rm -f molin-user
             docker run -d --name molin-user --restart unless-stopped \
-              -p 3000:80 --add-host api:host-gateway molin-user:latest
+              --network "$PROXY_NETWORK" --ip "$USER_PROXY_IP" \
+              -p 3000:80 --add-host "api:$PROXY_GATEWAY" molin-user:latest
+
+            [ "$(docker inspect molin-admin --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')" = "$ADMIN_PROXY_IP" ]
+            [ "$(docker inspect molin-user --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')" = "$USER_PROXY_IP" ]
 
             echo "=== 健康检查（首页 + 经 nginx 代理到宿主 API）==="
             fail=0
@@ -83,12 +163,8 @@ jobs:
               echo "${name}: / -> ${home}, /api/health -> ${api}"
               [ "$home" = "200" ] && [ "$api" = "200" ] || fail=1
             done
-            if [ "$fail" != "0" ]; then
-              echo "❌ 健康检查失败，可用 molin-*:rollback-$TS 回滚"
-              exit 1
-            fi
-
-            echo "=== 清理悬空镜像 ==="
-            docker image prune -f
+            [ "$fail" = "0" ]
+            rollback_armed=false
+            trap - ERR
 
             echo "=== 前端部署完成 ==="

@@ -41,6 +41,9 @@ jobs:
         working-directory: server
         run: go mod verify
 
+      - name: 校验 GitHub Actions 工作流
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/*.yml
+
       - name: 代码检查（go vet）
         working-directory: server
         run: go vet ./...
@@ -65,6 +68,38 @@ jobs:
       - name: 构建确认
         working-directory: server
         run: go build -o /dev/null ./cmd/api
+
+  phase5-release-safety:
+    name: 阶段 5 短信发布安全门禁
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 校验 Nginx 来源头安全边界
+        run: python infra/nginx/verify_forwarded_headers.py
+
+      - name: 校验短信发布准备度
+        shell: pwsh
+        run: ./scripts/verify-sms-phase5-readiness.ps1 -SelfTest
+
+      - name: 校验代理专用网络规划
+        shell: pwsh
+        run: ./scripts/verify-sms-phase5-proxy-network-plan.ps1 -SelfTest
+
+      # 测试服只读审计依赖专用 SSH 凭据，不在不可信 PR 上自动连接外部环境；部署窗口由运维手工执行对应脚本。
+
+      - name: 使用 promtool 校验告警规则
+        run: |
+          docker run --rm --entrypoint=/bin/promtool \
+            -v "${{ github.workspace }}/infra/prometheus:/rules:ro" \
+            prom/prometheus:v3.12.0-distroless \
+            check rules /rules/email-alerts.yml
+
+      - name: 演练测试服与生产关闭回滚
+        shell: pwsh
+        run: |
+          ./scripts/verify-sms-phase5-rollback-dry-run.ps1 -Environment test -CurrentSmsEnabled false
+          ./scripts/verify-sms-phase5-rollback-dry-run.ps1 -Environment production -CurrentSmsEnabled true
 
   gateway-g3:
     name: AI 网关 G3 财务与消息验收

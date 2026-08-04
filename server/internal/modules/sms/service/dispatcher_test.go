@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"molin/server/internal/config"
 	"molin/server/internal/modules/sms/model"
@@ -68,6 +70,13 @@ func TestSubmitPersistsOnlyMaskedPhoneAndHMAC(t *testing.T) {
 	if metrics.Accepted != 1 || metrics.Failed != 0 {
 		t.Fatalf("受理指标错误: %#v", metrics)
 	}
+	if got := dispatcher.SMSProviderMetricValue("register", "accepted"); got != 1 {
+		t.Fatalf("注册场景受理指标应为 1，实际 %d", got)
+	}
+	count, totalNanoseconds := dispatcher.SMSProviderDuration("register")
+	if count != 1 {
+		t.Fatalf("注册场景耗时指标错误: count=%d sum=%d", count, totalNanoseconds)
+	}
 }
 
 func TestSubmitCountsProviderFailure(t *testing.T) {
@@ -80,6 +89,95 @@ func TestSubmitCountsProviderFailure(t *testing.T) {
 	metrics := dispatcher.MetricsSnapshot()
 	if metrics.Accepted != 0 || metrics.Failed != 1 {
 		t.Fatalf("失败指标错误: %#v", metrics)
+	}
+	if got := dispatcher.SMSProviderMetricValue("register", "timeout"); got != 1 {
+		t.Fatalf("超时必须归入固定 timeout 类别，实际 %d", got)
+	}
+}
+
+func TestSMSProviderMetricsUseOnlyFixedSafeClassifications(t *testing.T) {
+	tests := []struct {
+		name string
+		kind sender.ErrorKind
+	}{
+		{name: "供应商限流", kind: sender.ErrorKindRateLimit},
+		{name: "签名错误", kind: sender.ErrorKindSignature},
+		{name: "模板错误", kind: sender.ErrorKindTemplate},
+		{name: "账户异常", kind: sender.ErrorKindArrears},
+		{name: "网络错误", kind: sender.ErrorKindNetwork},
+		{name: "普通拒绝", kind: sender.ErrorKindRejected},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dispatcher := NewDispatcher(enabledConfig(), &fakeRepository{bindings: map[string]*model.SceneBinding{}}, sender.NewMockSender(
+				sender.Result{}, sender.NewProviderError(test.kind, "RAW_PROVIDER_CODE", errors.New("供应商原始错误")),
+			))
+			plan := PreparedSend{Scene: "login", TemplateID: 1, TemplateCode: "SMS_TEST", SignName: "test-sign", Provider: "aliyun"}
+			_, _ = dispatcher.SendProvider(context.Background(), plan, "phone-test-value", "otp-test-value", "business-request")
+			if got := dispatcher.SMSProviderMetricValue("login", string(test.kind)); got != 1 {
+				t.Fatalf("安全类别 %s 计数应为 1，实际 %d", test.kind, got)
+			}
+			if got := dispatcher.SMSProviderMetricValue("login", "RAW_PROVIDER_CODE"); got != 0 {
+				t.Fatal("指标不得把供应商原始错误码作为标签值")
+			}
+		})
+	}
+}
+
+func TestSMSProviderMetricsRejectUnknownSceneAndNormalizeUnknownResult(t *testing.T) {
+	dispatcher := NewDispatcher(enabledConfig(), &fakeRepository{bindings: map[string]*model.SceneBinding{}}, sender.NewMockSender(sender.Result{}, nil))
+	dispatcher.recordProviderMetric("custom_scene", "accepted", time.Millisecond)
+	if got := dispatcher.SMSProviderMetricValue("custom_scene", "accepted"); got != 0 {
+		t.Fatalf("非固定场景不得进入指标聚合，实际 %d", got)
+	}
+
+	dispatcher.recordProviderMetric("register", "raw_provider_error", time.Millisecond)
+	if got := dispatcher.SMSProviderMetricValue("register", "raw_provider_error"); got != 0 {
+		t.Fatalf("未知结果不得成为指标标签，实际 %d", got)
+	}
+	if got := dispatcher.SMSProviderMetricValue("register", "rejected"); got != 1 {
+		t.Fatalf("未知结果必须收敛到 rejected，实际 %d", got)
+	}
+}
+
+func TestSMSProviderMetricsConcurrentReadWrite(t *testing.T) {
+	dispatcher := NewDispatcher(enabledConfig(), &fakeRepository{bindings: map[string]*model.SceneBinding{}}, sender.NewMockSender(sender.Result{}, nil))
+	const writerCount = 32
+	const writesPerWriter = 200
+	const readerCount = 8
+
+	var writers sync.WaitGroup
+	writers.Add(writerCount)
+	for writer := 0; writer < writerCount; writer++ {
+		go func() {
+			defer writers.Done()
+			for index := 0; index < writesPerWriter; index++ {
+				dispatcher.recordProviderMetric("register", "accepted", time.Millisecond)
+			}
+		}()
+	}
+
+	var readers sync.WaitGroup
+	readers.Add(readerCount)
+	for reader := 0; reader < readerCount; reader++ {
+		go func() {
+			defer readers.Done()
+			for index := 0; index < writesPerWriter; index++ {
+				_ = dispatcher.SMSProviderMetricValue("register", "accepted")
+				_, _ = dispatcher.SMSProviderDuration("register")
+			}
+		}()
+	}
+
+	writers.Wait()
+	readers.Wait()
+	expected := uint64(writerCount * writesPerWriter)
+	if got := dispatcher.SMSProviderMetricValue("register", "accepted"); got != expected {
+		t.Fatalf("并发写入计数错误: got=%d want=%d", got, expected)
+	}
+	count, totalNanoseconds := dispatcher.SMSProviderDuration("register")
+	if count != expected || totalNanoseconds != expected*uint64(time.Millisecond) {
+		t.Fatalf("并发耗时聚合错误: count=%d sum=%d", count, totalNanoseconds)
 	}
 }
 

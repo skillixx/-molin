@@ -26,6 +26,29 @@ docker compose -f infra/docker-compose.yml up -d
 - **后端不在本工作流内**：测试服 `molin-api` 是宿主机二进制（非容器），构建/重启见 `infra/CLAUDE.md` 的「测试服务器」一节，需单独执行。
 - DirectMail 完整配置、端口选择、Migration、模板初始化、生产 Compose 和回滚流程见 `docs/directmail-configuration-deployment-guide.md`。
 
+## 短信阶段 5 灰度边界
+
+阶段 5 的部署、真实短信和生产开关均需单独授权。执行前先运行不访问外部环境的准备度和回滚 Dry Run：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-readiness.ps1 -RunGoTests
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-rollback-dry-run.ps1 -Environment test -CurrentSmsEnabled false
+```
+
+获准进行测试服只读审计时，可执行下列脚本。它使用现有 SSH 身份，只输出安全状态和聚合计数，不修改远端：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-readonly.ps1
+```
+
+测试或生产环境文件可通过 `-EnvironmentFile` 做不回显值的检查，但目标文件必须已被 Git 忽略。测试服与生产均先保持
+`SMS_ENABLED=false`、`SMS_TEST_MODE=true`。只有白名单 Canary、监控、QA 和产品批准完成后，才能分别授权变更生产开关。
+
+公开验证码流量经过 Nginx/容器时，必须为代理建立专用固定网络并把实际连接 API 的地址或 CIDR 写入
+`TRUSTED_PROXY_IPS`。代理同时必须覆盖单值 `X-Real-IP` 并删除 XFF/Forwarded。不得把默认全部 Docker 网段、
+VPC 全网段或 `0.0.0.0/0` 作为快捷配置。详细计划和回滚见 `docs/sms-phase5-deployment-plan.md`、
+`docs/sms-phase5-reverse-proxy-report.md` 和 `docs/sms-phase5-rollback-runbook.md`。
+
 ## 邮件 Phase 4 测试环境监控
 
 本节只描述测试环境运行方式，不授权执行数据库 migration、远程部署或真实邮件发送。Prometheus 直接抓取宿主机 API 的

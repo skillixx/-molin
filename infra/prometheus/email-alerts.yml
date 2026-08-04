@@ -1,4 +1,4 @@
-# 邮件 Adapter 告警仅使用冻结的低基数标签，禁止加入邮箱、请求号或供应商原始错误。
+# 邮件和短信供应商告警仅使用冻结的低基数标签，禁止加入收件人、请求号或供应商原始错误。
 groups:
   - name: molin-email-adapter
     interval: 15s
@@ -40,3 +40,59 @@ groups:
         annotations:
           summary: 邮件供应商出现未知结果
           description: 场景 {{ $labels.scene }} 最近五分钟出现供应商超时或响应未知，请按持久化墓碑规则检查，禁止自动重发。
+
+  - name: molin-sms-provider
+    interval: 15s
+    rules:
+      - alert: MolinSMSProviderFailureRateHigh
+        expr: |
+          (
+            sum by (scene) (increase(sms_provider_calls_total{result!="accepted"}[5m]))
+            /
+            clamp_min(sum by (scene) (increase(sms_provider_calls_total[5m])), 1)
+          ) > 0.20
+          and on (scene)
+          sum by (scene) (increase(sms_provider_calls_total[5m])) >= 10
+        for: 1m
+        labels:
+          severity: critical
+          module: sms
+        annotations:
+          summary: 短信供应商提交失败率超过灰度门禁
+          description: 场景 {{ $labels.scene }} 最近五分钟至少提交十次，非受理比例持续超过 20%，应立即关闭 SMS_ENABLED 并保留脱敏证据。
+
+      - alert: MolinSMSProviderConfigurationFailure
+        expr: sum by (scene, result) (increase(sms_provider_calls_total{result=~"signature|template|arrears"}[5m])) > 0
+        for: 0m
+        labels:
+          severity: critical
+          module: sms
+        annotations:
+          summary: 短信供应商配置或账户异常
+          description: 场景 {{ $labels.scene }} 出现 {{ $labels.result }} 安全分类，禁止自动重试并检查签名、模板绑定或账户状态。
+
+      - alert: MolinSMSProviderTimeoutOrNetworkFailure
+        expr: sum by (scene, result) (increase(sms_provider_calls_total{result=~"timeout|network"}[5m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+          module: sms
+        annotations:
+          summary: 短信供应商网络调用异常
+          description: 场景 {{ $labels.scene }} 最近五分钟出现 {{ $labels.result }}，accepted 之外的结果不得自动重发。
+
+      - alert: MolinSMSProviderAverageLatencyHigh
+        expr: |
+          sum by (scene) (increase(sms_provider_request_duration_seconds_sum[5m]))
+          /
+          clamp_min(sum by (scene) (increase(sms_provider_request_duration_seconds_count[5m])), 1)
+          > 2
+          and on (scene)
+          sum by (scene) (increase(sms_provider_request_duration_seconds_count[5m])) >= 10
+        for: 2m
+        labels:
+          severity: warning
+          module: sms
+        annotations:
+          summary: 短信供应商平均调用延迟升高
+          description: 场景 {{ $labels.scene }} 最近五分钟至少十次调用且平均耗时持续超过两秒，请检查阿里云链路与应用资源。

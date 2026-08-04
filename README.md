@@ -260,7 +260,8 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | 阿里云短信验证码阶段 1（数据基础、Sender 适配、五场景关闭态与前端容错） | `modules/sms/`、`modules/auth/`、`web/user-console/`、`server/migrations/000058*` | ✅ PR #314 已合并，阶段 1 正式闭环（`main` 提交 `3aa8f3e`） |
 | 阿里云短信验证码阶段 2（模板同步、场景绑定、9 个管理 API 与安全测试发送） | `modules/sms/`、`modules/auth/`、`modules/iam/`、`server/migrations/000059*` | ✅ PR #315 已于 2026-08-04 Squash 合并至 `main`（`9e50ee1`）；五独立模板同步/绑定、6 条真实收件、九 API、QA、产品及正式评审均通过，P0/P1/P2/P3 均为 0，阶段 2 正式闭环 |
 | 阿里云短信验证码阶段 3（管理后台模板页面） | `web/admin-console/src/views/sms/`、`src/api/sms.ts`、`src/types/sms.ts` | ✅ PR #317 已采用 Squash and merge 合并至 `main`（`e7f29d5`），阶段 3 正式闭环 |
-| 阿里云短信验证码阶段 4（五场景全链路验收） | `modules/auth/`、`modules/sms/`、`web/admin-console/`、`web/user-console/`、`docs/sms-phase4-*` | 🟡 PR #320 已创建；功能提交 `ac33744` 的 GitHub Actions run `30891459024` 5/5 通过，覆盖隔离 MySQL 8、Redis 7、HTTP E2E 与 Linux race；P0/P1=0，P2/P3 已书面处置，等待最新文档提交 CI 及用户合并批准；未部署、未连接阿里云、未发送真实短信 |
+| 阿里云短信验证码阶段 4（五场景全链路验收） | `modules/auth/`、`modules/sms/`、`web/admin-console/`、`web/user-console/`、`docs/sms-phase4-*` | ✅ PR #320 已采用 Merge commit 合并至 `main`（`c9b4783`），阶段 4 正式闭环；阶段 4 自身未部署、未连接阿里云、未发送真实短信 |
+| 阿里云短信验证码阶段 5（灰度部署、代理核验与观察） | `modules/sms/`、内部 metrics、`infra/nginx/`、`infra/prometheus/`、`docs/sms-phase5-*` | 🟡 阶段 5A 进行中：已完成主线与测试服只读审计、短信低基数指标、并发测试、告警规则、CI 发布安全门禁、四档浏览器检查和回滚 Dry Run；测试服 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`，但 `TRUSTED_PROXY_IPS` 为空，端到端代理来源链未通过；尚未部署、未执行 migration、未发短信、未进入生产灰度 |
 
 ### 后端 B（product / order / billing / finance_consumer）
 
