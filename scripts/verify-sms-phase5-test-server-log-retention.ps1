@@ -19,7 +19,8 @@ if ($SelfTest) {
         "journald_capacity_limit_configured",
         "journald_retention_limit_configured",
         "log_retention_policy_verified",
-        "remote_mutations=0",
+        "business_configuration_mutations=0",
+        "access_audit_logs_may_increase=true",
         "real_sms_sent=0"
     )) {
         if (-not $payload.Contains($marker)) {
@@ -39,7 +40,8 @@ if ($SelfTest) {
     }
     Write-Output "self_test=passed"
     Write-Output "remote_connections=0"
-    Write-Output "remote_mutations=0"
+    Write-Output "business_configuration_mutations=0"
+    Write-Output "access_audit_logs_may_increase=false"
     Write-Output "real_sms_sent=0"
     exit 0
 }

@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -40,17 +42,22 @@ class LogRetentionPreflightContractTest(unittest.TestCase):
         for marker in (
             "journald_active",
             "journald_persistent_storage_present",
+            "journald_storage_mode_persistent",
             "journald_capacity_limit_configured",
             "journald_keep_free_configured",
             "journald_retention_limit_configured",
             "journald_rotation_limit_configured",
+            "log_retention_configuration_complete",
+            "log_retention_runtime_reload_verified=false",
             "log_retention_policy_verified",
             "log_retention_change_authorization_required",
-            "remote_mutations=0",
+            "business_configuration_mutations=0",
+            "access_audit_logs_may_increase=true",
             "real_sms_sent=0",
         ):
             self.assertIn(marker, self.sh)
         for setting in (
+            "Storage",
             "SystemMaxUse",
             "SystemKeepFree",
             "MaxRetentionSec",
@@ -59,6 +66,63 @@ class LogRetentionPreflightContractTest(unittest.TestCase):
             self.assertIn(setting, self.sh)
         self.assertIn("systemd-analyze cat-config systemd/journald.conf", self.sh)
         self.assertNotIn("SMS_ENABLED=true", self.sh)
+        self.assertNotIn("log_retention_policy_verified=true", self.sh)
+        self.assertNotIn("log_retention_change_authorization_required=false", self.sh)
+
+    def test_parser_rejects_invalid_zero_and_volatile_settings(self) -> None:
+        start_marker = "python3 -c '\n"
+        end_marker = "\n')\" || fail policy_parse"
+        start = self.sh.index(start_marker) + len(start_marker)
+        end = self.sh.index(end_marker, start)
+        parser = self.sh[start:end]
+
+        invalid = subprocess.run(
+            [sys.executable, "-c", parser],
+            input="""[Journal]
+Storage=volatile
+SystemMaxUse=garbage
+SystemKeepFree=0B
+MaxRetentionSec=0min
+MaxFileSec=infinity
+""",
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertEqual(
+            invalid.stdout.splitlines(),
+            [
+                "storage_mode_persistent=false",
+                "capacity=false",
+                "keep_free=false",
+                "retention=false",
+                "rotation=false",
+            ],
+        )
+
+        configured = subprocess.run(
+            [sys.executable, "-c", parser],
+            input="""[Journal]
+Storage=persistent
+SystemMaxUse=3G
+SystemKeepFree=1G
+MaxRetentionSec=14day
+MaxFileSec=1day
+""",
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertEqual(
+            configured.stdout.splitlines(),
+            [
+                "storage_mode_persistent=true",
+                "capacity=true",
+                "keep_free=true",
+                "retention=true",
+                "rotation=true",
+            ],
+        )
 
     def test_payload_contains_no_mutating_commands(self) -> None:
         forbidden = (

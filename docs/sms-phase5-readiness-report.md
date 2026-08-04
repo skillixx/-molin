@@ -63,7 +63,7 @@ Prometheus 抓取目标以及观察窗口前后发送增量；任一条件不符
 
 补充只读查询过程中，为计算公开版本响应哈希曾短暂创建 `/tmp/molin-phase5-version.json`，同一命令已立即删除。
 该文件只包含 `/api/version` 的公开响应，没有配置、凭据或业务数据，未引起服务重启或状态变化；后续查询改为流式读取。
-测试服 systemd journal 当前占用约 2.3G。新增固定测试服只读审计确认 journald 正常运行、持久目录存在且磁盘用量可查询，但合并配置中的 `SystemMaxUse`、`SystemKeepFree`、`MaxRetentionSec`、`MaxFileSec` 均未显式配置，因此固定输出 `log_retention_policy_verified=false`；日志策略变更仍需独立授权。
+测试服 systemd journal 当前占用约 2.3G。新增固定测试服只读审计确认 journald 正常运行、持久目录存在且磁盘用量可查询，但合并配置中的 `SystemMaxUse`、`SystemKeepFree`、`MaxRetentionSec`、`MaxFileSec` 均未显式配置，因此固定输出 `log_retention_configuration_complete=false` 与 `log_retention_policy_verified=false`；日志策略变更、获批值比对和运行时重载证据仍需独立授权与验收。SSH 只读连接可能增加访问审计日志，但业务配置修改和真实短信发送均为 0。
 
 回滚与通知专项只读预检确认：备份目录保持 `pc:700`，11 个固定文件均为安全权限、无符号链接，清单自身摘要
 与仓库固定锚点一致且文件校验通过；旧 API、当前磁盘文件及运行 PID/监听与 x86-64 架构匹配，三份容器快照
