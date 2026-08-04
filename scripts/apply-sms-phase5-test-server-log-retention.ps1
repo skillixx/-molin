@@ -27,6 +27,11 @@ foreach ($item in @($MaxRetentionSec, $MaxFileSec)) {
         throw "journald 时间值必须使用非零整数和 s/min/h/day/week 单位"
     }
 }
+# 固定授权短语只绑定当前经过容量审计的四项候选；调整任何值都必须先修改资产并重新评审。
+if ($SystemMaxUse -cne "8G" -or $SystemKeepFree -cne "50G" -or
+    $MaxRetentionSec -cne "14day" -or $MaxFileSec -cne "1day") {
+    throw "journald 参数必须与当前冻结候选完全一致"
+}
 
 $payloadPath = Join-Path $PSScriptRoot "apply-sms-phase5-test-server-log-retention.sh"
 $payload = Get-Content -LiteralPath $payloadPath -Raw -Encoding UTF8

@@ -129,6 +129,7 @@ jobs:
         run: |
           python tests/sms/phase5_log_retention_change_contract.py
           bash -n scripts/apply-sms-phase5-test-server-log-retention.sh
+          bash scripts/apply-sms-phase5-test-server-log-retention.sh --self-test
 
       - name: 离线校验测试服日志留存变更包装器
         shell: pwsh

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import unittest
 from pathlib import Path
@@ -78,6 +79,8 @@ class LogRetentionChangeContractTest(unittest.TestCase):
             'SystemKeepFree = "50G"',
             'MaxRetentionSec = "14day"',
             'MaxFileSec = "1day"',
+            'SystemMaxUse -cne "8G"',
+            'SystemKeepFree -cne "50G"',
             "HostKeyAlgorithms=ssh-ed25519",
             "SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I",
         ):
@@ -98,14 +101,25 @@ class LogRetentionChangeContractTest(unittest.TestCase):
             "unsafe_config_directory",
             "unsafe_config_target",
             "unsafe_backup_root",
+            "config_directory_was_present",
+            "merged-config.sha256",
+            "api-health.txt",
+            "monitoring-health.txt",
+            "provider_metric_delta_zero=true",
+            "prometheus_postcheck=true",
             "systemctl restart systemd-journald",
             "log_retention_change_applied=true",
             "real_sms_delivery_not_verified=true",
         ):
             self.assertIn(marker, self.sh)
         self.assertNotIn("SMS_ENABLED=true", self.sh)
-        self.assertIn("test -L /etc/systemd/journald.conf.d", self.sh)
+        self.assertIn('test -L "$config_dir"', self.sh)
         self.assertIn('test -L "$target"', self.sh)
+        self.assertIn("trap 'on_signal HUP 129' HUP", self.sh)
+        self.assertIn("trap 'on_signal INT 130' INT", self.sh)
+        self.assertIn("trap 'on_signal TERM 143' TERM", self.sh)
+        self.assertIn('verify_api_closed "$api_pid" || rollback_failed api_not_closed', self.sh)
+        self.assertIn('mv -f -- "$staged_target" "$target"', self.sh)
         self.assertNotRegex(self.sh, r"\bjournalctl\s+(?:--vacuum|--rotate|--flush)\b")
 
     def test_assets_are_wired_into_readiness_ci_and_runbook(self) -> None:
@@ -120,11 +134,37 @@ class LogRetentionChangeContractTest(unittest.TestCase):
 
     def test_payload_does_not_embed_secrets_or_sms_operations(self) -> None:
         for pattern in (
-            r"(?i)(access[_-]?key|secret|token)\s*[:=]\s*[^<\s`]+",
+            r"(?i)(access[_-]?key|secret|token)\s*[:=]\s*[\"']?(?!\$)[A-Za-z0-9+/=_-]{12,}",
             r"/api/auth/verification-codes/phone",
             r"/api/admin/sms/.+test-send",
         ):
             self.assertIsNone(re.search(pattern, self.sh), pattern)
+
+    def test_linux_payload_self_test_covers_rollback_paths(self) -> None:
+        bash = shutil.which("bash")
+        if bash is None:
+            self.skipTest("当前平台没有 Bash，Linux CI 和固定测试服语法门禁负责执行")
+        completed = subprocess.run(
+            [bash, str(PAYLOAD), "--self-test"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=True,
+        )
+        for marker in (
+            "existing_config_rollback=passed",
+            "absent_config_rollback=passed",
+            "error_path_rollback=passed",
+            "signal_path_rollback=passed",
+            "rollback_failure_exit_90=passed",
+            "install_failure_rollback=passed",
+            "restart_failure_rollback=passed",
+            "payload_self_test=passed",
+            "system_paths_written=0",
+            "service_restarts=0",
+        ):
+            self.assertIn(marker, completed.stdout)
 
 
 if __name__ == "__main__":

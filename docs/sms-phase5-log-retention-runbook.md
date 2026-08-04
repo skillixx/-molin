@@ -58,6 +58,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/apply-sms-phase5-tes
 任一安装、重启或复验失败都会恢复原 drop-in 并再次重启 journald；回滚也失败时固定以退出码 90 暴露高优先级故障。
 脚本不执行 vacuum/rotate/flush，不读取日志正文，不调用短信接口，也不删除备份。
 
+Linux/CI 行为自测会在随机临时目录覆盖已有配置恢复、原配置不存在、普通复验失败、`HUP/INT/TERM` 中断、安装失败、
+journald 重启失败和回滚失败退出码 90；自测通过时固定输出 `system_paths_written=0`、`service_restarts=0`。该自测不替代
+获批测试服变更窗口，只证明回滚状态机和信号处理可重复执行。
+
 ## 4. 关闭态变更与验证门禁
 
 取得独立授权后，变更必须始终保持 `SMS_ENABLED=false`，并按以下顺序执行：
