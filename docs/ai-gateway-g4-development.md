@@ -20,6 +20,8 @@ MySQL 是策略、预算和审计事实源，Redis 只保存可过期的短期�
 
 G4 不修改 G3 的钱包流水或销售 Outbox 金额语义。预算金额来自 G3 冻结报价，最终销售金额只从 G3 终态读取；输出审核拒绝额外写入 `ai_usage_items.source=provider_cost`，保存数量、冻结成本单价和平台成本金额，不进入用户销售额汇总。Usage 暂缺时保持 `settlement_pending`，由 `ResolveContentPolicyWaiver` 在行锁事务中校验错误类型和状态、补写原始 Usage 与平台成本、释放 hold 并写唯一 Outbox。终态重复调用会逐项核对数量、成本单价和金额；不一致返回冲突，不允许静默覆盖。
 
+内容安全规范化使用 NFKC，并删除空白、标点、`Cf` 格式字符、Unicode `Other_Default_Ignorable_Code_Point` 和变体选择符。驱动对顶层响应和 `choices[]` 分别执行公开字段白名单，供应商私有 choice 字符串不会透传；message、delta、tool_calls 等兼容结构仍进入递归审核和跨分块连续视图。
+
 ## 3. Redis 原子性
 
 单次 Lua 脚本同时检查四层并发、RPM 和 TPM；任何层失败都不保留部分准入。并发成员使用 `lease_id=request_id` 和过期分值，心跳续租时检查租约仍存在。Redis 请求失败统一映射为 503，禁止降级为本地内存计数。

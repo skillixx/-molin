@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -81,9 +82,15 @@ func TestSafetyServiceRejectsNormalizedInputWithoutPersistingRawContent(t *testi
 func TestSafetyServiceRejectsSlashAndZeroWidthKeywordSplitting(t *testing.T) {
 	repo := &memorySafetyRepository{policy: testSafetyPolicy(t)}
 	svc := NewSafetyService(repo, "0123456789abcdef0123456789abcdef")
-	body := map[string]interface{}{"messages": []interface{}{map[string]interface{}{"role": "user", "content": "网/络\u200b赌/博推广"}}}
-	if _, err := svc.ModerateInput(context.Background(), SafetySubject{RequestID: "req-safe-separator", UserID: 1, ProjectID: 2, APIKeyID: 3}, body); !errors.Is(err, ErrContentPolicyViolation) {
-		t.Fatalf("斜杠和零宽字符不得绕过关键词审核: %v", err)
+	for index, content := range []string{
+		"网/络\u200b赌/博推广",
+		"网\u034f络赌博推广",
+		"网\ufe0f络赌博推广",
+	} {
+		body := map[string]interface{}{"messages": []interface{}{map[string]interface{}{"role": "user", "content": content}}}
+		if _, err := svc.ModerateInput(context.Background(), SafetySubject{RequestID: fmt.Sprintf("req-safe-separator-%d", index), UserID: 1, ProjectID: 2, APIKeyID: 3}, body); !errors.Is(err, ErrContentPolicyViolation) {
+			t.Fatalf("斜杠、零宽或默认可忽略字符不得绕过关键词审核: content=%q err=%v", content, err)
+		}
 	}
 }
 

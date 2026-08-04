@@ -25,6 +25,15 @@ import (
 	"molin/server/internal/modules/token_gateway/repository"
 )
 
+type startFailingG2Store struct {
+	*repository.G2Repository
+	err error
+}
+
+func (s *startFailingG2Store) StartRequest(context.Context, string, *model.AIExecutionAttempt) error {
+	return s.err
+}
+
 // TestG3MySQLBillingIntegration 只在隔离 MySQL 8 验证脚本显式注入 DSN 时运行。
 func TestG3MySQLBillingIntegration(t *testing.T) {
 	dsn := os.Getenv("G3_MYSQL_DSN")
@@ -61,12 +70,17 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 		if _, err := billing.PrepareRequest(ctx, request, map[string]interface{}{"max_tokens": 10}); err != nil {
 			t.Fatal(err)
 		}
-		attempt := ExecutionAttempt{
-			AttemptNo: 1, Driver: "bifrost", ProviderCode: "bailian", EndpointCode: "bailian",
-			ProviderModel: "qwen-plus", StartedAt: time.Now(), Outcome: "running",
-		}
-		if err := billing.AbortBeforeExecution(ctx, request.RequestID, attempt); err != nil {
-			t.Fatal(err)
+		upstreamModel := "qwen-plus"
+		orchestrator := NewRequestOrchestrator(&startFailingG2Store{G2Repository: g2, err: errors.New("模拟启动事务失败")}, nil, nil).
+			WithBillingService(billing)
+		orchestrator.prepared.Store(request.RequestID, &PreparedRequest{
+			RequestID:    request.RequestID,
+			command:      PrepareCommand{LogicalModel: request.LogicalModelCode, Body: map[string]interface{}{"max_tokens": 10}},
+			tokenModel:   model.TokenModel{UpstreamModel: &upstreamModel},
+			providerCode: "bailian", endpointCode: "bailian", driver: &fakeOrchestratorDriver{},
+		})
+		if err := orchestrator.Execute(ctx, request.RequestID, &memorySink{}); err == nil {
+			t.Fatal("StartRequest 失败必须从真实编排链返回错误")
 		}
 		assertRequestAndHoldStatus(t, db, request.RequestID, model.AIBillingReleased, "released")
 		var executionStatus, errorCode string

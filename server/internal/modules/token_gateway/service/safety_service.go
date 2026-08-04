@@ -152,8 +152,9 @@ func (s *SafetyService) digest(content string) string {
 func normalizeModerationText(value string) string {
 	normalized := strings.ToLower(norm.NFKC.String(value))
 	return strings.Map(func(char rune) rune {
-		// 空白、标点和不可见格式字符都不参与匹配，防止通过斜杠或零宽字符拆分关键词。
-		if unicode.IsSpace(char) || unicode.IsPunct(char) || unicode.Is(unicode.Cf, char) {
+		// 空白、标点、格式字符和 Unicode 默认可忽略字符都不参与匹配，防止通过斜杠、零宽连接符或变体选择符拆分关键词。
+		if unicode.IsSpace(char) || unicode.IsPunct(char) || unicode.Is(unicode.Cf, char) ||
+			unicode.Is(unicode.Other_Default_Ignorable_Code_Point, char) || unicode.Is(unicode.Variation_Selector, char) {
 			return -1
 		}
 		return char
