@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -79,6 +80,18 @@ func TestSubmitCountsProviderFailure(t *testing.T) {
 	metrics := dispatcher.MetricsSnapshot()
 	if metrics.Accepted != 0 || metrics.Failed != 1 {
 		t.Fatalf("失败指标错误: %#v", metrics)
+	}
+}
+
+func TestPrepareRejectsTemplateWithExtraVariable(t *testing.T) {
+	binding := fixtureBinding("register", "SMS_EXTRA")
+	binding.Template.Content = "${name} 的验证码 ${code}"
+	binding.Template.Variables = []string{"name", "code"}
+	repo := &fakeRepository{bindings: map[string]*model.SceneBinding{"register": binding}}
+	dispatcher := NewDispatcher(enabledConfig(), repo, sender.NewMockSender(sender.Result{}, nil))
+
+	if _, err := dispatcher.Prepare(context.Background(), "register", "phone-test-value"); !errors.Is(err, ErrSceneNotBound) {
+		t.Fatalf("含额外变量的模板不得进入发送链路: %v", err)
 	}
 }
 

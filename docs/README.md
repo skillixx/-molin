@@ -64,6 +64,9 @@
 | [backend-a-group-roles-design.md](./backend-a-group-roles-design.md) | 后端甲 分组角色设计 |
 | [sms-phase1-feature.md](./sms-phase1-feature.md) | 阿里云短信验证码阶段 1 功能说明 |
 | [sms-phase1-development.md](./sms-phase1-development.md) | 阿里云短信验证码阶段 1 开发说明 |
+| [sms-phase2-feature.md](./sms-phase2-feature.md) | 阿里云短信验证码阶段 2 功能说明 |
+| [sms-phase2-development.md](./sms-phase2-development.md) | 阿里云短信验证码阶段 2 开发说明 |
+| [sms-phase2-deployment-monitoring-rollback.md](./sms-phase2-deployment-monitoring-rollback.md) | 阶段 2 部署、监控与回滚说明 |
 | [backend-b-fix-plan.md](./backend-b-fix-plan.md) | 后端乙 修复计划 |
 | [backend-b-go-live-checklist.md](./backend-b-go-live-checklist.md) | 后端乙 上线检查单 |
 | [backend-stage2-go-live-checklist.md](./backend-stage2-go-live-checklist.md) | 第二阶段上线检查单 |
@@ -102,6 +105,7 @@
 | [m1](./m1-manual-test-apipost.md) / [m2](./m2-manual-test-apipost.md) / [m3](./m3-manual-test-apipost.md) / [m4](./m4-manual-test-apipost.md) / [stage3](./stage3-manual-test-apipost.md) | 各里程碑手动测试用例 |
 | [backend-stage2-m2-test-report.md](./backend-stage2-m2-test-report.md) / [m3](./backend-stage2-m3-test-report.md) / [m4](./backend-stage2-m4-test-report.md) | 第二阶段测试报告 |
 | [backend-stage3-test-report.md](./backend-stage3-test-report.md) | 第三阶段测试报告 |
+| [sms-phase2-test-report.md](./sms-phase2-test-report.md) / [验收报告](./sms-phase2-acceptance-report.md) | 阿里云短信阶段 2 本地测试与正式验收状态 |
 | [regression-backend-b-fixes.md](./regression-backend-b-fixes.md) / [final-regression-f3-p3.md](./final-regression-f3-p3.md) | 回归测试 |
 
 ## 流程与协作规范

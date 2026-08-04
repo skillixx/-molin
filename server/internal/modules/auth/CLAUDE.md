@@ -520,8 +520,8 @@ POST /api/auth/logout                     -- 退出（吊销 Refresh Token）
 GET  /api/me                              -- 当前登录用户信息（含 username/脱敏手机邮箱/admin_*_verified 等新字段）
 PATCH /api/me/password                    -- 修改密码
 PATCH /api/me/username                    -- 修改用户名（2-32位字母/数字/下划线）★新增
-PATCH /api/me/phone                       -- 修改手机号（需先发 scene=bind_phone 验证码）★新增
-PATCH /api/me/email                       -- 修改邮箱（需先发 scene=bind_email 验证码）★新增
+PATCH /api/me/phone                       -- 修改手机号（需先发 scene=bind_phone 验证码；成功后清空旧管理员手机 MFA）★新增
+PATCH /api/me/email                       -- 修改邮箱（需先发 scene=bind_email 验证码；成功后清空旧管理员邮箱 MFA）★新增
 POST /api/me/verification-codes/phone     -- D-96：向新手机号发送验证码（scene=bind_phone，配合 PATCH /api/me/phone）★新增
 POST /api/me/verification-codes/email     -- D-96：向新邮箱发送验证码（scene=bind_email，配合 PATCH /api/me/email）★新增
 

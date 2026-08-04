@@ -649,29 +649,33 @@ server/internal/modules/asset/
 
 九个管理接口必须逐项覆盖：
 
+> 开发及验证快照（2026-08-03）：九条路由及最小权限映射、九接口 401/403/MFA 矩阵、模板适配器、同步失败零写入与总截止、同步去重、模板启停 CAS、固定五场景、同版本场景冲突、测试发送并发单外呼、幂等隔离与冲突、白名单、双维限流失败关闭、审计/响应脱敏、全库 Go 测试、vet、依赖校验和敏感扫描已通过。PR #315 提交 `34b69a4` 的 GitHub Actions 运行 #375 已在 MySQL 8、Redis 7 和 Linux race 环境通过；隔离测试服也已完成模板同步、五场景绑定、管理测试发送和五入口真实发码/收件。下表仍保留独立 QA HTTP 与业务 E2E 验收，自动化及开发侧真实验证不能替代验收签字。
+
 | 编号 | 方法与路径 | 权限 | 核心检查 | 当前状态 |
 |---|---|---|---|---|
-| SMS-A01 | `GET /api/admin/sms/summary` | `sms:template:view` | 统计口径正确；从未同步时 `last_synced_at=null`；无客户端多页聚合假设 | 待执行 |
-| SMS-A02 | `GET /api/admin/sms/templates` | `sms:template:view` | 筛选、边界分页、空列表及 D-95 `{items,page,page_size,total}` | 待执行 |
-| SMS-A03 | `GET /api/admin/sms/templates/{id}` | `sms:template:view` | 完整字段、可空字段、404/40400 和敏感信息边界 | 待执行 |
-| SMS-A04 | `POST /api/admin/sms/templates/sync` | `sms:template:sync` | 无 body；幂等计数；供应商失败无部分写；后端总截止 10 秒 | 待执行 |
-| SMS-A05 | `GET /api/admin/sms/scenes` | `sms:template:view` | 固定五场景、D-95；未绑定字段为 `null`、`enabled=false`、`version=0` | 待执行 |
-| SMS-A06 | `PUT /api/admin/sms/scenes/{scene}` | `sms:template:manage` | 只接收 `template_id/enabled/version`；不接收 `sign_name`；版本冲突返回 409/40900 | 待执行 |
-| SMS-A07 | `PATCH /api/admin/sms/templates/{id}/status` | `sms:template:manage` | 乐观锁、审核状态约束及有效绑定阻止停用 | 待执行 |
-| SMS-A08 | `POST /api/admin/sms/templates/{id}/test-send` | `sms:template:test` | 白名单、场景绑定、`Idempotency-Key`、双维度限流和受理语义 | 待执行 |
-| SMS-A09 | `GET /api/admin/sms/send-logs` | `sms:template:view` | D-95、筛选、可空字段、RFC3339 闭区间、开始不晚于结束、最大 31 天及脱敏 | 待执行 |
+| SMS-A01 | `GET /api/admin/sms/summary` | `sms:template:view` | 统计口径正确；从未同步时 `last_synced_at=null`；无客户端多页聚合假设 | 自动化通过；QA HTTP 待验收 |
+| SMS-A02 | `GET /api/admin/sms/templates` | `sms:template:view` | 筛选、边界分页、空列表及 D-95 `{items,page,page_size,total}` | 自动化通过；QA HTTP 待验收 |
+| SMS-A03 | `GET /api/admin/sms/templates/{id}` | `sms:template:view` | 完整字段、可空字段、404/40400 和敏感信息边界 | 自动化通过；QA HTTP 待验收 |
+| SMS-A04 | `POST /api/admin/sms/templates/sync` | `sms:template:sync` | 无 body；幂等计数；供应商失败无部分写；后端总截止 10 秒 | 自动化及真实阿里云重复同步通过；QA HTTP 待复核 |
+| SMS-A05 | `GET /api/admin/sms/scenes` | `sms:template:view` | 固定五场景、D-95；未绑定字段为 `null`、`enabled=false`、`version=0` | 自动化通过；QA HTTP 待验收 |
+| SMS-A06 | `PUT /api/admin/sms/scenes/{scene}` | `sms:template:manage` | 只接收 `template_id/enabled/version`；不接收 `sign_name`；版本冲突返回 409/40900；同一模板绑定另一启用场景返回 409/40900，停用历史共用绑定允许整改 | 自动化通过；QA HTTP 待验收 |
+| SMS-A07 | `PATCH /api/admin/sms/templates/{id}/status` | `sms:template:manage` | 乐观锁、审核状态约束及有效绑定阻止停用 | 自动化通过；QA HTTP 待验收 |
+| SMS-A08 | `POST /api/admin/sms/templates/{id}/test-send` | `sms:template:test` | 白名单、场景绑定、`Idempotency-Key`、双维度限流和受理语义 | 自动化通过；真实发送已受理且原白名单手机确认收件；QA HTTP 待复核 |
+| SMS-A09 | `GET /api/admin/sms/send-logs` | `sms:template:view` | D-95、筛选、可空字段、RFC3339 闭区间、开始不晚于结束、最大 31 天及脱敏 | 自动化通过；QA HTTP 待验收 |
+
+模板同步、启用、绑定和运行时选模均须拒绝含额外变量的模板，只允许变量集合精确为 `code`。四类管理写操作的请求审计失败必须在业务调用前返回 `500/50000` 且零副作用；业务完成后的结果审计失败必须记录安全 warning 并返回真实业务结果，不得用 500 诱导客户端重复改绑或重复发送。
 
 四个权限必须分别创建最小权限管理员测试，不能只用超级管理员覆盖：
 
 | 权限测试 | 期望结果 | 当前状态 |
 |---|---|---|
-| 无 Token 调用任一短信管理接口 | `401/40001` | 待执行 |
-| 已登录但未完成管理员双重认证 | `403/40031` | 待执行 |
-| 仅有 `sms:template:view` | 只允许 A01/A02/A03/A05/A09；写接口返回 `403/40003` | 待执行 |
-| 仅追加 `sms:template:manage` | 允许 A06/A07，不获得同步和测试发送能力 | 待执行 |
-| 仅追加 `sms:template:sync` | 只新增 A04 能力 | 待执行 |
-| 仅追加 `sms:template:test` | 只新增 A08 能力 | 待执行 |
-| 权限 seed 重复执行 | 不产生重复权限或重复角色绑定 | 待执行 |
+| 无 Token 调用任一短信管理接口 | `401/40001` | 自动化通过；QA 待复核 |
+| 已登录但未完成管理员双重认证 | `403/40031` | 自动化通过；QA 待复核 |
+| 仅有 `sms:template:view` | 只允许 A01/A02/A03/A05/A09；写接口返回 `403/40003` | 自动化通过；QA 待复核 |
+| 仅追加 `sms:template:manage` | 允许 A06/A07，不获得同步和测试发送能力 | 自动化通过；QA 待复核 |
+| 仅追加 `sms:template:sync` | 只新增 A04 能力 | 自动化通过；QA 待复核 |
+| 仅追加 `sms:template:test` | 只新增 A08 能力 | 自动化通过；QA 待复核 |
+| 权限 seed 重复执行 | 不产生重复权限或重复角色绑定 | MySQL 8 CI 通过；QA 待复核 |
 
 同步、绑定和测试发送必须补充以下并发与幂等用例：
 
@@ -690,11 +694,11 @@ server/internal/modules/asset/
 
 | 场景 | 发码入口 | 后续业务 | 必须验证 | 当前状态 |
 |---|---|---|---|---|
-| `register` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 统一注册 | 独立注册模板、正确签名、验证码可单次消费 | 待执行 |
-| `login` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 手机验证码登录 | 独立登录模板，不可与注册验证码串用 | 待执行 |
-| `reset_password` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 重置密码 | 独立重置模板、成功后旧会话失效 | 待执行 |
-| `bind_phone` | `POST /api/me/verification-codes/phone`，body 仅含新 `phone` | 换绑手机号 | 必须登录；公开端点传该 scene 被拒；成功后手机号更新 | 待执行 |
-| `admin_verify` | `POST /api/admin/auth/verification-codes/phone`，无 body | 管理员手机双重认证 | 发往当前管理员绑定手机号；公开端点传该 scene 被拒 | 待执行 |
+| `register` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 统一注册 | 独立注册模板、正确签名、验证码可单次消费 | 独立模板发码受理并由用户确认收件/签名/文案正确；后续注册与单次消费 E2E 转入阶段 4 |
+| `login` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 手机验证码登录 | 独立登录模板，不可与注册验证码串用 | 独立模板发码受理并由用户确认收件/签名/文案正确；后续登录与跨场景隔离 E2E 待 QA |
+| `reset_password` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 重置密码 | 独立重置模板、成功后旧会话失效 | 独立模板发码受理并由用户确认收件/签名/文案正确；后续重置与旧会话失效 E2E 待 QA |
+| `bind_phone` | `POST /api/me/verification-codes/phone`，body 仅含新 `phone` | 换绑手机号 | 必须登录；公开端点传该 scene 被拒；成功后手机号更新 | 独立模板发码受理并由用户确认收件/签名/文案正确 |
+| `admin_verify` | `POST /api/admin/auth/verification-codes/phone`，无 body | 管理员手机双重认证 | 发往当前管理员绑定手机号；公开端点传该 scene 被拒 | 独立模板发码受理并由用户确认收件/签名/文案正确 |
 
 邮箱注册、登录、重置密码、`POST /api/me/verification-codes/email` 换绑邮箱及
 `POST /api/admin/auth/verification-codes/email` 管理员邮箱验证必须全量回归，证明短信改造未将邮箱接入短信适配器，也未错误要求 `send_status=sent`。
@@ -708,6 +712,10 @@ server/internal/modules/asset/
 | 白名单真实手机收件记录 | 指定手机收到本次正确签名、场景文案和验证码 | 全量用户送达率及长期稳定性 |
 
 真实链路验收必须保存脱敏的时间、场景、模板编码、`business_request_id`、供应商请求标识和收件确认，禁止保存验证码、完整手机号或密钥。只有外部准备项已核验、`SMS_TEST_MODE=true`、白名单非空且获得测试授权后，才允许执行真实阿里云提交和收件验证。
+
+> 2026-08-04 五模板窗口共新增 6 条 `Code=OK/accepted`：管理测试 1 条、OTP 5 条，覆盖五个业务入口且失败 0。用户确认收到 6 条，并确认统一签名和六条文案正确。窗口结束后已恢复 `SMS_ENABLED=false`、`SMS_TEST_MODE=true` 和原白名单，健康检查为 200。历史 7 条受理记录继续保留为前次验证证据，但不与本轮计数混算。
+
+> 独立复验结论：五独立模板、五场景绑定、真实收件、统一签名和文案证据已关闭历史单模板 P1；`79ac4d0` 三项 CI、隔离部署和九 API 独立 HTTP 已关闭部署态 P2。阶段 2 独立 QA、产品经理和正式代码评审均已通过，P0=0、P1=0、P2=0、P3=0；前三个公开业务验证码消费 E2E 转入阶段 4，阶段 2 当前仅待验收文档提交、推送及 PR #315 合并。
 
 ## 4. 并发与安全测试
 
