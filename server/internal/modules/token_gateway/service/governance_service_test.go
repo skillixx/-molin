@@ -23,6 +23,7 @@ type memoryBudgetRepository struct {
 	heldIDs     []string
 	syncResult  bool
 	syncErr     error
+	rejections  []model.AIGatewayRejectionEvent
 }
 
 func (r *memoryBudgetRepository) ReserveBudget(_ context.Context, _ repository.BudgetReservationRequest) (*model.AIBudgetReservation, error) {
@@ -61,6 +62,10 @@ func (r *memoryBudgetRepository) ListHeldBudgetRequestIDs(context.Context, time.
 }
 func (r *memoryBudgetRepository) RecordCompensationFailure(context.Context, string, string) error {
 	r.compensated++
+	return nil
+}
+func (r *memoryBudgetRepository) RecordGatewayRejection(_ context.Context, event *model.AIGatewayRejectionEvent) error {
+	r.rejections = append(r.rejections, *event)
 	return nil
 }
 
@@ -138,6 +143,9 @@ func TestGovernanceHardBudgetStopsBeforeResource(t *testing.T) {
 	_, err := governance.AdmitAfterSafety(context.Background(), subject, "Asia/Shanghai", body, &PriceQuote{HeldAmount: decimal.NewFromInt(1), MaxTokens: 8, Snapshot: PriceSnapshot{LogicalModelCode: "molin/test"}}, decision)
 	if !errors.Is(err, ErrBudgetExceeded) {
 		t.Fatalf("硬预算应稳定拒绝，实际 %v", err)
+	}
+	if len(budget.rejections) != 1 || budget.rejections[0].ReasonCode != "budget_limit_exceeded" {
+		t.Fatalf("硬预算拒绝必须形成脱敏统计事实: %+v", budget.rejections)
 	}
 	if limiter.released != 0 {
 		t.Fatal("预算拒绝前不得创建资源租约")

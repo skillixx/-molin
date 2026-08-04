@@ -887,7 +887,7 @@ func NewApp() (*App, error) {
 
 			// 管理端：渠道 / 模型目录 / 全量用量（token:manage + 管理员双重认证）。
 			tokengatewaymod.RegisterRoutes(mux, tokenGatewayModule.ChannelService, tokenGatewayModule.CatalogService,
-				tokenGatewayModule.UsageService, tokenGatewayModule.BillingService, tokenGatewayModule.GovernanceAdmin, auditSvc, cfg.JWTSecret, iamService, authService, authService)
+				tokenGatewayModule.UsageService, tokenGatewayModule.BillingService, tokenGatewayModule.GovernanceAdmin, tokenGatewayModule.G5Admin, auditSvc, cfg.JWTSecret, iamService, authService, authService)
 			// 用户端：列模型 + OpenAI 兼容 chat 转发 + 我的用量（双模式鉴权：sk + 登录态）。
 			// nil 接口陷阱：仅在 apiKeyService 非 nil 时构造适配器并传入；否则传字面 nil 接口，
 			// 使中间件 apiKeyResolver==nil 判断生效、对 sk 调用安全退化为「sk 鉴权未启用」而非 panic。

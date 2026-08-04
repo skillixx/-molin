@@ -2564,3 +2564,18 @@ DELETE /api/token/projects/{id}/keys/{key_id}
 - 手机验证码响应永远没有明文 `code`；前端不得读取或展示供应商请求标识。
 - 找回密码等成功确认区域必须显示脱敏手机号，接口失败后按钮恢复可操作状态。
 - 邮箱验证码继续使用 DirectMail 独立契约和非生产调试门禁，不受 `SMS_ENABLED` 影响。
+
+## AI 网关 G5 管理工作台
+
+页面入口：`/token/workbench`，读取权限 `ai_gateway:view`，并要求管理员双重认证。接口和状态机详见 `docs/ai-gateway-g5-development.md`。
+
+- `GET /api/admin/token/overview`：支持 `from/to/model/channel_id/status`，返回请求量、成功率、Token、人民币销售额/成本/毛利、治理拒绝和配置异常；金额和比率为十进制字符串。
+- `POST /api/admin/token/models/{id}/rollback`：从历史快照创建新的发布版本，不修改历史版本。
+- `POST /api/admin/token/prices/{id}/rollback`：从历史价格复制新草稿，前端必须提示重新审批发布。
+- `POST /api/admin/token/channels/{id}/health-check`：执行无密钥、无模型费用的 Bifrost `/health` 检测。
+- 模型状态使用 `active/inactive`，路由状态使用 `active/disabled`，二者不得混用。
+- 模型文档字段为 `intro_url/docs_url/quick_start_url`，仅允许 HTTP/HTTPS 静态网页。
+- 价格金额全部按字符串接收和展示，前端不得转为浮点数后再提交。
+- 路由编辑必须回传当前 `version_no`；收到 409 时提示刷新，禁止静默覆盖。
+- 发布、审批、暂停、退役、下架均需二次确认；按钮在请求中进入 loading，失败后恢复可操作。
+- 价格固定展示 `input_tokens/output_tokens/cached_tokens/reasoning_tokens` 四项，不在 G5 页面伪造图片或视频计量。

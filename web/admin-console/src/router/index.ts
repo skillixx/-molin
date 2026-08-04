@@ -146,6 +146,12 @@ const router = createRouter({
           meta: { requiresAuth: true, requiresAdminVerify: true, title: '应用管理', permission: 'app:manage' },
         },
         {
+          path: 'token/workbench',
+          name: 'AIGatewayWorkbench',
+          component: () => import('@/views/token/AIGatewayWorkbenchView.vue'),
+          meta: { requiresAuth: true, requiresAdminVerify: true, title: 'AI 网关工作台', permission: 'ai_gateway:view' },
+        },
+        {
           path: 'token/channels',
           name: 'TokenChannelList',
           component: () => import('@/views/token/TokenChannelListView.vue'),

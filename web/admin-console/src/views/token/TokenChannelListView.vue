@@ -13,7 +13,7 @@
       <el-form-item label="状态">
         <el-select v-model="searchForm.status" placeholder="全部" clearable style="width: 160px">
           <el-option label="启用" value="active" />
-          <el-option label="停用" value="disabled" />
+          <el-option label="停用" value="inactive" />
         </el-select>
       </el-form-item>
     </SearchForm>
@@ -98,7 +98,7 @@
         <el-form-item label="状态" prop="status">
           <el-select v-model="form.status" style="width: 100%">
             <el-option label="启用" value="active" />
-            <el-option label="停用" value="disabled" />
+            <el-option label="停用" value="inactive" />
           </el-select>
         </el-form-item>
         <el-form-item label="优先级" prop="priority">

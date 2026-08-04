@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 
 	authmodel "molin/server/internal/modules/auth/model"
 	"molin/server/internal/modules/token_gateway/crypto"
@@ -83,6 +84,8 @@ type PreparedRequest struct {
 	apiKey               string
 	driver               ExecutionDriver
 	governanceTicket     *GovernanceTicket
+	routeTimeout         time.Duration
+	runtimeRoute         *model.AIModelRoute
 	retrySourceRequestID string
 }
 
@@ -114,8 +117,24 @@ type RequestOrchestratorService struct {
 	visibility     modelVisibilityChecker
 	billing        *AIBillingService
 	governance     *GovernanceService
+	routeResolver  runtimeRouteResolver
 	prepared       sync.Map
 	activeTickets  sync.Map
+}
+
+type runtimeRouteResolver interface {
+	ResolveActiveRoute(ctx context.Context, modelCode, requestID string) (*model.AIModelRoute, error)
+}
+
+type runtimeRouteStateRecorder interface {
+	RecordRouteTransportFailure(ctx context.Context, routeID, threshold uint64) error
+	ResetRouteTransportFailures(ctx context.Context, routeID uint64) error
+}
+
+// WithRouteResolver 让 G5 路由事实参与真实请求；无可用记录时兼容旧 token_models 路由字段。
+func (s *RequestOrchestratorService) WithRouteResolver(resolver runtimeRouteResolver) *RequestOrchestratorService {
+	s.routeResolver = resolver
+	return s
 }
 
 // WithBillingService 启用 G3 正式报价、钱包预占和一次终态结算链路。
@@ -226,7 +245,21 @@ func (s *RequestOrchestratorService) Prepare(ctx context.Context, cmd PrepareCom
 		return nil, ErrG2ModelNotAllowed
 	}
 	tokenModel := snapshot.TokenModel
-	if tokenModel.Status != "active" || tokenModel.Modality != "chat" || tokenModel.ChannelID == nil || tokenModel.UpstreamModel == nil || strings.TrimSpace(*tokenModel.UpstreamModel) == "" {
+	if tokenModel.Status != "active" || tokenModel.Modality != "chat" {
+		return nil, ErrG2ModelUnavailable
+	}
+	var runtimeRoute *model.AIModelRoute
+	if s.routeResolver != nil {
+		route, routeErr := s.routeResolver.ResolveActiveRoute(ctx, cmd.LogicalModel, cmd.RequestID)
+		if routeErr == nil {
+			runtimeRoute = route
+			channelID, providerModel := route.ChannelID, route.ProviderModel
+			tokenModel.ChannelID, tokenModel.UpstreamModel = &channelID, &providerModel
+		} else if !errors.Is(routeErr, gorm.ErrRecordNotFound) {
+			return nil, ErrChannelUnavailable
+		}
+	}
+	if tokenModel.ChannelID == nil || tokenModel.UpstreamModel == nil || strings.TrimSpace(*tokenModel.UpstreamModel) == "" {
 		return nil, ErrG2ModelUnavailable
 	}
 	if s.visibility == nil {
@@ -274,7 +307,7 @@ func (s *RequestOrchestratorService) Prepare(ctx context.Context, cmd PrepareCom
 	if s.billing != nil {
 		var quote *PriceQuote
 		var safetyDecision *SafetyDecision
-		subject := SafetySubject{RequestID: cmd.RequestID, UserID: cmd.UserID, ProjectID: projectID, APIKeyID: cmd.APIKeyID}
+		subject := SafetySubject{RequestID: cmd.RequestID, UserID: cmd.UserID, ProjectID: projectID, APIKeyID: cmd.APIKeyID, LogicalModelCode: cmd.LogicalModel}
 		if s.governance != nil {
 			safetyDecision, err = s.governance.CheckInput(ctx, subject, cmd.Body)
 			if err != nil {
@@ -329,6 +362,11 @@ func (s *RequestOrchestratorService) Prepare(ctx context.Context, cmd PrepareCom
 		ProjectID: projectID, command: cmd, tokenModel: tokenModel,
 		providerCode: channel.Code, endpointCode: channel.Code, baseURL: channel.BaseURL, apiKey: apiKey, driver: driver,
 		governanceTicket: governanceTicket,
+	}
+	if runtimeRoute != nil {
+		prepared.routeTimeout = time.Duration(runtimeRoute.TimeoutMS) * time.Millisecond
+		prepared.endpointCode = fmt.Sprintf("route:%d", runtimeRoute.ID)
+		prepared.runtimeRoute = runtimeRoute
 	}
 	s.prepared.Store(cmd.RequestID, prepared)
 	return prepared, nil
@@ -430,7 +468,11 @@ func (s *RequestOrchestratorService) Execute(ctx context.Context, requestID stri
 		EndpointCode: prepared.endpointCode, AttemptNo: 1, BaseURL: prepared.baseURL,
 		APIKey: prepared.apiKey, Body: prepared.command.Body,
 	}
-	executionCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultStreamExecutionTimeout)
+	executionTimeout := defaultStreamExecutionTimeout
+	if prepared.routeTimeout > 0 && prepared.routeTimeout < executionTimeout {
+		executionTimeout = prepared.routeTimeout
+	}
+	executionCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), executionTimeout)
 	defer cancel()
 	if prepared.governanceTicket != nil {
 		heartbeat := s.governance.StartHeartbeat(executionCtx, prepared.governanceTicket)
@@ -446,10 +488,29 @@ func (s *RequestOrchestratorService) Execute(ctx context.Context, requestID stri
 	}
 	var executed *ExecutionResponse
 	var err error
-	if prepared.command.Stream {
-		executed, err = driver.ChatCompletionStream(executionCtx, executionRequest)
-	} else {
-		executed, err = driver.ChatCompletion(executionCtx, executionRequest)
+	maxRetries := uint64(0)
+	if prepared.runtimeRoute != nil {
+		maxRetries = prepared.runtimeRoute.MaxRetries
+	}
+	for retryNo := uint64(0); ; retryNo++ {
+		if prepared.command.Stream {
+			executed, err = driver.ChatCompletionStream(executionCtx, executionRequest)
+		} else {
+			executed, err = driver.ChatCompletion(executionCtx, executionRequest)
+		}
+		if err == nil || !safeRequestNotSent(executed, err) || retryNo >= maxRetries {
+			break
+		}
+		select {
+		case <-executionCtx.Done():
+			err = executionCtx.Err()
+			executed = nil
+			break
+		case <-time.After(50 * time.Millisecond):
+		}
+		if executionCtx.Err() != nil {
+			break
+		}
 	}
 	if err != nil {
 		attempt := running
@@ -459,7 +520,17 @@ func (s *RequestOrchestratorService) Execute(ctx context.Context, requestID stri
 			attempt.FinishedAt = time.Now()
 			attempt.Outcome = statusFromErr(err)
 			attempt.ErrorClass = executionNetworkErrorClass(err)
-			attempt.ResultUnknown = true
+			attempt.ResultUnknown = executionResultUnknown(err)
+			if !attempt.ResultUnknown {
+				attempt.ErrorClass = "request_not_sent"
+			}
+		}
+		if prepared.runtimeRoute != nil && attempt.ErrorClass == "request_not_sent" && !attempt.ResultUnknown {
+			if recorder, ok := s.routeResolver.(runtimeRouteStateRecorder); ok {
+				if recordErr := recorder.RecordRouteTransportFailure(context.WithoutCancel(ctx), prepared.runtimeRoute.ID, prepared.runtimeRoute.CircuitBreakerThreshold); recordErr != nil {
+					log.Printf("[token_gateway] 路由传输失败计数写入失败 request_id=%s route_id=%d", requestID, prepared.runtimeRoute.ID)
+				}
+			}
 		}
 		errorCode := "upstream_execution_error"
 		if attempt.ErrorClass == "request_not_sent" && !attempt.ResultUnknown {
@@ -476,11 +547,28 @@ func (s *RequestOrchestratorService) Execute(ctx context.Context, requestID stri
 		}
 		return ErrUpstream
 	}
+	if prepared.runtimeRoute != nil {
+		if recorder, ok := s.routeResolver.(runtimeRouteStateRecorder); ok {
+			if resetErr := recorder.ResetRouteTransportFailures(context.WithoutCancel(ctx), prepared.runtimeRoute.ID); resetErr != nil {
+				log.Printf("[token_gateway] 路由熔断状态复位失败 request_id=%s route_id=%d", requestID, prepared.runtimeRoute.ID)
+			}
+		}
+	}
 	defer executed.Response.Body.Close()
 	if prepared.command.Stream && executed.Response.StatusCode >= 200 && executed.Response.StatusCode < 300 {
 		return s.executeStream(executionCtx, sink, driver, executed, prepared.command.LogicalModel, requestID)
 	}
 	return s.executeJSON(executionCtx, sink, executed, requestID)
+}
+
+func safeRequestNotSent(executed *ExecutionResponse, err error) bool {
+	if err == nil {
+		return false
+	}
+	if executed != nil {
+		return executed.Attempt.ErrorClass == "request_not_sent" && !executed.Attempt.ResultUnknown
+	}
+	return !executionResultUnknown(err)
 }
 
 func (s *RequestOrchestratorService) executeJSON(ctx context.Context, sink StreamSink, executed *ExecutionResponse, requestID string) error {

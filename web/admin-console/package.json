@@ -10,6 +10,7 @@
     "test:sms-management": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test tests/sms-management-contract.test.mjs",
     "test:vite-isolation": "node --test tests/vite-proxy-isolation.test.mjs",
     "test:outbound-url": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test tests/outbound-url.test.mjs",
+    "test:g5-e2e": "playwright test tests/g5-workbench.spec.ts",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
     "type-check": "vue-tsc --noEmit",
     "lint": "eslint ."
@@ -25,6 +26,7 @@
     "vue-router": "^4.3.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.54.0",
     "@types/node": "^20.0.0",
     "@vue/eslint-config-typescript": "^14.6.0",
     "eslint": "^9.11.0",

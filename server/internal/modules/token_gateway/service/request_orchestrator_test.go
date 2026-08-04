@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"gorm.io/gorm"
+
 	authmodel "molin/server/internal/modules/auth/model"
 	"molin/server/internal/modules/token_gateway/model"
 	"molin/server/internal/modules/token_gateway/repository"
@@ -237,20 +239,76 @@ func (f fakeVisibilityChecker) VisibleToUser(context.Context, uint64, string) (b
 	return f.visible, nil
 }
 
+type fakeRuntimeRouteResolver struct {
+	route model.AIModelRoute
+	err   error
+}
+
+func (f fakeRuntimeRouteResolver) ResolveActiveRoute(context.Context, string, string) (*model.AIModelRoute, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	route := f.route
+	return &route, nil
+}
+
+type recordingRuntimeRouteResolver struct {
+	fakeRuntimeRouteResolver
+	failures int
+	resets   int
+}
+
+type switchingRuntimeRouteResolver struct {
+	primary  model.AIModelRoute
+	fallback model.AIModelRoute
+	opened   bool
+}
+
+func (r *switchingRuntimeRouteResolver) ResolveActiveRoute(context.Context, string, string) (*model.AIModelRoute, error) {
+	route := r.primary
+	if r.opened {
+		route = r.fallback
+	}
+	return &route, nil
+}
+
+func (r *switchingRuntimeRouteResolver) RecordRouteTransportFailure(_ context.Context, routeID, _ uint64) error {
+	if routeID == r.primary.ID {
+		r.opened = true
+	}
+	return nil
+}
+
+func (r *switchingRuntimeRouteResolver) ResetRouteTransportFailures(context.Context, uint64) error {
+	return nil
+}
+
+func (r *recordingRuntimeRouteResolver) RecordRouteTransportFailure(context.Context, uint64, uint64) error {
+	r.failures++
+	return nil
+}
+func (r *recordingRuntimeRouteResolver) ResetRouteTransportFailures(context.Context, uint64) error {
+	r.resets++
+	return nil
+}
+
 type fakeOrchestratorDriver struct {
-	executeErr     bool
-	incomplete     bool
-	requestNotSent bool
-	streamBody     io.ReadCloser
-	lastRequest    ExecutionRequest
+	executeErr            bool
+	incomplete            bool
+	requestNotSent        bool
+	streamBody            io.ReadCloser
+	lastRequest           ExecutionRequest
+	calls                 int
+	failuresBeforeSuccess int
 }
 
 func (f *fakeOrchestratorDriver) Name() string { return "bifrost" }
 func (f *fakeOrchestratorDriver) ChatCompletion(_ context.Context, req ExecutionRequest) (*ExecutionResponse, error) {
+	f.calls++
 	f.lastRequest = req
 	now := time.Now()
-	if f.executeErr {
-		if f.requestNotSent {
+	if f.executeErr || f.calls <= f.failuresBeforeSuccess {
+		if f.requestNotSent || f.calls <= f.failuresBeforeSuccess {
 			return &ExecutionResponse{Attempt: ExecutionAttempt{AttemptNo: 1, Driver: "bifrost", ProviderCode: "bailian", ProviderModel: "bailian/qwen-turbo", StartedAt: now.Add(-time.Millisecond), FinishedAt: now, Outcome: "failed", ErrorClass: "request_not_sent", ResultUnknown: false}}, errors.New("连接前失败")
 		}
 		return &ExecutionResponse{Attempt: ExecutionAttempt{AttemptNo: 1, Driver: "bifrost", ProviderCode: "bailian", ProviderModel: "bailian/qwen-turbo", StartedAt: now.Add(-time.Millisecond), FinishedAt: now, Outcome: "timeout", ErrorClass: "network_timeout", ResultUnknown: true}}, context.DeadlineExceeded
@@ -343,6 +401,123 @@ func TestRequestOrchestratorPrepareRejectsEmptyAllowlistAndUnverifiedUser(t *tes
 	_, err = orchestrator.Prepare(context.Background(), PrepareCommand{RequestID: "req-hidden", UserID: 3, APIKeyID: 7, LogicalModel: "molin/qwen-turbo", Body: map[string]interface{}{}})
 	if !errors.Is(err, ErrG2ModelUnavailable) {
 		t.Fatalf("定向隐藏模型必须在上游调用前拒绝，实际: %v", err)
+	}
+}
+
+func TestRequestOrchestratorUsesG5RuntimeRoute(t *testing.T) {
+	store := newMemoryOrchestratorStore()
+	driver := &fakeOrchestratorDriver{}
+	orchestrator := NewRequestOrchestrator(store, fakeChannelReader{channel: model.TokenChannel{ID: 4, Code: "bifrost-main", BaseURL: "http://unused", Status: "active"}}, nil).
+		WithVisibilityChecker(fakeVisibilityChecker{visible: true}).
+		WithRouteResolver(fakeRuntimeRouteResolver{route: model.AIModelRoute{ID: 88, ChannelID: 4, ProviderModel: "openrouter/runtime-model", TimeoutMS: 2000}})
+	orchestrator.SetExecutionDriverSelector(staticExecutionDriverSelector{driver: driver})
+	prepared := prepareTestRequest(t, orchestrator, "req-g5-route", "", map[string]interface{}{"messages": []interface{}{}})
+	if prepared.tokenModel.UpstreamModel == nil || *prepared.tokenModel.UpstreamModel != "openrouter/runtime-model" || prepared.endpointCode != "route:88" || prepared.routeTimeout != 2*time.Second {
+		t.Fatalf("G5 路由未写入执行上下文: %+v", prepared)
+	}
+	if err := orchestrator.Execute(context.Background(), prepared.RequestID, &memorySink{}); err != nil {
+		t.Fatalf("执行失败: %v", err)
+	}
+	if driver.lastRequest.ProviderModel != "openrouter/runtime-model" {
+		t.Fatalf("运行时未使用 G5 provider/model: %+v", driver.lastRequest)
+	}
+}
+
+func TestRequestOrchestratorOnlyFallsBackWhenG5RouteWasNeverConfigured(t *testing.T) {
+	store := newMemoryOrchestratorStore()
+	legacy := NewRequestOrchestrator(store, fakeChannelReader{channel: model.TokenChannel{ID: 4, Code: "bailian", BaseURL: "http://unused", Status: "active"}}, nil).
+		WithVisibilityChecker(fakeVisibilityChecker{visible: true}).
+		WithRouteResolver(fakeRuntimeRouteResolver{err: gorm.ErrRecordNotFound})
+	legacy.SetExecutionDriverSelector(staticExecutionDriverSelector{driver: &fakeOrchestratorDriver{}})
+	if _, err := legacy.Prepare(context.Background(), PrepareCommand{RequestID: "req-legacy-route", UserID: 3, APIKeyID: 7, LogicalModel: "molin/qwen-turbo", Body: map[string]interface{}{}}); err != nil {
+		t.Fatalf("从未配置 G5 路由的旧模型应继续使用冻结路由: %v", err)
+	}
+
+	unavailable := NewRequestOrchestrator(store, fakeChannelReader{channel: model.TokenChannel{ID: 4, Code: "bailian", BaseURL: "http://unused", Status: "active"}}, nil).
+		WithVisibilityChecker(fakeVisibilityChecker{visible: true}).
+		WithRouteResolver(fakeRuntimeRouteResolver{err: repository.ErrRouteUnavailable})
+	unavailable.SetExecutionDriverSelector(staticExecutionDriverSelector{driver: &fakeOrchestratorDriver{}})
+	_, err := unavailable.Prepare(context.Background(), PrepareCommand{RequestID: "req-circuit-open", UserID: 3, APIKeyID: 7, LogicalModel: "molin/qwen-turbo", Body: map[string]interface{}{}})
+	if !errors.Is(err, ErrChannelUnavailable) {
+		t.Fatalf("已配置但熔断或 down 的 G5 路由必须失败关闭，不能回退旧路由: %v", err)
+	}
+}
+
+func TestRequestOrchestratorRetriesOnlyConfirmedNotSentAndResetsCircuit(t *testing.T) {
+	store := newMemoryOrchestratorStore()
+	driver := &fakeOrchestratorDriver{failuresBeforeSuccess: 2}
+	resolver := &recordingRuntimeRouteResolver{fakeRuntimeRouteResolver: fakeRuntimeRouteResolver{route: model.AIModelRoute{ID: 89, ChannelID: 4, ProviderModel: "openrouter/runtime-model", TimeoutMS: 5000, MaxRetries: 2, CircuitBreakerThreshold: 3}}}
+	orchestrator := NewRequestOrchestrator(store, fakeChannelReader{channel: model.TokenChannel{ID: 4, Code: "bifrost-main", BaseURL: "http://unused", Status: "active"}}, nil).
+		WithVisibilityChecker(fakeVisibilityChecker{visible: true}).WithRouteResolver(resolver)
+	orchestrator.SetExecutionDriverSelector(staticExecutionDriverSelector{driver: driver})
+	prepared := prepareTestRequest(t, orchestrator, "req-g5-safe-retry", "", map[string]interface{}{"messages": []interface{}{}})
+	if err := orchestrator.Execute(context.Background(), prepared.RequestID, &memorySink{}); err != nil {
+		t.Fatalf("确认未发送的短暂失败应在上限内恢复: %v", err)
+	}
+	if driver.calls != 3 || resolver.failures != 0 || resolver.resets != 1 {
+		t.Fatalf("安全重试或熔断复位次数错误: calls=%d failures=%d resets=%d", driver.calls, resolver.failures, resolver.resets)
+	}
+}
+
+func TestRequestOrchestratorOpensCircuitAfterSafeRetriesExhausted(t *testing.T) {
+	store := newMemoryOrchestratorStore()
+	driver := &fakeOrchestratorDriver{failuresBeforeSuccess: 5}
+	resolver := &recordingRuntimeRouteResolver{fakeRuntimeRouteResolver: fakeRuntimeRouteResolver{route: model.AIModelRoute{ID: 90, ChannelID: 4, ProviderModel: "openrouter/runtime-model", TimeoutMS: 5000, MaxRetries: 1, CircuitBreakerThreshold: 2}}}
+	orchestrator := NewRequestOrchestrator(store, fakeChannelReader{channel: model.TokenChannel{ID: 4, Code: "bifrost-main", BaseURL: "http://unused", Status: "active"}}, nil).
+		WithVisibilityChecker(fakeVisibilityChecker{visible: true}).WithRouteResolver(resolver)
+	orchestrator.SetExecutionDriverSelector(staticExecutionDriverSelector{driver: driver})
+	prepared := prepareTestRequest(t, orchestrator, "req-g5-retry-exhausted", "", map[string]interface{}{"messages": []interface{}{}})
+	if err := orchestrator.Execute(context.Background(), prepared.RequestID, &memorySink{}); !errors.Is(err, ErrUpstream) {
+		t.Fatalf("安全重试耗尽后必须返回上游失败: %v", err)
+	}
+	if driver.calls != 2 || resolver.failures != 1 || resolver.resets != 0 {
+		t.Fatalf("耗尽后必须只登记一次连续失败: calls=%d failures=%d resets=%d", driver.calls, resolver.failures, resolver.resets)
+	}
+}
+
+func TestRequestOrchestratorNextRequestAvoidsOpenedRouteWithoutDuplicateUsage(t *testing.T) {
+	store := newMemoryOrchestratorStore()
+	driver := &fakeOrchestratorDriver{failuresBeforeSuccess: 1}
+	resolver := &switchingRuntimeRouteResolver{
+		primary:  model.AIModelRoute{ID: 90, ChannelID: 4, ProviderModel: "openrouter/primary", TimeoutMS: 5000, MaxRetries: 0, CircuitBreakerThreshold: 1},
+		fallback: model.AIModelRoute{ID: 92, ChannelID: 4, ProviderModel: "openrouter/fallback", TimeoutMS: 5000, MaxRetries: 0, CircuitBreakerThreshold: 1},
+	}
+	orchestrator := NewRequestOrchestrator(store, fakeChannelReader{channel: model.TokenChannel{ID: 4, Code: "bifrost-main", BaseURL: "http://unused", Status: "active"}}, nil).
+		WithVisibilityChecker(fakeVisibilityChecker{visible: true}).WithRouteResolver(resolver)
+	orchestrator.SetExecutionDriverSelector(staticExecutionDriverSelector{driver: driver})
+
+	first := prepareTestRequest(t, orchestrator, "req-route-primary", "", map[string]interface{}{"messages": []interface{}{}})
+	if err := orchestrator.Execute(context.Background(), first.RequestID, &memorySink{}); !errors.Is(err, ErrUpstream) {
+		t.Fatalf("主路由失败应返回受控上游错误: %v", err)
+	}
+	second := prepareTestRequest(t, orchestrator, "req-route-fallback", "", map[string]interface{}{"messages": []interface{}{}})
+	if second.endpointCode != "route:92" {
+		t.Fatalf("下一请求必须避开已熔断主路由，实际 endpoint=%s", second.endpointCode)
+	}
+	if err := orchestrator.Execute(context.Background(), second.RequestID, &memorySink{}); err != nil {
+		t.Fatalf("备用路由应成功完成请求: %v", err)
+	}
+	if len(store.usage[first.RequestID]) != 0 || len(store.usage[second.RequestID]) == 0 {
+		t.Fatalf("失败请求不得产生用量事实，成功请求只保存自身事实: first=%d second=%d", len(store.usage[first.RequestID]), len(store.usage[second.RequestID]))
+	}
+	if driver.lastRequest.ProviderModel != "openrouter/fallback" || driver.calls != 2 {
+		t.Fatalf("不得重复执行或回到主路由: calls=%d provider=%s", driver.calls, driver.lastRequest.ProviderModel)
+	}
+}
+
+func TestRequestOrchestratorNeverRetriesUnknownResult(t *testing.T) {
+	store := newMemoryOrchestratorStore()
+	driver := &fakeOrchestratorDriver{executeErr: true}
+	resolver := &recordingRuntimeRouteResolver{fakeRuntimeRouteResolver: fakeRuntimeRouteResolver{route: model.AIModelRoute{ID: 91, ChannelID: 4, ProviderModel: "openrouter/runtime-model", TimeoutMS: 5000, MaxRetries: 3, CircuitBreakerThreshold: 2}}}
+	orchestrator := NewRequestOrchestrator(store, fakeChannelReader{channel: model.TokenChannel{ID: 4, Code: "bifrost-main", BaseURL: "http://unused", Status: "active"}}, nil).
+		WithVisibilityChecker(fakeVisibilityChecker{visible: true}).WithRouteResolver(resolver)
+	orchestrator.SetExecutionDriverSelector(staticExecutionDriverSelector{driver: driver})
+	prepared := prepareTestRequest(t, orchestrator, "req-g5-unknown-no-retry", "", map[string]interface{}{"messages": []interface{}{}})
+	if err := orchestrator.Execute(context.Background(), prepared.RequestID, &memorySink{}); !errors.Is(err, ErrUpstream) {
+		t.Fatalf("结果未知必须失败并进入对账: %v", err)
+	}
+	if driver.calls != 1 || resolver.failures != 0 {
+		t.Fatalf("结果未知禁止重试和熔断计数: calls=%d failures=%d", driver.calls, resolver.failures)
 	}
 }
 

@@ -60,3 +60,22 @@ func TestDecodeGovernanceJSONRejectsTrailingDocument(t *testing.T) {
 		t.Fatalf("尾随 JSON 应返回 400，实际 %d", recorder.Code)
 	}
 }
+
+func TestDecodeGovernanceJSONRejectsDuplicateKeysAtEveryDepth(t *testing.T) {
+	tests := []string{
+		`{"version_no":1,"version_no":2}`,
+		`{"rules":[{"category":"illegal","category":"gambling"}]}`,
+		`{"rules":[{"category":"illegal","keywords":[{"value":"a","value":"b"}]}]}`,
+	}
+	for _, body := range tests {
+		req := httptest.NewRequest("POST", "/", strings.NewReader(body))
+		recorder := httptest.NewRecorder()
+		var target map[string]interface{}
+		if decodeGovernanceJSON(recorder, req, &target) {
+			t.Fatalf("治理写接口不得接受重复对象键: %s", body)
+		}
+		if recorder.Code != 400 {
+			t.Fatalf("重复对象键应返回 400，实际 %d", recorder.Code)
+		}
+	}
+}

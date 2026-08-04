@@ -91,12 +91,25 @@ func TestRegisterRoutes_G4PermissionMatrix(t *testing.T) {
 		{http.MethodPost, "/api/admin/token/compensation-tasks/1/resolve", "ai_gateway:reconcile_manage"},
 		{http.MethodPost, "/api/admin/token/outbox-events/req-1%3Abilling/requeue", "ai_gateway:reconcile_manage"},
 		{http.MethodPost, "/api/admin/token/billing/content-policy/req-1/resolve", "ai_gateway:reconcile_manage"},
+		{http.MethodGet, "/api/admin/token/overview", "ai_gateway:view"},
+		{http.MethodGet, "/api/admin/token/models/1/versions", "ai_gateway:view"},
+		{http.MethodPost, "/api/admin/token/models/1/rollback", "ai_gateway:model_manage"},
+		{http.MethodPost, "/api/admin/token/models/1/publish", "ai_gateway:model_manage"},
+		{http.MethodPost, "/api/admin/token/models/1/unpublish", "ai_gateway:model_manage"},
+		{http.MethodGet, "/api/admin/token/routes", "ai_gateway:view"},
+		{http.MethodPost, "/api/admin/token/routes", "ai_gateway:route_manage"},
+		{http.MethodPost, "/api/admin/token/channels/1/health-check", "ai_gateway:route_manage"},
+		{http.MethodPut, "/api/admin/token/routes/1", "ai_gateway:route_manage"},
+		{http.MethodGet, "/api/admin/token/prices", "ai_gateway:view"},
+		{http.MethodPost, "/api/admin/token/prices", "ai_gateway:price_manage"},
+		{http.MethodPost, "/api/admin/token/prices/1/publish", "ai_gateway:price_manage"},
+		{http.MethodPost, "/api/admin/token/prices/1/rollback", "ai_gateway:price_manage"},
 	}
 	for _, test := range cases {
 		t.Run(test.method+" "+test.path, func(t *testing.T) {
 			checker := &recordingIAMChecker{}
 			mux := http.NewServeMux()
-			RegisterRoutes(mux, nil, nil, nil, nil, nil, nil, secret, checker, nil, rejectingAdminVerifiedChecker{})
+			RegisterRoutes(mux, nil, nil, nil, nil, nil, nil, nil, secret, checker, nil, rejectingAdminVerifiedChecker{})
 			req := httptest.NewRequest(test.method, test.path, nil)
 			req.Header.Set("Authorization", "Bearer "+token)
 			response := httptest.NewRecorder()

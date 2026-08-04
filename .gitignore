@@ -40,3 +40,7 @@ infra/.data/
 # Agent 临时工作目录（按机器生成，无需入库）
 .claude/worktrees/
 .gstack/
+
+# 浏览器自动化运行时产物，测试脚本与正式验收截图仍正常入库。
+.playwright-cli/
+web/admin-console/test-results/

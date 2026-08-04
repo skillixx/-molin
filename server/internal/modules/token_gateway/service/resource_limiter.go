@@ -21,6 +21,7 @@ var (
 type ResourceLimitError struct {
 	Cause      error
 	LimitScope string
+	LimitType  string
 	RetryAfter time.Duration
 }
 
@@ -118,10 +119,14 @@ func (s *ResourceLimiter) Acquire(ctx context.Context, requestID string, userID,
 			return nil, ErrResourceUnavailable
 		}
 		cause := ErrRateLimitExceeded
+		limitType := "rpm"
 		if reason == 1 {
 			cause = ErrConcurrencyExceeded
+			limitType = "concurrency"
+		} else if reason == 3 {
+			limitType = "tpm"
 		}
-		return nil, &ResourceLimitError{Cause: cause, LimitScope: scopes[scopeIndex-1], RetryAfter: time.Duration(max(retryMS, 1000)) * time.Millisecond}
+		return nil, &ResourceLimitError{Cause: cause, LimitScope: scopes[scopeIndex-1], LimitType: limitType, RetryAfter: time.Duration(max(retryMS, 1000)) * time.Millisecond}
 	}
 	return &ResourceTicket{LeaseID: requestID, Scopes: scopes, Keys: keys, ReservedTPM: reservedTokens}, nil
 }

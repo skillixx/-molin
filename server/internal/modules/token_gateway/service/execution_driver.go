@@ -357,7 +357,13 @@ func (d *BifrostDriver) ChatCompletionStream(ctx context.Context, in ExecutionRe
 
 func (d *BifrostDriver) execute(ctx context.Context, in ExecutionRequest, stream bool) (*ExecutionResponse, error) {
 	started := time.Now()
+	// 只有 G5 数据库路由使用 route:{id} 端点标记时才直传 provider/model。
+	// 旧 token_models.upstream_model 允许只保存供应商内模型名，必须继续使用冻结映射补全 Provider。
 	providerModel, ok := d.models[in.LogicalModel]
+	if strings.HasPrefix(strings.TrimSpace(in.EndpointCode), "route:") {
+		providerModel = strings.TrimSpace(in.ProviderModel)
+		ok = providerModel != ""
+	}
 	provider, providerModelName, mapped := strings.Cut(providerModel, "/")
 	if !ok || !mapped || strings.TrimSpace(provider) == "" || strings.TrimSpace(providerModelName) == "" {
 		attempt := newExecutionAttempt(d.Name(), in, providerModel, started)
@@ -563,16 +569,30 @@ func sanitizeExecutionResponse(value map[string]interface{}, logicalModel string
 	if logicalModel != "" {
 		value["model"] = logicalModel
 	}
-	sanitizeExecutionChoices(value["choices"])
+	for _, key := range []string{"id", "object", "model", "system_fingerprint", "service_tier"} {
+		sanitizeExecutionString(value, key, true)
+	}
+	if created, exists := value["created"]; exists && !isExecutionNumber(created) {
+		delete(value, "created")
+	}
+	if rawChoices, exists := value["choices"]; exists && !sanitizeExecutionChoices(rawChoices) {
+		delete(value, "choices")
+	}
+	if rawUsage, exists := value["usage"]; exists {
+		if _, ok := rawUsage.(map[string]interface{}); !ok {
+			delete(value, "usage")
+		} else {
+			sanitizeExecutionUsage(rawUsage)
+		}
+	}
 	redactExecutionInternalFields(value)
 }
 
-// sanitizeExecutionChoices 只公开 OpenAI 兼容的 choice 字段，避免供应商私有字符串绕过跨分块连续审核。
-// message、delta 和 tool_calls 内的兼容扩展仍会递归进入内容审核，不在此处截断其结构。
-func sanitizeExecutionChoices(value interface{}) {
+// sanitizeExecutionChoices 只公开冻结的 OpenAI 兼容字段，供应商私有扩展既不能旁路内容审核，也不能进入客户响应。
+func sanitizeExecutionChoices(value interface{}) bool {
 	choices, ok := value.([]interface{})
 	if !ok {
-		return
+		return false
 	}
 	allowed := map[string]struct{}{
 		"index": {}, "message": {}, "delta": {}, "text": {}, "finish_reason": {}, "logprobs": {},
@@ -580,12 +600,355 @@ func sanitizeExecutionChoices(value interface{}) {
 	for _, rawChoice := range choices {
 		choice, ok := rawChoice.(map[string]interface{})
 		if !ok {
-			continue
+			return false
 		}
 		for key := range choice {
 			if _, exists := allowed[key]; !exists {
 				delete(choice, key)
 			}
+		}
+		if index, exists := choice["index"]; exists && !isExecutionNumber(index) {
+			delete(choice, "index")
+		}
+		sanitizeExecutionString(choice, "text", true)
+		sanitizeExecutionString(choice, "finish_reason", true)
+		if rawMessage, exists := choice["message"]; exists && !sanitizeExecutionMessage(rawMessage, false) {
+			delete(choice, "message")
+		}
+		if rawDelta, exists := choice["delta"]; exists && !sanitizeExecutionMessage(rawDelta, true) {
+			delete(choice, "delta")
+		}
+		if rawLogprobs, exists := choice["logprobs"]; exists {
+			if _, ok := rawLogprobs.(map[string]interface{}); !ok {
+				delete(choice, "logprobs")
+			} else {
+				sanitizeExecutionLogprobs(rawLogprobs)
+			}
+		}
+	}
+	return true
+}
+
+// sanitizeExecutionUsage 仅公开 OpenAI Usage 标准字段及冻结的明细字段，供应商成本和路由信息不得外泄。
+func sanitizeExecutionUsage(value interface{}) {
+	usage, ok := value.(map[string]interface{})
+	if !ok {
+		return
+	}
+	filterExecutionObject(usage, map[string]struct{}{
+		"prompt_tokens": {}, "completion_tokens": {}, "total_tokens": {},
+		"prompt_tokens_details": {}, "completion_tokens_details": {},
+	})
+	for _, key := range []string{"prompt_tokens", "completion_tokens", "total_tokens"} {
+		if raw, exists := usage[key]; exists && !isExecutionNumber(raw) {
+			delete(usage, key)
+		}
+	}
+	detailFields := map[string][]string{
+		"prompt_tokens_details":     {"cached_tokens", "audio_tokens"},
+		"completion_tokens_details": {"reasoning_tokens", "audio_tokens", "accepted_prediction_tokens", "rejected_prediction_tokens"},
+	}
+	for detailKey, allowedFields := range detailFields {
+		raw, exists := usage[detailKey]
+		if !exists {
+			continue
+		}
+		details, ok := raw.(map[string]interface{})
+		if !ok {
+			delete(usage, detailKey)
+			continue
+		}
+		allowed := make(map[string]struct{}, len(allowedFields))
+		for _, field := range allowedFields {
+			allowed[field] = struct{}{}
+		}
+		filterExecutionObject(details, allowed)
+		for _, field := range allowedFields {
+			if value, present := details[field]; present && !isExecutionNumber(value) {
+				delete(details, field)
+			}
+		}
+	}
+}
+
+// sanitizeExecutionLogprobs 对概率结果逐层使用白名单，避免供应商追踪字段混入兼容响应。
+func sanitizeExecutionLogprobs(value interface{}) {
+	logprobs, ok := value.(map[string]interface{})
+	if !ok {
+		return
+	}
+	filterExecutionObject(logprobs, map[string]struct{}{"content": {}, "refusal": {}, "tokens": {}, "token_logprobs": {}, "top_logprobs": {}, "text_offset": {}})
+	sanitizeExecutionScalarList(logprobs, "tokens", func(value interface{}) bool { _, ok := value.(string); return ok })
+	sanitizeExecutionScalarList(logprobs, "token_logprobs", func(value interface{}) bool { return value == nil || isExecutionNumber(value) })
+	sanitizeExecutionScalarList(logprobs, "text_offset", isExecutionNumber)
+	if rawTop, exists := logprobs["top_logprobs"]; exists {
+		topItems, ok := rawTop.([]interface{})
+		if !ok {
+			delete(logprobs, "top_logprobs")
+		} else {
+			for _, rawItem := range topItems {
+				item, ok := rawItem.(map[string]interface{})
+				if !ok {
+					delete(logprobs, "top_logprobs")
+					break
+				}
+				for token, probability := range item {
+					if token == "" || !isExecutionNumber(probability) {
+						delete(item, token)
+					}
+				}
+			}
+		}
+	}
+	for _, key := range []string{"content", "refusal"} {
+		rawItems, exists := logprobs[key]
+		if !exists {
+			continue
+		}
+		items, ok := rawItems.([]interface{})
+		if !ok {
+			delete(logprobs, key)
+			continue
+		}
+		validItems := true
+		for _, rawItem := range items {
+			item, ok := rawItem.(map[string]interface{})
+			if !ok {
+				validItems = false
+				break
+			}
+			filterExecutionObject(item, map[string]struct{}{"token": {}, "logprob": {}, "bytes": {}, "top_logprobs": {}})
+			if token, exists := item["token"]; exists {
+				if _, ok := token.(string); !ok {
+					delete(item, "token")
+				}
+			}
+			if probability, exists := item["logprob"]; exists && !isExecutionNumber(probability) {
+				delete(item, "logprob")
+			}
+			sanitizeExecutionScalarList(item, "bytes", func(value interface{}) bool { return isExecutionNumber(value) })
+			if topItems, ok := item["top_logprobs"].([]interface{}); ok {
+				validTopItems := true
+				for _, rawTop := range topItems {
+					top, ok := rawTop.(map[string]interface{})
+					if !ok {
+						validTopItems = false
+						break
+					}
+					filterExecutionObject(top, map[string]struct{}{"token": {}, "logprob": {}, "bytes": {}})
+					if token, exists := top["token"]; exists {
+						if _, ok := token.(string); !ok {
+							delete(top, "token")
+						}
+					}
+					if probability, exists := top["logprob"]; exists && !isExecutionNumber(probability) {
+						delete(top, "logprob")
+					}
+					sanitizeExecutionScalarList(top, "bytes", isExecutionNumber)
+				}
+				if !validTopItems {
+					delete(item, "top_logprobs")
+				}
+			} else if _, exists := item["top_logprobs"]; exists {
+				delete(item, "top_logprobs")
+			}
+		}
+		if !validItems {
+			delete(logprobs, key)
+		}
+	}
+}
+
+func sanitizeExecutionScalarList(object map[string]interface{}, key string, valid func(interface{}) bool) {
+	raw, exists := object[key]
+	if !exists {
+		return
+	}
+	items, ok := raw.([]interface{})
+	if !ok {
+		delete(object, key)
+		return
+	}
+	for _, item := range items {
+		if !valid(item) {
+			delete(object, key)
+			return
+		}
+	}
+}
+
+func isExecutionNumber(value interface{}) bool {
+	switch value.(type) {
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, json.Number:
+		return true
+	default:
+		return false
+	}
+}
+
+// sanitizeExecutionMessage 冻结 message/delta 的嵌套兼容契约。
+// G5 文字网关保留标准文本、工具调用、音频引用和 URL 引用字段，其余供应商私有字段默认删除。
+func sanitizeExecutionMessage(value interface{}, delta bool) bool {
+	message, ok := value.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	allowed := map[string]struct{}{
+		"role": {}, "content": {}, "refusal": {}, "tool_calls": {}, "function_call": {}, "audio": {},
+	}
+	if !delta {
+		allowed["annotations"] = struct{}{}
+	}
+	filterExecutionObject(message, allowed)
+	sanitizeExecutionString(message, "role", false)
+	sanitizeExecutionString(message, "refusal", true)
+	if !sanitizeExecutionContent(message["content"]) {
+		delete(message, "content")
+	}
+	if !sanitizeExecutionToolCalls(message["tool_calls"]) {
+		delete(message, "tool_calls")
+	}
+	if !sanitizeExecutionFunction(message["function_call"]) {
+		delete(message, "function_call")
+	}
+	if !sanitizeExecutionAudio(message["audio"]) {
+		delete(message, "audio")
+	}
+	if !sanitizeExecutionAnnotations(message["annotations"]) {
+		delete(message, "annotations")
+	}
+	return true
+}
+
+func sanitizeExecutionContent(value interface{}) bool {
+	if value == nil {
+		return true
+	}
+	if _, ok := value.(string); ok {
+		return true
+	}
+	parts, ok := value.([]interface{})
+	if !ok {
+		return false
+	}
+	allowed := map[string]struct{}{"type": {}, "text": {}, "refusal": {}}
+	for _, rawPart := range parts {
+		part, ok := rawPart.(map[string]interface{})
+		if !ok {
+			return false
+		}
+		filterExecutionObject(part, allowed)
+		sanitizeExecutionString(part, "type", false)
+		sanitizeExecutionString(part, "text", true)
+		sanitizeExecutionString(part, "refusal", true)
+	}
+	return true
+}
+
+func sanitizeExecutionToolCalls(value interface{}) bool {
+	if value == nil {
+		return true
+	}
+	calls, ok := value.([]interface{})
+	if !ok {
+		return false
+	}
+	allowed := map[string]struct{}{"id": {}, "index": {}, "type": {}, "function": {}}
+	for _, rawCall := range calls {
+		call, ok := rawCall.(map[string]interface{})
+		if !ok {
+			return false
+		}
+		filterExecutionObject(call, allowed)
+		sanitizeExecutionString(call, "id", false)
+		sanitizeExecutionString(call, "type", false)
+		if index, exists := call["index"]; exists && !isExecutionNumber(index) {
+			delete(call, "index")
+		}
+		if !sanitizeExecutionFunction(call["function"]) {
+			delete(call, "function")
+		}
+	}
+	return true
+}
+
+func sanitizeExecutionFunction(value interface{}) bool {
+	if value == nil {
+		return true
+	}
+	function, ok := value.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	filterExecutionObject(function, map[string]struct{}{"name": {}, "arguments": {}})
+	sanitizeExecutionString(function, "name", false)
+	sanitizeExecutionString(function, "arguments", false)
+	return true
+}
+
+func sanitizeExecutionAudio(value interface{}) bool {
+	if value == nil {
+		return true
+	}
+	audio, ok := value.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	filterExecutionObject(audio, map[string]struct{}{"id": {}, "data": {}, "expires_at": {}, "transcript": {}})
+	sanitizeExecutionString(audio, "id", false)
+	sanitizeExecutionString(audio, "data", false)
+	sanitizeExecutionString(audio, "transcript", true)
+	if expiresAt, exists := audio["expires_at"]; exists && !isExecutionNumber(expiresAt) {
+		delete(audio, "expires_at")
+	}
+	return true
+}
+
+func sanitizeExecutionAnnotations(value interface{}) bool {
+	if value == nil {
+		return true
+	}
+	annotations, ok := value.([]interface{})
+	if !ok {
+		return false
+	}
+	for _, rawAnnotation := range annotations {
+		annotation, ok := rawAnnotation.(map[string]interface{})
+		if !ok {
+			return false
+		}
+		filterExecutionObject(annotation, map[string]struct{}{"type": {}, "url_citation": {}})
+		sanitizeExecutionString(annotation, "type", false)
+		if citation, ok := annotation["url_citation"].(map[string]interface{}); ok {
+			filterExecutionObject(citation, map[string]struct{}{"start_index": {}, "end_index": {}, "title": {}, "url": {}})
+			for _, key := range []string{"start_index", "end_index"} {
+				if index, exists := citation[key]; exists && !isExecutionNumber(index) {
+					delete(citation, key)
+				}
+			}
+			sanitizeExecutionString(citation, "title", false)
+			sanitizeExecutionString(citation, "url", false)
+		} else if _, exists := annotation["url_citation"]; exists {
+			delete(annotation, "url_citation")
+		}
+	}
+	return true
+}
+
+func sanitizeExecutionString(object map[string]interface{}, key string, nullable bool) {
+	value, exists := object[key]
+	if !exists || (nullable && value == nil) {
+		return
+	}
+	if _, ok := value.(string); !ok {
+		delete(object, key)
+	}
+}
+
+func filterExecutionObject(value map[string]interface{}, allowed map[string]struct{}) {
+	for key := range value {
+		if _, ok := allowed[key]; !ok {
+			delete(value, key)
 		}
 	}
 }

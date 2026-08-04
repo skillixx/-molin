@@ -21,7 +21,7 @@
       <el-form-item label="状态">
         <el-select v-model="searchForm.status" placeholder="全部" clearable style="width: 140px">
           <el-option label="启用" value="active" />
-          <el-option label="停用" value="disabled" />
+          <el-option label="停用" value="inactive" />
         </el-select>
       </el-form-item>
     </SearchForm>
@@ -76,7 +76,7 @@
     <el-dialog
       v-model="dialogVisible"
       :title="dialogMode === 'create' ? '新建模型' : '编辑模型'"
-      width="560px"
+      width="min(760px, 96vw)"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-width="120px">
         <el-form-item label="对外模型代码" prop="logical_model_code">
@@ -88,6 +88,12 @@
         <el-form-item label="展示名称" prop="display_name">
           <el-input v-model="form.display_name" placeholder="如：GPT-4o" />
         </el-form-item>
+        <el-form-item label="供应商" prop="provider_name"><el-input v-model="form.provider_name" placeholder="如：阿里云百炼" /></el-form-item>
+        <el-form-item label="模型介绍"><el-input v-model="form.description" type="textarea" :rows="3" maxlength="1000" show-word-limit /></el-form-item>
+        <el-form-item label="上下文窗口"><el-input-number v-model="form.context_window" :min="0" :step="1000" style="width:100%" /></el-form-item>
+        <el-form-item label="介绍网页"><el-input v-model="form.intro_url" placeholder="https://docs.example.com/models/intro" /></el-form-item>
+        <el-form-item label="操作文档"><el-input v-model="form.docs_url" placeholder="https://docs.example.com/models/api" /></el-form-item>
+        <el-form-item label="快速入门"><el-input v-model="form.quick_start_url" placeholder="https://docs.example.com/models/quick-start" /><div class="form-tip">填写静态网页地址，无需维护 Markdown 文件。</div></el-form-item>
         <el-form-item label="模态" prop="modality">
           <el-select v-model="form.modality" style="width: 100%">
             <el-option label="对话" value="chat" />
@@ -129,7 +135,7 @@
         <el-form-item label="状态" prop="status">
           <el-select v-model="form.status" style="width: 100%">
             <el-option label="启用" value="active" />
-            <el-option label="停用" value="disabled" />
+            <el-option label="停用" value="inactive" />
           </el-select>
         </el-form-item>
         <el-form-item label="排序" prop="sort_order">
@@ -253,6 +259,12 @@ const formRef = ref<FormInstance>()
 const form = reactive<{
   logical_model_code: string
   display_name: string
+  provider_name: string
+  description: string
+  context_window: number
+  intro_url: string
+  docs_url: string
+  quick_start_url: string
   modality: TokenModelModality
   channel_id: number | undefined
   upstream_model: string
@@ -266,6 +278,7 @@ const form = reactive<{
 }>({
   logical_model_code: '',
   display_name: '',
+  provider_name: '', description: '', context_window: 0, intro_url: '', docs_url: '', quick_start_url: '',
   modality: 'chat',
   channel_id: undefined,
   upstream_model: '',
@@ -378,6 +391,7 @@ function openCreate() {
   editingId.value = 0
   form.logical_model_code = ''
   form.display_name = ''
+  form.provider_name = ''; form.description = ''; form.context_window = 0; form.intro_url = ''; form.docs_url = ''; form.quick_start_url = ''
   form.modality = 'chat'
   form.channel_id = undefined
   form.upstream_model = ''
@@ -403,6 +417,12 @@ async function openEdit(row: TokenModel) {
 function fillFormFromModel(model: TokenModel) {
   form.logical_model_code = model.logical_model_code
   form.display_name = model.display_name
+  form.provider_name = model.provider_name || ''
+  form.description = model.description || ''
+  form.context_window = model.context_window || 0
+  form.intro_url = model.intro_url || ''
+  form.docs_url = model.docs_url || ''
+  form.quick_start_url = model.quick_start_url || ''
   form.modality = model.modality
   form.channel_id = model.channel_id
   form.upstream_model = model.upstream_model
@@ -449,6 +469,8 @@ async function handleSave() {
       const payload: CreateTokenModelReq = {
         logical_model_code: form.logical_model_code,
         display_name: form.display_name,
+        provider_name: form.provider_name, description: form.description, context_window: form.context_window,
+        intro_url: form.intro_url, docs_url: form.docs_url, quick_start_url: form.quick_start_url,
         modality: form.modality,
         channel_id: form.channel_id as number,
         upstream_model: form.upstream_model,
@@ -461,8 +483,9 @@ async function handleSave() {
       ElMessage.success('模型创建成功')
     } else {
       const payload: UpdateTokenModelReq = {
-        logical_model_code: form.logical_model_code,
         display_name: form.display_name,
+        provider_name: form.provider_name, description: form.description, context_window: form.context_window,
+        intro_url: form.intro_url, docs_url: form.docs_url, quick_start_url: form.quick_start_url,
         modality: form.modality,
         channel_id: form.channel_id as number,
         upstream_model: form.upstream_model,

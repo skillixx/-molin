@@ -2537,3 +2537,9 @@ ai_gateway:lease_force_release
 **VERDICT:** CEO CLEAR；长期蓝图已完成范围收敛，Phase 1 进入工程评审前准备，eng review required。
 
 NO UNRESOLVED DECISIONS
+
+## G5 实施落地补充（2026-08-04）
+
+G5 管理工作台按 `docs/ai-gateway-g5-feature.md` 和 `docs/ai-gateway-g5-development.md` 落地，主路径为：模型不可变发布、人民币价格版本、Bifrost `provider/model` 路由、G4 安全/资源/预算/异常统一入口。Migration 从 `000064` 开始。
+
+当前实现不改变长期多模态边界：图片、音频、视频先进入模型目录和文档发布能力，实际生成、异步任务、对象存储生命周期及对应 metric 仍由后续阶段交付。验收状态只以 `docs/ai-gateway-g5-acceptance.md` 的机器证据、PR、测试部署和 QA/产品签署为准。
