@@ -584,6 +584,50 @@ src/components/email/SafeEmailHtmlPreview.vue
 
 ---
 
+## 5.2 阶段 A8：阿里云短信模板管理（阶段 3）
+
+> **基线门禁**：阶段 2 PR #315 已合并至 `main@9e50ee1`，QA、产品经理和正式代码评审均通过。本节是短信阶段 3 管理后台的唯一前端任务清单，不包含真实短信发送、后端改造、migration、部署或阶段 4 消费 E2E。
+
+### 5.2.1 页面与权限
+
+| 页面能力 | 权限 | 接口 | 关键规则 |
+|---|---|---|---|
+| 概览、模板、详情、场景、日志 | `sms:template:view` | A01/A02/A03/A05/A09 | 路由和菜单门禁；D-95；五态完整 |
+| 场景绑定与模板启停 | `sms:template:manage` | A06/A07 | 提交 `version`；409 刷新并保留场景表单；二次确认 |
+| 阿里云只读同步 | `sms:template:sync` | A04 | 空 body；loading 防重复；不得显示为修改云端模板 |
+| 白名单测试提交 | `sms:template:test` | A08 | MFA、白名单、安全提示、二次确认、幂等键；完整手机号不持久化 |
+
+页面路由固定为 `/message/sms-templates`，侧边栏位于“消息中心 → 短信模板”。四个权限必须分别控制路由、菜单和操作按钮，不能使用单一角色权限替代。
+
+### 5.2.2 API 与类型
+
+- `src/types/sms.ts`：`SmsSummary`、`SmsTemplate`、`SmsSceneBinding`、`SmsTemplateSyncResult`、`SmsTemplateStatusResult`、`SmsTestSendResult`、`SmsSendLog` 和 D-95 `SmsPage<T>`。
+- `src/api/sms.ts`：严格实现 `docs/frontend-api-reference.md §5.3` 的九个接口。
+- 固定场景为 `register/login/reset_password/bind_phone/admin_verify`，页面不提供新增、删除或改名。
+- 场景写入只提交 `{template_id,enabled,version}`；模板启停只提交 `{enabled,version}`；禁止提交签名。
+- 同步接口严格无 body、无客户端伪造的同步幂等契约；测试提交每个新动作生成唯一 `Idempotency-Key`，不确定结果的网络重试复用原 Key。
+
+### 5.2.3 交互和安全红线
+
+- 模板列表提供关键词、审核、本地启停和场景筛选；详情使用抽屉只读展示正文、变量和审核信息。
+- 可绑定候选必须审核通过、验证码类型、变量精确为 `code` 且本地启用；同一模板已经占用其他启用场景时禁选。
+- 场景和模板写操作必须二次确认；版本冲突重新读取最新数据，不静默覆盖。
+- 测试提交仅提示“供应商已受理”，不得表述为送达；`SMS_ENABLED=false` 的 `50300` 必须显示关闭态，不能模拟成功。
+- 完整手机号只存在于弹窗内存，关闭或成功后清空；列表、日志和确认文案只显示脱敏值或尾号。
+- 加载、空数据、错误、无权限、正常五态齐全；局部失败不得导致整页崩溃。
+- 1440/1024/768/390 宽度可操作；手机端使用卡片和筛选抽屉，控件最小触控高度 44px。
+
+### 5.2.4 阶段 3 验收清单
+
+- [x] 九接口路径、方法、请求体、字段、分页和错误码与 SSOT 一致。
+- [x] 四权限路由/菜单/按钮矩阵通过，`403/40031` 正确进入管理员双重认证流程。
+- [x] 五场景独立模板、启停、同步、详情、测试提交和发送日志交互完整。
+- [x] 409 表单保留、429 Retry-After、502/503 安全提示和测试幂等重试通过。
+- [x] 完整手机号、验证码、AccessKey、Bearer Token 和 JWT 泄漏扫描为 0。
+- [x] `type-check`、`lint`、生产构建、短信专项测试和既有前端回归通过。
+- [x] 1440/1024/768/390 浏览器检查通过。
+- [x] 独立 QA 和产品经理验收通过，P0/P1/P2 为 0；PR 合并后阶段 3 才闭环。
+
 ## 6. 后端乙对接任务（商品/订单/钱包管理后台）
 
 > **接口字段 SSOT**：`docs/frontend-api-reference.md` 第五～八章
