@@ -485,7 +485,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 **作用：** 将“材料存在”“候选可生成”“配置完整”“运行时已验证”拆成独立证据，禁止用旧环境整份覆盖当前固定代理配置，
 也禁止把 journald 配置存在误报为策略已批准。五个阶段 5 远端包装器统一调用共享 SSH 目标与 ED25519 指纹校验，避免固定身份规则分叉；各入口都支持或配有离线安全契约，真实候选生成会写远端文件，必须单独授权。日志留存变更入口还支持
 `-ExportOperatorPayload`：在固定授权短语通过后，把四项批准值和测试服 machine-id 摘要冻结为本地运维脚本；该模式与
-`-Apply` 和 `-SelfTest` 互斥，不读取 `known_hosts`、不连接远端，拒绝 UNC、设备、映射网络驱动器和含重解析祖先的路径，
+`-Apply` 和 `-SelfTest` 互斥，不读取 `known_hosts`、不连接远端，只接受完全限定的本机绝对路径，并拒绝 UNC、设备、映射网络驱动器和含重解析祖先的路径，
 也拒绝覆盖已有文件，并输出 SHA-256 供安全传输后复核。导出成功不代表部署完成。
 
 ```powershell

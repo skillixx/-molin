@@ -114,6 +114,11 @@ if ($exportRequested) {
     if (-not [IO.Path]::IsPathRooted($ExportOperatorPayload)) {
         throw "运维脚本导出路径必须为绝对路径"
     }
+    $isWindowsRuntime = [IO.Path]::DirectorySeparatorChar -eq "\"
+    if (($isWindowsRuntime -and $ExportOperatorPayload -cnotmatch '^[A-Za-z]:[\\/]') -or
+        (-not $isWindowsRuntime -and -not $ExportOperatorPayload.StartsWith("/"))) {
+        throw "运维脚本导出路径必须为完全限定的本机绝对路径"
+    }
     if ($ExportOperatorPayload.StartsWith("\\") -or $ExportOperatorPayload.StartsWith("//")) {
         throw "运维脚本导出路径不能使用 UNC、设备或网络路径"
     }
@@ -126,7 +131,7 @@ if ($exportRequested) {
         -not (Test-Path -LiteralPath $exportParent -PathType Container)) {
         throw "运维脚本导出目录不存在"
     }
-    if ([IO.Path]::DirectorySeparatorChar -eq "\") {
+    if ($isWindowsRuntime) {
         $exportDrive = New-Object IO.DriveInfo([IO.Path]::GetPathRoot($exportPath))
         if ($exportDrive.DriveType -eq [IO.DriveType]::Network) {
             throw "运维脚本导出路径不能使用映射网络驱动器"

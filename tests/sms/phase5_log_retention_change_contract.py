@@ -232,6 +232,22 @@ class LogRetentionChangeContractTest(unittest.TestCase):
             )
             self.assertNotEqual(unc.returncode, 0)
 
+            for ambiguous_path in (r"C:payload.sh", r"\root-relative-payload.sh"):
+                ambiguous = subprocess.run(
+                    command[:-1]
+                    + [
+                        ambiguous_path,
+                        "-Authorization",
+                        "APPROVE_TEST_JOURNALD_RETENTION",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    check=False,
+                )
+                self.assertNotEqual(ambiguous.returncode, 0)
+
             real_parent = Path(temp_dir) / "real-parent"
             linked_parent = Path(temp_dir) / "linked-parent"
             real_parent.mkdir()
