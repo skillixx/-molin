@@ -419,7 +419,7 @@ func assertPhase4PasswordAndSessions(t *testing.T, db *sql.DB, userID uint64, ne
 		t.Fatalf("重置密码后密码哈希不正确: err=%v", err)
 	}
 	var activeSessions int
-	if err := db.QueryRow("SELECT COUNT(*) FROM sessions WHERE user_id=? AND revoked_at IS NULL", userID).Scan(&activeSessions); err != nil || activeSessions != 0 {
+	if err := db.QueryRow("SELECT COUNT(*) FROM user_sessions WHERE user_id=? AND revoked_at IS NULL", userID).Scan(&activeSessions); err != nil || activeSessions != 0 {
 		t.Fatalf("重置密码后必须吊销全部会话: active=%d err=%v", activeSessions, err)
 	}
 }
