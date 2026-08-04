@@ -48,7 +48,7 @@ go test ./migrations -run TestSMSPhase2FullMySQL8Matrix -count=1 -v
 
 ## 隔离测试环境验证（2026-08-03 至 2026-08-04）
 
-- 当前部署提交：`e06e0cc`；数据库：`59:0`；健康检查：200。最新代码变更提交 `8aca288` 包含请求审计失败关闭、结果审计语义、精确变量门禁和统一五场景校验，尚待推送、CI 与部署态复核；其后只有验收文档更新。
+- 当前部署代码基线：`79ac4d0`；数据库：`59:0`；健康与就绪检查：200。GitHub 三项检查、九管理 API 部署态 HTTP 和部署后独立复核均已通过；本次部署未执行 migration，`SMS_ENABLED=false`。
 - 五个审核通过、变量为 `${code}` 的独立模板已完成只读同步；重复同步为 0 新增、0 更新、5 未变化。
 - `register/login/reset_password/bind_phone/admin_verify` 已分别绑定不同模板，后四位依次为 `5137/0141/0117/0118/5093`。
 - 五模板真实窗口新增 6 条阿里云 `Code=OK/accepted`，失败 0；其中管理测试 1 条、OTP 5 条，覆盖五业务入口。
@@ -60,4 +60,4 @@ go test ./migrations -run TestSMSPhase2FullMySQL8Matrix -count=1 -v
 
 测试服原环境仍存在废弃键名 `SMS_ACCESS_KEY`、`SMS_ACCESS_SECRET`、`SMS_SIGN_NAME`。真实窗口中为满足新版本 fail-closed 校验曾临时移除旧键并使用 `SMS_ALIYUN_*`；窗口结束后按授权恢复原环境。未来再次启用短信前应单独批准并永久清理废弃键名。
 
-独立复验已确认历史“单模板覆盖五场景”P1 关闭，当前 P0=0、P1=0；产品经理的五模板、统一签名和六条文案业务复验通过。阶段 2 整体仍待最新代码部署、九管理 API 独立 HTTP、`register/login/reset_password` 后续业务消费 E2E、QA 最终签署、正式评审与 PR 合并，因此暂不进入阶段 3。
+独立复验已确认历史“单模板覆盖五场景”P1 关闭；阶段 2 独立 QA 最终签署为 P0=0、P1=0、P2=0、P3=0，产品经理批准产品验收，正式代码评审通过。`79ac4d0` 的最新代码部署和九管理 API 独立 HTTP 已完成；`register/login/reset_password` 后续业务消费 E2E 转入阶段 4 待办。阶段 2 当前只剩验收文档提交、推送与 PR 合并，因此合并前暂不进入阶段 3。

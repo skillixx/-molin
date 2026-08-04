@@ -694,7 +694,7 @@ server/internal/modules/asset/
 
 | 场景 | 发码入口 | 后续业务 | 必须验证 | 当前状态 |
 |---|---|---|---|---|
-| `register` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 统一注册 | 独立注册模板、正确签名、验证码可单次消费 | 独立模板发码受理并由用户确认收件/签名/文案正确；后续注册与单次消费 E2E 待 QA |
+| `register` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 统一注册 | 独立注册模板、正确签名、验证码可单次消费 | 独立模板发码受理并由用户确认收件/签名/文案正确；后续注册与单次消费 E2E 转入阶段 4 |
 | `login` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 手机验证码登录 | 独立登录模板，不可与注册验证码串用 | 独立模板发码受理并由用户确认收件/签名/文案正确；后续登录与跨场景隔离 E2E 待 QA |
 | `reset_password` | `POST /api/auth/verification-codes/phone`，body 使用 `phone/scene` | 重置密码 | 独立重置模板、成功后旧会话失效 | 独立模板发码受理并由用户确认收件/签名/文案正确；后续重置与旧会话失效 E2E 待 QA |
 | `bind_phone` | `POST /api/me/verification-codes/phone`，body 仅含新 `phone` | 换绑手机号 | 必须登录；公开端点传该 scene 被拒；成功后手机号更新 | 独立模板发码受理并由用户确认收件/签名/文案正确 |
@@ -715,7 +715,7 @@ server/internal/modules/asset/
 
 > 2026-08-04 五模板窗口共新增 6 条 `Code=OK/accepted`：管理测试 1 条、OTP 5 条，覆盖五个业务入口且失败 0。用户确认收到 6 条，并确认统一签名和六条文案正确。窗口结束后已恢复 `SMS_ENABLED=false`、`SMS_TEST_MODE=true` 和原白名单，健康检查为 200。历史 7 条受理记录继续保留为前次验证证据，但不与本轮计数混算。
 
-> 独立复验结论：五独立模板、五场景绑定、真实收件、统一签名和文案证据已关闭历史单模板 P1，当前 P0=0、P1=0。阶段 2 仍须部署最新审计修复、完成九 API 独立部署态 HTTP、补齐前三个公开业务后续 E2E，并将最新证据提交到 PR 后重新签署。
+> 独立复验结论：五独立模板、五场景绑定、真实收件、统一签名和文案证据已关闭历史单模板 P1；`79ac4d0` 三项 CI、隔离部署和九 API 独立 HTTP 已关闭部署态 P2。阶段 2 独立 QA、产品经理和正式代码评审均已通过，P0=0、P1=0、P2=0、P3=0；前三个公开业务验证码消费 E2E 转入阶段 4，阶段 2 当前仅待验收文档提交、推送及 PR #315 合并。
 
 ## 4. 并发与安全测试
 
