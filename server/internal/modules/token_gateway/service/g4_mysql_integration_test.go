@@ -133,7 +133,8 @@ func TestG4MySQLBudgetIntegration(t *testing.T) {
 			t.Fatalf("Project 预算不得超卖，held=%s", held)
 		}
 		var thresholds []uint64
-		if err := db.Model(&model.AIBudgetAlert{}).Order("threshold_percent").Pluck("threshold_percent", &thresholds).Error; err != nil {
+		if err := db.Model(&model.AIBudgetAlert{}).Where("scope_type = ? AND scope_id = ?", "project", 1).
+			Order("threshold_percent").Pluck("threshold_percent", &thresholds).Error; err != nil {
 			t.Fatal(err)
 		}
 		if fmt.Sprint(thresholds) != "[80 90 100]" {
