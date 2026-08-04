@@ -396,8 +396,9 @@ func phase4HTTPError(t *testing.T, handler http.Handler, method, path, accessTok
 func createPhase4AcceptedEmailCode(t *testing.T, ctx context.Context, repo *authrepo.VerificationRepository, targetHash, scene, code string) {
 	t.Helper()
 	now := time.Now().UTC().Truncate(time.Second)
+	targetMasked := "p***@example.test"
 	if err := repo.Create(ctx, &authmodel.VerificationCode{
-		TargetType: "email", TargetHash: &targetHash, CodeHash: pkgcrypto.SHA256Hex(code), Scene: scene,
+		TargetType: "email", TargetHash: &targetHash, TargetMasked: &targetMasked, CodeHash: pkgcrypto.SHA256Hex(code), Scene: scene,
 		SendStatus: "accepted", AcceptedAt: &now, ExpiresAt: now.Add(10 * time.Minute),
 	}); err != nil {
 		t.Fatalf("创建阶段 4 邮箱注册验证码夹具失败: %v", err)
