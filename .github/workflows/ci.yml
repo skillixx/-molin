@@ -91,9 +91,15 @@ jobs:
       - name: 使用 promtool 校验告警规则
         run: |
           docker run --rm --entrypoint=/bin/promtool \
+            --workdir=/rules \
             -v "${{ github.workspace }}/infra/prometheus:/rules:ro" \
             prom/prometheus:v3.12.0-distroless \
-            check rules /rules/email-alerts.yml
+            check rules email-alerts.yml
+          docker run --rm --entrypoint=/bin/promtool \
+            --workdir=/rules \
+            -v "${{ github.workspace }}/infra/prometheus:/rules:ro" \
+            prom/prometheus:v3.12.0-distroless \
+            test rules email-alerts.test.yml
 
       - name: 演练测试服与生产关闭回滚
         shell: pwsh

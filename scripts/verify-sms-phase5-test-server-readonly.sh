@@ -67,7 +67,12 @@ run_mysql() {
     return
   fi
   if command -v docker >/dev/null 2>&1 && docker inspect molin-mysql >/dev/null 2>&1; then
-    docker exec -e MYSQL_PWD="$db_pass" molin-mysql mysql --batch --skip-column-names -u "$db_user" "$db_name" -e "$statement" 2>/dev/null
+    # 密码只经 stdin 进入容器进程环境，不得出现在宿主机 docker 命令参数中。
+    printf '%s\n' "$db_pass" | docker exec -i molin-mysql sh -c '
+      IFS= read -r MYSQL_PWD
+      export MYSQL_PWD
+      exec mysql --batch --skip-column-names -u "$1" "$2" -e "$3"
+    ' sh "$db_user" "$db_name" "$statement" 2>/dev/null
   fi
 }
 
@@ -96,19 +101,26 @@ printf 'proxy_network_matches_expected=%s\n' "$([ "$network_subnet" = "$expected
 printf 'admin_fixed_ip_matches_expected=%s\n' "$([ "$admin_ip" = "$expected_admin_ip" ] && printf true || printf false)"
 printf 'user_fixed_ip_matches_expected=%s\n' "$([ "$user_ip" = "$expected_user_ip" ] && printf true || printf false)"
 
-metrics_file="$(mktemp)"
-trap 'rm -f "$metrics_file"' EXIT
 metrics_http='unavailable'
+metrics_text=''
+read_internal_metrics() {
+  # Header 从 stdin 读取，避免内部 Token 出现在 curl 进程参数或临时文件中。
+  printf 'X-Internal-Token: %s\n' "$internal_token" |
+    curl -fsS --max-time 5 -H @- http://127.0.0.1:8080/api/internal/metrics 2>/dev/null
+}
 if [ -n "$internal_token" ]; then
-  metrics_http="$(curl -sS --max-time 5 -o "$metrics_file" -w '%{http_code}' -H "X-Internal-Token: $internal_token" http://127.0.0.1:8080/api/internal/metrics 2>/dev/null || true)"
+  # 响应正文和状态码都保留在内存变量中，远端不创建临时文件。
+  metrics_response="$(printf 'X-Internal-Token: %s\n' "$internal_token" | curl -sS --max-time 5 -H @- -w '\n__HTTP_STATUS__:%{http_code}\n' http://127.0.0.1:8080/api/internal/metrics 2>/dev/null || true)"
+  metrics_http="$(printf '%s\n' "$metrics_response" | sed -n 's/^__HTTP_STATUS__://p' | tail -n 1)"
+  metrics_text="$(printf '%s\n' "$metrics_response" | sed '/^__HTTP_STATUS__:/d')"
 fi
-sms_calls_series="$(grep -c '^sms_provider_calls_total{' "$metrics_file" || true)"
-sms_duration_sum_series="$(grep -c '^sms_provider_request_duration_seconds_sum{' "$metrics_file" || true)"
-sms_duration_count_series="$(grep -c '^sms_provider_request_duration_seconds_count{' "$metrics_file" || true)"
-sensitive_metric_labels="$( (grep -E '^sms_[a-z_]+\{[^}]*(phone|mobile|request_id|provider_request_id|token|secret)=' "$metrics_file" || true) | wc -l)"
+sms_calls_series="$(printf '%s\n' "$metrics_text" | grep -c '^sms_provider_calls_total{' || true)"
+sms_duration_sum_series="$(printf '%s\n' "$metrics_text" | grep -c '^sms_provider_request_duration_seconds_sum{' || true)"
+sms_duration_count_series="$(printf '%s\n' "$metrics_text" | grep -c '^sms_provider_request_duration_seconds_count{' || true)"
+sensitive_metric_labels="$( (printf '%s\n' "$metrics_text" | grep -E '^sms_[a-z_]+\{[^}]*(phone|mobile|request_id|provider_request_id|token|secret)=' || true) | wc -l)"
 read_provider_total() {
   if [ -n "$internal_token" ]; then
-    curl -fsS --max-time 5 -H "X-Internal-Token: $internal_token" http://127.0.0.1:8080/api/internal/metrics 2>/dev/null |
+    read_internal_metrics |
       awk '/^sms_provider_calls_total\{/{sum += $NF} END{printf "%.0f", sum + 0}'
   fi
 }
