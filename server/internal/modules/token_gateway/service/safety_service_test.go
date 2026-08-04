@@ -135,6 +135,16 @@ func TestSafetyResponseModeratesAllPublicStrings(t *testing.T) {
 	}
 }
 
+func TestSSEContinuityTextIncludesPublicLogprobsTokens(t *testing.T) {
+	line := []byte(`data: {"choices":[{"delta":{"content":"正常回复"},"logprobs":{"content":[{"token":"网络"},{"token":"赌博","top_logprobs":[{"token":"推广"}]}]}}]}`)
+	text := extractSSEContinuityText(line)
+	for _, expected := range []string{"正常回复", "网络", "赌博", "推广"} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("SSE 连续审核必须包含公开 logprobs 字符串 %q，实际: %q", expected, text)
+		}
+	}
+}
+
 func TestSafetyServiceModeratesToolDefinitionsAndToolCallArguments(t *testing.T) {
 	repo := &memorySafetyRepository{policy: testSafetyPolicy(t)}
 	svc := NewSafetyService(repo, "0123456789abcdef0123456789abcdef")

@@ -229,7 +229,9 @@ func extractSSEContinuityText(line []byte) string {
 			if !ok {
 				continue
 			}
-			for _, key := range []string{"delta", "message", "text"} {
+			// logprobs 会随 SSE 分块公开实际 token 及候选 token；这些字符串同样必须进入连续视图，
+			// 否则违规词可以拆在多个 logprobs chunk 中绕过单段审核后泄漏给客户端。
+			for _, key := range []string{"delta", "message", "text", "logprobs"} {
 				appendModerationStrings(&builder, choice[key])
 			}
 		}
