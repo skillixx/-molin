@@ -4,6 +4,13 @@ import { ElMessage } from 'element-plus'
 import { resolveAuthFailure } from './auth-failure-policy'
 import { isAdminVerificationRequired } from '@/views/auth/admin-verification-policy'
 
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    // 页面明确处理可恢复业务错误时，允许关闭全局重复提示；认证和权限错误始终由全局策略接管。
+    suppressRecoverableErrorMessage?: boolean
+  }
+}
+
 // 注意：避免循环引用 — store 和 router 在拦截器内部延迟引入
 const http = axios.create({
   baseURL: '/api',
@@ -94,6 +101,11 @@ http.interceptors.response.use(
       const { default: router } = await import('@/router')
       auth.clearSession()
       router.push('/login')
+      return Promise.reject(err)
+    }
+
+    // 仅抑制页面已覆盖的可恢复错误，403、认证失效和其他未知错误仍保留统一提示。
+    if (originalRequest?.suppressRecoverableErrorMessage && [409, 429, 503].includes(status ?? 0)) {
       return Promise.reject(err)
     }
 
