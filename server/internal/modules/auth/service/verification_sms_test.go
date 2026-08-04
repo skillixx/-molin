@@ -53,11 +53,15 @@ func (f *fakeVerificationRepository) FinalizeEmailSend(context.Context, uint64, 
 }
 
 type fakeSMSRepository struct {
-	binding *smsmodel.SceneBinding
-	logs    []*smsmodel.SendLog
+	binding  *smsmodel.SceneBinding
+	bindings map[string]*smsmodel.SceneBinding
+	logs     []*smsmodel.SendLog
 }
 
-func (f *fakeSMSRepository) FindActiveBinding(_ context.Context, _ string) (*smsmodel.SceneBinding, error) {
+func (f *fakeSMSRepository) FindActiveBinding(_ context.Context, scene string) (*smsmodel.SceneBinding, error) {
+	if f.bindings != nil {
+		return f.bindings[scene], nil
+	}
 	return f.binding, nil
 }
 
@@ -88,6 +92,34 @@ func TestPhoneCodeAcceptedTransitionsPendingToAccepted(t *testing.T) {
 	}
 	if verificationRepo.status != "accepted" || mock.CallCount() != 1 {
 		t.Fatalf("受理后必须转为 accepted，当前状态 %s", verificationRepo.status)
+	}
+}
+
+func TestPhoneCodeFiveScenesUseIndependentDatabaseBindings(t *testing.T) {
+	scenes := []string{"register", "login", "reset_password", "bind_phone", "admin_verify"}
+	smsRepo := &fakeSMSRepository{bindings: make(map[string]*smsmodel.SceneBinding, len(scenes))}
+	for index, scene := range scenes {
+		smsRepo.bindings[scene] = testBindingForScene(scene, "SMS_SCENE_"+string(rune('A'+index)))
+	}
+	mock := smssender.NewMockSender(smssender.Result{ProviderRequestID: "provider-request", ProviderCode: "OK"}, nil)
+	dispatcher := smsservice.NewDispatcher(testSMSConfig(), smsRepo, mock)
+
+	for index, scene := range scenes {
+		verificationRepo := &fakeVerificationRepository{}
+		svc := NewVerificationService(verificationRepo)
+		svc.SetSMSDispatcher(dispatcher)
+		if _, err := svc.SendDetailed(context.Background(), "phone", "phone-scene-"+scene, scene); err != nil {
+			t.Fatalf("场景 %s 未能通过短信发送编排: %v", scene, err)
+		}
+		if verificationRepo.status != "accepted" {
+			t.Fatalf("场景 %s 供应商受理后验证码状态错误: %s", scene, verificationRepo.status)
+		}
+		if got := smsRepo.logs[index].TemplateCode; got != "SMS_SCENE_"+string(rune('A'+index)) {
+			t.Fatalf("场景 %s 未使用自身数据库模板绑定: %s", scene, got)
+		}
+	}
+	if mock.CallCount() != len(scenes) || len(smsRepo.logs) != len(scenes) {
+		t.Fatalf("五场景必须各提交一次短信: provider=%d logs=%d", mock.CallCount(), len(smsRepo.logs))
 	}
 }
 
@@ -173,11 +205,15 @@ func testSMSConfig() config.Config {
 }
 
 func testBinding() *smsmodel.SceneBinding {
+	return testBindingForScene("register", "SMS_TEST")
+}
+
+func testBindingForScene(scene, templateCode string) *smsmodel.SceneBinding {
 	return &smsmodel.SceneBinding{
 		ID:       1,
-		Scene:    "register",
+		Scene:    scene,
 		SignName: "test-sign",
 		Enabled:  true,
-		Template: smsmodel.Template{ID: 1, Provider: "aliyun", TemplateCode: "SMS_TEST", ProviderAuditStatus: "approved", Content: "验证码 ${code}", LocalEnabled: true},
+		Template: smsmodel.Template{ID: 1, Provider: "aliyun", TemplateCode: templateCode, ProviderAuditStatus: "approved", Content: "验证码 ${code}", LocalEnabled: true},
 	}
 }

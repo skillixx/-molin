@@ -1253,7 +1253,7 @@ func (s *AuthService) UpdateUsername(ctx context.Context, userID uint64, req dto
 	return nil
 }
 
-// UpdatePhone 修改手机号（验证码校验后更新，标记已验证）。
+// UpdatePhone 修改手机号（验证码校验后更新，标记基础验证并清空旧管理员手机 MFA）。
 // D-14：验证码校验通过后，手机号字段与 phone_verified 标记通过单条 UPDATE 同时写入，
 // 避免"更新手机号"与"标记已验证"两步独立操作之间出现非原子窗口。
 func (s *AuthService) UpdatePhone(ctx context.Context, userID uint64, req dto.UpdatePhoneReq) error {
@@ -1279,7 +1279,7 @@ func (s *AuthService) UpdatePhone(ctx context.Context, userID uint64, req dto.Up
 	return nil
 }
 
-// UpdateEmail 修改邮箱（验证码校验后更新，标记已验证）。
+// UpdateEmail 修改邮箱（验证码校验后更新，标记基础验证并清空旧管理员邮箱 MFA）。
 //
 // D-14：验证码校验通过后，邮箱字段与 email_verified 标记通过单条 UPDATE 同时写入，
 // 避免"更新邮箱"与"标记已验证"两步独立操作之间出现非原子窗口。
@@ -1398,7 +1398,8 @@ func (s *AuthService) CreateAdminUser(ctx context.Context, operatorID uint64, re
 }
 
 // UpdateAdminUser A-29：管理员修改用户邮箱/手机号/状态（PATCH 语义，跳过 OTP）。
-// 修改邮箱/手机号后自动将对应 verified 置为 true。
+// 修改邮箱/手机号后自动将对应基础 verified 置为 true，但仓储层会清空旧联系方式的管理员 MFA，
+// 目标管理员必须使用新联系方式重新完成二次认证。
 func (s *AuthService) UpdateAdminUser(ctx context.Context, operatorID, targetUserID uint64, req dto.UpdateAdminUserReq, ip string) error {
 	fields := make(map[string]interface{})
 	if req.Email != nil {

@@ -51,6 +51,7 @@ import (
 	provisionmod "molin/server/internal/modules/provision"
 	provisionhandler "molin/server/internal/modules/provision/handler"
 	provisionsvc "molin/server/internal/modules/provision/service"
+	smsmod "molin/server/internal/modules/sms"
 	smsrepo "molin/server/internal/modules/sms/repository"
 	smssender "molin/server/internal/modules/sms/sender"
 	smsservice "molin/server/internal/modules/sms/service"
@@ -616,6 +617,17 @@ func NewApp() (*App, error) {
 	verifySvc.SetEmailTargetKeyer(emailSvc)
 	// 阶段 1 默认关闭短信。只有显式开启且配置完整时才构造真实阿里云 Sender；Mock 只能由测试注入。
 	smsRepo := smsrepo.NewSMSRepository(gormDB)
+	smsAdminSvc := smsservice.NewSMSAdminService(smsRepo)
+	// 模板同步只读取阿里云资源，可在真实发送关闭时独立装配；缺少任一配置时接口按失败关闭处理。
+	if cfg.SMSAliyunAccessKeyID != "" && cfg.SMSAliyunAccessKeySecret != "" && cfg.SMSAliyunSignName != "" {
+		templateProvider, providerErr := smssender.NewAliyunTemplateProvider(cfg.SMSAliyunAccessKeyID, cfg.SMSAliyunAccessKeySecret, cfg.SMSAliyunEndpoint)
+		if providerErr != nil {
+			return nil, providerErr
+		}
+		smsAdminSvc.ConfigureTemplateSync(templateProvider, cfg.SMSAliyunSignName)
+	} else {
+		smsAdminSvc.ConfigureTemplateSync(nil, cfg.SMSAliyunSignName)
+	}
 	var smsSender smssender.Sender
 	if cfg.SMSEnabled {
 		aliyunSender, err := smssender.NewAliyunSender(cfg.SMSAliyunAccessKeyID, cfg.SMSAliyunAccessKeySecret, cfg.SMSAliyunEndpoint)
@@ -624,7 +636,9 @@ func NewApp() (*App, error) {
 		}
 		smsSender = aliyunSender
 	}
-	verifySvc.SetSMSDispatcher(smsservice.NewDispatcher(cfg, smsRepo, smsSender))
+	smsDispatcher := smsservice.NewDispatcher(cfg, smsRepo, smsSender)
+	verifySvc.SetSMSDispatcher(smsDispatcher)
+	smsAdminSvc.ConfigureTestSend(cfg, smsDispatcher, redisClient)
 	// 传入 redisClient，用于封禁用户黑名单（P1-01 修复）；传入 auditSvc 用于封禁/解封审计记录（A-05）；
 	// 传入 iamService 作为 PermissionResolver，用于 GET /api/me/permissions（A-10）
 	authService := authsvc.NewAuthService(userRepo, sessionRepo, verifySvc, loginLogRepo, cfg, redisClient, auditSvc, iamService, gormDB)
@@ -713,6 +727,7 @@ func NewApp() (*App, error) {
 	// 注册各模块路由（authService 实现 BanChecker 接口，用于封禁黑名单检查）
 	authmod.RegisterRoutes(mux, authService, verifySvc, emailSvc, cfg, iamService, scopeService, redisClient, publicSourceIP, apiKeyService)
 	authmod.RegisterEmailBootstrapRoute(mux, emailBootstrapSvc, cfg, authService, iamService, iamService)
+	smsmod.RegisterAdminRoutes(mux, smsAdminSvc, cfg, iamService, authService, auditSvc)
 	iammod.RegisterRoutes(mux, iamService, groupService, cfg.JWTSecret, authService, authService)
 	identitymod.RegisterRoutes(mux, identityService, iamService, cfg.JWTSecret, authService, authService)
 
