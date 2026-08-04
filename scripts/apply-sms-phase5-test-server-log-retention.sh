@@ -7,6 +7,7 @@ system_max_use='__SYSTEM_MAX_USE__'
 system_keep_free='__SYSTEM_KEEP_FREE__'
 max_retention_sec='__MAX_RETENTION_SEC__'
 max_file_sec='__MAX_FILE_SEC__'
+expected_machine_id_sha256='__EXPECTED_MACHINE_ID_SHA256__'
 target='/etc/systemd/journald.conf.d/90-molin-sms-phase5-retention.conf'
 config_dir='/etc/systemd/journald.conf.d'
 api_path='/home/pc/molin/molin-api'
@@ -371,6 +372,11 @@ trap 'on_signal HUP 129' HUP
 trap 'on_signal INT 130' INT
 trap 'on_signal TERM 143' TERM
 trap 'if [ -n "$candidate" ] && [ -f "$candidate" ]; then rm -f -- "$candidate"; fi; if [ -n "$staged_target" ]; then sudo -n rm -f -- "$staged_target" >/dev/null 2>&1 || true; fi' EXIT
+
+# 本地运维执行不经过 SSH 传输，因此必须先用非敏感摘要锁定同一测试服主机。
+actual_machine_id_sha256="$(sha256sum /etc/machine-id 2>/dev/null | awk '{print $1}')" || fail machine_identity
+[ "$actual_machine_id_sha256" = "$expected_machine_id_sha256" ] || fail machine_identity
+printf 'machine_identity_verified=true\n'
 
 sudo -n true || fail sudo_unavailable
 mapfile -t api_pids < <(pgrep -f "^${api_path}$" 2>/dev/null || true)

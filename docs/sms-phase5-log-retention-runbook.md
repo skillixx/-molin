@@ -68,6 +68,28 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/apply-sms-phase5-tes
 不得把批准口令等同于系统提权能力，也不得索取、输出或通过命令参数传递 sudo 密码。下一次执行必须由运维提供受控的
 非交互提权入口，或由具备权限的运维人员在测试服本地执行同一冻结资产；执行后仍须完整通过本手册第 4 节复验。
 
+### 3.2 离线运维交接包
+
+当前自动化账号没有非交互 sudo 时，可由已获本次变更授权的执行人，在受控本地目录导出冻结后的运维脚本。导出路径必须是
+执行人选择的绝对 `.sh` 路径，父目录必须已经存在且不能是重解析目录；目标文件已存在时脚本会拒绝覆盖。示例中的路径仅为
+占位，执行前必须换成实际受控目录：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/apply-sms-phase5-test-server-log-retention.ps1 `
+  -ExportOperatorPayload C:\受控目录\apply-journald-retention.sh `
+  -Authorization APPROVE_TEST_JOURNALD_RETENTION
+```
+
+`-ExportOperatorPayload` 与 `-Apply` 互斥。导出模式不读取 `known_hosts`、不建立 SSH 连接、不写测试服配置、不重启服务，
+只在指定本地路径创建一个 UTF-8、LF、无 BOM 的新文件，并输出 `operator_payload_sha256`。因此“导出成功”只表示交接资产
+已经生成，不能记为测试服已部署。脚本冻结 `8G/50G/14day/1day`，并以测试服 `/etc/machine-id` 的 SHA-256 摘要绑定
+目标主机；不记录或输出原始 machine-id。目标摘要不匹配时会在 sudo 与任何配置写入之前失败。
+
+执行人须通过已批准的安全传输渠道交接文件，并在测试服核对 SHA-256 与导出输出完全一致。具备权限的运维人员应在同一个
+已授权的测试服本地终端中先完成其组织规定的 sudo 身份验证，再执行脚本；不得把 sudo 密码写入命令、聊天、文件或仓库。
+脚本仍执行同一套短信关闭态、API、Prometheus、磁盘容量、原子安装、受控重启和失败自动回滚门禁。执行结束后，交接文件的
+保留或清理由运维按证据留存制度人工处理，本流程不自动删除该文件。
+
 Linux/CI 行为自测会在随机临时目录覆盖已有配置恢复、原配置不存在、普通复验失败、`HUP/INT/TERM` 中断、安装失败、
 journald 重启失败和回滚失败退出码 90；自测通过时固定输出 `system_paths_written=0`、`service_restarts=0`。该自测不替代
 获批测试服变更窗口，只证明回滚状态机和信号处理可重复执行。

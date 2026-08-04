@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -89,9 +91,97 @@ class LogRetentionChangeContractTest(unittest.TestCase):
         ):
             self.assertIn(marker, self.ps)
 
+    def test_authorized_operator_payload_export_is_offline_and_never_overwrites(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "apply-journald-retention.sh"
+            command = [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(POWERSHELL),
+                "-ExportOperatorPayload",
+                str(output_path),
+            ]
+
+            unauthorized = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+            self.assertNotEqual(unauthorized.returncode, 0)
+            self.assertFalse(output_path.exists())
+
+            exported = subprocess.run(
+                command + ["-Authorization", "APPROVE_TEST_JOURNALD_RETENTION"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=True,
+                env={**os.environ, "USERPROFILE": str(Path(temp_dir) / "missing-profile")},
+            )
+            self.assertIn("operator_payload_exported=true", exported.stdout)
+            self.assertIn("remote_connections=0", exported.stdout)
+            self.assertIn("configuration_writes=0", exported.stdout)
+            self.assertIn("local_operator_payload_writes=1", exported.stdout)
+
+            payload = output_path.read_bytes()
+            self.assertTrue(payload.startswith(b"#!/usr/bin/env bash\n"))
+            self.assertNotIn(b"\r", payload)
+            self.assertNotIn(b"\xef\xbb\xbf", payload)
+            for expected in (
+                b"SystemMaxUse=8G",
+                b"SystemKeepFree=50G",
+                b"MaxRetentionSec=14day",
+                b"MaxFileSec=1day",
+                b"b60555f0a2defd1c02b752b215989686592244e810e3d22c884ab5d5e8d578d4",
+                b"machine_identity_verified=true",
+            ):
+                self.assertIn(expected, payload)
+            self.assertNotIn(b"__SYSTEM_MAX_USE__", payload)
+            self.assertNotIn(b"__EXPECTED_MACHINE_ID_SHA256__", payload)
+            self.assertNotIn(b"SMS_ENABLED=true", payload)
+
+            original = payload
+            repeated = subprocess.run(
+                command + ["-Authorization", "APPROVE_TEST_JOURNALD_RETENTION"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+            self.assertNotEqual(repeated.returncode, 0)
+            self.assertEqual(output_path.read_bytes(), original)
+
+            combined_path = Path(temp_dir) / "combined-mode.sh"
+            combined = subprocess.run(
+                [
+                    *command[:-1],
+                    str(combined_path),
+                    "-Apply",
+                    "-Authorization",
+                    "APPROVE_TEST_JOURNALD_RETENTION",
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+            self.assertNotEqual(combined.returncode, 0)
+            self.assertFalse(combined_path.exists())
+
     def test_payload_preserves_sms_closed_state_and_rolls_back_failures(self) -> None:
         for marker in (
             "SMS_ENABLED",
+            "__EXPECTED_MACHINE_ID_SHA256__",
+            "machine_identity_verified=true",
             "sms_closed_before=true",
             "sms_closed_after=true",
             "90-molin-sms-phase5-retention.conf",
@@ -134,6 +224,8 @@ class LogRetentionChangeContractTest(unittest.TestCase):
         self.assertIn(f"bash -n scripts/{PAYLOAD.name}", self.ci)
         self.assertIn(POWERSHELL.name, self.runbook)
         self.assertIn("APPROVE_TEST_JOURNALD_RETENTION", self.runbook)
+        self.assertIn("ExportOperatorPayload", self.runbook)
+        self.assertIn("machine-id", self.runbook)
         self.assertIn("默认模式不连接测试服", self.runbook)
 
     def test_payload_does_not_embed_secrets_or_sms_operations(self) -> None:
