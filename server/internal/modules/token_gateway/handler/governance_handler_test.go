@@ -38,6 +38,15 @@ func TestGovernanceHandlerAuditsDeadOutboxReason(t *testing.T) {
 	if !ok || summary["reason"] != "已核对钱包终态" {
 		t.Fatalf("审计必须保留受控重试原因: %#v", audit.summary)
 	}
+
+	audit.summary = nil
+	invalid := httptest.NewRequest("POST", "/api/admin/token/outbox-events/event-1/requeue", strings.NewReader(`{"reason":"`+strings.Repeat("a", 256)+`"}`))
+	invalid.SetPathValue("event_id", "event-1")
+	invalidRecorder := httptest.NewRecorder()
+	handler.RequeueDeadOutbox(invalidRecorder, invalid)
+	if invalidRecorder.Code != 400 || audit.summary != nil {
+		t.Fatalf("超长原因必须在审计写入前拒绝: status=%d summary=%#v", invalidRecorder.Code, audit.summary)
+	}
 }
 
 func TestDecodeGovernanceJSONRejectsTrailingDocument(t *testing.T) {

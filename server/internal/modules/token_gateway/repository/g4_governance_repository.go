@@ -21,8 +21,6 @@ var (
 	ErrBudgetLimitExceeded     = errors.New("预算已达到硬限制")
 )
 
-const orphanBudgetRecoveryGrace = 5 * time.Minute
-
 // G4GovernanceRepository 统一保存安全、预算和资源策略事实，不保存提示词或模型响应正文。
 type G4GovernanceRepository struct {
 	db  *gorm.DB
@@ -263,7 +261,7 @@ func (r *G4GovernanceRepository) ReleaseBudget(ctx context.Context, requestID st
 }
 
 // SyncBudgetFromRequest 只读取 G3 终态和既有补偿事实，不创建金额事实，也不会重放上游调用。
-// 明确的释放失败可在补偿任务到期后立即重试；补偿任务自身未能落库时，孤立预留超过保护窗口也会安全释放。
+// 明确的释放失败可在补偿任务到期后立即重试；没有持久化补偿事实时必须等待预留自然过期，避免慢请求被提前释放。
 func (r *G4GovernanceRepository) SyncBudgetFromRequest(ctx context.Context, requestID string) (bool, error) {
 	returnStatus := false
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -289,12 +287,11 @@ func (r *G4GovernanceRepository) SyncBudgetFromRequest(ctx context.Context, requ
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				now := r.now()
 				explicitRelease := hasTask && task.LastErrorClass != nil && *task.LastErrorClass == "budget_release_failed"
-				staleOrphan := !reservation.CreatedAt.After(now.Add(-orphanBudgetRecoveryGrace))
-				// 预算预留发生在钱包预占之前；明确释放失败或超过保护窗口仍无 G3 请求时，可以确认没有上游执行事实。
-				if explicitRelease || staleOrphan || !reservation.ExpiresAt.After(now) {
+				// 预算预留发生在钱包预占之前；只有明确的释放补偿事实或预留自然过期，才能证明原准入链不再继续。
+				if explicitRelease || !reservation.ExpiresAt.After(now) {
 					returnStatus = true
 					status := model.AIBudgetReleased
-					if !explicitRelease && !staleOrphan {
+					if !explicitRelease {
 						status = model.AIBudgetExpired
 					}
 					if err := tx.Model(&reservation).Updates(map[string]interface{}{"status": status, "released_at": now}).Error; err != nil {
@@ -346,14 +343,12 @@ func completeBudgetCompensationTx(tx *gorm.DB, exists bool, taskID uint64, now t
 
 func (r *G4GovernanceRepository) ListHeldBudgetRequestIDs(ctx context.Context, before time.Time, limit int) ([]string, error) {
 	var ids []string
-	orphanBefore := before.Add(-orphanBudgetRecoveryGrace)
 	err := r.db.WithContext(ctx).Model(&model.AIBudgetReservation{}).
 		Where("status = ?", model.AIBudgetHeld).
 		Where(`(
-			(NOT EXISTS (SELECT 1 FROM ai_compensation_tasks t WHERE t.task_key = CONCAT('budget:', ai_budget_reservations.request_id))
-				AND (expires_at <= ? OR (created_at <= ? AND NOT EXISTS (SELECT 1 FROM ai_requests r WHERE r.request_id = ai_budget_reservations.request_id))))
+			(NOT EXISTS (SELECT 1 FROM ai_compensation_tasks t WHERE t.task_key = CONCAT('budget:', ai_budget_reservations.request_id)) AND expires_at <= ?)
 			OR EXISTS (SELECT 1 FROM ai_compensation_tasks t WHERE t.task_key = CONCAT('budget:', ai_budget_reservations.request_id) AND t.status IN ('pending','retry') AND t.next_retry_at <= ?)
-		)`, before, orphanBefore, before).
+		)`, before, before).
 		Order("id ASC").Limit(limit).Pluck("request_id", &ids).Error
 	return ids, err
 }

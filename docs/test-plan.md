@@ -976,7 +976,7 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - 100 个并发、两个 SK、同一 Project hard 预算不得超卖；累计值精确等于限额时允许，只有超过限额才拒绝；soft 预算不阻断。
 - 80/90/100 阈值按主体和周期幂等；日/月周期按 Project IANA 时区。
 - 预算预留只能按 G3 settled/released 同步；没有 G3 请求的过期预留才可 expired。
-- 释放或同步失败形成的补偿任务在 `next_retry_at` 到期后立即重试；明确释放失败在无 G3 请求事实时直接释放，无任务且无 G3 请求的孤立预留超过 5 分钟后兜底释放，均不等待 24 小时。成功任务进入 completed；连续八次失败进入 dead，可用乐观锁转 retry/manual_review；completed/dead/manual_review 不会被后到失败记录覆盖，只有显式 retry 恢复；坏任务不阻塞批次。
+- 释放或同步失败形成的补偿任务在 `next_retry_at` 到期后立即重试；持久化成功的明确释放失败在无 G3 请求事实时直接释放，不等待 24 小时。补偿事实也无法写入时保持 held 到自然过期并记录错误，不允许固定时间提前释放。成功任务进入 completed；连续八次失败进入 dead，可用乐观锁转 retry/manual_review；completed/dead/manual_review 不会被后到失败记录覆盖，只有显式 retry 恢复；坏任务不阻塞批次。
 - 管理写接口必须先审计，具备 JWT、对应 `ai_gateway:*_manage` 细粒度权限和管理员双重认证；用户事件与申诉只允许 JWT 且响应最小化。
 - 000063 up 可重复执行；down/re-up 保留治理事实；不得写旧 `token_usage_logs`。
 - 必须执行本地全量测试、Linux `go test -race -count=1 ./...`、G3 回归和 `verify-ai-gateway-g4-governance.sh`。

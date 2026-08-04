@@ -503,6 +503,7 @@ func TestNativeDriver_RecognizesBusinessAndProtocolErrors(t *testing.T) {
 	for _, body := range []string{
 		`{"error":{"message":"provider secret"}}`,
 		`{"choices":[]}`,
+		`{"choices":["网络赌博推广"]}`,
 		`{"id":"missing-choices"}`,
 		`{`,
 	} {
@@ -520,6 +521,13 @@ func TestNativeDriver_RecognizesBusinessAndProtocolErrors(t *testing.T) {
 		if result.Response.StatusCode != http.StatusBadGateway || result.Attempt.Outcome != "failed" || bytes.Contains(raw, []byte("provider secret")) {
 			t.Fatalf("Native 必须与 Bifrost 使用同一错误和脱敏契约: status=%d attempt=%+v body=%s", result.Response.StatusCode, result.Attempt, raw)
 		}
+	}
+}
+
+func TestNativeDriverRejectsNonObjectChoiceInSSE(t *testing.T) {
+	driver := NewNativeOpenAICompatibleDriver(&http.Client{})
+	if _, err := driver.NormalizeStreamLine([]byte(`data: {"choices":["网络赌博推广"]}`+"\n"), "molin/qwen-turbo"); err == nil {
+		t.Fatal("非对象 choice 必须作为畸形上游协议拒绝，不能进入公开 SSE")
 	}
 }
 

@@ -20,7 +20,7 @@ MySQL 是策略、预算和审计事实源，Redis 只保存可过期的短期�
 
 G4 不修改 G3 的钱包流水或销售 Outbox 金额语义。预算金额来自 G3 冻结报价，最终销售金额只从 G3 终态读取；输出审核拒绝额外写入 `ai_usage_items.source=provider_cost`，保存数量、冻结成本单价和平台成本金额，不进入用户销售额汇总。Usage 暂缺时保持 `settlement_pending`，由 `ResolveContentPolicyWaiver` 在行锁事务中校验错误类型和状态、补写原始 Usage 与平台成本、释放 hold 并写唯一 Outbox。终态重复调用会逐项核对数量、成本单价和金额；不一致返回冲突，不允许静默覆盖。
 
-内容安全规范化使用 NFKC，并删除空白、标点、`Cf` 格式字符、Unicode `Other_Default_Ignorable_Code_Point` 和变体选择符。驱动对顶层响应和 `choices[]` 分别执行公开字段白名单，供应商私有 choice 字符串不会透传；message、delta、tool_calls 等兼容结构仍进入递归审核和跨分块连续视图。
+内容安全规范化使用 NFKC，并删除空白、标点、Unicode Mark、`Cf` 格式字符、`Other_Default_Ignorable_Code_Point` 和变体选择符。驱动对顶层响应和 `choices[]` 分别执行公开字段白名单，非对象 choice 直接判定为畸形上游协议，供应商私有 choice 字符串不会透传；message、delta、tool_calls 等兼容结构仍进入递归审核和跨分块连续视图。
 
 ## 3. Redis 原子性
 
@@ -35,7 +35,7 @@ SSE 扫描器最大单行 2 MiB。公开事件暂存在有界段内，遇到句�
 - 请求正常、失败、panic 可通过 defer 回收资源租约。
 - 客户端断开不取消已经形成的上游事实和结算。
 - 没有可信 Usage 时继续遵守 G3 settlement_pending，不猜测消费量。
-- 预算释放或终态同步失败写补偿任务，`next_retry_at` 到期即重新扫描；`budget_release_failed` 在确认没有 G3 请求事实后立即释放，补偿任务落库也失败时由“无 G3 请求且超过 5 分钟”的孤立扫描兜底，不等待 24 小时。成功收敛进入 completed；连续八次失败进入 dead，manual_review 不会被恢复任务覆盖，管理员使用 `updated_at` 乐观锁显式转 retry 后才恢复扫描。
+- 预算释放或终态同步失败写补偿任务，`next_retry_at` 到期即重新扫描；持久化成功的 `budget_release_failed` 在确认没有 G3 请求事实后立即释放，不等待 24 小时。补偿任务落库也失败时保持 held 到自然过期并记录错误，禁止用固定分钟数推断准入链已经停止。成功收敛进入 completed；连续八次失败进入 dead，manual_review 不会被恢复任务覆盖，管理员使用 `updated_at` 乐观锁显式转 retry 后才恢复扫描。
 - 日/月预算归属在准入时固化到 `daily_period_start/monthly_period_start`；held 和 settled 都从同一预算预留表按该周期汇总，跨午夜完成不会漂移到新周期。
 - Outbox dead 事件只能由具有 `ai_gateway:reconcile_manage` 且完成管理员二次认证的人员按原 event_id 重试；必须填写原因并在执行前记录审计，非 dead 状态返回冲突。
 - migration down 只执行 no-op，不删除安全、预算或补偿审计事实。

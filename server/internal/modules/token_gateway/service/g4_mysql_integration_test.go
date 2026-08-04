@@ -168,6 +168,28 @@ func TestG4MySQLBudgetIntegration(t *testing.T) {
 	})
 
 	t.Run("过期孤立预留自动释放且补偿任务可人工处置", func(t *testing.T) {
+		unexpiredReservation := model.AIBudgetReservation{
+			RequestID: "g4-unexpired-without-request", UserID: 1, ProjectID: 1, APIKeyID: 1,
+			ReservedAmount: decimal.NewFromInt(1), Status: model.AIBudgetHeld,
+			DailyPeriodStart: daily, MonthlyPeriodStart: monthly, ExpiresAt: now.Add(time.Hour),
+		}
+		if err := db.Create(&unexpiredReservation).Error; err != nil {
+			t.Fatal(err)
+		}
+		settled, err := repo.SyncBudgetFromRequest(ctx, unexpiredReservation.RequestID)
+		if err != nil || settled {
+			t.Fatalf("没有补偿事实的未过期预留不得因 G3 请求暂未落库而提前释放: settled=%v err=%v", settled, err)
+		}
+		dueBeforeExpiry, err := repo.ListHeldBudgetRequestIDs(ctx, now, 20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, requestID := range dueBeforeExpiry {
+			if requestID == unexpiredReservation.RequestID {
+				t.Fatal("没有补偿事实的未过期预留不得进入自动恢复扫描")
+			}
+		}
+
 		reservation := model.AIBudgetReservation{
 			RequestID: "g4-expired-without-request", UserID: 1, ProjectID: 1, APIKeyID: 1,
 			ReservedAmount: decimal.NewFromInt(1), Status: model.AIBudgetHeld,
@@ -176,7 +198,7 @@ func TestG4MySQLBudgetIntegration(t *testing.T) {
 		if err := db.Create(&reservation).Error; err != nil {
 			t.Fatal(err)
 		}
-		settled, err := repo.SyncBudgetFromRequest(ctx, reservation.RequestID)
+		settled, err = repo.SyncBudgetFromRequest(ctx, reservation.RequestID)
 		if err != nil || !settled {
 			t.Fatalf("没有 G3 请求事实的过期预留应安全释放: settled=%v err=%v", settled, err)
 		}

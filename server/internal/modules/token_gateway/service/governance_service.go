@@ -134,14 +134,21 @@ func (s *GovernanceService) FinishExecution(ctx context.Context, ticket *Governa
 	_ = s.limiter.Release(context.WithoutCancel(ctx), ticket.Resource)
 	if ticket.BudgetReserved {
 		if synced, err := s.budget.SyncBudgetFromRequest(context.WithoutCancel(ctx), ticket.Subject.RequestID); err != nil || !synced {
-			_ = s.budget.RecordCompensationFailure(context.WithoutCancel(ctx), ticket.Subject.RequestID, "budget_sync_failed")
+			s.recordBudgetCompensation(context.WithoutCancel(ctx), ticket.Subject.RequestID, "budget_sync_failed")
 		}
 	}
 }
 
 func (s *GovernanceService) releaseBudgetOrCompensate(ctx context.Context, requestID string) {
 	if err := s.budget.ReleaseBudget(context.WithoutCancel(ctx), requestID); err != nil {
-		_ = s.budget.RecordCompensationFailure(context.WithoutCancel(ctx), requestID, "budget_release_failed")
+		s.recordBudgetCompensation(context.WithoutCancel(ctx), requestID, "budget_release_failed")
+	}
+}
+
+func (s *GovernanceService) recordBudgetCompensation(ctx context.Context, requestID, class string) {
+	if err := s.budget.RecordCompensationFailure(ctx, requestID, class); err != nil {
+		// 数据库完全不可用时无法伪造“已持久化”事实；保留 held 到自然过期并记录错误，禁止按时间猜测提前释放。
+		log.Printf("[token_gateway] G4 预算补偿登记失败 request_id=%s class=%s err=%v", requestID, class, err)
 	}
 }
 
@@ -167,7 +174,7 @@ func (s *GovernanceService) ReconcileExpiredBudgets(ctx context.Context, limit i
 	for _, requestID := range ids {
 		settled, syncErr := s.budget.SyncBudgetFromRequest(ctx, requestID)
 		if syncErr != nil {
-			_ = s.budget.RecordCompensationFailure(ctx, requestID, "budget_sync_failed")
+			s.recordBudgetCompensation(ctx, requestID, "budget_sync_failed")
 			continue
 		}
 		if settled {

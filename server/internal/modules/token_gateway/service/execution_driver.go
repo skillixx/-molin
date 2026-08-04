@@ -508,12 +508,28 @@ func normalizeExecutionJSON(raw []byte, requireChoices, allowUsageOnly bool, log
 		return nil, usage, false
 	}
 	choices, choicesPresent := value["choices"]
+	if choicesPresent && !validExecutionChoices(choices) {
+		return nil, usage, false
+	}
 	if requireChoices && (!choicesPresent || emptyJSONList(choices)) && !(allowUsageOnly && usage.Present) {
 		return nil, usage, false
 	}
 	sanitizeExecutionResponse(value, logicalModel)
 	public, err := json.Marshal(value)
 	return public, usage, err == nil
+}
+
+func validExecutionChoices(value interface{}) bool {
+	items, ok := value.([]interface{})
+	if !ok {
+		return false
+	}
+	for _, item := range items {
+		if _, ok := item.(map[string]interface{}); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func hasExecutionError(value map[string]interface{}) bool {

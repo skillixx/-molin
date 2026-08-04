@@ -426,6 +426,7 @@ func (h *GovernanceHandler) ResolveCompensationTask(w http.ResponseWriter, r *ht
 
 func (h *GovernanceHandler) RequeueDeadOutbox(w http.ResponseWriter, r *http.Request) {
 	eventID := strings.TrimSpace(r.PathValue("event_id"))
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
 	var req struct {
 		Reason string `json:"reason"`
 	}
@@ -433,6 +434,10 @@ func (h *GovernanceHandler) RequeueDeadOutbox(w http.ResponseWriter, r *http.Req
 		return
 	}
 	reason := strings.TrimSpace(req.Reason)
+	if reason == "" || len(reason) > 255 {
+		response.Error(w, http.StatusBadRequest, 40000, "请求参数不合法")
+		return
+	}
 	operatorID := middleware.UserIDFromContext(r.Context())
 	if !h.auditBeforeWrite(w, r, operatorID, "outbox.dead.requeue", "outbox_event", eventID, map[string]interface{}{"reason": reason, "reason_length": len(reason)}) {
 		return

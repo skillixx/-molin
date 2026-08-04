@@ -85,6 +85,7 @@ func TestSafetyServiceRejectsSlashAndZeroWidthKeywordSplitting(t *testing.T) {
 	for index, content := range []string{
 		"网/络\u200b赌/博推广",
 		"网\u034f络赌博推广",
+		"网\u0301络赌博推广",
 		"网\ufe0f络赌博推广",
 	} {
 		body := map[string]interface{}{"messages": []interface{}{map[string]interface{}{"role": "user", "content": content}}}

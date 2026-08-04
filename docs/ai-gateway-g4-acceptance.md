@@ -4,10 +4,10 @@
 
 PR #316 在合并前独立评审发现的阻断项已经形成代码和测试候选，但在新 commit 的 G3/G4 隔离 CI、QA 和产品复验完成前，本节不把候选误写为最终通过：
 
-- SSE 使用“全公开字段段审核 + 增量生成字段连续视图”，公开 choice 仅保留兼容字段；新增跨段、300 组斜杠/零宽字符、U+034F 默认可忽略字符和变体选择符绕过测试，违规后段不外泄。
+- SSE 使用“全公开字段段审核 + 增量生成字段连续视图”，公开 choice 仅允许对象并保留兼容字段；新增跨段、300 组斜杠/零宽字符、U+034F、普通组合附加符和变体选择符绕过测试，违规后段不外泄。
 - 管理端创建、发布和回滚安全策略都要求完整覆盖 illegal、sexual、gambling、drugs、terror、hate、self_harm，关键词规范化长度不超过 256。
 - 预算 held/settled 统一按预留时固化的日/月周期归集，新增跨午夜隔离 MySQL 用例。
-- 预算释放失败立即登记 `budget_release_failed` 补偿，下一轮在无 G3 请求事实时直接释放并把任务推进 completed；补偿任务未能落库时由 5 分钟孤立扫描兜底。
+- 预算释放失败立即登记 `budget_release_failed` 补偿，下一轮在无 G3 请求事实时直接释放并把任务推进 completed；补偿任务也无法落库时保留 held 到自然过期并记录错误，不使用存在并发竞争的固定时间兜底。
 - pending -> running 启动失败新增原子 `request_not_sent` 终结，释放钱包 hold，并在 G3 隔离 MySQL 中核对请求与 hold 终态。
 - Outbox dead 新增受 `ai_gateway:reconcile_manage`、管理员二次认证、非空原因和前置审计保护的重试入口；只按原 event_id 重排。
 - 日/月限额逐项要求正数，钱包 GORM 金额精度同步为 `DECIMAL(20,8)`，治理 JSON 拒绝尾随文档。
@@ -29,7 +29,7 @@ PR #316 在合并前独立评审发现的阻断项已经形成代码和测试候
 | Redis 停止/恢复 | 通过 | 停止时失败关闭，恢复后无幽灵租约 |
 | RabbitMQ 停止/恢复 | 通过 | 基础设施恢复；G3 Outbox 由 G3 回归继续验证 |
 | 安全输出 | 通过 | JSON 拦截；SSE 违规片段不外泄且 Usage 持久化 |
-| 补偿任务 | 待当前 Head CI 复验 | 释放失败立即收敛、孤立兜底、completed、八次失败进入 dead、乐观锁和 manual_review |
+| 补偿任务 | 待当前 Head CI 复验 | 有事实的释放失败立即收敛、自然过期、completed、八次失败进入 dead、乐观锁和 manual_review |
 
 隔离脚本成功摘要：
 
