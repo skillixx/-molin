@@ -57,11 +57,17 @@ class Phase5SSHIdentityContractTest(unittest.TestCase):
                 self.assertEqual(
                     source.count("Assert-SmsPhase5FixedTestServerIdentity"), 1
                 )
+                self.assertEqual(
+                    source.count("Assert-SmsPhase5FixedTestServerTarget"), 1
+                )
+                self.assertNotIn('$ServerHost -cne "8.130.9.163"', source)
                 self.assertNotIn("ssh-keygen -F", source)
                 self.assertNotIn(
                     "SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I",
                     source,
                 )
+                self.assertIn('$destination = "${SSHUser}@${ServerHost}"', source)
+                self.assertIn('"-p", $SSHPort.ToString()', source)
 
     def test_shared_contract_is_mandatory_in_readiness_and_ci(self) -> None:
         self.assertIn(HELPER.name, self.readiness)

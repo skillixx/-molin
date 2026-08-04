@@ -53,14 +53,15 @@ $knownHostsPath = Assert-SmsPhase5FixedTestServerIdentity -ServerHost $ServerHos
 
 $payload = $payload -replace "`r`n", "`n"
 $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payload))
+$destination = "${SSHUser}@${ServerHost}"
 $sshArguments = @(
-    "-p", "10003",
+    "-p", $SSHPort.ToString(),
     "-o", "BatchMode=yes",
     "-o", "ConnectTimeout=8",
     "-o", "StrictHostKeyChecking=yes",
     "-o", "HostKeyAlgorithms=ssh-ed25519",
     "-o", "UserKnownHostsFile=$knownHostsPath",
-    "pc@8.130.9.163",
+    $destination,
     "printf '%s' '$encoded' | base64 -d | bash"
 )
 

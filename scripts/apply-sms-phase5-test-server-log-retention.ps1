@@ -15,10 +15,6 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "sms-phase5-test-server-ssh.ps1")
 Assert-SmsPhase5FixedTestServerTarget -ServerHost $ServerHost -SSHPort $SSHPort -SSHUser $SSHUser
 
-# 本变更资产只允许固定测试服；生产环境和其他账号必须另建审批与脚本。
-if ($ServerHost -cne "8.130.9.163" -or $SSHUser -cne "pc" -or $SSHPort -ne 10003) {
-    throw "SSH 目标必须固定为阶段 5 测试服务器"
-}
 foreach ($item in @($SystemMaxUse, $SystemKeepFree)) {
     if ($item -cnotmatch '^[1-9][0-9]{0,3}(K|M|G|T)$') {
         throw "journald 容量值必须使用非零整数和 K/M/G/T 单位"
