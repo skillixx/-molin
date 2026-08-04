@@ -35,6 +35,7 @@ merged_config="$(systemd-analyze cat-config systemd/journald.conf)" || fail merg
 policy_status="$(printf '%s\n' "$merged_config" | python3 -c '
 import re
 import sys
+from decimal import Decimal, InvalidOperation
 
 settings = {}
 section = ""
@@ -52,7 +53,15 @@ for raw_line in sys.stdin:
 
 def valid_size(name):
     value = settings.get(name, "").strip()
-    return re.fullmatch(r"[1-9][0-9]*(?:[.][0-9]+)?(?:[KMGTPE])?(?:i?B)?", value, re.IGNORECASE) is not None
+    match = re.fullmatch(r"([1-9][0-9]*(?:[.][0-9]+)?)([KMGTPE]?)", value, re.IGNORECASE)
+    if match is None:
+        return False
+    multipliers = {"": 1, "K": 1024, "M": 1024**2, "G": 1024**3, "T": 1024**4, "P": 1024**5, "E": 1024**6}
+    try:
+        byte_count = Decimal(match.group(1)) * multipliers[match.group(2).upper()]
+    except (InvalidOperation, OverflowError):
+        return False
+    return 0 < byte_count <= 2**64 - 1
 
 def valid_duration(name):
     value = settings.get(name, "").strip()

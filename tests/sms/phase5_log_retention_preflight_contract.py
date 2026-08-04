@@ -124,6 +124,22 @@ MaxFileSec=1day
             ],
         )
 
+        for unsafe_capacity in ("1iB", "18446744073709551616"):
+            overflow = subprocess.run(
+                [sys.executable, "-c", parser],
+                input=f"""[Journal]
+Storage=persistent
+SystemMaxUse={unsafe_capacity}
+SystemKeepFree=1G
+MaxRetentionSec=14day
+MaxFileSec=1day
+""",
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("capacity=false", overflow.stdout.splitlines())
+
     def test_payload_contains_no_mutating_commands(self) -> None:
         forbidden = (
             r"(?m)^\s*(?:rm|mv|cp|install|chmod|chown|truncate|touch|tee)\b",
