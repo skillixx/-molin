@@ -67,6 +67,32 @@ func TestAliyunSenderClassifiesRejectedTemplate(t *testing.T) {
 	}
 }
 
+func TestAliyunSenderClassifiesAllPhase4ProviderFailures(t *testing.T) {
+	cases := []struct {
+		name string
+		code string
+		want ErrorKind
+	}{
+		{name: "供应商限流", code: "isv.BUSINESS_LIMIT_CONTROL", want: ErrorKindRateLimit},
+		{name: "签名错误", code: "isv.SMS_SIGNATURE_ILLEGAL", want: ErrorKindSignature},
+		{name: "模板错误", code: "isv.TEMPLATE_MISSING", want: ErrorKindTemplate},
+		{name: "账户余额异常", code: "isv.AMOUNT_NOT_ENOUGH", want: ErrorKindArrears},
+		{name: "网络中断", code: "SDK.CONNECTION_ERROR", want: ErrorKindNetwork},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &fakeAliyunClient{result: &dysmsapi20170525.SendSmsResponse{
+				Body: &dysmsapi20170525.SendSmsResponseBody{Code: tea.String(tc.code)},
+			}}
+			_, err := (&AliyunSender{client: client}).Send(context.Background(), Request{})
+			providerErr, ok := err.(*ProviderError)
+			if !ok || providerErr.Kind != tc.want {
+				t.Fatalf("错误分类不正确，期望 %s，实际 %T %v", tc.want, err, err)
+			}
+		})
+	}
+}
+
 func TestAliyunSenderClassifiesSDKTransportErrors(t *testing.T) {
 	cases := []struct {
 		name string

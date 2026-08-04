@@ -1013,6 +1013,8 @@ func (s *AuthService) generateTokenPair(ctx context.Context, tx *gorm.DB, user *
 
 // recordLogin 写入登录日志。D-19：写入失败不阻断主流程，但需记录日志以便排查。
 func (s *AuthService) recordLogin(ctx context.Context, userID *uint64, loginType, account, ip, ua, status string) {
+	// 登录账号在落库前即完成脱敏，禁止依赖查询接口临时遮盖数据库中的完整手机号或邮箱。
+	account = sanitizeLoginAccount(loginType, account)
 	if err := s.loginLogRepo.Create(ctx, &model.LoginLog{
 		UserID:       userID,
 		LoginType:    loginType,
@@ -1022,6 +1024,37 @@ func (s *AuthService) recordLogin(ctx context.Context, userID *uint64, loginType
 		Status:       status,
 	}); err != nil {
 		log.Printf("recordLogin: 写入登录日志失败 loginType=%s status=%s err=%v", loginType, status, err)
+	}
+}
+
+func sanitizeLoginAccount(loginType, account string) string {
+	switch loginType {
+	case "phone":
+		if len(account) != 11 || account[0] != '1' || account[1] < '3' || account[1] > '9' {
+			return "***"
+		}
+		for index := 2; index < len(account); index++ {
+			if account[index] < '0' || account[index] > '9' {
+				return "***"
+			}
+		}
+		return account[:3] + "****" + account[7:]
+	case "email":
+		account = strings.TrimSpace(account)
+		if strings.Count(account, "@") != 1 || strings.ContainsAny(account, "\r\n\t ") {
+			return "***"
+		}
+		parts := strings.SplitN(account, "@", 2)
+		if parts[0] == "" || parts[1] == "" {
+			return "***"
+		}
+		localRunes := []rune(parts[0])
+		if len(localRunes) <= 2 {
+			return string(localRunes[:1]) + "***@" + parts[1]
+		}
+		return string(localRunes[:2]) + "***@" + parts[1]
+	default:
+		return "***"
 	}
 }
 
@@ -1185,7 +1218,12 @@ func (s *AuthService) AdminVerifyPhone(ctx context.Context, userID uint64, code 
 		return ErrInvalidCode
 	}
 	// 记录认证时间
-	return s.userRepo.UpdateAdminPhoneVerified(ctx, userID)
+	if err := s.userRepo.UpdateAdminPhoneVerified(ctx, userID); err != nil {
+		return err
+	}
+	// 管理员手机 MFA 属于敏感状态变化，成功后记录不含手机号和验证码的审计事件。
+	s.recordSensitiveAudit(ctx, "admin_verify_phone", userID, "")
+	return nil
 }
 
 // AdminVerifyEmail 管理员邮箱认证（需手机号已认证，验证码校验后记录认证时间）。

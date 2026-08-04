@@ -638,6 +638,10 @@ func NewApp() (*App, error) {
 	}
 	smsDispatcher := smsservice.NewDispatcher(cfg, smsRepo, smsSender)
 	verifySvc.SetSMSDispatcher(smsDispatcher)
+	// 手机 OTP 额外使用 Redis 原子门禁限制手机号+场景发码和错误校验次数；键中只保存手机号 HMAC。
+	if cfg.SMSEnabled {
+		verifySvc.SetSMSVerificationGuard(smsservice.NewRedisOTPGuard(redisClient, cfg.SMSPhoneHMACSecret))
+	}
 	smsAdminSvc.ConfigureTestSend(cfg, smsDispatcher, redisClient)
 	// 传入 redisClient，用于封禁用户黑名单（P1-01 修复）；传入 auditSvc 用于封禁/解封审计记录（A-05）；
 	// 传入 iamService 作为 PermissionResolver，用于 GET /api/me/permissions（A-10）

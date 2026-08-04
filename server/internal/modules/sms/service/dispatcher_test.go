@@ -95,6 +95,35 @@ func TestPrepareRejectsTemplateWithExtraVariable(t *testing.T) {
 	}
 }
 
+func TestPrepareRejectsEveryUnavailableBindingState(t *testing.T) {
+	base := fixtureBinding("register", "SMS_VALID")
+	tests := []struct {
+		name    string
+		scene   string
+		binding *model.SceneBinding
+	}{
+		{name: "场景未绑定", scene: "register", binding: nil},
+		{name: "场景不在固定集合", scene: "unknown", binding: base},
+		{name: "绑定场景不一致", scene: "register", binding: func() *model.SceneBinding { v := *base; v.Scene = "login"; return &v }()},
+		{name: "场景已停用", scene: "register", binding: func() *model.SceneBinding { v := *base; v.Enabled = false; return &v }()},
+		{name: "签名不一致", scene: "register", binding: func() *model.SceneBinding { v := *base; v.SignName = "other-sign"; return &v }()},
+		{name: "供应商不一致", scene: "register", binding: func() *model.SceneBinding { v := *base; v.Template.Provider = "other"; return &v }()},
+		{name: "模板未审核", scene: "register", binding: func() *model.SceneBinding { v := *base; v.Template.ProviderAuditStatus = "pending"; return &v }()},
+		{name: "模板本地停用", scene: "register", binding: func() *model.SceneBinding { v := *base; v.Template.LocalEnabled = false; return &v }()},
+		{name: "模板编码为空", scene: "register", binding: func() *model.SceneBinding { v := *base; v.Template.TemplateCode = ""; return &v }()},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repo := &fakeRepository{bindings: map[string]*model.SceneBinding{test.scene: test.binding}}
+			dispatcher := NewDispatcher(enabledConfig(), repo, sender.NewMockSender(sender.Result{}, nil))
+			if _, err := dispatcher.Prepare(context.Background(), test.scene, "phone-test-value"); !errors.Is(err, ErrSceneNotBound) {
+				t.Fatalf("不可用绑定必须在调用供应商前失败关闭: %v", err)
+			}
+		})
+	}
+}
+
 func fixtureBinding(scene, templateCode string) *model.SceneBinding {
 	return &model.SceneBinding{
 		ID:       1,

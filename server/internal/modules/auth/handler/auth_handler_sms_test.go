@@ -32,6 +32,16 @@ func TestSMSSendFailureMapsToSafe50200(t *testing.T) {
 	}
 }
 
+func TestSMSRateLimitMapsTo42900(t *testing.T) {
+	recorder := httptest.NewRecorder()
+
+	handleAuthError(recorder, service.ErrSMSRateLimited)
+
+	if recorder.Code != http.StatusTooManyRequests || !strings.Contains(recorder.Body.String(), `"code":42900`) {
+		t.Fatalf("短信服务层限流必须映射为 42900，响应=%s", recorder.Body.String())
+	}
+}
+
 func TestPhoneSendResponseContainsSafeContract(t *testing.T) {
 	data := phoneSendResponse(service.VerificationSendResult{
 		Sent: true, ExpiresIn: 600, BusinessRequestID: "business-request", SubmitStatus: "accepted",

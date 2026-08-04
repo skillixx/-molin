@@ -737,6 +737,8 @@ func handleAuthError(w http.ResponseWriter, err error) {
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 	case service.ErrSMSUnavailable:
 		response.Error(w, http.StatusServiceUnavailable, 50300, err.Error())
+	case service.ErrSMSRateLimited:
+		response.Error(w, http.StatusTooManyRequests, 42900, err.Error())
 	case service.ErrSMSSendFailed:
 		response.Error(w, http.StatusBadGateway, 50200, err.Error())
 	case service.ErrEmailVariables:
