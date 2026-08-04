@@ -1,73 +1,170 @@
-# AI 网关 G4 验收记录
+# AI 网关 G4 最终验收记录
 
-## 0. PR 独立评审整改候选（2026-08-04）
+> 最终状态：**测试环境验收通过，允许进入 G5 开发**。
+>
+> 本结论覆盖 G4 主线合并、Migration `000060` 至 `000063`、Molin API 到 Bifrost 的双上游真实 E2E、商业计量、安全拒绝、回滚准备和测试凭据回收。它不代表生产部署、真实客户流量、管理后台 UI 或多模态能力已经完成。
 
-PR #316 在合并前独立评审发现的阻断项已经形成代码和测试候选，但在新 commit 的 G3/G4 隔离 CI、QA 和产品复验完成前，本节不把候选误写为最终通过：
+## 1. 验收对象
 
-- SSE 使用“全公开字段段审核 + 增量生成字段连续视图”，公开 choice 仅允许对象并保留兼容字段；新增跨段、300 组斜杠/零宽字符、U+034F、普通组合附加符和变体选择符绕过测试，违规后段不外泄。
-- 管理端创建、发布和回滚安全策略都要求完整覆盖 illegal、sexual、gambling、drugs、terror、hate、self_harm，关键词规范化长度不超过 256。
-- 预算 held/settled 统一按预留时固化的日/月周期归集，新增跨午夜隔离 MySQL 用例。
-- 预算释放失败立即登记 `budget_release_failed` 补偿，下一轮在无 G3 请求事实时直接释放并把任务推进 completed；补偿任务也无法落库时保留 held 到自然过期并记录错误，不使用存在并发竞争的固定时间兜底。
-- pending -> running 启动失败新增原子 `request_not_sent` 终结，释放钱包 hold，并在 G3 隔离 MySQL 中核对请求与 hold 终态。
-- Outbox dead 新增受 `ai_gateway:reconcile_manage`、管理员二次认证、非空原因和前置审计保护的重试入口；只按原 event_id 重排。
-- 日/月限额逐项要求正数，钱包 GORM 金额精度同步为 `DECIMAL(20,8)`，治理 JSON 拒绝尾随文档。
+| 项目 | 最终事实 |
+|---|---|
+| G4 功能 PR | [#316](https://github.com/skillixx/-molin/pull/316) 已合并 |
+| G4 主线提交 | `19a353bffe4520c17b6703296d404566561bc06f` |
+| E2E 热修复 PR | [#318](https://github.com/skillixx/-molin/pull/318) 已合并 |
+| 最终主线提交 | `1b378499aff30e13a9ee85ddc35943fac67450ea` |
+| 最终主线树 | `9822a9d4106258a3150abd4e62a1b6dbcf0115fd` |
+| 测试环境 | `pc@8.130.9.163:10003` |
+| 数据库版本 | `63:0`，即 version=63、dirty=0 |
+| API 执行驱动 | `bifrost` |
+| Bifrost 入口 | 测试机本地统一入口；内部 Token 和上游 SK 未写入本文 |
+| 短信开关 | `SMS_ENABLED=false` |
 
-本地已完成 `go test -count=1 ./...`、`go vet ./...`、`go mod verify`、管理端和用户端 type-check/lint/契约测试/build。当前 Windows 环境无 Docker CLI，新增隔离 MySQL 用例必须以推送后 `gateway-g3`、`gateway-g4` CI 结果为准；CI 未绿、独立复评 P0/P1 未清零前禁止合并和部署。
+## 2. 主线与评审
 
-## 1. 验收范围
+PR #316 合并前完成独立代码、测试和产品复核：
 
-验收对象为 `feature/bifrost-ai-gateway-g4` 当前候选代码，包括内容安全、四层资源限制、Project/SK 预算、补偿任务、管理接口、migration 和文档。结论不代表已合并 main、已部署测试环境、已接入真实用户或已进入 G5。
+- 代码评审：P0=0、P1=0、P2=0、P3=0。
+- 测试复核：P0=0、P1=0、P2=3、P3=0，允许合并。
+- 产品复核：P0=0、P1=0、P2=1、P3=0，允许合并。
+- CI 五项全部通过：后端、G3、G4、管理后台、用户控制台。
 
-## 2. 自动化证据
+真实 E2E 随后发现一个此前 Mock 未覆盖的 P1：GORM 将授权快照中的嵌套 `TokenModel` 误判为未声明关联，导致合法 Project SK 返回 403。PR #318 将授权 SQL 原始行改为扁平结构，再单独加载模型实体，并增加回归测试。PR #318 的五项 CI 全绿，候选 Linux 二进制通过真实 MySQL 和双上游复验后合并。
 
-| 门禁 | 结果 | 覆盖 |
-|---|---|---|
-| Token 网关模块测试 | 通过 | 输入/输出审核、资源、预算、SSE、错误契约、路由 |
-| G4 Linux 隔离脚本 | 通过 | migration 重入/保留、临时 MySQL/Redis/RabbitMQ |
-| MySQL 100 并发 | 通过 | 两个 SK 共享 Project hard 预算，10 准入、90 拒绝、无超卖 |
-| Redis 8 节点模拟 | 通过 | 100 请求、并发上限 20、租约过期、TPM 核销 |
-| Redis 停止/恢复 | 通过 | 停止时失败关闭，恢复后无幽灵租约 |
-| RabbitMQ 停止/恢复 | 通过 | 基础设施恢复；G3 Outbox 由 G3 回归继续验证 |
-| 安全输出 | 通过 | JSON 拦截；SSE 违规片段不外泄且 Usage 持久化 |
-| 补偿任务 | 待当前 Head CI 复验 | 有事实的释放失败立即收敛、自然过期、completed、八次失败进入 dead、乐观锁和 manual_review |
+## 3. Migration 验收
 
-隔离脚本成功摘要：
+部署前确认测试环境为 `59:0`，且不存在 `000060` 至 `000063` 的异常部分结构。完成数据库压缩备份、API 二进制备份、环境配置备份、哈希清单和回滚路径后，按顺序执行：
+
+1. `000060`：AI 请求、Usage、执行尝试和 Project 账本。
+2. `000061`：Project SK、模型 allowlist 和归属约束。
+3. `000062`：价格版本、钱包关联和事务 Outbox。
+4. `000063`：内容安全、资源策略、预算和补偿任务。
+
+每一步执行后均确认版本和 dirty 状态。最终结果：
 
 ```text
-G4_VERIFY=PASS isolated=true migrations=up_repeated_down_reup_preserved
-redis_nodes=8 concurrency=100/20 redis_down_fail_closed=true
-redis_recovered=true budget_multi_sk=true thresholds=80_90_100
-rabbit_recovered=true project_database=false
+MIGRATIONS=PASS
+schema_migrations=63:0
+critical_counts_unchanged=true
+permissions=5
+sms_enabled=false
 ```
 
-最终复核候选使用独立 Git index 生成，不包含忽略文件或本地密钥：
+短信、邮件、钱包、订单和旧 `token_usage_logs` 的关键行数在迁移前后保持一致。Migration 未自动创建活动安全策略，符合 G4 的 fail-closed 设计。
+
+## 4. 部署验收
+
+从合并后的主线构建 Linux `amd64` 二进制。候选端口通过 `/api/health`、`/api/ready` 和 `/api/version` 后，再切换正式测试端口。
+
+最终热修复二进制：
 
 ```text
-candidate_tree=43b139731cd765cd25f632fc9d91016788753b57
-archive_sha256=1ca8110091bfdafb308b4cae4ce3bfa564a6633163f844e88b7b526eef586a40
-remote_linux_race=PASS
-g3_mysql_rabbitmq=PASS
-g4_isolated_governance=PASS
-sensitive_scan_hits=0
+sha256=2475408aacb9f4b3b8096bae4f136c19dacf16b706cf92926fc44d789bdfe78e
+formal_instances=1
+listener_8080=1
+candidate_listener_18081=0
+rollback=ready
 ```
 
-本轮补充了内容安全免单请求的正式受控 Usage 补录入口，并在隔离 MySQL 中验证 `settlement_pending`、超期 `billing_exception`、相同 Usage 幂等、冲突 Usage 拒绝、用户消费为 0、钱包 hold 释放、平台成本入账和唯一 Outbox。测试不再以直接插入 Usage 表作为业务收敛路径。
+部署后确认：
 
-## 3. 人工验收
+- `TOKEN_EXECUTION_DRIVER=bifrost`。
+- Bifrost、MySQL、Redis、RabbitMQ 和 MinIO 健康。
+- 正式端口只有一个 Molin API 实例。
+- 原二进制和部署前配置保留在测试机私有回滚目录。
+- API 回滚不删除请求账本、价格快照、钱包流水或安全事件。
 
-以下表格仅记录 2026-08-03 旧候选树的历史定向复核，不适用于 2026-08-04 PR 整改提交，也不能作为当前 Head 的合并批准。当前 Head 必须重新取得独立测试工程师和产品经理 P0=0、P1=0 结论：
+## 5. 双上游真实 E2E
 
-| 角色 | P0 | P1 | P2 | 结论 |
-|---|---:|---:|---:|---|
-| 独立测试工程师（旧候选） | 0 | 0 | 0 | 历史 PASS，当前无效 |
-| 产品经理（旧候选） | 0 | 0 | 0 | 历史 PASS，当前无效 |
+测试使用专用已实名用户、Project、allowlist 平台 SK、人民币钱包、活动价格版本和完整七类安全策略。只执行最低成本样本，不进行真实上游压力测试。
 
-两位复核人确认：超期内容安全请求保留 `output_moderation_blocked`，`billing_exception` 可通过专用入口补录；完整规范化 JSON/SSE 公共载荷均参与审核；G4 脚本实际执行全部“输出审核”子用例。commit SHA 在提交后以 Git 历史为准，不把未提交候选误写为提交完成。
+| 上游 | 逻辑模型 | 请求结果 | 执行驱动 | 账单结果 | 销售金额 |
+|---|---|---|---|---|---:|
+| 阿里云百炼 | `molin/qwen-turbo` | HTTP 200、Usage 完整 | Bifrost / Bailian | `succeeded / settled / passed` | ¥0.00000100 |
+| OpenRouter | `molin/deepseek-v4-flash` | HTTP 200、Usage 完整 | Bifrost / OpenRouter | `succeeded / settled / passed` | ¥0.00000100 |
 
-## 4. 残余边界
+最终请求账本标识：
 
-- 主线合并和测试环境部署依赖短信阶段2 Migration `000059`（PR #315）先完成合并；网关 Migration 已调整为 `000060` 至 `000063`，不得跳过该依赖直接部署。
-- 默认关键词规则只是工程初始防线，生产词库、分类器、误判指标和留存策略仍需合规审批。
-- 管理后台和用户控制台 UI 不在本阶段实现范围，接口已冻结供后续前端任务使用。
-- 图片、视频、音频、embedding 和对象存储生命周期属于 G5。
-- 本阶段未执行生产 migration、真实上游付费调用或真实用户流量。
+```text
+Bailian:    req_acbfdd4bd7035e1e
+OpenRouter: req_fae277f43aae8fe8
+```
+
+两个请求均满足：
+
+- 用户、Project、API Key 归属一致。
+- `execution_driver=bifrost`，供应商分别归因为 `bailian` 和 `openrouter`。
+- 原始 Usage、计价 Usage、价格版本和价格快照齐全。
+- 每个请求只有一个钱包关联、一个 hold、一个冻结流水、一个消费流水和一个解冻流水。
+- hold、结算和释放后余额一致，`frozen_amount=0`。
+- 两个请求的总钱包减少金额为 ¥0.00000200，无重复扣费。
+- 使用同一幂等键重放返回 HTTP 202 和原 request_id；请求、attempt、钱包关联仍各为 1。
+- `/v1/models` 只展示该 SK 获准模型；`/v1/requests/{request_id}` 返回本人已结算状态。
+- 公开响应保留 OpenAI 兼容字段，但不暴露 `extra_fields`、`routing_info`、上游响应头或密钥。
+
+按不可变价格快照和实际 Usage 重算的平台成本：
+
+| 上游 | 销售金额 | 平台成本 | 毛利金额 |
+|---|---:|---:|---:|
+| Bailian | ¥0.00000100 | ¥0.00000003 | ¥0.00000097 |
+| OpenRouter | ¥0.00000100 | ¥0.00000013 | ¥0.00000087 |
+
+正常成功请求的上游成本事实由 `price_snapshot_json` 和原始 Usage 确定性重算；`provider_cost` 独立 Usage 行保留给“输出被平台拦截、用户免单但平台承担成本”的受控场景。
+
+## 6. 安全与失败场景
+
+| 场景 | 结果 | 上游调用 | 钱包影响 |
+|---|---|---:|---:|
+| 非法平台 SK | HTTP 401 | 0 | 0 |
+| 命中输入安全规则 | HTTP 403 | 0 | 0 |
+| 安全规则缺失 | fail-closed | 0 | 0 |
+| Redis 不可用 | 隔离测试稳定拒绝 | 0 | 0 |
+| `request_not_sent` | 请求失败并释放 hold | 0 | 释放 |
+| 相同幂等键重放 | 返回原请求 | 不重复 | 不重复 |
+
+安全命中时返回统一文案：
+
+```text
+请求内容违反中国大陆相关法律法规或平台安全规范，无法继续处理。
+```
+
+安全事件只保存分类、规则编号、内容摘要和主体标识；未保存测试提示词正文。测试日志扫描未发现平台 SK 明文。
+
+## 7. 测试凭据回收
+
+最终验收完成后：
+
+- 专用平台 SK 状态改为 `revoked`。
+- 专用 Project 状态改为 `archived`。
+- 专用测试用户状态改为 `disabled`。
+- 保存明文平台 SK 的临时文件已删除。
+- 吊销后再次访问 `/v1/models` 返回 HTTP 401。
+- 请求账本、Usage、价格快照、钱包流水和安全事件作为不可变验收证据保留。
+
+测试环境保留活动安全策略，避免 API 在无策略时进入 fail-closed；该合成测试规则不得直接视为生产合规词库，生产发布前必须经过合规负责人审批和替换。
+
+## 8. 最终 QA 与产品结论
+
+| 角色 | P0 | P1 | P2 | P3 | 结论 |
+|---|---:|---:|---:|---:|---|
+| 测试工程师最终验收 | 0 | 0 | 2 | 0 | PASS，允许进入 G5 |
+| 产品经理最终确认 | 0 | 0 | 2 | 0 | PASS，允许进入 G5 |
+
+两项开放 P2：
+
+1. 管理端治理 JSON 当前拒绝尾随文档，但未显式拒绝重复对象键；G5 应统一使用可检测重复键的严格解码器。
+2. OpenAI 兼容响应的顶层敏感扩展已过滤，但 message/delta 内仍允许部分未知兼容扩展；G5 应冻结嵌套字段白名单和兼容策略。
+
+两项均不造成当前 G4 的鉴权绕过、重复扣费、敏感密钥泄露或内容安全失效，不阻断进入 G5；进入生产前必须完成复核。
+
+## 9. 阶段结论
+
+G4 的主线合并、Migration、测试环境部署、真实 Bifrost 双上游调用、平台 SK 鉴权、模型权限、安全拒绝、人民币计量、钱包结算、幂等、脱敏和回滚准备均已完成。
+
+**G4 测试环境门禁通过，允许开始 G5“管理后台模型发布、价格、路由和安全工作台”开发。**
+
+以下事项不属于本结论：
+
+- 生产环境 Migration 或生产流量。
+- 管理后台和用户控制台 G5/G6 页面。
+- 图片、视频、音频、Embedding 和对象存储生命周期。
+- 生产内容词库、分类器、算法备案和法务批准。

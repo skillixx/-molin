@@ -23,7 +23,7 @@ Week 4（2026-06-07 验收通过）：
 AI 网关 Phase 1：
 - G0/G1 已完成并签收：商业请求账本 Expand Schema、Native/Bifrost 执行契约和双上游 POC。
 - G3 功能分支已实现价格快照、最坏成本报价、钱包 hold、一次终态结算、Outbox 和异常对账；本地全量测试、隔离 MySQL/RabbitMQ 与测试 Linux race 已通过，2026-08-03 独立 QA 和产品经理以 P0=0、P1=0 双签通过，证据见 `docs/ai-gateway-g3-acceptance.md`。不代表允许合并 `main`、生产部署或进入 G4。
-- G4 功能分支已实现输入/输出内容安全、四层 Redis 并发/RPM/TPM、Project/SK 日月预算、阈值提醒和补偿任务；隔离 Linux 的 100 路预算并发、8 节点资源模拟、Redis/RabbitMQ 故障恢复已通过。功能、开发、运维和验收边界见 `docs/ai-gateway-g4-*.md`，不代表已完成前端页面、生产部署或进入 G5。
+- G4 已完成主线合并、Migration `000060` 至 `000063`、测试环境 Bifrost 部署、百炼/OpenRouter 最低成本真实 E2E、人民币钱包对账和测试凭据回收；最终 QA/产品以 P0=0、P1=0 通过，允许进入 G5 管理后台开发。证据见 `docs/ai-gateway-g4-acceptance.md`；该结论不代表生产上线、多模态能力或真实客户流量已经开放。
 
 > **第一阶段（Week 1-4：平台底座 + 应用售卖闭环）已于 2026-06-07 正式验收通过，并于 2026-06-08 完成最终收尾确认 ✅**
 > 端到端验收 16/16 核心用例、37/37 全部用例通过（通过率 100%）。
