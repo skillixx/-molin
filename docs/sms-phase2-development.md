@@ -60,4 +60,4 @@ go test ./migrations -run TestSMSPhase2FullMySQL8Matrix -count=1 -v
 
 测试服原环境仍存在废弃键名 `SMS_ACCESS_KEY`、`SMS_ACCESS_SECRET`、`SMS_SIGN_NAME`。真实窗口中为满足新版本 fail-closed 校验曾临时移除旧键并使用 `SMS_ALIYUN_*`；窗口结束后按授权恢复原环境。未来再次启用短信前应单独批准并永久清理废弃键名。
 
-独立复验已确认历史“单模板覆盖五场景”P1 关闭；阶段 2 独立 QA 最终签署为 P0=0、P1=0、P2=0、P3=0，产品经理批准产品验收，正式代码评审通过。`79ac4d0` 的最新代码部署和九管理 API 独立 HTTP 已完成；`register/login/reset_password` 后续业务消费 E2E 转入阶段 4 待办。阶段 2 当前只剩验收文档提交、推送与 PR 合并，因此合并前暂不进入阶段 3。
+独立复验已确认历史“单模板覆盖五场景”P1 关闭；阶段 2 独立 QA 最终签署为 P0=0、P1=0、P2=0、P3=0，产品经理批准产品验收，正式代码评审通过。`79ac4d0` 的部署和九管理 API 独立 HTTP 已完成；最终六份验收文档提交为 `dd5df2d`，PR #315 已于 2026-08-04 Squash 合并至 `main@9e50ee1`，阶段 2 正式闭环并允许进入阶段 3。`register/login/reset_password` 后续业务消费 E2E 仍属于阶段 4。

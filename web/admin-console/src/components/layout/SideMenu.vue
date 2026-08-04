@@ -60,14 +60,18 @@
       <template #title>审计日志</template>
     </el-menu-item>
 
-    <el-sub-menu v-if="can('email:template:view')" index="message-center">
+    <el-sub-menu v-if="can('email:template:view') || can('sms:template:view')" index="message-center">
       <template #title>
         <el-icon><Message /></el-icon>
         <span>消息中心</span>
       </template>
-      <el-menu-item index="/message/email-templates">
+      <el-menu-item v-if="can('email:template:view')" index="/message/email-templates">
         <el-icon><DocumentChecked /></el-icon>
         <template #title>邮件模板</template>
+      </el-menu-item>
+      <el-menu-item v-if="can('sms:template:view')" index="/message/sms-templates">
+        <el-icon><Cellphone /></el-icon>
+        <template #title>短信模板</template>
       </el-menu-item>
     </el-sub-menu>
 

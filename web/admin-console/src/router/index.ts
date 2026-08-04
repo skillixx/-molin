@@ -93,6 +93,17 @@ const router = createRouter({
           },
         },
         {
+          path: 'message/sms-templates',
+          name: 'SmsManagement',
+          component: () => import('@/views/sms/SmsManagementView.vue'),
+          meta: {
+            requiresAuth: true,
+            requiresAdminVerify: true,
+            title: '短信模板管理',
+            permission: 'sms:template:view',
+          },
+        },
+        {
           path: 'products',
           name: 'ProductList',
           component: () => import('@/views/product/ProductListView.vue'),

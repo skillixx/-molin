@@ -66,15 +66,18 @@ test('手机与邮箱发码操作使用同一个显式互斥状态', () => {
   )
 })
 
-test('只有权威 MFA 错误三元组才要求进入管理员验证页', () => {
+test('只有邮件历史或短信正式 MFA 错误三元组才要求进入管理员验证页', () => {
   assert.equal(
     isAdminVerificationRequired(403, 40003, '请先完成管理员双重认证'),
+    true,
+  )
+  assert.equal(
+    isAdminVerificationRequired(403, 40031, '请先完成管理员双重认证（手机+邮箱）'),
     true,
   )
   assert.equal(isAdminVerificationRequired(403, 40031, '请先完管理员双重认证'), false)
   assert.equal(isAdminVerificationRequired(403, 40003, '无操作权限'), false)
   assert.equal(isAdminVerificationRequired(401, 40003, '请先完成管理员双重认证'), false)
-  assert.doesNotMatch(httpSource, /code\s*===\s*40031/)
   assert.match(httpSource, /isAdminVerificationRequired\(status, code, message\)/)
 })
 

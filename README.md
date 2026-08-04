@@ -252,7 +252,8 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | 数据范围中间件（组管理员仅可见本组用户，超管 `scope:all` 不受限，已接入管理员用户列表/详情） | `server/internal/middleware/scope.go`、`modules/iam/service/scope_service.go`、`modules/auth/handler/auth_handler.go` | ✅ 已完成 |
 | Migration 000015（用户分组基础表 ×4）、000016（`group:manage`/`scope:all` 权限码 seed） | `server/migrations/` | ✅ 已完成 |
 | 阿里云短信验证码阶段 1（数据基础、Sender 适配、五场景关闭态与前端容错） | `modules/sms/`、`modules/auth/`、`web/user-console/`、`server/migrations/000058*` | ✅ PR #314 已合并，阶段 1 正式闭环（`main` 提交 `3aa8f3e`） |
-| 阿里云短信验证码阶段 2（模板同步、场景绑定、9 个管理 API 与安全测试发送） | `modules/sms/`、`modules/auth/`、`modules/iam/`、`server/migrations/000059*` | 🟡 PR #315 的 `79ac4d0` 已通过三项 CI、隔离部署和九 API HTTP；五独立模板同步/绑定幂等，本轮 6 条短信均实际收件，统一签名及六条文案人工核验正确，历史单模板 P1 已关闭。独立 QA、产品经理及正式代码评审均通过，P0/P1/P2/P3 均为 0；消费 E2E 转入阶段 4，当前仅待验收文档提交、推送与 PR 合并，合并前暂不进入阶段 3 |
+| 阿里云短信验证码阶段 2（模板同步、场景绑定、9 个管理 API 与安全测试发送） | `modules/sms/`、`modules/auth/`、`modules/iam/`、`server/migrations/000059*` | ✅ PR #315 已于 2026-08-04 Squash 合并至 `main`（`9e50ee1`）；五独立模板同步/绑定、6 条真实收件、九 API、QA、产品及正式评审均通过，P0/P1/P2/P3 均为 0，阶段 2 正式闭环 |
+| 阿里云短信验证码阶段 3（管理后台模板页面） | `web/admin-console/src/views/sms/`、`src/api/sms.ts`、`src/types/sms.ts` | 🟡 已完成开发、四档浏览器 Mock、独立 QA、产品验收及两轴代码审查，P0/P1/P2/P3 为 0；待推送、PR、CI 与合并后闭环 |
 
 ### 后端 B（product / order / billing / finance_consumer）
 
