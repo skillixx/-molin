@@ -5,6 +5,7 @@
     [string]$BackupPath = "/home/pc/molin/backups/sms-phase5-20260804T120056Z",
     [string]$ExpectedOldBinarySHA256 = "c18aa8d0efe51e2b9cccf924b275983741dcd5194fa3bb25e1d292888b926cc9",
     [string]$ExpectedCurrentBinarySHA256 = "4ade3d34a7b9473a23cbda80c4a4451192725da66caa2dc09aab454c05fdd8b0",
+    [string]$ExpectedManifestSHA256 = "a4df572f6eb8f9a52fd4252c9c6a5b10ef57c59fabe8315265ac4ae6a69482f1",
     [int]$PrometheusPort = 19090,
     [switch]$SelfTest
 )
@@ -21,7 +22,7 @@ if ($SSHPort -lt 1 -or $SSHPort -gt 65535 -or $PrometheusPort -lt 1 -or $Prometh
 if ($BackupPath -notmatch '^/home/pc/molin/backups/sms-phase5-[0-9]{8}T[0-9]{6}Z$') {
     throw "备份路径不符合阶段 5 固定格式"
 }
-foreach ($hash in @($ExpectedOldBinarySHA256, $ExpectedCurrentBinarySHA256)) {
+foreach ($hash in @($ExpectedOldBinarySHA256, $ExpectedCurrentBinarySHA256, $ExpectedManifestSHA256)) {
     if ($hash -notmatch '^[a-fA-F0-9]{64}$') {
         throw "二进制 SHA-256 格式无效"
     }
@@ -36,6 +37,7 @@ if ($SelfTest) {
         "__BACKUP_PATH__",
         "__EXPECTED_OLD_BINARY_SHA256__",
         "__EXPECTED_CURRENT_BINARY_SHA256__",
+        "__EXPECTED_MANIFEST_SHA256__",
         "__PROMETHEUS_PORT__"
     )
     foreach ($placeholder in $required) {
@@ -63,7 +65,8 @@ if ($SelfTest) {
     Write-Output "self_test=passed"
     Write-Output "contract_checks=15"
     Write-Output "remote_connections=0"
-    Write-Output "remote_mutations=0"
+    Write-Output "business_configuration_mutations=0"
+    Write-Output "access_audit_logs_may_increase=false"
     Write-Output "real_sms_sent=0"
     exit 0
 }
@@ -72,6 +75,7 @@ $replacements = [ordered]@{
     "__BACKUP_PATH__" = $BackupPath
     "__EXPECTED_OLD_BINARY_SHA256__" = $ExpectedOldBinarySHA256.ToLowerInvariant()
     "__EXPECTED_CURRENT_BINARY_SHA256__" = $ExpectedCurrentBinarySHA256.ToLowerInvariant()
+    "__EXPECTED_MANIFEST_SHA256__" = $ExpectedManifestSHA256.ToLowerInvariant()
     "__PROMETHEUS_PORT__" = $PrometheusPort.ToString()
 }
 foreach ($entry in $replacements.GetEnumerator()) {

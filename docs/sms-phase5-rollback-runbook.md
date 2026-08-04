@@ -46,7 +46,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-ro
 `c18aa8d0efe51e2b9cccf924b275983741dcd5194fa3bb25e1d292888b926cc9`。本轮后端与 Prometheus 部署脚本均带
 自动恢复路径；一次监控验证条件写错时已实际触发规则文件回滚并确认 Prometheus 恢复就绪，修正验证条件后再部署成功。
 
-## 6. 测试服恢复点只读预检
+## 6. 测试服恢复材料只读预检
 
 可重复执行：
 
@@ -55,9 +55,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 ```
 
 该入口只读取固定备份、当前 API、Prometheus 和 Alertmanager 运行态，不复制文件、不改权限、不重启、不 reload、
-不触发告警、不连接短信供应商。2026-08-04 正式结果为：11 个固定文件、清单、权限、无符号链接、新旧 API 哈希、
-x86-64 架构及当前 health/ready 全部通过，`rollback_restore_point_ready=true`。该结论只证明实际回滚演练的恢复点
-可用；真正替换二进制、恢复配置或重启 API 仍会改变测试服服务状态，必须取得独立授权。
+不触发告警、不连接短信供应商；SSH 与 HTTP GET 仍可能增加系统访问和审计日志。2026-08-04 正式结果为：11 个
+固定文件、外部固定清单摘要、权限、无符号链接、新旧 API 及运行 PID 哈希、x86-64 架构和当前 health/ready
+全部通过，输出 `rollback_materials_verified=true`、`rollback_restore_runtime_verified=false`。该结论只证明恢复
+材料完整和当前版本健康，不证明旧环境配置可解析、旧镜像仍存在或旧 API 能够启动。真正替换二进制、恢复配置
+或重启 API 会改变测试服服务状态，必须取得独立授权。
 
 同一预检确认 Alertmanager 引用、容器、进程和 9093 监听均为 0，状态为
 `receiver_configuration_required`。必须先明确接收渠道、值班人和 Secret 注入方式并取得部署授权，之后才能另行批准

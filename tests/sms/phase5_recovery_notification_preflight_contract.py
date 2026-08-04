@@ -48,8 +48,16 @@ class RecoveryNotificationPreflightContractTest(unittest.TestCase):
         ):
             self.assertIn(name, self.sh)
         self.assertIn("sha256sum -c SHA256SUMS", self.sh)
+        self.assertIn("expected_manifest_sha256", self.sh)
+        self.assertIn('sha256sum "$backup/SHA256SUMS"', self.sh)
         self.assertIn("backup_manifest_ok", self.sh)
-        self.assertIn("rollback_restore_point_ready", self.sh)
+        self.assertIn("rollback_materials_verified", self.sh)
+        self.assertIn("rollback_restore_runtime_verified=false", self.sh)
+        self.assertNotIn("rollback_restore_point_ready=true", self.sh)
+        self.assertIn('/proc/${api_pids[0]}/exe', self.sh)
+        self.assertIn('file -Lb "$running_api_path"', self.sh)
+        self.assertIn('pid=${api_pids[0]},', self.sh)
+        self.assertIn("current_api_listener_owner_verified", self.sh)
 
     def test_payload_audits_runtime_notification_chain_without_triggering_it(self) -> None:
         for marker in (
@@ -62,6 +70,7 @@ class RecoveryNotificationPreflightContractTest(unittest.TestCase):
             "notification_configuration_authorization_required",
         ):
             self.assertIn(marker, self.sh)
+        self.assertIn(r'r"(?m)^\s*alertmanagers\s*:"', self.sh)
         self.assertNotIn("/-/reload", self.sh)
         self.assertNotIn("/api/v1/alerts", self.sh)
         self.assertNotIn("SMS_ENABLED=true", self.sh)
@@ -78,7 +87,9 @@ class RecoveryNotificationPreflightContractTest(unittest.TestCase):
         # 只允许把诊断噪声丢弃到 /dev/null，不允许把任何内容写入普通文件。
         for match in re.finditer(r">{1,2}\s*([^\s;&|]+)", self.sh):
             self.assertEqual(match.group(1).rstrip("'\")"), "/dev/null")
-        self.assertIn("remote_mutations=0", self.sh)
+        self.assertIn("business_configuration_mutations=0", self.sh)
+        self.assertIn("access_audit_logs_may_increase=true", self.sh)
+        self.assertNotIn("remote_mutations=0", self.sh)
         self.assertIn("real_sms_sent=0", self.sh)
 
     def test_offline_contract_is_part_of_readiness_and_ci(self) -> None:
@@ -86,6 +97,7 @@ class RecoveryNotificationPreflightContractTest(unittest.TestCase):
         self.assertIn(PAYLOAD.name, self.readiness)
         self.assertIn("phase5_recovery_notification_preflight_contract.py", self.ci)
         self.assertIn(f"./scripts/{POWERSHELL.name} -SelfTest", self.ci)
+        self.assertIn(f"bash -n scripts/{PAYLOAD.name}", self.ci)
 
 
 if __name__ == "__main__":

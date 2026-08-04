@@ -36,13 +36,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-pr
 
 该命令只验证规划，不执行远端操作。网络创建、容器重建、环境文件修改和 API 重启仍需分别列入获批窗口。
 
-回滚恢复点和通知链可用以下只读入口复核：
+回滚材料和通知链可用以下只读入口复核：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-recovery-readiness.ps1
 ```
 
-当前恢复点已 ready；通知链为 `receiver_configuration_required`。该入口不会执行回滚或触发告警。
+当前回滚材料完整性预检通过，但恢复运行时未验证；通知链为 `receiver_configuration_required`。该入口不会执行
+回滚或触发告警，但 SSH 与 HTTP GET 可能增加系统访问和审计日志。
 
 手动前端部署工作流已同步使用 `molin-sms-proxy`、`172.20.250.0/28`、管理端 `.2`、用户端 `.3` 和宿主网关
 `.1`。工作流会在删除旧容器前保存真实运行镜像，检查宿主路由和全部 Docker 网络重叠，并在部署或健康检查失败时

@@ -6,13 +6,15 @@ exec 2>/dev/null
 backup='__BACKUP_PATH__'
 expected_old_binary_sha256='__EXPECTED_OLD_BINARY_SHA256__'
 expected_current_binary_sha256='__EXPECTED_CURRENT_BINARY_SHA256__'
+expected_manifest_sha256='__EXPECTED_MANIFEST_SHA256__'
 prometheus_port='__PROMETHEUS_PORT__'
 api_path='/home/pc/molin/molin-api'
 
 fail() {
   printf 'recovery_notification_preflight=failed\n'
   printf 'failure_stage=%s\n' "$1"
-  printf 'remote_mutations=0\n'
+  printf 'business_configuration_mutations=0\n'
+  printf 'access_audit_logs_may_increase=true\n'
   printf 'real_sms_sent=0\n'
   exit 2
 }
@@ -38,6 +40,7 @@ actual_files="$(find "$backup" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sor
 [ "$actual_files" = "$expected_files" ] || fail backup_file_set
 [ -z "$(find "$backup" -maxdepth 1 -type l -print -quit)" ] || fail backup_symlink
 [ -z "$(find "$backup" -maxdepth 1 -type f \( ! -user pc -o ! -perm 0600 \) -print -quit)" ] || fail backup_file_permissions
+[ "$(sha256sum "$backup/SHA256SUMS" | awk '{print $1}')" = "$expected_manifest_sha256" ] || fail backup_manifest_anchor
 (cd "$backup" && sha256sum -c SHA256SUMS >/dev/null) || fail backup_manifest
 
 # 三份 inspect 必须仍是有效 JSON；这里只解析结构，不输出容器环境或其他原始内容。
@@ -54,12 +57,18 @@ PY
 mapfile -t api_pids < <(pgrep -f "^${api_path}$" || true)
 [ "${#api_pids[@]}" -eq 1 ] || fail current_api_process
 [ -f "$api_path" ] && [ ! -L "$api_path" ] || fail current_api_identity
+running_api_path="/proc/${api_pids[0]}/exe"
+[ -e "$running_api_path" ] || fail current_running_api_identity
 old_binary_sha256="$(sha256sum "$backup/molin-api" | awk '{print $1}')"
 current_binary_sha256="$(sha256sum "$api_path" | awk '{print $1}')"
+running_binary_sha256="$(sha256sum "$running_api_path" | awk '{print $1}')"
 [ "$old_binary_sha256" = "$expected_old_binary_sha256" ] || fail old_binary_hash
 [ "$current_binary_sha256" = "$expected_current_binary_sha256" ] || fail current_binary_hash
+[ "$running_binary_sha256" = "$expected_current_binary_sha256" ] || fail current_running_binary_hash
 file -b "$backup/molin-api" | grep -q 'ELF 64-bit.*x86-64' || fail old_binary_architecture
-file -b "$api_path" | grep -q 'ELF 64-bit.*x86-64' || fail current_binary_architecture
+file -Lb "$running_api_path" | grep -q 'ELF 64-bit.*x86-64' || fail current_binary_architecture
+api_listener="$(ss -lntpH 'sport = :8080' || true)"
+printf '%s\n' "$api_listener" | grep -Fq "pid=${api_pids[0]}," || fail current_api_listener_owner
 health_http="$(curl -sS --max-time 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/health || true)"
 ready_http="$(curl -sS --max-time 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/ready || true)"
 [ "$health_http" = 200 ] && [ "$ready_http" = 200 ] || fail current_api_health
@@ -72,7 +81,7 @@ import re
 import sys
 data = json.load(sys.stdin)
 yaml_text = str(data.get("data", {}).get("yaml", ""))
-print(len(re.findall(r"(?m)^\\s*alertmanagers\\s*:", yaml_text)))
+print(len(re.findall(r"(?m)^\s*alertmanagers\s*:", yaml_text)))
 ')" || fail prometheus_runtime_parse
 prometheus_sms_rules="$(curl -fsS --max-time 5 "http://127.0.0.1:${prometheus_port}/api/v1/rules?type=alert" | python3 -c '
 import json
@@ -82,7 +91,7 @@ print(sum(1 for group in data.get("data", {}).get("groups", []) for rule in grou
 ')" || fail prometheus_rule_query
 [ "$prometheus_sms_rules" -eq 4 ] || fail prometheus_rule_count
 
-alertmanager_containers="$(docker ps --format '{{.Names}}' | grep -Eic 'alertmanager' || true)"
+alertmanager_containers="$(docker ps --format '{{.Names}} {{.Image}} {{.Command}}' | grep -Eic 'alertmanager' || true)"
 alertmanager_processes="$(pgrep -fa '[/]alertmanager([[:space:]]|$)' | wc -l || true)"
 alertmanager_listener_9093="$(ss -lntH | awk '$4 ~ /:9093$/{count++} END{print count+0}')"
 
@@ -104,9 +113,12 @@ printf 'backup_symlink_count=0\n'
 printf 'backup_unsafe_file_mode_count=0\n'
 printf 'old_binary_sha_matches_expected=true\n'
 printf 'current_binary_sha_matches_expected=true\n'
+printf 'current_running_binary_sha_matches_expected=true\n'
+printf 'current_api_listener_owner_verified=true\n'
 printf 'old_current_arch_compatible=true\n'
 printf 'current_health_ready=200:200\n'
-printf 'rollback_restore_point_ready=true\n'
+printf 'rollback_materials_verified=true\n'
+printf 'rollback_restore_runtime_verified=false\n'
 printf 'actual_rollback_authorization_required=true\n'
 printf 'prometheus_sms_rules=%s\n' "$prometheus_sms_rules"
 printf 'prometheus_alertmanager_config_refs=%s\n' "$prometheus_alertmanager_config_refs"
@@ -116,5 +128,6 @@ printf 'alertmanager_listener_9093=%s\n' "$alertmanager_listener_9093"
 printf 'notification_chain_status=%s\n' "$notification_chain_status"
 printf 'notification_drill_ready=%s\n' "$notification_drill_ready"
 printf 'notification_configuration_authorization_required=%s\n' "$notification_configuration_authorization_required"
-printf 'remote_mutations=0\n'
+printf 'business_configuration_mutations=0\n'
+printf 'access_audit_logs_may_increase=true\n'
 printf 'real_sms_sent=0\n'
