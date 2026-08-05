@@ -147,7 +147,18 @@ function Read-NotificationDrillEvidence {
     }
     try {
         $text = [Text.UTF8Encoding]::new($false, $true).GetString($bytes)
-        $evidence = ConvertFrom-Json -InputObject $text -ErrorAction Stop
+        # 禁止属性名转义，避免同一语义键以字面和 Unicode 形式重复后被 JSON 解析器静默覆盖。
+        if ([regex]::IsMatch($text, '"(?:[^"\\]|\\.)*\\(?:u[0-9A-Fa-f]{4}|["\\/bfnrt])(?:[^"\\]|\\.)*"\s*:')) {
+            throw "告警通知演练证据属性名不得使用转义"
+        }
+        $convertFromJsonCommand = Get-Command ConvertFrom-Json -ErrorAction Stop
+        if ($convertFromJsonCommand.Parameters.ContainsKey("DateKind")) {
+            # PowerShell 7.5+ 必须保留 JSON 日期字符串，防止自动转换掩盖原始格式差异。
+            $evidence = ConvertFrom-Json -InputObject $text -DateKind String -ErrorAction Stop
+        }
+        else {
+            $evidence = ConvertFrom-Json -InputObject $text -ErrorAction Stop
+        }
     }
     catch {
         throw "告警通知演练证据不是严格 UTF-8 JSON"
@@ -236,6 +247,9 @@ function Read-NotificationDrillEvidence {
         throw "告警通知演练证据时间格式无效"
     }
     $createdAtText = $createdAtMatches[0].Groups["value"].Value
+    if ([string]$evidence.created_at_utc -cne $createdAtText) {
+        throw "告警通知演练证据顶层时间字段与原始 JSON 不一致"
+    }
     $createdAt = [DateTimeOffset]::MinValue
     $parsed = [DateTimeOffset]::TryParseExact(
         $createdAtText,

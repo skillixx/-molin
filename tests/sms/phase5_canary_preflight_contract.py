@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -186,6 +186,40 @@ class CanaryPreflightContractTest(unittest.TestCase):
             self.assertIn(f"notification_drill_evidence_sha256={digest}", valid.stdout)
             self.assertIn("remote_connections=0", valid.stdout)
             self.assertIn("real_sms_sent=0", valid.stdout)
+
+            valid_created_at = evidence["created_at_utc"]
+            escaped_duplicate_payload = payload.replace(
+                f'"created_at_utc":"{valid_created_at}"'.encode(),
+                (
+                    '"created_at\\u005futc":"2000-01-01T00:00:00Z",'
+                    f'"created_at_utc":"{valid_created_at}"'
+                ).encode(),
+            )
+            escaped_duplicate_path = Path(temp_dir) / "notification-drill-duplicate.json"
+            escaped_duplicate_path.write_bytes(escaped_duplicate_payload)
+            escaped_duplicate = invoke(
+                escaped_duplicate_path,
+                hashlib.sha256(escaped_duplicate_payload).hexdigest(),
+                "我已确认阶段5测试服告警通知演练成功",
+            )
+            self.assertNotEqual(escaped_duplicate.returncode, 0)
+
+            for suffix, created_at in (
+                ("offset", datetime.now(timezone.utc).isoformat()),
+                ("expired", (datetime.now(timezone.utc) - timedelta(hours=25)).strftime("%Y-%m-%dT%H:%M:%SZ")),
+                ("future", (datetime.now(timezone.utc) + timedelta(minutes=6)).strftime("%Y-%m-%dT%H:%M:%SZ")),
+            ):
+                time_evidence = dict(evidence)
+                time_evidence["created_at_utc"] = created_at
+                time_payload = json.dumps(time_evidence, separators=(",", ":"), ensure_ascii=False).encode()
+                time_path = Path(temp_dir) / f"notification-drill-{suffix}.json"
+                time_path.write_bytes(time_payload)
+                invalid_time = invoke(
+                    time_path,
+                    hashlib.sha256(time_payload).hexdigest(),
+                    "我已确认阶段5测试服告警通知演练成功",
+                )
+                self.assertNotEqual(invalid_time.returncode, 0)
 
             wrong_phrase = invoke(path, digest, "错误确认短语")
             self.assertNotEqual(wrong_phrase.returncode, 0)
