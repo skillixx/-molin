@@ -2,7 +2,7 @@
 
 ## 1. 当前状态
 
-状态：**未执行，等待独立测试服真实短信授权。**
+状态：**技术前置门禁已通过，等待独立测试服真实短信 Canary 授权。**
 
 阶段 5A 关闭态部署与代理验证没有发送短信。当前测试服 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`、白名单数量 1，
 固定代理和 4 条短信告警已经部署通过。
@@ -39,6 +39,20 @@ ChangeId，并使用 `resolved.endsAt > resolved.startsAt` 的候选载荷。
 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`。本窗口配置修改 0、服务重载 0、通知 POST 0、真实短信 0；候选执行尚未授权，
 不得以无参数方式运行。仓库外候选 manifest SHA-256 为
 `774b740474ecc1b7e55966d84125d9fa44eb0df8b4fcdb2f1e388c10fa27e98c`。
+
+随后经独立执行授权完成修正版单次邮件演练 `20260805T105517Z`：仅发送 1 次 firing 和 1 次 resolved，负责人均在 QQ
+收件箱确认收到主题为 `[test] MolinSMSDrill` 的当前 ChangeId 邮件；resolved 载荷转换校验通过，且没有重试或其他告警。
+演练结束后根路由恢复为 `discard`，配置 SHA-256 精确恢复为
+`2e906ed20a48d2585f7b7648892de1ee809afdf34c6e45b9a110722fab48239d`。独立复核确认累计通知/请求为 3/3、失败计数为
+0、活动告警为 0、Provider 增量为 0、`SMS_ENABLED=false`、`SMS_TEST_MODE=true`、Alertmanager health/ready 为
+200/200、Prometheus 活跃 Alertmanager 为 1。全过程真实短信 0。
+
+成功证据位于仓库外受控目录
+`D:\molingproject\molin-phase5-alertmanager-drill-evidence-20260805T105517Z`；成功 manifest SHA-256 为
+`67c9b95adc648c6689e904bae255131a619fc7a93f5fd8a1a15f9ce5062bf7a0`，证据契约校验输出
+`notification_evidence_validation=passed`。在此基础上再次执行完整实服聚合预检，关闭态、回滚候选、回滚材料、监控、
+通知演练和日志留存全部为 true，输出 `canary_preflight=passed`、`canary_preflight_ready=true`；该只读预检业务配置修改
+0、服务重启 0、真实短信 0。预检通过仅表示技术前置条件满足，不构成真实短信 Canary 授权，也不代表阶段 5 已完成。
 
 ## 2. 执行门禁
 
