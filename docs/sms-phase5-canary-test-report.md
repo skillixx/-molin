@@ -26,6 +26,9 @@ Alertmanager 于 `2026-08-05T09:55:54.116Z` 以 `start time must be before end t
 离线载荷转换校验和中断恢复规则；下一次通知演练必须取得新的独立授权与 ChangeId，并先完成 126 发件侧记录、QQ
 垃圾箱/拦截规则和收件地址哈希的双人核对。
 
+同日将该失败 manifest 输入 `-ValidateNotificationEvidenceOnly` 成功证据入口，验证器以退出码 1 和“字段集合不符合契约”
+失败关闭，证明失败材料不能误置 `notification_drill_ready=true`，该本地验证没有连接测试服或产生通知。
+
 ## 2. 执行门禁
 
 只读聚合入口：
