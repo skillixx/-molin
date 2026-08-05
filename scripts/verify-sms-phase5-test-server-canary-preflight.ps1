@@ -227,9 +227,18 @@ function Read-NotificationDrillEvidence {
         throw "告警通知演练五层证据文件和摘要必须相互独立"
     }
 
+    # PowerShell 版本可能把 ISO JSON 字符串自动转换为 DateTime；从原始 JSON 提取可避免平台差异放宽格式。
+    $createdAtMatches = [regex]::Matches(
+        $text,
+        '"created_at_utc"\s*:\s*"(?<value>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z)"'
+    )
+    if ($createdAtMatches.Count -ne 1) {
+        throw "告警通知演练证据时间格式无效"
+    }
+    $createdAtText = $createdAtMatches[0].Groups["value"].Value
     $createdAt = [DateTimeOffset]::MinValue
     $parsed = [DateTimeOffset]::TryParseExact(
-        [string]$evidence.created_at_utc,
+        $createdAtText,
         "yyyy-MM-dd'T'HH:mm:ss'Z'",
         [Globalization.CultureInfo]::InvariantCulture,
         [Globalization.DateTimeStyles]::AssumeUniversal,
