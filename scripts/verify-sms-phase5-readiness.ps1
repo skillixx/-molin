@@ -140,6 +140,7 @@ $requiredFiles = @(
     "scripts\verify-sms-phase5-test-server-canary-preflight.ps1",
     "scripts\verify-sms-phase5-canary-execution-plan.ps1",
     "scripts\prepare-sms-phase5-canary-execution-plan.ps1",
+    "scripts\prepare-sms-phase5-canary-target-preflight.ps1",
     "scripts\verify-sms-phase5-observation-evidence.py",
     "scripts\apply-sms-phase5-test-server-log-retention.ps1",
     "scripts\apply-sms-phase5-test-server-log-retention.sh"
@@ -187,6 +188,11 @@ if ($SelfTest) {
         (Join-Path $root "scripts\prepare-sms-phase5-canary-execution-plan.ps1") -SelfTest
     if ($LASTEXITCODE -ne 0) {
         throw "阶段 5 Canary 脱敏计划候选生成自测失败"
+    }
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+        (Join-Path $root "scripts\prepare-sms-phase5-canary-target-preflight.ps1") -SelfTest
+    if ($LASTEXITCODE -ne 0) {
+        throw "阶段 5 Canary 双号码隐藏输入候选自测失败"
     }
     & python (Join-Path $root "scripts\verify-sms-phase5-observation-evidence.py") --self-test
     if ($LASTEXITCODE -ne 0) {

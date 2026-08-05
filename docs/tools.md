@@ -773,6 +773,21 @@ mc cp ./file.jpg local/molin-uploads/    # 上传文件
 
 ## 开发辅助工具
 
+### 阶段 5 Canary 双号码本地预检候选生成器
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维 / 测试 / 产品负责人 |
+| **涉及功能** | 为真实收件 Canary 生成默认关闭的双号码隐藏输入 runner |
+| **代码位置** | `scripts/prepare-sms-phase5-canary-target-preflight.ps1` |
+
+生成器绑定 ChangeId、脱敏计划文件和计划 SHA-256，只允许写入全新的本地目录。生成时执行语法、默认关闭和合成值自测；不采集真实手机号、不连接测试服、不修改白名单、不上传、不打开短信开关、不发送短信。生成的 runner 仅在后续独立批准 `-Interactive` 后，才通过隐藏输入在内存中校验两个号码的格式与互异性。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  scripts/prepare-sms-phase5-canary-target-preflight.ps1 -SelfTest
+```
+
 ### Git
 
 | 项目 | 说明 |

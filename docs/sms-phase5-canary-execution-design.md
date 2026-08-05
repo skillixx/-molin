@@ -83,3 +83,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 3. ChangeId `20260805T132831Z` 的脱敏候选已经本地生成并通过独立静态验证；生成授权已消费，候选不得覆盖或重建。
 4. 通过本地隐藏输入分别提供一个未注册自有号码和一个已绑定合格管理员测试账号的自有号码，只在后续受控执行进程内短暂使用；先完成号码归属、状态和白名单只读预检。
 5. 再分别批准候选上传/只读预检和真实执行；计划生成或上传授权均不得继承为短信发送授权。
+
+## 6. 双号码本地交互只读预检候选
+
+`scripts/prepare-sms-phase5-canary-target-preflight.ps1` 用于生成绑定脱敏计划 ChangeId 与 SHA-256 的本地 runner。生成器默认关闭，只有显式 `-ExportCandidate` 才会在全新的本地目录写入一个 runner；生成过程只执行 PowerShell 语法检查、默认关闭检查和合成号码自测，不进入真实交互分支。
+
+runner 的 `-Interactive` 分支通过 `Read-Host -AsSecureString` 分别读取 `target-new` 与 `target-admin`，使用 BSTR 临时解包，并在 `finally` 中调用 `ZeroFreeBSTR`。号码只用于内存中的格式与互异性校验，不输出、不写盘、不传输。由于托管字符串无法保证物理清零，脚本仅缩短引用生命周期；号码归属、注册状态、管理员身份与白名单状态仍须后续获得独立授权后，在固定测试服执行只读预检确认。
+
+本地静态生成示例：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  scripts/prepare-sms-phase5-canary-target-preflight.ps1 `
+  -ExportCandidate `
+  -ChangeId <UTC_CHANGE_ID> `
+  -PlanFile <LOCAL_PLAN_FILE> `
+  -ExpectedPlanSHA256 <LOWERCASE_SHA256> `
+  -OutputDirectory <NEW_LOCAL_DIRECTORY>
+```
+
+本入口不修改白名单、不连接测试服、不上传、不修改 `SMS_ENABLED`，也不发送短信。实际执行 `-Interactive` 必须另行批准；候选生成授权不继承为交互输入或任何远程操作授权。
