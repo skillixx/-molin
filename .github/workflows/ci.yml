@@ -200,6 +200,11 @@ jobs:
       - name: 校验测试服 Canary 只读聚合预检
         run: python tests/sms/phase5_canary_preflight_contract.py
 
+      - name: 校验 Canary 执行计划与五档观察证据门禁
+        run: |
+          python tests/sms/phase5_canary_execution_plan_contract.py
+          python tests/sms/phase5_observation_evidence_contract.py
+
       - name: 离线校验测试服 Canary 聚合预检包装器
         shell: pwsh
         run: ./scripts/verify-sms-phase5-test-server-canary-preflight.ps1 -SelfTest

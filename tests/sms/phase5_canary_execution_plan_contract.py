@@ -5,11 +5,13 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "verify-sms-phase5-canary-execution-plan.ps1"
+CI = ROOT / ".github" / "workflows" / "ci.yml"
 
 
 class Phase5CanaryExecutionPlanContract(unittest.TestCase):
     def setUp(self) -> None:
         self.source = SCRIPT.read_text(encoding="utf-8")
+        self.ci = CI.read_text(encoding="utf-8")
 
     def test_script_is_offline_and_has_no_send_path(self) -> None:
         self.assertNotRegex(self.source, re.compile(r"\b(?:curl|Invoke-WebRequest|ssh|scp)\b", re.I))
@@ -29,6 +31,9 @@ class Phase5CanaryExecutionPlanContract(unittest.TestCase):
         self.assertIn("场景计划字段必须严格限定", self.source)
         self.assertIn("sensitive_values_persisted=0", self.source)
         self.assertRegex(self.source, r"1\[3-9\].*\\d\{9\}")
+
+    def test_contract_is_explicitly_wired_into_ci(self) -> None:
+        self.assertIn("python tests/sms/phase5_canary_execution_plan_contract.py", self.ci)
 
 
 if __name__ == "__main__":

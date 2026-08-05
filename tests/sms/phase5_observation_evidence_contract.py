@@ -6,9 +6,13 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "verify-sms-phase5-observation-evidence.py"
+CI = ROOT / ".github" / "workflows" / "ci.yml"
 
 
 class Phase5ObservationEvidenceContract(unittest.TestCase):
+    def setUp(self) -> None:
+        self.ci = CI.read_text(encoding="utf-8")
+
     def test_offline_self_test_passes(self) -> None:
         result = subprocess.run(
             [sys.executable, str(SCRIPT), "--self-test"],
@@ -40,6 +44,9 @@ class Phase5ObservationEvidenceContract(unittest.TestCase):
             self.assertNotIn(forbidden, source)
         self.assertNotIn("SMS_ENABLED=true", source)
         self.assertIn("real_sms_sent_by_verifier=0", source)
+
+    def test_contract_is_explicitly_wired_into_ci(self) -> None:
+        self.assertIn("python tests/sms/phase5_observation_evidence_contract.py", self.ci)
 
 
 if __name__ == "__main__":
