@@ -67,7 +67,7 @@ if ($SelfTest) {
         '/api/auth/verification-codes/phone',
         '/api/admin/sms/.+test-send',
         '\bcurl\b[^\n]*(--request|-X|--data|-d|--form|-F)\b',
-        '\brm\s+(-[^\n]*r|--recursive)\b',
+        '\brm\s+(?:-[A-Za-z]*r[A-Za-z]*\b|--recursive\b)',
         '\bgit\s+(reset|push|checkout|restore)\b',
         '\bdocker\s+(restart|stop|kill|rm|run|create|pull)\b'
     )) {

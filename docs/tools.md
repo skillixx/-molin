@@ -511,7 +511,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-re
 | **使用者** | 运维 / 测试 / 产品经理 |
 | **涉及模块** | 测试服回滚、固定代理、journald、告警通知链 |
 | **涉及功能** | 回滚材料只读预检、安全回滚候选、旧二进制运行/当前版本恢复演练候选、日志留存策略只读审计与获批后受控变更 |
-| **代码位置** | `scripts/sms-phase5-test-server-ssh.ps1`、`scripts/verify-sms-phase5-test-server-recovery-readiness.ps1`、`scripts/prepare-sms-phase5-test-server-rollback-candidate.ps1`、`scripts/verify-sms-phase5-test-server-rollback-candidate.ps1`、`scripts/prepare-sms-phase5-test-server-rollback-drill.ps1`、`scripts/run-sms-phase5-test-server-rollback-drill.sh`、`scripts/verify-sms-phase5-test-server-log-retention.ps1`、`scripts/apply-sms-phase5-test-server-log-retention.ps1` 及相关 Bash payload |
+| **代码位置** | `scripts/sms-phase5-test-server-ssh.ps1`、`scripts/verify-sms-phase5-test-server-recovery-readiness.ps1`、`scripts/prepare-sms-phase5-test-server-rollback-candidate.ps1`、`scripts/verify-sms-phase5-test-server-rollback-candidate.ps1`、`scripts/prepare-sms-phase5-test-server-rollback-drill.ps1`、`scripts/run-sms-phase5-test-server-rollback-drill.sh`、`scripts/stage-sms-phase5-test-server-rollback-drill.ps1`、`scripts/stage-sms-phase5-test-server-rollback-drill.sh`、`scripts/verify-sms-phase5-test-server-rollback-drill.ps1`、`scripts/verify-sms-phase5-test-server-rollback-drill.sh`、`scripts/verify-sms-phase5-test-server-log-retention.ps1`、`scripts/apply-sms-phase5-test-server-log-retention.ps1` 及相关 Bash payload |
 
 **作用：** 将“材料存在”“候选可生成”“配置完整”“运行时已验证”拆成独立证据，禁止用旧环境整份覆盖当前固定代理配置，
 也禁止把 journald 配置存在误报为策略已批准。六个阶段 5 远端包装器统一调用共享 SSH 目标与 ED25519 指纹校验，避免固定身份规则分叉；各入口都支持或配有离线安全契约，真实候选生成会写远端文件，必须单独授权。回滚候选验证器按 UTC ChangeId 只读核对文件类型、700/600 权限、SHA-256、短信关闭态、固定代理、必要发布键、废弃键和重复键，不输出任何环境值。日志留存变更入口还支持
@@ -524,6 +524,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-re
 关闭态、活动告警、通知计数、数据库发送摘要和磁盘余量；`--execute` 还要求输入与 ChangeId 绑定的精确批准短语。
 执行器只向精确 API PID 发送 TERM，超时后才对再次核验的同一 PID 使用 KILL；任何失败都优先恢复当前二进制和原进程环境。
 它不替换 `infra/.env.test`，不 POST 告警或业务接口，不发送邮件或短信。交接候选通过只读预检仍不构成服务重启授权。
+暂存包装器只在独立批准后排他创建远端暂存目录、上传固定摘要 runner，并运行语法、自测和关闭态只读预检；失败清理不用
+递归删除。执行后独立验证器只读复核证据文件集合、当前二进制/环境摘要、双代理、数据库、Provider、Alertmanager、
+Prometheus 和日志敏感值，不以 runner 自报成功替代运行态证据。
 
 ```powershell
 # 本地离线检查，不连接测试服
@@ -532,6 +535,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-sms-phase5-t
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-rollback-candidate.ps1 -SelfTest
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-sms-phase5-test-server-rollback-drill.ps1 `
   -ChangeId 20990101T000000Z -SelfTest
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stage-sms-phase5-test-server-rollback-drill.ps1 -SelfTest
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-rollback-drill.ps1 -SelfTest
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-log-retention.ps1 -SelfTest
 
 # 已获只读测试服审计授权时使用；可能增加 SSH 访问审计日志，但不修改业务配置或发送短信

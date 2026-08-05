@@ -262,6 +262,36 @@ if values.get('SMS_PROVIDER') != 'aliyun' or values.get('SMS_ALIYUN_ENDPOINT') !
 PY
 }
 
+verify_candidate_matches_process() {
+  local pid="$1"
+  python3 - "$candidate" "/proc/${pid}/environ" <<'PY'
+import re
+import sys
+
+candidate_path, process_environment_path = sys.argv[1:]
+candidate = {}
+for raw_line in open(candidate_path, encoding="utf-8"):
+    line = raw_line.strip()
+    if not line or line.startswith("#"):
+        continue
+    match = re.fullmatch(r"(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)", line)
+    if match is None or match.group(1) in candidate:
+        raise SystemExit(2)
+    key, value = match.groups()
+    value = value.strip()
+    if len(value) not in (0, 1) and value[0] == value[-1] and value[0] in "'\"":
+        value = value[1:-1]
+    candidate[key] = value
+running = {}
+for item in open(process_environment_path, "rb").read().split(b"\0"):
+    key, separator, value = item.partition(b"=")
+    if separator:
+        running[key.decode(errors="surrogateescape")] = value.decode(errors="surrogateescape")
+if any(running.get(key) != value for key, value in candidate.items()):
+    raise SystemExit(2)
+PY
+}
+
 verify_closed_alertmanager() {
   [ "$(sha256sum "$alertmanager_config" | awk '{print $1}')" = "$alertmanager_config_sha256" ]
   python3 - "$alertmanager_config" <<'PY'
@@ -295,11 +325,13 @@ preflight_checks() {
   current_hash="$(sha256sum "$api_path" | awk '{print $1}')"
   [ "$current_hash" = "$current_binary_sha256" ] || fail current_binary_hash
   [ -f "$current_env" ] && [ ! -L "$current_env" ] && [ "$(stat -c '%U:%a' "$current_env")" = pc:600 ] || fail current_environment
+  [ "$(sha256sum "$current_env" | awk '{print $1}')" = "$candidate_sha256" ] || fail current_environment_hash
   verify_candidate || fail rollback_candidate
   verify_closed_alertmanager || fail alertmanager_closed
   mapfile -t running < <(api_pids)
   [ "${#running[@]}" -eq 1 ] || fail current_api_count
   original_pid="${running[0]}"
+  verify_candidate_matches_process "$original_pid" || fail candidate_running_environment_drift
   running_hash="$(sha256sum "/proc/${original_pid}/exe" | awk '{print $1}')"
   [ "$running_hash" = "$current_binary_sha256" ] || fail current_running_hash
   verify_running_api "$original_pid" "$current_binary_sha256" || fail current_api_health
@@ -320,6 +352,8 @@ preflight_checks() {
   printf 'change_id=%s\n' "$change_id"
   printf 'candidate_change_id=%s\n' "$candidate_change_id"
   printf 'candidate_sha256=%s\n' "$candidate_sha256"
+  printf 'current_environment_sha256=%s\n' "$candidate_sha256"
+  printf 'candidate_matches_running_environment=true\n'
   printf 'old_binary_sha256=%s\n' "$old_binary_sha256"
   printf 'current_binary_sha256=%s\n' "$current_binary_sha256"
   printf 'alertmanager_route=discard\n'

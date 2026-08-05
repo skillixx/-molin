@@ -140,8 +140,31 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 2026-08-05 首个本地冻结候选 `20260805T112823Z` 因把前端端口错误冻结为 `13001/13000`，在只读预检阶段失败，已在
 候选目录写入 `INVALIDATED.txt`，禁止上传或执行；该失败发生在服务重启、配置替换和任何外发之前。修正版 ChangeId
 `20260805T113149Z` 虽通过只读预检，但随后被“写入前预检、候选根身份和运行时候选快照”加固版取代，仓库外已写
-`SUPERSEDED.txt`，同样禁止上传或执行。加固候选 `20260805T113924Z` 又被增加敏感快照全退出路径清理的版本取代；最终
-修正版 ChangeId `20260805T114239Z` 的 runner SHA-256 为
-`fd5afd804457824f5dfaefcf6542b39d070a92a8e809ddcdf0fd6ecb077839d4`。本地包装器 SelfTest、远端流式 `bash -n`、
+`SUPERSEDED.txt`，同样禁止上传或执行。加固候选 `20260805T113924Z` 又被增加敏感快照全退出路径清理的版本取代；
+`20260805T114239Z` 则被执行前环境一致性门禁版本取代。最终修正版 ChangeId `20260805T115540Z` 的 runner SHA-256 为
+`2724b89ea0096b15e5c443a2f5dfdd7e80f93c971ff2fb22a3585a5a1ad2bb46`。本地包装器 SelfTest、远端流式 `bash -n`、
 runner SelfTest 和关闭态只读预检均通过；预检确认通知基线 `3:0:3:0`、活动告警 `0:0`、短信关闭/测试模式开启，
 远端文件写入、服务重启、通知 POST、业务 POST 和真实短信均为 0。最终候选尚未上传或执行，不能记为实际回滚通过。
+
+候选上传与远端只读预检必须使用 `scripts/stage-sms-phase5-test-server-rollback-drill.ps1` 与
+`scripts/stage-sms-phase5-test-server-rollback-drill.sh`。默认模式和
+`-SelfTest` 均不连接测试服；真实暂存必须同时提供 `-StageAndPreflight` 和精确批准短语
+`APPROVE_SMS_PHASE5_TEST_ROLLBACK_DRILL_STAGE_20260805T115540Z`。包装器先复算本地候选摘要，再以固定 ED25519 身份在
+`/home/pc/molin/rollback/sms-phase5/runtime-drill-staging/20260805T115540Z` 排他创建 700 目录，上传 runner 后固定为
+600，并只执行摘要、`bash -n`、runner SelfTest 和 `--preflight`。任一失败只用精确文件删除和空目录 `rmdir` 清理本次
+暂存，不使用递归删除；不进入实际服务切换模式，不发信号、不重启、不 POST、不发送邮件或短信。暂存与预检通过仍须另行
+批准实际执行。
+
+实际窗口结束后必须由 `scripts/verify-sms-phase5-test-server-rollback-drill.ps1` 与
+`scripts/verify-sms-phase5-test-server-rollback-drill.sh` 独立只读验收。该验证器不信任单一成功标记，而是同时核对：
+
+- 暂存 runner 摘要、证据目录固定文件集合、700/600 权限、属主、硬链接和符号链接；
+- `drill-result.txt`、`old-runtime.txt`、`exit-evidence.txt` 和执行前预检的精确字段集合；
+- 原进程环境与运行时候选快照均已清理，临时二进制不存在；
+- 当前磁盘、运行进程及 `infra/.env.test` 均恢复当前版本/候选固定摘要，短信仍为关闭和测试模式；
+- API health/ready/version、双前端代理、`sms_send_logs=13:13:0`、Provider 0；
+- Alertmanager 配置摘要与通知计数仍为 `3:0:3:0`、活动告警 0、Prometheus 活跃 Alertmanager 1；
+- API 日志不含当前运行进程中的 Secret、完整手机号、Bearer 或验证码形态，且没有遗留执行进程。
+
+全部通过才输出 `rollback_restore_runtime_verified=true`。该只读验收可能增加 SSH/HTTP/数据库只读审计记录，但远端文件
+写入、服务重启、通知 POST、业务 POST 和真实短信均为 0。

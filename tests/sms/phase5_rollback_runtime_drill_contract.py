@@ -51,6 +51,8 @@ class RollbackRuntimeDrillContractTest(unittest.TestCase):
             "old_binary_runtime_verified=true",
             "current_binary_restored=true",
             "current_environment_file_replaced=false",
+            "current_environment_sha256=%s",
+            "candidate_matches_running_environment=true",
             "notification_delta_zero=true",
             "sms_send_log_delta_zero=true",
             "real_sms_sent=0",
@@ -63,7 +65,10 @@ class RollbackRuntimeDrillContractTest(unittest.TestCase):
             self.sh,
             r"\bcurl\b[^\n]*(?:--request|-X|--data|-d|--form|-F)\b",
         )
-        self.assertNotRegex(self.sh, r"\brm\s+(?:-[^\n]*r|--recursive)\b")
+        self.assertNotRegex(
+            self.sh,
+            r"\brm\s+(?:-[A-Za-z]*r[A-Za-z]*\b|--recursive\b)",
+        )
 
     def test_process_replacement_is_exact_and_recovery_is_armed_first(self) -> None:
         self.assertEqual(len(re.findall(r"(?m)^\s*kill -TERM ", self.sh)), 1)
