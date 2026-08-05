@@ -78,6 +78,27 @@ jobs:
           # 敏感信息门禁需要比较阶段分支与主分支的完整共同基线。
           fetch-depth: 0
 
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            web/admin-console/package-lock.json
+            web/user-console/package-lock.json
+
+      - name: 构建管理端扫描产物
+        working-directory: web/admin-console
+        run: |
+          npm ci
+          npm run build
+
+      - name: 构建用户端扫描产物
+        working-directory: web/user-console
+        run: |
+          npm ci
+          npm run build
+
       - name: 校验 Nginx 来源头安全边界
         run: python infra/nginx/verify_forwarded_headers.py
 
@@ -86,9 +107,7 @@ jobs:
         run: ./scripts/verify-sms-phase5-readiness.ps1 -SelfTest -RunSensitiveScan
 
       - name: 校验阶段 5 敏感信息门禁契约
-        run: |
-          python tests/sms/phase5_sensitive_data_gate_contract.py
-          python scripts/verify-sms-phase5-sensitive-data.py --repo-root . --base-ref origin/main
+        run: python tests/sms/phase5_sensitive_data_gate_contract.py
 
       - name: 校验代理专用网络规划
         shell: pwsh

@@ -169,7 +169,7 @@ if ($SelfTest) {
 
 if ($RunSensitiveScan) {
     $scanOutput = @(& python (Join-Path $root "scripts\verify-sms-phase5-sensitive-data.py") `
-        --repo-root $root --base-ref $SensitiveScanBaseRef)
+        --repo-root $root --base-ref $SensitiveScanBaseRef --require-dist)
     $scanExitCode = $LASTEXITCODE
     $scanOutput | Write-Output
     if ($scanExitCode -ne 0 -or $scanOutput -notcontains "phase5_sensitive_scan=passed") {

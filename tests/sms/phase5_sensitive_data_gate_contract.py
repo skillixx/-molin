@@ -50,7 +50,7 @@ class Phase5SensitiveDataGateContractTest(unittest.TestCase):
         self.run_git("add", relative_path)
         self.run_git("commit", "--quiet", "-m", "更新测试文件")
 
-    def run_gate(self) -> subprocess.CompletedProcess[str]:
+    def run_gate(self, *extra_arguments: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [
                 sys.executable,
@@ -59,6 +59,7 @@ class Phase5SensitiveDataGateContractTest(unittest.TestCase):
                 str(self.repo),
                 "--base-ref",
                 "phase5-base",
+                *extra_arguments,
             ],
             cwd=ROOT,
             check=False,
@@ -112,6 +113,71 @@ class Phase5SensitiveDataGateContractTest(unittest.TestCase):
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         self.assertIn("category=sms_test_mode_false", result.stdout)
 
+    def test_secret_added_then_deleted_is_still_rejected_from_branch_history(self) -> None:
+        secret = "LTAI" + "9" * 16
+        self.commit_file("temporary-secret.log", f"access_key_id={secret}\n")
+        (self.repo / "temporary-secret.log").unlink()
+        self.run_git("add", "-u")
+        self.run_git("commit", "--quiet", "-m", "删除临时文件")
+
+        result = self.run_gate()
+
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("category=access_key_or_secret_value", result.stdout)
+        self.assertIn("source_ref=blob:", result.stdout)
+        self.assertNotIn(secret, result.stdout)
+
+    def test_deleted_protected_env_is_rejected_even_when_blob_already_existed(self) -> None:
+        # 内容与基线 README 完全相同，验证门禁依赖历史路径而非“新 blob”巧合。
+        self.commit_file("infra/.env", "阶段 5 基线\n")
+        (self.repo / "infra" / ".env").unlink()
+        self.run_git("add", "-u")
+        self.run_git("commit", "--quiet", "-m", "删除受保护环境文件")
+
+        result = self.run_gate()
+
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("category=historical_protected_env", result.stdout)
+        self.assertIn("source_ref=commit:", result.stdout)
+
+    def test_non_placeholder_phone_and_otp_in_document_are_rejected(self) -> None:
+        phone = "137" + "1357" + "2468"
+        otp = "135" + "790"
+        self.commit_file("docs/evidence.md", f"phone={phone}\ncode={otp}\n")
+
+        result = self.run_gate()
+
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("category=static_phone_literal", result.stdout)
+        self.assertIn("category=synthetic_test_otp", result.stdout)
+        self.assertNotIn(phone, result.stdout)
+        self.assertNotIn(otp, result.stdout)
+
+    def test_common_configuration_forms_cannot_bypass_closed_state(self) -> None:
+        self.commit_file(
+            "infra/runtime-config.txt",
+            "{\"SMS_ENABLED\": true},\n"
+            "environment: { SMS_ENABLED: true }\n"
+            "$env:SMS_ENABLED = $true\n"
+            "SMS_ENABLED=true command\n"
+            "{\"SMS_TEST_MODE\": false}\n",
+        )
+
+        result = self.run_gate()
+
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("category=sms_enabled_true", result.stdout)
+        self.assertIn("category=sms_test_mode_false", result.stdout)
+        self.assertIn("sms_enable_literals=4", result.stdout)
+
+    def test_required_dist_artifacts_fail_closed_when_missing(self) -> None:
+        self.commit_file("infra/.env.example", "SMS_ENABLED=false\nSMS_TEST_MODE=true\n")
+
+        result = self.run_gate("--require-dist")
+
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("category=missing_required_dist", result.stdout)
+
     def test_tracked_protected_environment_file_is_rejected_without_reading_value(self) -> None:
         secret = "never-print-this-environment-value"
         self.commit_file("infra/.env", f"SMS_ALIYUN_ACCESS_KEY_SECRET={secret}\n")
@@ -149,8 +215,12 @@ class Phase5SensitiveDataGateContractTest(unittest.TestCase):
         self.assertIn("verify-sms-phase5-sensitive-data.py", readiness)
         self.assertIn("phase5_sensitive_scan=passed", readiness)
         self.assertIn("fetch-depth: 0", phase5_job)
+        self.assertIn("actions/setup-node@v4", phase5_job)
+        self.assertIn("npm ci", phase5_job)
+        self.assertGreaterEqual(phase5_job.count("npm run build"), 2)
         self.assertIn("phase5_sensitive_data_gate_contract.py", phase5_job)
-        self.assertIn("verify-sms-phase5-sensitive-data.py", phase5_job)
+        self.assertIn("-RunSensitiveScan", phase5_job)
+        self.assertIn("--require-dist", readiness)
 
 
 if __name__ == "__main__":

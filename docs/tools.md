@@ -482,16 +482,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 | **涉及功能** | 敏感值离线扫描、受保护环境文件检查、短信关闭态静态检查 |
 | **代码位置** | `scripts/verify-sms-phase5-sensitive-data.py`、`tests/sms/phase5_sensitive_data_gate_contract.py` |
 
-**作用：** 只读比较阶段分支与指定基线，扫描改动文本文件和现有 admin/user `dist` 产物；同时检查全部 Git 跟踪文件中是否存在
-受保护环境文件。发现真实凭据、JWT、完整手机号、验证码、供应商原始正文、`SMS_ENABLED=true` 或 `SMS_TEST_MODE=false` 时返回失败。
-输出只包含规则分类、相对路径和行号，不打印命中正文。只读包装器用于拒绝危险 payload 的禁止模式字面量会经过上下文识别，
-不会被误报为真实开启短信。
+**作用：** 只读比较阶段分支与指定基线，扫描该分支引入的全部历史 blob 和提交说明、暂存/未暂存/未忽略工作树文件，
+以及 admin/user `dist` 产物；因此“先提交秘密再删除”不能绕过门禁。同时检查全部 Git 跟踪及历史中是否存在受保护环境文件。
+发现真实凭据、JWT、完整手机号、验证码、供应商原始正文、`SMS_ENABLED=true` 或 `SMS_TEST_MODE=false` 时返回失败；
+关闭态赋值覆盖 env、JSON、flow YAML、PowerShell 和命令前缀。输出只包含规则分类、相对路径、行号和 Git 对象摘要，
+不打印命中正文。只读包装器用于拒绝危险 payload 的禁止模式字面量会经过上下文识别，不会被误报为真实开启短信。
 
 ```powershell
 # 独立扫描阶段分支；不连接服务器、不读取被 Git 忽略的真实环境文件
-python scripts/verify-sms-phase5-sensitive-data.py --repo-root . --base-ref origin/main
+python scripts/verify-sms-phase5-sensitive-data.py --repo-root . --base-ref origin/main --require-dist
 
-# 与阶段 5 准备度一起运行；CI 使用完整 Git 历史保证可解析比较基线
+# 与阶段 5 准备度一起运行；CI 使用完整 Git 历史并先重新构建两套 dist
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-readiness.ps1 `
   -SelfTest -RunSensitiveScan -SensitiveScanBaseRef origin/main
 ```
