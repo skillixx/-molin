@@ -635,6 +635,30 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 
 ---
 
+### 短信阶段 5 Canary 执行计划门禁
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 产品经理 / 运维 / 测试 |
+| **涉及模块** | 五个短信业务场景、白名单目标角色、发送预算和业务状态变更边界 |
+| **涉及功能** | 在生成真实发送执行器前阻断单号码状态冲突、超预算、重试和敏感值持久化 |
+| **代码位置** | `scripts/verify-sms-phase5-canary-execution-plan.ps1` |
+
+**作用：** 仅离线验证脱敏计划文件。`register` 的未注册目标不能与 `login/reset_password/admin_verify` 的已注册目标
+复用同一号码别名；若选择完整 OTP 消费，还必须显式批准一次性账号、业务状态变更和恢复。本工具不连接测试服、不切换
+短信开关、不调用 HTTP 或供应商。详细边界见 `docs/sms-phase5-canary-execution-design.md`。
+
+```powershell
+# 本地正反例自测；不会创建计划、连接网络或发送短信
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-canary-execution-plan.ps1 -SelfTest
+
+# 对仓库外的脱敏 JSON 计划执行静态验证
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-canary-execution-plan.ps1 `
+  -PlanFile C:\受控目录\canary-plan.json
+```
+
+---
+
 ### MySQL
 
 | 项目 | 说明 |
