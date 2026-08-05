@@ -205,6 +205,21 @@ class CanaryPreflightContractTest(unittest.TestCase):
             )
             self.assertNotEqual(escaped_duplicate.returncode, 0)
 
+            nested_evidence = dict(evidence)
+            nested_evidence["created_at_utc"] = datetime.now(timezone.utc).isoformat()
+            nested_evidence["alertmanager_evidence_path"] = {
+                "created_at_utc": valid_created_at,
+            }
+            nested_payload = json.dumps(nested_evidence, separators=(",", ":"), ensure_ascii=False).encode()
+            nested_path = Path(temp_dir) / "notification-drill-nested.json"
+            nested_path.write_bytes(nested_payload)
+            nested = invoke(
+                nested_path,
+                hashlib.sha256(nested_payload).hexdigest(),
+                "我已确认阶段5测试服告警通知演练成功",
+            )
+            self.assertNotEqual(nested.returncode, 0)
+
             for suffix, created_at in (
                 ("offset", datetime.now(timezone.utc).isoformat()),
                 ("expired", (datetime.now(timezone.utc) - timedelta(hours=25)).strftime("%Y-%m-%dT%H:%M:%SZ")),

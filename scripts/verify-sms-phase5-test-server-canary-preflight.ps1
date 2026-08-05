@@ -204,6 +204,15 @@ function Read-NotificationDrillEvidence {
         throw "告警通知演练证据字段集合不符合契约"
     }
     foreach ($property in $expectedProperties) {
+        $propertyValue = $evidence.$property
+        if ($null -eq $propertyValue -or
+            ($propertyValue -isnot [string] -and $propertyValue -isnot [bool] -and
+             $propertyValue -isnot [int] -and $propertyValue -isnot [long] -and
+             $propertyValue -isnot [DateTime] -and $propertyValue -isnot [DateTimeOffset])) {
+            throw "告警通知演练证据只允许顶层标量字段"
+        }
+    }
+    foreach ($property in $expectedProperties) {
         if ([regex]::Matches($text, '"' + [regex]::Escape($property) + '"\s*:').Count -ne 1) {
             throw "告警通知演练证据包含缺失键或重复键"
         }
