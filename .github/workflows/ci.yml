@@ -206,6 +206,7 @@ jobs:
       - name: 校验 Canary 执行计划与五档观察证据门禁
         run: |
           python tests/sms/phase5_canary_execution_plan_contract.py
+          python tests/sms/phase5_canary_plan_candidate_contract.py
           python tests/sms/phase5_observation_evidence_contract.py
 
       - name: 离线校验测试服 Canary 聚合预检包装器

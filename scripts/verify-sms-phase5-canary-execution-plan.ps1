@@ -72,6 +72,9 @@ function Assert-CanaryExecutionPlan {
         $byScene.admin_verify.target_state -cne "registered_admin") {
         throw "场景目标账号状态与业务入口前置条件不一致"
     }
+    if ($byScene.bind_phone.target_state -cne "unregistered") {
+        throw "bind_phone 目标必须是未注册的新手机号别名"
+    }
     if ($byScene.register.target_alias -ceq $byScene.login.target_alias -or
         $byScene.register.target_alias -ceq $byScene.reset_password.target_alias -or
         $byScene.register.target_alias -ceq $byScene.admin_verify.target_alias) {
@@ -80,8 +83,10 @@ function Assert-CanaryExecutionPlan {
 
     switch ([string]$Plan.acceptance_scope) {
         "receipt_only" {
-            if ($Plan.business_state_changes -ne $false) {
-                throw "仅收件 Canary 不得授权业务状态变更"
+            if ($Plan.business_state_changes -ne $false -or
+                $Plan.business_state_rollback_approved -ne $false -or
+                $Plan.disposable_accounts -ne $false) {
+                throw "仅收件 Canary 不得携带业务变更、回滚或一次性账号授权"
             }
         }
         "full_business_consume" {
@@ -122,11 +127,13 @@ if ($SelfTest) {
         max_sends = 5
         acceptance_scope = "receipt_only"
         business_state_changes = $false
+        business_state_rollback_approved = $false
+        disposable_accounts = $false
         scenes = @(
             [pscustomobject]@{ scene = "register"; target_alias = "target-new"; target_state = "unregistered" },
             [pscustomobject]@{ scene = "login"; target_alias = "target-admin"; target_state = "registered" },
             [pscustomobject]@{ scene = "reset_password"; target_alias = "target-admin"; target_state = "registered" },
-            [pscustomobject]@{ scene = "bind_phone"; target_alias = "target-admin"; target_state = "registered" },
+            [pscustomobject]@{ scene = "bind_phone"; target_alias = "target-new"; target_state = "unregistered" },
             [pscustomobject]@{ scene = "admin_verify"; target_alias = "target-admin"; target_state = "registered_admin" }
         )
     }
