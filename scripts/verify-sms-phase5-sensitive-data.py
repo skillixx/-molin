@@ -40,6 +40,7 @@ BEARER_TOKEN_RE = re.compile(
     r"(?i)\bBearer[ \t]+(?P<value>[A-Za-z0-9._~+/-]{16,}=*)(?![A-Za-z0-9._~+/-])"
 )
 PATH_PHONE_RE = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
+PATH_OTP_RE = re.compile(r"(?<!\d)\d{6}(?!\d)")
 PATH_JWT_RE = re.compile(
     r"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?![A-Za-z0-9_-])"
 )
@@ -238,11 +239,16 @@ def safe_path_metadata(path: pathlib.Path, repo: pathlib.Path) -> tuple[str, str
 
     raw = relative_path(path, repo)
     digest = hashlib.sha256(raw.encode("utf-8", errors="surrogatepass")).hexdigest()
-    has_control = any(unicodedata.category(character) in {"Cc", "Cf", "Cs"} for character in raw)
+    has_control = any(
+        unicodedata.category(character).startswith("C")
+        or unicodedata.category(character) in {"Zl", "Zp"}
+        for character in raw
+    )
     has_sensitive_shape = any(
         pattern.search(raw)
         for pattern in (
             PATH_PHONE_RE,
+            PATH_OTP_RE,
             ALIYUN_ACCESS_KEY_ID_RE,
             PATH_JWT_RE,
             PATH_EMAIL_RE,

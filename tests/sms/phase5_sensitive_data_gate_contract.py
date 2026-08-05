@@ -230,9 +230,24 @@ class Phase5SensitiveDataGateContractTest(unittest.TestCase):
         result = self.run_gate()
 
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
-        self.assertIn("file=[redacted-sensitive-path]", result.stdout)
+        self.assertIn("file=[redacted-sensitive-path]", result.stdout, result.stderr)
         self.assertIn("path_sha256=", result.stdout)
         self.assertNotIn(phone, result.stdout)
+
+    def test_otp_and_unicode_line_separator_filename_is_never_echoed(self) -> None:
+        otp = "246" + "810"
+        separator = "\u2028"
+        target = self.repo / "artifacts" / f"evidence-{otp}{separator}tail.log"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("code=" + "135" + "790\n", encoding="utf-8")
+
+        result = self.run_gate()
+
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("file=[redacted-sensitive-path]", result.stdout, result.stderr)
+        self.assertIn("path_sha256=", result.stdout)
+        self.assertNotIn(otp, result.stdout)
+        self.assertNotIn(separator, result.stdout)
 
     def test_merge_conflict_resolution_blob_is_scanned_after_later_removal(self) -> None:
         base_branch = self.run_git("branch", "--show-current").stdout.strip()
