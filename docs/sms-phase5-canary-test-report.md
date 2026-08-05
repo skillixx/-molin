@@ -22,9 +22,10 @@ Alertmanager 于 `2026-08-05T09:55:54.116Z` 以 `start time must be before end t
 通知计数为 0。失败路径已恢复 `discard` 和关闭态配置，活动告警为 0，`SMS_ENABLED=false`、`SMS_TEST_MODE=true`。
 本次演练正式记为**失败**，不得据此解除 Canary 门禁，也不得在原授权下重试 firing 或 resolved。仓库外受控失败证据位于
 `D:\molingproject\molin-phase5-alertmanager-drill-failure-evidence-20260805T094720Z`，manifest SHA-256 为
-`22acc123e477cc3084cde19e56e6e123864ef3db42c7295776bbbe245419d606`，不含邮箱地址或 SMTP Secret。复盘已新增
-离线载荷转换校验和中断恢复规则；下一次通知演练必须取得新的独立授权与 ChangeId，并先完成 126 发件侧记录、QQ
-垃圾箱/拦截规则和收件地址哈希的双人核对。
+`f747497c05285e5803601046034b83b952f438bd9baeca2f7fbd97976e59439d`，不含邮箱地址或 SMTP Secret。负责人已通过
+本地不回显工具确认预期收件地址 SHA-256 与测试服配置一致，地址未保存、网络连接为 0；因此已排除收件地址配置错误，
+剩余故障范围为 126 SMTP 接受后的投递、退信、风控或 QQ 收件端拦截。复盘已新增离线载荷转换校验和中断恢复规则；
+下一次通知演练必须取得新的独立授权与 ChangeId，并先完成 126 发件侧记录及 QQ 垃圾箱/拦截规则的双人核对。
 
 同日将该失败 manifest 输入 `-ValidateNotificationEvidenceOnly` 成功证据入口，验证器以退出码 1 和“字段集合不符合契约”
 失败关闭，证明失败材料不能误置 `notification_drill_ready=true`，该本地验证没有连接测试服或产生通知。
