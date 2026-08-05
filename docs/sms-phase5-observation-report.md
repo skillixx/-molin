@@ -19,14 +19,17 @@ SSH/API 访问审计日志，业务配置修改、服务重启和短信发送操
 签名异常、网络异常持续时间、平均延迟严格大于 2 秒且至少 10 次均有正例；20% 边界和 9 次调用均有不触发反例。
 离线测试不会写运行指标或制造供应商故障，不能替代测试服告警通知链路演练。
 
-2026-08-04 进一步只读核验测试服运行态：Prometheus 配置中的 Alertmanager 引用为 0，Alertmanager 容器、进程
-和 9093 监听也均为 0。因此当前通知链明确为 `receiver_configuration_required`，尚不具备演练条件。下一步必须先
-确定接收渠道与值班人，以 Secret 方式部署 Alertmanager 并把 Prometheus 指向它；这些均是外部通知和服务配置变更，
-需要独立授权。配置完成后还需在 `SMS_ENABLED=false` 下用合成指标或专用测试规则演练，不得通过真实短信故障触发。
+2026-08-05 经独立授权完成 Alertmanager 邮件候选关闭态部署。Prometheus 运行配置中 Alertmanager 引用为 1，容器和
+进程各 1，管理端仅绑定 `127.0.0.1:19093`；Alertmanager/Prometheus health/ready 均为 `200/200`。根路由仍为
+`discard`，子路由 0，活动告警、通知累计、邮件和短信发送均为 0，因此通知链只能记为
+`transport_present_receiver_unverified`。下一步仍须在 `SMS_ENABLED=false` 下取得独立演练授权，且不得通过真实短信故障触发。
 
-2026-08-05 刷新的日志留存只读审计确认：journald 服务正常、持久目录存在，journal 目录约 2.97GB；文件系统总量约 982.24GB、可用约 354.74GB。`8G/50G/14day/1day` 已获测试服短信关闭态部署授权，但首次受控执行在任何配置写入或服务重启前因 `sudo_unavailable` 失败；固定账号的 `sudo -n -l` 同样确认需要密码。四项显式配置仍全部缺失，固定结论继续为 `log_retention_configuration_complete=false` 与 `log_retention_policy_verified=false`。失败后 journald、API、代理、Prometheus 和短信关闭态复验正常，发送摘要与 Provider 指标继续零增量。现已在仓库外生成绑定测试服 machine-id 摘要、拒绝覆盖并输出可复核 SHA-256 的离线运维交接包；同一渲染文件经固定身份 SSH 送入测试服 `bash --self-test`，已有/无原配置恢复、错误与三类信号、安装/重启失败及回滚失败码 90 全部通过，自测业务配置写入 0、服务重启 0、短信发送 0。随后只读复验继续确认短信关闭、Provider 零增量、API/代理/Prometheus 正常；四项 journald 策略仍缺失。下一次执行仍需由运维提供受控非交互提权入口，或由有权限运维在同一获批测试服本地终端执行，交接资产与 Linux 自测均不代表已部署。
+2026-08-05 日志留存策略随后由有权限运维在固定测试服本地受控窗口完成部署。独立只读验证确认 journald 正常、持久目录存在，
+`SystemMaxUse=8G`、`SystemKeepFree=50G`、`MaxRetentionSec=14day`、`MaxFileSec=1day` 已生效，
+`log_retention_configuration_complete=true`、`log_retention_policy_verified=true`。执行保持短信关闭态，真实短信和 Provider
+增量为 0；失败回滚资产继续保留。首次因 `sudo_unavailable` 的零写入失败记录仍作为审计历史保留，不再代表当前运行态。
 
-在用户要求继续完成未完成项后，使用同一获批参数再次执行真实入口。脚本先通过目标主机摘要核验，随后仍以
+在完成有权限运维部署之前，曾使用同一获批参数再次执行自动化入口。脚本先通过目标主机摘要核验，随后仍以
 `failure_stage=sudo_unavailable` 在配置写入和服务重启之前失败。紧接着的只读复验确认 journald active、四项显式配置仍全部缺失、
 API 单进程与 health/ready 正常、短信保持关闭、发送摘要仍为 `13:13:0`、Provider 指标仍为 0；本次没有部分部署或短信发送。
 
@@ -41,7 +44,7 @@ API 单进程与 health/ready 正常、短信保持关闭、发送摘要仍为 `
 
 | 窗口 | 必查内容 | 当前结果 |
 |---|---|---|
-| 开启前 | health/ready、开关、模板/绑定、告警、回滚人 | 关闭态应用技术项通过；Alertmanager 接收链、真实发送授权人与观察人待确认 |
+| 开启前 | health/ready、开关、模板/绑定、告警、回滚人 | 关闭态应用与 Alertmanager 传输层通过；实际邮件投递、值班确认、真实短信授权人与观察人待确认 |
 | 关闭态 30 秒 | 发送日志、Provider 调用、代理健康、Prometheus | 2026-08-04、2026-08-05 两次均通过，发送与 Provider 调用零增量 |
 | 5 分钟 | 调用数、非受理数、配置类错误、平均延迟 | 待执行 |
 | 15 分钟 | 五场景分布、429、认证失败、用户反馈 | 待执行 |

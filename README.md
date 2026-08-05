@@ -261,7 +261,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | 阿里云短信验证码阶段 2（模板同步、场景绑定、9 个管理 API 与安全测试发送） | `modules/sms/`、`modules/auth/`、`modules/iam/`、`server/migrations/000059*` | ✅ PR #315 已于 2026-08-04 Squash 合并至 `main`（`9e50ee1`）；五独立模板同步/绑定、6 条真实收件、九 API、QA、产品及正式评审均通过，P0/P1/P2/P3 均为 0，阶段 2 正式闭环 |
 | 阿里云短信验证码阶段 3（管理后台模板页面） | `web/admin-console/src/views/sms/`、`src/api/sms.ts`、`src/types/sms.ts` | ✅ PR #317 已采用 Squash and merge 合并至 `main`（`e7f29d5`），阶段 3 正式闭环 |
 | 阿里云短信验证码阶段 4（五场景全链路验收） | `modules/auth/`、`modules/sms/`、`web/admin-console/`、`web/user-console/`、`docs/sms-phase4-*` | ✅ PR #320 已采用 Merge commit 合并至 `main`（`c9b4783`），阶段 4 正式闭环；阶段 4 自身未部署、未连接阿里云、未发送真实短信 |
-| 阿里云短信验证码阶段 5（灰度部署、代理核验与观察） | `modules/sms/`、内部 metrics、`infra/nginx/`、`infra/prometheus/` | 🟡 阶段 5A 关闭态部署已完成：固定代理、可信配置、新后端、4 条规则、管理 GET/鉴权、真实页面和四档响应式均通过。11 份回滚材料与镜像通过预检；旧环境禁止整份恢复，基于当前环境生成的关闭态回滚候选已通过权限、摘要、固定代理和废弃键核验，但旧二进制恢复运行时尚未验证。journald 的 `8G/50G/14day/1day` 已获授权，最新重试仍因 `sudo_unavailable` 在零写入、零重启阶段失败；仓库外交接包已通过测试服 Linux 回滚行为自测，等待有权限运维执行。阶段 5 feature 分支已推送至远端，至少包含已复核的 `9a3e50e`；尚未创建 PR，因此 PR CI 未触发。业务配置和数据库/Provider 均无增量，全程未发送短信。当前无 Alertmanager 接收链；日志策略部署、实际回滚、真实 Canary、生产发布、24 小时观察、QA/产品验收及 PR/CI/合并仍待独立门禁 |
+| 阿里云短信验证码阶段 5（灰度部署、代理核验与观察） | `modules/sms/`、内部 metrics、`infra/nginx/`、`infra/prometheus/` | 🟡 阶段 5A 关闭态部署已完成：固定代理、可信配置、新后端、4 条规则、管理 GET/鉴权、真实页面和四档响应式均通过。11 份回滚材料与镜像通过预检；旧环境禁止整份恢复，基于当前环境生成的关闭态回滚候选已通过权限、摘要、固定代理和废弃键核验，但旧二进制恢复运行时尚未验证。journald `8G/50G/14day/1day` 已由有权限运维受控部署并通过独立只读验证。Alertmanager 邮件候选关闭态部署通过，Prometheus 活跃目标为 1，根路由 `discard`，活动告警、通知累计、邮件和短信发送均为 0；实际投递和值班确认仍待独立演练授权。阶段 5 feature 分支已推送至远端，尚未创建 PR，因此 PR CI 未触发。当前仅通知演练阻断 Canary 聚合预检；实际回滚、真实 Canary、生产发布、24 小时观察、QA/产品验收及 PR/CI/合并仍待独立门禁 |
 
 ### 后端 B（product / order / billing / finance_consumer）
 

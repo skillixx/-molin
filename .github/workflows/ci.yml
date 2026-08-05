@@ -165,6 +165,15 @@ jobs:
         shell: pwsh
         run: ./scripts/verify-sms-phase5-test-server-log-retention.ps1 -SelfTest
 
+      - name: 校验 Alertmanager 通知演练只读预检资产
+        run: |
+          python tests/sms/phase5_alertmanager_drill_readiness_contract.py
+          bash -n scripts/verify-sms-phase5-alertmanager-drill-readiness.sh
+
+      - name: 离线校验 Alertmanager 通知演练只读预检包装器
+        shell: pwsh
+        run: ./scripts/verify-sms-phase5-alertmanager-drill-readiness.ps1 -SelfTest
+
       - name: 校验测试服 Canary 只读聚合预检
         run: python tests/sms/phase5_canary_preflight_contract.py
 

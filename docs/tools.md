@@ -546,6 +546,30 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/apply-sms-phase5-tes
 
 ---
 
+### 短信阶段 5 Alertmanager 通知演练只读预检
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维 / 测试 / 产品经理 |
+| **涉及模块** | Alertmanager、Prometheus、短信关闭态 |
+| **涉及功能** | 在申请一次 firing/resolved 邮件演练授权前验证关闭态和零通知基线 |
+| **代码位置** | `scripts/verify-sms-phase5-alertmanager-drill-readiness.ps1`、`.sh` |
+
+**作用：** 固定测试服、Alertmanager 部署 ChangeId、容器、端口和镜像摘要，只读核对根路由为 `discard`、邮件 receiver
+已加载、配置不含明文 Secret、Secret 文件为 `pc:pc:400`、容器最小权限、Prometheus 活跃目标为 1、活动告警为 0、
+通知累计为 0，以及 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`。脚本没有告警 POST、配置 reload、容器变更或通知发送能力；
+通过时仍固定输出 `notification_drill_execution_authorization_required=true` 和 `receiver_delivery_unverified=true`。
+
+```powershell
+# 本地冻结资产检查，不连接测试服
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-alertmanager-drill-readiness.ps1 -SelfTest
+
+# 固定测试服只读预检
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-alertmanager-drill-readiness.ps1
+```
+
+---
+
 ### 短信阶段 5 Canary 只读聚合预检
 
 | 项目 | 说明 |

@@ -13,8 +13,9 @@
 - 数据库：只读核验 schema version 和 `000058/000059` 结构；默认不执行 migration。
 - 监控：统一内部 metrics 端点新增短信固定低基数序列和四条告警。
 
-当前测试服只具备 Prometheus 规则计算，没有 Alertmanager 配置引用或运行实例。通知接收渠道、值班人、Secret 注入、
-Alertmanager 关闭态部署和后续触发演练必须作为独立变更审批，不能把 4 条规则已加载写成通知链已完成。
+当前测试服已完成 Alertmanager 邮件候选关闭态部署：Prometheus 活跃 Alertmanager 为 1，根路由只指向 `discard`，
+活动告警、通知累计、邮件和短信发送均为 0。通知接收渠道实际到达、值班人确认和后续触发演练仍必须作为独立变更审批，
+不能把 4 条规则已加载或 Alertmanager 健康写成通知链已完成。
 渠道中立的审批字段、离线 `amtool` 校验、关闭态部署和单次合成演练顺序见
 `docs/sms-phase5-alertmanager-change-runbook.md`；该手册不包含任何接收渠道值或 Secret。
 
@@ -49,7 +50,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 `SMS_ENABLED=false`/`SMS_TEST_MODE=true` 并排除废弃模板键。项目负责人已单独批准真实生成，测试服候选
 `candidate-20260805T015043Z.env` 已排他创建并通过 700/600 权限、SHA-256、固定代理、短信关闭、废弃键和重复键只读核验；
 当前环境未替换、服务未重启、短信未发送。候选生成已经完成，但旧二进制运行时仍需在独立授权窗口验证，不能据此记为实际回滚通过。
-通知链为 `receiver_configuration_required`。该入口不会执行回滚或触发告警，但 SSH 与 HTTP GET 可能增加系统访问和审计日志。
+通知链为 `transport_present_receiver_unverified`。该入口不会执行回滚或触发告警，但 SSH 与 HTTP GET 可能增加系统访问和审计日志。
 
 手动前端部署工作流已同步使用 `molin-sms-proxy`、`172.20.250.0/28`、管理端 `.2`、用户端 `.3` 和宿主网关
 `.1`。工作流会在删除旧容器前保存真实运行镜像，检查宿主路由和全部 Docker 网络重叠，并在部署或健康检查失败时

@@ -106,6 +106,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 验证器固定测试服 SSH 身份，只读取候选文件的类型、权限和环境安全断言，输出 SHA-256 与布尔摘要；不输出环境值，
 不替换当前环境、不重启服务、不调用短信接口。SSH 访问审计日志可能增加。
 
-同一预检确认 Alertmanager 引用、容器、进程和 9093 监听均为 0，状态为
-`receiver_configuration_required`。必须先明确接收渠道、值班人和 Secret 注入方式并取得部署授权，之后才能另行批准
-关闭态通知演练；禁止用制造真实短信失败的方式验证通知。
+同一预检现确认 Prometheus Alertmanager 引用、Alertmanager 容器和进程均为 1，管理端只绑定回环地址，状态为
+`transport_present_receiver_unverified`。关闭态部署已通过，但实际邮件投递和值班人确认仍须另行批准单次合成演练；
+禁止用制造真实短信失败的方式验证通知。

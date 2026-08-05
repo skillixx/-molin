@@ -52,9 +52,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 VPC 全网段或 `0.0.0.0/0` 作为快捷配置。详细计划和回滚见 `docs/sms-phase5-deployment-plan.md`、
 `docs/sms-phase5-reverse-proxy-report.md` 和 `docs/sms-phase5-rollback-runbook.md`。
 
-Alertmanager 接收渠道尚未选择，禁止提交带真实接收地址或 Secret 的配置。后续必须按
-`docs/sms-phase5-alertmanager-change-runbook.md` 分别完成渠道决策、离线配置校验、关闭态部署和合成告警演练授权；
-任何一步都不得调用真实短信接口。
+Alertmanager 邮件候选已在仓库外生成，并于 2026-08-05 在测试服完成关闭态部署：Prometheus 已发现 1 个
+Alertmanager，根路由仍只指向 `discard`，活动告警、通知尝试、邮件和短信发送均为 0。真实接收地址与 SMTP Secret
+继续禁止进入仓库。后续必须按 `docs/sms-phase5-alertmanager-change-runbook.md` 另行批准单次合成告警演练；任何一步
+都不得调用真实短信接口，也不得把关闭态健康检查写成邮件投递成功。
 
 测试服回滚候选只允许使用 `scripts/prepare-sms-phase5-test-server-rollback-candidate.ps1` 生成。先执行 `-SelfTest`；
 真实模式会写入 600 权限候选文件，必须另行批准，且生成后仍不得替换当前环境或重启 API。

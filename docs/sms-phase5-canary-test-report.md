@@ -12,6 +12,10 @@
 false，因此固定输出 `canary_preflight=blocked`、`canary_preflight_ready=false` 并以退出码 2 失败关闭。执行过程
 业务配置修改 0、服务重启 0、真实短信 0；SSH 只读访问可能增加系统访问审计日志。
 
+2026-08-05 后续获批完成 journald `8G/50G/14day/1day` 留存策略和 Alertmanager 邮件候选关闭态部署。最新实服聚合预检中
+关闭态、回滚候选、回滚材料、监控和日志留存均为 true，仅 `notification_drill_ready=false`，因此仍严格输出
+`canary_preflight=blocked`。Alertmanager 根路由为 `discard`，本次部署与复核未触发告警，邮件和短信发送均为 0。
+
 ## 2. 执行门禁
 
 只读聚合入口：

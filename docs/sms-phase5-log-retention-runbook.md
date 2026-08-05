@@ -2,9 +2,12 @@
 
 ## 1. 当前证据
 
-2026-08-05 最新只读检查确认测试服 `systemd-journald` 正常运行，`/var/log/journal` 持久目录存在。journal 所在文件系统总量为 `982240026624` 字节、可用 `354741161984` 字节，journal 目录聚合占用 `2969567232` 字节，约占文件系统总量 `0.30%`。合并后的 `journald.conf` 没有显式启用 `SystemMaxUse`、`SystemKeepFree`、`MaxRetentionSec` 和 `MaxFileSec`。
+2026-08-05 有权限运维已在固定测试服本地受控窗口部署批准值。最新独立只读检查确认测试服 `systemd-journald` 正常运行，
+`/var/log/journal` 持久目录存在；`SystemMaxUse=8G`、`SystemKeepFree=50G`、`MaxRetentionSec=14day`、
+`MaxFileSec=1day` 精确来自固定 `root:644` drop-in，且 journald 当前运行周期晚于配置文件落盘时间。
 
-因此只能证明日志正在持久保存，不能证明容量上限、磁盘保留空间、最长留存时间或单文件轮转周期满足阶段 5 运维要求。未配置不等于默认值已获批准，当前固定结论为 `log_retention_policy_verified=false`。
+当前固定结论为 `log_retention_configuration_complete=true`、`log_retention_runtime_reload_verified=true`、
+`log_retention_policy_verified=true`。该结论只适用于测试服，不外推生产容量或留存策略。
 
 ## 2. 只读审计
 
@@ -17,6 +20,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 脚本只读取 journald 服务状态、持久目录、磁盘用量可查询性以及 systemd 合并后的配置。输出只包含布尔摘要，不输出日志内容、环境变量、账号、手机号、验证码或配置值；业务配置修改数为 0。SSH 登录可能增加服务端访问审计日志，因此固定披露 `access_audit_logs_may_increase=true`，不能把它描述为远端写入绝对为 0。脚本不调用短信接口，但也不读取 Provider 或手机收件证据，固定披露 `real_sms_delivery_not_verified=true`。
 
 服务正常、持久目录存在、`Storage` 允许持久化、磁盘用量可查询，并且容量上限、磁盘保留空间、最长留存时间、单文件轮转周期四项均为可识别的非零显式配置时，输出 `log_retention_configuration_complete=true`。策略完整通过还要求合并配置精确等于已批准的 `8G/50G/14day/1day`、固定 drop-in 为非符号链接的 `root:644` 普通文件，并直接枚举主配置与四级 drop-in，确认四项键只在该固定文件中各出现一次；配置正文中的伪来源注释不能改变归属判定。journald 的 `ActiveEnterTimestamp` 还必须不早于该文件 mtime，以证明当前进程至少在配置落盘后重启过。条件全部满足时才输出 `log_retention_runtime_reload_verified=true` 与 `log_retention_policy_verified=true`；任一条件缺失均失败关闭。
+未配置不等于默认值已获批准；未来任何配置缺失、漂移或来源冲突都必须重新阻断门禁，不能沿用本次通过结论。
 
 ## 3. 策略决策门禁
 
@@ -68,7 +72,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/apply-sms-phase5-tes
 不得把批准口令等同于系统提权能力，也不得索取、输出或通过命令参数传递 sudo 密码。下一次执行必须由运维提供受控的
 非交互提权入口，或由具备权限的运维人员在测试服本地执行同一冻结资产；执行后仍须完整通过本手册第 4 节复验。
 
-### 3.2 离线运维交接包
+### 3.2 有权限运维执行结果
+
+有权限运维随后在固定测试服本地终端执行同一冻结资产，受控重启 journald 后通过独立只读验证。四项批准值、固定文件
+属主权限、唯一来源和运行时重载均通过；API、代理与 Prometheus 保持健康，`SMS_ENABLED=false`、Provider 增量和
+真实短信发送均为 0。首次 `sudo_unavailable` 记录仍作为失败关闭证据保留，不再代表当前运行态。
+
+### 3.3 离线运维交接包
 
 当前自动化账号没有非交互 sudo 时，可由已获本次变更授权的执行人，在受控本地目录导出冻结后的运维脚本。导出路径必须是
 执行人选择的完全限定本机绝对 `.sh` 路径；Windows 不接受驱动器相对或当前驱动器根相对写法。父目录必须已经存在，完整祖先链不能包含重解析点，也不能使用 UNC、设备或映射网络驱动器；目标文件已存在时脚本会拒绝覆盖。示例中的路径仅为

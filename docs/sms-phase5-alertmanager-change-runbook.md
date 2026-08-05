@@ -2,9 +2,11 @@
 
 ## 1. 当前结论
 
-测试服 Prometheus 已加载 4 条短信告警规则，但实际运行配置中的 Alertmanager 引用、容器、进程和 9093 监听均为 0。
-因此当前只能证明规则能够计算，不能证明告警能够路由、通知或被值班人确认。本手册只固化后续实施顺序，不选择接收
-渠道、不生成配置、不写入凭据，也不授权远端部署或告警触发。
+测试服 Prometheus 已加载 4 条短信告警规则。2026-08-05 经独立授权完成 Alertmanager 邮件候选关闭态部署：固定
+`prom/alertmanager:v0.32.1` 的 Linux/amd64 镜像摘要，管理端仅绑定 `127.0.0.1:19093`，Prometheus 已发现 1 个
+Alertmanager。根路由仍只指向 `discard`，子路由为 0；邮件 receiver 已加载但不可路由。部署与独立复核期间活动告警、
+通知累计、邮件和短信发送均为 0，状态只能记为 `transport_present_receiver_unverified`，不能证明邮件实际投递或值班人确认。
+真实接收地址、SMTP Secret 和候选配置继续保存在仓库外受控目录，本手册不记录这些敏感值，也不授权告警触发。
 
 整个流程必须保持 `SMS_ENABLED=false`。真实短信发送数必须为 0，合成告警不得通过制造真实短信失败产生。
 
@@ -55,6 +57,25 @@ UTF-8 strict mode。参考：
 6. 运行阶段 5 只读预检，期望状态只能推进到 `transport_present_receiver_unverified`。
 
 关闭态部署通过不等于通知链通过。本窗口预期外部通知数为 0、真实短信数为 0。
+
+2026-08-05 关闭态实服证据：Alertmanager 与 Prometheus health/ready 均为 `200/200`，运行镜像摘要为
+`sha256:82c38dcc97cd0fbf5d5e31ddfb304dbb3a6e411194477de5de82ec71b328bb40`；容器使用只读根文件系统、移除全部
+Capability、启用 `no-new-privileges`，SMTP Secret 仅以 `0400` 文件挂载。Prometheus 变更前配置已以 `0600` 备份，
+成功路径未触发自动回滚。该证据不包含邮箱地址或 Secret。
+
+关闭态部署后、申请真实通知演练授权前，必须运行专用只读预检：
+
+```powershell
+# 本地契约自测，不连接测试服
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-alertmanager-drill-readiness.ps1 -SelfTest
+
+# 固定测试服只读检查，不提交告警、不重载服务
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-alertmanager-drill-readiness.ps1
+```
+
+只有输出 `notification_drill_preflight=passed`、`closed_route_discard_only=true`、
+`notification_baseline_total=0` 且 `notification_drill_execution_authorization_required=true` 时，才允许提交独立演练审批。
+该结果只证明可以申请演练，不构成演练授权或接收端投递证明。
 
 ## 5. 合成告警演练门禁
 
