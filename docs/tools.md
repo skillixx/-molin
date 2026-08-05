@@ -798,7 +798,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 
 生成器只在全新的本地目录写入候选，并执行 PowerShell 语法、只读 SQL、默认关闭和合成状态自测。runner 只允许单次 SSH stdin 内存传值，远端仅执行 `SELECT`，不会上传文件、修改白名单、调用业务 POST、改变短信开关或发送短信。`-ExecuteReadOnly` 属于后续独立人工门禁，本地生成授权不能直接用于执行。
 
-实际只读执行必须先按 `docs/sms-phase5-canary-execution-design.md` 核对完整 runner SHA-256 并取得独立批准。ChangeId `20260805T132831Z` / runner `4fc5c444...d8e9c` 与 ChangeId `20260805T164138Z` / runner `d00ff59a...7f34` 的一次性执行授权均已消费且返回退出码 2，禁止重试。后者确认是 SSH 参数链丢失 Bash 换行，未进入状态查询。生成器现使用 LF/无 BOM 标准输入把完整脚本交给远端 `bash -s`，并保留失败关闭前输出低敏结果和精确退出码的约束；再次执行必须生成新 ChangeId、核对新摘要并取得独立批准。
+实际只读执行必须先按 `docs/sms-phase5-canary-execution-design.md` 核对完整 runner SHA-256 并取得独立批准。ChangeId `20260805T132831Z` / runner `4fc5c444...d8e9c` 与 ChangeId `20260805T164138Z` / runner `d00ff59a...7f34` 的一次性执行授权均已消费且返回退出码 2，禁止重试。后者确认是 SSH 参数链丢失 Bash 换行，未进入状态查询。生成器现使用 LF/无 BOM 标准输入把完整脚本交给远端 `bash -s`，并保留失败关闭前输出低敏结果和精确退出码的约束。新 ChangeId `20260805T170528Z` runner SHA-256 为 `884ec7f681f8b1e0502c71efc31bc0aa2d97b459d10551875b6daeeb4dbac8c3`，仅完成本地静态验证；执行前仍必须按完整摘要取得独立批准。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File `

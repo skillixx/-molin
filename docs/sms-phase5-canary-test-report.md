@@ -90,6 +90,10 @@ SHA-256 为 `9188dce74133797bb155ed9fc969be11ec64daf58921d2747a5fe1e8ecb6e126`�
 
 该 runner 随后按一次性批准执行，远端 Bash 在首个 `then` 处返回语法错误，`readonly_exit_code=2`。错误回显证明多行负载经 SSH 参数重组后变成单行；脚本未进入 API 进程、数据库、白名单或发送计数查询，因此不能据此判定任何目标状态。执行摘要为 `network_connections=1`、`uploads=0`、`business_posts=0`、`real_sms_sent=0`，且没有重试。生成器已改为以 LF/无 BOM 的 SSH stdin 交给 `bash -s`，并新增禁止 `eval` 参数链的回归断言；修复后尚未生成或执行新 ChangeId。
 
+随后按独立本地生成授权创建 ChangeId `20260805T170528Z` 的新候选。计划 SHA-256 为
+`43b37bdb00ed954004324a3cc9fcfd50ce013d5b4517e6ae3715f5a0392b1a75`，runner SHA-256 为
+`884ec7f681f8b1e0502c71efc31bc0aa2d97b459d10551875b6daeeb4dbac8c3`。计划校验、PowerShell 解析、默认关闭、SelfTest、5 项候选契约和 Bash `-n` 均通过；远端负载为 125 个 LF、0 个 CR、无 BOM，只读 SQL 写匹配、完整手机号字面量、旧 `eval` 与旧 `$remoteCommand` 均为 0。验证确认 stdin 底层字节写入、内存字节数组清零和 `bash -s` 传输契约存在。全过程未输入手机号、未连接测试服、未上传、未修改白名单、未调用业务 POST、未发送邮件或短信。该结果仅证明本地候选可审计，不构成执行授权。
+
 ## 2. 执行门禁
 
 只读聚合入口：
