@@ -148,3 +148,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 执行授权消费后，仅在本地生成变更后只读复核候选 ChangeId `20260805T182328Z`：receipt-only 计划 SHA-256 为 `f84c96a61172d025909c5b3d15116f9f6cb67f7c056bf6d2e071234f6accda89`，runner SHA-256 为 `2a4225f6b7c77738226afb495c8596b9b04f80bf057d49a81532a0a90da8540f`。PowerShell/Bash 语法、只读 SQL、双目标白名单总门禁、默认关闭、完整手机号字面量和上传命令检查均通过；生成与静态验证期间输入、网络、上传、配置修改、服务操作和短信均为 0。
 
 该 runner 随后按绑定 ChangeId、计划摘要和 runner 摘要的一次性授权执行，固定 SSH stdin 仅连接 1 次且未重试。结果为 `target_state_readonly_preflight=passed`、`readonly_exit_code=0`：`SMS_ENABLED=false`、`SMS_TEST_MODE=true`，target-new 未注册，target-admin 已注册且手机号已验证，并具有直接 admin 角色与 `user:manage` 权限；两个目标均在当前白名单，`whitelist_targets_ready=true`、`whitelist_verified=true`。发送日志零增量，业务配置修改、业务 POST、上传、短信提交请求、敏感值持久化和真实短信均为 0，远端 stderr 为空。该结果关闭白名单技术门禁，但不构成真实短信发送授权或收件证明。
+
+## 5. 五场景真实收件默认关闭候选验证
+
+按本地生成授权创建最终候选 ChangeId `20260805T191326Z`：receipt-only 计划 SHA-256 为 `772b5bcdfe49e24bc508c8dd8224994c079369895a4b4f2f19ac15c24a280a3b`，runner SHA-256 为 `062f45cd500caf21a3cafb0b2c941529df12121f89a14dadbf131271440e543c`。独立验证确认 PowerShell 与 Bash 语法、默认关闭、runner/payload 自测、固定 SSH 辅助脚本摘要、管理员 Token 与 target-admin/IAM 的发送前只读绑定、锁所有权、恢复失败材料保留、请求体 stdin 和双敏感输入无 argv 均通过；完整手机号和 JWT 字面量为 0。
+
+阶段 5 全量契约为 115 项通过、3 项环境跳过；静态总门禁和历史敏感扫描通过，`findings=0`、`sms_enable_literals=0`。本轮未实际输入手机号或 Token，网络、上传、测试服配置修改、服务重启和真实短信均为 0。该候选尚未取得测试服执行授权，不能据此声称供应商受理或手机收件。

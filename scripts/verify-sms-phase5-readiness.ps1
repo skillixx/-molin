@@ -143,6 +143,7 @@ $requiredFiles = @(
     "scripts\prepare-sms-phase5-canary-target-preflight.ps1",
     "scripts\prepare-sms-phase5-canary-target-state-readonly.ps1",
     "scripts\prepare-sms-phase5-canary-whitelist-change.ps1",
+    "scripts\prepare-sms-phase5-canary-send-candidate.ps1",
     "scripts\verify-sms-phase5-observation-evidence.py",
     "scripts\apply-sms-phase5-test-server-log-retention.ps1",
     "scripts\apply-sms-phase5-test-server-log-retention.sh"
@@ -205,6 +206,11 @@ if ($SelfTest) {
         (Join-Path $root "scripts\prepare-sms-phase5-canary-whitelist-change.ps1") -SelfTest
     if ($LASTEXITCODE -ne 0) {
         throw "阶段 5 Canary 精确白名单变更候选自测失败"
+    }
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+        (Join-Path $root "scripts\prepare-sms-phase5-canary-send-candidate.ps1") -SelfTest
+    if ($LASTEXITCODE -ne 0) {
+        throw "阶段 5 五场景真实收件候选自测失败"
     }
     & python (Join-Path $root "scripts\verify-sms-phase5-observation-evidence.py") --self-test
     if ($LASTEXITCODE -ne 0) {

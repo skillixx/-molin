@@ -168,3 +168,11 @@ ChangeId `20260805T132831Z`、runner SHA-256 `4fc5c444...d8e9c` 的一次性执�
 变更执行授权消费后，已离线生成新 ChangeId `20260805T182328Z` 的 receipt-only 计划与固定测试服只读复核 runner。计划 SHA-256 为 `f84c96a61172d025909c5b3d15116f9f6cb67f7c056bf6d2e071234f6accda89`，runner SHA-256 为 `2a4225f6b7c77738226afb495c8596b9b04f80bf057d49a81532a0a90da8540f`。该 runner 只允许重新读取关闭态、账号/IAM、双目标白名单和发送计数。
 
 该 runner 已按一次性授权执行并消费，固定 SSH stdin 仅连接 1 次且没有自动重试。结果为 `target_state_readonly_preflight=passed`、`readonly_exit_code=0`：关闭态和测试模式保持，target-new 未注册，target-admin 已注册且手机号已验证，并具有直接 admin 角色和 `user:manage` 权限；两个目标均在当前白名单，发送日志零增量。业务配置修改、业务 POST、上传、短信提交请求、敏感值持久化和真实短信均为 0，远端 stderr 为空。白名单技术门禁据此通过；该证据不授权开启 `SMS_ENABLED`，也不证明阿里云受理或手机收件。
+
+## 10. 五场景真实收件默认关闭候选
+
+`scripts/prepare-sms-phase5-canary-send-candidate.ps1` 只在显式 `-ExportCandidate` 时生成绑定新 ChangeId、receipt-only 计划摘要和固定测试服 SSH 身份的 runner。生成器默认关闭，`-SelfTest` 与导出过程均不提示或读取手机号、Bearer Token，不联网、不上传、不修改配置、不重启服务、不发送邮件或短信。
+
+runner 同样默认关闭，未来只有同时提供 `-Interactive` 和获批的完整 runner SHA-256 才会进入交互分支。两个自有手机号和管理员 Bearer Token 均使用隐藏输入，只在内存中转换并通过 LF、无 BOM 的 SSH stdin 传递；候选不保存、不输出这些值，也不把它们放入进程参数。远端执行前再次核对 API 单进程、文件与进程关闭态、测试模式、双目标白名单和 Alertmanager `discard` 路由。
+
+受控窗口严格固定 `register`、`login`、`reset_password`、`bind_phone`、`admin_verify` 各提交一次，总计 5 次且没有重试分支。候选在写入前保存原环境文件和原进程 NUL 环境，使用排他锁，临时启用短信后启动同一二进制；成功或任一失败路径均恢复原环境文件及原进程环境，并核验 `SMS_ENABLED=false`、`SMS_TEST_MODE=true` 和 API ready。API 提交成功只记为等待人工收件确认，不等同于供应商最终投递或手机收件。实际执行仍必须另行批准 ChangeId、计划与 runner 完整摘要、两次停止/启动上限、5 次真实短信提交及供应商费用。

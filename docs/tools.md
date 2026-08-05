@@ -891,3 +891,19 @@ swag fmt                                       # 格式化 swag 注释
 powershell -NoProfile -ExecutionPolicy Bypass -File `
   scripts/prepare-sms-phase5-canary-whitelist-change.ps1 -SelfTest
 ```
+
+### 阶段 5 五场景真实收件默认关闭候选生成器
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维工程师、测试工程师、产品经理 |
+| **涉及功能** | 生成绑定新 ChangeId 的五场景真实短信 runner，固定每场景一次、总量 5、零重试和关闭态自动恢复 |
+| **代码位置** | `scripts/prepare-sms-phase5-canary-send-candidate.ps1` |
+
+生成器和 runner 均默认关闭。生成与自测完全离线，不输入手机号或 Token；未来交互执行必须另行批准完整摘要，隐藏输入两个自有手机号和管理员 Bearer Token，并在任一结果后恢复 `SMS_ENABLED=false`。HTTP 成功仅表示业务入口受理本次提交，最终收件必须由号码持有人逐场景人工确认。
+
+```powershell
+# 仅离线自测，不写候选、不联网
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  scripts/prepare-sms-phase5-canary-send-candidate.ps1 -SelfTest
+```
