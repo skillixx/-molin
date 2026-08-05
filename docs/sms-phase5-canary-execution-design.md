@@ -125,3 +125,29 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
   -ExpectedPlanSHA256 <LOWERCASE_SHA256> `
   -OutputDirectory <NEW_LOCAL_DIRECTORY>
 ```
+
+## 8. 固定测试服只读执行人工门禁
+
+执行前必须取得同时包含 ChangeId、完整 runner SHA-256、单次连接、只读范围和禁止事项的独立批准。批准文本不得省略“禁止重试、禁止上传、禁止修改白名单、禁止业务 POST、禁止服务信号或重启、禁止邮件和短信”。本门禁不授权白名单变更，也不授权后续真实 Canary。
+
+批准后由操作人在本机 PowerShell 交互执行以下命令；两个自有手机号只在两次隐藏提示中输入，不得写入命令、环境变量、文件或聊天：
+
+```powershell
+$runner = 'D:\molingproject\molin-phase5-sms-canary-target-state-readonly-20260805T132831Z\run-sms-phase5-canary-target-state-readonly-20260805T132831Z.ps1'
+$expectedSHA = '4fc5c4442a5530f8b5cad83a7d92db68722ecc5972ebacf6791ffe1e305d8e9c'
+$actualSHA = (Get-FileHash -LiteralPath $runner -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actualSHA -cne $expectedSHA) {
+    throw "runner 摘要不匹配，禁止执行：$actualSHA"
+}
+
+powershell -NoProfile -ExecutionPolicy Bypass -File $runner `
+  -ExecuteReadOnly `
+  -ApprovalToken 'APPROVE_SMS_PHASE5_TARGET_STATE_READONLY_20260805T132831Z'
+```
+
+结果判定：
+
+- `target_state_readonly_preflight=passed` 仅表示关闭态、未注册目标、合格直接管理员身份与权限、双目标白名单及发送日志零增量同时通过。
+- `target_state_readonly_preflight=blocked` 或非零退出码表示本次只读核验停止；即使前面的布尔字段已经输出，也禁止自动重试。
+- `target_new_whitelisted=false` 或 `target_admin_whitelisted=false` 只允许据此准备新的精确白名单变更候选，不能直接修改测试服。
+- 任何输出都不能替代号码归属和持有人同意确认；不得粘贴完整终端输出中可能出现的意外敏感内容。

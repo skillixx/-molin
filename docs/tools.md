@@ -798,6 +798,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 
 生成器只在全新的本地目录写入候选，并执行 PowerShell 语法、只读 SQL、默认关闭和合成状态自测。runner 只允许单次 SSH stdin 内存传值，远端仅执行 `SELECT`，不会上传文件、修改白名单、调用业务 POST、改变短信开关或发送短信。`-ExecuteReadOnly` 属于后续独立人工门禁，本地生成授权不能直接用于执行。
 
+实际只读执行必须先按 `docs/sms-phase5-canary-execution-design.md` 第 8 节核对完整 runner SHA-256 并取得独立批准。只读结果为 `blocked` 或非零退出码时禁止自动重试；白名单缺项只能进入新的白名单变更批准流程。
+
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File `
   scripts/prepare-sms-phase5-canary-target-state-readonly.ps1 -SelfTest
