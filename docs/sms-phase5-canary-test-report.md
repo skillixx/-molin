@@ -2,7 +2,7 @@
 
 ## 1. 当前状态
 
-状态：**技术前置、实际回滚、验收层级、本地脱敏计划和固定测试服双号码只读状态核验均已完成；只读结果确认唯一阻断为 target-admin 不在白名单，精确变更/自动回滚候选已完成本地验证，等待独立测试服执行授权及后续真实短信授权。**
+状态：**技术前置、实际回滚、验收层级、本地脱敏计划和固定测试服双号码只读状态核验均已完成；target-admin 精确白名单变更已按一次性授权执行成功，等待新 ChangeId 的独立关闭态只读复核及后续真实短信授权。**
 
 阶段 5A 关闭态部署与代理验证没有发送短信。当前测试服 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`、白名单数量 1，
 固定代理和 4 条短信告警已经部署通过。
@@ -141,4 +141,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 
 按独立本地生成授权，已生成 target-admin 精确白名单变更与自动回滚最终候选 ChangeId `20260805T180909Z`，runner SHA-256 为 `d202e6f7f9ee23b63f7c9556dd2f9e2fca7ca846ef5e0c21cbfa06d7b60079f7`。4 项候选契约测试通过；独立复验确认 runner PowerShell 解析错误 0、内嵌 Bash 语法退出码 0、负载自测退出码 0 且 stderr 为空，`candidate_add_only_test=passed`、`automatic_file_rollback_test=passed`。双轴审查发现的动态 SQL 进程参数、锁竞态/信号窗口和同名目录证据污染均已修复：SQL 改为 stdin，锁与 ChangeId 目录通过不可中断临界区完成原子创建和状态登记，退出证据只写入本次核验过的目录。
 
-负载 CR、完整手机号字面量、外部 URL、上传命令、动态 SQL argv 和 `SMS_ENABLED=true` 均为 0。旧候选（包括继续加固前的 `20260805T174747Z`、`20260805T175544Z`、`20260805T175907Z`、`20260805T180434Z`）已以 superseded 后缀可恢复隔离；本轮没有输入手机号、联网、上传、修改环境、发送信号、重启服务、发送邮件或短信。实际白名单变更仍未批准、未执行。
+负载 CR、完整手机号字面量、外部 URL、上传命令、动态 SQL argv 和 `SMS_ENABLED=true` 均为 0。旧候选（包括继续加固前的 `20260805T174747Z`、`20260805T175544Z`、`20260805T175907Z`、`20260805T180434Z`）已以 superseded 后缀可恢复隔离；在该本地生成阶段没有输入手机号、联网、上传、修改环境、发送信号、重启服务、发送邮件或短信，实际白名单变更当时尚未批准或执行。
+
+随后 ChangeId `20260805T180909Z`、runner SHA-256 `d202e6f7...0079f7` 获得一次性精确授权并执行成功，禁止重试。runner 输出确认白名单数量从 1 变为 2、target-new 保留、target-admin 新增，`SMS_ENABLED=false`、`SMS_TEST_MODE=true`、Alertmanager 活动告警 `0:0`；发送日志、Provider 与通知计数均零增量，业务 POST、上传、短信提交请求和真实短信均为 0，服务停止/启动各 1 次，未进入回滚路径。
+
+执行授权消费后，仅在本地生成变更后只读复核候选 ChangeId `20260805T182328Z`：receipt-only 计划 SHA-256 为 `f84c96a61172d025909c5b3d15116f9f6cb67f7c056bf6d2e071234f6accda89`，runner SHA-256 为 `2a4225f6b7c77738226afb495c8596b9b04f80bf057d49a81532a0a90da8540f`。PowerShell/Bash 语法、只读 SQL、双目标白名单总门禁、默认关闭、完整手机号字面量和上传命令检查均通过；生成与静态验证期间输入、网络、上传、配置修改、服务操作和短信均为 0。该 runner 尚未取得执行授权。
