@@ -17,15 +17,16 @@ false，因此固定输出 `canary_preflight=blocked`、`canary_preflight_ready=
 `canary_preflight=blocked`。Alertmanager 根路由为 `discard`，本次部署与复核未触发告警，邮件和短信发送均为 0。
 
 2026-08-05 经独立授权执行邮件通知演练 `20260805T094720Z`：Alertmanager 仅形成 1 次 firing SMTP 通知请求，通知失败
-指标为 0，业务短信 Provider 增量为 0；负责人随后明确确认 firing 邮件**未收到**。失败清理尝试提交 resolved 时，
-Alertmanager 于 `2026-08-05T09:55:54.116Z` 以 `start time must be before end time` 拒绝无效载荷，因此 resolved
-通知计数为 0。失败路径已恢复 `discard` 和关闭态配置，活动告警为 0，`SMS_ENABLED=false`、`SMS_TEST_MODE=true`。
-本次演练正式记为**失败**，不得据此解除 Canary 门禁，也不得在原授权下重试 firing 或 resolved。仓库外受控失败证据位于
-`D:\molingproject\molin-phase5-alertmanager-drill-failure-evidence-20260805T094720Z`，manifest SHA-256 为
-`f747497c05285e5803601046034b83b952f438bd9baeca2f7fbd97976e59439d`，不含邮箱地址或 SMTP Secret。负责人已通过
-本地不回显工具确认预期收件地址 SHA-256 与测试服配置一致，地址未保存、网络连接为 0；因此已排除收件地址配置错误，
-剩余故障范围为 126 SMTP 接受后的投递、退信、风控或 QQ 收件端拦截。复盘已新增离线载荷转换校验和中断恢复规则；
-下一次通知演练必须取得新的独立授权与 ChangeId，并先完成 126 发件侧记录及 QQ 垃圾箱/拦截规则的双人核对。
+指标为 0，业务短信 Provider 增量为 0。负责人初次检查反馈未收到，后续以主题 `[test] MolinSMSDrill` 全邮箱搜索确认
+邮件实际位于 QQ 收件箱；预期收件地址 SHA-256 也与测试服配置一致，因此 firing 的接收渠道到达已得到人工确认。
+失败清理尝试提交 resolved 时，Alertmanager 于 `2026-08-05T09:55:54.116Z` 以
+`start time must be before end time` 拒绝无效载荷，因此 resolved 通知计数为 0。失败路径已恢复 `discard` 和关闭态配置，
+活动告警为 0，`SMS_ENABLED=false`、`SMS_TEST_MODE=true`。本次演练仍正式记为**失败**，唯一失败阶段修正为
+`resolved_validation`；不得据此解除 Canary 门禁，也不得在原授权下重试 firing 或 resolved。仓库外受控失败证据位于
+`D:\molingproject\molin-phase5-alertmanager-drill-failure-evidence-20260805T094720Z`，最终 manifest SHA-256 为
+`96ea4637945d80ee8c27035a5b6bdbb2030514e2a72906b23bb6efb466f0f2c7`，保留初次未找到与后续收件箱确认两层时序证据，
+且不含邮箱地址或 SMTP Secret。复盘已新增离线载荷转换校验和中断恢复规则；下一次通知演练必须取得新的独立授权与
+ChangeId，并使用 `resolved.endsAt > resolved.startsAt` 的候选载荷。
 
 同日将该失败 manifest 输入 `-ValidateNotificationEvidenceOnly` 成功证据入口，验证器以退出码 1 和“字段集合不符合契约”
 失败关闭，证明失败材料不能误置 `notification_drill_ready=true`，该本地验证没有连接测试服或产生通知。
