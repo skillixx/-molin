@@ -171,6 +171,8 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | [测试计划](docs/test-plan.md) | 接口测试用例、并发安全测试、验收 Checklist |
 | [产品和 MVP 规划](docs/cloud-resource-app-marketplace-mvp.md) | 三阶段交付计划 |
 | [开发执行计划](docs/development-execution-plan.md) | Week 1–12 节奏 |
+| [短信阶段 5 验收报告](docs/sms-phase5-acceptance-report.md) | 灰度发布门禁、测试服运行证据、剩余授权与最终验收状态 |
+| [短信阶段 5 Canary 执行设计](docs/sms-phase5-canary-execution-design.md) | `receipt_only` 五场景计划、双号码隐藏输入候选及真实发送前置门禁 |
 | [Auth 接口测试文档](docs/api-test-auth.md) | Auth 模块手动测试用例（Week 1） |
 | [IAM 接口测试文档](docs/api-test-iam.md) | IAM 模块手动测试用例（Week 1） |
 | [Identity 接口测试文档](docs/api-test-identity.md) | Identity 模块手动测试用例（Week 1） |
@@ -196,7 +198,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 ## 开发进度
 
-> 最后更新：2026-06-30
+> 最后更新：2026-08-05
 > 当前阶段：**Week 1 已验收（2026-06-05），Week 2 已验收（2026-06-06），Week 3 已验收（2026-06-07），Week 4 已验收（2026-06-07），第一阶段（Week 1-4）已于 2026-06-07 正式验收通过，并于 2026-06-08 完成最终收尾确认，正式画上句号 ✅（端到端验收 37/37 全部通过，详见 `tests/audit-stage1-final.md`；收尾确认 6/6 全部通过，详见 `tests/audit-stage1-closing-confirm.md`）**
 >
 > **前端进度更新（2026-06-19）**：管理后台（前端 A）与用户控制台（前端 B）的全部业务页面代码已完成并合并到 main（提交 `94b8466 前端甲对接后端丙管理页面`、`f6d85b6 前端乙对接后端丙用户页面` 等）。两端覆盖商品/订单/钱包/资产/会员/内容/应用/消费等模块的页面与 API 封装；后端丙对接任务 FA-06/07/09/10、FB-07/08/09 均已落地（详见各端进度表）。
@@ -261,7 +263,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | 阿里云短信验证码阶段 2（模板同步、场景绑定、9 个管理 API 与安全测试发送） | `modules/sms/`、`modules/auth/`、`modules/iam/`、`server/migrations/000059*` | ✅ PR #315 已于 2026-08-04 Squash 合并至 `main`（`9e50ee1`）；五独立模板同步/绑定、6 条真实收件、九 API、QA、产品及正式评审均通过，P0/P1/P2/P3 均为 0，阶段 2 正式闭环 |
 | 阿里云短信验证码阶段 3（管理后台模板页面） | `web/admin-console/src/views/sms/`、`src/api/sms.ts`、`src/types/sms.ts` | ✅ PR #317 已采用 Squash and merge 合并至 `main`（`e7f29d5`），阶段 3 正式闭环 |
 | 阿里云短信验证码阶段 4（五场景全链路验收） | `modules/auth/`、`modules/sms/`、`web/admin-console/`、`web/user-console/`、`docs/sms-phase4-*` | ✅ PR #320 已采用 Merge commit 合并至 `main`（`c9b4783`），阶段 4 正式闭环；阶段 4 自身未部署、未连接阿里云、未发送真实短信 |
-| 阿里云短信验证码阶段 5（灰度部署、代理核验与观察） | `modules/sms/`、内部 metrics、`infra/nginx/`、`infra/prometheus/` | 🟡 阶段 5A 关闭态部署已完成：固定代理、可信配置、新后端、4 条规则、管理 GET/鉴权、真实页面和四档响应式均通过。11 份回滚材料与镜像通过预检；旧环境禁止整份恢复，基于当前环境生成的关闭态回滚候选已通过权限、摘要、固定代理和废弃键核验。旧二进制运行/当前版本恢复最终执行候选 `20260805T115540Z` 已按独立授权上传至固定测试服精确暂存目录；远端摘要、`pc:600`、`bash -n`、SelfTest 和关闭态只读预检均通过，并证明候选、当前环境文件和运行进程环境一致。该步骤没有切换二进制或环境，实际回滚仍未执行；默认关闭的执行包装器已固定唯一执行次数并在成功后强制独立验收，等待新的执行授权。journald `8G/50G/14day/1day` 已由有权限运维受控部署并通过独立只读验证。Alertmanager 修正版邮件演练 `20260805T105517Z` 已完成且无重试：1 次 firing 与 1 次 resolved 均在 QQ 收件箱人工确认，随后精确恢复 `discard`；Provider 与真实短信增量均为 0。成功证据契约校验通过，完整实服聚合预检输出 `canary_preflight_ready=true`。真实短信执行计划复核发现当前单号码白名单不能同时满足 `register` 未注册和 `login/reset_password/admin_verify` 已注册管理员前置，完整 OTP 消费还会引入账号状态变更，因此新增离线失败关闭门禁，待产品确认收件层或完整消费层。五档观察证据现有纯本地校验器，可核验 5m/15m/30m/2h/24h 时间覆盖、累计计数、停止线和最终开关状态，但真实观察尚未开始。远端已存在 PR #323 的 head/merge refs；当前 head 已推进，merge ref 由远端重新生成。PR 页面状态和 CI 结果尚未取得授权 API 证据。实际应用回滚、白名单真实短信 Canary、生产发布、24 小时观察、QA/产品最终验收、PR 审查/CI/合并仍待各自独立门禁 |
+| 阿里云短信验证码阶段 5（灰度部署、代理核验与观察） | `modules/sms/`、内部 metrics、`infra/nginx/`、`infra/prometheus/` | 🟡 阶段 5A 关闭态部署已完成：固定代理、可信配置、新后端、4 条规则、管理 GET/鉴权、真实页面和四档响应式均通过。11 份回滚材料与镜像通过预检；旧环境禁止整份恢复，基于当前环境生成的关闭态回滚候选已通过权限、摘要、固定代理和废弃键核验。最终回滚候选 `20260805T115540Z` 已按独立授权仅执行一次且无重试：旧二进制关闭态稳定 10 秒，当前二进制及原进程环境自动恢复后稳定 10 秒；独立验收确认环境文件未替换、`discard`、Provider/通知/业务 POST/邮件/真实短信增量均为 0。journald `8G/50G/14day/1day` 已由有权限运维受控部署并通过独立只读验证。Alertmanager 修正版邮件演练 `20260805T105517Z` 已完成且无重试：1 次 firing 与 1 次 resolved 均在 QQ 收件箱人工确认，随后精确恢复 `discard`；Provider 与真实短信增量均为 0。成功证据契约校验通过，完整实服聚合预检输出 `canary_preflight_ready=true`。产品负责人已选择 `receipt_only` 收件层；ChangeId `20260805T132831Z` 的五场景脱敏计划和双号码本地隐藏输入 runner 已生成并静态验证，runner SHA-256 为 `eb67246d...fff9e`，但没有输入或保存手机号，也未连接测试服、修改白名单、上传、开短信或发送短信。五档观察证据现有纯本地校验器，可核验 5m/15m/30m/2h/24h 时间覆盖、累计计数、停止线和最终开关状态，但真实观察尚未开始。远端已存在 PR #323 的 head/merge refs；PR 页面状态和 CI 结果尚未取得授权 API 证据。双号码实际隐藏输入、号码归属/状态与白名单受控准备、真实短信 Canary、生产发布、24 小时观察、QA/产品最终验收、PR 审查/CI/合并仍待各自独立门禁 |
 
 ### 后端 B（product / order / billing / finance_consumer）
 
