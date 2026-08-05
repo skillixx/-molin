@@ -2,7 +2,7 @@
 
 ## 1. 当前状态
 
-状态：**技术前置、实际回滚、验收层级、本地脱敏计划和双号码隐藏输入格式/互异预检已通过；等待号码归属/状态与白名单受控准备、上传只读预检及独立真实短信授权。**
+状态：**技术前置、实际回滚、验收层级、本地脱敏计划、双号码隐藏输入格式/互异预检和固定测试服只读状态候选均已通过；等待实际只读状态核验、白名单受控准备及独立真实短信授权。**
 
 阶段 5A 关闭态部署与代理验证没有发送短信。当前测试服 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`、白名单数量 1，
 固定代理和 4 条短信告警已经部署通过。
@@ -59,7 +59,7 @@ ChangeId，并使用 `resolved.endsAt > resolved.startsAt` 的候选载荷。
 `633f4eeb1b855d9295d0b9fae8ed3d7dc47de3b33e577726c8ed21173301034b`。候选固定五场景各提交一次、总量 5、零重试，
 `register/bind_phone` 使用 `target-new:unregistered`，其余三个场景使用 `target-admin` 的注册/管理员状态；候选文件数 1、
 手机号字面量 0、敏感字段 0。生成和两次独立静态校验期间网络、上传、短信均为 0，未修改开关。该证据不证明真实号码归属、
-账号状态、白名单就绪或短信收件，上传和真实执行仍须分别授权。
+账号状态、白名单就绪或短信收件，固定测试服只读状态预检和真实执行仍须分别授权。
 
 随后按独立授权生成绑定同一 ChangeId 与计划摘要的双号码本地隐藏输入 runner，SHA-256 为
 `eb67246dffaabcfdb95a71fecaf3bec9a7da522461bfc63907e90b79483fff9e`。候选仅实现 `Read-Host -AsSecureString`、BSTR
@@ -68,6 +68,12 @@ ChangeId，并使用 `resolved.endsAt > resolved.startsAt` 的候选载荷。
 本地隐藏输入：`interactive_prompts=2`、`format_verified=true`、`distinct_targets_verified=true`；号码只短暂进入内存，未输出或
 持久化。结果同时明确 `registration_state_verified=false`、`admin_identity_verified=false`、`whitelist_verified=false`，因此不能
 推定号码归属、注册状态、管理员身份或白名单状态。本次网络、上传、白名单修改、短信开关修改和真实短信均为 0；远端只读预检仍须独立授权。
+
+随后按独立授权生成固定测试服只读状态 runner，最终 SHA-256 为
+`4fc5c4442a5530f8b5cad83a7d92db68722ecc5972ebacf6791ffe1e305d8e9c`。候选固定 SSH 主机、端口、用户和唯一 ED25519 指纹，
+隐藏输入的两个号码仅经 stdin 进入远端内存；内嵌负载只允许 `SELECT` 用户、直接管理员角色、`user:manage` 权限、白名单和发送计数。
+PowerShell/Bash 语法、默认关闭、合成值、白名单总门禁、只读 SQL 和敏感字面量检查均通过，双轴复审无 P0/P1/P2。本次未执行
+`-ExecuteReadOnly`，因此提示、网络、上传、业务 POST、白名单修改、开关修改和短信均为 0；账号和白名单实况仍未验证。
 
 ## 2. 执行门禁
 
