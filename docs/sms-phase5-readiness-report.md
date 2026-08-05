@@ -30,7 +30,7 @@ Prometheus 抓取目标以及观察窗口前后发送增量；任一条件不符
 | 开发分支 | `codex/aliyun-sms-phase5-canary-release` |
 | 独立工作树 | `D:\molingproject\molin-sms-phase5` |
 | 开发基线 | `origin/main@60b569f` 为直接父基线；阶段 5 首个重放提交 `f42acee`；安全门禁资产已验证至 `5175288` |
-| 远端主线、feature 与 PR | 以 `73753ea` 为审计锚点时，`origin/main@60b569f`、feature、`refs/pull/323/head` 与 merge 双父已核对。PR 页面审查与 CI 状态因私有 API 未授权而未验证 |
+| 远端主线、feature 与 PR | 当前 `origin/main@60b569f` 仍是直接 merge base；本地 HEAD、远端 feature 与 `refs/pull/323/head` 均为 `2754ad4`，`refs/pull/323/merge@0247b32` 已生成。PR 页面审查与 CI 状态因私有 API 未授权而未验证 |
 | 原工作区保护 | `D:\molingproject\molin` 的 13 项既有未提交内容未触碰 |
 | migration | 复用 `000058`、`000059`；阶段 5 当前不新增 migration |
 | API 契约 | 九个短信管理 API 与五业务入口不变，无需修改权威 API 文档 |
@@ -123,8 +123,8 @@ ED25519 指纹；未来只读分支仅通过 SSH stdin 在内存中传值，并�
 
 ## 4. 剩余门禁
 
-测试服代理阻塞已经关闭，阶段 5 feature 分支也已按授权持续同步。仍未完成的内容为：号码归属/注册与管理员状态和
-白名单只读核验与受控准备、固定测试服只读状态预检、真实短信 Canary、生产只读基线与发布、24 小时观察、
+测试服代理阻塞已经关闭，阶段 5 feature 分支也已按授权持续同步。双号码注册/管理员状态与当前白名单只读核验已完成，
+target-admin 精确白名单变更/自动回滚候选也已本地验证。仍未完成的内容为：测试服受控执行该白名单变更、变更后只读复核、真实短信 Canary、生产只读基线与发布、24 小时观察、
 独立 QA、产品经理确认、PR #323 CI/代码审查和合并。`SMS_ENABLED=true`、真实短信、通知演练重跑、任何新的服务回滚、
 生产变更、PR 创建及合并仍需分别授权；后续新增提交若需再次推送，也必须先确认仍在已批准的阶段 5 分支同步范围内。
 
