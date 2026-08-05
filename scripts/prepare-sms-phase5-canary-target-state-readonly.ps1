@@ -318,6 +318,59 @@ function Get-VerifiedKnownHosts {
     return $knownHosts
 }
 
+function Invoke-FixedSshReadonlyScript {
+    param(
+        [Parameter(Mandatory = $true)][string]$KnownHosts,
+        [Parameter(Mandatory = $true)][string]$Script
+    )
+
+    # 使用进程标准输入直接传送 LF/无 BOM 脚本，避免 PowerShell 到 SSH 的参数重组吞掉 Bash 换行。
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = "ssh.exe"
+    $startInfo.Arguments = "-p $SSHPort -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=yes -o HostKeyAlgorithms=ssh-ed25519 -o `"UserKnownHostsFile=$KnownHosts`" -- ${SSHUser}@${ServerHost} bash -s"
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardInput = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    $startInfo.StandardOutputEncoding = $utf8NoBom
+    $startInfo.StandardErrorEncoding = $utf8NoBom
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+    try {
+        if (-not $process.Start()) { throw "无法启动固定 SSH 只读进程" }
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        # 号码的 Base64 值只存在于该内存字符串与 SSH stdin，不写文件、不进入远端进程参数。
+        $normalizedScript = $Script.Replace("`r`n", "`n").Replace("`r", "`n")
+        $inputBytes = $utf8NoBom.GetBytes($normalizedScript)
+        try {
+            # Windows PowerShell 5 没有 StandardInputEncoding，直接写底层字节流才能冻结 LF/无 BOM 契约。
+            $process.StandardInput.BaseStream.Write($inputBytes, 0, $inputBytes.Length)
+            $process.StandardInput.BaseStream.Flush()
+        }
+        finally {
+            if ($null -ne $inputBytes) { [Array]::Clear($inputBytes, 0, $inputBytes.Length) }
+            $inputBytes = $null
+            $normalizedScript = $null
+            $process.StandardInput.Close()
+        }
+        $process.WaitForExit()
+        $stdout = $stdoutTask.Result
+        $stderr = $stderrTask.Result
+        return [PSCustomObject]@{
+            ExitCode = $process.ExitCode
+            Output = @($stdout -split "`r?`n" | Where-Object { $_ -ne "" })
+            StderrPresent = -not [string]::IsNullOrWhiteSpace($stderr)
+        }
+    }
+    finally {
+        $process.Dispose()
+    }
+}
+
 if (-not $ExecuteReadOnly -and -not $SelfTest) {
     Write-Output "target_state_change_id=$ChangeId"
     Write-Output "plan_sha256=$PlanSHA256"
@@ -364,19 +417,12 @@ try {
     Assert-TargetPair -NewTarget $newTarget -AdminTarget $adminTarget
     $newBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($newTarget))
     $adminBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($adminTarget))
-    # Windows PowerShell 原生管道可能写入 CRLF；远端在解码前仅移除每行末尾的 CR。
-    $remoteCommand = 'IFS= read -r script_b64; IFS= read -r new_b64; IFS= read -r admin_b64; script_b64=$(printf %s "$script_b64" | tr -d ''\r''); new_b64=$(printf %s "$new_b64" | tr -d ''\r''); admin_b64=$(printf %s "$admin_b64" | tr -d ''\r''); eval "$(printf %s "$script_b64" | base64 -d)"'
-    $sshArgs = @(
-        "-p", "$SSHPort",
-        "-o", "BatchMode=yes",
-        "-o", "ConnectTimeout=8",
-        "-o", "StrictHostKeyChecking=yes",
-        "-o", "HostKeyAlgorithms=ssh-ed25519",
-        "-o", "UserKnownHostsFile=$knownHosts",
-        "--", "${SSHUser}@${ServerHost}", $remoteCommand
-    )
-    $remoteOutput = @(@($RemotePayloadBase64, $newBase64, $adminBase64) | & ssh.exe @sshArgs)
-    $readonlyExitCode = $LASTEXITCODE
+    $remotePayload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($RemotePayloadBase64))
+    # Base64 字符集不含单引号，可安全放入只存在于内存和 stdin 的 Bash 变量赋值。
+    $remoteExecutionScript = "new_b64='$newBase64'`nadmin_b64='$adminBase64'`n$remotePayload`n"
+    $remoteResult = Invoke-FixedSshReadonlyScript -KnownHosts $knownHosts -Script $remoteExecutionScript
+    $remoteOutput = @($remoteResult.Output)
+    $readonlyExitCode = $remoteResult.ExitCode
     # 失败关闭前先输出远端已经返回的低敏布尔结果，避免丢失实际阻断原因。
     $remoteOutput | Write-Output
     Write-Output "interactive_prompts=2"
@@ -385,6 +431,7 @@ try {
     Write-Output "uploads=0"
     Write-Output "business_posts=0"
     Write-Output "real_sms_sent=0"
+    Write-Output "remote_stderr_present=$($remoteResult.StderrPresent.ToString().ToLowerInvariant())"
     Write-Output "readonly_exit_code=$readonlyExitCode"
     if ($readonlyExitCode -ne 0) { throw "固定测试服只读状态预检未通过，退出码：$readonlyExitCode" }
 }
@@ -394,6 +441,8 @@ finally {
     $adminTarget = $null
     $newBase64 = $null
     $adminBase64 = $null
+    $remotePayload = $null
+    $remoteExecutionScript = $null
 }
 '@
 

@@ -83,6 +83,8 @@ SHA-256 为 `9188dce74133797bb155ed9fc969be11ec64daf58921d2747a5fe1e8ecb6e126`�
 固定 SSH 身份、只读 SQL、失败证据输出顺序和敏感字面量均通过；真实输入、网络、上传、业务 POST、白名单/开关修改、邮件和短信均为 0。
 该结果只证明修正版候选本地可审计，不构成固定测试服执行授权。
 
+该 runner 随后按一次性批准执行，远端 Bash 在首个 `then` 处返回语法错误，`readonly_exit_code=2`。错误回显证明多行负载经 SSH 参数重组后变成单行；脚本未进入 API 进程、数据库、白名单或发送计数查询，因此不能据此判定任何目标状态。执行摘要为 `network_connections=1`、`uploads=0`、`business_posts=0`、`real_sms_sent=0`，且没有重试。生成器已改为以 LF/无 BOM 的 SSH stdin 交给 `bash -s`，并新增禁止 `eval` 参数链的回归断言；修复后尚未生成或执行新 ChangeId。
+
 ## 2. 执行门禁
 
 只读聚合入口：
