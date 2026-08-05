@@ -31,6 +31,15 @@ ChangeId，并使用 `resolved.endsAt > resolved.startsAt` 的候选载荷。
 同日将该失败 manifest 输入 `-ValidateNotificationEvidenceOnly` 成功证据入口，验证器以退出码 1 和“字段集合不符合契约”
 失败关闭，证明失败材料不能误置 `notification_drill_ready=true`，该本地验证没有连接测试服或产生通知。
 
+针对上述缺陷生成新 ChangeId `20260805T105517Z` 修正版候选：resolved 仅在 firing 实际收件确认后动态生成，并强制
+`resolved.endsAt > resolved.startsAt`；授权输入 300 秒、收件确认 600 秒、firing 自然到期 1800 秒，确保确认超时后
+先恢复 `discard`。runner SHA-256 为 `b076494ac2e07fa75f3f155869348580f41b9e808e4d6dd42e1a75f0959b578c`。
+经独立上传/只读预检授权，runner 与专用摘要清单已放入固定测试服暂存目录；远端摘要、`bash -n`、`--self-test` 和
+关闭态预检均通过，确认路由关闭、活动告警 0、累计通知/请求基线 1/1、失败计数 0、收件哈希一致、Provider 0、
+`SMS_ENABLED=false`、`SMS_TEST_MODE=true`。本窗口配置修改 0、服务重载 0、通知 POST 0、真实短信 0；候选执行尚未授权，
+不得以无参数方式运行。仓库外候选 manifest SHA-256 为
+`774b740474ecc1b7e55966d84125d9fa44eb0df8b4fcdb2f1e388c10fa27e98c`。
+
 ## 2. 执行门禁
 
 只读聚合入口：
