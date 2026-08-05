@@ -112,6 +112,9 @@ class RollbackCandidateContractTest(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            # Linux 生产构建器只接受当前用户持有的 0600 环境文件；测试夹具必须复刻同一安全前提。
+            if sys.platform != "win32":
+                source.chmod(0o600)
             root_text = root.as_posix()
             code = match.group(1).replace("__CANDIDATE_ROOT__", root_text)
             first = subprocess.run(
