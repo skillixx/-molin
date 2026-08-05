@@ -74,13 +74,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 敏感信息门禁需要比较阶段分支与主分支的完整共同基线。
+          fetch-depth: 0
 
       - name: 校验 Nginx 来源头安全边界
         run: python infra/nginx/verify_forwarded_headers.py
 
       - name: 校验短信发布准备度
         shell: pwsh
-        run: ./scripts/verify-sms-phase5-readiness.ps1 -SelfTest
+        run: ./scripts/verify-sms-phase5-readiness.ps1 -SelfTest -RunSensitiveScan
+
+      - name: 校验阶段 5 敏感信息门禁契约
+        run: |
+          python tests/sms/phase5_sensitive_data_gate_contract.py
+          python scripts/verify-sms-phase5-sensitive-data.py --repo-root . --base-ref origin/main
 
       - name: 校验代理专用网络规划
         shell: pwsh

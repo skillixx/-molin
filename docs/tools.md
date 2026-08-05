@@ -473,6 +473,33 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 
 ---
 
+### 短信阶段 5 敏感信息与关闭态门禁
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 开发 / 测试 / 产品经理 |
+| **涉及模块** | 阶段分支、前端构建产物、CI、短信发布准备度 |
+| **涉及功能** | 敏感值离线扫描、受保护环境文件检查、短信关闭态静态检查 |
+| **代码位置** | `scripts/verify-sms-phase5-sensitive-data.py`、`tests/sms/phase5_sensitive_data_gate_contract.py` |
+
+**作用：** 只读比较阶段分支与指定基线，扫描改动文本文件和现有 admin/user `dist` 产物；同时检查全部 Git 跟踪文件中是否存在
+受保护环境文件。发现真实凭据、JWT、完整手机号、验证码、供应商原始正文、`SMS_ENABLED=true` 或 `SMS_TEST_MODE=false` 时返回失败。
+输出只包含规则分类、相对路径和行号，不打印命中正文。只读包装器用于拒绝危险 payload 的禁止模式字面量会经过上下文识别，
+不会被误报为真实开启短信。
+
+```powershell
+# 独立扫描阶段分支；不连接服务器、不读取被 Git 忽略的真实环境文件
+python scripts/verify-sms-phase5-sensitive-data.py --repo-root . --base-ref origin/main
+
+# 与阶段 5 准备度一起运行；CI 使用完整 Git 历史保证可解析比较基线
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-readiness.ps1 `
+  -SelfTest -RunSensitiveScan -SensitiveScanBaseRef origin/main
+```
+
+该门禁通过只证明指定 Git 差异和本地构建产物未命中规则，不等同于测试服/生产日志、密钥系统或短信供应商侧完成审计。
+
+---
+
 ### 短信阶段 5 回滚与日志留存门禁
 
 | 项目 | 说明 |

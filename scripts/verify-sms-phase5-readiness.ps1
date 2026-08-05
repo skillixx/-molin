@@ -3,6 +3,8 @@
     [ValidateSet("none", "test", "production")]
     [string]$ExpectedEnvironment = "none",
     [switch]$RunGoTests,
+    [switch]$RunSensitiveScan,
+    [string]$SensitiveScanBaseRef = "origin/main",
     [switch]$SelfTest
 )
 
@@ -112,6 +114,7 @@ $requiredFiles = @(
     "server\migrations\000059_add_sms_phase2_management.up.sql",
     "infra\nginx\verify_forwarded_headers.py",
     "infra\prometheus\email-alerts.yml",
+    "scripts\verify-sms-phase5-sensitive-data.py",
     "scripts\verify-sms-phase5-proxy-network-plan.ps1",
     "scripts\sms-phase5-test-server-ssh.ps1",
     "scripts\verify-sms-phase5-test-server-readonly.ps1",
@@ -162,6 +165,16 @@ if ($EnvironmentFile -ne "") {
 
 if ($SelfTest) {
     Invoke-SelfTest
+}
+
+if ($RunSensitiveScan) {
+    $scanOutput = @(& python (Join-Path $root "scripts\verify-sms-phase5-sensitive-data.py") `
+        --repo-root $root --base-ref $SensitiveScanBaseRef)
+    $scanExitCode = $LASTEXITCODE
+    $scanOutput | Write-Output
+    if ($scanExitCode -ne 0 -or $scanOutput -notcontains "phase5_sensitive_scan=passed") {
+        throw "阶段 5 敏感信息与短信关闭态门禁失败"
+    }
 }
 
 if ($RunGoTests) {
