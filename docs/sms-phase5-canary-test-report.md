@@ -54,6 +54,11 @@ ChangeId，并使用 `resolved.endsAt > resolved.startsAt` 的候选载荷。
 通知演练和日志留存全部为 true，输出 `canary_preflight=passed`、`canary_preflight_ready=true`；该只读预检业务配置修改
 0、服务重启 0、真实短信 0。预检通过仅表示技术前置条件满足，不构成真实短信 Canary 授权，也不代表阶段 5 已完成。
 
+2026-08-06 在分支提交 `a6ea0b4` 上重新复算同一成功 manifest 摘要并执行证据限定校验，仍得到
+`notification_evidence_validation=passed`；随后完整聚合预检六项仍全部为 true，`canary_preflight=passed`。本次复验
+远程连接、业务配置修改、服务重启和真实短信均为 0，证明无参运行得到的 `notification_drill_ready=false` 只是缺少四项
+显式证据绑定参数，不能覆盖已经通过摘要和人工确认的成功演练结论。
+
 2026-08-05 产品负责人选择“真实受理与收件 Canary”，明确不消费 OTP、不批准账号、密码、会话、换绑或 MFA 状态变化。
 本地默认关闭生成器随后创建 ChangeId `20260805T132831Z` 的仓库外脱敏计划，SHA-256 为
 `633f4eeb1b855d9295d0b9fae8ed3d7dc47de3b33e577726c8ed21173301034b`。候选固定五场景各提交一次、总量 5、零重试，
