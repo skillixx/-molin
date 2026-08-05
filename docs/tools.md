@@ -515,6 +515,32 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/apply-sms-phase5-tes
 
 ---
 
+### 短信阶段 5 Canary 只读聚合预检
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维 / 测试 / 产品经理 |
+| **涉及模块** | 短信关闭态、固定代理、Prometheus、Alertmanager、journald、回滚材料 |
+| **涉及功能** | 在申请真实 Canary 授权前聚合判断全部技术前置条件 |
+| **代码位置** | `scripts/verify-sms-phase5-test-server-canary-preflight.ps1` |
+
+**作用：** 复用四个既有只读验证器，以失败关闭方式聚合关闭态、零发送增量、回滚候选、回滚材料、监控、通知演练
+和日志留存状态。依赖输出必须符合严格键值协议，异常文本、重复键或缺键都会阻断。该工具不包含 HTTP 发送、短信开关
+变更、配置写入或服务重启能力；`canary_preflight_ready=true` 也不等于获准真实发送。Alertmanager 运行态只能证明
+传输存在，真实演练完成后还必须提供精确人工确认短语、UTC ChangeId、仓库外证据 JSON 路径和独立证据 SHA-256。
+工具会校验清单摘要、24 小时有效期，逐份读取五层仓库外原始证据并复算独立摘要，再验证关闭态约束；不能用配置
+存在、任意占位摘要或不存在的证据文件冒充通知可达。
+
+```powershell
+# 本地行为自测，不连接测试服
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-canary-preflight.ps1 -SelfTest
+
+# 固定测试服只读聚合；当前任一门禁缺失时以退出码 2 失败关闭
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-canary-preflight.ps1
+```
+
+---
+
 ### MySQL
 
 | 项目 | 说明 |

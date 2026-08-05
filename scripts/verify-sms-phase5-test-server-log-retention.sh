@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 exec 2>/dev/null
+target='/etc/systemd/journald.conf.d/90-molin-sms-phase5-retention.conf'
 
 # 本脚本只读取 journald 运行态和合并后的配置，不修改日志、配置或服务状态。
 fail() {
@@ -65,7 +66,9 @@ settings = {}
 section = ""
 for raw_line in sys.stdin:
     line = raw_line.strip()
-    if not line or line.startswith("#"):
+    if not line:
+        continue
+    if line.startswith("#"):
         continue
     if line.startswith("[") and line.endswith("]"):
         section = line
@@ -98,7 +101,78 @@ print("capacity=" + str(valid_size("SystemMaxUse")).lower())
 print("keep_free=" + str(valid_size("SystemKeepFree")).lower())
 print("retention=" + str(valid_duration("MaxRetentionSec")).lower())
 print("rotation=" + str(valid_duration("MaxFileSec")).lower())
+approved_values = (
+    settings.get("SystemMaxUse", "") == "8G"
+    and settings.get("SystemKeepFree", "") == "50G"
+    and settings.get("MaxRetentionSec", "") == "14day"
+    and settings.get("MaxFileSec", "") == "1day"
+)
+print("approved_values=" + str(approved_values).lower())
 ')" || fail policy_parse
+
+# 不信任 cat-config 的注释作为来源边界；直接枚举所有 journald 配置源，其他文件出现四项键即失败关闭。
+policy_source_status="$(python3 - "$target" \
+  /etc/systemd/journald.conf \
+  /etc/systemd/journald.conf.d \
+  /run/systemd/journald.conf.d \
+  /usr/local/lib/systemd/journald.conf.d \
+  /usr/lib/systemd/journald.conf.d <<'PY'
+import glob
+import os
+import sys
+
+target = os.path.abspath(sys.argv[1])
+sources = []
+for candidate in sys.argv[2:]:
+    if os.path.isdir(candidate):
+        sources.extend(sorted(glob.glob(os.path.join(candidate, "*.conf"))))
+    elif os.path.isfile(candidate) or os.path.islink(candidate):
+        sources.append(candidate)
+
+expected = {
+    "SystemMaxUse": "8G",
+    "SystemKeepFree": "50G",
+    "MaxRetentionSec": "14day",
+    "MaxFileSec": "1day",
+}
+target_counts = {key: 0 for key in expected}
+exclusive = True
+target_seen = False
+
+for path in sources:
+    absolute = os.path.abspath(path)
+    if absolute == target:
+        target_seen = True
+    try:
+        with open(path, "r", encoding="utf-8", errors="strict") as handle:
+            lines = handle.readlines()
+    except (OSError, UnicodeError):
+        exclusive = False
+        continue
+    section = ""
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#") or line.startswith(";"):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            section = line
+            continue
+        if section != "[Journal]" or "=" not in line:
+            continue
+        key, value = (part.strip() for part in line.split("=", 1))
+        if key not in expected:
+            continue
+        if absolute != target:
+            exclusive = False
+            continue
+        target_counts[key] += 1
+        if value != expected[key]:
+            exclusive = False
+
+exclusive = exclusive and target_seen and all(count == 1 for count in target_counts.values())
+print("source_is_exclusive=" + str(exclusive).lower())
+PY
+)" || fail policy_source_parse
 
 marker_value() {
   printf '%s\n' "$policy_status" | awk -F= -v marker="$1" '$1 == marker {print $2}'
@@ -109,12 +183,25 @@ journald_capacity_limit_configured="$(marker_value capacity)"
 journald_keep_free_configured="$(marker_value keep_free)"
 journald_retention_limit_configured="$(marker_value retention)"
 journald_rotation_limit_configured="$(marker_value rotation)"
+journald_policy_source_exclusive="$(printf '%s\n' "$policy_source_status" | awk -F= '$1 == "source_is_exclusive" {print $2}')"
+journald_policy_values_match_approved=false
+if [ "$(marker_value approved_values)" = true ] && [ "$journald_policy_source_exclusive" = true ]; then
+  journald_policy_values_match_approved=true
+fi
+
+# 只接受受控脚本安装的固定 root:644 普通文件；符号链接或权限漂移均失败关闭。
+journald_policy_file_identity_verified=false
+if [ -f "$target" ] && [ ! -L "$target" ] \
+  && [ "$(stat -c '%U:%a' "$target" 2>/dev/null || true)" = 'root:644' ]; then
+  journald_policy_file_identity_verified=true
+fi
 
 log_retention_configuration_complete=false
 if [ "$journald_active" = true ] \
   && [ "$journald_persistent_storage_present" = true ] \
   && [ "$journald_storage_mode_persistent" = true ] \
   && [ "$journal_disk_usage_observed" = true ] \
+  && [ "$journal_filesystem_capacity_observed" = true ] \
   && [ "$journald_capacity_limit_configured" = true ] \
   && [ "$journald_keep_free_configured" = true ] \
   && [ "$journald_retention_limit_configured" = true ] \
@@ -122,10 +209,29 @@ if [ "$journald_active" = true ] \
   log_retention_configuration_complete=true
 fi
 
-# 只读预检无法证明配置值已经过批准，也无法证明运行中的 journald 已在变更后 reload/restart。
+# 当前 journald 的进入 active 时间必须不早于受控配置文件 mtime，证明进程至少在配置落盘后重启过。
 log_retention_runtime_reload_verified=false
+active_enter="$(systemctl show systemd-journald --property=ActiveEnterTimestamp --value 2>/dev/null || true)"
+active_enter_epoch="$(date -d "$active_enter" +%s 2>/dev/null || true)"
+policy_file_mtime="$(stat -c '%Y' "$target" 2>/dev/null || true)"
+if [ "$journald_active" = true ] \
+  && [ "$journald_policy_file_identity_verified" = true ] \
+  && [ "$journald_policy_values_match_approved" = true ] \
+  && [[ "$active_enter_epoch" =~ ^[0-9]+$ ]] \
+  && [[ "$policy_file_mtime" =~ ^[0-9]+$ ]] \
+  && [ "$active_enter_epoch" -ge "$policy_file_mtime" ]; then
+  log_retention_runtime_reload_verified=true
+fi
+
 log_retention_policy_verified=false
 log_retention_change_authorization_required=true
+if [ "$log_retention_configuration_complete" = true ] \
+  && [ "$journald_policy_values_match_approved" = true ] \
+  && [ "$journald_policy_file_identity_verified" = true ] \
+  && [ "$log_retention_runtime_reload_verified" = true ]; then
+  log_retention_policy_verified=true
+  log_retention_change_authorization_required=false
+fi
 
 printf 'log_retention_preflight=passed\n'
 printf 'journald_active=%s\n' "$journald_active"
@@ -141,6 +247,9 @@ printf 'journald_capacity_limit_configured=%s\n' "$journald_capacity_limit_confi
 printf 'journald_keep_free_configured=%s\n' "$journald_keep_free_configured"
 printf 'journald_retention_limit_configured=%s\n' "$journald_retention_limit_configured"
 printf 'journald_rotation_limit_configured=%s\n' "$journald_rotation_limit_configured"
+printf 'journald_policy_file_identity_verified=%s\n' "$journald_policy_file_identity_verified"
+printf 'journald_policy_source_exclusive=%s\n' "$journald_policy_source_exclusive"
+printf 'journald_policy_values_match_approved=%s\n' "$journald_policy_values_match_approved"
 printf 'log_retention_configuration_complete=%s\n' "$log_retention_configuration_complete"
 printf 'log_retention_runtime_reload_verified=%s\n' "$log_retention_runtime_reload_verified"
 printf 'log_retention_policy_verified=%s\n' "$log_retention_policy_verified"

@@ -8,7 +8,28 @@
 固定代理和 4 条短信告警已经部署通过。
 发送日志只读基线为 accepted 13、failed 0，与阶段 2 历史 7+6 条一致；阶段 5 Canary 必须只计算基线后的增量。
 
+2026-08-05 首次执行只读聚合预检：关闭态、回滚候选、回滚材料和监控均为 true；通知演练与日志留存策略均为
+false，因此固定输出 `canary_preflight=blocked`、`canary_preflight_ready=false` 并以退出码 2 失败关闭。执行过程
+业务配置修改 0、服务重启 0、真实短信 0；SSH 只读访问可能增加系统访问审计日志。
+
 ## 2. 执行门禁
+
+只读聚合入口：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-canary-preflight.ps1
+```
+
+该入口依次复用关闭态、回滚候选、回滚材料/通知链和 journald 四个既有只读验证器，只输出布尔与低敏摘要。
+只有关闭态、固定代理、零发送增量、监控规则、回滚材料、当前环境派生候选、Alertmanager 通知演练和日志留存策略
+全部通过时，才输出 `canary_preflight_ready=true`。它没有开启开关或发送短信的代码路径；输出通过也只代表允许进入
+后续人工批准窗口，不代表已取得真实短信授权或完成 Canary。
+
+通知演练不能由配置存在性自动推定。完成独立获批的合成演练后，负责人必须同时提供精确确认短语、演练 ChangeId、
+仓库外证据 JSON 的绝对路径和其 SHA-256；聚合器会从同一文件句柄读取并核对摘要、24 小时有效期，并逐份读取 JSON
+引用的五层仓库外原始证据文件、复算五个独立摘要，再校验五层结果、
+一次 firing/resolved、短信关闭、Provider 零增量、通知队列清空及无敏感字段，再确认运行态为
+`transport_present_receiver_unverified`。任一条件缺失即阻断。证据确认不会部署 Alertmanager、触发告警或构成真实短信授权。
 
 - 测试服固定代理、关闭态来源链与监控加载通过；原始异常头和限流矩阵在真实 Canary 前复核。
 - 部署版本、备份和回滚点已记录。

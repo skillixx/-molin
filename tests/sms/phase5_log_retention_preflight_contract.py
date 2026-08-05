@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -55,8 +56,11 @@ class LogRetentionPreflightContractTest(unittest.TestCase):
             "journald_keep_free_configured",
             "journald_retention_limit_configured",
             "journald_rotation_limit_configured",
+            "journald_policy_file_identity_verified",
+            "journald_policy_source_exclusive",
+            "journald_policy_values_match_approved",
             "log_retention_configuration_complete",
-            "log_retention_runtime_reload_verified=false",
+            "log_retention_runtime_reload_verified",
             "log_retention_policy_verified",
             "log_retention_change_authorization_required",
             "business_configuration_mutations=0",
@@ -75,10 +79,11 @@ class LogRetentionPreflightContractTest(unittest.TestCase):
         self.assertIn("systemd-analyze cat-config systemd/journald.conf", self.sh)
         self.assertIn("df -B1 -P /var/log/journal", self.sh)
         self.assertIn("du -sb /var/log/journal", self.sh)
+        self.assertIn("90-molin-sms-phase5-retention.conf", self.sh)
+        self.assertIn("systemctl show systemd-journald --property=ActiveEnterTimestamp --value", self.sh)
+        self.assertIn("log_retention_policy_verified=true", self.sh)
         self.assertNotIn("SMS_ENABLED=true", self.sh)
         self.assertNotIn("real_sms_sent=0", self.sh)
-        self.assertNotIn("log_retention_policy_verified=true", self.sh)
-        self.assertNotIn("log_retention_change_authorization_required=false", self.sh)
 
     def test_parser_rejects_invalid_zero_and_volatile_settings(self) -> None:
         start_marker = "python3 -c '\n"
@@ -88,7 +93,7 @@ class LogRetentionPreflightContractTest(unittest.TestCase):
         parser = self.sh[start:end]
 
         invalid = subprocess.run(
-            [sys.executable, "-c", parser],
+            [sys.executable, "-c", parser, "/etc/systemd/journald.conf.d/90-molin-sms-phase5-retention.conf"],
             input="""[Journal]
 Storage=volatile
 SystemMaxUse=garbage
@@ -108,11 +113,12 @@ MaxFileSec=infinity
                 "keep_free=false",
                 "retention=false",
                 "rotation=false",
+                "approved_values=false",
             ],
         )
 
         configured = subprocess.run(
-            [sys.executable, "-c", parser],
+            [sys.executable, "-c", parser, "/etc/systemd/journald.conf.d/90-molin-sms-phase5-retention.conf"],
             input="""[Journal]
 Storage=persistent
 SystemMaxUse=3G
@@ -132,12 +138,29 @@ MaxFileSec=1day
                 "keep_free=true",
                 "retention=true",
                 "rotation=true",
+                "approved_values=false",
             ],
         )
 
+        approved = subprocess.run(
+            [sys.executable, "-c", parser, "/etc/systemd/journald.conf.d/90-molin-sms-phase5-retention.conf"],
+            input="""# /etc/systemd/journald.conf.d/90-molin-sms-phase5-retention.conf
+[Journal]
+Storage=persistent
+SystemMaxUse=8G
+SystemKeepFree=50G
+MaxRetentionSec=14day
+MaxFileSec=1day
+""",
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertIn("approved_values=true", approved.stdout.splitlines())
+
         for unsafe_capacity in ("1iB", "18446744073709551616"):
             overflow = subprocess.run(
-                [sys.executable, "-c", parser],
+                [sys.executable, "-c", parser, "/etc/systemd/journald.conf.d/90-molin-sms-phase5-retention.conf"],
                 input=f"""[Journal]
 Storage=persistent
 SystemMaxUse={unsafe_capacity}
@@ -150,6 +173,53 @@ MaxFileSec=1day
                 check=True,
             )
             self.assertIn("capacity=false", overflow.stdout.splitlines())
+
+    def test_source_parser_rejects_spoofed_boundary_comment_and_other_assignments(self) -> None:
+        block_start = self.sh.index('policy_source_status="$(python3 - "$target"')
+        start = self.sh.index("<<'PY'\n", block_start) + len("<<'PY'\n")
+        end = self.sh.index('\nPY\n)" || fail policy_source_parse', start)
+        parser = self.sh[start:end]
+
+        with tempfile.TemporaryDirectory(prefix="molin-journald-source-") as temp_dir:
+            root = Path(temp_dir)
+            dropin = root / "etc" / "systemd" / "journald.conf.d"
+            dropin.mkdir(parents=True)
+            target = dropin / "90-molin-sms-phase5-retention.conf"
+            target.write_text(
+                """[Journal]
+SystemMaxUse=8G
+SystemKeepFree=50G
+MaxRetentionSec=14day
+MaxFileSec=1day
+""",
+                encoding="utf-8",
+            )
+            args = [
+                sys.executable,
+                "-c",
+                parser,
+                str(target),
+                str(root / "etc" / "systemd" / "journald.conf"),
+                str(dropin),
+                str(root / "run"),
+                str(root / "usr-local"),
+                str(root / "usr"),
+            ]
+            valid = subprocess.run(args, capture_output=True, text=True, check=True)
+            self.assertEqual(valid.stdout.strip(), "source_is_exclusive=true")
+
+            (dropin / "99-untracked.conf").write_text(
+                """# /etc/systemd/journald.conf.d/90-molin-sms-phase5-retention.conf
+[Journal]
+SystemMaxUse=8G
+SystemKeepFree=50G
+MaxRetentionSec=14day
+MaxFileSec=1day
+""",
+                encoding="utf-8",
+            )
+            spoofed = subprocess.run(args, capture_output=True, text=True, check=True)
+            self.assertEqual(spoofed.stdout.strip(), "source_is_exclusive=false")
 
     def test_payload_contains_no_mutating_commands(self) -> None:
         forbidden = (

@@ -72,6 +72,29 @@ UTF-8 strict mode。参考：
 [通知模板说明](https://prometheus.io/docs/alerting/latest/notifications/)、
 [通知集成清单](https://prometheus.io/docs/alerting/latest/integrations/)。
 
+### 5.1 聚合预检证据契约
+
+演练完成后，在仓库外受控本机路径生成不超过 64KB 的无 BOM UTF-8 JSON。文件必须使用 schema
+`molin.sms.phase5.notification-drill.v1`，包含测试环境、UTC ChangeId、UTC 创建时间、通过结果、短信关闭、一次
+firing/resolved、通知队列清空、Provider 增量 0、真实短信 0、敏感值不存在，以及 Alertmanager 接收、路由匹配、
+通知尝试、接收渠道到达、值班人确认五层布尔结果。五层原始证据分别以五个非零且互不相同的 SHA-256 引用，原始
+截图、日志或工单内容不得写入仓库。JSON 同时记录五份仓库外原始证据的本机绝对路径；验证器会逐份从同一文件句柄
+读取并复算摘要，文件缺失、摘要不符、路径重复、网络/设备/重解析路径或位于 Git 工作区都会失败关闭。
+
+证据须在创建后 24 小时内由负责人使用以下只读入口验证。路径不得位于 Git 工作区、网络驱动器或重解析路径；摘要由
+执行人从受控证据文件计算，不能使用占位值。精确确认短语只确认告警演练证据，不批准短信发送、开关变更或 Canary：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-canary-preflight.ps1 `
+  -ValidateNotificationEvidenceOnly `
+  -NotificationDrillConfirmation 我已确认阶段5测试服告警通知演练成功 `
+  -NotificationDrillChangeId <UTC_CHANGE_ID> `
+  -NotificationDrillEvidencePath C:\受控证据目录\notification-drill.json `
+  -NotificationDrillEvidenceSHA256 <证据文件64位SHA256>
+```
+
+只有该证据校验通过且实服聚合预检仍确认 Alertmanager 传输存在时，`notification_drill_ready` 才能为 true。
+
 ## 6. 回滚与证据
 
 部署失败时先从 Prometheus 恢复原配置并确认规则计算仍正常，再停止新 Alertmanager；不得删除告警规则、Prometheus

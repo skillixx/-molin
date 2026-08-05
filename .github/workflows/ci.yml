@@ -138,6 +138,13 @@ jobs:
         shell: pwsh
         run: ./scripts/verify-sms-phase5-test-server-log-retention.ps1 -SelfTest
 
+      - name: 校验测试服 Canary 只读聚合预检
+        run: python tests/sms/phase5_canary_preflight_contract.py
+
+      - name: 离线校验测试服 Canary 聚合预检包装器
+        shell: pwsh
+        run: ./scripts/verify-sms-phase5-test-server-canary-preflight.ps1 -SelfTest
+
       - name: 校验测试服日志留存变更资产
         run: |
           python tests/sms/phase5_log_retention_change_contract.py

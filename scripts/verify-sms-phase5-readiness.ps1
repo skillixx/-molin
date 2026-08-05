@@ -124,6 +124,7 @@ $requiredFiles = @(
     "scripts\verify-sms-phase5-test-server-rollback-candidate.sh",
     "scripts\verify-sms-phase5-test-server-log-retention.ps1",
     "scripts\verify-sms-phase5-test-server-log-retention.sh",
+    "scripts\verify-sms-phase5-test-server-canary-preflight.ps1",
     "scripts\apply-sms-phase5-test-server-log-retention.ps1",
     "scripts\apply-sms-phase5-test-server-log-retention.sh"
 )
