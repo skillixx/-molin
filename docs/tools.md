@@ -798,7 +798,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 
 生成器只在全新的本地目录写入候选，并执行 PowerShell 语法、只读 SQL、默认关闭和合成状态自测。runner 只允许单次 SSH stdin 内存传值，远端仅执行 `SELECT`，不会上传文件、修改白名单、调用业务 POST、改变短信开关或发送短信。`-ExecuteReadOnly` 属于后续独立人工门禁，本地生成授权不能直接用于执行。
 
-实际只读执行必须先按 `docs/sms-phase5-canary-execution-design.md` 核对完整 runner SHA-256 并取得独立批准。旧 ChangeId `20260805T132831Z`、SHA-256 `4fc5c444...d8e9c` 的一次性执行授权已经消费且返回退出码 2，禁止重试。生成器现要求失败关闭前先输出远端低敏结果和精确退出码；修正版必须使用新 ChangeId，重新经过生成和执行两道批准。
+实际只读执行必须先按 `docs/sms-phase5-canary-execution-design.md` 核对完整 runner SHA-256 并取得独立批准。旧 ChangeId `20260805T132831Z`、SHA-256 `4fc5c444...d8e9c` 的一次性执行授权已经消费且返回退出码 2，禁止重试。新 ChangeId `20260805T164138Z` 修正版 runner SHA-256 `d00ff59a...7f34` 已通过本地静态验证；它要求失败关闭前先输出远端低敏结果和精确退出码，但尚未取得执行授权。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File `
