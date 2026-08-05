@@ -788,6 +788,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
   scripts/prepare-sms-phase5-canary-target-preflight.ps1 -SelfTest
 ```
 
+### 阶段 5 Canary 固定测试服双号码状态只读候选生成器
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维 / 测试 / 产品负责人 |
+| **涉及功能** | 生成固定 SSH 身份、默认关闭的双号码注册/IAM/白名单只读预检 runner |
+| **代码位置** | `scripts/prepare-sms-phase5-canary-target-state-readonly.ps1` |
+
+生成器只在全新的本地目录写入候选，并执行 PowerShell 语法、只读 SQL、默认关闭和合成状态自测。runner 只允许单次 SSH stdin 内存传值，远端仅执行 `SELECT`，不会上传文件、修改白名单、调用业务 POST、改变短信开关或发送短信。`-ExecuteReadOnly` 属于后续独立人工门禁，本地生成授权不能直接用于执行。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  scripts/prepare-sms-phase5-canary-target-state-readonly.ps1 -SelfTest
+```
+
 ### Git
 
 | 项目 | 说明 |

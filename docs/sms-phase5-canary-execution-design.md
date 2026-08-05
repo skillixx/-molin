@@ -103,3 +103,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 ```
 
 本入口不修改白名单、不连接测试服、不上传、不修改 `SMS_ENABLED`，也不发送短信。实际执行 `-Interactive` 必须另行批准；候选生成授权不继承为交互输入或任何远程操作授权。
+
+## 7. 双号码固定测试服只读状态预检候选
+
+`scripts/prepare-sms-phase5-canary-target-state-readonly.ps1` 生成绑定同一 ChangeId 与计划摘要的默认关闭 runner。候选冻结测试服地址 `8.130.9.163:10003`、SSH 用户 `pc` 和唯一 ED25519 指纹；执行前必须从本机普通 `known_hosts` 文件重新计算并核对指纹，禁止接受新主机密钥或回退其他算法。
+
+runner 的默认入口与 `-SelfTest` 均不提示输入、不读取 `known_hosts`、不建立网络连接。只有后续取得独立执行授权并显式传入 `-ExecuteReadOnly` 与绑定 ChangeId 的批准口令后，才会隐藏输入两个号码并通过单次 SSH stdin 传入远端内存。远端负载只执行 `SELECT`：核验 `target-new` 未注册、`target-admin` 为启用且手机号已验证的直接 `admin` 角色账号、管理员角色拥有 `user:manage` 权限，并分别判断两个号码是否位于当前测试白名单；输出仅包含布尔值和计数，不包含原值、掩码或可关联哈希。
+
+本次授权仅允许本地生成与静态验证，因此不得执行 runner 的 `-ExecuteReadOnly` 分支。候选不包含上传、白名单修改、业务 POST、短信开关变更或短信发送路径；实际只读执行仍须按 runner SHA-256 单独批准。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  scripts/prepare-sms-phase5-canary-target-state-readonly.ps1 `
+  -ExportCandidate `
+  -ChangeId <UTC_CHANGE_ID> `
+  -PlanFile <LOCAL_PLAN_FILE> `
+  -ExpectedPlanSHA256 <LOWERCASE_SHA256> `
+  -OutputDirectory <NEW_LOCAL_DIRECTORY>
+```
