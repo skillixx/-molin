@@ -136,3 +136,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 | admin_verify | 待执行 | 待执行 | 待确认 | 待执行 | 待执行 |
 
 报告只允许保存脱敏手机号、模板后四位、时间、业务请求标识摘要和供应商请求标识摘要，不保存 OTP。
+
+## 4. target-admin 精确白名单变更候选验证
+
+按独立本地生成授权，已生成 target-admin 精确白名单变更与自动回滚最终候选 ChangeId `20260805T180909Z`，runner SHA-256 为 `d202e6f7f9ee23b63f7c9556dd2f9e2fca7ca846ef5e0c21cbfa06d7b60079f7`。4 项候选契约测试通过；独立复验确认 runner PowerShell 解析错误 0、内嵌 Bash 语法退出码 0、负载自测退出码 0 且 stderr 为空，`candidate_add_only_test=passed`、`automatic_file_rollback_test=passed`。双轴审查发现的动态 SQL 进程参数、锁竞态/信号窗口和同名目录证据污染均已修复：SQL 改为 stdin，锁与 ChangeId 目录通过不可中断临界区完成原子创建和状态登记，退出证据只写入本次核验过的目录。
+
+负载 CR、完整手机号字面量、外部 URL、上传命令、动态 SQL argv 和 `SMS_ENABLED=true` 均为 0。旧候选（包括继续加固前的 `20260805T174747Z`、`20260805T175544Z`、`20260805T175907Z`、`20260805T180434Z`）已以 superseded 后缀可恢复隔离；本轮没有输入手机号、联网、上传、修改环境、发送信号、重启服务、发送邮件或短信。实际白名单变更仍未批准、未执行。

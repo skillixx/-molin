@@ -209,6 +209,7 @@ jobs:
           python tests/sms/phase5_canary_plan_candidate_contract.py
           python tests/sms/phase5_canary_target_intake_candidate_contract.py
           python tests/sms/phase5_canary_target_state_readonly_candidate_contract.py
+          python tests/sms/phase5_canary_whitelist_change_candidate_contract.py
           python tests/sms/phase5_observation_evidence_contract.py
 
       - name: 离线校验测试服 Canary 聚合预检包装器

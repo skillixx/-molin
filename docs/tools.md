@@ -873,3 +873,21 @@ swag fmt                                       # 格式化 swag 注释
 ```
 
 **访问地址（开发模式）：** http://localhost:8080/swagger/index.html
+
+### 阶段 5 Canary target-admin 精确白名单变更候选生成器
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维工程师、测试工程师、产品经理 |
+| **涉及功能** | 在关闭态下保留 target-new、只新增 target-admin，并冻结失败自动回滚契约 |
+| **代码位置** | `scripts/prepare-sms-phase5-canary-whitelist-change.ps1` |
+
+生成器默认关闭，只在全新的本地目录导出一个绑定 ChangeId 的 runner；生成和 `-SelfTest` 均不提示手机号、不读取 SSH 身份、不联网。候选通过隐藏输入和内存传递两个自有号码，未来执行前会重新核验 target-new 单项白名单、target-admin 注册/IAM 状态、关闭态、测试模式、Alertmanager `discard` 和零发送基线。它只允许精确新增 target-admin，并冻结环境备份、原进程环境快照、排他锁、一次停止/启动、10 秒稳定观察和失败自动回滚。
+
+本地候选生成授权不继承为测试服执行授权。实际执行必须另行批准完整 ChangeId、runner SHA-256、配置影响、服务信号次数和回滚范围；不得上传 runner，不得发送邮件或短信，除非后续批准明确改变这些边界。
+
+```powershell
+# 仅离线自测，不写候选、不联网
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  scripts/prepare-sms-phase5-canary-whitelist-change.ps1 -SelfTest
+```

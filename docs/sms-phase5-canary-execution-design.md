@@ -153,3 +153,13 @@ ChangeId `20260805T132831Z`、runner SHA-256 `4fc5c444...d8e9c` 的一次性执�
 `884ec7f681f8b1e0502c71efc31bc0aa2d97b459d10551875b6daeeb4dbac8c3`。独立静态验证确认 PowerShell 解析错误 0、Bash `-n` 退出码 0、负载 125 个 LF/0 个 CR/无 BOM、只读 SQL 写操作 0、完整手机号字面量 0、旧 `eval`/`remoteCommand` 传输链不存在，并确认 stdin 底层字节写入、字节数组清零和 `bash -s` 均存在。生成和复验期间隐藏输入提示、网络连接、上传、业务 POST、配置修改、邮件和短信均为 0；执行门禁仍关闭。
 
 该 runner 随后按完整 SHA-256 的一次性批准执行。固定 SSH stdin 连接成功，返回 `target_state_readonly_preflight=blocked`、`readonly_exit_code=3`；关闭态、测试模式、target-new 未注册、target-admin 已注册且手机号已验证、直接 admin 角色、`user:manage` 权限、target-new 白名单、白名单环境读取和发送日志零增量均为 true，仅 target-admin 未在当前白名单，导致 `whitelist_targets_ready=false` 与 `whitelist_verified=false`。执行期间业务配置修改、业务 POST、上传、短信提交请求和真实短信均为 0，远端 stderr 为空且没有重试。下一步只能先生成精确白名单变更与回滚候选并取得独立配置变更授权；不得复用本 runner 或把其他通过项解释为 Canary 发送授权。
+
+## 9. target-admin 精确白名单变更与自动回滚候选
+
+`scripts/prepare-sms-phase5-canary-whitelist-change.ps1` 仅在显式 `-ExportCandidate` 时向全新的本地目录导出一个默认关闭 runner。生成过程不提示输入、不读取 SSH 身份、不联网，也不修改测试服或本地 `infra/.env.test`。runner 固定测试服地址、端口、用户和 ED25519 指纹；未来只有取得绑定 ChangeId 与完整 SHA-256 的独立执行授权后，才允许隐藏输入两个自有手机号并通过 LF、无 BOM 的 SSH stdin 在内存中传递。
+
+远端负载在任何业务配置写入前核验：API 单进程与二进制身份、`SMS_ENABLED=false`、`SMS_TEST_MODE=true`、文件和进程白名单都精确等于 target-new、target-new 未注册、target-admin 已注册且手机号已验证并具有直接 `admin` 与 `user:manage`、Alertmanager 根路由为 `discard`、活动告警为 0，以及发送日志、Provider 调用和通知计数基线。候选只把 `SMS_TEST_PHONE_WHITELIST` 从单个 target-new 改为 `target-new,target-admin`，拒绝任何已有额外条目、重复键、符号链接或权限异常。
+
+变更前保存 `pc:600` 的环境备份和原进程 NUL 环境快照，使用 `pc:700` 原子目录排他锁，并在不可中断临界区内登记锁与 ChangeId 目录的持有状态。成功路径只允许停止/启动 API 各一次并稳定观察 10 秒；任一写入后失败或收到 INT/TERM/HUP 时自动恢复原环境文件和原进程环境。整个候选不包含上传、业务 POST、告警触发、邮件或短信发送路径；实际执行、服务信号与配置变更仍需新的独立人工批准。
+
+本轮最终本地候选 ChangeId 为 `20260805T180909Z`，runner SHA-256 为 `d202e6f7f9ee23b63f7c9556dd2f9e2fca7ca846ef5e0c21cbfa06d7b60079f7`。PowerShell 解析、Bash `-n`、负载自测、只新增 target-admin、文件自动恢复、固定 SSH 身份、默认关闭、零外部 URL、零上传命令、零完整手机号字面量和零 `SMS_ENABLED=true` 负载均通过；SQL 只经 stdin 进入固定参数客户端，排他锁与 ChangeId 目录均使用原子创建并以不可中断临界区登记状态，同名 ChangeId 创建失败不会污染历史证据。生成与复验期间交互输入、网络连接、上传、配置修改、服务重启、邮件和短信均为 0。此前 `20260805T174747Z`、`20260805T175544Z`、`20260805T175907Z`、`20260805T180434Z` 候选因继续加固已用 superseded 后缀可恢复隔离，不得执行。该证据只证明本地候选可审计，不构成测试服执行授权。
