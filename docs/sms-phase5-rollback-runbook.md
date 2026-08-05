@@ -157,6 +157,11 @@ runner SelfTest 和关闭态只读预检均通过；预检确认通知基线 `3:
 暂存，不使用递归删除；不进入实际服务切换模式，不发信号、不重启、不 POST、不发送邮件或短信。暂存与预检通过仍须另行
 批准实际执行。
 
+实际执行统一使用 `scripts/execute-sms-phase5-test-server-rollback-drill.ps1`。默认模式和 `-SelfTest` 均零连接；只有同时提供
+`-Execute` 与 `APPROVE_SMS_PHASE5_TEST_ROLLBACK_DRILL_20260805T115540Z` 才会连接固定测试服。包装器在远端再次核对
+精确 runner 路径、普通文件、`pc:600`、单硬链接、SHA-256 及证据目录不存在，然后只调用一次 `--execute`，禁止自动重试。
+runner 成功后包装器立即调用既有独立只读验收器；只有运行和独立验收同时通过，才输出组合通过结论。
+
 实际窗口结束后必须由 `scripts/verify-sms-phase5-test-server-rollback-drill.ps1` 与
 `scripts/verify-sms-phase5-test-server-rollback-drill.sh` 独立只读验收。该验证器不信任单一成功标记，而是同时核对：
 

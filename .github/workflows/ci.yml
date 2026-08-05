@@ -171,6 +171,9 @@ jobs:
           bash -n scripts/stage-sms-phase5-test-server-rollback-drill.sh
           bash -n scripts/verify-sms-phase5-test-server-rollback-drill.sh
 
+      - name: 校验回滚实际执行包装器安全契约
+        run: python tests/sms/phase5_rollback_runtime_execution_contract.py
+
       - name: 离线校验测试服回滚候选暂存包装器
         shell: pwsh
         run: ./scripts/stage-sms-phase5-test-server-rollback-drill.ps1 -SelfTest
