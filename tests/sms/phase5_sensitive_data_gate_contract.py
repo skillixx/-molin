@@ -208,6 +208,60 @@ class Phase5SensitiveDataGateContractTest(unittest.TestCase):
         self.assertNotIn(access_key, result.stdout)
         self.assertNotIn(bearer, result.stdout)
 
+    def test_credential_containing_placeholder_word_or_base64_symbols_is_not_exempt(self) -> None:
+        access_key = "LTAI" + "123456" + "test" + "789012"
+        bearer = "Bearer +/realtesttoken" + "8" * 18 + "=="
+        self.commit_file("artifacts/opaque-token.log", f"{access_key}\n{bearer}\n")
+
+        result = self.run_gate()
+
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("category=aliyun_access_key_id", result.stdout)
+        self.assertIn("category=bearer_token", result.stdout)
+        self.assertNotIn(access_key, result.stdout)
+        self.assertNotIn(bearer, result.stdout)
+
+    def test_sensitive_filename_is_hashed_and_never_echoed(self) -> None:
+        phone = "137" + "8642" + "9753"
+        target = self.repo / "artifacts" / f"evidence-{phone}.log"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("code=" + "246" + "810\n", encoding="utf-8")
+
+        result = self.run_gate()
+
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("file=[redacted-sensitive-path]", result.stdout)
+        self.assertIn("path_sha256=", result.stdout)
+        self.assertNotIn(phone, result.stdout)
+
+    def test_merge_conflict_resolution_blob_is_scanned_after_later_removal(self) -> None:
+        base_branch = self.run_git("branch", "--show-current").stdout.strip()
+        self.run_git("checkout", "--quiet", "-b", "side")
+        self.commit_file("conflict.txt", "side value\n")
+        self.run_git("checkout", "--quiet", base_branch)
+        self.commit_file("conflict.txt", "main value\n")
+        merge = subprocess.run(
+            ["git", "merge", "--no-ff", "side", "-m", "合并测试分支"],
+            cwd=self.repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        self.assertNotEqual(0, merge.returncode)
+        secret = "LTAI" + "3" * 16
+        (self.repo / "conflict.txt").write_text(secret + "\n", encoding="utf-8")
+        self.run_git("add", "conflict.txt")
+        self.run_git("commit", "--quiet", "-m", "解决合并冲突")
+        self.commit_file("conflict.txt", "safe final value\n")
+
+        result = self.run_gate()
+
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("category=aliyun_access_key_id", result.stdout)
+        self.assertIn("source_ref=commit:", result.stdout)
+        self.assertNotIn(secret, result.stdout)
+
     def test_nul_in_text_file_fails_closed_without_echoing_content(self) -> None:
         target = self.repo / "artifacts" / "nul.log"
         target.parent.mkdir(parents=True, exist_ok=True)

@@ -482,12 +482,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 | **涉及功能** | 敏感值离线扫描、受保护环境文件检查、短信关闭态静态检查 |
 | **代码位置** | `scripts/verify-sms-phase5-sensitive-data.py`、`tests/sms/phase5_sensitive_data_gate_contract.py` |
 
-**作用：** 只读比较阶段分支与指定基线，按每个提交的实际路径扫描新 blob 和提交说明，并分别扫描 Git index、未暂存/未忽略
+**作用：** 只读比较阶段分支与指定基线，按每个提交相对第一父提交的实际路径扫描新 blob（包括合并冲突解决）和提交说明，并分别扫描 Git index、未暂存/未忽略
 工作树文件及 admin/user `dist` 产物；因此“先提交秘密再删除”“复用基线 blob”“暂存秘密后覆盖工作树”均不能绕过门禁。
 同时检查全部 Git 跟踪及历史中是否存在受保护环境文件。发现真实凭据、JWT、裸阿里云 AccessKey ID、不透明 Bearer Token、
 完整手机号、验证码、供应商原始正文、文本文件 NUL、危险 `SMS_ENABLED` 或关闭 `SMS_TEST_MODE` 时返回失败；布尔值判断与 Go
-运行时 `1/t/true/y/yes/on` 真值表一致，赋值语法覆盖 env、JSON、flow YAML、PowerShell 和命令前缀。输出只包含规则分类、
-相对路径、行号和 Git 对象摘要，不打印命中正文。只读包装器的禁止模式字面量会经过上下文识别，不会被误报为真实开启短信。
+运行时 `1/t/true/y/yes/on` 真值表一致，赋值语法覆盖 env、JSON、flow YAML、PowerShell 和命令前缀。裸凭据形态命中即拒绝，
+不再按 `test/example` 等子串放行。输出只包含规则分类、行号、Git 对象摘要和路径 SHA-256；路径安全时附相对路径，路径含敏感形态
+或控制字符时仅显示脱敏标记，不打印命中正文。只读包装器的禁止模式字面量会经过上下文识别，不会被误报为真实开启短信。
 
 ```powershell
 # 独立扫描阶段分支；不连接服务器、不读取被 Git 忽略的真实环境文件

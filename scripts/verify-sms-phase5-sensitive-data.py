@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import pathlib
 import re
 import subprocess
 import sys
+import unicodedata
 from dataclasses import dataclass
 
 
@@ -34,7 +36,14 @@ SMS_ASSIGNMENT_PATTERNS = {
 }
 REJECT_INFO_CATEGORIES = {"static_phone_literal", "synthetic_test_otp"}
 ALIYUN_ACCESS_KEY_ID_RE = re.compile(r"(?<![A-Za-z0-9])LTAI[A-Za-z0-9]{12,32}(?![A-Za-z0-9])")
-BEARER_TOKEN_RE = re.compile(r"(?i)\bBearer[ \t]+(?P<value>[A-Za-z0-9][A-Za-z0-9._~-]{15,})")
+BEARER_TOKEN_RE = re.compile(
+    r"(?i)\bBearer[ \t]+(?P<value>[A-Za-z0-9._~+/-]{16,}=*)(?![A-Za-z0-9._~+/-])"
+)
+PATH_PHONE_RE = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
+PATH_JWT_RE = re.compile(
+    r"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?![A-Za-z0-9_-])"
+)
+PATH_EMAIL_RE = re.compile(r"(?i)[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
 
 @dataclass(frozen=True)
@@ -120,19 +129,33 @@ def list_branch_blob_events(repo: pathlib.Path, base_ref: str) -> list[tuple[str
     events: list[tuple[str, pathlib.Path, str]] = []
     for raw_commit in commits:
         commit = raw_commit.decode("ascii", errors="strict")
-        raw = run_git(
-            repo,
-            "diff-tree",
-            "--root",
-            "--first-parent",
-            "--no-commit-id",
-            "--raw",
-            "--no-abbrev",
-            "--diff-filter=ACMR",
-            "-r",
-            "-z",
-            commit,
-        )
+        ancestry = run_git(repo, "rev-list", "--parents", "-n", "1", commit).split()
+        if len(ancestry) > 1:
+            # 对合并提交显式比较第一父提交，确保冲突解决中新写入的 blob 不被 Git 默认合并展示规则隐藏。
+            raw = run_git(
+                repo,
+                "diff",
+                "--raw",
+                "--no-abbrev",
+                "--diff-filter=ACMR",
+                "-r",
+                "-z",
+                ancestry[1].decode("ascii", errors="strict"),
+                commit,
+            )
+        else:
+            raw = run_git(
+                repo,
+                "diff-tree",
+                "--root",
+                "--no-commit-id",
+                "--raw",
+                "--no-abbrev",
+                "--diff-filter=ACMR",
+                "-r",
+                "-z",
+                commit,
+            )
         events.extend(parse_raw_diff(raw, f"commit:{commit[:12]}"))
     return events
 
@@ -183,15 +206,14 @@ def scanner_findings(scanner, path: pathlib.Path, text: str, source_ref: str = "
     for finding in scan_sms_state(path, text):
         findings.append(GateFinding(finding.category, finding.path, finding.lines, source_ref))
     for match in ALIYUN_ACCESS_KEY_ID_RE.finditer(text):
-        if not scanner.is_safe_config_value(match.group(0)):
-            findings.append(
-                GateFinding("aliyun_access_key_id", path, (line_number(text, match.start()),), source_ref)
-            )
+        # 裸凭据没有可靠的占位上下文；只要形态命中就拒绝，避免随机值包含 test/example 子串而被误放。
+        findings.append(
+            GateFinding("aliyun_access_key_id", path, (line_number(text, match.start()),), source_ref)
+        )
     for match in BEARER_TOKEN_RE.finditer(text):
-        if not scanner.is_safe_config_value(match.group("value")):
-            findings.append(
-                GateFinding("bearer_token", path, (line_number(text, match.start()),), source_ref)
-            )
+        findings.append(
+            GateFinding("bearer_token", path, (line_number(text, match.start()),), source_ref)
+        )
     return findings
 
 
@@ -209,6 +231,26 @@ def relative_path(path: pathlib.Path, repo: pathlib.Path) -> str:
         return path.resolve().relative_to(repo.resolve()).as_posix()
     except ValueError:
         return path.name
+
+
+def safe_path_metadata(path: pathlib.Path, repo: pathlib.Path) -> tuple[str, str]:
+    """仅在路径不含敏感形态或控制字符时展示原文，并始终提供可复核摘要。"""
+
+    raw = relative_path(path, repo)
+    digest = hashlib.sha256(raw.encode("utf-8", errors="surrogatepass")).hexdigest()
+    has_control = any(unicodedata.category(character) in {"Cc", "Cf", "Cs"} for character in raw)
+    has_sensitive_shape = any(
+        pattern.search(raw)
+        for pattern in (
+            PATH_PHONE_RE,
+            ALIYUN_ACCESS_KEY_ID_RE,
+            PATH_JWT_RE,
+            PATH_EMAIL_RE,
+            BEARER_TOKEN_RE,
+        )
+    )
+    label = "[redacted-sensitive-path]" if has_control or has_sensitive_shape else raw
+    return label, digest
 
 
 def line_number(text: str, offset: int) -> int:
@@ -405,7 +447,11 @@ def main(argv: list[str] | None = None) -> int:
     ):
         lines = ",".join(str(line) for line in finding.lines)
         source_ref = f" source_ref={finding.source_ref}" if finding.source_ref else ""
-        print(f"[FAIL] category={finding.category} file={relative_path(finding.path, repo)} lines={lines}{source_ref}")
+        safe_path, path_digest = safe_path_metadata(finding.path, repo)
+        print(
+            f"[FAIL] category={finding.category} file={safe_path} "
+            f"path_sha256={path_digest} lines={lines}{source_ref}"
+        )
 
     sms_enable_count = sum(
         len(finding.lines) for finding in findings if finding.category == "sms_enabled_true"
