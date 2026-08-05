@@ -86,7 +86,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 6. 本地生成器已经补充失败输出顺序回归：未来 runner 必须先输出远端低敏结果和精确退出码，再失败关闭。新 ChangeId `20260805T164138Z` 修正版计划和 runner 已按独立授权在仓库外生成并通过静态验证；其一次性执行随后也以退出码 2 失败关闭。低敏错误证明 SSH 参数重组把多行 Bash 负载压成一行，远端在首个 `then` 前发生语法错误，未进入 API、数据库、白名单或发送计数查询；这不是目标业务状态失败。
 7. `20260805T164138Z` 与 runner SHA-256 `d00ff59a...7f34` 的执行授权已经消费，禁止重试；原候选目录已可恢复地移至带 `consumed-exit2-d00ff59a` 后缀的仓库外隔离路径。生成器现改为用进程标准输入传送 LF/无 BOM 完整脚本并由远端 `bash -s` 执行，号码 Base64 只保留在内存和 SSH stdin，不进入命令行或文件；必须使用全新 ChangeId 重新生成、静态验证并独立批准后才可再次执行。
 8. 只有新候选按完整 SHA-256 取得独立批准并执行，且账号状态、管理员直接角色/权限、双目标白名单和关闭态均通过，才可另行批准五场景真实执行；任何本地生成、只读预检或白名单变更授权均不得继承为短信发送授权。
-9. 2026-08-06 按新的本地生成授权创建 ChangeId `20260805T170528Z`：计划 SHA-256 为 `43b37bdb00ed954004324a3cc9fcfd50ce013d5b4517e6ae3715f5a0392b1a75`，runner SHA-256 为 `884ec7f681f8b1e0502c71efc31bc0aa2d97b459d10551875b6daeeb4dbac8c3`。该候选仅完成本地静态验证，尚未取得固定测试服执行授权。
+9. 2026-08-06 按新的本地生成授权创建 ChangeId `20260805T170528Z`：计划 SHA-256 为 `43b37bdb00ed954004324a3cc9fcfd50ce013d5b4517e6ae3715f5a0392b1a75`，runner SHA-256 为 `884ec7f681f8b1e0502c71efc31bc0aa2d97b459d10551875b6daeeb4dbac8c3`。随后按一次性授权执行并以退出码 3 失败关闭；唯一未通过项为 `target_admin_whitelisted=false`，证明传输、账号、手机号验证、直接管理员角色、`user:manage` 权限、target-new 白名单和发送日志零增量均已实际读取并通过。该候选已消费且移入带 `consumed-exit3-884ec7f6` 后缀的仓库外隔离路径，禁止重试。
 
 ## 6. 双号码本地交互只读预检候选
 
@@ -151,3 +151,5 @@ ChangeId `20260805T132831Z`、runner SHA-256 `4fc5c444...d8e9c` 的一次性执�
 传输修复后已使用全新 ChangeId `20260805T170528Z` 生成仓库外候选。计划仍固定为 `receipt_only`、五场景各一次、总量 5、零重试；计划 SHA-256 为
 `43b37bdb00ed954004324a3cc9fcfd50ce013d5b4517e6ae3715f5a0392b1a75`，runner SHA-256 为
 `884ec7f681f8b1e0502c71efc31bc0aa2d97b459d10551875b6daeeb4dbac8c3`。独立静态验证确认 PowerShell 解析错误 0、Bash `-n` 退出码 0、负载 125 个 LF/0 个 CR/无 BOM、只读 SQL 写操作 0、完整手机号字面量 0、旧 `eval`/`remoteCommand` 传输链不存在，并确认 stdin 底层字节写入、字节数组清零和 `bash -s` 均存在。生成和复验期间隐藏输入提示、网络连接、上传、业务 POST、配置修改、邮件和短信均为 0；执行门禁仍关闭。
+
+该 runner 随后按完整 SHA-256 的一次性批准执行。固定 SSH stdin 连接成功，返回 `target_state_readonly_preflight=blocked`、`readonly_exit_code=3`；关闭态、测试模式、target-new 未注册、target-admin 已注册且手机号已验证、直接 admin 角色、`user:manage` 权限、target-new 白名单、白名单环境读取和发送日志零增量均为 true，仅 target-admin 未在当前白名单，导致 `whitelist_targets_ready=false` 与 `whitelist_verified=false`。执行期间业务配置修改、业务 POST、上传、短信提交请求和真实短信均为 0，远端 stderr 为空且没有重试。下一步只能先生成精确白名单变更与回滚候选并取得独立配置变更授权；不得复用本 runner 或把其他通过项解释为 Canary 发送授权。
