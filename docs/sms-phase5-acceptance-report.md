@@ -56,18 +56,22 @@ SHA-256 为 `347b59734d87d5a611b47627044822bc4e103c250262bcfa814faecd7819105a`�
 环境一致，相同三类校验再次通过。项目负责人随后独立批准远端暂存与只读预检；包装器以固定 ED25519 身份排他创建
 `/home/pc/molin/rollback/sms-phase5/runtime-drill-staging/20260805T115540Z`，上传唯一 runner 并固定为 `pc:600`。
 远端 SHA-256、`bash -n`、SelfTest 和 `--preflight` 全部通过，关闭态仍为 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`、
-Alertmanager `discard`、活动告警 `0:0`。本窗口服务重启、通知 POST、业务 POST 和真实短信均为 0；实际回滚没有执行，
-状态继续保持未通过。
+Alertmanager `discard`、活动告警 `0:0`。暂存窗口服务重启、通知 POST、业务 POST 和真实短信均为 0。项目负责人随后以
+ChangeId、runner SHA-256、停止/启动次数、信号边界和失败恢复范围进行独立授权；实际执行包装器只调用一次冻结 runner，
+得到 `execution_attempts=1`、`execution_retries=0`。旧二进制使用关闭态候选稳定运行 10 秒后，当前二进制及原进程环境自动恢复并
+稳定运行 10 秒；独立只读验收确认 `old_binary_runtime_verified=true`、`current_binary_restored=true`、
+`current_environment_unchanged=true`、`rollback_restore_runtime_verified=true`。实际窗口服务停止 2 次、启动 2 次，
+`infra/.env.test` 未替换，notification/business POST、邮件、Provider 调用和真实短信增量均为 0。
 测试服日志留存只读审计与受控部署均已完成：journald 正常运行、持久目录存在，`SystemMaxUse=8G`、
 `SystemKeepFree=50G`、`MaxRetentionSec=14day`、`MaxFileSec=1day` 已由独立只读入口确认生效，
 `log_retention_policy_verified=true`。部署过程保持短信关闭态并具备失败自动回滚；SSH 登录可能增加访问审计日志，
 Provider 与真实短信发送均为 0，不能据此证明用户侧收件事实。完整分支 Standards/Spec 双轴审查发现的部署回滚、关闭态验收、白名单可重复核验、
 部署探针 Redis 副作用和证据口径问题均已修复，复核未发现新的 P1/P2。原 P3 重复 SSH 指纹校验也已收敛为共享函数，
 六个远端包装器通过同一固定目标与 ED25519 指纹契约。Canary 前 QA/产品预审已记录在
-`docs/sms-phase5-pre-canary-review.md`：已执行关闭态与邮件演练范围未发现 P0/P1，通知及技术聚合门禁已通过；实际回滚、
-真实 Canary、PR CI、生产和观察证据仍缺失，最终 QA 与产品确认均不可签署。
+`docs/sms-phase5-pre-canary-review.md`：已执行关闭态、邮件演练和实际回滚范围未发现 P0/P1，通知、技术聚合门禁及测试服
+回滚恢复运行时验证已通过；真实 Canary、PR CI、生产和观察证据仍缺失，最终 QA 与产品确认均不可签署。
 
-未完成：测试服实际回滚演练、测试服真实短信、生产只读审计、生产部署、生产 Canary、生产开关、
+未完成：测试服真实短信、生产只读审计、生产部署、生产 Canary、生产开关、
 24 小时观察、独立 QA、产品经理批准、PR #323 审查、PR CI 和合并。
 
 2026-08-05 已按项目负责人既有授权将 `codex/aliyun-sms-phase5-canary-release` 推送至 `origin`。以
@@ -98,7 +102,7 @@ CI 检查或合并已通过。
 | 测试服 Canary 聚合预检 | 通过：关闭态、回滚候选、回滚材料、监控、通知演练和 journald 留存全部为 true，输出 `canary_preflight_ready=true`；只表示技术前置满足，不构成真实短信授权 |
 | 测试服关闭态部署 | 通过：新二进制 hash 已核验，health/ready 通过，双代理发码均 `503/50300` |
 | 部署后可重复核验 | 通过：精确网络/IP、数据库、指标、告警、抓取目标和观察增量均纳入脚本断言 |
-| 测试服回滚材料 | 材料完整；旧环境禁止整份恢复。最终候选 `20260805T115540Z` 已上传至固定测试服精确暂存目录，远端摘要、`pc:600`、Bash 语法、SelfTest 和关闭态只读预检通过；候选/环境文件/运行进程环境一致。未切换二进制或环境，实际回滚仍未通过 |
+| 测试服实际回滚 | 通过：最终候选 `20260805T115540Z`、runner SHA-256 `2724b89e...bb46` 仅执行一次且无重试；旧二进制关闭态稳定 10 秒，随后当前二进制及原进程环境自动恢复并稳定 10 秒。独立只读验收确认当前环境文件未替换、关闭态与 `discard` 保持、活动告警 `0:0`、发送摘要 `13:13:0`、Provider 0；服务停止/启动各 2 次，通知 POST、业务 POST、邮件和真实短信均为 0 |
 | 测试服日志留存策略 | 通过：`8G/50G/14day/1day` 已由有权限运维在固定测试服受控部署；独立只读验证得到 `log_retention_configuration_complete=true`、`log_retention_runtime_reload_verified=true`、`log_retention_policy_verified=true`，真实短信和 Provider 增量为 0 |
 | 测试服短信管理只读 API | 通过：5 个 GET 经管理代理实服返回正确；未登录 `401/40001`、无权限 `403/40003`、MFA 失效 `403/40031`；响应脱敏且数据库/审计/Provider 零增量 |
 | 管理后台认证后真实数据显示 | 通过：真实 Chrome 展示 5 个模板、5 个场景、13 条日志；四档无横向溢出，短信写请求 0；保留 1 条无路径静态 404 环境观察 |
@@ -107,7 +111,7 @@ CI 检查或合并已通过。
 | 生产发布与观察 | 未开始 |
 | P0/P1 | 当前本地开发未发现；最终以 QA 结论为准 |
 
-本地最新验证明细：16 个阶段 5 契约文件共执行 90 项，87 项通过，3 项 Bash 环境依赖用例在 Windows 按设计跳过；敏感扫描覆盖 159 个文件、412 个历史 blob，发现 0、短信启用字面量 0。新增五档观察证据校验覆盖 5m/15m/30m/2h/24h，并以反例确认关闭态新增发送、延迟停止线、计数回退和敏感值均会失败关闭；Canary 执行计划、五档观察及回滚实际执行包装器契约已显式接入 PR CI。本机仍没有 actionlint，因此工作流最终语法和执行结果必须以 PR CI 为准。管理端短信 9/9、管理员 MFA 8/8、邮件 11/11、Vite 隔离 1/1、出站 URL 4/4；
+本地最新验证明细：16 个阶段 5 契约文件共执行 90 项，87 项通过，3 项 Bash 环境依赖用例在 Windows 按设计跳过；本次证据文档提交前敏感扫描覆盖 161 个文件、418 个历史 blob，发现 0、短信启用字面量 0。新增五档观察证据校验覆盖 5m/15m/30m/2h/24h，并以反例确认关闭态新增发送、延迟停止线、计数回退和敏感值均会失败关闭；Canary 执行计划、五档观察及回滚实际执行包装器契约已显式接入 PR CI。本机仍没有 actionlint，因此工作流最终语法和执行结果必须以 PR CI 为准。管理端短信 9/9、管理员 MFA 8/8、邮件 11/11、Vite 隔离 1/1、出站 URL 4/4；
 用户端短信 9/9、邮件 15/15、Vite 隔离 1/1；两端 type-check、ESLint、build 通过。前端依赖审计仍有
 1 个 moderate、6 个 high 的既有风险，本阶段未执行破坏性依赖升级。
 

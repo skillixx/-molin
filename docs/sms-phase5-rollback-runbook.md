@@ -72,7 +72,8 @@ rollback_restore_runtime_verified=false
 因此 `env.test` 备份只能用于对账，禁止整份覆盖当前配置。实际回滚候选必须基于当前受控环境文件生成，保留
 `TRUSTED_PROXY_IPS` 和其他当前安全边界，保持 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`，并确保不存在任何
 `SMS_TEMPLATE_CODE_*`。候选文件不得输出值，必须另存到 600 权限的受控临时路径，经人工逐键确认后才能在已授权
-窗口替换旧二进制并重启。该流程尚未执行；真正替换二进制、恢复配置或重启 API 会改变测试服服务状态，必须取得独立授权。
+窗口替换旧二进制并重启。该段记录描述候选生成时的门禁；后续实际运行已经取得独立授权并按本节最终 ChangeId 完成，
+不改变“候选生成授权不能继承为执行授权”的规则。
 
 候选生成器已固化为 `scripts/prepare-sms-phase5-test-server-rollback-candidate.ps1` 与同名 Bash payload。默认不执行任何
 动作，离线检查命令为：
@@ -93,8 +94,9 @@ SHA-256：8435f846ff2e5815bec889ac4e4c32d432acb06bb05c0e1e9c3bd6b02bb65494
 ```
 
 独立只读核验确认 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`、固定代理精确为 `172.20.250.0/28`，废弃模板键和重复键均为 0；
-核验只输出布尔摘要与文件哈希，不输出环境值。生成与核验期间当前环境未替换、服务重启 0、短信发送 0。该候选尚未用于替换当前环境或启动旧二进制，
-因此不能记为实际回滚或恢复运行时验证通过。
+核验只输出布尔摘要与文件哈希，不输出环境值。生成与核验期间当前环境未替换、服务重启 0、短信发送 0。该候选在生成阶段
+尚未用于启动旧二进制；后续由最终 runner `20260805T115540Z` 在独立授权窗口使用同一候选完成旧二进制运行和当前版本恢复验证，
+最终结论以本节后续运行证据为准。
 
 候选生成后的可重复只读验证入口为：
 
@@ -146,7 +148,13 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 runner SelfTest 和关闭态只读预检均通过；预检确认通知基线 `3:0:3:0`、活动告警 `0:0`、短信关闭/测试模式开启，
 在暂存授权前的流式预检中，远端文件写入、服务重启、通知 POST、业务 POST 和真实短信均为 0。随后取得独立暂存授权，
 最终候选已上传至固定精确目录；远端摘要、`pc:600`、`bash -n`、runner SelfTest 和关闭态 `--preflight` 均通过。
-暂存窗口只新增 1 个 runner 文件，服务重启、通知 POST、业务 POST 和真实短信仍为 0；尚未执行实际服务切换，不能记为回滚通过。
+暂存窗口只新增 1 个 runner 文件，服务重启、通知 POST、业务 POST 和真实短信仍为 0。项目负责人随后以完整影响范围独立批准
+实际执行；冻结 runner 只执行一次且没有重试。旧二进制使用关闭态候选稳定运行 10 秒，随后当前二进制及原进程环境自动恢复并
+稳定运行 10 秒；实际窗口服务停止 2 次、启动 2 次，`infra/.env.test` 始终未替换。独立只读验收确认
+`old_binary_runtime_verified=true`、`current_binary_restored=true`、`current_environment_unchanged=true`、
+`rollback_restore_runtime_verified=true`，并复核短信关闭、测试模式开启、Alertmanager `discard`、活动告警 `0:0`、
+通知基线 `3:0:3:0`、发送摘要 `13:13:0`、Provider 0；通知 POST、业务 POST、邮件和真实短信均为 0。该 ChangeId 的实际回滚
+与恢复运行时验证已经通过，授权已消费，禁止重复执行。
 
 候选上传与远端只读预检必须使用 `scripts/stage-sms-phase5-test-server-rollback-drill.ps1` 与
 `scripts/stage-sms-phase5-test-server-rollback-drill.sh`。默认模式和
