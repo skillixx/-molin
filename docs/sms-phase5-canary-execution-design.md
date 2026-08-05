@@ -129,7 +129,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 
 ## 8. 已消费的固定测试服只读执行人工门禁
 
-ChangeId `20260805T132831Z`、runner SHA-256 `4fc5c444...d8e9c` 的一次性执行门禁已经消费。其批准口令和 runner 均已撤销执行资格；禁止再次运行、禁止把失败视为白名单结论，也禁止据此修改测试服。
+ChangeId `20260805T132831Z`、runner SHA-256 `4fc5c444...d8e9c` 的一次性执行门禁已经消费。其批准口令和 runner 均已撤销执行资格；原候选目录已可恢复地移至带 `consumed-exit2-4fc5c444` 后缀的仓库外隔离路径。禁止再次运行、禁止把失败视为白名单结论，也禁止据此修改测试服。
 
 本次结果判定：
 
