@@ -4,7 +4,7 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档状态 | 阶段 0、阶段 1（PR #314、`3aa8f3e`）、阶段 2（PR #315、`9e50ee1`）、阶段 3（PR #317、`e7f29d5`）和阶段 4（PR #320、`c9b4783`）均已闭环。阶段 5 分支已同步 `origin/main@60b569f`，并已推送至 `origin/codex/aliyun-sms-phase5-canary-release`，至少包含已复核锚点 `9a3e50e`；阶段 5A 已完成本地回归、CI 安全门禁资产、四档浏览器检查、回滚 Dry Run 和测试服关闭态部署。测试服固定代理专网、`TRUSTED_PROXY_IPS=172.20.250.0/28`、新后端、40+5+5 指标和 4 条短信告警均已核验；`SMS_ENABLED=false`、`SMS_TEST_MODE=true`，数据库与 Provider 调用零增量、真实短信 0 条。尚未创建 PR，故 PR CI 尚未触发；真实 Canary、生产发布、观察、QA/产品验收及 PR/CI/合并仍未完成 |
+| 文档状态 | 阶段 0、阶段 1（PR #314、`3aa8f3e`）、阶段 2（PR #315、`9e50ee1`）、阶段 3（PR #317、`e7f29d5`）和阶段 4（PR #320、`c9b4783`）均已闭环。阶段 5 分支已同步 `origin/main@60b569f`；以 `73753ea` 为审计锚点时，远端 feature、`refs/pull/323/head` 和 merge 双父一致，PR 页面审查和 CI 状态尚未取得授权 API 证据。阶段 5A 已完成本地回归、CI 安全门禁资产、四档浏览器检查、回滚 Dry Run 和测试服关闭态部署。测试服固定代理专网、`TRUSTED_PROXY_IPS=172.20.250.0/28`、新后端、40+5+5 指标和 4 条短信告警均已核验；journald 批准策略和 Alertmanager 关闭态传输已部署，`SMS_ENABLED=false`、`SMS_TEST_MODE=true`，数据库与 Provider 调用零增量、真实短信 0 条。实际邮件演练、真实 Canary、生产发布、观察、QA/产品验收及 PR 审查/CI/合并仍未完成 |
 | 目标系统 | 墨灵平台 |
 | 功能范围 | 阿里云短信发送接入、短信模板同步与场景绑定、管理后台短信模板管理 |
 | 首期供应商 | 阿里云短信 |

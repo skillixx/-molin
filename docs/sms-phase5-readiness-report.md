@@ -30,7 +30,7 @@ Prometheus 抓取目标以及观察窗口前后发送增量；任一条件不符
 | 开发分支 | `codex/aliyun-sms-phase5-canary-release` |
 | 独立工作树 | `D:\molingproject\molin-sms-phase5` |
 | 开发基线 | `origin/main@60b569f` 为直接父基线；阶段 5 首个重放提交 `f42acee`；安全门禁资产已验证至 `5175288` |
-| 远端主线与 feature 分支 | 已同步 `origin/main@60b569f` 并完成全量回归；feature 分支已推送至 `origin/codex/aliyun-sms-phase5-canary-release`，至少包含已复核锚点 `9a3e50e`，尚未创建 PR |
+| 远端主线、feature 与 PR | 以 `73753ea` 为审计锚点时，`origin/main@60b569f`、feature、`refs/pull/323/head` 与 merge 双父已核对。PR 页面审查与 CI 状态因私有 API 未授权而未验证 |
 | 原工作区保护 | `D:\molingproject\molin` 的 13 项既有未提交内容未触碰 |
 | migration | 复用 `000058`、`000059`；阶段 5 当前不新增 migration |
 | API 契约 | 九个短信管理 API 与五业务入口不变，无需修改权威 API 文档 |
@@ -99,7 +99,7 @@ Prometheus 引用、容器和进程均为 1，管理端只绑定回环地址；�
 
 测试服代理阻塞已经关闭，阶段 5 feature 分支也已按授权推送并包含已复核锚点 `9a3e50e`。仍未完成的内容为：
 Alertmanager 实际通知演练、实际应用回滚演练、真实短信 Canary、生产只读基线与发布、24 小时观察、
-独立 QA、产品经理确认、PR/CI/代码审查和合并。`SMS_ENABLED=true`、真实短信、通知演练、服务回滚、
+独立 QA、产品经理确认、PR #323 CI/代码审查和合并。`SMS_ENABLED=true`、真实短信、通知演练、服务回滚、
 生产变更、PR 创建及合并仍需分别授权；后续新增提交若需再次推送，也必须先确认仍在已批准的阶段 5 分支同步范围内。
 
 只读 Canary 聚合预检现已把关闭态、回滚候选、回滚材料、监控、通知演练和 journald 留存收敛为单一失败关闭结论。
