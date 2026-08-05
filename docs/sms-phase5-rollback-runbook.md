@@ -96,6 +96,16 @@ SHA-256：8435f846ff2e5815bec889ac4e4c32d432acb06bb05c0e1e9c3bd6b02bb65494
 核验只输出布尔摘要与文件哈希，不输出环境值。生成与核验期间当前环境未替换、服务重启 0、短信发送 0。该候选尚未用于替换当前环境或启动旧二进制，
 因此不能记为实际回滚或恢复运行时验证通过。
 
+候选生成后的可重复只读验证入口为：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-rollback-candidate.ps1 `
+  -ChangeId 20260805T015043Z
+```
+
+验证器固定测试服 SSH 身份，只读取候选文件的类型、权限和环境安全断言，输出 SHA-256 与布尔摘要；不输出环境值，
+不替换当前环境、不重启服务、不调用短信接口。SSH 访问审计日志可能增加。
+
 同一预检确认 Alertmanager 引用、容器、进程和 9093 监听均为 0，状态为
 `receiver_configuration_required`。必须先明确接收渠道、值班人和 Secret 注入方式并取得部署授权，之后才能另行批准
 关闭态通知演练；禁止用制造真实短信失败的方式验证通知。

@@ -15,6 +15,7 @@ CI = ROOT / ".github" / "workflows" / "ci.yml"
 WRAPPERS = (
     "apply-sms-phase5-test-server-log-retention.ps1",
     "prepare-sms-phase5-test-server-rollback-candidate.ps1",
+    "verify-sms-phase5-test-server-rollback-candidate.ps1",
     "verify-sms-phase5-test-server-log-retention.ps1",
     "verify-sms-phase5-test-server-readonly.ps1",
     "verify-sms-phase5-test-server-recovery-readiness.ps1",
