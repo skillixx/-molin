@@ -125,6 +125,8 @@ $requiredFiles = @(
     "scripts\prepare-sms-phase5-test-server-rollback-candidate.sh",
     "scripts\verify-sms-phase5-test-server-rollback-candidate.ps1",
     "scripts\verify-sms-phase5-test-server-rollback-candidate.sh",
+    "scripts\prepare-sms-phase5-test-server-rollback-drill.ps1",
+    "scripts\run-sms-phase5-test-server-rollback-drill.sh",
     "scripts\verify-sms-phase5-test-server-log-retention.ps1",
     "scripts\verify-sms-phase5-test-server-log-retention.sh",
     "scripts\verify-sms-phase5-alertmanager-drill-readiness.ps1",

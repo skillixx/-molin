@@ -156,6 +156,15 @@ jobs:
         shell: pwsh
         run: ./scripts/verify-sms-phase5-test-server-rollback-candidate.ps1 -SelfTest
 
+      - name: 校验测试服旧二进制回滚与当前版本恢复演练资产
+        run: |
+          python tests/sms/phase5_rollback_runtime_drill_contract.py
+          bash -n scripts/run-sms-phase5-test-server-rollback-drill.sh
+
+      - name: 离线校验测试服回滚恢复演练包装器
+        shell: pwsh
+        run: ./scripts/prepare-sms-phase5-test-server-rollback-drill.ps1 -ChangeId 20990101T000000Z -SelfTest
+
       - name: 校验测试服日志留存只读审计资产
         run: |
           python tests/sms/phase5_log_retention_preflight_contract.py

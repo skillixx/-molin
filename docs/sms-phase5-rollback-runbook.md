@@ -109,3 +109,39 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 同一预检现确认 Prometheus Alertmanager 引用、Alertmanager 容器和进程均为 1，管理端只绑定回环地址，状态为
 `transport_present_receiver_unverified`。关闭态部署已通过，但实际邮件投递和值班人确认仍须另行批准单次合成演练；
 禁止用制造真实短信失败的方式验证通知。
+
+## 7. 测试服旧二进制运行与当前版本恢复候选
+
+实际运行时演练已固化为：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File scripts/prepare-sms-phase5-test-server-rollback-drill.ps1 `
+  -ChangeId <UTC_CHANGE_ID> `
+  -SelfTest
+```
+
+生成器只在本地冻结 `scripts/run-sms-phase5-test-server-rollback-drill.sh`，默认不连接测试服；通过
+`-ExportOperatorPayload` 导出时使用排他创建并输出 SHA-256，禁止覆盖旧候选。冻结内容包括固定测试服 machine-id、
+候选 `20260805T015043Z` 及其摘要、新旧二进制摘要、Alertmanager 关闭态配置摘要、10 秒旧版本稳定窗口和 10 秒恢复后
+稳定窗口。执行脚本支持 `--self-test`、`--preflight` 和 `--execute` 三种互斥意图；无参数运行失败关闭。
+
+`--preflight` 只读核对：唯一当前 API PID、磁盘与运行二进制摘要、备份旧二进制、候选配置、`SMS_ENABLED=false`、
+`SMS_TEST_MODE=true`、双前端代理 health、Alertmanager `discard`、活动告警 0、通知/请求/失败四计数、数据库发送摘要和
+磁盘余量。它不创建远端文件、不发信号、不重启、不 POST、不发送邮件或短信。
+
+`--execute` 必须在取得新的独立授权后，由运维输入
+`APPROVE_SMS_PHASE5_TEST_ROLLBACK_DRILL_<UTC_CHANGE_ID>`。执行器先保存当前二进制和原进程 NUL 环境快照，再武装 EXIT
+自动恢复；旧二进制只使用已验证的关闭态候选启动。旧版本 health/ready、版本接口、双代理和进程摘要连续稳定后，执行器
+在同一窗口恢复当前二进制及原进程环境，再次验证相同健康条件、`discard`、零活动告警、通知零增量和
+`sms_send_logs` 零增量。当前 `infra/.env.test` 始终不被替换；任何失败或信号都必须先恢复当前二进制。仅在自动恢复本身
+失败时保留含 Secret 的 0600 原进程环境快照供人工恢复，禁止下载或输出其内容。
+
+2026-08-05 首个本地冻结候选 `20260805T112823Z` 因把前端端口错误冻结为 `13001/13000`，在只读预检阶段失败，已在
+候选目录写入 `INVALIDATED.txt`，禁止上传或执行；该失败发生在服务重启、配置替换和任何外发之前。修正版 ChangeId
+`20260805T113149Z` 虽通过只读预检，但随后被“写入前预检、候选根身份和运行时候选快照”加固版取代，仓库外已写
+`SUPERSEDED.txt`，同样禁止上传或执行。加固候选 `20260805T113924Z` 又被增加敏感快照全退出路径清理的版本取代；最终
+修正版 ChangeId `20260805T114239Z` 的 runner SHA-256 为
+`fd5afd804457824f5dfaefcf6542b39d070a92a8e809ddcdf0fd6ecb077839d4`。本地包装器 SelfTest、远端流式 `bash -n`、
+runner SelfTest 和关闭态只读预检均通过；预检确认通知基线 `3:0:3:0`、活动告警 `0:0`、短信关闭/测试模式开启，
+远端文件写入、服务重启、通知 POST、业务 POST 和真实短信均为 0。最终候选尚未上传或执行，不能记为实际回滚通过。
