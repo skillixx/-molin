@@ -2,9 +2,9 @@
 
 ## 1. 当前状态
 
-状态：**技术前置、实际回滚、验收层级、本地脱敏计划和固定测试服双号码只读状态核验均已完成；target-admin 精确白名单变更已按一次性授权执行成功，等待新 ChangeId 的独立关闭态只读复核及后续真实短信授权。**
+状态：**技术前置、实际回滚、验收层级、本地脱敏计划和固定测试服双号码只读状态核验均已完成；target-admin 精确白名单变更及其新 ChangeId 独立关闭态只读复核均已通过，等待后续真实短信授权。**
 
-阶段 5A 关闭态部署与代理验证没有发送短信。当前测试服 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`、白名单数量 1，
+阶段 5A 关闭态部署与代理验证没有发送短信。当前测试服 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`、白名单数量 2，
 固定代理和 4 条短信告警已经部署通过。
 发送日志只读基线为 accepted 13、failed 0，与阶段 2 历史 7+6 条一致；阶段 5 Canary 必须只计算基线后的增量。
 
@@ -145,4 +145,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 
 随后 ChangeId `20260805T180909Z`、runner SHA-256 `d202e6f7...0079f7` 获得一次性精确授权并执行成功，禁止重试。runner 输出确认白名单数量从 1 变为 2、target-new 保留、target-admin 新增，`SMS_ENABLED=false`、`SMS_TEST_MODE=true`、Alertmanager 活动告警 `0:0`；发送日志、Provider 与通知计数均零增量，业务 POST、上传、短信提交请求和真实短信均为 0，服务停止/启动各 1 次，未进入回滚路径。
 
-执行授权消费后，仅在本地生成变更后只读复核候选 ChangeId `20260805T182328Z`：receipt-only 计划 SHA-256 为 `f84c96a61172d025909c5b3d15116f9f6cb67f7c056bf6d2e071234f6accda89`，runner SHA-256 为 `2a4225f6b7c77738226afb495c8596b9b04f80bf057d49a81532a0a90da8540f`。PowerShell/Bash 语法、只读 SQL、双目标白名单总门禁、默认关闭、完整手机号字面量和上传命令检查均通过；生成与静态验证期间输入、网络、上传、配置修改、服务操作和短信均为 0。该 runner 尚未取得执行授权。
+执行授权消费后，仅在本地生成变更后只读复核候选 ChangeId `20260805T182328Z`：receipt-only 计划 SHA-256 为 `f84c96a61172d025909c5b3d15116f9f6cb67f7c056bf6d2e071234f6accda89`，runner SHA-256 为 `2a4225f6b7c77738226afb495c8596b9b04f80bf057d49a81532a0a90da8540f`。PowerShell/Bash 语法、只读 SQL、双目标白名单总门禁、默认关闭、完整手机号字面量和上传命令检查均通过；生成与静态验证期间输入、网络、上传、配置修改、服务操作和短信均为 0。
+
+该 runner 随后按绑定 ChangeId、计划摘要和 runner 摘要的一次性授权执行，固定 SSH stdin 仅连接 1 次且未重试。结果为 `target_state_readonly_preflight=passed`、`readonly_exit_code=0`：`SMS_ENABLED=false`、`SMS_TEST_MODE=true`，target-new 未注册，target-admin 已注册且手机号已验证，并具有直接 admin 角色与 `user:manage` 权限；两个目标均在当前白名单，`whitelist_targets_ready=true`、`whitelist_verified=true`。发送日志零增量，业务配置修改、业务 POST、上传、短信提交请求、敏感值持久化和真实短信均为 0，远端 stderr 为空。该结果关闭白名单技术门禁，但不构成真实短信发送授权或收件证明。
