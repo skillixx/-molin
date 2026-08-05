@@ -76,6 +76,12 @@ class RollbackCandidateVerifierContractTest(unittest.TestCase):
         self.assertNotIn("cat ", sh)
         self.assertNotIn("printenv", sh)
         self.assertNotIn("env |", sh)
+        for marker in (
+            "quoted_export_candidate=passed",
+            "quoted_short_hmac_candidate=passed",
+            "concurrent_replacement_candidate=passed",
+        ):
+            self.assertIn(marker, sh)
 
         bash = shutil.which("bash")
         if bash is None:
@@ -90,6 +96,8 @@ class RollbackCandidateVerifierContractTest(unittest.TestCase):
         )
         for marker in (
             "valid_candidate=passed",
+            "quoted_export_candidate=passed",
+            "quoted_short_hmac_candidate=passed",
             "missing_candidate=passed",
             "symlink_candidate=passed",
             "wrong_mode_candidate=passed",
@@ -97,6 +105,7 @@ class RollbackCandidateVerifierContractTest(unittest.TestCase):
             "proxy_drift_candidate=passed",
             "legacy_key_candidate=passed",
             "duplicate_key_candidate=passed",
+            "concurrent_replacement_candidate=passed",
             "payload_self_test=passed",
             "business_configuration_mutations=0",
             "service_restarts=0",

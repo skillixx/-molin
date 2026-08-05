@@ -16,29 +16,63 @@ import sys
 import tempfile
 
 
-def verify_candidate(path: pathlib.Path, expected_owner: str, expected_root: pathlib.Path | None) -> str:
+def verify_candidate(
+    path: pathlib.Path,
+    expected_owner: str,
+    expected_root: pathlib.Path | None,
+    after_open=None,
+) -> str:
     """只读验证候选文件的路径身份、权限和关闭态环境契约。"""
     root = path.parent
     if expected_root is not None and root != expected_root:
         raise ValueError("candidate_root")
 
-    root_stat = root.lstat()
-    if stat.S_ISLNK(root_stat.st_mode) or not stat.S_ISDIR(root_stat.st_mode):
-        raise ValueError("candidate_root_type")
-    if pwd.getpwuid(root_stat.st_uid).pw_name != expected_owner or stat.S_IMODE(root_stat.st_mode) != 0o700:
-        raise ValueError("candidate_root_identity")
+    if root.resolve(strict=True) != root:
+        raise ValueError("candidate_root_path")
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    root_descriptor = os.open(root, directory_flags)
+    candidate_descriptor = None
+    try:
+        root_stat = os.fstat(root_descriptor)
+        if not stat.S_ISDIR(root_stat.st_mode):
+            raise ValueError("candidate_root_type")
+        if pwd.getpwuid(root_stat.st_uid).pw_name != expected_owner or stat.S_IMODE(root_stat.st_mode) != 0o700:
+            raise ValueError("candidate_root_identity")
 
-    candidate_stat = path.lstat()
-    if stat.S_ISLNK(candidate_stat.st_mode) or not stat.S_ISREG(candidate_stat.st_mode):
-        raise ValueError("candidate_type")
-    if candidate_stat.st_nlink != 1:
-        raise ValueError("candidate_hardlink")
-    if pwd.getpwuid(candidate_stat.st_uid).pw_name != expected_owner or stat.S_IMODE(candidate_stat.st_mode) != 0o600:
-        raise ValueError("candidate_identity")
-    if candidate_stat.st_size <= 0 or candidate_stat.st_size > 1024 * 1024:
-        raise ValueError("candidate_size")
+        candidate_flags = os.O_RDONLY | os.O_NOFOLLOW
+        candidate_descriptor = os.open(path.name, candidate_flags, dir_fd=root_descriptor)
+        candidate_stat = os.fstat(candidate_descriptor)
+        if not stat.S_ISREG(candidate_stat.st_mode):
+            raise ValueError("candidate_type")
+        if candidate_stat.st_nlink != 1:
+            raise ValueError("candidate_hardlink")
+        if pwd.getpwuid(candidate_stat.st_uid).pw_name != expected_owner or stat.S_IMODE(candidate_stat.st_mode) != 0o600:
+            raise ValueError("candidate_identity")
+        if candidate_stat.st_size <= 0 or candidate_stat.st_size > 1024 * 1024:
+            raise ValueError("candidate_size")
 
-    raw = path.read_bytes()
+        if after_open is not None:
+            after_open()
+        chunks = []
+        while True:
+            chunk = os.read(candidate_descriptor, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        raw = b"".join(chunks)
+
+        # 读取后再次核对目录项与已打开描述符指向同一 inode，拒绝验证窗口内的替换竞态。
+        current_candidate = os.stat(path.name, dir_fd=root_descriptor, follow_symlinks=False)
+        current_root = os.stat(root, follow_symlinks=False)
+        if (current_candidate.st_dev, current_candidate.st_ino) != (candidate_stat.st_dev, candidate_stat.st_ino):
+            raise ValueError("candidate_replaced")
+        if (current_root.st_dev, current_root.st_ino) != (root_stat.st_dev, root_stat.st_ino):
+            raise ValueError("candidate_root_replaced")
+    finally:
+        if candidate_descriptor is not None:
+            os.close(candidate_descriptor)
+        os.close(root_descriptor)
+
     if raw.startswith(b"\xef\xbb\xbf") or b"\x00" in raw or b"\r" in raw:
         raise ValueError("candidate_encoding")
     text = raw.decode("utf-8")
@@ -48,15 +82,16 @@ def verify_candidate(path: pathlib.Path, expected_owner: str, expected_root: pat
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
-        if "=" not in line:
+        match = re.fullmatch(r"(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)", stripped)
+        if match is None:
             raise ValueError("candidate_line")
-        key, value = line.split("=", 1)
-        key = key.strip()
-        if not re.fullmatch(r"[A-Z][A-Z0-9_]*", key):
-            raise ValueError("candidate_key")
+        key, value = match.groups()
         if key in values:
             duplicates += 1
-        values[key] = value.strip()
+        normalized = value.strip()
+        if len(normalized) not in (0, 1) and normalized[0] == normalized[-1] and normalized[0] in "'\"":
+            normalized = normalized[1:-1]
+        values[key] = normalized
 
     trusted = {item.strip() for item in values.get("TRUSTED_PROXY_IPS", "").split(",") if item.strip()}
     legacy = sum(1 for key in values if key.startswith("SMS_TEMPLATE_CODE_"))
@@ -123,10 +158,32 @@ def run_self_test() -> None:
         verify_candidate(path, owner, root)
         print("valid_candidate=passed")
 
+        quoted = valid.replace("APP_ENV=test", "export APP_ENV='test'")
+        quoted = quoted.replace("SMS_PROVIDER=aliyun", 'SMS_PROVIDER="aliyun"')
+        quoted = quoted.replace(
+            "SMS_PHONE_HMAC_SECRET=SELF_TEST_HMAC_SECRET_32_CHARS_ONLY",
+            'SMS_PHONE_HMAC_SECRET="SELF_TEST_HMAC_SECRET_32_CHARS_ONLY"',
+        )
+        write_candidate(quoted)
+        verify_candidate(path, owner, root)
+        print("quoted_export_candidate=passed")
+
+        quoted_short_hmac = quoted.replace(
+            '"SELF_TEST_HMAC_SECRET_32_CHARS_ONLY"',
+            '"' + ("x" * 30) + '"',
+        )
+        write_candidate(quoted_short_hmac)
+        try:
+            verify_candidate(path, owner, root)
+        except ValueError:
+            print("quoted_short_hmac_candidate=passed")
+        else:
+            raise AssertionError("quoted_short_hmac_candidate")
+
         path.unlink()
         try:
             verify_candidate(path, owner, root)
-        except (FileNotFoundError, ValueError):
+        except (FileNotFoundError, OSError, ValueError):
             print("missing_candidate=passed")
         else:
             raise AssertionError("missing_candidate")
@@ -137,7 +194,7 @@ def run_self_test() -> None:
         path.symlink_to(target)
         try:
             verify_candidate(path, owner, root)
-        except ValueError:
+        except (OSError, ValueError):
             print("symlink_candidate=passed")
         else:
             raise AssertionError("symlink_candidate")
@@ -158,6 +215,22 @@ def run_self_test() -> None:
                 print(f"{name}=passed")
             else:
                 raise AssertionError(name)
+
+        write_candidate(valid)
+        opened_path = root / "opened.env"
+
+        def replace_after_open() -> None:
+            path.rename(opened_path)
+            replacement = valid.replace("SMS_ENABLED=false", "SMS_ENABLED=" + "true")
+            path.write_text(replacement, encoding="utf-8", newline="\n")
+            os.chmod(path, 0o600)
+
+        try:
+            verify_candidate(path, owner, root, after_open=replace_after_open)
+        except ValueError:
+            print("concurrent_replacement_candidate=passed")
+        else:
+            raise AssertionError("concurrent_replacement_candidate")
 
     print("payload_self_test=passed")
     print("business_configuration_mutations=0")
