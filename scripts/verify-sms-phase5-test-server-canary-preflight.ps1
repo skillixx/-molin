@@ -49,6 +49,31 @@ function Test-SafeValue {
     return $Values.ContainsKey($Key) -and [string]$Values[$Key] -ceq $Expected
 }
 
+function ConvertTo-CanonicalEvidenceTimeText {
+    param([object]$Value)
+
+    if ($Value -is [DateTimeOffset]) {
+        return ([DateTimeOffset]$Value).ToUniversalTime().ToString(
+            "yyyy-MM-dd'T'HH:mm:ss'Z'",
+            [Globalization.CultureInfo]::InvariantCulture
+        )
+    }
+    if ($Value -is [DateTime]) {
+        $dateTimeValue = [DateTime]$Value
+        if ($dateTimeValue.Kind -eq [DateTimeKind]::Unspecified) {
+            throw "告警通知演练证据日期对象缺少时区"
+        }
+        return $dateTimeValue.ToUniversalTime().ToString(
+            "yyyy-MM-dd'T'HH:mm:ss'Z'",
+            [Globalization.CultureInfo]::InvariantCulture
+        )
+    }
+    if ($Value -is [string]) {
+        return [string]$Value
+    }
+    throw "告警通知演练证据时间字段类型无效"
+}
+
 function Read-VerifiedLocalEvidenceFile {
     param(
         [string]$Path,
@@ -247,7 +272,8 @@ function Read-NotificationDrillEvidence {
         throw "告警通知演练证据时间格式无效"
     }
     $createdAtText = $createdAtMatches[0].Groups["value"].Value
-    if ([string]$evidence.created_at_utc -cne $createdAtText) {
+    $semanticCreatedAtText = ConvertTo-CanonicalEvidenceTimeText $evidence.created_at_utc
+    if ($semanticCreatedAtText -cne $createdAtText) {
         throw "告警通知演练证据顶层时间字段与原始 JSON 不一致"
     }
     $createdAt = [DateTimeOffset]::MinValue
@@ -431,6 +457,19 @@ function Invoke-SelfTest {
         throw "SelfTest 未拒绝非键值输出"
     }
     Write-Output "malformed_output_blocker_case=passed"
+
+    $legacyDateTime = [DateTime]::SpecifyKind(
+        [DateTime]::ParseExact(
+            "2026-08-05T00:00:00Z",
+            "yyyy-MM-dd'T'HH:mm:ss'Z'",
+            [Globalization.CultureInfo]::InvariantCulture
+        ),
+        [DateTimeKind]::Utc
+    )
+    if ((ConvertTo-CanonicalEvidenceTimeText $legacyDateTime) -cne "2026-08-05T00:00:00Z") {
+        throw "SelfTest 未兼容旧版 PowerShell 日期自动转换"
+    }
+    Write-Output "legacy_datetime_normalization_case=passed"
     Write-Output "self_test=passed"
     Write-Output "remote_connections=0"
     Write-Output "business_configuration_mutations=0"

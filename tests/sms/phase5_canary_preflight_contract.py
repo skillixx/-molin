@@ -99,6 +99,7 @@ class CanaryPreflightContractTest(unittest.TestCase):
             "notification_blocker_case=passed",
             "log_retention_blocker_case=passed",
             "malformed_output_blocker_case=passed",
+            "legacy_datetime_normalization_case=passed",
             "self_test=passed",
             "remote_connections=0",
             "business_configuration_mutations=0",
