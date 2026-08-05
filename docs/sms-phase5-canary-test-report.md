@@ -16,11 +16,15 @@ false，因此固定输出 `canary_preflight=blocked`、`canary_preflight_ready=
 关闭态、回滚候选、回滚材料、监控和日志留存均为 true，仅 `notification_drill_ready=false`，因此仍严格输出
 `canary_preflight=blocked`。Alertmanager 根路由为 `discard`，本次部署与复核未触发告警，邮件和短信发送均为 0。
 
-2026-08-05 经独立授权执行邮件通知演练 `20260805T094720Z`：Alertmanager 仅形成 1 次 firing 通知尝试，通知失败计数为
-0，业务短信 Provider 增量为 0；但流程在 firing 收件人工确认处中断，未形成可验证的 resolved 通知，收件端到达也尚未
-获得负责人确认。失败路径已恢复 `discard` 和关闭态配置，禁止重试 firing，因此本次演练仍记为**未通过**，不得据此解除
-Canary 门禁。复盘发现原候选的 `resolved.endsAt` 早于 `startsAt`，已新增离线载荷转换校验和“仅 resolved、零 firing”
-恢复规则；恢复执行仍须先取得本次 firing 实际收件确认，并在原精确告警已过期时失败关闭。
+2026-08-05 经独立授权执行邮件通知演练 `20260805T094720Z`：Alertmanager 仅形成 1 次 firing SMTP 通知请求，通知失败
+指标为 0，业务短信 Provider 增量为 0；负责人随后明确确认 firing 邮件**未收到**。失败清理尝试提交 resolved 时，
+Alertmanager 于 `2026-08-05T09:55:54.116Z` 以 `start time must be before end time` 拒绝无效载荷，因此 resolved
+通知计数为 0。失败路径已恢复 `discard` 和关闭态配置，活动告警为 0，`SMS_ENABLED=false`、`SMS_TEST_MODE=true`。
+本次演练正式记为**失败**，不得据此解除 Canary 门禁，也不得在原授权下重试 firing 或 resolved。仓库外受控失败证据位于
+`D:\molingproject\molin-phase5-alertmanager-drill-failure-evidence-20260805T094720Z`，manifest SHA-256 为
+`22acc123e477cc3084cde19e56e6e123864ef3db42c7295776bbbe245419d606`，不含邮箱地址或 SMTP Secret。复盘已新增
+离线载荷转换校验和中断恢复规则；下一次通知演练必须取得新的独立授权与 ChangeId，并先完成 126 发件侧记录、QQ
+垃圾箱/拦截规则和收件地址哈希的双人核对。
 
 ## 2. 执行门禁
 
