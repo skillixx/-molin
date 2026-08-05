@@ -129,6 +129,7 @@ $requiredFiles = @(
     "scripts\verify-sms-phase5-test-server-log-retention.sh",
     "scripts\verify-sms-phase5-alertmanager-drill-readiness.ps1",
     "scripts\verify-sms-phase5-alertmanager-drill-readiness.sh",
+    "scripts\verify-sms-phase5-alertmanager-drill-payload.ps1",
     "scripts\verify-sms-phase5-test-server-canary-preflight.ps1",
     "scripts\apply-sms-phase5-test-server-log-retention.ps1",
     "scripts\apply-sms-phase5-test-server-log-retention.sh"
@@ -167,6 +168,11 @@ if ($EnvironmentFile -ne "") {
 
 if ($SelfTest) {
     Invoke-SelfTest
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+        (Join-Path $root "scripts\verify-sms-phase5-alertmanager-drill-payload.ps1") -SelfTest
+    if ($LASTEXITCODE -ne 0) {
+        throw "Alertmanager firing/resolved 载荷转换自测失败"
+    }
 }
 
 if ($RunSensitiveScan) {

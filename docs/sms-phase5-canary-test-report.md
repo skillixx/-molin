@@ -16,6 +16,12 @@ false，因此固定输出 `canary_preflight=blocked`、`canary_preflight_ready=
 关闭态、回滚候选、回滚材料、监控和日志留存均为 true，仅 `notification_drill_ready=false`，因此仍严格输出
 `canary_preflight=blocked`。Alertmanager 根路由为 `discard`，本次部署与复核未触发告警，邮件和短信发送均为 0。
 
+2026-08-05 经独立授权执行邮件通知演练 `20260805T094720Z`：Alertmanager 仅形成 1 次 firing 通知尝试，通知失败计数为
+0，业务短信 Provider 增量为 0；但流程在 firing 收件人工确认处中断，未形成可验证的 resolved 通知，收件端到达也尚未
+获得负责人确认。失败路径已恢复 `discard` 和关闭态配置，禁止重试 firing，因此本次演练仍记为**未通过**，不得据此解除
+Canary 门禁。复盘发现原候选的 `resolved.endsAt` 早于 `startsAt`，已新增离线载荷转换校验和“仅 resolved、零 firing”
+恢复规则；恢复执行仍须先取得本次 firing 实际收件确认，并在原精确告警已过期时失败关闭。
+
 ## 2. 执行门禁
 
 只读聚合入口：

@@ -570,6 +570,32 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-al
 
 ---
 
+### 短信阶段 5 Alertmanager 演练载荷转换校验
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维 / 测试 |
+| **涉及模块** | Alertmanager 合成告警演练 |
+| **涉及功能** | 在提交告警前离线验证唯一 firing/resolved、精确标签和有效时间顺序 |
+| **代码位置** | `scripts/verify-sms-phase5-alertmanager-drill-payload.ps1` |
+
+**作用：** 只读解析本地候选 JSON，要求 firing 与 resolved 各恰好一条、标签严格匹配测试环境和 ChangeId、两者
+`startsAt` 一致，并拒绝 `resolved.endsAt <= resolved.startsAt`。该检查专门防止把 Alertmanager 的 HTTP 200
+误判为有效 resolved 状态；不连接测试服，不包含告警 POST、配置重载、邮件或短信发送能力。
+
+```powershell
+# 内置正反例自测
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-alertmanager-drill-payload.ps1 -SelfTest
+
+# 校验本次受控候选载荷
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-alertmanager-drill-payload.ps1 `
+  -FiringPayloadPath C:\受控候选目录\firing-alert.json `
+  -ResolvedPayloadPath C:\受控候选目录\resolved-alert.json `
+  -ChangeId <UTC_CHANGE_ID>
+```
+
+---
+
 ### 短信阶段 5 Canary 只读聚合预检
 
 | 项目 | 说明 |

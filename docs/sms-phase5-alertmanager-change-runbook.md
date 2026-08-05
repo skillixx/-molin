@@ -87,6 +87,28 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-al
 4. 同时记录 Alertmanager 接收、路由、通知尝试、接收渠道到达和值班人确认五层证据。
 5. 演练结束确认合成告警已 resolved、通知队列清空、业务短信 Provider 指标增量为 0。
 
+载荷生成后、任何配置重载或告警提交之前，必须离线验证 firing/resolved 状态转换：
+
+```powershell
+# 契约自测不会读取测试服、不会提交告警
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-alertmanager-drill-payload.ps1 -SelfTest
+
+# 校验本次两个候选载荷；命令只读文件，不连接 Alertmanager
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-alertmanager-drill-payload.ps1 `
+  -FiringPayloadPath C:\受控候选目录\firing-alert.json `
+  -ResolvedPayloadPath C:\受控候选目录\resolved-alert.json `
+  -ChangeId <UTC_CHANGE_ID>
+```
+
+`resolved.startsAt` 必须与 firing 完全一致，`resolved.endsAt` 必须晚于 `startsAt`。Alertmanager 告警提交接口返回
+HTTP 200 只证明请求被接收，不能证明时间窗口有效、resolved 通知已发送或收件人已收到。
+
+若流程在 firing 实际发送后中断，必须先恢复 `discard`，保留原 ChangeId 和通知计数证据，并等待人工确认 firing
+实际收件。恢复候选只能提交一次有效 resolved，必须静态证明 firing POST 数为 0；禁止重新执行原始全流程、禁止自动重试
+firing，也禁止用“先提交一次新的 firing 但依赖 repeat interval 去重”的方式绕过单次演练门禁。若原告警已过期或精确指纹不再
+存在，恢复候选必须失败关闭并重新申请处置授权。失败清理只能恢复配置，不得在退出陷阱中异步提交 resolved 后立即重载
+`discard`，因为通知分组等待尚未完成时会造成无法验证的状态。
+
 只有接收渠道真实到达且值班人确认后，才能把通知链记为通过。HTTP 200、Alertmanager 接收成功或通知尝试成功均不能
 单独代表最终到达。Alertmanager 官方说明其职责是接收 Prometheus 告警并路由到具体 receiver；可用的 receiver 包括
 邮件、值班平台和通用 Webhook。参考：
