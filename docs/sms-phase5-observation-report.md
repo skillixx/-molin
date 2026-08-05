@@ -24,6 +24,11 @@ SSH/API 访问审计日志，业务配置修改、服务重启和短信发送操
 `discard`，子路由 0，活动告警、通知累计、邮件和短信发送均为 0，因此通知链只能记为
 `transport_present_receiver_unverified`。下一步仍须在 `SMS_ENABLED=false` 下取得独立演练授权，且不得通过真实短信故障触发。
 
+随后已在新的独立授权下完成修正版通知演练 `20260805T105517Z`：仅 1 次 firing 和 1 次 resolved，负责人均在 QQ
+收件箱确认收到对应邮件；没有重试、其他告警或短信。演练结束后根路由恢复 `discard`，活动告警 0、通知失败 0、Provider
+与短信增量 0，成功证据契约通过。因此当前通知链状态已经从上述部署时点的“仅传输存在”推进为“演练投递已确认”；
+该历史段仍保留用于区分部署证据和后续投递证据。
+
 2026-08-05 日志留存策略随后由有权限运维在固定测试服本地受控窗口完成部署。独立只读验证确认 journald 正常、持久目录存在，
 `SystemMaxUse=8G`、`SystemKeepFree=50G`、`MaxRetentionSec=14day`、`MaxFileSec=1day` 已生效，
 `log_retention_configuration_complete=true`、`log_retention_policy_verified=true`。执行保持短信关闭态，真实短信和 Provider
@@ -42,9 +47,21 @@ API 单进程与 health/ready 正常、短信保持关闭、发送摘要仍为 `
 
 ## 3. 观察窗口
 
+五档观察完成后必须把低敏累计值写入仓库外 JSON，并使用以下离线入口验证计数守恒、时间覆盖、停止线、活动告警、
+最终开关状态和零未授权业务变更。校验器不连接服务器或供应商，也不证明 JSON 中的数据真实；原始 Prometheus、数据库、
+运行进程和人工收件证据仍须由独立操作者对照保存。
+
+```powershell
+python scripts/verify-sms-phase5-observation-evidence.py --self-test
+python scripts/verify-sms-phase5-observation-evidence.py --evidence C:\受控目录\phase5-observation.json
+```
+
+测试服只允许 `closed_after_canary`，五个快照期间不得出现 Canary 之外的新发送增量。`production_enabled` 只允许生产环境，
+且只有在生产开关已经取得独立批准后才能使用；计划文件中的模式字段本身不能证明批准存在。
+
 | 窗口 | 必查内容 | 当前结果 |
 |---|---|---|
-| 开启前 | health/ready、开关、模板/绑定、告警、回滚人 | 关闭态应用与 Alertmanager 传输层通过；实际邮件投递、值班确认、真实短信授权人与观察人待确认 |
+| 开启前 | health/ready、开关、模板/绑定、告警、回滚人 | 关闭态应用、Alertmanager 传输和单次 firing/resolved 人工收件均通过；真实短信授权人、目标角色与观察人仍待确认 |
 | 关闭态 30 秒 | 发送日志、Provider 调用、代理健康、Prometheus | 2026-08-04、2026-08-05 两次均通过，发送与 Provider 调用零增量 |
 | 5 分钟 | 调用数、非受理数、配置类错误、平均延迟 | 待执行 |
 | 15 分钟 | 五场景分布、429、认证失败、用户反馈 | 待执行 |

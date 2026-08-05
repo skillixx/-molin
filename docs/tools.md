@@ -659,6 +659,26 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-ca
 
 ---
 
+### 短信阶段 5 五档观察证据校验
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维 / 测试 / 产品经理 |
+| **涉及模块** | 短信累计指标、发送日志、Alertmanager、health/ready、阶段 5 观察报告 |
+| **涉及功能** | 校验 5 分钟、15 分钟、30 分钟、2 小时和 24 小时低敏证据 |
+| **代码位置** | `scripts/verify-sms-phase5-observation-evidence.py` |
+
+**作用：** 对仓库外 JSON 做纯本地契约检查，验证时间覆盖、发送日志守恒、计数单调、关闭态零新增、Provider 失败率和
+平均耗时停止线、活动告警、通知失败及最终开关状态。它不读取线上指标、不连接供应商，也不能把人工填写的 JSON 变成
+真实运行证据；必须与原始只读快照、运行状态和收件确认共同复核。
+
+```powershell
+python scripts/verify-sms-phase5-observation-evidence.py --self-test
+python scripts/verify-sms-phase5-observation-evidence.py --evidence C:\受控目录\phase5-observation.json
+```
+
+---
+
 ### MySQL
 
 | 项目 | 说明 |
