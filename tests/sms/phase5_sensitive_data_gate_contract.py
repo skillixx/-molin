@@ -26,7 +26,10 @@ class Phase5SensitiveDataGateContractTest(unittest.TestCase):
         self.run_git("config", "user.name", "阶段5契约测试")
         self.run_git("config", "user.email", "phase5@example.invalid")
         (self.repo / "README.md").write_text("阶段 5 基线\n", encoding="utf-8")
-        self.run_git("add", "README.md")
+        baseline_fixture = self.repo / "tests" / "baseline-fixture.txt"
+        baseline_fixture.parent.mkdir(parents=True, exist_ok=True)
+        baseline_fixture.write_text("SMS_ENABLED=true\n", encoding="utf-8")
+        self.run_git("add", "README.md", "tests/baseline-fixture.txt")
         self.run_git("commit", "--quiet", "-m", "建立测试基线")
         self.run_git("tag", "phase5-base")
 
@@ -124,7 +127,7 @@ class Phase5SensitiveDataGateContractTest(unittest.TestCase):
 
         self.assertEqual(1, result.returncode, result.stdout + result.stderr)
         self.assertIn("category=access_key_or_secret_value", result.stdout)
-        self.assertIn("source_ref=blob:", result.stdout)
+        self.assertIn("source_ref=commit:", result.stdout)
         self.assertNotIn(secret, result.stdout)
 
     def test_deleted_protected_env_is_rejected_even_when_blob_already_existed(self) -> None:
@@ -169,6 +172,68 @@ class Phase5SensitiveDataGateContractTest(unittest.TestCase):
         self.assertIn("category=sms_enabled_true", result.stdout)
         self.assertIn("category=sms_test_mode_false", result.stdout)
         self.assertIn("sms_enable_literals=4", result.stdout)
+
+    def test_runtime_boolean_truth_table_is_mirrored(self) -> None:
+        self.commit_file(
+            "infra/boolean-config.txt",
+            "SMS_ENABLED=1\nSMS_ENABLED=t\nSMS_ENABLED=y\nSMS_ENABLED=yes\nSMS_ENABLED=on\n"
+            "SMS_TEST_MODE=0\nSMS_TEST_MODE=no\nSMS_TEST_MODE=off\nSMS_TEST_MODE=unknown\n",
+        )
+
+        result = self.run_gate()
+
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("sms_enable_literals=5", result.stdout)
+        self.assertIn("category=sms_test_mode_false", result.stdout)
+
+    def test_blob_reused_from_base_is_scanned_under_new_runtime_path(self) -> None:
+        self.commit_file("infra/reused-runtime.txt", "SMS_ENABLED=true\n")
+
+        result = self.run_gate()
+
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("category=sms_enabled_true", result.stdout)
+        self.assertIn("file=infra/reused-runtime.txt", result.stdout)
+
+    def test_bare_access_key_and_opaque_bearer_token_are_rejected(self) -> None:
+        access_key = "LTAI" + "6" * 16
+        bearer = "Bearer " + "OpaqueToken" + "7" * 18
+        self.commit_file("artifacts/provider.log", f"{access_key}\n{bearer}\n")
+
+        result = self.run_gate()
+
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("category=aliyun_access_key_id", result.stdout)
+        self.assertIn("category=bearer_token", result.stdout)
+        self.assertNotIn(access_key, result.stdout)
+        self.assertNotIn(bearer, result.stdout)
+
+    def test_nul_in_text_file_fails_closed_without_echoing_content(self) -> None:
+        target = self.repo / "artifacts" / "nul.log"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        secret = "LTAI" + "5" * 16
+        target.write_bytes(b"prefix\x00" + secret.encode("ascii") + b"\n")
+
+        result = self.run_gate()
+
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("category=nul_byte_in_text", result.stdout)
+        self.assertNotIn(secret, result.stdout)
+
+    def test_staged_blob_is_scanned_even_when_worktree_was_overwritten(self) -> None:
+        target = self.repo / "artifacts" / "staged.log"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        secret = "LTAI" + "4" * 16
+        target.write_text(secret + "\n", encoding="utf-8")
+        self.run_git("add", "artifacts/staged.log")
+        target.write_text("safe worktree content\n", encoding="utf-8")
+
+        result = self.run_gate()
+
+        self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+        self.assertIn("category=aliyun_access_key_id", result.stdout)
+        self.assertIn("source_ref=index:", result.stdout)
+        self.assertNotIn(secret, result.stdout)
 
     def test_required_dist_artifacts_fail_closed_when_missing(self) -> None:
         self.commit_file("infra/.env.example", "SMS_ENABLED=false\nSMS_TEST_MODE=true\n")

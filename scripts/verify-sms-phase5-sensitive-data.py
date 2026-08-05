@@ -13,21 +13,28 @@ from dataclasses import dataclass
 
 
 PROTECTED_ENV_NAMES = {".env", ".env.local", ".env.test", ".env.production"}
-SMS_STATE_PATTERNS = {
-    "sms_enabled_true": re.compile(
-        r"(?m)(?<![A-Za-z0-9_])(?:(?i:export)\s+)?"
-        r"(?:[\"']?SMS_ENABLED[\"']?|\[\s*[\"']SMS_ENABLED[\"']\s*\]|(?i:\$env:SMS_ENABLED)|"
-        r"\$[A-Za-z_]\w*\[\s*[\"']SMS_ENABLED[\"']\s*\])"
-        r"\s*[:=]\s*(?:[\"']?(?i:true)[\"']?|(?i:\$true))(?=\s|[,;#}]|$)"
-    ),
-    "sms_test_mode_false": re.compile(
-        r"(?m)(?<![A-Za-z0-9_])(?:(?i:export)\s+)?"
-        r"(?:[\"']?SMS_TEST_MODE[\"']?|\[\s*[\"']SMS_TEST_MODE[\"']\s*\]|(?i:\$env:SMS_TEST_MODE)|"
-        r"\$[A-Za-z_]\w*\[\s*[\"']SMS_TEST_MODE[\"']\s*\])"
-        r"\s*[:=]\s*(?:[\"']?(?i:false)[\"']?|(?i:\$false))(?=\s|[,;#}]|$)"
-    ),
+TRUE_VALUES = {"1", "t", "true", "y", "yes", "on"}
+
+
+def compile_sms_assignment_pattern(key: str) -> re.Pattern[str]:
+    """为环境键生成赋值匹配器；布尔判定由运行时真值表统一完成。"""
+
+    escaped_key = re.escape(key)
+    return re.compile(
+        rf"(?m)(?<![A-Za-z0-9_])(?:(?i:export)\s+)?"
+        rf"(?:[\"']?{escaped_key}[\"']?|\[\s*[\"']{escaped_key}[\"']\s*\]|(?i:\$env:{escaped_key})|"
+        rf"\$[A-Za-z_]\w*\[\s*[\"']{escaped_key}[\"']\s*\])"
+        rf"\s*[:=]\s*(?P<quote>[\"']?)(?P<value>\$?[A-Za-z0-9_-]+)(?P=quote)(?=\s|[,;#}}]|$)"
+    )
+
+
+SMS_ASSIGNMENT_PATTERNS = {
+    "sms_enabled_true": compile_sms_assignment_pattern("SMS_ENABLED"),
+    "sms_test_mode_false": compile_sms_assignment_pattern("SMS_TEST_MODE"),
 }
 REJECT_INFO_CATEGORIES = {"static_phone_literal", "synthetic_test_otp"}
+ALIYUN_ACCESS_KEY_ID_RE = re.compile(r"(?<![A-Za-z0-9])LTAI[A-Za-z0-9]{12,32}(?![A-Za-z0-9])")
+BEARER_TOKEN_RE = re.compile(r"(?i)\bBearer[ \t]+(?P<value>[A-Za-z0-9][A-Za-z0-9._~-]{15,})")
 
 
 @dataclass(frozen=True)
@@ -75,56 +82,66 @@ def load_sensitive_scanner(repo: pathlib.Path):
     return module
 
 
-def list_branch_objects(repo: pathlib.Path, base_ref: str) -> list[tuple[str, pathlib.Path]]:
-    """列出阶段分支引入的历史对象及其最后可识别路径。"""
+def parse_raw_diff(raw: bytes, source: str) -> list[tuple[str, pathlib.Path, str]]:
+    """解析 Git `--raw -z`，保留每次变更的新路径与新 blob，不受文件名空格影响。"""
 
-    raw = run_git(repo, "rev-list", "--objects", f"{base_ref}..HEAD")
-    objects: list[tuple[str, pathlib.Path]] = []
-    seen: set[str] = set()
-    for raw_line in raw.splitlines():
-        object_id_raw, separator, path_raw = raw_line.partition(b" ")
-        object_id = object_id_raw.decode("ascii", errors="strict")
-        if not re.fullmatch(r"[0-9a-f]{40,64}", object_id) or object_id in seen:
-            continue
-        seen.add(object_id)
-        # 无路径对象仍使用固定安全名称参与内容扫描；输出只展示对象摘要。
-        relative = pathlib.Path(path_raw.decode("utf-8", errors="strict")) if separator else pathlib.Path("git-object.txt")
-        objects.append((object_id, relative))
-    return objects
+    tokens = raw.split(b"\0")
+    events: list[tuple[str, pathlib.Path, str]] = []
+    index = 0
+    while index < len(tokens) and tokens[index]:
+        header = tokens[index].split(b" ")
+        index += 1
+        if len(header) != 5 or not header[0].startswith(b":"):
+            raise RuntimeError("Git raw diff 头部格式异常")
+        object_id = header[3].decode("ascii", errors="strict")
+        status = header[4].decode("ascii", errors="strict")
+        if not re.fullmatch(r"[0-9a-f]{40,64}", object_id) or not status:
+            raise RuntimeError("Git raw diff 对象摘要或状态异常")
+        if status[0] in {"R", "C"}:
+            if index + 1 >= len(tokens):
+                raise RuntimeError("Git raw diff 重命名路径缺失")
+            index += 1  # 跳过旧路径，只扫描提交后的新路径和新 blob。
+            path_raw = tokens[index]
+            index += 1
+        else:
+            if index >= len(tokens):
+                raise RuntimeError("Git raw diff 路径缺失")
+            path_raw = tokens[index]
+            index += 1
+        path = pathlib.Path(path_raw.decode("utf-8", errors="strict"))
+        events.append((source, path, object_id))
+    return events
 
 
-def list_branch_commit_paths(repo: pathlib.Path, base_ref: str) -> list[tuple[str, pathlib.Path]]:
-    """逐提交读取变更路径，确保复用既有 blob 的受保护文件也不能从历史中消失。"""
+def list_branch_blob_events(repo: pathlib.Path, base_ref: str) -> list[tuple[str, pathlib.Path, str]]:
+    """逐提交列出新 blob，确保删除、覆盖、重命名和复用基线 blob 都按实际路径扫描。"""
 
     commits = run_git(repo, "rev-list", "--reverse", f"{base_ref}..HEAD").splitlines()
-    paths: list[tuple[str, pathlib.Path]] = []
+    events: list[tuple[str, pathlib.Path, str]] = []
     for raw_commit in commits:
         commit = raw_commit.decode("ascii", errors="strict")
-        changed = decode_null_paths(
-            run_git(
-                repo,
-                "diff-tree",
-                "--root",
-                "--first-parent",
-                "--no-commit-id",
-                "--name-only",
-                "--diff-filter=ACMR",
-                "-r",
-                "-z",
-                commit,
-            )
+        raw = run_git(
+            repo,
+            "diff-tree",
+            "--root",
+            "--first-parent",
+            "--no-commit-id",
+            "--raw",
+            "--no-abbrev",
+            "--diff-filter=ACMR",
+            "-r",
+            "-z",
+            commit,
         )
-        paths.extend((commit, path) for path in changed)
-    return paths
+        events.extend(parse_raw_diff(raw, f"commit:{commit[:12]}"))
+    return events
 
 
-def read_branch_blobs(
-    repo: pathlib.Path, objects: list[tuple[str, pathlib.Path]]
-) -> list[tuple[str, pathlib.Path, bytes]]:
-    """通过单个 cat-file 批处理读取历史 blob，避免为每个对象启动一个 Git 进程。"""
+def read_git_objects(repo: pathlib.Path, object_ids: set[str]) -> dict[str, tuple[bytes, bytes]]:
+    """通过单个 cat-file 批处理读取对象，供历史提交和暂存区共享同一解析逻辑。"""
 
-    object_paths = {object_id: path for object_id, path in objects}
-    request = b"".join(object_id.encode("ascii") + b"\n" for object_id, _ in objects)
+    ordered_ids = sorted(object_ids)
+    request = b"".join(object_id.encode("ascii") + b"\n" for object_id in ordered_ids)
     completed = subprocess.run(
         ["git", "-C", str(repo), "cat-file", "--batch"],
         input=request,
@@ -134,10 +151,10 @@ def read_branch_blobs(
     if completed.returncode != 0:
         raise RuntimeError(f"Git 对象批量读取失败，退出码={completed.returncode}")
 
-    blobs: list[tuple[str, pathlib.Path, bytes]] = []
+    objects: dict[str, tuple[bytes, bytes]] = {}
     output = completed.stdout
     offset = 0
-    for _ in objects:
+    for _ in ordered_ids:
         header_end = output.find(b"\n", offset)
         if header_end < 0:
             raise RuntimeError("Git 对象批量输出缺少头部终止符")
@@ -151,10 +168,9 @@ def read_branch_blobs(
         data_end = data_start + size
         if data_end >= len(output) or output[data_end:data_end + 1] != b"\n":
             raise RuntimeError("Git 对象批量输出长度异常")
-        if object_type == b"blob":
-            blobs.append((object_id, object_paths[object_id], output[data_start:data_end]))
+        objects[object_id] = (object_type, output[data_start:data_end])
         offset = data_end + 1
-    return blobs
+    return objects
 
 
 def scanner_findings(scanner, path: pathlib.Path, text: str, source_ref: str = "") -> list[GateFinding]:
@@ -166,7 +182,24 @@ def scanner_findings(scanner, path: pathlib.Path, text: str, source_ref: str = "
             findings.append(GateFinding(finding.category, path, finding.lines, source_ref))
     for finding in scan_sms_state(path, text):
         findings.append(GateFinding(finding.category, finding.path, finding.lines, source_ref))
+    for match in ALIYUN_ACCESS_KEY_ID_RE.finditer(text):
+        if not scanner.is_safe_config_value(match.group(0)):
+            findings.append(
+                GateFinding("aliyun_access_key_id", path, (line_number(text, match.start()),), source_ref)
+            )
+    for match in BEARER_TOKEN_RE.finditer(text):
+        if not scanner.is_safe_config_value(match.group("value")):
+            findings.append(
+                GateFinding("bearer_token", path, (line_number(text, match.start()),), source_ref)
+            )
     return findings
+
+
+def is_text_path(scanner, path: pathlib.Path) -> bool:
+    """判断 NUL 是否出现在应为文本的文件中；二进制产物仍按二进制安全跳过。"""
+
+    suffix = ".env.example" if path.name.endswith(".env.example") else path.suffix.lower()
+    return suffix in scanner.TEXT_SUFFIXES or path.name in PROTECTED_ENV_NAMES
 
 
 def relative_path(path: pathlib.Path, repo: pathlib.Path) -> str:
@@ -197,18 +230,28 @@ def is_forbidden_pattern_literal(text: str, match: re.Match[str]) -> bool:
 
 
 def scan_sms_state(path: pathlib.Path, text: str) -> list[GateFinding]:
-    """只把可执行配置赋值判为违规，不误报文档和契约测试中的禁止示例。"""
+    """按 Go 运行时真值表判断危险赋值，不误报文档和契约测试中的禁止示例。"""
 
     if "docs" in path.parts or "tests" in path.parts:
         return []
     findings: list[GateFinding] = []
-    for category, pattern in SMS_STATE_PATTERNS.items():
+    for category, pattern in SMS_ASSIGNMENT_PATTERNS.items():
         lines = tuple(
             sorted(
                 {
                     line_number(text, match.start())
                     for match in pattern.finditer(text)
                     if not is_forbidden_pattern_literal(text, match)
+                    and (
+                        (
+                            category == "sms_enabled_true"
+                            and match.group("value").lstrip("$").lower() in TRUE_VALUES
+                        )
+                        or (
+                            category == "sms_test_mode_false"
+                            and match.group("value").lstrip("$").lower() not in TRUE_VALUES
+                        )
+                    )
                 }
             )
         )
@@ -243,8 +286,23 @@ def main(argv: list[str] | None = None) -> int:
             decode_null_paths(run_git(repo, "ls-files", "--others", "--exclude-standard", "-z"))
         )
         tracked = decode_null_paths(run_git(repo, "ls-files", "-z"))
-        branch_blobs = read_branch_blobs(repo, list_branch_objects(repo, args.base_ref))
-        branch_commit_paths = list_branch_commit_paths(repo, args.base_ref)
+        branch_blob_events = list_branch_blob_events(repo, args.base_ref)
+        index_blob_events = parse_raw_diff(
+            run_git(
+                repo,
+                "diff",
+                "--cached",
+                "--raw",
+                "--no-abbrev",
+                "--diff-filter=ACMR",
+                "-z",
+            ),
+            "index",
+        )
+        object_data = read_git_objects(
+            repo,
+            {object_id for _, _, object_id in branch_blob_events + index_blob_events},
+        )
         commit_message_parts = run_git(
             repo, "log", "-z", "--format=%H%x00%B", f"{args.base_ref}..HEAD"
         ).split(b"\0")
@@ -258,11 +316,6 @@ def main(argv: list[str] | None = None) -> int:
     for path in tracked:
         if path.name in PROTECTED_ENV_NAMES:
             findings.append(GateFinding("tracked_protected_env", repo / path, (0,)))
-    for commit, path in branch_commit_paths:
-        if path.name in PROTECTED_ENV_NAMES:
-            findings.append(
-                GateFinding("historical_protected_env", repo / path, (0,), f"commit:{commit[:12]}")
-            )
 
     scan_targets = [str(repo / path) for path in sorted(working_changed) if (repo / path).is_file()]
     dist_artifacts_verified = 0
@@ -285,6 +338,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             data = path.read_bytes()
             if b"\x00" in data:
+                findings.append(GateFinding("nul_byte_in_text", path, (0,)))
                 continue
             text = data.decode("utf-8", errors="replace")
         except OSError:
@@ -293,14 +347,45 @@ def main(argv: list[str] | None = None) -> int:
             continue
         findings.extend(scanner_findings(scanner, path, text))
 
-    historical_blobs_scanned = 0
-    for object_id, historical_path, data in branch_blobs:
-        if b"\x00" in data:
+    historical_blob_versions_scanned = 0
+    for source_ref, historical_path, object_id in branch_blob_events:
+        object_type, data = object_data[object_id]
+        if object_type != b"blob":
             continue
-        historical_blobs_scanned += 1
+        if historical_path.name in PROTECTED_ENV_NAMES:
+            findings.append(
+                GateFinding("historical_protected_env", repo / historical_path, (0,), source_ref)
+            )
+        if b"\x00" in data:
+            if is_text_path(scanner, historical_path):
+                findings.append(
+                    GateFinding("nul_byte_in_text", repo / historical_path, (0,), source_ref)
+                )
+            continue
+        historical_blob_versions_scanned += 1
         text = data.decode("utf-8", errors="replace")
         findings.extend(
-            scanner_findings(scanner, repo / historical_path, text, f"blob:{object_id[:12]}")
+            scanner_findings(scanner, repo / historical_path, text, source_ref)
+        )
+
+    index_blobs_scanned = 0
+    for _, index_path, object_id in index_blob_events:
+        object_type, data = object_data[object_id]
+        if object_type != b"blob":
+            continue
+        source_ref = f"index:{object_id[:12]}"
+        if b"\x00" in data:
+            if is_text_path(scanner, index_path):
+                findings.append(GateFinding("nul_byte_in_text", repo / index_path, (0,), source_ref))
+            continue
+        index_blobs_scanned += 1
+        findings.extend(
+            scanner_findings(
+                scanner,
+                repo / index_path,
+                data.decode("utf-8", errors="replace"),
+                source_ref,
+            )
         )
 
     # 提交说明同样属于 Git 历史；按 NUL 分隔读取，任何命中只输出提交摘要而不输出正文。
@@ -329,8 +414,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"phase5_sensitive_scan={status}")
     print(f"files_scanned={len(files)}")
     print(f"committed_paths_considered={len(committed_changed)}")
-    print(f"historical_path_events_checked={len(branch_commit_paths)}")
-    print(f"historical_blobs_scanned={historical_blobs_scanned}")
+    print(f"historical_path_events_checked={len(branch_blob_events)}")
+    print(f"historical_blob_versions_scanned={historical_blob_versions_scanned}")
+    print(f"index_blobs_scanned={index_blobs_scanned}")
     print(f"commit_messages_scanned={commit_messages_scanned}")
     print(f"dist_artifacts_verified={dist_artifacts_verified}")
     print(f"findings={len(findings)}")
