@@ -2,7 +2,7 @@
 
 ## 1. 当前状态
 
-状态：**技术前置、实际回滚、验收层级、本地脱敏计划和双号码隐藏输入候选已通过；等待实际隐藏输入、双号码受控准备、上传只读预检及独立真实短信授权。**
+状态：**技术前置、实际回滚、验收层级、本地脱敏计划和双号码隐藏输入格式/互异预检已通过；等待号码归属/状态与白名单受控准备、上传只读预检及独立真实短信授权。**
 
 阶段 5A 关闭态部署与代理验证没有发送短信。当前测试服 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`、白名单数量 1，
 固定代理和 4 条短信告警已经部署通过。
@@ -64,8 +64,10 @@ ChangeId，并使用 `resolved.endsAt > resolved.startsAt` 的候选载荷。
 随后按独立授权生成绑定同一 ChangeId 与计划摘要的双号码本地隐藏输入 runner，SHA-256 为
 `eb67246dffaabcfdb95a71fecaf3bec9a7da522461bfc63907e90b79483fff9e`。候选仅实现 `Read-Host -AsSecureString`、BSTR
 临时解包、`ZeroFreeBSTR` 清理以及内存中的格式/互异校验；AST 语法错误、完整手机号字面量和网络命令标记均为 0。
-生成时只运行默认关闭和合成值自测，未进入 `-Interactive`，未输入或保存手机号，未连接测试服、修改白名单、上传、打开短信开关
-或发送短信。该候选仍不能证明号码归属、注册状态、管理员身份或白名单状态，实际交互和远端只读预检必须分别授权。
+生成时只运行默认关闭和合成值自测，未进入 `-Interactive`。随后取得与 ChangeId 和 runner 摘要绑定的独立授权，并仅执行一次
+本地隐藏输入：`interactive_prompts=2`、`format_verified=true`、`distinct_targets_verified=true`；号码只短暂进入内存，未输出或
+持久化。结果同时明确 `registration_state_verified=false`、`admin_identity_verified=false`、`whitelist_verified=false`，因此不能
+推定号码归属、注册状态、管理员身份或白名单状态。本次网络、上传、白名单修改、短信开关修改和真实短信均为 0；远端只读预检仍须独立授权。
 
 ## 2. 执行门禁
 
