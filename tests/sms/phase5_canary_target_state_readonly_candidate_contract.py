@@ -152,6 +152,17 @@ class Phase5CanaryTargetStateReadonlyCandidateContract(unittest.TestCase):
             self.assertNotRegex(runner_text, r"(?<!\d)1[3-9]\d{9}(?!\d)")
             self.assertIn("tr -d ''\\r''", runner_text)
 
+            # 远端以非零码失败关闭时，也必须先输出已经取得的低敏布尔结果和精确退出码。
+            remote_call_index = runner_text.index("$remoteOutput = @(")
+            exit_capture_index = runner_text.index("$readonlyExitCode = $LASTEXITCODE")
+            remote_output_index = runner_text.index("$remoteOutput | Write-Output")
+            exit_output_index = runner_text.index('Write-Output "readonly_exit_code=$readonlyExitCode"')
+            failure_index = runner_text.index('if ($readonlyExitCode -ne 0)')
+            self.assertLess(remote_call_index, exit_capture_index)
+            self.assertLess(exit_capture_index, remote_output_index)
+            self.assertLess(remote_output_index, exit_output_index)
+            self.assertLess(exit_output_index, failure_index)
+
             closed = subprocess.run(
                 [self.powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(runner)],
                 cwd=ROOT,

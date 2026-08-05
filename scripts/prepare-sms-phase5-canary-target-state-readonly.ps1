@@ -376,7 +376,8 @@ try {
         "--", "${SSHUser}@${ServerHost}", $remoteCommand
     )
     $remoteOutput = @(@($RemotePayloadBase64, $newBase64, $adminBase64) | & ssh.exe @sshArgs)
-    if ($LASTEXITCODE -ne 0) { throw "固定测试服只读状态预检未通过" }
+    $readonlyExitCode = $LASTEXITCODE
+    # 失败关闭前先输出远端已经返回的低敏布尔结果，避免丢失实际阻断原因。
     $remoteOutput | Write-Output
     Write-Output "interactive_prompts=2"
     Write-Output "sensitive_values_persisted=0"
@@ -384,6 +385,8 @@ try {
     Write-Output "uploads=0"
     Write-Output "business_posts=0"
     Write-Output "real_sms_sent=0"
+    Write-Output "readonly_exit_code=$readonlyExitCode"
+    if ($readonlyExitCode -ne 0) { throw "固定测试服只读状态预检未通过，退出码：$readonlyExitCode" }
 }
 finally {
     # 托管字符串无法保证物理清零，因此只缩短引用生命周期，并且从不输出或写入号码。

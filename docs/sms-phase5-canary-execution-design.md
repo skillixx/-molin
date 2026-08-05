@@ -82,8 +82,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 2. 产品负责人已选择“真实收件 Canary”，明确不消费 OTP、不产生业务状态变化。
 3. ChangeId `20260805T132831Z` 的脱敏候选已经本地生成并通过独立静态验证；生成授权已消费，候选不得覆盖或重建。
 4. 双号码本地隐藏输入的格式与互异性预检已经通过；号码未输出、未持久化、未联网。
-5. 下一步按最终 runner SHA-256 独立批准一次固定测试服只读状态预检；该 runner 直接通过固定 SSH stdin 执行，不需要上传文件。若白名单尚未覆盖双目标，再单独生成和批准精确白名单变更，变更后重新只读核验。
-6. 只有账号状态、管理员直接角色/权限、双目标白名单和关闭态均通过，才可另行批准五场景真实执行；任何本地生成、只读预检或白名单变更授权均不得继承为短信发送授权。
+5. 原 runner SHA-256 `4fc5c444...d8e9c` 已按独立批准执行一次并返回退出码 2；禁止重试。该版本在检查退出码后才输出远端缓冲，导致实际布尔阻断原因丢失，只能记录为“固定测试服只读状态预检未通过、原因未确认”。
+6. 本地生成器已经补充失败输出顺序回归：未来 runner 必须先输出远端低敏结果和精确退出码，再失败关闭。修正版必须使用新 ChangeId，经独立授权后才能在仓库外生成和静态验证；生成授权仍不等于执行授权。
+7. 只有新候选经独立批准执行且账号状态、管理员直接角色/权限、双目标白名单和关闭态均通过，才可另行批准五场景真实执行；任何本地生成、只读预检或白名单变更授权均不得继承为短信发送授权。
 
 ## 6. 双号码本地交互只读预检候选
 
@@ -111,10 +112,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 
 runner 的默认入口与 `-SelfTest` 均不提示输入、不读取 `known_hosts`、不建立网络连接。只有后续取得独立执行授权并显式传入 `-ExecuteReadOnly` 与绑定 ChangeId 的批准口令后，才会隐藏输入两个号码并通过单次 SSH stdin 传入远端内存。远端负载只执行 `SELECT`：核验 `target-new` 未注册、`target-admin` 为启用且手机号已验证的直接 `admin` 角色账号、管理员角色拥有 `user:manage` 权限，并分别判断两个号码是否位于当前测试白名单；输出仅包含布尔值和计数，不包含原值、掩码或可关联哈希。
 
-本次授权仅允许本地生成与静态验证，因此不得执行 runner 的 `-ExecuteReadOnly` 分支。候选不包含上传、白名单修改、业务 POST、短信开关变更或短信发送路径；实际只读执行仍须按 runner SHA-256 单独批准。
+候选不包含上传、白名单修改、业务 POST、短信开关变更或短信发送路径；每个 runner 的生成与执行必须分别绑定 ChangeId 和 SHA-256 独立批准。
 
 ChangeId `20260805T132831Z` 的最终本地候选位于仓库外目录，runner SHA-256 为
-`4fc5c4442a5530f8b5cad83a7d92db68722ecc5972ebacf6791ffe1e305d8e9c`。PowerShell 语法、内嵌 Bash 语法、只读 SQL、默认关闭、合成值、自身摘要和敏感字面量检查均通过；生成与复验的交互提示、网络连接、上传、业务 POST、短信开关修改和真实短信均为 0。审查中产生的早期 runner 已移入带 `rejected-*` 后缀的隔离目录，不得执行。
+`4fc5c4442a5530f8b5cad83a7d92db68722ecc5972ebacf6791ffe1e305d8e9c`。PowerShell 语法、内嵌 Bash 语法、只读 SQL、默认关闭、合成值、自身摘要和敏感字面量检查均通过。2026-08-06 该 runner 获得一次性批准并执行，返回 `readonly_exit_code=2`；没有自动重试，执行后没有活动 SSH 子进程。旧 runner 在非零退出时吞掉远端缓冲，因此不能从当前证据区分 API 进程数量异常与远端格式校验失败；本地格式与互异性在建立 SSH 前已经通过，所以 API 进程数量异常只是较强推断，不是确认事实。该 SHA 的执行授权已消费，禁止再次运行。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File `
@@ -126,28 +127,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
   -OutputDirectory <NEW_LOCAL_DIRECTORY>
 ```
 
-## 8. 固定测试服只读执行人工门禁
+## 8. 已消费的固定测试服只读执行人工门禁
 
-执行前必须取得同时包含 ChangeId、完整 runner SHA-256、单次连接、只读范围和禁止事项的独立批准。批准文本不得省略“禁止重试、禁止上传、禁止修改白名单、禁止业务 POST、禁止服务信号或重启、禁止邮件和短信”。本门禁不授权白名单变更，也不授权后续真实 Canary。
+ChangeId `20260805T132831Z`、runner SHA-256 `4fc5c444...d8e9c` 的一次性执行门禁已经消费。其批准口令和 runner 均已撤销执行资格；禁止再次运行、禁止把失败视为白名单结论，也禁止据此修改测试服。
 
-批准后由操作人在本机 PowerShell 交互执行以下命令；两个自有手机号只在两次隐藏提示中输入，不得写入命令、环境变量、文件或聊天：
-
-```powershell
-$runner = 'D:\molingproject\molin-phase5-sms-canary-target-state-readonly-20260805T132831Z\run-sms-phase5-canary-target-state-readonly-20260805T132831Z.ps1'
-$expectedSHA = '4fc5c4442a5530f8b5cad83a7d92db68722ecc5972ebacf6791ffe1e305d8e9c'
-$actualSHA = (Get-FileHash -LiteralPath $runner -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($actualSHA -cne $expectedSHA) {
-    throw "runner 摘要不匹配，禁止执行：$actualSHA"
-}
-
-powershell -NoProfile -ExecutionPolicy Bypass -File $runner `
-  -ExecuteReadOnly `
-  -ApprovalToken 'APPROVE_SMS_PHASE5_TARGET_STATE_READONLY_20260805T132831Z'
-```
-
-结果判定：
+本次结果判定：
 
 - `target_state_readonly_preflight=passed` 仅表示关闭态、未注册目标、合格直接管理员身份与权限、双目标白名单及发送日志零增量同时通过。
 - `target_state_readonly_preflight=blocked` 或非零退出码表示本次只读核验停止；即使前面的布尔字段已经输出，也禁止自动重试。
 - `target_new_whitelisted=false` 或 `target_admin_whitelisted=false` 只允许据此准备新的精确白名单变更候选，不能直接修改测试服。
 - 任何输出都不能替代号码归属和持有人同意确认；不得粘贴完整终端输出中可能出现的意外敏感内容。
+
+## 9. 修正版候选的新门禁
+
+修正版只修复失败证据输出顺序，不改变固定 SSH 身份、隐藏输入、stdin 内存传递、只读 SQL、零上传、零业务 POST、零配置修改和零短信边界。必须先取得“生成新 ChangeId 修正版候选，仅本地生成与静态验证”的独立授权；生成后再按新 runner 完整 SHA-256 请求一次新的执行授权。任何旧 ChangeId、旧 SHA 或旧批准口令都不得复用。
