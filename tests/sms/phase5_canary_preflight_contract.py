@@ -206,7 +206,6 @@ class CanaryPreflightContractTest(unittest.TestCase):
             self.assertNotEqual(escaped_duplicate.returncode, 0)
 
             nested_evidence = dict(evidence)
-            nested_evidence["created_at_utc"] = datetime.now(timezone.utc).isoformat()
             nested_evidence["alertmanager_evidence_path"] = {
                 "created_at_utc": valid_created_at,
             }
@@ -219,6 +218,7 @@ class CanaryPreflightContractTest(unittest.TestCase):
                 "我已确认阶段5测试服告警通知演练成功",
             )
             self.assertNotEqual(nested.returncode, 0)
+            self.assertIn("只允许顶层标量字段", nested.stdout + nested.stderr)
 
             for suffix, created_at in (
                 ("offset", datetime.now(timezone.utc).isoformat()),
