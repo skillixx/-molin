@@ -527,7 +527,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-re
 暂存包装器只在独立批准后排他创建远端暂存目录、上传固定摘要 runner，并运行语法、自测和关闭态只读预检；失败清理不用
 递归删除。执行后独立验证器只读复核证据文件集合、当前二进制/环境摘要、双代理、数据库、Provider、Alertmanager、
 Prometheus 和日志敏感值，不以 runner 自报成功替代运行态证据。
-实际执行包装器默认关闭，固定 ChangeId、摘要、主机身份和唯一执行次数；成功后强制进入独立只读验收，失败禁止自动重试。
+实际执行包装器默认关闭，固定 ChangeId、摘要、主机身份和唯一执行次数；成功后强制进入独立证据验收，失败后仅执行一次
+关闭态恢复只读审计并以失败结束，任何结果都禁止自动重试。
 
 ```powershell
 # 本地离线检查，不连接测试服

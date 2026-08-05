@@ -138,8 +138,29 @@ $sshArguments = @(
     "printf '%s' '$encoded' | base64 -d | bash"
 )
 & ssh.exe @sshArguments
-if ($LASTEXITCODE -ne 0) {
-    throw "阶段 5 测试服实际回滚执行失败；禁止自动重试，必须先核对自动恢复证据"
+$executionExitCode = $LASTEXITCODE
+if ($executionExitCode -ne 0) {
+    # runner 失败时绝不重试；仅用既有关闭态只读审计确认自动恢复后的当前版本是否健康。
+    $recoveryVerified = $false
+    try {
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+            (Join-Path $PSScriptRoot "verify-sms-phase5-test-server-readonly.ps1") `
+            -ServerHost $ServerHost -SSHPort $SSHPort -SSHUser $SSHUser `
+            -ExpectedBinarySHA256 "4ade3d34a7b9473a23cbda80c4a4451192725da66caa2dc09aab454c05fdd8b0" `
+            -ExpectedWhitelistCount 1 -ObservationSeconds 0
+        $recoveryVerified = $LASTEXITCODE -eq 0
+    }
+    catch {
+        $recoveryVerified = $false
+    }
+    Write-Output "rollback_runtime_execution_failed=true"
+    Write-Output "execution_attempts=1"
+    Write-Output "execution_retries=0"
+    Write-Output "failure_recovery_readonly_verification=$($recoveryVerified.ToString().ToLowerInvariant())"
+    if (-not $recoveryVerified) {
+        throw "实际回滚执行失败且关闭态自动恢复无法独立确认；禁止重试，必须人工恢复"
+    }
+    throw "实际回滚执行失败，但当前版本关闭态已独立确认恢复；禁止自动重试"
 }
 
 # 执行成功后立即使用独立只读验证器核对证据和当前恢复状态，不信任 runner 单一成功标记。

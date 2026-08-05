@@ -161,6 +161,8 @@ runner SelfTest 和关闭态只读预检均通过；预检确认通知基线 `3:
 `-Execute` 与 `APPROVE_SMS_PHASE5_TEST_ROLLBACK_DRILL_20260805T115540Z` 才会连接固定测试服。包装器在远端再次核对
 精确 runner 路径、普通文件、`pc:600`、单硬链接、SHA-256 及证据目录不存在，然后只调用一次 `--execute`，禁止自动重试。
 runner 成功后包装器立即调用既有独立只读验收器；只有运行和独立验收同时通过，才输出组合通过结论。
+若 runner 返回失败，包装器不会再次执行，而是只调用一次既有关闭态只读审计确认当前二进制、开关、代理、数据库和监控是否
+已恢复；恢复已确认和无法确认都会以失败结束，后者要求人工恢复，任何一种都不能自动重试。
 
 实际窗口结束后必须由 `scripts/verify-sms-phase5-test-server-rollback-drill.ps1` 与
 `scripts/verify-sms-phase5-test-server-rollback-drill.sh` 独立只读验收。该验证器不信任单一成功标记，而是同时核对：

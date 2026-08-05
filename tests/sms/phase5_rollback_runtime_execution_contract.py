@@ -32,6 +32,13 @@ class Phase5RollbackRuntimeExecutionContract(unittest.TestCase):
         self.assertIn("independent_verification=passed", self.source)
         self.assertIn("不信任 runner 单一成功标记", self.source)
 
+    def test_failure_path_verifies_closed_state_and_never_retries(self) -> None:
+        self.assertIn("verify-sms-phase5-test-server-readonly.ps1", self.source)
+        self.assertIn("failure_recovery_readonly_verification=", self.source)
+        self.assertIn("执行失败且关闭态自动恢复无法独立确认", self.source)
+        self.assertIn("执行失败，但当前版本关闭态已独立确认恢复", self.source)
+        self.assertNotRegex(self.source, r"(?i)\bfor\b[\s\S]{0,120}\bssh\.exe\b")
+
     def test_self_test_is_offline(self) -> None:
         powershell = shutil.which("pwsh") or shutil.which("powershell") or shutil.which("powershell.exe")
         if powershell is None:
