@@ -9,6 +9,27 @@
 
 $ErrorActionPreference = "Stop"
 
+function Assert-LocalOutputDirectoryInput {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    # 必须在 GetFullPath、Test-Path 等文件系统调用前拒绝 UNC 和 PowerShell Provider 路径，避免隐式 SMB 访问。
+    if ([string]::IsNullOrWhiteSpace($Path) -or $Path -match '^(?:\\\\|//)' -or $Path.Contains("::")) {
+        throw "候选输出目录必须是本地文件系统绝对路径"
+    }
+    $isWindowsPlatform = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
+    if ($isWindowsPlatform) {
+        if ($Path -cnotmatch '^[A-Za-z]:[\\/]') {
+            throw "Windows 候选输出目录必须使用本地盘符绝对路径"
+        }
+        $drive = Get-PSDrive -Name $Path.Substring(0, 1) -PSProvider FileSystem -ErrorAction Stop
+        if (([string]$drive.Root).StartsWith("\\") -or ([string]$drive.DisplayRoot).StartsWith("\\")) {
+            throw "候选输出目录不得使用网络映射盘"
+        }
+    } elseif (-not [IO.Path]::IsPathRooted($Path)) {
+        throw "候选输出目录必须使用本地绝对路径"
+    }
+}
+
 # 默认入口必须保持完全关闭，只有显式 Generate 才能创建本地脱敏候选。
 if (-not $Generate -and -not $SelfTest) {
     Write-Output "canary_plan_candidate_authorized=false"
@@ -27,6 +48,15 @@ if ($SelfTest) {
     $selfTestChangeId = "20990103T010203Z"
     $selfTestDirectory = Join-Path ([IO.Path]::GetTempPath()) ("molin-sms-phase5-canary-plan-" + [Guid]::NewGuid().ToString("N"))
     $selfTestCandidate = Join-Path $selfTestDirectory "sms-phase5-canary-plan-$selfTestChangeId.json"
+    $uncRejected = $false
+    try {
+        Assert-LocalOutputDirectoryInput -Path "\\phase5-invalid.example.invalid\candidate"
+    } catch {
+        $uncRejected = $true
+    }
+    if (-not $uncRejected) {
+        throw "Canary 脱敏计划候选 SelfTest 未拒绝 UNC 输出目录"
+    }
     try {
         $selfTestOutput = @(& $PSCommandPath `
             -Generate `
@@ -64,6 +94,7 @@ if ($SelfTest) {
         throw "Canary 脱敏计划候选 SelfTest 留下了持久文件"
     }
     Write-Output "canary_plan_candidate_self_test=passed"
+    Write-Output "unc_output_path_rejected=true"
     Write-Output "candidate_files_remaining=0"
     Write-Output "network_connections=0"
     Write-Output "uploads=0"
@@ -81,6 +112,7 @@ if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     throw "生成候选必须提供全新的 OutputDirectory"
 }
 
+Assert-LocalOutputDirectoryInput -Path $OutputDirectory
 $outputPath = [IO.Path]::GetFullPath($OutputDirectory)
 $outputParent = Split-Path -Parent $outputPath
 if ([string]::IsNullOrWhiteSpace($outputParent) -or -not (Test-Path -LiteralPath $outputParent -PathType Container)) {

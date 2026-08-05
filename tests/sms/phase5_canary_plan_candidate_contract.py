@@ -115,6 +115,7 @@ class Phase5CanaryPlanCandidateContract(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("canary_plan_candidate_self_test=passed", result.stdout)
+        self.assertIn("unc_output_path_rejected=true", result.stdout)
         self.assertIn("candidate_files_remaining=0", result.stdout)
         self.assertIn("network_connections=0", result.stdout)
         self.assertIn("uploads=0", result.stdout)
