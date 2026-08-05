@@ -144,7 +144,9 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 `20260805T114239Z` 则被执行前环境一致性门禁版本取代。最终修正版 ChangeId `20260805T115540Z` 的 runner SHA-256 为
 `2724b89ea0096b15e5c443a2f5dfdd7e80f93c971ff2fb22a3585a5a1ad2bb46`。本地包装器 SelfTest、远端流式 `bash -n`、
 runner SelfTest 和关闭态只读预检均通过；预检确认通知基线 `3:0:3:0`、活动告警 `0:0`、短信关闭/测试模式开启，
-远端文件写入、服务重启、通知 POST、业务 POST 和真实短信均为 0。最终候选尚未上传或执行，不能记为实际回滚通过。
+在暂存授权前的流式预检中，远端文件写入、服务重启、通知 POST、业务 POST 和真实短信均为 0。随后取得独立暂存授权，
+最终候选已上传至固定精确目录；远端摘要、`pc:600`、`bash -n`、runner SelfTest 和关闭态 `--preflight` 均通过。
+暂存窗口只新增 1 个 runner 文件，服务重启、通知 POST、业务 POST 和真实短信仍为 0；尚未执行实际服务切换，不能记为回滚通过。
 
 候选上传与远端只读预检必须使用 `scripts/stage-sms-phase5-test-server-rollback-drill.ps1` 与
 `scripts/stage-sms-phase5-test-server-rollback-drill.sh`。默认模式和
