@@ -224,11 +224,14 @@ class Phase5CanaryTargetStateReadonlyCandidateContract(unittest.TestCase):
         self.assertIn("候选输出目录必须是本地文件系统绝对路径", result.stdout + result.stderr)
 
     def test_contract_is_wired_into_readiness_ci_and_documentation(self) -> None:
+        source = SCRIPT.read_text(encoding="utf-8-sig")
         readiness = (ROOT / "scripts" / "verify-sms-phase5-readiness.ps1").read_text(encoding="utf-8-sig")
         ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         design = (ROOT / "docs" / "sms-phase5-canary-execution-design.md").read_text(encoding="utf-8")
         tools = (ROOT / "docs" / "tools.md").read_text(encoding="utf-8")
 
+        self.assertNotIn("$isWindows =", source)
+        self.assertIn("$isWindowsPlatform", source)
         self.assertIn("prepare-sms-phase5-canary-target-state-readonly.ps1", readiness)
         self.assertIn("phase5_canary_target_state_readonly_candidate_contract.py", ci)
         self.assertIn("prepare-sms-phase5-canary-target-state-readonly.ps1", design)

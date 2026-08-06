@@ -23,8 +23,8 @@ function Assert-LocalFileSystemPathInput {
     if ([string]::IsNullOrWhiteSpace($Path) -or $Path -match '^(?:\\\\|//)' -or $Path.Contains("::")) {
         throw "${Description}必须是本地文件系统绝对路径"
     }
-    $isWindows = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
-    if ($isWindows) {
+    $isWindowsPlatform = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
+    if ($isWindowsPlatform) {
         if ($Path -cnotmatch '^[A-Za-z]:[\\/]') {
             throw "Windows ${Description}必须使用本地盘符绝对路径"
         }

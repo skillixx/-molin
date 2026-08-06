@@ -24,8 +24,8 @@ function Assert-LocalFileSystemPathInput {
     if ([string]::IsNullOrWhiteSpace($Path) -or $Path.StartsWith([string][char]92) -or $Path.StartsWith("//") -or $Path.Contains("::")) {
         throw "${Description}必须是本地文件系统绝对路径"
     }
-    $isWindows = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
-    if ($isWindows) {
+    $isWindowsPlatform = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
+    if ($isWindowsPlatform) {
         $hasLocalDrivePrefix = $Path.Length -ge 3 -and [char]::IsLetter($Path[0]) -and $Path[1] -eq ':' -and ($Path[2] -eq [char]92 -or $Path[2] -eq [char]47)
         if (-not $hasLocalDrivePrefix) { throw "Windows ${Description}必须使用本地盘符绝对路径" }
         $drive = Get-PSDrive -Name $Path.Substring(0, 1) -PSProvider FileSystem -ErrorAction Stop

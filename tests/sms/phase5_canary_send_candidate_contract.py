@@ -230,10 +230,13 @@ class Phase5CanarySendCandidateContract(unittest.TestCase):
             self.assertEqual(len(list(output.iterdir())), 1, "默认关闭与 SelfTest 不得生成结果文件")
 
     def test_candidate_is_wired_into_release_gates_and_docs(self) -> None:
+        source = GENERATOR.read_text(encoding="utf-8-sig")
         readiness = (ROOT / "scripts" / "verify-sms-phase5-readiness.ps1").read_text(encoding="utf-8-sig")
         ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         design = (ROOT / "docs" / "sms-phase5-canary-execution-design.md").read_text(encoding="utf-8")
         tools = (ROOT / "docs" / "tools.md").read_text(encoding="utf-8")
+        self.assertNotIn("$isWindows =", source)
+        self.assertIn("$isWindowsPlatform", source)
         for text in (readiness, design, tools):
             self.assertIn("prepare-sms-phase5-canary-send-candidate.ps1", text)
         self.assertIn("phase5_canary_send_candidate_contract.py", ci)
