@@ -94,6 +94,11 @@ migration 决策、备份证据摘要和回滚证据摘要。它还会调用同�
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-sms-phase5-production-closed-deployment-plan.ps1 -SelfTest
 ```
 
+上述目标候选和部署计划仍不足以凭空生成真实部署 runner。执行候选还必须由项目负责人确认生产实际交付拓扑：API 制品的受控来源与目标路径、
+前端镜像仓库及服务标识、migration 执行器与迁移目录、版本化备份根目录、服务控制方式、固定代理网络/地址及失败恢复入口。这些均属于非密钥元数据，
+但选择不同会改变上传、停机、migration 和回滚动作，因此不得由测试服拓扑推断或写成任意 shell 命令。冻结这些值、生成实际部署 runner、上传暂存、
+执行关闭态部署仍须分开审批；在拓扑未确认前，当前计划只证明制品和关闭态前置门禁可被绑定，不证明生产可部署。
+
 1. 只读确认生产目标、当前版本、拓扑、schema、备份能力、监控和回滚操作者。
 2. 部署应用和前端，但保持 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`，白名单为空或仅包含批准号码。
 3. 验证关闭态、反代来源头、metrics、九 API 只读与页面，不发送短信。
