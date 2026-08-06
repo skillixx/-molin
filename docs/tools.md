@@ -807,6 +807,26 @@ mc cp ./file.jpg local/molin-uploads/    # 上传文件
 
 ## 开发辅助工具
 
+### 阶段 5 生产目标元数据候选生成器
+
+| 项目 | 说明 |
+|---|---|
+| **用途** | 在任何生产连接前冻结目标身份、路径、服务形态以及回滚/观察操作者低敏别名 |
+| **使用者** | 运维工程师、测试工程师、产品经理 |
+| **涉及功能** | 生产只读基线、关闭态部署、白名单 Canary 和生产开启的前置身份边界 |
+| **代码位置** | `scripts/prepare-sms-phase5-production-target-intake.ps1` |
+
+默认入口和 `-SelfTest` 均不联网、不提示输入、不创建候选。实际导出只接受非密钥元数据，并把生产 SSH 地址/端口/用户、
+唯一 ED25519 指纹、项目目录、项目内 `.env.prod` 路径、服务形态和操作者别名写入全新的工作区外 JSON。候选固定
+`SMS_ENABLED=false`、`SMS_TEST_MODE=true`、零重试和零发送，并明确生产只读、部署、Canary、正式开启均未获授权。
+密码、私钥、Token、手机号和环境值不得作为参数或输出；生成候选也不会验证生产真实状态。
+
+```powershell
+# 仅运行离线正反例，不生成候选或连接生产
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  scripts/prepare-sms-phase5-production-target-intake.ps1 -SelfTest
+```
+
 ### 阶段 5 Canary 双号码本地预检候选生成器
 
 | 项目 | 说明 |

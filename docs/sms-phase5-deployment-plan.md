@@ -3,8 +3,8 @@
 ## 1. 授权边界
 
 测试服固定代理、监控规则、后端关闭态部署已获批并执行；测试服五场景真实收件 Canary 也已在后续独立一次性授权下完成并恢复关闭态。
-当前修正版代码、测试和证据文档仍保留在工作树，尚未提交或推送。生产部署、生产真实短信、生产开关以及 Git 提交、推送、PR、
-合并仍须分别取得项目负责人明确授权。默认状态始终为 `SMS_ENABLED=false`。
+当前修正版代码、测试和证据文档已同步到阶段 5 分支及 PR #323，正式 CI 全部通过。生产部署、生产真实短信、生产开关、
+PR 合并仍须分别取得项目负责人明确授权。默认状态始终为 `SMS_ENABLED=false`。
 
 ## 2. 发布对象
 
@@ -65,6 +65,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 自动以原镜像恢复两套容器。不得再使用默认 `bridge` 或漂移容器 IP 作为短信来源 IP 信任边界。
 
 ## 4. 生产顺序
+
+生产目标元数据必须先通过本地离线候选冻结，至少包含目标别名、SSH 地址/端口/用户、唯一 ED25519 指纹、项目目录、
+`.env.prod` 路径、服务形态以及回滚/观察操作者低敏别名。生成器不会连接生产、读取环境文件或取得任何后续授权：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-sms-phase5-production-target-intake.ps1 -SelfTest
+```
+
+实际导出候选必须使用全新的 ChangeId 和工作区外目录，并由项目负责人提供上述非密钥元数据。候选 SHA-256 形成后，生产只读基线、
+关闭态部署、白名单 Canary 和正式开启仍是四个互不继承的人工门禁；密码、私钥、Token、手机号和环境值不得作为生成参数或输出。
 
 1. 只读确认生产目标、当前版本、拓扑、schema、备份能力、监控和回滚操作者。
 2. 部署应用和前端，但保持 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`，白名单为空或仅包含批准号码。
