@@ -24,6 +24,8 @@ class Phase5ObservationEvidenceContract(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("phase5_observation_evidence_self_test=passed", result.stdout)
         self.assertIn("closed_state_send_growth_rejected=true", result.stdout)
+        self.assertIn("process_metric_reset_supported=true", result.stdout)
+        self.assertIn("closed_process_provider_growth_rejected=true", result.stdout)
         self.assertIn("latency_stop_line_rejected=true", result.stdout)
         self.assertIn("counter_rollback_rejected=true", result.stdout)
         self.assertIn("sensitive_value_rejected=true", result.stdout)
@@ -37,6 +39,7 @@ class Phase5ObservationEvidenceContract(unittest.TestCase):
         self.assertIn("Provider 非受理比例越过自动停止线", source)
         self.assertIn("Provider 平均耗时越过 2 秒停止线", source)
         self.assertIn("观察窗口存在活动告警或通知失败", source)
+        self.assertIn("关闭态恢复后当前进程 Provider 计数发生增长", source)
 
     def test_source_has_no_network_or_send_implementation(self) -> None:
         source = SCRIPT.read_text(encoding="utf-8")

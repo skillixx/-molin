@@ -11,7 +11,8 @@ function Assert-CanaryExecutionPlan {
     $allowedPlanFields = @(
         "change_id", "environment", "sms_test_mode", "restore_sms_enabled", "no_retries",
         "requested_sends", "max_sends", "acceptance_scope", "business_state_changes",
-        "business_state_rollback_approved", "disposable_accounts", "scenes"
+        "business_state_rollback_approved", "disposable_accounts",
+        "same_target_min_interval_seconds", "scheduled_waits", "scenes"
     )
     $actualPlanFields = @($Plan.PSObject.Properties.Name)
     if (@($actualPlanFields | Where-Object { $allowedPlanFields -cnotcontains $_ }).Count -ne 0) {
@@ -27,6 +28,10 @@ function Assert-CanaryExecutionPlan {
     }
     if ([int]$Plan.max_sends -lt 5 -or [int]$Plan.max_sends -gt 10 -or [int]$Plan.requested_sends -ne 5) {
         throw "Canary 必须恰好计划五次提交，窗口硬上限不得超过十次"
+    }
+    # 两个号码分别承担多个场景，按供应商同号码分钟级频控预留两个不可跳过的 65 秒窗口。
+    if ([int]$Plan.same_target_min_interval_seconds -ne 65 -or [int]$Plan.scheduled_waits -ne 2) {
+        throw "Canary 必须固定两个 65 秒同号码发送间隔，避免触发供应商频率限制"
     }
 
     $requiredScenes = @("register", "login", "reset_password", "bind_phone", "admin_verify")
@@ -111,6 +116,8 @@ function Assert-CanaryExecutionPlan {
     Write-Output "requested_sends=5"
     Write-Output "max_sends=$($Plan.max_sends)"
     Write-Output "no_retries=true"
+    Write-Output "same_target_min_interval_seconds=65"
+    Write-Output "scheduled_waits=2"
     Write-Output "sensitive_values_persisted=0"
     Write-Output "network_connections=0"
     Write-Output "real_sms_sent=0"
@@ -125,6 +132,8 @@ if ($SelfTest) {
         no_retries = $true
         requested_sends = 5
         max_sends = 5
+        same_target_min_interval_seconds = 65
+        scheduled_waits = 2
         acceptance_scope = "receipt_only"
         business_state_changes = $false
         business_state_rollback_approved = $false

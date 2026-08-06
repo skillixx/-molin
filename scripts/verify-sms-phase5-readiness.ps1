@@ -10,6 +10,11 @@
 
 $ErrorActionPreference = "Stop"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+# 子脚本必须复用当前 PowerShell 主机，避免 Windows 的 powershell.exe 名称在 Linux CI 中不可用。
+$powerShellExecutable = (Get-Process -Id $PID).Path
+if ([string]::IsNullOrWhiteSpace($powerShellExecutable) -or -not (Test-Path -LiteralPath $powerShellExecutable -PathType Leaf)) {
+    throw "无法定位当前 PowerShell 主机，禁止执行阶段 5 子脚本"
+}
 
 function Read-KeyValueFile {
     param([string]$Path)
@@ -144,7 +149,15 @@ $requiredFiles = @(
     "scripts\prepare-sms-phase5-canary-target-state-readonly.ps1",
     "scripts\prepare-sms-phase5-canary-whitelist-change.ps1",
     "scripts\prepare-sms-phase5-canary-send-candidate.ps1",
+    "scripts\prepare-sms-phase5-canary-failure-readonly-diagnostic.ps1",
+    "scripts\prepare-sms-phase5-canary-postcheck-readonly.ps1",
+    "scripts\prepare-sms-phase5-enabled-startup-readonly-diagnostic.ps1",
+    "scripts\prepare-sms-phase5-legacy-config-cleanup.ps1",
     "scripts\verify-sms-phase5-observation-evidence.py",
+    "scripts\verify-sms-phase5-observation-progress.py",
+    "scripts\assemble-sms-phase5-observation-evidence.py",
+    "scripts\assemble-sms-phase5-final-state.py",
+    "scripts\prepare-sms-phase5-observation-snapshot-readonly.ps1",
     "scripts\apply-sms-phase5-test-server-log-retention.ps1",
     "scripts\apply-sms-phase5-test-server-log-retention.sh"
 )
@@ -182,41 +195,78 @@ if ($EnvironmentFile -ne "") {
 
 if ($SelfTest) {
     Invoke-SelfTest
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+    & $powerShellExecutable -NoProfile -ExecutionPolicy Bypass -File `
         (Join-Path $root "scripts\verify-sms-phase5-canary-execution-plan.ps1") -SelfTest
     if ($LASTEXITCODE -ne 0) {
         throw "阶段 5 Canary 执行计划自测失败"
     }
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+    & $powerShellExecutable -NoProfile -ExecutionPolicy Bypass -File `
         (Join-Path $root "scripts\prepare-sms-phase5-canary-execution-plan.ps1") -SelfTest
     if ($LASTEXITCODE -ne 0) {
         throw "阶段 5 Canary 脱敏计划候选生成自测失败"
     }
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+    & $powerShellExecutable -NoProfile -ExecutionPolicy Bypass -File `
         (Join-Path $root "scripts\prepare-sms-phase5-canary-target-preflight.ps1") -SelfTest
     if ($LASTEXITCODE -ne 0) {
         throw "阶段 5 Canary 双号码隐藏输入候选自测失败"
     }
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+    & $powerShellExecutable -NoProfile -ExecutionPolicy Bypass -File `
         (Join-Path $root "scripts\prepare-sms-phase5-canary-target-state-readonly.ps1") -SelfTest
     if ($LASTEXITCODE -ne 0) {
         throw "阶段 5 Canary 双号码固定测试服只读状态候选自测失败"
     }
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+    & $powerShellExecutable -NoProfile -ExecutionPolicy Bypass -File `
         (Join-Path $root "scripts\prepare-sms-phase5-canary-whitelist-change.ps1") -SelfTest
     if ($LASTEXITCODE -ne 0) {
         throw "阶段 5 Canary 精确白名单变更候选自测失败"
     }
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+    & $powerShellExecutable -NoProfile -ExecutionPolicy Bypass -File `
         (Join-Path $root "scripts\prepare-sms-phase5-canary-send-candidate.ps1") -SelfTest
     if ($LASTEXITCODE -ne 0) {
         throw "阶段 5 五场景真实收件候选自测失败"
+    }
+    & $powerShellExecutable -NoProfile -ExecutionPolicy Bypass -File `
+        (Join-Path $root "scripts\prepare-sms-phase5-canary-failure-readonly-diagnostic.ps1") -SelfTest
+    if ($LASTEXITCODE -ne 0) {
+        throw "阶段 5 Canary 部分失败只读诊断候选自测失败"
+    }
+    & $powerShellExecutable -NoProfile -ExecutionPolicy Bypass -File `
+        (Join-Path $root "scripts\prepare-sms-phase5-canary-postcheck-readonly.ps1") -SelfTest
+    if ($LASTEXITCODE -ne 0) {
+        throw "阶段 5 Canary 事后只读核验候选自测失败"
+    }
+    & $powerShellExecutable -NoProfile -ExecutionPolicy Bypass -File `
+        (Join-Path $root "scripts\prepare-sms-phase5-enabled-startup-readonly-diagnostic.ps1") -SelfTest
+    if ($LASTEXITCODE -ne 0) {
+        throw "阶段 5 启用态启动只读诊断候选自测失败"
+    }
+    & $powerShellExecutable -NoProfile -ExecutionPolicy Bypass -File `
+        (Join-Path $root "scripts\prepare-sms-phase5-legacy-config-cleanup.ps1") -SelfTest
+    if ($LASTEXITCODE -ne 0) {
+        throw "阶段 5 旧短信环境键精确清理候选自测失败"
     }
     & python (Join-Path $root "scripts\verify-sms-phase5-observation-evidence.py") --self-test
     if ($LASTEXITCODE -ne 0) {
         throw "阶段 5 五档观察证据自测失败"
     }
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+    & python (Join-Path $root "scripts\verify-sms-phase5-observation-progress.py") --self-test
+    if ($LASTEXITCODE -ne 0) {
+        throw "阶段 5 五档观察进度验证器自测失败"
+    }
+    & python (Join-Path $root "scripts\assemble-sms-phase5-observation-evidence.py") --self-test
+    if ($LASTEXITCODE -ne 0) {
+        throw "阶段 5 五档观察证据组装器自测失败"
+    }
+    & python (Join-Path $root "scripts\assemble-sms-phase5-final-state.py") --self-test
+    if ($LASTEXITCODE -ne 0) {
+        throw "阶段 5 最终关闭态证据组装器自测失败"
+    }
+    & $powerShellExecutable -NoProfile -ExecutionPolicy Bypass -File `
+        (Join-Path $root "scripts\prepare-sms-phase5-observation-snapshot-readonly.ps1") -SelfTest
+    if ($LASTEXITCODE -ne 0) {
+        throw "阶段 5 五档观察只读快照候选自测失败"
+    }
+    & $powerShellExecutable -NoProfile -ExecutionPolicy Bypass -File `
         (Join-Path $root "scripts\verify-sms-phase5-alertmanager-drill-payload.ps1") -SelfTest
     if ($LASTEXITCODE -ne 0) {
         throw "Alertmanager firing/resolved 载荷转换自测失败"

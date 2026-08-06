@@ -135,6 +135,8 @@ try {
         no_retries = $true
         requested_sends = 5
         max_sends = 5
+        same_target_min_interval_seconds = 65
+        scheduled_waits = 2
         acceptance_scope = $AcceptanceScope
         business_state_changes = $false
         business_state_rollback_approved = $false

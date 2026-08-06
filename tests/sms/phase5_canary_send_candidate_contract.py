@@ -47,6 +47,8 @@ class Phase5CanarySendCandidateContract(unittest.TestCase):
             "no_retries": True,
             "requested_sends": 5,
             "max_sends": 5,
+            "same_target_min_interval_seconds": 65,
+            "scheduled_waits": 2,
             "acceptance_scope": "receipt_only",
             "business_state_changes": False,
             "business_state_rollback_approved": False,
@@ -119,12 +121,23 @@ class Phase5CanarySendCandidateContract(unittest.TestCase):
                 "rollback_armed=true",
                 "restore_closed_state",
                 "requested_sends=5",
+                "baseline_send_log_id",
+                "baseline_verification_code_id",
+                "baseline_send_total",
+                "baseline_provider_calls_total",
+                "canary_completed_at",
                 "automatic_retries=0",
+                "same_target_min_interval_seconds=65",
+                "scheduled_waits=2",
+                "wait_same_target_interval",
             ):
                 self.assertIn(marker, runner_text + payload)
             self.assertIn("replace_sms_enabled \"$env_file\" \"$enabled_env\" '" + "tr" + "ue'", payload)
             for scene in ("register", "login", "reset_password", "bind_phone", "admin_verify"):
                 self.assertEqual(payload.count(f"send_scene {scene} "), 1)
+            self.assertEqual(payload.count("wait_same_target_interval || fail"), 2)
+            self.assertIn("for index in $(seq 1 65)", payload)
+            self.assertIn("completed_pacing_waits", runner_text)
             self.assertIn("Authorization: Bearer", payload)
             self.assertIn("--data-binary @-", payload)
             self.assertNotIn('--data-binary "$body"', payload)
@@ -140,6 +153,18 @@ class Phase5CanarySendCandidateContract(unittest.TestCase):
             self.assertLess(payload.index("verify_target_and_token_state || fail"), payload.index("send_scene register"))
             self.assertIn("trap 'handle_exit $?' EXIT", payload)
             self.assertIn("verify_alertmanager_discard", payload)
+            self.assertIn(
+                "alertmanager_config='/home/pc/molin-alertmanager-phase5/20260805T084215Z/alertmanager.closed.yml'",
+                payload,
+            )
+            self.assertNotIn("/home/pc/molin/infra/alertmanager/alertmanager.yml", payload)
+            self.assertIn("alertmanager_container='molin-alertmanager-phase5-closed'", payload)
+            self.assertIn("http://127.0.0.1:${alertmanager_port}/-/ready", payload)
+            self.assertIn("docker inspect \"$alertmanager_container\"", payload)
+            self.assertLess(
+                payload.index("verify_alertmanager_discard || fail alertmanager_discard"),
+                payload.index("verify_target_and_token_state || fail"),
+            )
             self.assertIn("lock_acquired=false", payload)
             self.assertIn("lock_acquired=true", payload)
             self.assertIn('if [ "$lock_acquired" = true ]; then rmdir -- "$lock_dir"', payload)
@@ -149,7 +174,22 @@ class Phase5CanarySendCandidateContract(unittest.TestCase):
             self.assertIn('replace_process_sms_enabled "$original_env_snapshot"', payload)
             self.assertIn('sha256sum "/proc/${pid}/exe"', payload)
             self.assertIn('stat -c \'%U:%a\' "$env_file"', payload)
-            self.assertIn('Write-Output ("remote_stderr_present=" +', runner_text)
+            self.assertIn('Write-Output "remote_stderr_present=$stderrPresent"', runner_text)
+            self.assertIn('$ResultPath = Join-Path (Split-Path -Parent $PSCommandPath)', runner_text)
+            self.assertIn('if (Test-Path -LiteralPath $ResultPath)', runner_text)
+            self.assertIn("[IO.FileMode]::CreateNew", runner_text)
+            self.assertIn("low_sensitivity_result_persisted=true", runner_text)
+            self.assertIn("result_sha256=", runner_text)
+            self.assertIn('"baseline_send_log_id", "baseline_verification_code_id"', runner_text)
+            self.assertIn('"baseline_provider_calls_total", "baseline_provider_nonaccepted_total", "canary_completed_at"', runner_text)
+            self.assertIn("$safeKeys = @(", runner_text)
+            self.assertIn("$safeKeys -ccontains $Matches['key']", runner_text)
+            self.assertIn("^(?<key>[a-z][a-z0-9_]*)=[A-Za-z0-9_.:,-]+$", runner_text)
+            self.assertIn('"scene_admin_verify_submitted"', runner_text)
+            self.assertNotIn('"phone"', runner_text)
+            self.assertNotIn('"token"', runner_text)
+            self.assertNotIn('"otp"', runner_text)
+            self.assertNotIn('$safeLines += $stderr', runner_text)
             self.assertNotRegex(runner_text, r"(?<!\d)1[3-9]\d{9}(?!\d)")
             self.assertNotRegex(payload, r"(?<!\d)1[3-9]\d{9}(?!\d)")
             self.assertNotRegex(runner_text, r"(?i)\b(?:scp|sftp|wget)\b")
@@ -187,6 +227,7 @@ class Phase5CanarySendCandidateContract(unittest.TestCase):
             self.assertIn("canary_send_runner_self_test=passed", self_test.stdout)
             self.assertIn("network_connections=0", self_test.stdout)
             self.assertIn("real_sms_sent=0", self_test.stdout)
+            self.assertEqual(len(list(output.iterdir())), 1, "默认关闭与 SelfTest 不得生成结果文件")
 
     def test_candidate_is_wired_into_release_gates_and_docs(self) -> None:
         readiness = (ROOT / "scripts" / "verify-sms-phase5-readiness.ps1").read_text(encoding="utf-8-sig")

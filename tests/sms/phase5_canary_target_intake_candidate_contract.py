@@ -74,6 +74,8 @@ class Phase5CanaryTargetIntakeCandidateContract(unittest.TestCase):
             "no_retries": True,
             "requested_sends": 5,
             "max_sends": 5,
+            "same_target_min_interval_seconds": 65,
+            "scheduled_waits": 2,
             "acceptance_scope": "receipt_only",
             "business_state_changes": False,
             "business_state_rollback_approved": False,

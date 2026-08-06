@@ -27,6 +27,8 @@ class Phase5CanaryExecutionPlanContract(unittest.TestCase):
             "no_retries": True,
             "requested_sends": 5,
             "max_sends": 5,
+            "same_target_min_interval_seconds": 65,
+            "scheduled_waits": 2,
             "acceptance_scope": "receipt_only",
             "business_state_changes": False,
             "business_state_rollback_approved": False,
@@ -78,6 +80,8 @@ class Phase5CanaryExecutionPlanContract(unittest.TestCase):
         self.assertIn("requested_sends -ne 5", self.source)
         self.assertIn("max_sends -gt 10", self.source)
         self.assertIn("no_retries -ne $true", self.source)
+        self.assertIn("same_target_min_interval_seconds -ne 65", self.source)
+        self.assertIn("scheduled_waits -ne 2", self.source)
 
     def test_receipt_only_rejects_registered_bind_phone_target(self) -> None:
         """公开校验入口必须遵守换绑发码只允许未注册新手机号的业务规则。"""

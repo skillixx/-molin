@@ -211,7 +211,15 @@ jobs:
           python tests/sms/phase5_canary_target_state_readonly_candidate_contract.py
           python tests/sms/phase5_canary_whitelist_change_candidate_contract.py
           python tests/sms/phase5_canary_send_candidate_contract.py
+          python tests/sms/phase5_canary_failure_readonly_diagnostic_contract.py
+          python tests/sms/phase5_canary_postcheck_readonly_candidate_contract.py
+          python tests/sms/phase5_enabled_startup_readonly_diagnostic_contract.py
+          python tests/sms/phase5_legacy_config_cleanup_candidate_contract.py
           python tests/sms/phase5_observation_evidence_contract.py
+          python tests/sms/phase5_observation_progress_contract.py
+          python tests/sms/phase5_observation_assembler_contract.py
+          python tests/sms/phase5_final_state_assembler_contract.py
+          python tests/sms/phase5_observation_snapshot_candidate_contract.py
 
       - name: 离线校验测试服 Canary 聚合预检包装器
         shell: pwsh

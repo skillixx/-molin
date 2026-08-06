@@ -672,13 +672,47 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-ca
 | **代码位置** | `scripts/verify-sms-phase5-observation-evidence.py` |
 
 **作用：** 对仓库外 JSON 做纯本地契约检查，验证时间覆盖、发送日志守恒、计数单调、关闭态零新增、Provider 失败率和
-平均耗时停止线、活动告警、通知失败及最终开关状态。它不读取线上指标、不连接供应商，也不能把人工填写的 JSON 变成
+平均耗时停止线、活动告警、通知失败及最终开关状态。测试服关闭态恢复会重启 API，因此持久发送日志必须精确为基线加 5，
+当前进程 Provider 计数允许从 0 开始但五窗口不得增长；生产启用态仍要求 Provider 增量与发送日志一致。它不读取线上指标、不连接供应商，也不能把人工填写的 JSON 变成
 真实运行证据；必须与原始只读快照、运行状态和收件确认共同复核。
 
 ```powershell
 python scripts/verify-sms-phase5-observation-evidence.py --self-test
 python scripts/verify-sms-phase5-observation-evidence.py --evidence C:\受控目录\phase5-observation.json
 ```
+
+---
+
+### 短信阶段 5 五档观察快照与证据组装工具链
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维 / 测试 / 产品经理 |
+| **涉及模块** | 测试服关闭态、发送日志、Provider 指标、Prometheus、Alertmanager、人工收件证据 |
+| **涉及功能** | 生成冻结的五窗口只读 runner，并在 24h 后离线生成最终状态与完整观察证据 |
+| **代码位置** | `scripts/prepare-sms-phase5-observation-snapshot-readonly.ps1`、`scripts/verify-sms-phase5-observation-progress.py`、`scripts/assemble-sms-phase5-final-state.py`、`scripts/assemble-sms-phase5-observation-evidence.py` |
+
+**作用：** 快照生成器只在源 Canary 成功结果摘要匹配时生成工作区外 runner。runner 固定
+`5m/15m/30m/2h/24h` 五个最小经过时间窗口，每个窗口最多执行一次、只允许固定 SSH stdin 单连接和只读查询，
+不内置等待或自动重试。实际连接必须逐窗口取得包含 ChangeId 和完整 runner SHA-256 的人工授权。
+
+24h 快照完成后，最终状态组装器以源 Canary、修正版事后核验和 24h 快照三项完整摘要为输入，拒绝关闭态新增发送、
+计数回退、OTP 消费、告警或通知失败；它只离线写出七个低敏最终状态字段。完整观察组装器随后要求五个快照、人工逐场景
+收件确认、最终状态及全部摘要，并复用权威验证器生成最终 JSON。两个组装器均不联网、不发送短信，也不能替代原始证据。
+
+观察尚未满五档时，可使用进度验证器核验从 5m 开始的连续前缀。它只读取工作区外源结果和快照，不创建补齐文件、
+不伪造未来窗口；每个已有窗口仍必须提供完整 SHA-256。
+
+```powershell
+# 三个入口的离线自测；不会连接测试服或创建真实证据
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  scripts/prepare-sms-phase5-observation-snapshot-readonly.ps1 -SelfTest
+python scripts/assemble-sms-phase5-final-state.py --self-test
+python scripts/assemble-sms-phase5-observation-evidence.py --self-test
+python scripts/verify-sms-phase5-observation-progress.py --self-test
+```
+
+真实组装必须使用工作区外的新输出路径和全部输入文件的完整 SHA-256；命令参数不得包含手机号、Token、OTP 或供应商原始响应。
 
 ---
 

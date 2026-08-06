@@ -88,7 +88,9 @@ $planOutput = @(& (Join-Path $PSScriptRoot "verify-sms-phase5-canary-execution-p
 if ($planOutput -cnotcontains "canary_execution_plan=passed" -or
     $planOutput -cnotcontains "change_id=$ChangeId" -or
     $planOutput -cnotcontains "acceptance_scope=receipt_only" -or
-    $planOutput -cnotcontains "requested_sends=5") {
+    $planOutput -cnotcontains "requested_sends=5" -or
+    $planOutput -cnotcontains "same_target_min_interval_seconds=65" -or
+    $planOutput -cnotcontains "scheduled_waits=2") {
     throw "Canary 计划未通过五场景绑定校验"
 }
 
@@ -105,6 +107,8 @@ set -euo pipefail
 if [ "${1:-}" = "--self-test" ]; then
   printf 'canary_send_payload_self_test=passed\n'
   printf 'requested_sends=5\n'
+  printf 'same_target_min_interval_seconds=65\n'
+  printf 'scheduled_waits=2\n'
   printf 'automatic_retries=0\n'
   printf 'network_connections=0\n'
   printf 'configuration_mutations=0\n'
@@ -115,6 +119,9 @@ fi
 
 api_path='/home/pc/molin/molin-api'
 env_file='/home/pc/molin/infra/.env.test'
+alertmanager_config='/home/pc/molin-alertmanager-phase5/20260805T084215Z/alertmanager.closed.yml'
+alertmanager_container='molin-alertmanager-phase5-closed'
+alertmanager_port=19093
 change_id='__CHANGE_ID__'
 lock_dir="/home/pc/.molin-sms-phase5-canary-send.lock"
 change_dir="/home/pc/.molin-sms-phase5-canary-send-${change_id}"
@@ -132,6 +139,14 @@ service_stops=0
 service_starts=0
 submission_requests=0
 completed_scenes=0
+pacing_waits=0
+baseline_send_log_id=''
+baseline_verification_code_id=''
+baseline_send_total=''
+baseline_send_accepted=''
+baseline_send_failed=''
+baseline_provider_calls_total=''
+baseline_provider_nonaccepted_total=''
 db_host=''
 db_port=''
 db_user=''
@@ -229,15 +244,16 @@ with os.fdopen(fd, "wb") as stream: stream.write(b"\0".join(items))
 PY
 }
 verify_alertmanager_discard() {
-  local config='/home/pc/molin/infra/alertmanager/alertmanager.yml'
-  [ -f "$config" ] && [ ! -L "$config" ] &&
-  python3 - "$config" <<'PY'
+  [ -f "$alertmanager_config" ] && [ ! -L "$alertmanager_config" ] &&
+  python3 - "$alertmanager_config" <<'PY'
 import re, sys
 text=open(sys.argv[1], encoding="utf-8").read()
 route=re.search(r"(?ms)^route:\s*\n(?P<body>(?:^[ \t]+.*\n?)*)", text)
 body=route.group("body") if route else ""
 raise SystemExit(0 if re.search(r"(?m)^\s+receiver:\s*[\"\x27]?discard[\"\x27]?\s*$", body) and not re.search(r"(?m)^\s+routes:\s*$", body) else 2)
 PY
+  [ "$(docker inspect "$alertmanager_container" --format '{{.State.Running}}' 2>/dev/null)" = true ] &&
+  [ "$(curl -sS --max-time 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:${alertmanager_port}/-/ready" 2>/dev/null || true)" = 200 ]
 }
 run_mysql_readonly() {
   local statement="$1"
@@ -254,6 +270,10 @@ run_mysql_readonly() {
     return
   fi
   return 127
+}
+read_internal_metrics() {
+  printf 'X-Internal-Token: %s\n' "$internal_token" |
+    curl -fsS --max-time 5 -H @- http://127.0.0.1:8080/api/internal/metrics 2>/dev/null
 }
 verify_target_and_token_state() {
   local response http payload admin_id new_hex admin_hex new_count admin_identity_count
@@ -295,6 +315,7 @@ handle_exit() {
   fi
   printf 'service_stops=%s\n' "$service_stops"; printf 'service_starts=%s\n' "$service_starts"
   printf 'sms_submission_requests=%s\n' "$submission_requests"; printf 'automatic_retries=0\n'
+  printf 'same_target_min_interval_seconds=65\n'; printf 'scheduled_waits=2\n'; printf 'completed_pacing_waits=%s\n' "$pacing_waits"
   if [ "$recovery_failed" = false ]; then
     if [ -n "$original_env_snapshot" ]; then rm -f -- "$original_env_snapshot"; fi
     if [ -n "$backup_env" ]; then rm -f -- "$backup_env"; fi
@@ -317,7 +338,7 @@ admin_token="$(printf '%s' "$token_b64" | base64 -d)"; new_b64=''; admin_b64='';
 [ "$new_phone" != "$admin_phone" ] || fail distinct_targets
 [[ "$admin_token" =~ ^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$ ]] || fail bearer_token_shape
 
-for command_name in awk base64 chmod cp curl kill mkdir mv nohup od pgrep python3 rm rmdir sed seq sha256sum stat tr; do command -v "$command_name" >/dev/null || fail "command_${command_name}"; done
+for command_name in awk base64 chmod cp curl date docker kill mkdir mv nohup od pgrep python3 rm rmdir sed seq sha256sum sleep stat tr; do command -v "$command_name" >/dev/null || fail "command_${command_name}"; done
 [ "$(id -un)" = pc ] || fail operator_identity
 [ -f "$env_file" ] && [ ! -L "$env_file" ] || fail environment_identity
 [ "$(stat -c '%U:%a' "$env_file")" = pc:600 ] || fail environment_permissions
@@ -338,6 +359,19 @@ db_pass="$(read_process_env "$original_pid" MYSQL_PASSWORD)"
 db_name="$(read_process_env "$original_pid" MYSQL_DATABASE)"
 [ -n "$db_host" ] && [ -n "$db_user" ] && [ -n "$db_pass" ] && [ -n "$db_name" ] || fail database_environment
 verify_target_and_token_state || fail target_and_token_state
+# 在任何配置变更和真实提交之前固化低敏数据库游标，供事后只读核验精确限定本次五场景记录。
+baseline_send_log_id="$(run_mysql_readonly "SELECT COALESCE(MAX(id),0) FROM sms_send_logs;")" || fail baseline_send_log
+baseline_verification_code_id="$(run_mysql_readonly "SELECT COALESCE(MAX(id),0) FROM verification_codes;")" || fail baseline_verification_code
+[[ "$baseline_send_log_id" =~ ^[0-9]+$ ]] || fail baseline_send_log_shape
+[[ "$baseline_verification_code_id" =~ ^[0-9]+$ ]] || fail baseline_verification_code_shape
+IFS=: read -r baseline_send_total baseline_send_accepted baseline_send_failed <<<"$(run_mysql_readonly "SELECT CONCAT(COUNT(*),':',COALESCE(SUM(submit_status='accepted'),0),':',COALESCE(SUM(submit_status='failed'),0)) FROM sms_send_logs;")" || fail baseline_send_summary
+[[ "$baseline_send_total:$baseline_send_accepted:$baseline_send_failed" =~ ^[0-9]+:[0-9]+:[0-9]+$ ]] || fail baseline_send_summary_shape
+[ "$baseline_send_total" -eq $((baseline_send_accepted + baseline_send_failed)) ] || fail baseline_send_summary_conservation
+internal_token="$(read_process_env "$original_pid" INTERNAL_API_TOKEN)"; [ -n "$internal_token" ] || fail internal_metrics_token
+baseline_provider_calls_total="$(read_internal_metrics | awk '/^sms_provider_calls_total\{/{sum += $NF} END{printf "%.0f",sum+0}')" || fail baseline_provider_calls
+baseline_provider_nonaccepted_total="$(read_internal_metrics | awk '/^sms_provider_calls_total\{/{if($0 !~ /result="accepted"/) sum += $NF} END{printf "%.0f",sum+0}')" || fail baseline_provider_nonaccepted
+[[ "$baseline_provider_calls_total:$baseline_provider_nonaccepted_total" =~ ^[0-9]+:[0-9]+$ ]] || fail baseline_provider_shape
+[ "$baseline_provider_nonaccepted_total" -le "$baseline_provider_calls_total" ] || fail baseline_provider_conservation
 
 mkdir -- "$lock_dir" || fail concurrent_execution
 lock_acquired=true
@@ -374,16 +408,33 @@ send_scene() {
   completed_scenes=$((completed_scenes + 1)); printf 'scene_%s_submitted=true\n' "$scene"
 }
 
+wait_same_target_interval() {
+  local index
+  pacing_waits=$((pacing_waits + 1))
+  # 阿里云同号码分钟级频控已在前次 Canary 得到实证；固定等待 65 秒且不构成失败重试。
+  for index in $(seq 1 65); do
+    sleep 1
+    kill -0 "$enabled_pid" 2>/dev/null || return 1
+  done
+  wait_for_api "$enabled_pid" true
+}
+
 send_scene register "$new_phone" '/api/auth/verification-codes/phone' false || fail scene_register
 send_scene login "$admin_phone" '/api/auth/verification-codes/phone' false || fail scene_login
+wait_same_target_interval || fail pacing_window_one
 send_scene reset_password "$admin_phone" '/api/auth/verification-codes/phone' false || fail scene_reset_password
 send_scene bind_phone "$new_phone" '/api/me/verification-codes/phone' true || fail scene_bind_phone
+wait_same_target_interval || fail pacing_window_two
 send_scene admin_verify "$admin_phone" '/api/admin/auth/verification-codes/phone' true || fail scene_admin_verify
-[ "$submission_requests" -eq 5 ] && [ "$completed_scenes" -eq 5 ] || fail exact_send_count
+[ "$submission_requests" -eq 5 ] && [ "$completed_scenes" -eq 5 ] && [ "$pacing_waits" -eq 2 ] || fail exact_send_count
 restore_closed_state || fail final_closed_state_restore
 rollback_armed=false
 printf 'canary_send=awaiting_manual_receipt_confirmation\n'
 printf 'requested_sends=5\n'; printf 'completed_scenes=5\n'; printf 'sms_enabled=false\n'; printf 'sms_test_mode=true\n'
+printf 'baseline_send_log_id=%s\n' "$baseline_send_log_id"; printf 'baseline_verification_code_id=%s\n' "$baseline_verification_code_id"
+printf 'baseline_send_total=%s\n' "$baseline_send_total"; printf 'baseline_send_accepted=%s\n' "$baseline_send_accepted"; printf 'baseline_send_failed=%s\n' "$baseline_send_failed"
+printf 'baseline_provider_calls_total=%s\n' "$baseline_provider_calls_total"; printf 'baseline_provider_nonaccepted_total=%s\n' "$baseline_provider_nonaccepted_total"
+printf 'canary_completed_at=%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 printf 'sensitive_values_persisted=0\n'; printf 'real_sms_receipt_confirmed=false\n'
 '@
 $remotePayload = $remotePayloadTemplate.Replace("__CHANGE_ID__", $ChangeId).Replace("__SMS_ON__", ("tr" + "ue"))
@@ -400,6 +451,7 @@ $RemotePayloadBase64 = "__PAYLOAD_BASE64__"
 $ExpectedChangeId = "__CHANGE_ID__"
 $ExpectedPlanSHA256 = "__PLAN_SHA256__"
 $ExpectedSSHHelperSHA256 = "__SSH_HELPER_SHA256__"
+$ResultPath = Join-Path (Split-Path -Parent $PSCommandPath) "result-$ExpectedChangeId.txt"
 
 function Read-HiddenValue {
     param([string]$Prompt)
@@ -421,7 +473,7 @@ if (-not $Interactive -and -not $SelfTest) {
 if ($Interactive -and $SelfTest) { throw "Interactive 与 SelfTest 必须互斥" }
 if ($SelfTest) {
     $payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($RemotePayloadBase64))
-    foreach ($marker in @("requested_sends=5", "automatic_retries=0", "restore_closed_state", "rollback_armed=true")) {
+    foreach ($marker in @("requested_sends=5", "automatic_retries=0", "same_target_min_interval_seconds=65", "scheduled_waits=2", "wait_same_target_interval", "restore_closed_state", "rollback_armed=true")) {
         if (-not $payload.Contains($marker)) { throw "runner 自测缺少安全标记：$marker" }
     }
     Write-Output "canary_send_runner_self_test=passed"
@@ -437,6 +489,7 @@ if ($SelfTest) {
 if ($ExpectedRunnerSHA256 -cnotmatch '^[0-9a-f]{64}$') { throw "交互执行必须提供获批的完整 runner SHA-256" }
 $actualRunnerSHA256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($actualRunnerSHA256 -cne $ExpectedRunnerSHA256) { throw "runner SHA-256 与批准值不匹配" }
+if (Test-Path -LiteralPath $ResultPath) { throw "低敏结果文件已存在，禁止重复执行" }
 
 $sshHelperPath = Join-Path "__REPO_SCRIPTS__" "sms-phase5-test-server-ssh.ps1"
 $actualSSHHelperSHA256 = (Get-FileHash -LiteralPath $sshHelperPath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -470,8 +523,42 @@ try {
     $stdout = $stdoutTask.Result
     $stderr = $stderrTask.Result
     $stdout.TrimEnd() | Write-Output
-    Write-Output ("remote_stderr_present=" + (-not [string]::IsNullOrWhiteSpace($stderr)).ToString().ToLowerInvariant())
+    $stderrPresent = (-not [string]::IsNullOrWhiteSpace($stderr)).ToString().ToLowerInvariant()
+    Write-Output "remote_stderr_present=$stderrPresent"
     Write-Output "canary_send_exit_code=$($process.ExitCode)"
+    # 只持久化预定义低敏字段，不允许远端新增任意键借此保存手机号、Token、验证码或自由文本。
+    $safeKeys = @(
+        "canary_send", "failure_gate", "automatic_closed_state_restore",
+        "recovery_materials_retained", "lock_retained", "service_stops", "service_starts",
+        "sms_submission_requests", "automatic_retries", "scene_register_submitted",
+        "scene_login_submitted", "scene_reset_password_submitted", "scene_bind_phone_submitted",
+        "scene_admin_verify_submitted", "requested_sends", "completed_scenes", "sms_enabled",
+        "sms_test_mode", "same_target_min_interval_seconds", "scheduled_waits", "completed_pacing_waits",
+        "baseline_send_log_id", "baseline_verification_code_id",
+        "baseline_send_total", "baseline_send_accepted", "baseline_send_failed",
+        "baseline_provider_calls_total", "baseline_provider_nonaccepted_total", "canary_completed_at",
+        "sensitive_values_persisted", "real_sms_receipt_confirmed"
+    )
+    $safeLines = @($stdout -split "`r?`n" | Where-Object {
+        if ($_ -cnotmatch '^(?<key>[a-z][a-z0-9_]*)=[A-Za-z0-9_.:,-]+$') { return $false }
+        return $safeKeys -ccontains $Matches['key']
+    })
+    $safeLines += "remote_stderr_present=$stderrPresent"
+    $safeLines += "canary_send_exit_code=$($process.ExitCode)"
+    $resultText = (($safeLines -join "`n") + "`n")
+    $resultBytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes($resultText)
+    $resultStream = $null
+    try {
+        $resultStream = New-Object IO.FileStream($ResultPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+        $resultStream.Write($resultBytes, 0, $resultBytes.Length)
+        $resultStream.Flush($true)
+    }
+    finally {
+        if ($null -ne $resultStream) { $resultStream.Dispose() }
+        [Array]::Clear($resultBytes, 0, $resultBytes.Length)
+    }
+    Write-Output "low_sensitivity_result_persisted=true"
+    Write-Output "result_sha256=$((Get-FileHash -LiteralPath $ResultPath -Algorithm SHA256).Hash.ToLowerInvariant())"
     if ($process.ExitCode -ne 0) { throw "固定测试服五场景 Canary 执行失败，退出码：$($process.ExitCode)" }
 }
 finally {
@@ -500,6 +587,8 @@ try {
     Write-Output "runner_sha256=$runnerSHA256"
     Write-Output "runner_path=$runnerPath"
     Write-Output "requested_sends=5"
+    Write-Output "same_target_min_interval_seconds=65"
+    Write-Output "scheduled_waits=2"
     Write-Output "automatic_retries=0"
     Write-Output "candidate_files_written=1"
     Write-Output "interactive_prompts=0"

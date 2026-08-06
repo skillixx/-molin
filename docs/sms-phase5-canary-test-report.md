@@ -2,7 +2,7 @@
 
 ## 1. 当前状态
 
-状态：**技术前置、实际回滚、验收层级、本地脱敏计划和固定测试服双号码只读状态核验均已完成；target-admin 精确白名单变更及其新 ChangeId 独立关闭态只读复核均已通过，等待后续真实短信授权。**
+状态：**技术前置、实际回滚、日志留存、Alertmanager 邮件演练、双目标账号/IAM 与白名单均已通过。供应商频控修正版真实 Canary ChangeId `20260806T053735Z` 已完成五场景各一次提交、两个 65 秒窗口与零重试，两个自有号码的五场景均已人工确认收件；修正版事后只读核验 ChangeId `20260806T062059Z` 已证明五场景全部受理、OTP 均未消费且系统恢复关闭态。五档观察和最终验收尚未完成，阶段 5 尚未最终通过。**
 
 阶段 5A 关闭态部署与代理验证没有发送短信。当前测试服 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`、白名单数量 2，
 固定代理和 4 条短信告警已经部署通过。
@@ -125,15 +125,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 - 单窗口总发送上限 10 条；预算仍受项目 500 条总上限约束。
 - 执行结束无条件恢复原白名单和 `SMS_ENABLED=false`。
 
-## 3. 待填证据
+## 3. 五场景验收证据
 
 | 场景 | 模板后四位 | 阿里云受理 | 手机收件 | OTP 单次消费 | 最终业务状态 |
 |---|---|---|---|---|---|
-| register | 待执行 | 待执行 | 待确认 | 待执行 | 待执行 |
-| login | 待执行 | 待执行 | 待确认 | 待执行 | 待执行 |
-| reset_password | 待执行 | 待执行 | 待确认 | 待执行 | 待执行 |
-| bind_phone | 待执行 | 待执行 | 待确认 | 待执行 | 待执行 |
-| admin_verify | 待执行 | 待执行 | 待确认 | 待执行 | 待执行 |
+| register | 不持久化（数据库独立绑定已预检） | accepted | 已人工确认 | 未消费（`receipt_only`） | 无业务状态变更 |
+| login | 不持久化（数据库独立绑定已预检） | accepted | 已人工确认 | 未消费（`receipt_only`） | 无业务状态变更 |
+| reset_password | 不持久化（数据库独立绑定已预检） | accepted | 已人工确认 | 未消费（`receipt_only`） | 无业务状态变更 |
+| bind_phone | 不持久化（数据库独立绑定已预检） | accepted | 已人工确认 | 未消费（`receipt_only`） | 无业务状态变更 |
+| admin_verify | 不持久化（数据库独立绑定已预检） | accepted | 已人工确认 | 未消费（`receipt_only`） | 无业务状态变更 |
 
 报告只允许保存脱敏手机号、模板后四位、时间、业务请求标识摘要和供应商请求标识摘要，不保存 OTP。
 
@@ -153,4 +153,88 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 
 按本地生成授权创建最终候选 ChangeId `20260805T191326Z`：receipt-only 计划 SHA-256 为 `772b5bcdfe49e24bc508c8dd8224994c079369895a4b4f2f19ac15c24a280a3b`，runner SHA-256 为 `062f45cd500caf21a3cafb0b2c941529df12121f89a14dadbf131271440e543c`。独立验证确认 PowerShell 与 Bash 语法、默认关闭、runner/payload 自测、固定 SSH 辅助脚本摘要、管理员 Token 与 target-admin/IAM 的发送前只读绑定、锁所有权、恢复失败材料保留、请求体 stdin 和双敏感输入无 argv 均通过；完整手机号和 JWT 字面量为 0。
 
-阶段 5 全量契约为 115 项通过、3 项环境跳过；静态总门禁和历史敏感扫描通过，`findings=0`、`sms_enable_literals=0`。本轮未实际输入手机号或 Token，网络、上传、测试服配置修改、服务重启和真实短信均为 0。该候选尚未取得测试服执行授权，不能据此声称供应商受理或手机收件。
+候选生成与静态验证阶段的阶段 5 全量契约为 115 项通过、3 项环境跳过；静态总门禁和历史敏感扫描通过，`findings=0`、`sms_enable_literals=0`。该生成轮次未实际输入手机号或 Token，网络、上传、测试服配置修改、服务重启和真实短信均为 0。
+
+2026-08-06，项目负责人以 ChangeId、计划完整 SHA-256、runner 完整 SHA-256、五场景各一次、总计 5 次、零重试、自动恢复关闭态及失败保留恢复材料的精确边界，批准并启动该 runner。启动前再次核验计划、runner 与固定 SSH 辅助脚本摘要，默认关闭和 SelfTest 均通过；随后仅启动 1 个可见交互进程，`execution_attempts=1`、`automatic_retry=false`。该进程已经结束，项目负责人仅确认管理员 Token、手机号及身份绑定前置验证成功；尚未提供 runner 的五场景提交计数、供应商受理、恢复关闭态、Provider/通知/告警增量等低敏摘要，也未提供两个目标逐场景人工收件结果。本地候选目录没有结果文件，因此当前证据只能记为“单次授权已消耗、发送前身份门禁通过、执行结果待回收”，不得重跑、不得声称五次提交成功、供应商受理、手机收件或关闭态恢复已经证明。
+
+执行结束后，项目负责人提供管理员安全认证页面截图：第 1 步手机发码停留在原步骤，按钮恢复可操作，并显示“短信功能当前不可用”。本分支前端只在后端返回 HTTP `503` / 业务码 `50300` 时映射该提示；服务层在短信开关关闭、Sender/配置不可用、白名单或模板门禁失败、Redis 门禁异常等失败关闭路径均可能返回该业务错误。因此该截图与 `SMS_ENABLED=false` 恢复预期一致，且没有显示发码成功、倒计时或进入下一步，但它不能单独区分具体失败原因，也不能证明 Provider 零调用或服务端恢复完成。该页面操作不得计入获批五场景，后续须用 runner 摘要或另行批准的关闭态只读核验完成服务端证据闭环。
+
+在上述执行结束后，本地重新运行阶段 5 准备度、历史敏感扫描和全量契约：115 项通过、3 项按 Windows 环境设计跳过；`findings=0`、`sms_enable_literals=0`。该复跑不联网、不读取测试服状态，也不能替代缺失的运行摘要和人工收件证据。
+
+## 6. 五场景执行后只读核验候选
+
+由于原 runner 未持久化低敏摘要且交互窗口已经结束，已在仓库外生成默认关闭的事后只读候选 ChangeId `20260805T193505Z`，绑定源执行 ChangeId `20260805T191326Z`，runner SHA-256 为 `57f3233d8d3f08b302173935c0cbb21c3bbf33e7677be09da0df991e11b0dae3`。候选计划仅通过固定 ED25519 身份建立 1 次 SSH stdin 连接，读取 API 进程与文件关闭态、health/ready、白名单数量、短信日志聚合、基线 13 条之后的五场景分布与供应商受理字段、关联 OTP 未消费状态、当前恢复后进程的 Provider 指标、Alertmanager `discard`、活动告警、通知失败计数以及精确恢复锁/材料状态。内部 metrics 与 Alertmanager metrics 均使用显式可达性门禁，请求失败或指标族缺失时输出 `unavailable` 并阻断，禁止把不可用误记为零。
+
+PowerShell 语法、Windows PowerShell 5.1 UTF-8 BOM 兼容、默认关闭、runner SelfTest、Git Bash `bash -n` 和载荷 SelfTest 均已通过；完整手机号与 JWT 字面量为 0。生成与静态验证期间网络连接、上传、业务 POST、配置修改、服务信号、自动重试和真实短信均为 0。实际执行必须重新取得该 ChangeId 与完整 runner SHA-256 的独立只读授权；它不会补发短信、修复环境、清理恢复材料或替代人工逐场景收件确认。
+
+首次收到的事后核验批准仍引用修正前旧 SHA-256 `23112fea...36b1e`，与当前 runner 摘要不匹配，已在连接前失败关闭。该错误批准没有启动 runner、没有建立 SSH、没有读取测试服、没有上传、业务 POST、配置修改、服务信号、邮件或短信；不得把它登记为执行尝试或复用其授权范围。
+
+随后项目负责人以当前完整 SHA-256 `57f3233d8d3f08b302173935c0cbb21c3bbf33e7677be09da0df991e11b0dae3` 批准一次性只读执行。runner 仅建立 1 次固定 SSH stdin 连接且未重试，输出 `canary_postcheck=blocked`、退出码 3。关闭态、测试模式、API health/ready、白名单数量 2 和恢复锁已确认：`SMS_ENABLED=false`、`SMS_TEST_MODE=true`、`recovery_lock_clear=true`，没有遗留恢复材料。短信日志仍为基线 `13:13:0:0`，基线后五场景形状、供应商受理字段和 OTP 未消费证据均不存在，证明源执行 ChangeId `20260805T191326Z` 没有形成任何五场景发送记录，而不是“发送结果待回收”。本次事后核验自身的业务 POST、配置修改、上传、服务信号、自动重试、邮件和短信均为 0。
+
+根因已定位为源 Canary 生成器的发送前 Alertmanager 门禁使用了不存在的旧路径 `/home/pc/molin/infra/alertmanager/alertmanager.yml`；固定测试服实际关闭态配置位于 `/home/pc/molin-alertmanager-phase5/20260805T084215Z/alertmanager.closed.yml`，因此 runner 在账号/IAM 远程绑定、加锁、打开短信开关和发送之前即失败退出。事后核验中的 `current_process_provider_metric_total=unavailable` 另由一次性候选误读 `INTERNAL_METRICS_TOKEN` 引起，实际环境键为 `INTERNAL_API_TOKEN`；该字段不可作为 Provider 零调用证据。`alertmanager_route_discard=false` 同样来自旧路径检查，不能推翻此前已完成的 Alertmanager 关闭态证据。仓库内生成器现已改为核验实际部署配置、容器运行态和 ready，并新增严格低敏结果文件的单次创建与摘要输出；本地阶段 5 契约 115 项通过、3 项环境跳过，静态准备度和历史敏感扫描通过，网络连接与真实发送均为 0。任何修正版真实 Canary 必须生成新 ChangeId、重新冻结计划及 runner 摘要并取得新的精确发送授权。
+
+## 7. 修正版五场景候选
+
+首次修正后生成的 ChangeId `20260805T200101Z` 在进一步静态审查中发现结果持久化仅限制了键值字符形状，尚未限制允许的字段名；虽然既定远端载荷不会输出敏感字段，为防止异常输出借任意键进入结果文件，该候选已在执行前隔离为 rejected，未输入敏感值、未联网、未连接测试服且真实短信为 0，不得执行。
+
+最终重新生成 ChangeId `20260805T200244Z`：receipt-only 计划 SHA-256 为 `3d47f96d172f3fc976b5acdc20e65b64813669bbce64799b0abc9d587fa45045`，runner SHA-256 为 `d7748b2df0056b9fcd2775b464a0dafd622142809f30d723deeff4d8de96c9ec`。runner 固定实际 Alertmanager 关闭态配置、容器运行态和 ready 门禁，仍在账号/IAM 绑定、加锁、开关切换及发送前完成核验；低敏结果只允许预定义字段名和受限值字符，使用 `CreateNew` 单次写入并输出文件摘要，不保存手机号、Token、OTP、远端 stderr 或自由文本，既有结果文件会阻断重复执行。
+
+独立验证确认计划契约、计划与 runner 摘要、PowerShell 解析、默认关闭、runner SelfTest、UTF-8 无 BOM、Git Bash `bash -n`、载荷 SelfTest、实际 Alertmanager 路径、旧路径不存在、低敏字段白名单和候选目录单文件集合均通过；完整手机号与 Bearer Token 字面量为 0，结果文件尚未生成。阶段 5 全量契约 115 项通过、3 项按环境设计跳过，静态准备度与历史敏感扫描通过，`findings=0`、`sms_enable_literals=0`。本轮网络连接、上传、配置修改、服务重启和真实短信均为 0。该候选尚未取得真实发送授权；执行前必须由项目负责人以完整 ChangeId、计划 SHA-256、runner SHA-256、五场景各一次、零重试、自动恢复关闭态及失败保留恢复材料的边界重新批准。
+
+项目负责人随后以完整 ChangeId、计划摘要、runner 摘要和五场景边界批准一次性执行。启动前计划、runner、固定 SSH 辅助脚本摘要、默认关闭、SelfTest 与结果文件不存在均重新通过；可见交互进程只启动 1 次，没有自动重试。runner 生成的低敏结果 SHA-256 为 `ea58e017b7a47f48efaf1ed1e670b43ce6f0eec7c65afb727eb0294c8b00524f`，结果为 `canary_send=blocked`、`failure_gate=enabled_api_ready`、`canary_send_exit_code=2`。临时启用后的 API 未在门禁窗口内同时满足进程身份、`SMS_ENABLED=true`、`SMS_TEST_MODE=true` 和 `/api/ready=200`，因此 runner 在任何业务 POST 前停止；`sms_submission_requests=0`，五个场景均未提交，真实短信和供应商费用为 0。
+
+### 启用态启动只读诊断候选静态验证
+
+针对 `enabled_api_ready` 阻断新增默认关闭的只读诊断生成器与 3 项契约测试。ChangeId `20260806T015216Z`、runner SHA-256 `65e1aed60921cea057bbe63fbaf663bb705171f31fffcbc9ec48025db356c9f6` 已在本地生成。默认关闭、生成器 SelfTest、runner SelfTest、PowerShell 解析、内嵌 Bash `-n`、低敏字段白名单、固定 SSH 辅助脚本摘要、禁止写操作/服务信号/业务 POST/邮件/短信断言均通过。随后完整 readiness 与敏感扫描通过：`findings=0`、`sms_enable_literals=0`。本轮网络连接、配置修改、服务信号、服务重启、业务 POST、邮件和短信均为 0；测试服诊断尚未授权或执行。
+
+一次性执行授权随后被消费，固定 SSH 连接 1 次且没有重试。结果文件 SHA-256 `6326a849d654e8cc21dfc0285850d74b85a4d92c628ec65834c98690402528ea` 显示：API 单进程和二进制身份、环境文件身份/权限、文件/进程短信配置一致性、关闭态 ready、Aliyun Provider、必需值、Endpoint、HMAC 和白名单均通过；`legacy_sms_keys_absent=false` 导致 `environment_file_sms_config_valid=false`、`enabled_startup_config_ready=false` 和退出码 3。执行期间配置修改、服务信号、服务重启、业务 POST、邮件、短信提交和真实短信全部为 0。依据 `server/internal/config/config.go`，任何旧键存在都会在短信启用时失败关闭，这与前次临时启用 API 退出一致；尚未核验具体旧键，且不得通过再次执行已消费诊断来获取。
+
+### 旧短信环境键精确清理候选静态验证
+
+ChangeId `20260806T021613Z`、runner SHA-256 `6979bf61a6d4352e9adb8d7540b335bd04fffb710e1435749f985990f4882117` 已离线生成。契约测试确认删除集合精确等于三个旧键，文件与进程候选同步变换，全部 Aliyun 新键保留，关闭态和测试模式不变；固定 SSH、摘要绑定、结果 `CreateNew`、排他锁、TERM/KILL 同 PID 复核、原环境双备份、失败自动恢复、Alertmanager discard 和 10 秒稳定性复核均存在。负载不包含 `SMS_ENABLED=true`、业务 SQL 写入、业务 POST、发送场景、完整手机号或 Bearer 输入。
+
+全量阶段 5 离线契约执行 121 项通过、3 项跳过；PowerShell、Bash `-n`、默认关闭、runner 自测、readiness 与敏感扫描均通过，`findings=0`、`sms_enable_literals=0`。本轮网络连接、上传、配置修改、服务信号、服务重启、业务 POST、邮件和短信全部为 0。该证据不代表测试服旧键已经删除；实际连接、环境文件替换、API 停止/启动和自动回滚仍需绑定 ChangeId 与完整摘要的独立授权。
+
+一次性执行随后成功完成，结果 SHA-256 `3564bd9259f819b4386e4867a5666118173c2c52b8754ff7833f3e28194a366d`、退出码 0。输出确认 `exact_legacy_keys_absent=true`、`aliyun_keys_preserved=true`、`file_process_sms_config_parity=true`、`current_closed_api_ready=true`、`closed_state_stability_verified=true` 和 `alertmanager_discard=true`；服务停止/启动各 1 次、配置修改 1 次。自动回滚保护已布防但未触发，恢复失败为 false，敏感恢复材料与排他锁均未保留。业务 POST、邮件、短信提交和真实短信均为 0。`remote_stderr_present=true` 仅作为布尔异常残余风险记录，正文按低敏契约未保存；不影响远端退出码 0 和全部强制成功字段，但不得据此跳过新的独立只读复核。
+
+清理后复核候选 ChangeId `20260806T022804Z`、runner SHA-256 `1dd13c8e2caba052c46de7963d106a5515e5c28bfdac9e27ce940c869a233ffb` 已离线生成，默认关闭且结果文件不存在；生成阶段网络、配置修改、服务操作、业务 POST、邮件和短信均为 0。
+
+一次性只读复核随后通过，结果 SHA-256 `eb666eb3520bac38bbfeafe8778a963b448b951c946d2c825043c67648889a43`、退出码 0、远端 stderr 为空。所有启用配置布尔门禁均为 true，包括 `legacy_sms_keys_absent=true`、`environment_file_sms_config_valid=true`、`file_process_sms_config_parity=true`、`current_closed_api_ready=true` 和 `enabled_startup_config_ready=true`。固定 SSH 连接 1 次，配置修改、服务操作、业务 POST、邮件和短信为 0。
+
+真实 Canary ChangeId `20260806T040627Z` 随后按计划 SHA-256 `c3f47450080443754c1bc140750717a39affda61821badabbd5bc54c7ca4cc07`、runner SHA-256 `885d356587752c6ecf58cd34007b03c0fcf7fb7ef73b367059304ed96a117868` 的一次性授权执行。低敏结果 SHA-256 `51eb9596cdbe01fa2c60959495ac464431f359772284e5dd48942bf53898ec4d` 显示：`register`、`login` 的提交标志为 true；第三个 `reset_password` 触发失败门禁；`bind_phone`、`admin_verify` 未执行；业务提交请求 3、自动重试 0、退出码 2、远端 stderr 为空。失败路径完成自动关闭态恢复，服务停止/启动各 2 次。结果文件存在意味着本 ChangeId 已消费并禁止重跑。该摘要没有携带供应商受理字段、发送日志增量或人工收件结果，因此实际外发/费用只能记为 0–2 次待核验，不能把两个提交成功标志直接写成供应商受理或真实收件。
+
+本地源码审计先排除了应用 IP 桶、跨场景 Redis 门禁和账号状态前置拒绝。随后获批执行 ChangeId `20260806T051625Z` 的单次固定 SSH 只读诊断，结果 SHA-256 `d8006dffbd18fe631ee5c652cd7f794472aefb4a34db619e42f9eb5ba86f638c`、退出码 0、远端 stderr 为空：发送日志从 13 增至 16，事件窗口 accepted 2、failed 1；`register` accepted 1、`login` accepted 1、`reset_password` failed 1，且失败安全分类精确命中供应商频率限制。事件验证码共 3 条且未消费 3 条。关闭态、测试模式、API ready、Alertmanager discard、恢复锁和材料清除全部通过。诊断自身配置修改、信号、重启、业务 POST、邮件、短信提交和真实短信均为 0。根因据此从推断提升为已确认；两条 accepted 仍只证明供应商受理，不证明手机收件。
+
+基于已确认的同号码分钟级频控，计划契约新增 `same_target_min_interval_seconds=65` 与 `scheduled_waits=2` 两个强制字段；真实发送负载在 `login→reset_password`、`bind_phone→admin_verify` 之间分别等待 65 秒，并在等待期间持续核验启用进程存活，结束后重新通过 ready 门禁。等待不增加提交次数，也不是失败重试；五场景仍各一次、总计 5 次、自动重试 0。最终本地候选 ChangeId `20260806T053735Z`，计划 SHA-256 `2511648d46c6ef3395d6a8fab0e9400e400c2fe66bf0dde184f799a61efca625`，runner SHA-256 `39b4a84b8e4b9b009cfb05045fd859d5d889405ea44e18dada3139057dd5b7aa`。计划校验、PowerShell 解析、默认关闭、runner/载荷 SelfTest、Git Bash `bash -n`、五次精确调用、两个固定等待和结果文件不存在均通过；生成及验证没有联网、配置修改、业务 POST、邮件或短信。真实执行必须取得新的独立授权。
+
+该候选随后按完整计划/runner 摘要的一次性授权执行，结果 SHA-256 `0ae03e57b796993f7b5418891720ea62601b9f6bd2a47605b7e06c2388cc29d9`、退出码 0、远端 stderr 为空。五个 `scene_*_submitted` 均为 true，`requested_sends=5`、`completed_scenes=5`、`sms_submission_requests=5`、`automatic_retries=0`；两个 65 秒窗口均完成。发送前游标为 send log ID 16、verification code ID 1751，绝对日志基线 16（accepted 15、failed 1），完成时间 `2026-08-06T05:57:50Z`。结束后 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`，服务停止/启动各 2 次，敏感值持久化 0。该结果仅证明 API 五次提交成功与关闭态恢复，不直接证明五条供应商 accepted、OTP 未消费、监控无异常或手机收件。
+
+原 runner 的成功主体与退出汇总重复输出三个完全相同的节奏字段。原始结果和摘要保持不可变；仓库解析器只对这三个已知字段允许一次同值重复，其他重复、第三次重复或不一致值仍失败关闭，生成器未来只由退出汇总输出一次。相关 postcheck、观察快照和离线组装契约测试通过。
+
+事后只读候选 ChangeId `20260806T060018Z` 已绑定源计划、runner、结果三项完整摘要生成，runner SHA-256 `d547cd54e2d8d3ee917fa4c4716dc13cbb03c9d9047909184ed662706be5581d`。PowerShell 解析、默认关闭、SelfTest、Git Bash `bash -n`、只读事务、零业务 POST/服务信号和结果不存在均通过；本地生成没有连接测试服。实际只读核验仍需独立授权。
+
+项目负责人同时人工确认两个自有号码的五场景均已收件，未提供或持久化手机号及 OTP。低敏确认文件绑定源 ChangeId 和确认时间，SHA-256 `6c9bda7862084567b78521921234e2c36afa0e143aa4b4dbc6ece2d19af0d61c`，UTF-8/LF/无 BOM，仅包含五个场景布尔值。
+
+ChangeId `20260806T060018Z` 随后按一次性授权执行并消费，结果 SHA-256 `c9c56de2a0d0c368bd24244d14ea48f1146f7a5906487bc0d444da8c1a9b4d75`，在 `provider_metrics_shape` 阻断。控制流已先通过精确的五条日志、五条 accepted、五个独立场景、五条供应商受理字段完整、五条验证码及未消费/关联一致性数据库门禁，随后才读取当前进程 Provider 指标。阻断原因是指标为进程内计数，Canary 恢复关闭态重启 API 后归零，而旧候选错误要求当前值至少 5。执行自身配置、信号、重启、业务 POST、邮件和短信为 0，远端 stderr 为空；旧候选禁止重跑。
+
+修正版事后候选 ChangeId `20260806T062059Z` 已按 runner SHA-256 `1c0291b2d3eb07b872a0aeae24bebf42e04c1f3a342fa844fc3b4eb67b3ca383` 的一次性只读授权执行通过，低敏结果 SHA-256 为 `5fd533d891772e57675721463f4c94f8f9952bce81ec05410908d81dc7ee421e`。核验确认：基线后短信日志 5 条、accepted 5 条、独立场景 5 个、供应商受理字段完整，验证码 5 条且全部未消费、日志与验证码关联完整；`SMS_ENABLED=false`、`SMS_TEST_MODE=true`、health/ready、双号码白名单、Alertmanager discard 均正常，活动 Alertmanager/SMS 告警均为 0、通知失败 0、恢复锁与材料已清除。恢复后当前进程 Provider 指标读取成功且计数为 0，这只说明重启后的进程内计数当前为零，五次历史受理由持久数据库证据证明。此次核验仅建立一次固定 SSH 连接，配置修改、服务操作、业务 POST、邮件、短信提交与真实短信均为 0，退出码 0、远端 stderr 为空。
+
+观察快照 ChangeId `20260806T060345Z` 随后按 runner SHA-256 `9b89eab7bde8461d3002422f58672ce4adf2b318e0c4c961423d8f6139faa636` 的限定授权执行 5m、15m、30m 三个窗口，每个窗口各执行一次、各建立一次固定 SSH stdin 连接且没有重试。三个名称表示“Canary 完成后至少经过该时长”的门禁；实际分别在 1812、1821、1830 秒采集。三次均返回 health/ready 200、累计发送 `21/20/1`、当前进程 Provider 调用/非受理为 `0/0`、活动 SMS/Alertmanager 告警 0、通知失败增量 0，并且配置修改、服务信号/重启、业务 POST、邮件和短信均为 0。快照 SHA-256 依次为：5m `80a84638ba2412acf7eda15ee5ba9d2f5263a578353afe96da001ada0a27bf78`、15m `13ccd424716feaf8703e557522078711397552db3b4ff95a0549f50a68be9320`、30m `7833cc5252c3f560993f0b4f667357fbe8c080ebe4f2b1c62e6a8d8886ab4e8a`。2h 与 24h 窗口尚未到达或执行，禁止把前三个快照解释为完整观察通过。
+
+本地完成前三个快照后审计发现，最终证据组装器还要求独立 `final_state` 文件，而原工具链没有受控生成路径。现已新增纯离线最终状态组装器：它必须同时绑定源 Canary 成功结果、修正版事后只读核验结果和 24h 快照的完整 SHA-256，并按两类结果字段白名单重新核验五场景成功/零重试、五次受理、OTP 未消费、关闭态、discard、零告警/通知失败，以及 24h 累计发送严格等于基线加 5；任何关闭态新增发送、计数回退、摘要篡改、未批准敏感字段、异常混合换行或工作区内输出都会失败关闭。输出仅包含组装器要求的七个最终低敏字段，不联网、不发送。新增 5 项契约通过，并已接入 readiness 与 PR CI；真实 `final_state` 仍必须等待 24h 快照后离线生成。
+
+真实输入兼容复核确认：Canary 结果为 UTF-8/LF/无 BOM，修正版事后核验结果为 PowerShell 生成的 UTF-8/规范 CRLF/无 BOM，前三份快照为 UTF-8/LF/无 BOM。最终状态组装器已仅对低敏 `key=value` 结果入口兼容纯 LF 或规范 CRLF，并继续拒绝 BOM、NUL、裸 CR 和异常混合换行；JSON 入口仍严格限定 LF。契约夹具改为使用真实同类 CRLF 事后结果后通过，避免 24h 后出现格式误阻断。
+
+同一审计还发现权威观察验证器曾错误要求关闭态快照的 Provider 进程内计数等于 Canary 前基线加 5；但关闭态恢复会重启 API，真实快照的当前进程计数从 0 重新开始。验证器现按模式区分：发送日志始终以持久数据库严格要求基线加 5；`closed_after_canary` 的 Provider 计数只要求非负、非受理不超过调用数且五个恢复后窗口不增长，支持首个快照为 0；`production_enabled` 仍要求相对基线增量与发送日志一致并保持单调。自测已覆盖进程指标归零可接受、关闭态 Provider 增长拒绝、生产延迟停止线与计数回退拒绝；前三份真实快照因此可被最终组装器按正确口径接收。
+
+为让未满五档的观察也能重复验证，新增纯离线观察进度验证器。它复用最终组装器的摘要、敏感字段和快照结构门禁，只接受从 5m 开始的连续窗口前缀，核验时间严格递增、持久发送始终为 `21/20/1`、恢复后当前进程 Provider `0/0` 不增长、health/ready 200、零活动告警和零通知失败。3 项契约通过；使用源 Canary 结果及 5m/15m/30m 三份真实完整摘要执行得到 `phase5_observation_progress=passed`、`snapshots_verified=3`，网络连接和真实短信均为 0。
+
+五窗口观察快照候选 ChangeId `20260806T060345Z` 也已绑定同一源结果生成，runner SHA-256 `9b89eab7bde8461d3002422f58672ce4adf2b318e0c4c961423d8f6139faa636`。同一 runner 覆盖 5m/15m/30m/2h/24h，每个窗口只允许创建一个结果，拒绝提前执行且内部不 sleep。PowerShell、默认关闭和 SelfTest 通过，候选目录仅含 runner；尚未连接测试服或生成任何窗口快照。
+
+新增事后只读核验候选生成器及 3 项攻击/契约用例：默认关闭与 SelfTest 不联网；生成时强制绑定源计划、源 runner、源成功结果三项摘要并提取两个数字游标；远端负载只允许 `START TRANSACTION READ ONLY` 查询和本机 GET，精确要求五场景日志、供应商受理字段、五条未消费 OTP 与业务请求关联均完整，并核验关闭态、监控 discard/零活动告警/零通知失败及恢复锁清除。篡改源结果摘要会在本地生成阶段失败。该生成器后续已产出并执行修正版候选 `20260806T062059Z`，结果通过且完整证据见本报告前文；不得再把此段最初的离线实现时点解释为当前状态。
+
+新增五档观察证据离线组装器及 3 项契约/篡改用例。组装器强制绑定源 Canary 成功结果、五场景人工收件确认、五个窗口快照及最终状态的完整摘要，只允许工作区外 UTF-8/LF/无 BOM 低敏文件；基线来自真实发送前固化的绝对计数，输出前复用权威观察验证器。正常夹具可生成并复核五档证据，篡改人工确认后摘要不匹配且不会创建输出。本轮没有联网、没有等待观察窗口、没有生成真实观察证据。
+
+新增五窗口只读快照候选生成器及 3 项契约/篡改用例。单一摘要冻结 runner 覆盖 5m、15m、30m、2h、24h，各窗口只能产生一次结果；本地与远端双重拒绝提前执行，负载无内部 sleep，仅执行固定 SSH 单连接、只读事务和本机 GET。五个 Bash 负载语法通过，篡改源结果摘要被生成门禁拒绝。本轮没有源成功结果、测试服连接或真实快照。
+
+失败路径已自动恢复关闭态：`automatic_closed_state_restore=true`、服务停止 1 次、启动 2 次、远端 stderr 为空。结果文件的存在同时撤销该 runner 的再次执行资格；ChangeId `20260805T200244Z` 和 runner SHA-256 `d7748b2d...6c9ec` 已消费，禁止重跑。当前低敏结果不能区分启用进程提前退出、二进制身份、开关/测试模式环境或 ready HTTP 哪一项失败；成功恢复路径按安全设计清除了临时启动日志。后续只能先生成并独立批准新的关闭态只读诊断，读取该执行时间窗的脱敏服务日志或 journald 分类；诊断完成前不得生成或执行新的真实发送候选。

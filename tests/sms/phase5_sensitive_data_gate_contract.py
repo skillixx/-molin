@@ -350,6 +350,8 @@ class Phase5SensitiveDataGateContractTest(unittest.TestCase):
 
         self.assertIn("verify-sms-phase5-sensitive-data.py", readiness)
         self.assertIn("phase5_sensitive_scan=passed", readiness)
+        self.assertIn("$powerShellExecutable", readiness)
+        self.assertNotIn("& powershell.exe", readiness)
         self.assertIn("fetch-depth: 0", phase5_job)
         self.assertIn("actions/setup-node@v4", phase5_job)
         self.assertIn("npm ci", phase5_job)

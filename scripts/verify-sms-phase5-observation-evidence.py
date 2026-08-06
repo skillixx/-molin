@@ -133,13 +133,12 @@ def validate(document: dict[str, Any], *, now: dt.datetime | None = None) -> lis
     if not isinstance(snapshots, list) or len(snapshots) != len(WINDOWS):
         fail("必须提供五个观察快照")
     previous: dict[str, int] | None = None
-    first_expected = {
+    first_send_expected = {
         "send_total": baseline_values["send_total"] + 5,
         "send_accepted": baseline_values["send_accepted"] + 5,
         "send_failed": baseline_values["send_failed"],
-        "provider_calls_total": baseline_values["provider_calls_total"] + 5,
-        "provider_nonaccepted_total": baseline_values["provider_nonaccepted_total"],
     }
+    closed_process_provider_baseline: tuple[int, int] | None = None
     for index, (window_name, minimum_elapsed) in enumerate(WINDOWS.items()):
         snapshot = snapshots[index]
         if not isinstance(snapshot, dict):
@@ -185,20 +184,36 @@ def validate(document: dict[str, Any], *, now: dt.datetime | None = None) -> lis
         }
         if counters["send_total"] != counters["send_accepted"] + counters["send_failed"]:
             fail("观察快照发送日志汇总不守恒")
-        if any(counters[key] < first_expected[key] for key in counters):
-            fail("观察快照没有包含完整五场景 Canary 增量")
+        if any(counters[key] < first_send_expected[key] for key in first_send_expected):
+            fail("观察快照没有包含完整五场景 Canary 发送日志增量")
         if previous is not None and any(counters[key] < previous[key] for key in counters):
             fail("观察计数发生回退")
         send_delta = counters["send_total"] - baseline_values["send_total"]
         failed_delta = counters["send_failed"] - baseline_values["send_failed"]
-        if counters["provider_calls_total"] - baseline_values["provider_calls_total"] != send_delta:
-            fail("Provider 调用增量与发送日志增量不一致")
-        if counters["provider_nonaccepted_total"] - baseline_values["provider_nonaccepted_total"] != failed_delta:
-            fail("Provider 非受理增量与失败日志增量不一致")
-        if mode == "closed_after_canary" and counters != first_expected:
-            fail("关闭态观察窗口出现 Canary 之外的新短信增量")
-        calls_delta = counters["provider_calls_total"] - baseline_values["provider_calls_total"]
-        nonaccepted_delta = counters["provider_nonaccepted_total"] - baseline_values["provider_nonaccepted_total"]
+        if counters["provider_nonaccepted_total"] > counters["provider_calls_total"]:
+            fail("当前进程 Provider 非受理数不能超过调用数")
+        if mode == "closed_after_canary":
+            # Canary 恢复关闭态会重启 API，Provider 指标是进程内计数，不能与重启前基线相加。
+            if any(counters[key] != first_send_expected[key] for key in first_send_expected):
+                fail("关闭态观察窗口出现 Canary 之外的新短信增量")
+            process_provider = (counters["provider_calls_total"], counters["provider_nonaccepted_total"])
+            if closed_process_provider_baseline is None:
+                closed_process_provider_baseline = process_provider
+            elif process_provider != closed_process_provider_baseline:
+                fail("关闭态恢复后当前进程 Provider 计数发生增长")
+            calls_delta = counters["provider_calls_total"]
+            nonaccepted_delta = counters["provider_nonaccepted_total"]
+        else:
+            if counters["provider_calls_total"] < baseline_values["provider_calls_total"]:
+                fail("生产观察 Provider 调用计数低于基线")
+            if counters["provider_nonaccepted_total"] < baseline_values["provider_nonaccepted_total"]:
+                fail("生产观察 Provider 非受理计数低于基线")
+            if counters["provider_calls_total"] - baseline_values["provider_calls_total"] != send_delta:
+                fail("Provider 调用增量与发送日志增量不一致")
+            if counters["provider_nonaccepted_total"] - baseline_values["provider_nonaccepted_total"] != failed_delta:
+                fail("Provider 非受理增量与失败日志增量不一致")
+            calls_delta = counters["provider_calls_total"] - baseline_values["provider_calls_total"]
+            nonaccepted_delta = counters["provider_nonaccepted_total"] - baseline_values["provider_nonaccepted_total"]
         if calls_delta >= 10 and nonaccepted_delta / calls_delta > 0.20:
             fail("Provider 非受理比例越过自动停止线")
         duration = snapshot["avg_provider_duration_seconds"]
@@ -280,7 +295,7 @@ def self_test() -> None:
                 "send_total": 18,
                 "send_accepted": 18,
                 "send_failed": 0,
-                "provider_calls_total": 5,
+                "provider_calls_total": 0,
                 "provider_nonaccepted_total": 0,
                 "avg_provider_duration_seconds": 0.4,
                 "active_sms_alerts": 0,
@@ -320,6 +335,16 @@ def self_test() -> None:
         rejected = True
     if not rejected:
         fail("关闭态新增发送反例未被拒绝")
+
+    provider_growth = json.loads(json.dumps(valid))
+    provider_growth["snapshots"][1]["provider_calls_total"] = 1
+    provider_growth_rejected = False
+    try:
+        validate(provider_growth, now=started + dt.timedelta(days=1, minutes=2))
+    except ValueError:
+        provider_growth_rejected = True
+    if not provider_growth_rejected:
+        fail("关闭态恢复后 Provider 当前进程增长反例未被拒绝")
 
     production = json.loads(json.dumps(valid))
     production["environment"] = "production"
@@ -362,6 +387,8 @@ def self_test() -> None:
         fail("完整手机号反例未被拒绝")
     print("phase5_observation_evidence_self_test=passed")
     print("closed_state_send_growth_rejected=true")
+    print("process_metric_reset_supported=true")
+    print("closed_process_provider_growth_rejected=true")
     print("latency_stop_line_rejected=true")
     print("counter_rollback_rejected=true")
     print("sensitive_value_rejected=true")
