@@ -222,6 +222,7 @@ jobs:
           python tests/sms/phase5_observation_snapshot_candidate_contract.py
           python tests/sms/phase5_production_target_intake_candidate_contract.py
           python tests/sms/phase5_production_readonly_baseline_candidate_contract.py
+          python tests/sms/phase5_production_closed_deployment_plan_contract.py
 
       - name: 离线校验测试服 Canary 聚合预检包装器
         shell: pwsh

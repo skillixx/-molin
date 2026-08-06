@@ -79,10 +79,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-sms-phase5-p
 冻结生产目标后，可在本地生成摘要绑定的关闭态只读基线 runner。生成与 SelfTest 不读取 `known_hosts`、不连接生产；实际
 `-ExecuteReadOnly` 才会重新核对唯一 ED25519 指纹并通过一次 SSH stdin 只读环境文件/进程一致性、health/ready、schema、
 五模板/绑定、发送聚合、内部指标、Prometheus、Alertmanager、活动短信告警和通知失败。runner 只输出布尔与聚合计数，
-不会验证备份真实可恢复性；备份能力和回滚人仍须人工证明。生成授权不继承为只读执行授权：
+并要求以 `CreateNew` 排他保存同一字段白名单的本地低敏 JSON 及 SHA-256；成功和阻断结果均可审计且禁止覆盖。它不会验证备份真实可恢复性；备份能力和回滚人仍须人工证明。生成授权不继承为只读执行授权：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-sms-phase5-production-readonly-baseline.ps1 -SelfTest
+```
+
+生产只读结果形成 SHA-256 后，关闭态部署计划生成器会同时绑定目标候选、实际只读 runner 及结果、完整发布提交、API 制品、两套前端镜像、
+migration 决策、备份证据摘要和回滚证据摘要。它还会调用同一权威只读基线生成器，按目标候选与 ChangeId 重新生成 runner；只有完整文件摘要精确一致才接受，并把生成器摘要写入计划，不能用注释、死代码或额外网络调用伪造结构标记。schema 已达到 59 时只能 `verify-only`；仅当前 schema 精确为 58 时允许
+规划 `apply-up-to-59`，并只允许只读结果因 `schema_ready=false` 单项阻断，其他关闭态、配置、模板、指标和监控门禁必须全部通过。schema 低于 58 必须先走独立 migration 方案，不能由本计划跨版本补齐。计划仍固定短信关闭、测试模式开启、数据库模板源、五模板/绑定、四条告警、自动回滚和零重试；
+备份摘要不等于恢复验证，且生成计划不会授予 migration、部署、Canary 或正式开启权限：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-sms-phase5-production-closed-deployment-plan.ps1 -SelfTest
 ```
 
 1. 只读确认生产目标、当前版本、拓扑、schema、备份能力、监控和回滚操作者。

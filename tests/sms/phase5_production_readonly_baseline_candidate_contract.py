@@ -114,6 +114,13 @@ class Phase5ProductionReadonlyBaselineCandidateContract(unittest.TestCase):
             self.assertIn("production_readonly_authorized=false", runner_text)
             self.assertIn("backup_capability_verified", runner_text)
             self.assertIn("duplicate_sms_config_absent", runner_text)
+            self.assertIn('"schema_version"', runner_text)
+            self.assertIn('"binding_distinct_templates"', runner_text)
+            self.assertIn("[IO.FileMode]::CreateNew", runner_text)
+            self.assertIn("结果文件不得使用网络映射盘", runner_text)
+            self.assertIn("[IO.FileAttributes]::ReparsePoint", runner_text)
+            self.assertIn("runner_sha256 = $runnerSHA256", runner_text)
+            self.assertIn("sensitive_values_persisted = 0", runner_text)
             self.assertEqual(runner_text.count("& $sshPath @sshArguments"), 1)
             self.assertNotRegex(runner_text, r"(?<!\d)1[3-9]\d{9}(?!\d)")
 
@@ -129,6 +136,7 @@ class Phase5ProductionReadonlyBaselineCandidateContract(unittest.TestCase):
             self.assertEqual(closed.returncode, 0, closed.stdout + closed.stderr)
             self.assertIn("production_readonly_authorized=false", closed.stdout)
             self.assertIn("network_connections=0", closed.stdout)
+            self.assertIn("low_sensitivity_result_persisted=false", closed.stdout)
 
             runner_self_test = subprocess.run(
                 [

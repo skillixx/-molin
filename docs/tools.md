@@ -840,12 +840,35 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 SHA-256，并只在全新的工作区外目录生成一个 runner。runner 默认关闭；后续单独批准 `-ExecuteReadOnly` 后，才重新核验
 唯一 ED25519 指纹并固定 SSH stdin 连接一次。远端负载只读取 `.env.prod` 与进程一致性、服务状态、本机健康接口、数据库
 schema/模板/绑定/发送聚合、内部指标和监控状态，输出固定布尔与聚合计数；不上传、不修改配置、不执行服务操作或业务 POST，
-不发送邮件或短信。备份可恢复性仍需人工证据，不能由只读 runner 自动推定。
+不发送邮件或短信。执行时必须向全新本地绝对路径以 `CreateNew` 排他保存字段白名单 JSON 和 SHA-256，禁止覆盖；备份可恢复性仍需人工证据，不能由只读 runner 自动推定。
 
 ```powershell
 # 仅运行离线正反例，不生成或执行生产 runner
 powershell -NoProfile -ExecutionPolicy Bypass -File `
   scripts/prepare-sms-phase5-production-readonly-baseline.ps1 -SelfTest
+```
+
+### 阶段 5 生产关闭态部署计划生成器
+
+| 项目 | 说明 |
+|---|---|
+| **用途** | 绑定生产目标、关闭态只读结果和全部发布制品摘要，生成默认未授权的部署计划 |
+| **使用者** | 运维工程师、测试工程师、产品经理 |
+| **涉及功能** | 生产关闭态部署、migration 决策、回滚与后续 Canary 人工门禁 |
+| **代码位置** | `scripts/prepare-sms-phase5-production-closed-deployment-plan.ps1` |
+
+默认入口和 `-SelfTest` 均不读取生产证据、不联网、不创建计划。实际导出必须同时绑定生产目标候选、实际只读 runner 与
+结果的完整 SHA-256，并由同一权威只读基线生成器按目标候选与 ChangeId 重新生成 runner；完整文件摘要精确一致后，计划还会冻结生成器自身摘要，避免仅靠注释或死代码伪造结构标记。随后固定发布提交、API 制品、两套前端镜像、备份证据及回滚证据摘要。schema 已达到 59 时只能
+`verify-only`；仅当前 schema 精确为 58 时允许规划 `apply-up-to-59`，并只允许 `schema_ready=false` 单项阻断。低于 58
+必须先走独立 migration 方案，其他阻断结果也不能生成部署计划。
+
+输出计划保持 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`、数据库模板源、五模板/五绑定、四条告警、零自动重试和失败自动
+回滚。计划生成不等于部署、migration、Canary 或正式开启授权，备份证据摘要也不等于恢复能力已经验证。
+
+```powershell
+# 仅运行离线正反例，不读取生产证据或生成真实计划
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  scripts/prepare-sms-phase5-production-closed-deployment-plan.ps1 -SelfTest
 ```
 
 ### 阶段 5 Canary 双号码本地预检候选生成器

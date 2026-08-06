@@ -160,6 +160,7 @@ $requiredFiles = @(
     "scripts\prepare-sms-phase5-observation-snapshot-readonly.ps1",
     "scripts\prepare-sms-phase5-production-target-intake.ps1",
     "scripts\prepare-sms-phase5-production-readonly-baseline.ps1",
+    "scripts\prepare-sms-phase5-production-closed-deployment-plan.ps1",
     "scripts\apply-sms-phase5-test-server-log-retention.ps1",
     "scripts\apply-sms-phase5-test-server-log-retention.sh"
 )
@@ -277,6 +278,11 @@ if ($SelfTest) {
         (Join-Path $root "scripts\prepare-sms-phase5-production-readonly-baseline.ps1") -SelfTest
     if ($LASTEXITCODE -ne 0) {
         throw "阶段 5 生产关闭态只读基线候选自测失败"
+    }
+    & $powerShellExecutable -NoProfile -ExecutionPolicy Bypass -File `
+        (Join-Path $root "scripts\prepare-sms-phase5-production-closed-deployment-plan.ps1") -SelfTest
+    if ($LASTEXITCODE -ne 0) {
+        throw "阶段 5 生产关闭态部署计划自测失败"
     }
     & $powerShellExecutable -NoProfile -ExecutionPolicy Bypass -File `
         (Join-Path $root "scripts\verify-sms-phase5-alertmanager-drill-payload.ps1") -SelfTest

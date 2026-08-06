@@ -231,6 +231,9 @@ schema="$(run_mysql "SELECT CONCAT(version,':',dirty) FROM schema_migrations LIM
 template_summary="$(run_mysql "SELECT CONCAT(COUNT(*),':',SUM(provider_audit_status='approved'),':',SUM(local_enabled=1)) FROM sms_templates" || true)"
 binding_summary="$(run_mysql "SELECT CONCAT(COUNT(*),':',SUM(enabled=1),':',COUNT(DISTINCT CASE WHEN enabled=1 THEN template_id END)) FROM sms_scene_bindings WHERE scene IN ('register','login','reset_password','bind_phone','admin_verify')" || true)"
 send_summary="$(run_mysql "SELECT CONCAT(COUNT(*),':',SUM(submit_status='accepted'),':',SUM(submit_status='failed')) FROM sms_send_logs" || true)"
+IFS=: read -r schema_version schema_dirty <<<"$schema"
+IFS=: read -r template_total template_approved template_enabled <<<"$template_summary"
+IFS=: read -r binding_total binding_enabled binding_distinct_templates <<<"$binding_summary"
 IFS=: read -r send_total send_accepted send_failed <<<"$send_summary"
 
 internal_token="$(runtime_value INTERNAL_API_TOKEN)"
@@ -291,7 +294,15 @@ printf 'process_environment_readable=%s\n' "$process_environment_readable"
 printf 'file_process_sms_config_match=%s\n' "$file_process_sms_config_match"
 printf 'health_ready=%s\n' "$(bool test "$health_http" = 200 -a "$ready_http" = 200)"
 printf 'schema_ready=%s\n' "$schema_ready"
+printf 'schema_version=%s\n' "${schema_version:-unavailable}"
+printf 'schema_dirty=%s\n' "${schema_dirty:-unavailable}"
 printf 'template_bindings_ready=%s\n' "$template_bindings_ready"
+printf 'template_total=%s\n' "${template_total:-unavailable}"
+printf 'template_approved=%s\n' "${template_approved:-unavailable}"
+printf 'template_enabled=%s\n' "${template_enabled:-unavailable}"
+printf 'binding_total=%s\n' "${binding_total:-unavailable}"
+printf 'binding_enabled=%s\n' "${binding_enabled:-unavailable}"
+printf 'binding_distinct_templates=%s\n' "${binding_distinct_templates:-unavailable}"
 printf 'send_log_readable=%s\n' "$send_log_readable"
 printf 'send_total=%s\n' "${send_total:-unavailable}"
 printf 'send_accepted=%s\n' "${send_accepted:-unavailable}"
@@ -421,7 +432,8 @@ try {
     $runnerTemplate = @'
 param(
     [switch]$ExecuteReadOnly,
-    [switch]$SelfTest
+    [switch]$SelfTest,
+    [string]$ResultFile = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -439,7 +451,9 @@ $allowedKeys = @(
     "endpoint_official", "required_sms_config_present", "legacy_sms_keys_absent", "template_env_overrides_absent",
     "duplicate_sms_config_absent",
     "environment_file_secure", "service_running", "process_environment_readable", "file_process_sms_config_match",
-    "health_ready", "schema_ready", "template_bindings_ready", "send_log_readable", "send_total", "send_accepted",
+    "health_ready", "schema_ready", "schema_version", "schema_dirty", "template_bindings_ready", "template_total",
+    "template_approved", "template_enabled", "binding_total", "binding_enabled", "binding_distinct_templates",
+    "send_log_readable", "send_total", "send_accepted",
     "send_failed", "metrics_ready", "sms_metric_shape_ready", "prometheus_ready", "sms_alert_rules_loaded",
     "prometheus_target_up", "active_sms_alerts", "notification_failures_total", "alertmanager_ready",
     "rollback_operator_declared", "observer_declared", "backup_capability_verified", "configuration_mutations",
@@ -451,6 +465,7 @@ if (-not $ExecuteReadOnly -and -not $SelfTest) {
     Write-Output "target_change_id=$TargetChangeId"
     Write-Output "target_candidate_sha256=$TargetCandidateSHA256"
     Write-Output "production_readonly_authorized=false"
+    Write-Output "low_sensitivity_result_persisted=false"
     Write-Output "network_connections=0"
     Write-Output "uploads=0"
     Write-Output "configuration_mutations=0"
@@ -461,12 +476,16 @@ if (-not $ExecuteReadOnly -and -not $SelfTest) {
     exit 0
 }
 if ($ExecuteReadOnly -and $SelfTest) { throw "ExecuteReadOnly 与 SelfTest 必须互斥" }
+if (-not $ExecuteReadOnly -and -not [string]::IsNullOrWhiteSpace($ResultFile)) {
+    throw "仅 ExecuteReadOnly 可以指定 ResultFile"
+}
 if ($SelfTest) {
     $decoded = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($RemotePayloadBase64))
     if (-not $decoded.StartsWith("#!/usr/bin/env bash`n") -or $decoded.Contains("`r") -or $decoded.Contains([char]0xFEFF)) {
         throw "内嵌生产只读负载编码无效"
     }
     Write-Output "production_readonly_runner_self_test=passed"
+    Write-Output "low_sensitivity_result_persisted=false"
     Write-Output "network_connections=0"
     Write-Output "uploads=0"
     Write-Output "configuration_mutations=0"
@@ -476,6 +495,34 @@ if ($SelfTest) {
     Write-Output "real_sms_sent=0"
     exit 0
 }
+
+if ([string]::IsNullOrWhiteSpace($ResultFile) -or $ResultFile -match '^(?:\\\\|//)' -or $ResultFile.Contains("::")) {
+    throw "生产只读执行必须提供本地文件系统结果绝对路径"
+}
+$isWindowsPlatform = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
+if ($isWindowsPlatform -and $ResultFile -cnotmatch '^[A-Za-z]:[\\/]') {
+    throw "Windows 结果文件必须使用本地盘符绝对路径"
+}
+if ($isWindowsPlatform) {
+    $resultDrive = Get-PSDrive -Name $ResultFile.Substring(0, 1) -PSProvider FileSystem -ErrorAction Stop
+    if (([string]$resultDrive.Root).StartsWith("\\") -or ([string]$resultDrive.DisplayRoot).StartsWith("\\")) {
+        throw "结果文件不得使用网络映射盘"
+    }
+}
+if (-not $isWindowsPlatform -and -not [IO.Path]::IsPathRooted($ResultFile)) {
+    throw "结果文件必须使用本地绝对路径"
+}
+$resultPath = [IO.Path]::GetFullPath($ResultFile)
+$resultParent = Split-Path -Parent $resultPath
+if ([string]::IsNullOrWhiteSpace($resultParent) -or -not (Test-Path -LiteralPath $resultParent -PathType Container)) {
+    throw "结果文件父目录必须已存在"
+}
+$resultParentItem = Get-Item -LiteralPath $resultParent -Force -ErrorAction Stop
+if (($resultParentItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+    throw "结果文件父目录不得是符号链接或重解析点"
+}
+if (Test-Path -LiteralPath $resultPath) { throw "结果文件已存在，禁止覆盖" }
+$runnerSHA256 = (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
 # 执行前只接受本机普通 known_hosts，并重新计算唯一 ED25519 公钥指纹。
 $knownHostsPath = [IO.Path]::GetFullPath((Join-Path $env:USERPROFILE ".ssh\known_hosts"))
@@ -529,6 +576,50 @@ foreach ($key in $allowedKeys) { Write-Output "$key=$($result[$key])" }
 Write-Output "network_connections=1"
 Write-Output "remote_stderr_present=false"
 Write-Output "readonly_exit_code=$readonlyExitCode"
+$evidence = [ordered]@{
+    schema_version = 1
+    change_id = $ChangeId
+    target_change_id = $TargetChangeId
+    target_candidate_sha256 = $TargetCandidateSHA256
+    runner_sha256 = $runnerSHA256
+    observed = $result
+    network_connections = 1
+    remote_stderr_present = $false
+    readonly_exit_code = $readonlyExitCode
+    uploads = 0
+    configuration_mutations = 0
+    service_operations = 0
+    business_posts = 0
+    emails_sent = 0
+    real_sms_sent = 0
+    sensitive_values_persisted = 0
+}
+$evidenceBytes = [Text.Encoding]::UTF8.GetBytes(($evidence | ConvertTo-Json -Depth 5) + "`n")
+$stream = $null
+$resultCreated = $false
+try {
+    # 使用 CreateNew 排他创建，禁止覆盖既有证据；文件只包含已通过字段白名单的低敏结果。
+    $stream = New-Object IO.FileStream($resultPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    $resultCreated = $true
+    $stream.Write($evidenceBytes, 0, $evidenceBytes.Length)
+    $stream.Flush($true)
+}
+catch {
+    if ($null -ne $stream) { $stream.Dispose(); $stream = $null }
+    if ($resultCreated -and (Test-Path -LiteralPath $resultPath -PathType Leaf)) {
+        Remove-Item -LiteralPath $resultPath -Force
+    }
+    throw
+}
+finally {
+    if ($null -ne $stream) { $stream.Dispose() }
+    [Array]::Clear($evidenceBytes, 0, $evidenceBytes.Length)
+}
+$resultSHA256 = (Get-FileHash -LiteralPath $resultPath -Algorithm SHA256).Hash.ToLowerInvariant()
+Write-Output "low_sensitivity_result_persisted=true"
+Write-Output "runner_sha256=$runnerSHA256"
+Write-Output "result_sha256=$resultSHA256"
+Write-Output "sensitive_values_persisted=0"
 if ($readonlyExitCode -ne 0 -or $result["production_readonly_baseline"] -cne "passed") {
     throw "生产关闭态只读基线未通过，退出码：$readonlyExitCode"
 }
