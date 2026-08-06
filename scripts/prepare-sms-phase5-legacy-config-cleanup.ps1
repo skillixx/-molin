@@ -34,11 +34,20 @@ function Assert-BashSyntax {
     param([Parameter(Mandatory = $true)][string]$Script)
 
     # 只把负载写入本机 Bash 标准输入执行 -n，不执行负载，也不创建临时脚本文件。
-    $bash = Get-Command bash.exe -ErrorAction SilentlyContinue
-    if ($null -eq $bash) {
+    $isWindowsPlatform = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
+    $bash = if ($isWindowsPlatform) {
+        Get-Command bash.exe -CommandType Application -ErrorAction SilentlyContinue
+    }
+    else {
+        Get-Command bash -CommandType Application -ErrorAction SilentlyContinue
+    }
+    if ($null -eq $bash -and $isWindowsPlatform) {
         $gitBash = "C:\Program Files\Git\bin\bash.exe"
         if (-not (Test-Path -LiteralPath $gitBash -PathType Leaf)) { throw "缺少 Bash，无法完成远端负载语法检查" }
         $bashPath = $gitBash
+    }
+    elseif ($null -eq $bash) {
+        throw "缺少 Bash，无法完成远端负载语法检查"
     }
     else {
         $bashPath = $bash.Source
