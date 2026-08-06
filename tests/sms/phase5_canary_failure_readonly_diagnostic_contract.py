@@ -10,7 +10,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "prepare-sms-phase5-canary-failure-readonly-diagnostic.ps1"
-POWERSHELL = shutil.which("powershell.exe") or shutil.which("powershell")
+POWERSHELL = shutil.which("pwsh") or shutil.which("powershell") or shutil.which("powershell.exe")
 
 
 def sha256(path: pathlib.Path) -> str:

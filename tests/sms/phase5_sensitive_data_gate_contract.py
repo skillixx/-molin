@@ -360,6 +360,11 @@ class Phase5SensitiveDataGateContractTest(unittest.TestCase):
         self.assertIn("-RunSensitiveScan", phase5_job)
         self.assertIn("--require-dist", readiness)
 
+    def test_phase5_contracts_resolve_cross_platform_powershell(self) -> None:
+        forbidden = 'shutil.which("powershell.exe")' + ' or shutil.which("powershell")'
+        for path in sorted((ROOT / "tests" / "sms").glob("phase5_*_contract.py")):
+            self.assertNotIn(forbidden, path.read_text(encoding="utf-8"), path.name)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

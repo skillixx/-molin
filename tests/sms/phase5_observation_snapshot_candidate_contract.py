@@ -11,7 +11,7 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "prepare-sms-phase5-observation-snapshot-readonly.ps1"
-POWERSHELL = shutil.which("powershell.exe") or shutil.which("powershell")
+POWERSHELL = shutil.which("pwsh") or shutil.which("powershell") or shutil.which("powershell.exe")
 WINDOWS = {"5m": 300, "15m": 900, "30m": 1800, "2h": 7200, "24h": 86400}
 
 
