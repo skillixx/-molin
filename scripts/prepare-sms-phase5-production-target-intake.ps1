@@ -9,6 +9,10 @@
     [string]$EnvironmentFile = "",
     [ValidateSet("host-binary", "systemd", "docker-compose")]
     [string]$ServiceKind = "host-binary",
+    [string]$ApiServiceIdentifier = "",
+    [int]$ApiLocalPort = 0,
+    [int]$PrometheusLocalPort = 0,
+    [int]$AlertmanagerLocalPort = 0,
     [string]$RollbackOperatorAlias = "",
     [string]$ObserverAlias = "",
     [string]$OutputDirectory = "",
@@ -65,6 +69,11 @@ function Assert-ProductionTargetMetadata {
         [Parameter(Mandatory = $true)][string]$Fingerprint,
         [Parameter(Mandatory = $true)][string]$RemoteProjectRoot,
         [Parameter(Mandatory = $true)][string]$RemoteEnvironmentFile,
+        [Parameter(Mandatory = $true)][string]$RemoteServiceKind,
+        [Parameter(Mandatory = $true)][string]$RemoteServiceIdentifier,
+        [Parameter(Mandatory = $true)][int]$RemoteApiLocalPort,
+        [Parameter(Mandatory = $true)][int]$RemotePrometheusLocalPort,
+        [Parameter(Mandatory = $true)][int]$RemoteAlertmanagerLocalPort,
         [Parameter(Mandatory = $true)][string]$RollbackAlias,
         [Parameter(Mandatory = $true)][string]$ObservationAlias
     )
@@ -102,6 +111,33 @@ function Assert-ProductionTargetMetadata {
         [IO.Path]::GetFileName($RemoteEnvironmentFile) -cne ".env.prod") {
         throw "生产环境文件必须是项目目录内的 .env.prod"
     }
+    if ($RemoteApiLocalPort -lt 1 -or $RemoteApiLocalPort -gt 65535) { throw "生产 API 本机端口超出有效范围" }
+    foreach ($monitoringPort in @($RemotePrometheusLocalPort, $RemoteAlertmanagerLocalPort)) {
+        if ($monitoringPort -lt 1 -or $monitoringPort -gt 65535) { throw "生产监控本机端口超出有效范围" }
+    }
+    if (@(@($RemoteApiLocalPort, $RemotePrometheusLocalPort, $RemoteAlertmanagerLocalPort) |
+            Select-Object -Unique).Count -ne 3) {
+        throw "生产 API、Prometheus 与 Alertmanager 本机端口必须互异"
+    }
+    switch ($RemoteServiceKind) {
+        "host-binary" {
+            Assert-LinuxAbsolutePath -Path $RemoteServiceIdentifier -Description "生产 API 二进制路径"
+            if (-not $RemoteServiceIdentifier.StartsWith($rootPrefix, [StringComparison]::Ordinal)) {
+                throw "生产 API 二进制必须位于项目目录内"
+            }
+        }
+        "systemd" {
+            if ($RemoteServiceIdentifier -cnotmatch '^[A-Za-z0-9_.@-]+\.service$') {
+                throw "生产 systemd 单元名称格式无效"
+            }
+        }
+        "docker-compose" {
+            if ($RemoteServiceIdentifier -cnotmatch '^[A-Za-z0-9_.-]+$') {
+                throw "生产 Compose 服务名称格式无效"
+            }
+        }
+        default { throw "生产服务形态无效" }
+    }
 }
 
 # 默认入口不接受目标信息、不写文件、不联网，避免把“生成器存在”误判为生产授权。
@@ -135,6 +171,11 @@ if ($SelfTest) {
         -Fingerprint $syntheticFingerprint `
         -RemoteProjectRoot "/srv/molin" `
         -RemoteEnvironmentFile "/srv/molin/.env.prod" `
+        -RemoteServiceKind "systemd" `
+        -RemoteServiceIdentifier "molin-api.service" `
+        -RemoteApiLocalPort 8080 `
+        -RemotePrometheusLocalPort 19090 `
+        -RemoteAlertmanagerLocalPort 19093 `
         -RollbackAlias "operator-a" `
         -ObservationAlias "observer-a"
 
@@ -143,7 +184,10 @@ if ($SelfTest) {
         Assert-ProductionTargetMetadata `
             -Alias "prod-primary" -HostName "127.0.0.1" -Port 22 -UserName "deploy" `
             -Fingerprint $syntheticFingerprint -RemoteProjectRoot "/srv/molin" `
-            -RemoteEnvironmentFile "/srv/molin/.env.prod" -RollbackAlias "operator-a" -ObservationAlias "observer-a"
+            -RemoteEnvironmentFile "/srv/molin/.env.prod" -RemoteServiceKind "systemd" `
+            -RemoteServiceIdentifier "molin-api.service" -RemoteApiLocalPort 8080 `
+            -RemotePrometheusLocalPort 19090 -RemoteAlertmanagerLocalPort 19093 `
+            -RollbackAlias "operator-a" -ObservationAlias "observer-a"
     }
     catch { $loopbackRejected = $true }
     if (-not $loopbackRejected) { throw "生产回环目标反例未被阻断" }
@@ -153,15 +197,32 @@ if ($SelfTest) {
         Assert-ProductionTargetMetadata `
             -Alias "prod-primary" -HostName "prod.example.invalid" -Port 22 -UserName "deploy" `
             -Fingerprint $syntheticFingerprint -RemoteProjectRoot "/srv/molin" `
-            -RemoteEnvironmentFile "/srv/molin/../.env.prod" -RollbackAlias "operator-a" -ObservationAlias "observer-a"
+            -RemoteEnvironmentFile "/srv/molin/../.env.prod" -RemoteServiceKind "systemd" `
+            -RemoteServiceIdentifier "molin-api.service" -RemoteApiLocalPort 8080 `
+            -RemotePrometheusLocalPort 19090 -RemoteAlertmanagerLocalPort 19093 `
+            -RollbackAlias "operator-a" -ObservationAlias "observer-a"
     }
     catch { $pathEscapeRejected = $true }
     if (-not $pathEscapeRejected) { throw "生产路径跳转反例未被阻断" }
+
+    $duplicatePortRejected = $false
+    try {
+        Assert-ProductionTargetMetadata `
+            -Alias "prod-primary" -HostName "prod.example.invalid" -Port 22 -UserName "deploy" `
+            -Fingerprint $syntheticFingerprint -RemoteProjectRoot "/srv/molin" `
+            -RemoteEnvironmentFile "/srv/molin/.env.prod" -RemoteServiceKind "systemd" `
+            -RemoteServiceIdentifier "molin-api.service" -RemoteApiLocalPort 8080 `
+            -RemotePrometheusLocalPort 8080 -RemoteAlertmanagerLocalPort 19093 `
+            -RollbackAlias "operator-a" -ObservationAlias "observer-a"
+    }
+    catch { $duplicatePortRejected = $true }
+    if (-not $duplicatePortRejected) { throw "生产本机端口重复反例未被阻断" }
 
     Write-Output "production_target_intake_self_test=passed"
     Write-Output "fixed_identity_required=true"
     Write-Output "loopback_target_rejected=true"
     Write-Output "path_escape_rejected=true"
+    Write-Output "duplicate_local_ports_rejected=true"
     Write-Output "candidate_files_written=0"
     Write-Output "network_connections=0"
     Write-Output "uploads=0"
@@ -184,6 +245,11 @@ Assert-ProductionTargetMetadata `
     -Fingerprint $ExpectedEd25519Fingerprint `
     -RemoteProjectRoot $ProjectRoot `
     -RemoteEnvironmentFile $EnvironmentFile `
+    -RemoteServiceKind $ServiceKind `
+    -RemoteServiceIdentifier $ApiServiceIdentifier `
+    -RemoteApiLocalPort $ApiLocalPort `
+    -RemotePrometheusLocalPort $PrometheusLocalPort `
+    -RemoteAlertmanagerLocalPort $AlertmanagerLocalPort `
     -RollbackAlias $RollbackOperatorAlias `
     -ObservationAlias $ObserverAlias
 
@@ -211,6 +277,10 @@ try {
         project_root = $ProjectRoot
         environment_file = $EnvironmentFile
         service_kind = $ServiceKind
+        api_service_identifier = $ApiServiceIdentifier
+        api_local_port = $ApiLocalPort
+        prometheus_local_port = $PrometheusLocalPort
+        alertmanager_local_port = $AlertmanagerLocalPort
         rollback_operator_alias = $RollbackOperatorAlias
         observer_alias = $ObserverAlias
         expected_sms_enabled = $false

@@ -62,6 +62,14 @@ class Phase5ProductionTargetIntakeCandidateContract(unittest.TestCase):
             "/srv/molin/.env.prod",
             "-ServiceKind",
             "systemd",
+            "-ApiServiceIdentifier",
+            "molin-api.service",
+            "-ApiLocalPort",
+            "8080",
+            "-PrometheusLocalPort",
+            "19090",
+            "-AlertmanagerLocalPort",
+            "19093",
             "-RollbackOperatorAlias",
             "operator-a",
             "-ObserverAlias",
@@ -88,6 +96,7 @@ class Phase5ProductionTargetIntakeCandidateContract(unittest.TestCase):
         self.assertIn("fixed_identity_required=true", result.stdout)
         self.assertIn("loopback_target_rejected=true", result.stdout)
         self.assertIn("path_escape_rejected=true", result.stdout)
+        self.assertIn("duplicate_local_ports_rejected=true", result.stdout)
         self.assertIn("network_connections=0", result.stdout)
         self.assertIn("real_sms_sent=0", result.stdout)
 
@@ -113,6 +122,10 @@ class Phase5ProductionTargetIntakeCandidateContract(unittest.TestCase):
             self.assertFalse(candidate["expected_sms_enabled"])
             self.assertTrue(candidate["expected_sms_test_mode"])
             self.assertTrue(candidate["readonly_baseline_requires_separate_approval"])
+            self.assertEqual(candidate["api_service_identifier"], "molin-api.service")
+            self.assertEqual(candidate["api_local_port"], 8080)
+            self.assertEqual(candidate["prometheus_local_port"], 19090)
+            self.assertEqual(candidate["alertmanager_local_port"], 19093)
             self.assertEqual(candidate["automatic_retries"], 0)
             self.assertEqual(candidate["real_sms_sent"], 0)
             self.assertNotRegex(candidate_bytes.decode("utf-8"), r"(?<!\d)1[3-9]\d{9}(?!\d)")

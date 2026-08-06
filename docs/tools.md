@@ -817,7 +817,7 @@ mc cp ./file.jpg local/molin-uploads/    # 上传文件
 | **代码位置** | `scripts/prepare-sms-phase5-production-target-intake.ps1` |
 
 默认入口和 `-SelfTest` 均不联网、不提示输入、不创建候选。实际导出只接受非密钥元数据，并把生产 SSH 地址/端口/用户、
-唯一 ED25519 指纹、项目目录、项目内 `.env.prod` 路径、服务形态和操作者别名写入全新的工作区外 JSON。候选固定
+唯一 ED25519 指纹、项目目录、项目内 `.env.prod` 路径、服务形态、API 服务唯一标识、API/Prometheus/Alertmanager 本机端口和操作者别名写入全新的工作区外 JSON。候选固定
 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`、零重试和零发送，并明确生产只读、部署、Canary、正式开启均未获授权。
 密码、私钥、Token、手机号和环境值不得作为参数或输出；生成候选也不会验证生产真实状态。
 
@@ -825,6 +825,27 @@ mc cp ./file.jpg local/molin-uploads/    # 上传文件
 # 仅运行离线正反例，不生成候选或连接生产
 powershell -NoProfile -ExecutionPolicy Bypass -File `
   scripts/prepare-sms-phase5-production-target-intake.ps1 -SelfTest
+```
+
+### 阶段 5 生产关闭态只读基线候选生成器
+
+| 项目 | 说明 |
+|---|---|
+| **用途** | 从摘要冻结的生产目标元数据生成单次 SSH、低敏输出的关闭态只读基线 runner |
+| **使用者** | 运维工程师、测试工程师、产品经理 |
+| **涉及功能** | 生产环境/进程一致性、health/ready、schema、模板绑定、发送聚合、指标、Prometheus 与 Alertmanager |
+| **代码位置** | `scripts/prepare-sms-phase5-production-readonly-baseline.ps1` |
+
+默认入口与 `-SelfTest` 只验证本地契约，不读取 `known_hosts`、不连接生产、不写候选。实际导出必须绑定生产目标候选完整
+SHA-256，并只在全新的工作区外目录生成一个 runner。runner 默认关闭；后续单独批准 `-ExecuteReadOnly` 后，才重新核验
+唯一 ED25519 指纹并固定 SSH stdin 连接一次。远端负载只读取 `.env.prod` 与进程一致性、服务状态、本机健康接口、数据库
+schema/模板/绑定/发送聚合、内部指标和监控状态，输出固定布尔与聚合计数；不上传、不修改配置、不执行服务操作或业务 POST，
+不发送邮件或短信。备份可恢复性仍需人工证据，不能由只读 runner 自动推定。
+
+```powershell
+# 仅运行离线正反例，不生成或执行生产 runner
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  scripts/prepare-sms-phase5-production-readonly-baseline.ps1 -SelfTest
 ```
 
 ### 阶段 5 Canary 双号码本地预检候选生成器

@@ -67,7 +67,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-te
 ## 4. 生产顺序
 
 生产目标元数据必须先通过本地离线候选冻结，至少包含目标别名、SSH 地址/端口/用户、唯一 ED25519 指纹、项目目录、
-`.env.prod` 路径、服务形态以及回滚/观察操作者低敏别名。生成器不会连接生产、读取环境文件或取得任何后续授权：
+`.env.prod` 路径、服务形态、API 服务唯一标识、API/Prometheus/Alertmanager 本机端口以及回滚/观察操作者低敏别名。生成器不会连接生产、读取环境文件或取得任何后续授权：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-sms-phase5-production-target-intake.ps1 -SelfTest
@@ -75,6 +75,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-sms-phase5-p
 
 实际导出候选必须使用全新的 ChangeId 和工作区外目录，并由项目负责人提供上述非密钥元数据。候选 SHA-256 形成后，生产只读基线、
 关闭态部署、白名单 Canary 和正式开启仍是四个互不继承的人工门禁；密码、私钥、Token、手机号和环境值不得作为生成参数或输出。
+
+冻结生产目标后，可在本地生成摘要绑定的关闭态只读基线 runner。生成与 SelfTest 不读取 `known_hosts`、不连接生产；实际
+`-ExecuteReadOnly` 才会重新核对唯一 ED25519 指纹并通过一次 SSH stdin 只读环境文件/进程一致性、health/ready、schema、
+五模板/绑定、发送聚合、内部指标、Prometheus、Alertmanager、活动短信告警和通知失败。runner 只输出布尔与聚合计数，
+不会验证备份真实可恢复性；备份能力和回滚人仍须人工证明。生成授权不继承为只读执行授权：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-sms-phase5-production-readonly-baseline.ps1 -SelfTest
+```
 
 1. 只读确认生产目标、当前版本、拓扑、schema、备份能力、监控和回滚操作者。
 2. 部署应用和前端，但保持 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`，白名单为空或仅包含批准号码。
