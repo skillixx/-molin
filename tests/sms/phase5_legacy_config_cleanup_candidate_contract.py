@@ -37,8 +37,9 @@ class Phase5LegacyConfigCleanupCandidateContract(unittest.TestCase):
 
     def test_default_and_self_test_are_offline(self) -> None:
         source = GENERATOR.read_text(encoding="utf-8-sig")
-        self.assertIn("Get-Command bash -CommandType Application", source)
+        self.assertIn("Get-Command bash -CommandType Application -All", source)
         self.assertIn("$isWindowsPlatform", source)
+        self.assertIn("Select-Object -First 1", source)
         closed = self.run_generator()
         self.assertEqual(closed.returncode, 0, closed.stdout + closed.stderr)
         self.assertIn("legacy_cleanup_candidate_authorized=false", closed.stdout)
