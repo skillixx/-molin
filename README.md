@@ -263,7 +263,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | 阿里云短信验证码阶段 2（模板同步、场景绑定、9 个管理 API 与安全测试发送） | `modules/sms/`、`modules/auth/`、`modules/iam/`、`server/migrations/000059*` | ✅ PR #315 已于 2026-08-04 Squash 合并至 `main`（`9e50ee1`）；五独立模板同步/绑定、6 条真实收件、九 API、QA、产品及正式评审均通过，P0/P1/P2/P3 均为 0，阶段 2 正式闭环 |
 | 阿里云短信验证码阶段 3（管理后台模板页面） | `web/admin-console/src/views/sms/`、`src/api/sms.ts`、`src/types/sms.ts` | ✅ PR #317 已采用 Squash and merge 合并至 `main`（`e7f29d5`），阶段 3 正式闭环 |
 | 阿里云短信验证码阶段 4（五场景全链路验收） | `modules/auth/`、`modules/sms/`、`web/admin-console/`、`web/user-console/`、`docs/sms-phase4-*` | ✅ PR #320 已采用 Merge commit 合并至 `main`（`c9b4783`），阶段 4 正式闭环；阶段 4 自身未部署、未连接阿里云、未发送真实短信 |
-| 阿里云短信验证码阶段 5（灰度部署、代理核验与观察） | `modules/sms/`、内部 metrics、`infra/nginx/`、`infra/prometheus/` | 🟡 阶段 5A 关闭态部署、实际回滚、journald 留存、Alertmanager 邮件演练、双目标账号/IAM 与白名单门禁均通过。供应商频控修正版真实 Canary ChangeId `20260806T053735Z` 已完成五场景各一次、两个 65 秒窗口和零重试；两个自有号码的五场景均已人工确认收件。修正版事后只读核验 ChangeId `20260806T062059Z` 证明 5 条供应商受理和 5 条 OTP 均未消费。观察 ChangeId `20260806T060345Z` 的 5m、15m、30m、2h 四个最小经过时间窗口已各执行一次并通过：累计发送稳定为 `21/20/1`、health/ready 200、活动告警与通知失败为 0、无副作用；仅余 24h 窗口。PR #323 CI、生产发布、QA/产品最终验收和合并仍待独立门禁 |
+| 阿里云短信验证码阶段 5（灰度部署、代理核验与观察） | `modules/sms/`、内部 metrics、`infra/nginx/`、`infra/prometheus/` | ✅ **测试服交付完成**：关闭态部署、实际回滚、journald 留存、Alertmanager 邮件演练、双目标账号/IAM 与白名单、五场景真实收件、五次供应商受理、OTP 未消费及 5m/15m/30m/2h/24h 五档观察全部通过；最终关闭态和五窗口证据已通过权威离线验证。PR #323 当前 CI 全绿；生产发布、独立 QA、产品最终确认和合并仍待独立门禁 |
 
 ### 后端 B（product / order / billing / finance_consumer）
 
