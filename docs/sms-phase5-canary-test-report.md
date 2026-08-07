@@ -250,3 +250,7 @@ ChangeId `20260806T060018Z` 随后按一次性授权执行并消费，结果 SHA
 2026-08-07 的三档最小差分诊断依次排除了基础 SSH 和隔离 Bash 包装，并在 `bash -s --` 加单行 `true` 时复现退出码 127。脱敏 stderr 为 1 行 58 字节，证明 Windows PowerShell 5.1 流式 stdin 在首行注入 UTF-8 BOM；其结果 SHA-256 为 `adbbbc45a066e93d095e03e47222a529e2566211ae2213776df9c31ad8004069`。离线构造的 BOM+`set` 错误与原 24h 隔离候选 57 字节摘要精确一致，根因因此确认。
 
 观察候选现使用受限临时文件配合 `Start-Process -RedirectStandardInput`，禁止 `StandardInput.BaseStream`，并通过 Base64 原始字节、文件回读及 SelfTest 三重无 BOM 门禁。新 ChangeId `20260807T081228Z` 的 runner SHA-256 为 `cb7a5611c9382a026460a5e7a276f6732abb7318539012ecae919e5e6fbb7226`；167 项阶段 5 契约中 165 项通过、2 项按 Windows 环境门禁跳过，readiness 和敏感扫描通过。候选仅本地生成，网络连接和消息发送为 0，执行仍须新的摘要绑定授权。
+
+新候选随后按摘要绑定授权单次执行并通过：24h 实际经过 95952 秒，health/ready 200、累计发送 `21/20/1`、Provider `0/0`、活动告警 0、通知失败增量 0，stderr 为空；快照 SHA-256 为 `138ea1907aef1b7ad29bdb1011c5e354dcb392a8d48b8b4de728399ec5eb9ba7`。该执行仅建立一次固定 SSH 连接，配置、服务、业务 POST、邮件和短信副作用均为 0。
+
+五份快照通过连续窗口验证，随后与源 Canary、事后核验和人工收件摘要离线组装。最终关闭态 SHA-256 为 `7c06c03a012d4e334c2c1e6e311f8d07c1e80889382dfbbfe47ba080ea780f07`，完整观察证据 SHA-256 为 `dbe5916a7fd8b63434d779178fd3b283d3fb55da38972a01073e0f1fed87f96f`。权威验证输出 `phase5_observation_evidence=passed`、`canary_attempted=5`、`canary_accepted=5`、`receipts_confirmed=5`、`sensitive_values_persisted=0`。测试服五档观察据此完成。
