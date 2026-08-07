@@ -193,6 +193,43 @@ func TestPrepareRejectsTemplateWithExtraVariable(t *testing.T) {
 	}
 }
 
+func TestPrepareRejectsSceneOutsideTestAllowlistBeforeRepositoryLookup(t *testing.T) {
+	repo := &countingRepository{fakeRepository: fakeRepository{bindings: map[string]*model.SceneBinding{
+		"register": fixtureBinding("register", "SMS_REGISTER"),
+	}}}
+	cfg := enabledConfig()
+	cfg.SMSTestMode = true
+	cfg.SMSTestPhoneWhitelist = []string{"phone-test-value"}
+	cfg.SMSTestSceneAllowlist = []string{"login"}
+	dispatcher := NewDispatcher(cfg, repo, sender.NewMockSender(sender.Result{}, nil))
+
+	if _, err := dispatcher.Prepare(context.Background(), "register", "phone-test-value"); !errors.Is(err, ErrSMSUnavailable) {
+		t.Fatalf("测试模式未放行的场景必须按短信不可用拒绝，实际 %v", err)
+	}
+	if repo.findCalls != 0 {
+		t.Fatalf("未放行场景不得查询模板绑定，实际查询 %d 次", repo.findCalls)
+	}
+}
+
+func TestPrepareAllowsLoginInsideTestAllowlist(t *testing.T) {
+	repo := &fakeRepository{bindings: map[string]*model.SceneBinding{
+		"login": fixtureBinding("login", "SMS_LOGIN"),
+	}}
+	cfg := enabledConfig()
+	cfg.SMSTestMode = true
+	cfg.SMSTestPhoneWhitelist = []string{"phone-test-value"}
+	cfg.SMSTestSceneAllowlist = []string{"login"}
+	dispatcher := NewDispatcher(cfg, repo, sender.NewMockSender(sender.Result{}, nil))
+
+	plan, err := dispatcher.Prepare(context.Background(), "login", "phone-test-value")
+	if err != nil {
+		t.Fatalf("测试模式已放行的登录场景应可准备发送: %v", err)
+	}
+	if plan.Scene != "login" {
+		t.Fatalf("准备结果场景错误，实际 %s", plan.Scene)
+	}
+}
+
 func TestPrepareRejectsEveryUnavailableBindingState(t *testing.T) {
 	base := fixtureBinding("register", "SMS_VALID")
 	tests := []struct {
@@ -230,6 +267,16 @@ func fixtureBinding(scene, templateCode string) *model.SceneBinding {
 		SignName: "test-sign",
 		Template: model.Template{ID: 1, Provider: "aliyun", TemplateCode: templateCode, ProviderAuditStatus: "approved", Content: "验证码 ${code}", LocalEnabled: true},
 	}
+}
+
+type countingRepository struct {
+	fakeRepository
+	findCalls int
+}
+
+func (r *countingRepository) FindActiveBinding(ctx context.Context, scene string) (*model.SceneBinding, error) {
+	r.findCalls++
+	return r.fakeRepository.FindActiveBinding(ctx, scene)
 }
 
 func enabledConfig() config.Config {

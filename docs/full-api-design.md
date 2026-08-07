@@ -294,7 +294,7 @@ POST /api/auth/login/email/code
 ```json
 {
   "email": "user@example.com",
-  "code": "123456"
+  "code": "<6位验证码>"
 }
 ```
 
@@ -2383,7 +2383,7 @@ Body 使用 `resolution=release|settle`；`settle` 时同时提交 `prompt_token
 {"code":0,"message":"ok","data":{"sent":true,"expires_in":600,"business_request_id":"平台业务请求标识","submit_status":"accepted"}}
 ```
 
-手机号验证码在任何环境都不得返回明文 `code`。`business_request_id` 是平台追踪标识，不是阿里云原始请求标识。`SMS_ENABLED=false`、配置不完整、白名单不通过或场景没有有效数据库绑定时返回 HTTP `503`、业务码 `50300`；供应商提交失败返回 HTTP `502`、业务码 `50200`。`accepted` 只表示供应商受理，不代表运营商最终送达。
+手机号验证码在任何环境都不得返回明文 `code`。`business_request_id` 是平台追踪标识，不是阿里云原始请求标识。`SMS_ENABLED=false`、配置不完整、手机号不在 `SMS_TEST_PHONE_WHITELIST`、场景不在 `SMS_TEST_SCENE_ALLOWLIST` 或场景没有有效数据库绑定时返回 HTTP `503`、业务码 `50300`；未放行场景必须在 OTP 创建、限流占用、发送日志和供应商调用前失败关闭。供应商提交失败返回 HTTP `502`、业务码 `50200`。`accepted` 只表示供应商受理，不代表运营商最终送达。
 
 阶段 1 不提供 `/api/admin/sms/*` 管理接口；模板同步、绑定管理和测试发送属于后续阶段。
 

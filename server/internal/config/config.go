@@ -73,6 +73,9 @@ type Config struct {
 	SMSPhoneHMACSecret       string
 	SMSTestMode              bool
 	SMSTestPhoneWhitelist    []string
+	// SMSTestSceneAllowlist 在测试模式下限制可进入真实供应商链路的业务场景。
+	// 它与手机号白名单同时生效，避免长期测试放行意外开启注册、找回密码或换绑等入口。
+	SMSTestSceneAllowlist []string
 	// SMSLegacyConfigPresent 只标识旧键是否仍存在，不保存或输出旧配置值。
 	SMSLegacyConfigPresent bool
 
@@ -216,6 +219,7 @@ func Load() Config {
 		SMSPhoneHMACSecret:       getenv("SMS_PHONE_HMAC_SECRET", ""),
 		SMSTestMode:              getenvBool("SMS_TEST_MODE", true),
 		SMSTestPhoneWhitelist:    splitCSV(getenv("SMS_TEST_PHONE_WHITELIST", "")),
+		SMSTestSceneAllowlist:    splitCSV(getenv("SMS_TEST_SCENE_ALLOWLIST", "")),
 		SMSLegacyConfigPresent:   hasAnyEnvKey("SMS_ACCESS_KEY", "SMS_ACCESS_SECRET", "SMS_SIGN_NAME"),
 
 		NotifyBodyKey: getenv("NOTIFY_BODY_KEY", ""),
@@ -319,7 +323,33 @@ func (c Config) ValidateSMS() error {
 	if c.SMSTestMode && len(c.SMSTestPhoneWhitelist) == 0 {
 		return fmt.Errorf("SMS_TEST_PHONE_WHITELIST 在测试模式下不能为空")
 	}
+	if c.SMSTestMode {
+		if len(c.SMSTestSceneAllowlist) == 0 {
+			return fmt.Errorf("SMS_TEST_SCENE_ALLOWLIST 在测试模式下不能为空")
+		}
+		seen := make(map[string]struct{}, len(c.SMSTestSceneAllowlist))
+		for _, scene := range c.SMSTestSceneAllowlist {
+			if !isFixedSMSScene(scene) {
+				return fmt.Errorf("SMS_TEST_SCENE_ALLOWLIST 包含不支持的短信场景")
+			}
+			if _, exists := seen[scene]; exists {
+				return fmt.Errorf("SMS_TEST_SCENE_ALLOWLIST 不得包含重复场景")
+			}
+			seen[scene] = struct{}{}
+		}
+	}
 	return nil
+}
+
+// isFixedSMSScene 与短信领域固定场景保持一致，只用于启动配置的失败关闭校验。
+// 配置包不反向依赖业务模块，避免形成 config 与 sms service 的循环依赖。
+func isFixedSMSScene(scene string) bool {
+	switch scene {
+	case "register", "login", "reset_password", "bind_phone", "admin_verify":
+		return true
+	default:
+		return false
+	}
 }
 
 // LoadEmailAdminVerifyBootstrapConfig 从四个冻结环境变量加载一次性 bootstrap 配置。

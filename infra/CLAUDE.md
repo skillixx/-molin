@@ -218,6 +218,7 @@ services:
 | `SMS_PHONE_HMAC_SECRET` | 完整手机号的不可逆 HMAC 密钥 | 与 AccessKey、JWT、身份证 HMAC 密钥完全独立，至少 32 字节 |
 | `SMS_TEST_MODE` | 真实短信白名单限制开关 | `true` 仍调用阿里云；不得实现或开启模拟发送回退 |
 | `SMS_TEST_PHONE_WHITELIST` | 测试发送和灰度手机号白名单 | 真实号码只存在于不入库环境文件或密钥系统；空白名单全拒 |
+| `SMS_TEST_SCENE_ALLOWLIST` | 测试模式短信场景白名单 | `SMS_ENABLED=true` 且 `SMS_TEST_MODE=true` 时不能为空；长期测试登录仅配置 `login` |
 
 五个业务场景 `register`、`login`、`reset_password`、`bind_phone`、`admin_verify` 的模板编码不得继续使用 `SMS_TEMPLATE_CODE_*` 环境变量。模板编码和审核状态来自阿里云同步快照，场景绑定和本地启停来自数据库；这是唯一权威来源，避免环境变量与数据库长期形成两套配置。
 
@@ -229,6 +230,7 @@ services:
 - `SMS_ENABLED=true` 时，供应商、AccessKey ID、AccessKey Secret、固定签名、端点、手机号 HMAC 密钥或当前场景有效绑定任一缺失，必须启动失败或拒绝短信提交。
 - 阿里云超时、限流、签名错误、模板错误、账户异常和网络错误均不得回退到模拟供应商、固定验证码或响应明文验证码。
 - `SMS_TEST_MODE=true` 且白名单为空时必须全拒；手机号不在白名单时必须拒绝，且日志只能记录脱敏手机号和 HMAC。
+- `SMS_TEST_MODE=true` 时场景白名单同样必须非空；未列入 `SMS_TEST_SCENE_ALLOWLIST` 的场景必须在 OTP 创建、发送日志和供应商调用前拒绝。
 - 生产环境不得把阿里云 `Code=OK` 表述为用户已收到，只能记录“供应商已受理”。
 
 ### 密钥注入与轮换

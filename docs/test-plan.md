@@ -640,6 +640,7 @@ server/internal/modules/asset/
 | SMS-S1-06 | 五场景模板选择 | 使用数据库 fixture 配置 `register/login/reset_password/bind_phone/admin_verify` | 每个场景只读取自身数据库绑定，不读取 `SMS_TEMPLATE_CODE_*`，不串用模板 | 本地 fixture + Mock 通过 |
 | SMS-S1-07 | 三张短信表与仓储约束 | migration 升降级、唯一索引和外键/并发测试 | `sms_templates`、`sms_scene_bindings`、`sms_send_logs` 可升降级；模板编码、场景和业务请求标识满足唯一性约束 | 仓储单测及隔离 MySQL 约束/并发通过（2026-08-03） |
 | SMS-S1-08 | 功能开关关闭 | 保持 `SMS_ENABLED=false` 调用全部手机发码入口 | 返回 `503/50300`；不调用真实阿里云；不产生可校验手机验证码；邮箱链路仍可用 | 服务与错误映射单测通过；HTTP 全入口待 QA |
+| SMS-S1-08A | 测试场景白名单 | `SMS_ENABLED=true`、`SMS_TEST_MODE=true`，手机号在白名单但场景不在 `SMS_TEST_SCENE_ALLOWLIST` | 在模板查询、OTP 创建、发送日志和供应商调用前返回短信不可用；白名单内 `login` 可继续 | 配置与 Dispatcher 单测通过；测试服长期登录放行待独立部署授权 |
 | SMS-S1-09 | 配置 fail-closed | 分别缺失供应商、AccessKey、签名、端点、HMAC 密钥或场景绑定 | 启动失败或拒绝短信提交，不回退 Mock、固定验证码或明文验证码响应 | 本地单测通过 |
 | SMS-S1-10 | 敏感信息 | 扫描响应、应用日志、审计日志和数据库 | 不出现验证码明文、完整手机号、AccessKey、请求签名原文或完整供应商响应；手机号仅保留脱敏值和独立 HMAC | 模型/响应单测通过；运行态与数据库扫描待 QA |
 

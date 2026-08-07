@@ -173,6 +173,7 @@ SMS_ALIYUN_SIGN_NAME=<已审核签名>
 SMS_ALIYUN_ENDPOINT=dysmsapi.aliyuncs.com
 SMS_TEST_MODE=false
 SMS_TEST_PHONE_WHITELIST=<通过安全配置注入的测试手机号列表>
+SMS_TEST_SCENE_ALLOWLIST=<测试模式允许的固定短信场景；长期测试登录仅填写 login>
 SMS_PHONE_HMAC_SECRET=<通过安全配置注入且独立轮换的HMAC密钥>
 ```
 

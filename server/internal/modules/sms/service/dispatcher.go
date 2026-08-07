@@ -163,6 +163,10 @@ func (d *Dispatcher) Prepare(ctx context.Context, scene, phone string) (Prepared
 	if !model.IsFixedScene(scene) {
 		return PreparedSend{}, ErrSceneNotBound
 	}
+	// 测试模式必须同时通过场景与手机号两层白名单；场景拒绝发生在模板查询、OTP 创建和供应商调用之前。
+	if d.cfg.SMSTestMode && !contains(d.cfg.SMSTestSceneAllowlist, scene) {
+		return PreparedSend{}, ErrSMSUnavailable
+	}
 	if d.cfg.SMSTestMode && !contains(d.cfg.SMSTestPhoneWhitelist, phone) {
 		return PreparedSend{}, ErrPhoneNotAllowed
 	}
