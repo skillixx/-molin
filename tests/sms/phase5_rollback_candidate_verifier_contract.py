@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -83,6 +84,9 @@ class RollbackCandidateVerifierContractTest(unittest.TestCase):
         ):
             self.assertIn(marker, sh)
 
+        # 验证器依赖 Linux 的 O_NOFOLLOW、目录文件描述符和 uid/mode 语义，Windows Git Bash 不等价。
+        if not sys.platform.startswith("linux"):
+            self.skipTest("当前平台不是原生 Linux，Linux CI 负责行为自测")
         bash = shutil.which("bash")
         if bash is None:
             self.skipTest("当前平台没有 Bash，Linux CI 负责执行行为自测")

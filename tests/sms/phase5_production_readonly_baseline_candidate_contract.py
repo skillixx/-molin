@@ -4,6 +4,7 @@ import json
 import pathlib
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -159,7 +160,9 @@ class Phase5ProductionReadonlyBaselineCandidateContract(unittest.TestCase):
             self.assertIn("production_readonly_runner_self_test=passed", runner_self_test.stdout)
             self.assertIn("network_connections=0", runner_self_test.stdout)
 
-            bash = shutil.which("bash")
+            # Windows 的 System32 bash.exe 可能只是 WSL 转发器，优先使用可独立运行的 Git Bash。
+            git_bash = pathlib.Path(r"C:\Program Files\Git\bin\bash.exe")
+            bash = str(git_bash) if sys.platform == "win32" and git_bash.is_file() else shutil.which("bash")
             if bash is not None:
                 import re
 

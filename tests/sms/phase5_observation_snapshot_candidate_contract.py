@@ -5,6 +5,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -45,9 +46,6 @@ class ObservationSnapshotCandidateContract(unittest.TestCase):
                     "completed_scenes=5",
                     "sms_enabled=false",
                     "sms_test_mode=true",
-                    "same_target_min_interval_seconds=65",
-                    "scheduled_waits=2",
-                    "completed_pacing_waits=2",
                     "same_target_min_interval_seconds=65",
                     "scheduled_waits=2",
                     "completed_pacing_waits=2",
@@ -107,9 +105,13 @@ class ObservationSnapshotCandidateContract(unittest.TestCase):
             payload_json = re.search(r"\$Payloads = ConvertFrom-Json '([^']+)'", text).group(1).replace("''", "'")
             payloads = json.loads(payload_json)
             self.assertEqual(set(payloads), set(WINDOWS))
-            bash = shutil.which("bash")
+            # Windows 自带的 bash.exe 可能只是未安装 WSL 发行版的转发器；仅在原生 Linux CI 执行 Bash 语法检查。
+            bash = shutil.which("bash") if sys.platform.startswith("linux") else None
             for window, minimum in WINDOWS.items():
-                payload = base64.b64decode(payloads[window]).decode("utf-8")
+                raw_payload = base64.b64decode(payloads[window])
+                self.assertTrue(raw_payload.startswith(b"set"))
+                self.assertFalse(raw_payload.startswith(b"\xef\xbb\xbf"))
+                payload = raw_payload.decode("utf-8")
                 for marker in (
                     f"window='{window}'",
                     f"minimum_elapsed={minimum}",
@@ -129,6 +131,19 @@ class ObservationSnapshotCandidateContract(unittest.TestCase):
             self.assertIn('ValidateSet("5m", "15m", "30m", "2h", "24h")', text)
             self.assertIn("该观察窗口快照已存在，禁止重复执行", text)
             self.assertIn("观察窗口尚未到达，禁止提前连接测试服", text)
+            self.assertIn('"-T", "-p", "10003"', text)
+            self.assertIn('"LANG=C", "LC_ALL=C", "/bin/bash", "--noprofile", "--norc", "-s", "--"', text)
+            self.assertIn("Microsoft.PowerShell.Management\\Start-Process", text)
+            self.assertIn("-RedirectStandardInput $stdinPath", text)
+            self.assertIn('Write-Output "stdin_transport=file_redirect_no_bom"', text)
+            self.assertIn("$payloadBytes[0] -ne 0x73", text)
+            self.assertNotIn("StandardInput.BaseStream", text)
+            self.assertNotIn("RedirectStandardInput = $true", text)
+            self.assertIn("$safeLines | Write-Output", text)
+            self.assertIn('Write-Output "remote_stderr_present=$($stderrPresent.ToString().ToLowerInvariant())"', text)
+            self.assertIn('Write-Output "remote_stderr_classification=$($stderrMetadata.Classification)"', text)
+            self.assertIn('Write-Output "remote_stderr_sha256=$($stderrMetadata.SHA256)"', text)
+            self.assertNotIn("Write-Output $stderr", text)
             runner_test = subprocess.run(
                 [POWERSHELL, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(runner), "-SelfTest"],
                 text=True,
@@ -139,6 +154,8 @@ class ObservationSnapshotCandidateContract(unittest.TestCase):
             )
             self.assertEqual(runner_test.returncode, 0, runner_test.stdout + runner_test.stderr)
             self.assertIn("observation_snapshot_runner_self_test=passed", runner_test.stdout)
+            self.assertIn("stderr_metadata_self_test=passed", runner_test.stdout)
+            self.assertIn("stdin_transport=file_redirect_no_bom", runner_test.stdout)
 
     def test_rejects_source_result_hash_mismatch(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -146,7 +163,10 @@ class ObservationSnapshotCandidateContract(unittest.TestCase):
             result_path = root / "canary-result.txt"
             self.make_result(result_path)
             expected = sha256(result_path)
-            result_path.write_text(result_path.read_text(encoding="utf-8").replace("completed_scenes=5", "completed_scenes=4"), encoding="utf-8")
+            result_path.write_text(
+                result_path.read_text(encoding="utf-8").replace("completed_scenes=5", "completed_scenes=4"),
+                encoding="utf-8",
+            )
             completed = self.run_script(
                 "-ExportCandidate",
                 "-ChangeId", "20990102T010000Z",

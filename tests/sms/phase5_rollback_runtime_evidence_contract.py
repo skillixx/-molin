@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -164,7 +165,9 @@ class RollbackRuntimeEvidenceContractTest(unittest.TestCase):
         self.assertIn(f"./scripts/{VERIFY_PS.name} -SelfTest", self.ci)
 
     def test_bash_assets_are_syntax_valid_when_bash_is_available(self) -> None:
-        bash = shutil.which("bash")
+        # Windows 的 System32 bash.exe 可能只是 WSL 转发器，优先使用可独立运行的 Git Bash。
+        git_bash = Path(r"C:\Program Files\Git\bin\bash.exe")
+        bash = str(git_bash) if sys.platform == "win32" and git_bash.is_file() else shutil.which("bash")
         if bash is None:
             self.skipTest("当前环境没有 Bash，Linux CI 和固定测试服负责语法验证")
         for path in (STAGE_SH, VERIFY_SH):

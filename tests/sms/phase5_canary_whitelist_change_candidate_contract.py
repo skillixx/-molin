@@ -3,6 +3,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -17,10 +18,8 @@ class Phase5CanaryWhitelistChangeCandidateContract(unittest.TestCase):
         cls.powershell = shutil.which("powershell") or shutil.which("pwsh")
         if cls.powershell is None:
             raise unittest.SkipTest("缺少 PowerShell")
-        cls.bash = shutil.which("bash")
-        if cls.bash is None:
-            git_bash = pathlib.Path(r"C:\Program Files\Git\bin\bash.exe")
-            cls.bash = str(git_bash) if git_bash.is_file() else None
+        git_bash = pathlib.Path(r"C:\Program Files\Git\bin\bash.exe")
+        cls.bash = str(git_bash) if sys.platform == "win32" and git_bash.is_file() else shutil.which("bash")
 
     def run_generator(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(

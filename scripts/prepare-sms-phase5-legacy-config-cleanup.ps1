@@ -35,23 +35,15 @@ function Assert-BashSyntax {
 
     # 只把负载写入本机 Bash 标准输入执行 -n，不执行负载，也不创建临时脚本文件。
     $isWindowsPlatform = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
-    $bashCandidates = if ($isWindowsPlatform) {
-        @(Get-Command bash.exe -CommandType Application -All -ErrorAction SilentlyContinue)
-    }
-    else {
-        @(Get-Command bash -CommandType Application -All -ErrorAction SilentlyContinue)
-    }
-    # PowerShell 可能同时解析到多个同名 Bash；只选择优先级最高的一项，避免路径数组被拼接成无效文件名。
-    $bash = @($bashCandidates) | Select-Object -First 1
-    if ($null -eq $bash -and $isWindowsPlatform) {
+    if ($isWindowsPlatform) {
+        # Windows System32 的 bash.exe 可能只是未安装 WSL 发行版的转发器；固定优先使用 Git Bash。
         $gitBash = "C:\Program Files\Git\bin\bash.exe"
         if (-not (Test-Path -LiteralPath $gitBash -PathType Leaf)) { throw "缺少 Bash，无法完成远端负载语法检查" }
         $bashPath = $gitBash
     }
-    elseif ($null -eq $bash) {
-        throw "缺少 Bash，无法完成远端负载语法检查"
-    }
     else {
+        $bash = @(Get-Command bash -CommandType Application -All -ErrorAction SilentlyContinue) | Select-Object -First 1
+        if ($null -eq $bash) { throw "缺少 Bash，无法完成远端负载语法检查" }
         $bashPath = $bash.Source
     }
     $utf8 = New-Object Text.UTF8Encoding($false)

@@ -270,6 +270,11 @@ if ($SelfTest) {
         throw "阶段 5 五档观察只读快照候选自测失败"
     }
     & $powerShellExecutable -NoProfile -ExecutionPolicy Bypass -File `
+        (Join-Path $root "scripts\prepare-sms-phase5-ssh-stderr-diagnostic.ps1") -SelfTest
+    if ($LASTEXITCODE -ne 0) {
+        throw "阶段 5 SSH stderr 最小传输诊断候选自测失败"
+    }
+    & $powerShellExecutable -NoProfile -ExecutionPolicy Bypass -File `
         (Join-Path $root "scripts\prepare-sms-phase5-production-target-intake.ps1") -SelfTest
     if ($LASTEXITCODE -ne 0) {
         throw "阶段 5 生产目标元数据候选自测失败"

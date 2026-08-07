@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -333,6 +334,9 @@ class LogRetentionChangeContractTest(unittest.TestCase):
             self.assertIsNone(re.search(pattern, self.sh), pattern)
 
     def test_linux_payload_self_test_covers_rollback_paths(self) -> None:
+        # 该行为自测依赖 Linux 信号退出码、文件权限和 systemd 路径语义，Git Bash 只能承担语法检查。
+        if not sys.platform.startswith("linux"):
+            self.skipTest("当前平台不是原生 Linux，Linux CI 和固定测试服负责行为自测")
         bash = shutil.which("bash")
         if bash is None:
             self.skipTest("当前平台没有 Bash，Linux CI 和固定测试服语法门禁负责执行")

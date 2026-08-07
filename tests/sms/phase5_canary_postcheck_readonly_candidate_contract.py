@@ -5,6 +5,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -153,7 +154,9 @@ class CanaryPostcheckReadonlyCandidateContract(unittest.TestCase):
             self.assertIn("ExpectedCanaryResultSHA256", text)
             self.assertIn("ExpectedCanaryRunnerSHA256", text)
 
-            bash = shutil.which("bash")
+            # Windows 的 System32 bash.exe 可能只是 WSL 转发器，优先使用可独立运行的 Git Bash。
+            git_bash = pathlib.Path(r"C:\Program Files\Git\bin\bash.exe")
+            bash = str(git_bash) if sys.platform == "win32" and git_bash.is_file() else shutil.which("bash")
             if bash:
                 syntax = subprocess.run(
                     [bash, "-n"], input=payload, text=True, capture_output=True, encoding="utf-8", errors="replace", timeout=30

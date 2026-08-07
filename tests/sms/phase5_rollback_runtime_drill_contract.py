@@ -7,6 +7,7 @@ import hashlib
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -170,7 +171,9 @@ class RollbackRuntimeDrillContractTest(unittest.TestCase):
                 )
                 self.assertNotEqual(unsafe.returncode, 0)
 
-            bash = shutil.which("bash")
+            # Windows 的 System32 bash.exe 可能只是 WSL 转发器，优先使用可独立运行的 Git Bash。
+            git_bash = Path(r"C:\Program Files\Git\bin\bash.exe")
+            bash = str(git_bash) if sys.platform == "win32" and git_bash.is_file() else shutil.which("bash")
             if bash is not None:
                 subprocess.run([bash, "-n", str(output)], check=True)
                 runner = subprocess.run(

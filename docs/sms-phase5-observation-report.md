@@ -67,7 +67,29 @@ python scripts/verify-sms-phase5-observation-evidence.py --evidence C:\受控目
 | 15 分钟 | 五场景分布、429、认证失败、用户反馈 | 通过；最小窗口实际于 1821 秒采集，累计 `21/20/1`，无新增发送或告警 |
 | 30 分钟 | 失败率、登录/注册转化差异、审计完整性 | 通过；最小窗口实际于 1830 秒采集，累计 `21/20/1`，无新增发送或告警 |
 | 2 小时 | 趋势与供应商账户状态 | 通过；实际于 13965 秒采集，累计 `21/20/1`，health/ready 200，当前 Provider `0/0`、活动告警和通知失败均为 0；单次固定 SSH，只读且零副作用 |
-| 24 小时 | 日累计、预算、转化、残余风险 | 待执行 |
+| 24 小时 | 日累计、预算、转化、残余风险 | 四个一次性版本的业务观察字段均通过，但都因同一非空 SSH stderr 严格失败关闭；未生成快照 |
+
+2026-08-07 的独立补充观察 ChangeId `20260806T131125Z` 在距 Canary 完成 75594 秒时再次取得 health/ready 200、累计发送 `21/20/1`、当前进程 Provider `0/0`、零活动告警和零通知失败增量，执行副作用为 0；结果 SHA-256 为 `f99749b50c0109cc5ef268921c6badd54392e846aab73ab30154520d346f88f6`。它不属于上表五档连续窗口，仅用于补充说明较晚时点未观察到异常，不能把 24 小时状态改为已执行。
+
+原 24h runner 随后按一次性授权执行，固定 SSH 连接一次、远端退出码 0，但本地严格门禁检测到 stderr 非空并拒绝生成快照；原失败路径未保留 stderr 正文，也未输出足以归类的低敏字段，因此本轮只能记为失败关闭。修正版 ChangeId `20260807T061605Z`、runner SHA-256 `87b0a38f14c10161d7f58fa52a733f96537daeaca5fa2004276681ac2b80bd28` 已离线就绪：它不放宽 stderr 门禁，只补齐白名单 stdout、stderr 布尔值和退出码的失败证据，执行仍须独立批准。
+
+修正版执行证明 24h 业务观察字段全部通过且零副作用，但仍因 SSH stderr 非空失败关闭。代码检查发现传输参数缺少 `-T`，与 OpenSSH 对非终端 stdin 的伪终端警告行为一致；第三版仅修正传输层，显式禁用伪终端并冻结零口令提示，不接受任何 stderr。新 ChangeId `20260807T062052Z`、runner SHA-256 `b4ca5febc35b6af93ebd03120148d57bce24e558141a8c0ea8d7bd7741df378e` 已离线验证，24h 状态仍未通过。
+
+第三版在显式 `-T` 后仍因 stderr 非空失败，虽然实际经过 89098 秒时所有观察值再次通过且零副作用；因此伪终端告警推断未被证实。当前候选改用隔离 locale 和无启动文件 Bash，并只在失败时输出 stderr 分类、计数与不可逆摘要；任何 stderr 仍阻断快照。最终候选为 ChangeId `20260807T064628Z`、runner SHA-256 `8cb7068967f1993351b07b874d33a162f663f25fa3007c4db11a4682c46c4506`，尚未执行。
+
+隔离环境版已单次执行：实际经过 89584 秒，关闭态、health/ready、累计发送 `21/20/1`、Provider `0/0`、Alertmanager discard、零活动告警、零通知失败及零副作用均通过；远端业务脚本退出码 0。唯一阻断项仍是 SSH stderr：1 行、57 字节、分类 `other`、SHA-256 `1be4aae086b93109187f5c53d6269e4a399e6cdb039e41389362ee63c6677076`。原始正文未输出，无法安全豁免。最终传输层最小诊断候选 ChangeId `20260807T071436Z` 已离线就绪，只允许远端 `/usr/bin/true`；执行前建立不可覆盖的一次性锁，仅保存脱敏单行、计数和摘要。runner SHA-256 `407b57e301c30e987abbba83fe8512b925e6dddd095a0f07ecc688fadd18123d`，执行仍待独立授权；此前三个诊断候选均已被替代。
+
+基础传输诊断已按授权执行一次：远端退出码 0、stdout/stderr 均为空，且执行锁与低敏结果均已形成，结果 SHA-256 `9a17aec9c374b5ea334448f2bd062c5be25495aea52ba11fc97c54e2865c4b14`。这证明 57 字节 stderr 不来自固定 SSH 连接本身。后续诊断应保持同一 SSH 参数，仅把远端命令增加为观察 runner 使用的隔离 Bash 包装并执行 `/usr/bin/true`；该操作仍需要新 ChangeId 和独立授权。
+
+上述隔离 Bash 差分候选已生成：ChangeId `20260807T072327Z`、runner SHA-256 `7fe114dd12236d47dc2a9111967f127ef8a37be9bd2b853a05997b7b4b56b4d7`。候选不含观察 payload、数据库、HTTP 或业务读取，只验证 `env -i + locale + bash --noprofile --norc` 包装是否产生同一 stderr；执行仍待独立授权。
+
+隔离 Bash 差分诊断已按授权执行一次并返回空 stderr，结果 SHA-256 `cecb38090f9b03c26f1a852480426d14cca800b5a6aca68304acb741811e2ca2`。因此隔离环境包装本身不产生历史 57 字节输出；下一最小差异是观察 runner 使用 `bash -s --` 接收 stdin。后续候选只应输入一行 `true`，不包含观察 payload 或业务读取。
+
+对应 stdin 模式候选已生成：ChangeId `20260807T073038Z`、runner SHA-256 `2c55627ead5ef550c1f5a8c9a5fe87398f4bb04ab9324d1b6a2f576d2dd34e9b`。它只把 `true\n` 写入隔离 Bash stdin；执行结果将区分 `-s`/stdin 传输与实际观察脚本内容，仍待独立授权。
+
+stdin 模式差分诊断已按授权单次执行并命中根因：远端退出码 127，stderr 为 1 行 58 字节，安全脱敏内容表明 `true` 前被注入 UTF-8 BOM；结果 SHA-256 `adbbbc45a066e93d095e03e47222a529e2566211ae2213776df9c31ad8004069`，执行锁已保留，业务读取和所有副作用均为 0。离线复算进一步证明历史 57 字节 stderr 的 SHA-256 `1be4aae086b93109187f5c53d6269e4a399e6cdb039e41389362ee63c6677076` 精确对应首行 `set` 被同一 BOM 污染。根因位于 Windows PowerShell 5.1 的 stdin 流写入路径，而非 SSH、隔离 Bash 或业务观察脚本。
+
+观察生成器现改为受限临时文件句柄配合 `Start-Process -RedirectStandardInput` 传输原始字节，并在执行前后逐字节复核和精确清理；任何 stderr 仍失败关闭。修正版 24h 候选已在本地离线生成：ChangeId `20260807T081228Z`、runner SHA-256 `cb7a5611c9382a026460a5e7a276f6732abb7318539012ecae919e5e6fbb7226`。默认关闭、SelfTest、PowerShell 解析、无 BOM 契约、167 项阶段 5 契约及敏感扫描均通过；尚未联网或执行，24h 状态仍为未通过。
 
 ## 4. 自动停止线
 

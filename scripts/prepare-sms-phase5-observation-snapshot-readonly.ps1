@@ -219,6 +219,138 @@ param(
     [string]$ExpectedRunnerSHA256 = ""
 )
 $ErrorActionPreference = "Stop"
+function Get-SafeStderrMetadata {
+    param([string]$Text)
+    # 仅返回固定分类和不可逆摘要，禁止把远端 stderr 正文写入控制台、文件或异常消息。
+    $normalized = $Text.Replace("`r`n", "`n").Replace("`r", "`n").TrimEnd("`n")
+    $lines = if ([string]::IsNullOrEmpty($normalized)) { @() } else { @($normalized -split "`n") }
+    $classification = "other"
+    if ($normalized -ceq "Pseudo-terminal will not be allocated because stdin is not a terminal.") {
+        $classification = "pty_warning"
+    }
+    elseif ($lines.Count -gt 0 -and @($lines | Where-Object { $_ -cnotmatch '^(?:bash: )?warning: setlocale: [A-Z_]+: cannot change locale .+$' }).Count -eq 0) {
+        $classification = "locale_warning"
+    }
+    elseif ($lines.Count -gt 0 -and @($lines | Where-Object { $_ -cnotmatch '^Warning: Permanently added .+ to the list of known hosts\.$' }).Count -eq 0) {
+        $classification = "known_hosts_warning"
+    }
+    elseif ($lines.Count -gt 0 -and @($lines | Where-Object { $_ -cnotmatch '^Warning: .+$' }).Count -eq 0) {
+        $classification = "ssh_warning"
+    }
+    elseif ($lines.Count -gt 0 -and @($lines | Where-Object { $_ -cnotmatch '^bash: (?:warning: )?.+$' }).Count -eq 0) {
+        $classification = "bash_warning"
+    }
+    $bytes = [Text.Encoding]::UTF8.GetBytes($Text)
+    try {
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try { $digest = ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace("-", "").ToLowerInvariant() }
+        finally { $sha.Dispose() }
+    }
+    finally { [Array]::Clear($bytes, 0, $bytes.Length) }
+    [pscustomobject]@{ Classification = $classification; ByteCount = [Text.Encoding]::UTF8.GetByteCount($Text); LineCount = $lines.Count; SHA256 = $digest }
+}
+
+function New-ObservationTransportDirectory {
+    # Windows PowerShell 5.1 的 StandardInput StreamWriter 会在原始字节前注入 BOM；改用受限临时文件句柄传输。
+    $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+    $leaf = "molin-sms-observation-" + [Guid]::NewGuid().ToString("N")
+    $path = [IO.Path]::GetFullPath((Join-Path $tempRoot $leaf))
+    if (-not $path.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -or
+        [IO.Directory]::Exists($path) -or [IO.File]::Exists($path)) {
+        throw "观察传输临时目录路径异常"
+    }
+    [void][IO.Directory]::CreateDirectory($path)
+    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+        $currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+        $security = New-Object Security.AccessControl.DirectorySecurity
+        $security.SetOwner($currentSid)
+        $security.SetAccessRuleProtection($true, $false)
+        $rule = New-Object Security.AccessControl.FileSystemAccessRule(
+            $currentSid,
+            [Security.AccessControl.FileSystemRights]::FullControl,
+            [Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit',
+            [Security.AccessControl.PropagationFlags]::None,
+            [Security.AccessControl.AccessControlType]::Allow
+        )
+        [void]$security.AddAccessRule($rule)
+        [IO.Directory]::SetAccessControl($path, $security)
+    }
+    $item = [IO.DirectoryInfo]::new($path)
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $item.FullName -cne $path) {
+        throw "观察传输临时目录身份异常"
+    }
+    return $path
+}
+
+function Remove-ObservationTransportDirectory {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $leaf = [IO.Path]::GetFileName($Path)
+    if (-not [IO.Path]::IsPathRooted($Path) -or $leaf -cnotmatch '^molin-sms-observation-[a-f0-9]{32}$') {
+        throw "观察传输临时目录清理路径异常"
+    }
+    foreach ($name in @("stdin.bin", "stdout.bin", "stderr.bin")) {
+        $target = Join-Path $Path $name
+        if ([IO.File]::Exists($target)) { [IO.File]::Delete($target) }
+    }
+    if ([IO.Directory]::Exists($Path)) {
+        if ([IO.Directory]::GetFileSystemEntries($Path).Length -ne 0) { throw "观察传输临时目录存在未知文件" }
+        [IO.Directory]::Delete($Path, $false)
+    }
+}
+
+function Invoke-ObservationSshProcess {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$Arguments,
+        [Parameter(Mandatory = $true)][byte[]]$InputBytes
+    )
+
+    $transportDirectory = New-ObservationTransportDirectory
+    $stdinPath = Join-Path $transportDirectory "stdin.bin"
+    $stdoutPath = Join-Path $transportDirectory "stdout.bin"
+    $stderrPath = Join-Path $transportDirectory "stderr.bin"
+    try {
+        [IO.File]::WriteAllBytes($stdinPath, $InputBytes)
+        $readBack = [IO.File]::ReadAllBytes($stdinPath)
+        try {
+            if ($readBack.Length -ne $InputBytes.Length) { throw "观察 stdin 写入长度不一致" }
+            for ($index = 0; $index -lt $InputBytes.Length; $index++) {
+                if ($readBack[$index] -ne $InputBytes[$index]) { throw "观察 stdin 写入内容不一致" }
+            }
+        }
+        finally { [Array]::Clear($readBack, 0, $readBack.Length); $readBack = $null }
+        $process = Microsoft.PowerShell.Management\Start-Process -FilePath "ssh.exe" -ArgumentList $Arguments `
+            -RedirectStandardInput $stdinPath -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath `
+            -NoNewWindow -PassThru
+        try {
+            # 等待前先取得原生句柄，避免 Windows PowerShell 5.1 丢失真实退出码。
+            $processHandle = $process.Handle
+            if ($processHandle -eq [IntPtr]::Zero) { throw "观察 SSH 进程句柄不可用" }
+            if (-not $process.WaitForExit(120000)) {
+                $process.Kill(); $process.WaitForExit(); throw "观察 SSH 进程超时"
+            }
+            $process.Refresh()
+            $exitCode = $process.ExitCode
+            if ($null -eq $exitCode) { throw "观察 SSH 退出码不可用" }
+        }
+        catch {
+            # 取得句柄或等待过程异常时也必须终止本次精确 SSH 子进程，避免后台残留连接。
+            try {
+                if (-not $process.HasExited) { $process.Kill(); $process.WaitForExit() }
+            }
+            catch { }
+            throw
+        }
+        finally { $process.Dispose() }
+        $strictUtf8 = New-Object Text.UTF8Encoding($false, $true)
+        return [pscustomobject]@{
+            ExitCode = [int]$exitCode
+            Stdout = $strictUtf8.GetString([IO.File]::ReadAllBytes($stdoutPath))
+            Stderr = $strictUtf8.GetString([IO.File]::ReadAllBytes($stderrPath))
+        }
+    }
+    finally { Remove-ObservationTransportDirectory -Path $transportDirectory }
+}
 $ChangeId = "__CHANGE_ID__"
 $SourceCanaryChangeId = "__SOURCE_CHANGE_ID__"
 $SourceResultSHA256 = "__SOURCE_RESULT_SHA256__"
@@ -241,12 +373,22 @@ if (-not $ExecuteReadOnly -and -not $SelfTest) {
 if ($ExecuteReadOnly -and $SelfTest) { throw "ExecuteReadOnly 与 SelfTest 必须互斥" }
 if ($SelfTest) {
     foreach ($name in $MinimumElapsed.Keys) {
-        $payload = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Payloads.$name))
+        $payloadBytes = [Convert]::FromBase64String($Payloads.$name)
+        if ($payloadBytes.Length -lt 3 -or $payloadBytes[0] -ne 0x73 -or $payloadBytes[1] -ne 0x65 -or $payloadBytes[2] -ne 0x74) {
+            throw "窗口 $name 负载首字节不是无 BOM 的 set"
+        }
+        $payload = [Text.Encoding]::UTF8.GetString($payloadBytes)
         foreach ($marker in @("START TRANSACTION READ ONLY", "minimum_elapsed=$($MinimumElapsed[$name])", "business_posts=0", "real_sms_sent=0")) {
             if (-not $payload.Contains($marker)) { throw "窗口 $name 负载缺少安全标记：$marker" }
         }
     }
+    # 使用纯合成文本验证分类器，不读取任何真实 stderr 或外部状态。
+    if ((Get-SafeStderrMetadata -Text "Pseudo-terminal will not be allocated because stdin is not a terminal.").Classification -cne "pty_warning") { throw "stderr 伪终端分类自测失败" }
+    if ((Get-SafeStderrMetadata -Text "bash: warning: setlocale: LC_ALL: cannot change locale C").Classification -cne "locale_warning") { throw "stderr locale 分类自测失败" }
+    if ((Get-SafeStderrMetadata -Text "未分类合成文本").Classification -cne "other") { throw "stderr 未知分类自测失败" }
     Write-Output "observation_snapshot_runner_self_test=passed"
+    Write-Output "stderr_metadata_self_test=passed"
+    Write-Output "stdin_transport=file_redirect_no_bom"
     Write-Output "observation_windows=5m,15m,30m,2h,24h"
     Write-Output "no_internal_sleep=true"
     Write-Output "network_connections=0"
@@ -271,21 +413,23 @@ if ((Get-FileHash -LiteralPath $sshHelperPath -Algorithm SHA256).Hash.ToLowerInv
 . $sshHelperPath
 $knownHosts = Assert-SmsPhase5FixedTestServerIdentity -ServerHost '8.130.9.163' -SSHPort 10003 -SSHUser 'pc'
 $utf8 = New-Object Text.UTF8Encoding($false)
-$inputBytes = $utf8.GetBytes([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Payloads.$Window)))
-$startInfo = New-Object Diagnostics.ProcessStartInfo
-$startInfo.FileName = "ssh.exe"; $startInfo.UseShellExecute = $false; $startInfo.RedirectStandardInput = $true
-$startInfo.RedirectStandardOutput = $true; $startInfo.RedirectStandardError = $true; $startInfo.CreateNoWindow = $true
-$startInfo.StandardOutputEncoding = $utf8; $startInfo.StandardErrorEncoding = $utf8
-$startInfo.Arguments = "-p 10003 -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=yes -o HostKeyAlgorithms=ssh-ed25519 -o `"UserKnownHostsFile=$knownHosts`" -- pc@8.130.9.163 bash -s"
-$process = New-Object Diagnostics.Process; $process.StartInfo = $startInfo
-try {
-    if (-not $process.Start()) { throw "无法启动固定 SSH 观察快照进程" }
-    $stdoutTask = $process.StandardOutput.ReadToEndAsync(); $stderrTask = $process.StandardError.ReadToEndAsync()
-    try { $process.StandardInput.BaseStream.Write($inputBytes, 0, $inputBytes.Length); $process.StandardInput.BaseStream.Flush() }
-    finally { [Array]::Clear($inputBytes, 0, $inputBytes.Length); $process.StandardInput.Close() }
-    $process.WaitForExit(); $stdout = $stdoutTask.Result; $stderr = $stderrTask.Result; $remoteExitCode = $process.ExitCode
+$inputBytes = [Convert]::FromBase64String($Payloads.$Window)
+if ($inputBytes.Length -lt 3 -or $inputBytes[0] -ne 0x73 -or $inputBytes[1] -ne 0x65 -or $inputBytes[2] -ne 0x74) {
+    [Array]::Clear($inputBytes, 0, $inputBytes.Length)
+    throw "观察负载首字节不是无 BOM 的 set"
 }
-finally { $process.Dispose(); $inputBytes = $null }
+# 明确禁用伪终端，并使用隔离环境和无启动文件 Bash，避免继承远端 locale 或启动脚本产生非业务 stderr。
+$sshArguments = @(
+    "-T", "-p", "10003", "-o", "BatchMode=yes", "-o", "NumberOfPasswordPrompts=0", "-o", "ConnectTimeout=8",
+    "-o", "StrictHostKeyChecking=yes", "-o", "HostKeyAlgorithms=ssh-ed25519", "-o", "UserKnownHostsFile=$knownHosts", "--",
+    "pc@8.130.9.163", "/usr/bin/env", "-i", "PATH=/usr/sbin:/usr/bin:/sbin:/bin", "HOME=/home/pc", "USER=pc", "LOGNAME=pc",
+    "LANG=C", "LC_ALL=C", "/bin/bash", "--noprofile", "--norc", "-s", "--"
+)
+try {
+    $execution = Invoke-ObservationSshProcess -Arguments $sshArguments -InputBytes $inputBytes
+    $stdout = $execution.Stdout; $stderr = $execution.Stderr; $remoteExitCode = $execution.ExitCode
+}
+finally { [Array]::Clear($inputBytes, 0, $inputBytes.Length); $inputBytes = $null }
 $safeKeys = @(
     "observation_snapshot", "failure_gate", "window", "observed_at", "elapsed_seconds", "api_health_http", "api_ready_http",
     "send_total", "send_accepted", "send_failed", "provider_calls_total", "provider_nonaccepted_total",
@@ -302,6 +446,18 @@ foreach ($marker in @("configuration_mutations=0", "service_signals=0", "service
 }
 $stderrPresent = -not [string]::IsNullOrWhiteSpace($stderr)
 if ($remoteExitCode -ne 0 -or $stderrPresent -or $values["observation_snapshot"] -cne "passed" -or $values["window"] -cne $Window) {
+    # 失败时只回显已经通过白名单校验的远端摘要和布尔状态，禁止输出 stderr 正文或其他未批准内容。
+    $safeLines | Write-Output
+    Write-Output "network_connections=1"
+    Write-Output "remote_stderr_present=$($stderrPresent.ToString().ToLowerInvariant())"
+    if ($stderrPresent) {
+        $stderrMetadata = Get-SafeStderrMetadata -Text $stderr
+        Write-Output "remote_stderr_classification=$($stderrMetadata.Classification)"
+        Write-Output "remote_stderr_byte_count=$($stderrMetadata.ByteCount)"
+        Write-Output "remote_stderr_line_count=$($stderrMetadata.LineCount)"
+        Write-Output "remote_stderr_sha256=$($stderrMetadata.SHA256)"
+    }
+    Write-Output "readonly_exit_code=$remoteExitCode"
     throw "固定测试服观察快照未通过，退出码：$remoteExitCode"
 }
 $snapshot = [ordered]@{
