@@ -48,14 +48,26 @@ type GovernanceTicket struct {
 
 // GovernanceService 按“内容安全 -> 预算 -> Redis 资源租约”顺序准入，任何依赖不确定都失败关闭。
 type GovernanceService struct {
-	safety  *SafetyService
-	budget  budgetRepository
-	limiter resourceLimiter
-	now     func() time.Time
+	safety                 *SafetyService
+	budget                 budgetRepository
+	limiter                resourceLimiter
+	metrics                *AIGatewayMetrics
+	now                    func() time.Time
+	safetyTimeout          time.Duration
+	rejectionRecordTimeout time.Duration
+}
+
+// WithMetrics 注入安全、预算和资源治理拒绝指标。
+func (s *GovernanceService) WithMetrics(metrics *AIGatewayMetrics) *GovernanceService {
+	s.metrics = metrics
+	return s
 }
 
 func NewGovernanceService(safety *SafetyService, budget budgetRepository, limiter resourceLimiter) *GovernanceService {
-	return &GovernanceService{safety: safety, budget: budget, limiter: limiter, now: time.Now}
+	return &GovernanceService{
+		safety: safety, budget: budget, limiter: limiter, now: time.Now,
+		safetyTimeout: defaultOutputModerationTimeout, rejectionRecordTimeout: defaultOutputModerationTimeout,
+	}
 }
 
 func (s *GovernanceService) Admit(ctx context.Context, subject SafetySubject, timezone string, body map[string]interface{}, quote *PriceQuote) (*GovernanceTicket, error) {
@@ -73,9 +85,22 @@ func (s *GovernanceService) CheckInput(ctx context.Context, subject SafetySubjec
 	if s == nil || s.safety == nil {
 		return nil, ErrModerationUnavailable
 	}
-	decision, err := s.safety.ModerateInput(ctx, subject, body)
+	timeout := s.safetyTimeout
+	if timeout <= 0 {
+		timeout = defaultOutputModerationTimeout
+	}
+	moderationCtx, cancel := context.WithTimeout(ctx, timeout)
+	decision, err := s.safety.ModerateInput(moderationCtx, subject, body)
+	cancel()
 	if errors.Is(err, ErrContentPolicyViolation) {
 		s.recordRejection(ctx, subject, "content_policy_violation", "user", strconv.FormatUint(subject.UserID, 10))
+	} else if err != nil {
+		// 分类器超时独立计数，其他依赖错误和无法判定统一失败关闭；二者都不暴露内部错误原文。
+		reason := "fail_closed"
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(moderationCtx.Err(), context.DeadlineExceeded) {
+			reason = "classifier_timeout"
+		}
+		s.recordRejection(ctx, subject, reason, "user", strconv.FormatUint(subject.UserID, 10))
 	}
 	return decision, err
 }
@@ -134,11 +159,51 @@ func (s *GovernanceService) AdmitAfterSafety(ctx context.Context, subject Safety
 }
 
 func (s *GovernanceService) recordRejection(ctx context.Context, subject SafetySubject, reason, scopeType, scopeID string) {
+	s.metrics.RecordRejection(metricRejectionReason(reason))
 	recorder, ok := s.budget.(gatewayRejectionRecorder)
 	if !ok || strings.TrimSpace(subject.RequestID) == "" {
 		return
 	}
-	_ = recorder.RecordGatewayRejection(context.WithoutCancel(ctx), &model.AIGatewayRejectionEvent{RequestID: subject.RequestID, LogicalModelCode: subject.LogicalModelCode, ReasonCode: reason, ScopeType: scopeType, ScopeID: scopeID})
+	timeout := s.rejectionRecordTimeout
+	if timeout <= 0 {
+		timeout = defaultOutputModerationTimeout
+	}
+	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	defer cancel()
+	_ = recorder.RecordGatewayRejection(recordCtx, &model.AIGatewayRejectionEvent{RequestID: subject.RequestID, LogicalModelCode: subject.LogicalModelCode, ReasonCode: reason, ScopeType: scopeType, ScopeID: scopeID})
+}
+
+// recordOutputModerationFailure 将输出审核的策略拒绝、超时和依赖失败纳入与输入审核相同的低基数指标及审计事实。
+// 调用方必须在一次请求的输出审核结束后只调用一次，避免流式分段重复计数。
+func (s *GovernanceService) recordOutputModerationFailure(ctx context.Context, subject SafetySubject, moderationErr error) {
+	reason := "fail_closed"
+	if errors.Is(moderationErr, ErrContentPolicyViolation) {
+		reason = "content_policy_violation"
+	} else if errors.Is(moderationErr, context.DeadlineExceeded) {
+		reason = "classifier_timeout"
+	}
+	s.recordRejection(ctx, subject, reason, "user", strconv.FormatUint(subject.UserID, 10))
+}
+
+func metricRejectionReason(reason string) string {
+	switch reason {
+	case "content_policy_violation":
+		return "content_policy"
+	case "budget_limit_exceeded":
+		return "budget_limit"
+	case "concurrency_limit_exceeded":
+		return "concurrency_limit"
+	case "rpm_limit_exceeded":
+		return "rpm_limit"
+	case "tpm_limit_exceeded":
+		return "tpm_limit"
+	case "fail_closed":
+		return "fail_closed"
+	case "classifier_timeout":
+		return "classifier_timeout"
+	default:
+		return "other"
+	}
 }
 
 func rejectionScopeID(subject SafetySubject, scope string) string {

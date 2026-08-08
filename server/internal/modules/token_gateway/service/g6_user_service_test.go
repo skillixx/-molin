@@ -9,6 +9,7 @@ import (
 
 	"molin/server/internal/modules/token_gateway/model"
 	"molin/server/internal/modules/token_gateway/repository"
+	pkgcrypto "molin/server/pkg/crypto"
 )
 
 func TestPublicCatalogDTOOnlyContainsSalePrice(t *testing.T) {
@@ -51,6 +52,21 @@ func TestBillingDisputeRejectsCredentialLikeText(t *testing.T) {
 	}
 	if credentialLikePattern.MatchString("本次费用与预期不一致，请帮助核查计价明细") {
 		t.Fatal("正常申诉说明不得被误判为密钥")
+	}
+}
+
+func TestConfirmedCredentialLeakRequiresExactIssuedPlatformKey(t *testing.T) {
+	secret := "g7-test-hmac-secret"
+	issuedKey := "sk-molin-AbCdEf_012345-6789"
+	storedHash := pkgcrypto.HMAC256(issuedKey, secret)
+	if !matchesPlatformCredential("请核查凭据 "+issuedKey+" 是否泄漏", storedHash, secret) {
+		t.Fatal("HMAC 精确匹配的已签发平台 SK 必须识别为确认泄漏")
+	}
+	if matchesPlatformCredential("请核查凭据 sk-molin-AbCdEf_012345-6788 是否泄漏", storedHash, secret) {
+		t.Fatal("仅格式相似的伪造 SK 不得升级为 P0 确认泄漏")
+	}
+	if matchesPlatformCredential("请核查 api_key=fabricatedvalue", storedHash, secret) {
+		t.Fatal("通用敏感模式只能阻止入库，不能污染确认泄漏指标")
 	}
 }
 

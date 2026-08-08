@@ -1,0 +1,255 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "告警",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "G7 测试环境 AI 网关 SLO、账务一致性、恢复队列和四层资源治理总览。所有查询仅使用低基数标签。",
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "molin-prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 3,
+          "max": 100,
+          "min": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red" }, { "color": "green", "value": 99 }] },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "100 * (1 - sum(rate(molin_ai_gateway_requests_total{outcome=\"failure\",logical_model_code=~\"$logical_model\"}[5m])) / clamp_min(sum(rate(molin_ai_gateway_requests_total{outcome=~\"success|failure\",logical_model_code=~\"$logical_model\"}[5m])), 1))",
+          "legendFormat": "可用性",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "五分钟可用性 SLO（目标 ≥ 99%）",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "molin-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+      "id": 2,
+      "options": { "legend": { "calcs": [], "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [{ "editorMode": "code", "expr": "sum by (request_type, outcome) (rate(molin_ai_gateway_requests_total{logical_model_code=~\"$logical_model\"}[5m]))", "legendFormat": "{{request_type}} / {{outcome}}", "range": true, "refId": "A" }],
+      "title": "请求吞吐与结果",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "molin-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "never", "spanNulls": false }, "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+      "id": 3,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "histogram_quantile(0.50, sum by (le, request_type) (rate(molin_ai_gateway_request_duration_seconds_bucket[5m])))", "legendFormat": "P50 {{request_type}}", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le, request_type) (rate(molin_ai_gateway_request_duration_seconds_bucket[5m])))", "legendFormat": "P95 {{request_type}}", "range": true, "refId": "B" },
+        { "editorMode": "code", "expr": "histogram_quantile(0.99, sum by (le, request_type) (rate(molin_ai_gateway_request_duration_seconds_bucket[5m])))", "legendFormat": "P99 {{request_type}}", "range": true, "refId": "C" }
+      ],
+      "title": "端到端 P50 / P95 / P99 延迟",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "molin-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "never", "spanNulls": false }, "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "id": 4,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [{ "editorMode": "code", "expr": "histogram_quantile(0.95, sum by (le, logical_model_code, driver) (rate(molin_ai_gateway_ttft_seconds_bucket{logical_model_code=~\"$logical_model\"}[5m])))", "legendFormat": "{{logical_model_code}} / {{driver}}", "range": true, "refId": "A" }],
+      "title": "流式 P95 TTFT（目标 ≤ 2.5 秒）",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "molin-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green" }, { "color": "red", "value": 0.00000001 }] }, "unit": "currencyCNY" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 6 },
+      "id": 5,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["max"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+      "targets": [{ "editorMode": "code", "expr": "max(molin_ai_gateway_billing_difference_cny)", "legendFormat": "最大差额", "range": true, "refId": "A" }],
+      "title": "账本 / Usage / 预占 / 钱包最大差额",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "molin-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green" }, { "color": "red", "value": 1 }] }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 6 },
+      "id": 6,
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["sum"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+      "targets": [{ "editorMode": "code", "expr": "sum(molin_ai_gateway_billing_anomalies)", "legendFormat": "异常事实", "range": true, "refId": "A" }],
+      "title": "账务异常事实（目标 = 0）",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "molin-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 6 },
+      "id": 7,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [{ "editorMode": "code", "expr": "molin_ai_gateway_billing_requests", "legendFormat": "{{billing_state}}", "range": true, "refId": "A" }],
+      "title": "账务状态请求数",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "molin-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 6 },
+      "id": 8,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [{ "editorMode": "code", "expr": "molin_ai_gateway_billing_oldest_age_seconds{billing_state=~\"held|settlement_pending|exception\"}", "legendFormat": "{{billing_state}}", "range": true, "refId": "A" }],
+      "title": "在途与异常账务年龄",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "molin-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 12 },
+      "id": 9,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "molin_ai_gateway_outbox_backlog", "legendFormat": "Outbox {{status}}", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "molin_ai_gateway_compensation_backlog", "legendFormat": "补偿 {{status}}", "range": true, "refId": "B" }
+      ],
+      "title": "Outbox 与补偿积压",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "molin-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 12 },
+      "id": 10,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "molin_ai_gateway_outbox_oldest_age_seconds", "legendFormat": "Outbox {{status}}", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "molin_ai_gateway_compensation_oldest_age_seconds", "legendFormat": "补偿 {{status}}", "range": true, "refId": "B" }
+      ],
+      "title": "恢复队列最老任务年龄",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "molin-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 12 },
+      "id": 11,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "molin_ai_gateway_concurrency_leases", "legendFormat": "租约 {{scope}}", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "sum by (scope) (increase(molin_ai_gateway_concurrency_rejections_total[5m]))", "legendFormat": "拒绝 {{scope}}", "range": true, "refId": "B" }
+      ],
+      "title": "四层并发租约与拒绝",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "molin-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 19 },
+      "id": 12,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "sum by (logical_model_code, driver) (increase(molin_ai_gateway_upstream_requests_total{logical_model_code=~\"$logical_model\",outcome!=\"success\"}[5m])) / clamp_min(sum by (logical_model_code, driver) (increase(molin_ai_gateway_upstream_requests_total{logical_model_code=~\"$logical_model\"}[5m])), 1)", "legendFormat": "错误率 {{logical_model_code}} / {{driver}}", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "sum by (logical_model_code, driver) (increase(molin_ai_gateway_upstream_retries_total{logical_model_code=~\"$logical_model\"}[5m]))", "legendFormat": "重试 {{logical_model_code}} / {{driver}}", "range": true, "refId": "B" }
+      ],
+      "title": "按模型与驱动的错误率 / 安全重试",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "molin-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 19 },
+      "id": 13,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "sum by (logical_model_code, request_type) (increase(molin_ai_gateway_usage_missing_total{logical_model_code=~\"$logical_model\"}[5m]))", "legendFormat": "Usage 缺失 {{logical_model_code}} / {{request_type}}", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "sum by (logical_model_code, driver) (increase(molin_ai_gateway_stream_interruptions_total{logical_model_code=~\"$logical_model\"}[5m]))", "legendFormat": "断连 {{logical_model_code}} / {{driver}}", "range": true, "refId": "B" }
+      ],
+      "title": "Usage 缺失与流式断连",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "molin-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 19 },
+      "id": 14,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "editorMode": "code", "expr": "increase(molin_ai_gateway_heartbeat_failures_total[5m])", "legendFormat": "心跳失败", "range": true, "refId": "A" },
+        { "editorMode": "code", "expr": "increase(molin_ai_gateway_ghost_leases_total[5m])", "legendFormat": "幽灵租约清理", "range": true, "refId": "B" },
+        { "editorMode": "code", "expr": "sum by (rejection_reason) (increase(molin_ai_gateway_rejections_total[5m]))", "legendFormat": "拒绝 {{rejection_reason}}", "range": true, "refId": "C" }
+      ],
+      "title": "治理拒绝、心跳与幽灵租约",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "molin-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "red" }, { "color": "green", "value": 2 }] }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 26 },
+      "id": 15,
+      "options": { "colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+      "targets": [{ "editorMode": "code", "expr": "sum(probe_success{job=\"molin-bifrost-node\"})", "legendFormat": "健康节点", "range": true, "refId": "A" }],
+      "title": "Bifrost 健康节点（目标 = 2）",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "molin-prometheus" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "currencyCNY" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 26 },
+      "id": 16,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" } },
+      "targets": [{ "editorMode": "code", "expr": "molin_ai_gateway_billing_amount_cny", "legendFormat": "{{kind}}", "range": true, "refId": "A" }],
+      "title": "请求结算 / 模型 Usage / 钱包扣费金额",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 42,
+  "tags": ["molin", "token-gateway", "g7", "slo"],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": { "text": "全部模型", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "molin-prometheus" },
+        "definition": "label_values(molin_ai_gateway_requests_total, logical_model_code)",
+        "includeAll": true,
+        "label": "逻辑模型",
+        "multi": true,
+        "name": "logical_model",
+        "options": [],
+        "query": { "query": "label_values(molin_ai_gateway_requests_total, logical_model_code)", "refId": "PrometheusVariableQueryEditor-VariableQuery" },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "墨灵 Token 网关 G7 可靠性与 SLO",
+  "uid": "molin-ai-gateway-g7",
+  "version": 1,
+  "weekStart": "monday"
+}

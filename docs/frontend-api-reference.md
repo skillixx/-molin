@@ -1270,7 +1270,7 @@ Redis 分布式锁是发布必需依赖；只有未取得锁或外呼开始前�
 邮件入口既有实现与前端契约保持不变；短信阶段 4 已将同一来源规则接入手机发码和密码重置。本地自动化通过，
 真实 Redis、HTTP、Linux race 与 Nginx 部署配置仍须按各自验收证据标记，不能由本文档替代。
 
-### 5.2.9 内部邮件 Adapter 指标（非前端消费，Phase 1 metrics delta 待 QA/PM 复签）
+### 5.2.9 统一内部指标端点（非前端消费）
 
 `GET /api/internal/metrics` 只供内部监控系统抓取，用户控制台和管理后台均不得调用、代理、展示或缓存该端点，也不得在前端代码、构建产物或运行时配置中保存 `X-Internal-Token`。
 
@@ -1280,10 +1280,11 @@ Redis 分布式锁是发布必需依赖；只有未取得锁或外呼开始前�
 - 200 响应使用 Prometheus text 0.0.4，并带 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff`。
 - `INTERNAL_API_TOKEN` 按不 trim 的原始 UTF-8 值校验：无首尾空白、至少 32 字节，并大小写不敏感拒绝空值及 `REPLACE_WITH_INTERNAL_API_TOKEN/CHANGE_ME/CHANGEME/DEFAULT/SECRET/TEST`；请求 Token 按原始字节常量时间比较且不得记录日志。`INTERNAL_ALLOWED_IPS`、`INTERNAL_TRUSTED_PROXY_IPS` 均须为非空、无空项且每项 trim 后是精确 IP 或 CIDR，任一非法即失败关闭。
 - 来源先解析 `RemoteAddr`。只有其命中 trusted proxy 时才要求并信任代理覆盖的恰好一个合法 `X-Real-IP`；否则始终只用 `RemoteAddr`，任何来源头不能改写结果。应用永不读取 `X-Forwarded-For`。Token 或最终来源 IP 任一校验失败只返回 `403/40003「无权限」`。
-- 只输出 `email_adapter_calls_total`。`operation` 固定为 `query_templates/describe_template/send_mail`；前两者仅配 `scene=template_sync`，`send_mail` 仅配五个固定邮件 scene；`result` 固定为 `accepted/failed/timeout`。21 个封闭序列启动即以 0 输出，进程内单调递增，重启允许归零。
-- 禁止任何高基数或敏感 label，禁止输出其他指标族。反向代理仅允许监控网络访问，删除 XFF/Forwarded 并覆盖 `X-Real-IP` 单值；不能替代或绕过应用双闸。
+- 除冻结的邮件、短信指标外，G7 追加 `molin_ai_gateway_*` 请求、TTFT、上游、资源治理、账务状态、预占数量/金额/最老年龄、积压、三项差额、七类异常、三方金额和已确认平台 SK 泄漏指标；对账 Usage 异常和在线缺失计数均触发 P1，未释放预占超过 300 秒或总额超过 10 元触发 P1。泄漏只在请求归属和 HMAC 精确匹配后按唯一 API Key 计数。全部标签为封闭枚举或最多 32 个数据库准入模型，超限收敛为 `other`。
+- 禁止任何高基数或敏感 label，尤其不得出现 `request_id/user_id/project_id/api_key/prompt/secret`。持久事实读取失败时整个端点返回脱敏 `503/50300`，前端不得尝试降级展示或重试携带内部 Token。
+- 反向代理仅允许监控网络访问，删除 XFF/Forwarded 并覆盖 `X-Real-IP` 单值；不能替代或绕过应用双闸。
 
-该 delta 已落档 QA 阻断修订，尚待 QA/PM 书面复签，且没有完成实现或环境验收；不得据此标记前端、后端或监控接入完成。
+G7 没有新增前端页面或公开 JSON API。用户控制台和管理后台不得直接嵌入 Grafana、代理 metrics、读取只读对账 CLI 输出或保存内部 Token；运维通过本机回环或受控 SSH 隧道查看 SLO 看板。
 
 ### 5.3 短信模板管理（阶段 2 后端契约，阶段 3 管理后台对接）
 

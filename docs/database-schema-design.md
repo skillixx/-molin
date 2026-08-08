@@ -430,6 +430,8 @@ Migration `000062_create_ai_gateway_g3_billing` 新增：
 
 `wallets`、`wallet_transactions`、`wallet_holds` 金额扩为 `DECIMAL(20,8)`；数据库 CHECK 保证钱包可用/冻结余额非负及结算金额不超过 hold。请求 ID、hold 和三类钱包流水在关联表中唯一，防止重复财务终态。
 
+G7 不新增 Migration 或第二套账务表。可观测 Collector 与 `ai-gateway-reconcile` 只在 MySQL READ ONLY、REPEATABLE READ 事务中读取既有 `ai_requests`、`ai_price_versions`、`ai_price_skus`、`ai_execution_attempts`、`ai_usage_items`、`ai_request_wallet_links`、`wallets`、`wallet_holds`、`wallet_transactions`、`ai_outbox_events`、`ai_compensation_tasks` 和 `audit_logs`。对账输出三项 DECIMAL 差额、七类聚合异常及有限条 request_id/issue_code 明细，并核对快照与不可变价格/SKU、raw↔sale 数量、逐项金额、钱包 owner 与 `0≤settled≤held`；任何未释放 hold、活跃 Outbox 或补偿积压同样失败，禁止以 G7 CLI 直接写表修账。
+
 价格发布使用逻辑模型共享行锁校验审批、四 SKU 和时间区间重叠；报价读取价格与 SKU 使用同一一致性事务。已发布版本不提供原地改价接口，只能暂停或创建新版本。000062 down 保留所有财务表和事实，不执行 DROP 或数据删除。
 
 完整字段与状态契约见 [`ai-gateway-g0-g1-contract.md`](./ai-gateway-g0-g1-contract.md)。

@@ -23,3 +23,19 @@ scrape_configs:
           - host.docker.internal:8080
         labels:
           environment: test
+
+  # Bifrost 节点使用 Blackbox HTTP 探测；测试环境部署时需把 exporter 接入 bifrost-net。
+  - job_name: molin-bifrost-node
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/targets/bifrost-nodes.json
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

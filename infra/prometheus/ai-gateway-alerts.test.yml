@@ -1,0 +1,461 @@
+rule_files:
+  - /rules/ai-gateway-alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: 可用性失败率超过百分之一且样本达到二十后触发
+    interval: 1m
+    input_series:
+      - series: 'molin_ai_gateway_requests_total{logical_model_code="molin/test",request_type="json",outcome="success"}'
+        values: '0 0 0 0 0 19 19 19 19'
+      - series: 'molin_ai_gateway_requests_total{logical_model_code="molin/test",request_type="json",outcome="failure"}'
+        values: '0 0 0 0 0 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: MolinAIGatewayAvailabilitySLOBreach
+        exp_alerts:
+          - exp_labels:
+              module: token_gateway
+              p_level: p1
+              severity: critical
+              slo: availability
+            exp_annotations:
+              summary: AI 网关可用性低于 99% SLO
+              description: 最近五分钟至少二十次已执行请求，失败率持续两分钟超过 1%，应停止测试流量并检查上游、账务及治理依赖。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-availability-slo-breach
+
+  - name: 可用性失败率高但样本不足二十时不触发
+    interval: 1m
+    input_series:
+      - series: 'molin_ai_gateway_requests_total{logical_model_code="molin/test",request_type="json",outcome="success"}'
+        values: '0 0 0 0 0 8 8 8'
+      - series: 'molin_ai_gateway_requests_total{logical_model_code="molin/test",request_type="json",outcome="failure"}'
+        values: '0 0 0 0 0 1 1 1'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: MolinAIGatewayAvailabilitySLOBreach
+        exp_alerts: []
+
+  - name: 任一账单差额立即触发P0告警
+    interval: 1m
+    input_series:
+      - series: 'molin_ai_gateway_billing_difference_cny{kind="request_wallet"}'
+        values: '0 0.01 0.01'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: MolinAIGatewayBillingDifference
+        exp_alerts:
+          - exp_labels:
+              kind: request_wallet
+              module: token_gateway
+              p_level: p0
+              severity: critical
+            exp_annotations:
+              summary: AI 网关账单链路出现非零差额
+              description: 对账口径 request_wallet 出现人民币差额 0.01，禁止自动修账、退款或补扣。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-billing-difference
+
+  - name: 成功执行缺失Usage立即触发
+    interval: 1m
+    input_series:
+      - series: 'molin_ai_gateway_usage_missing_total{logical_model_code="molin/test",request_type="stream"}'
+        values: '0 1 1'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: MolinAIGatewayUsageMissing
+        exp_alerts:
+          - exp_labels:
+              logical_model_code: molin/test
+              module: token_gateway
+              p_level: p1
+              request_type: stream
+              severity: critical
+            exp_annotations:
+              summary: AI 网关出现缺失或不一致的可信 Usage
+              description: 在线计数或只读对账发现 Usage 缺失、数量/单价/金额不一致，必须保留预占并按 request_id 核查。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-usage-missing
+
+  - name: 对账识别Usage不一致立即触发P1
+    interval: 1m
+    input_series:
+      - series: 'molin_ai_gateway_billing_anomalies{kind="missing_usage"}'
+        values: '0 1 1'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: MolinAIGatewayUsageMissing
+        exp_alerts:
+          - exp_labels:
+              kind: missing_usage
+              module: token_gateway
+              p_level: p1
+              severity: critical
+            exp_annotations:
+              summary: AI 网关出现缺失或不一致的可信 Usage
+              description: 在线计数或只读对账发现 Usage 缺失、数量/单价/金额不一致，必须保留预占并按 request_id 核查。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-usage-missing
+
+  - name: 小额预占超过五分钟也触发P1
+    interval: 1m
+    input_series:
+      - series: 'molin_ai_gateway_unreleased_holds_oldest_age_seconds'
+        values: '301 301 301'
+      - series: 'molin_ai_gateway_unreleased_holds_amount_cny'
+        values: '0.01 0.01 0.01'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: MolinAIGatewayUnreleasedHoldAmountHigh
+        exp_alerts:
+          - exp_labels:
+              module: token_gateway
+              p_level: p1
+              severity: warning
+            exp_annotations:
+              summary: AI 网关未释放预占超时或金额过高
+              description: 未释放预占已超过五分钟或总金额超过十元；即使单笔金额较小，也必须按 hold 与 request_id 核查。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-unreleased-hold-amount-high
+
+  - name: Outbox积压超过五分钟并持续一分钟触发
+    interval: 1m
+    input_series:
+      - series: 'molin_ai_gateway_outbox_oldest_age_seconds{status="pending"}'
+        values: '0 301 361 421'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: MolinAIGatewayOutboxBacklogStale
+        exp_alerts:
+          - exp_labels:
+              module: token_gateway
+              p_level: p1
+              severity: critical
+              status: pending
+            exp_annotations:
+              summary: AI 网关 Outbox 积压超过五分钟
+              description: 状态 pending 的最老 Outbox 事件年龄为 361 秒，请检查 RabbitMQ 和发布 Worker。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-outbox-backlog-stale
+
+  - name: 心跳失败立即触发
+    interval: 1m
+    input_series:
+      - series: 'molin_ai_gateway_heartbeat_failures_total'
+        values: '0 1 1'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: MolinAIGatewayHeartbeatFailure
+        exp_alerts:
+          - exp_labels:
+              module: token_gateway
+              p_level: p1
+              severity: critical
+            exp_annotations:
+              summary: AI 网关并发租约心跳失败
+              description: 最近五分钟出现租约心跳失败，请停止新增测试流量并检查 Redis；请求执行必须失败关闭。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-heartbeat-failure
+
+  - name: Bifrost双节点少一个持续一分钟触发
+    interval: 1m
+    input_series:
+      - series: 'probe_success{job="molin-bifrost-node",instance="bifrost-1"}'
+        values: '1 1 1'
+      - series: 'probe_success{job="molin-bifrost-node",instance="bifrost-2"}'
+        values: '0 0 0'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: MolinAIGatewayBifrostNodesInsufficient
+        exp_alerts:
+          - exp_labels:
+              module: token_gateway
+              p_level: p1
+              severity: critical
+            exp_annotations:
+              summary: Bifrost 健康节点少于两个
+              description: Blackbox 探测到的 Bifrost 健康节点数不足两个，先停止新增测试流量，再检查节点和负载均衡。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-bifrost-nodes-insufficient
+
+  - name: Bifrost探测指标完全缺失也必须失败关闭
+    interval: 1m
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: MolinAIGatewayBifrostNodesInsufficient
+        exp_alerts:
+          - exp_labels:
+              module: token_gateway
+              p_level: p1
+              severity: critical
+            exp_annotations:
+              summary: Bifrost 健康节点少于两个
+              description: Blackbox 探测到的 Bifrost 健康节点数不足两个，先停止新增测试流量，再检查节点和负载均衡。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-bifrost-nodes-insufficient
+
+  - name: Bifrost超时立即触发
+    interval: 1m
+    input_series:
+      - series: 'molin_ai_gateway_upstream_requests_total{logical_model_code="molin/test",driver="bifrost",outcome="timeout"}'
+        values: '0 1 1'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: MolinAIGatewayBifrostTimeoutDetected
+        exp_alerts:
+          - exp_labels:
+              logical_model_code: molin/test
+              module: token_gateway
+              p_level: p1
+              severity: critical
+            exp_annotations:
+              summary: Bifrost 上游出现超时
+              description: 逻辑模型 molin/test 最近五分钟出现 Bifrost 超时，禁止结果未知请求自动重试或自动扣费。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-bifrost-timeout-detected
+
+  - name: 内容审核失败关闭立即触发
+    interval: 1m
+    input_series:
+      - series: 'molin_ai_gateway_rejections_total{rejection_reason="classifier_timeout"}'
+        values: '0 1 1'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: MolinAIGatewayModerationUnavailable
+        exp_alerts:
+          - exp_labels:
+              module: token_gateway
+              p_level: p1
+              severity: critical
+            exp_annotations:
+              summary: AI 网关内容审核不可用并失败关闭
+              description: 最近五分钟出现分类器超时或审核依赖失败关闭，禁止绕过审核恢复流量。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-moderation-unavailable
+
+  - name: 密钥泄漏发现立即触发P0
+    interval: 1m
+    input_series:
+      - series: 'molin_ai_gateway_security_findings{kind="secret_leak"}'
+        values: '0 1 1'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: MolinAIGatewaySecretLeakDetected
+        exp_alerts:
+          - exp_labels:
+              kind: secret_leak
+              module: token_gateway
+              p_level: p0
+              severity: critical
+            exp_annotations:
+              summary: AI 网关确认有效平台密钥泄漏
+              description: 最近五分钟经请求归属与 HMAC 精确确认的有效平台 SK 数为 1，立即隔离日志和凭据，禁止在告警内容中复制原文。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-secret-leak-detected
+
+  - name: 其余十三条规则均通过正向阈值与持续时间验证
+    interval: 1m
+    input_series:
+      - series: 'molin_ai_gateway_request_duration_seconds_bucket{request_type="json",le="5"}'
+        values: '0 0 0 0 0 0'
+      - series: 'molin_ai_gateway_request_duration_seconds_bucket{request_type="json",le="10"}'
+        values: '0 0 0 0 0 0'
+      - series: 'molin_ai_gateway_request_duration_seconds_bucket{request_type="json",le="20"}'
+        values: '0 50 100 150 200 250'
+      - series: 'molin_ai_gateway_request_duration_seconds_bucket{request_type="json",le="+Inf"}'
+        values: '0 50 100 150 200 250'
+      - series: 'molin_ai_gateway_request_duration_seconds_count{request_type="json"}'
+        values: '0 50 100 150 200 250'
+      - series: 'molin_ai_gateway_ttft_seconds_bucket{logical_model_code="molin/test",driver="bifrost",le="2.5"}'
+        values: '0 0 0 0 0 0'
+      - series: 'molin_ai_gateway_ttft_seconds_bucket{logical_model_code="molin/test",driver="bifrost",le="5"}'
+        values: '0 10 20 30 40 50'
+      - series: 'molin_ai_gateway_ttft_seconds_bucket{logical_model_code="molin/test",driver="bifrost",le="+Inf"}'
+        values: '0 10 20 30 40 50'
+      - series: 'molin_ai_gateway_ttft_seconds_count{logical_model_code="molin/test",driver="bifrost"}'
+        values: '0 10 20 30 40 50'
+      - series: 'molin_ai_gateway_upstream_requests_total{logical_model_code="molin/test",driver="mock",outcome="success"}'
+        values: '0 17 34 51 68 85'
+      - series: 'molin_ai_gateway_upstream_requests_total{logical_model_code="molin/test",driver="mock",outcome="server_error"}'
+        values: '0 3 6 9 12 15'
+      - series: 'molin_ai_gateway_requests_total{logical_model_code="molin/test",request_type="stream",outcome="success"}'
+        values: '0 10 20 30 40 50'
+      - series: 'molin_ai_gateway_stream_interruptions_total{logical_model_code="molin/test",driver="bifrost"}'
+        values: '0 1 2 3 4 5'
+      - series: 'molin_ai_gateway_billing_anomalies{kind="missing_wallet_transaction"}'
+        values: '1 1 1 1 1 1'
+      - series: 'molin_ai_gateway_billing_requests{billing_state="exception"}'
+        values: '1 1 1 1 1 1'
+      - series: 'molin_ai_gateway_billing_oldest_age_seconds{billing_state="held"}'
+        values: '301 301 301 301 301 301'
+      - series: 'molin_ai_gateway_unreleased_holds_amount_cny'
+        values: '11 11 11 11 11 11'
+      - series: 'molin_ai_gateway_outbox_backlog{status="dead"}'
+        values: '1 1 1 1 1 1'
+      - series: 'molin_ai_gateway_compensation_oldest_age_seconds{status="pending"}'
+        values: '301 301 301 301 301 301'
+      - series: 'molin_ai_gateway_compensation_backlog{status="manual_review"}'
+        values: '1 1 1 1 1 1'
+      - series: 'molin_ai_gateway_ghost_leases_total'
+        values: '0 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: MolinAIGatewayLatencyP95High
+        exp_alerts:
+          - exp_labels:
+              module: token_gateway
+              p_level: p1
+              request_type: json
+              severity: warning
+              slo: latency
+            exp_annotations:
+              summary: AI 网关 P95 端到端耗时超过五秒
+              description: 请求类型 json 最近五分钟样本不少于二十且 P95 持续超过五秒。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-latency-p95-high
+      - eval_time: 3m
+        alertname: MolinAIGatewayLatencyP99High
+        exp_alerts:
+          - exp_labels:
+              module: token_gateway
+              p_level: p1
+              request_type: json
+              severity: critical
+              slo: latency
+            exp_annotations:
+              summary: AI 网关 P99 端到端耗时超过十秒
+              description: 请求类型 json 最近五分钟样本不少于五十且 P99 持续超过十秒。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-latency-p99-high
+      - eval_time: 3m
+        alertname: MolinAIGatewayTTFTP95High
+        exp_alerts:
+          - exp_labels:
+              driver: bifrost
+              logical_model_code: molin/test
+              module: token_gateway
+              p_level: p1
+              severity: warning
+              slo: ttft
+            exp_annotations:
+              summary: AI 网关流式 P95 首 Token 耗时超过 2.5 秒
+              description: 逻辑模型 molin/test 驱动 bifrost 的有效样本不少于十且 TTFT 持续超标。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-ttft-p95-high
+      - eval_time: 2m
+        alertname: MolinAIGatewayUpstreamFailureRateHigh
+        exp_alerts:
+          - exp_labels:
+              driver: mock
+              logical_model_code: molin/test
+              module: token_gateway
+              p_level: p1
+              severity: critical
+            exp_annotations:
+              summary: AI 网关上游失败率超过 10%
+              description: 逻辑模型 molin/test 驱动 mock 最近五分钟至少二十次上游尝试且失败率持续超标。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-upstream-failure-rate-high
+      - eval_time: 3m
+        alertname: MolinAIGatewayStreamInterruptionRateHigh
+        exp_alerts:
+          - exp_labels:
+              module: token_gateway
+              p_level: p1
+              severity: warning
+            exp_annotations:
+              summary: AI 网关流式客户端断连率超过 5%
+              description: 最近五分钟至少十次流式请求，客户端断连率持续超过 5%，服务端仍须读完尾部 Usage 并完成结算。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-stream-interruption-rate-high
+      - eval_time: 1m
+        alertname: MolinAIGatewayBillingAnomaly
+        exp_alerts:
+          - exp_labels:
+              kind: missing_wallet_transaction
+              module: token_gateway
+              p_level: p0
+              severity: critical
+            exp_annotations:
+              summary: AI 网关账单链路出现 P0 异常事实
+              description: P0 异常类型 missing_wallet_transaction 当前数量为 1，必须先完成只读核对再决定人工处理；Usage 缺失、未收敛和 exception 由各自 P1 规则处理。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-billing-anomaly
+      - eval_time: 1m
+        alertname: MolinAIGatewayBillingExceptionExists
+        exp_alerts:
+          - exp_labels:
+              billing_state: exception
+              module: token_gateway
+              p_level: p1
+              severity: critical
+            exp_annotations:
+              summary: AI 网关存在人工账务异常
+              description: 当前 exception 请求数量为 1，不得继续扩大测试流量。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-billing-exception-exists
+      - eval_time: 1m
+        alertname: MolinAIGatewayBillingStateStale
+        exp_alerts:
+          - exp_labels:
+              billing_state: held
+              module: token_gateway
+              p_level: p1
+              severity: critical
+            exp_annotations:
+              summary: AI 网关账务状态超过五分钟未收敛
+              description: 状态 held 的最老请求年龄为 301 秒，请检查执行恢复、Usage 和结算 Worker。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-billing-state-stale
+      - eval_time: 1m
+        alertname: MolinAIGatewayUnreleasedHoldAmountHigh
+        exp_alerts:
+          - exp_labels:
+              module: token_gateway
+              p_level: p1
+              severity: warning
+            exp_annotations:
+              summary: AI 网关未释放预占超时或金额过高
+              description: 未释放预占已超过五分钟或总金额超过十元；即使单笔金额较小，也必须按 hold 与 request_id 核查。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-unreleased-hold-amount-high
+      - eval_time: 1m
+        alertname: MolinAIGatewayOutboxDeadExists
+        exp_alerts:
+          - exp_labels:
+              module: token_gateway
+              p_level: p1
+              severity: critical
+              status: dead
+            exp_annotations:
+              summary: AI 网关存在 dead Outbox 事件
+              description: dead 事件数量为 1，只能通过受控运维流程按 event_id 幂等重入。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-outbox-dead-exists
+      - eval_time: 1m
+        alertname: MolinAIGatewayCompensationBacklogStale
+        exp_alerts:
+          - exp_labels:
+              module: token_gateway
+              p_level: p1
+              severity: critical
+              status: pending
+            exp_annotations:
+              summary: AI 网关补偿任务积压超过五分钟
+              description: 状态 pending 的最老补偿任务年龄为 301 秒，请检查预算同步和数据库可用性。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-compensation-backlog-stale
+      - eval_time: 1m
+        alertname: MolinAIGatewayCompensationManualActionRequired
+        exp_alerts:
+          - exp_labels:
+              module: token_gateway
+              p_level: p1
+              severity: critical
+              status: manual_review
+            exp_annotations:
+              summary: AI 网关补偿任务需要人工处理
+              description: 状态 manual_review 的任务数量为 1，禁止盲目重试或直接修改钱包。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-compensation-manual-action-required
+      - eval_time: 1m
+        alertname: MolinAIGatewayGhostLeaseDetected
+        exp_alerts:
+          - exp_labels:
+              module: token_gateway
+              p_level: p1
+              severity: warning
+            exp_annotations:
+              summary: AI 网关清理到过期并发租约
+              description: 最近五分钟清理到幽灵租约，需结合进程重启、断连和心跳失败证据排查。
+              runbook_url: https://github.com/skillixx/-molin/blob/main/docs/ai-gateway-g7-alert-runbook.md#molin-ai-gateway-ghost-lease-detected
+
+  - name: Usage缺失和账务exception不得误升级为通用P0异常
+    interval: 1m
+    input_series:
+      - series: 'molin_ai_gateway_billing_anomalies{kind="missing_usage"}'
+        values: '1 1'
+      - series: 'molin_ai_gateway_billing_anomalies{kind="billing_exception"}'
+        values: '1 1'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: MolinAIGatewayBillingAnomaly
+        exp_alerts: []

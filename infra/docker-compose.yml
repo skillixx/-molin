@@ -61,6 +61,8 @@ services:
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/email-alerts.yml:/etc/prometheus/rules/email-alerts.yml:ro
+      - ./prometheus/ai-gateway-alerts.yml:/etc/prometheus/rules/ai-gateway-alerts.yml:ro
+      - ./prometheus/targets:/etc/prometheus/targets:ro
       - prometheus-data:/prometheus
     secrets:
       - source: internal_api_token
@@ -75,10 +77,57 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  blackbox-exporter:
+    # 固定官方 0.28.0；仅执行测试内网 HTTP 2xx 探测，不携带 Bifrost 内部 Token 或上游密钥。
+    image: prom/blackbox-exporter:v0.28.0
+    container_name: molin-blackbox-exporter
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/blackbox_exporter/config.yml
+    volumes:
+      - ./prometheus/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    networks:
+      monitoring:
+        ipv4_address: ${BLACKBOX_CONTAINER_IP:-172.31.250.12}
+    security_opt:
+      - no-new-privileges:true
+
+  grafana:
+    # Grafana 13.1.3 是 2026-08-08 官方发布的稳定 OSS 版本，固定版本避免 latest 漂移。
+    image: grafana/grafana:13.1.3
+    container_name: molin-grafana
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    ports:
+      # 测试仪表盘只绑定本机回环；远程查看必须使用受控 SSH 隧道。
+      - "127.0.0.1:${GRAFANA_PORT:-13000}:3000"
+    volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    networks:
+      monitoring:
+        ipv4_address: ${GRAFANA_CONTAINER_IP:-172.31.250.11}
+    security_opt:
+      - no-new-privileges:true
+
 volumes:
   mysql-data:
   minio-data:
   prometheus-data:
+  grafana-data:
 
 networks:
   monitoring:

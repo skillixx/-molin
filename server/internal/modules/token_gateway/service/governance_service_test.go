@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,6 +68,51 @@ func (r *memoryBudgetRepository) RecordCompensationFailure(context.Context, stri
 func (r *memoryBudgetRepository) RecordGatewayRejection(_ context.Context, event *model.AIGatewayRejectionEvent) error {
 	r.rejections = append(r.rejections, *event)
 	return nil
+}
+
+func TestGovernanceRecordsClassifierTimeoutSeparately(t *testing.T) {
+	repository := &memorySafetyRepository{}
+	safety := NewSafetyService(repository, "1234567890abcdef")
+	safety.policyLoad = func(ctx context.Context) (*model.AISafetyPolicyVersion, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	metrics := NewAIGatewayMetrics(nil)
+	governance := NewGovernanceService(safety, &memoryBudgetRepository{}, &memoryResourceLimiter{}).WithMetrics(metrics)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	_, err := governance.CheckInput(ctx, SafetySubject{RequestID: "req-classifier-timeout", UserID: 1}, map[string]interface{}{"prompt": "正常文本"})
+	if !errors.Is(err, ErrModerationUnavailable) {
+		t.Fatalf("分类器超时必须失败关闭: %v", err)
+	}
+	metricText, metricErr := metrics.AIGatewayPrometheus(context.Background())
+	if metricErr != nil || !strings.Contains(metricText, `molin_ai_gateway_rejections_total{rejection_reason="classifier_timeout"} 1`) {
+		t.Fatalf("分类器超时指标缺失: err=%v\n%s", metricErr, metricText)
+	}
+}
+
+func TestGovernanceRecordsOutputModerationFailuresOnceByReason(t *testing.T) {
+	budget := &memoryBudgetRepository{}
+	metrics := NewAIGatewayMetrics(nil)
+	governance := NewGovernanceService(nil, budget, nil).WithMetrics(metrics)
+	subject := SafetySubject{RequestID: "req-output-moderation-metrics", UserID: 1, ProjectID: 2, APIKeyID: 3, LogicalModelCode: "molin/test"}
+
+	governance.recordOutputModerationFailure(context.Background(), subject, ErrContentPolicyViolation)
+	governance.recordOutputModerationFailure(context.Background(), subject, ErrModerationUnavailable)
+	governance.recordOutputModerationFailure(context.Background(), subject, errors.Join(ErrModerationUnavailable, context.DeadlineExceeded))
+
+	metricText, metricErr := metrics.AIGatewayPrometheus(context.Background())
+	if metricErr != nil {
+		t.Fatal(metricErr)
+	}
+	for _, reason := range []string{"content_policy", "fail_closed", "classifier_timeout"} {
+		if !strings.Contains(metricText, `molin_ai_gateway_rejections_total{rejection_reason="`+reason+`"} 1`) {
+			t.Fatalf("输出审核失败原因 %s 未进入低基数指标:\n%s", reason, metricText)
+		}
+	}
+	if len(budget.rejections) != 3 {
+		t.Fatalf("三类输出审核失败必须各形成一次脱敏拒绝事实: %+v", budget.rejections)
+	}
 }
 
 type memoryResourceLimiter struct {
@@ -136,7 +182,8 @@ func TestGovernanceHardBudgetStopsBeforeResource(t *testing.T) {
 	safetyRepo := &memorySafetyRepository{policy: testSafetyPolicy(t)}
 	budget := &memoryBudgetRepository{reserveErr: repository.ErrBudgetLimitExceeded}
 	limiter := &memoryResourceLimiter{}
-	governance := NewGovernanceService(NewSafetyService(safetyRepo, "0123456789abcdef0123456789abcdef"), budget, limiter)
+	metrics := NewAIGatewayMetrics(nil)
+	governance := NewGovernanceService(NewSafetyService(safetyRepo, "0123456789abcdef0123456789abcdef"), budget, limiter).WithMetrics(metrics)
 	subject := SafetySubject{RequestID: "req-governance-2", UserID: 1, ProjectID: 2, APIKeyID: 3}
 	body := map[string]interface{}{"messages": []interface{}{map[string]interface{}{"role": "user", "content": "正常问题"}}}
 	decision, _ := governance.CheckInput(context.Background(), subject, body)
@@ -149,6 +196,13 @@ func TestGovernanceHardBudgetStopsBeforeResource(t *testing.T) {
 	}
 	if limiter.released != 0 {
 		t.Fatal("预算拒绝前不得创建资源租约")
+	}
+	metricText, metricErr := metrics.AIGatewayPrometheus(context.Background())
+	if metricErr != nil {
+		t.Fatal(metricErr)
+	}
+	if !strings.Contains(metricText, `molin_ai_gateway_rejections_total{rejection_reason="budget_limit"} 1`) {
+		t.Fatalf("预算拒绝未进入低基数指标:\n%s", metricText)
 	}
 }
 

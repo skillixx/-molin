@@ -1666,13 +1666,13 @@ down 的第一道断言是 receipt 行数必须为 0。随后仅当 `admin_bindi
 邮件入口已按该契约实现并完成既有验收；短信阶段 4 将同一解析器接入手机发码和密码重置。阶段 4 本地单测通过，
 真实 Redis、HTTP 和 Linux race 仍以 PR CI 为准；本文件不代表 Nginx 部署配置已经复核。
 
-### 3.20 内部邮件 Adapter 指标（Phase 1 metrics delta，待 QA/PM 复签）
+### 3.20 统一内部指标端点
 
 ```text
 GET /api/internal/metrics
 ```
 
-本端点仅供监控系统从内部监控网络抓取，不是用户端或管理端业务 API。QA 阻断修订已落档，当前待 QA/PM 复签；未验收 Go、反向代理、监控系统或端到端实现。
+本端点仅供监控系统从内部监控网络抓取，不是用户端或管理端业务 API。邮件指标的既有安全契约继续生效；短信与 AI 网关指标通过同一鉴权端点追加，不创建匿名或弱鉴权旁路。
 
 **请求与响应：**
 
@@ -1684,7 +1684,7 @@ GET /api/internal/metrics
 - 来源 IP 真相首先来自 `RemoteAddr` 解析出的 IP。仅当 `RemoteAddr` 命中 `INTERNAL_TRUSTED_PROXY_IPS` 时，才要求并信任由代理覆盖写入的恰好一个 `X-Real-IP` 单值，且该值必须是合法 IP；缺失、空值、多值或非法值均返回 `403/40003「无权限」`。非可信代理或直连请求始终只用 `RemoteAddr` 与 `INTERNAL_ALLOWED_IPS` 匹配，任何 `X-Real-IP`、`X-Forwarded-For` 或 `Forwarded` 都不能改变结果。应用永远不得读取 `X-Forwarded-For`。
 - 三项配置缺失、为空或非法时不得放宽为匿名、本机默认、可信代理豁免或仅单闸访问；部署就绪检查应阻止错误配置承载监控流量。
 
-**唯一允许输出的指标族：**
+**邮件指标族：**
 
 ```text
 email_adapter_calls_total{operation="...",scene="...",result="..."}
@@ -1695,7 +1695,13 @@ email_adapter_calls_total{operation="...",scene="...",result="..."}
 - `result` 只允许 `accepted`、`failed`、`timeout`。上述 operation/scene 合法配对与三个 result 构成封闭的 21 个时间序列；进程启动后即全部输出，未发生调用的序列值为 0。
 - 指标是进程内单调递增计数器；同一进程生命周期内不得递减，进程重启允许重置为 0，不承诺跨重启持久化。
 - 禁止增加邮箱、邮箱 HMAC、OTP、用户/管理员 ID、请求 ID、业务请求号、供应商 RequestId、TemplateId、错误原文、IP、Token 或其他高基数/敏感 label。
-- 当前端点不得输出 Go runtime、process、HTTP、数据库、Redis 或其他任何指标族；输出中只能出现 `email_adapter_calls_total` 的 HELP/TYPE 元数据与上述封闭样本。
+- 禁止输出 Go runtime、process、通用 HTTP、数据库连接或 Redis key 明细。除已冻结的邮件、短信和下述 AI 网关指标族外，不得动态追加其他指标族。
+
+**AI 网关 G7 指标增量：**
+
+Token 与来源 IP 安全闸完全不变。AI 网关模块装配成功后追加 `molin_ai_gateway_*` 指标，覆盖请求量/耗时、TTFT、流式断连、上游结果/重试、Usage 缺失、治理拒绝、四层并发租约、账务状态、钱包预占数量/金额/最老年龄、Outbox/补偿积压、账单差额、三方金额和已确认平台 SK 泄漏。对账识别的 `missing_usage` 与在线缺失计数接入同一 P1 告警；最老未释放预占超过 300 秒或总额超过 10 元接入 P1。泄漏事实必须先校验请求归属，再以 HMAC 精确匹配请求所属有效 SK，通用疑似文本只拒绝入库且不得升级 P0；五分钟窗口按唯一 API Key 计数。逻辑模型必须由数据库准入且最多 32 个，超出或非法值收敛为 `other`；其他标签均为封闭枚举。禁止出现 `request_id/user_id/project_id/api_key/prompt/secret` 或任何正文、密钥、错误原文。
+
+持久 Gauge 读取失败时端点返回 `503/50300「指标服务暂不可用」`，不输出邮件/短信/AI 的部分文本，也不回显数据库错误。三项财务差额为：`request_usage`、`request_hold`、`request_wallet`；七类异常为：`duplicate_settlement`、`unbilled_execution`、`missing_price_snapshot`、`missing_wallet_transaction`、`missing_usage`、`completed_pending`、`billing_exception`。三方金额固定为 `request_settled`、`model_usage`、`wallet_consumed`；安全发现当前只允许 `secret_leak`。金额以 CNY Decimal 文本输出。
 
 **反向代理边界：** 反向代理只能从专用监控网络暴露该路径，必须删除 `X-Forwarded-For` 与 `Forwarded`，并覆盖而非追加 `X-Real-IP` 为代理直接看到的单一客户端 IP；代理自身地址必须显式位于 `INTERNAL_TRUSTED_PROXY_IPS`。网络隔离只是附加防护，应用层 Token 与来源 IP 双闸必须始终执行，禁止因请求来自内网、回环地址或反向代理而绕过任一安全闸。
 

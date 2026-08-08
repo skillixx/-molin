@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -47,13 +48,14 @@ func TestG4RedisResourceIntegration(t *testing.T) {
 
 	t.Run("八节点一百并发最多二十个准入", func(t *testing.T) {
 		flush(t)
+		metrics := NewAIGatewayMetrics(nil)
 		defaults := ResourceDefaults{
 			User: ResourceLimits{Concurrency: 20, RPM: 1000, TPM: 1000000}, Project: ResourceLimits{Concurrency: 1000, RPM: 1000, TPM: 1000000},
 			APIKey: ResourceLimits{Concurrency: 1000, RPM: 1000, TPM: 1000000}, Model: ResourceLimits{Concurrency: 1000, RPM: 1000, TPM: 1000000},
 		}
 		limiters := make([]*ResourceLimiter, 8)
 		for index := range limiters {
-			limiters[index] = NewResourceLimiter(client, fixedResourcePolicyReader{}, defaults)
+			limiters[index] = NewResourceLimiter(client, fixedResourcePolicyReader{}, defaults).WithMetrics(metrics)
 		}
 		var admitted atomic.Int64
 		var rejected atomic.Int64
@@ -89,6 +91,14 @@ func TestG4RedisResourceIntegration(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+		metricText, metricErr := metrics.AIGatewayPrometheus(ctx)
+		if metricErr != nil {
+			t.Fatal(metricErr)
+		}
+		if !strings.Contains(metricText, `molin_ai_gateway_concurrency_leases{scope="user"} 0`) ||
+			!strings.Contains(metricText, `molin_ai_gateway_concurrency_rejections_total{scope="user"} 80`) {
+			t.Fatalf("一百并发后的租约和拒绝指标错误:\n%s", metricText)
+		}
 	})
 
 	t.Run("租约过期自动回收", func(t *testing.T) {
@@ -97,17 +107,42 @@ func TestG4RedisResourceIntegration(t *testing.T) {
 			User: ResourceLimits{Concurrency: 1, RPM: 100, TPM: 100000}, Project: ResourceLimits{Concurrency: 100, RPM: 100, TPM: 100000},
 			APIKey: ResourceLimits{Concurrency: 100, RPM: 100, TPM: 100000}, Model: ResourceLimits{Concurrency: 100, RPM: 100, TPM: 100000},
 		}
-		limiter := NewResourceLimiter(client, fixedResourcePolicyReader{}, defaults)
-		limiter.leaseTTL = 120 * time.Millisecond
-		if _, err := limiter.Acquire(ctx, "req-lease-old", 11, 12, 13, "molin/lease", 10); err != nil {
+		firstMetrics := NewAIGatewayMetrics(nil)
+		secondMetrics := NewAIGatewayMetrics(nil)
+		firstLimiter := NewResourceLimiter(client, fixedResourcePolicyReader{}, defaults).WithMetrics(firstMetrics)
+		secondLimiter := NewResourceLimiter(client, fixedResourcePolicyReader{}, defaults).WithMetrics(secondMetrics)
+		firstLimiter.leaseTTL = 120 * time.Millisecond
+		secondLimiter.leaseTTL = 120 * time.Millisecond
+		if _, err := firstLimiter.Acquire(ctx, "req-lease-old", 11, 12, 13, "molin/lease", 10); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := limiter.Acquire(ctx, "req-lease-blocked", 11, 12, 13, "molin/lease", 10); !errors.Is(err, ErrConcurrencyExceeded) {
+		if _, err := secondLimiter.Acquire(ctx, "req-lease-blocked", 11, 12, 13, "molin/lease", 10); !errors.Is(err, ErrConcurrencyExceeded) {
 			t.Fatalf("活动租约应阻止第二个请求: %v", err)
 		}
 		time.Sleep(180 * time.Millisecond)
-		if _, err := limiter.Acquire(ctx, "req-lease-recovered", 11, 12, 13, "molin/lease", 10); err != nil {
+		recovered, err := secondLimiter.Acquire(ctx, "req-lease-recovered", 11, 12, 13, "molin/lease", 10)
+		if err != nil {
 			t.Fatalf("过期租约应自动回收: %v", err)
+		}
+		firstMetricText, firstMetricErr := firstMetrics.AIGatewayPrometheus(ctx)
+		secondMetricText, secondMetricErr := secondMetrics.AIGatewayPrometheus(ctx)
+		if firstMetricErr != nil || secondMetricErr != nil {
+			t.Fatalf("跨实例租约 Gauge 读取失败: first=%v second=%v", firstMetricErr, secondMetricErr)
+		}
+		if !strings.Contains(secondMetricText, "molin_ai_gateway_ghost_leases_total 4") ||
+			!strings.Contains(firstMetricText, `molin_ai_gateway_concurrency_leases{scope="user"} 1`) ||
+			!strings.Contains(secondMetricText, `molin_ai_gateway_concurrency_leases{scope="user"} 1`) {
+			t.Fatalf("清理方与原持有方必须读取同一 Redis 权威 Gauge:\nfirst:\n%s\nsecond:\n%s", firstMetricText, secondMetricText)
+		}
+		if err := secondLimiter.Release(ctx, recovered); err != nil {
+			t.Fatal(err)
+		}
+		firstMetricText, firstMetricErr = firstMetrics.AIGatewayPrometheus(ctx)
+		secondMetricText, secondMetricErr = secondMetrics.AIGatewayPrometheus(ctx)
+		if firstMetricErr != nil || secondMetricErr != nil ||
+			!strings.Contains(firstMetricText, `molin_ai_gateway_concurrency_leases{scope="user"} 0`) ||
+			!strings.Contains(secondMetricText, `molin_ai_gateway_concurrency_leases{scope="user"} 0`) {
+			t.Fatalf("任一实例释放后全部实例 Gauge 必须归零: first_err=%v second_err=%v\nfirst:\n%s\nsecond:\n%s", firstMetricErr, secondMetricErr, firstMetricText, secondMetricText)
 		}
 	})
 

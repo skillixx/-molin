@@ -15,6 +15,17 @@
 docker compose -f infra/docker-compose.yml up -d
 ```
 
+## AI 网关 G7 测试监控
+
+G7 的 `monitoring` profile 增加 Prometheus、Grafana 和 Blackbox Exporter。Prometheus/Grafana 只绑定本机回环；Blackbox Exporter 固定 `prom/blackbox-exporter:v0.28.0`，只对 `infra/prometheus/targets/bifrost-nodes.json` 中两个节点执行无凭据 `/health` HTTP 2xx 探测。测试环境启动后必须由运维受控执行 `docker network connect bifrost-net molin-blackbox-exporter`，回滚时只断开该网络并恢复旧监控配置，不运行 `docker compose down -v`。
+
+```bash
+INTERNAL_API_TOKEN=<受限测试值> docker compose -f infra/docker-compose.yml --profile monitoring config --quiet
+INTERNAL_API_TOKEN=<受限测试值> docker compose -f infra/docker-compose.yml --profile monitoring up -d prometheus blackbox-exporter grafana
+```
+
+告警规则在 `infra/prometheus/ai-gateway-alerts.yml`，22 条告警均关联 `docs/ai-gateway-g7-alert-runbook.md`。在线或对账 Usage 异常会触发 P1；AI hold 最老年龄超过 300 秒或总额超过 10 元也会触发 P1。Grafana UID 为 `molin-ai-gateway-g7`，覆盖 P50/P95/P99、TTFT、按模型/驱动错误率、Bifrost 双节点、账务状态/差额/积压/租约、安全拒绝以及请求结算、模型 Usage、钱包消费金额。该 profile 不授权生产部署、真实流量或自动账务补偿。
+
 ## 测试环境部署
 
 测试环境部署为**手动触发**，合并到 main 不会自动部署。
