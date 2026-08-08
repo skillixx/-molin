@@ -24,7 +24,7 @@
 | 用户端 Playwright | PASS | 生产构建预览下 8 条通过，并重复执行为 16/16：客户链路、Project/SK、文档状态、空/错误、账本/导出/申诉及三宽度 |
 | 全量 Go/vet/mod verify | PASS | `go test -count=1 ./...`、`go vet ./...`、`go mod verify`；Windows 因 `CGO_ENABLED=0` 不执行竞态检测，Linux `-race` 仍待测试环境执行 |
 | 两端 lint/build | PASS | 用户端与管理端均通过 `type-check`、`lint`、`build`；用户端生产依赖审计为 0 个漏洞 |
-| Migration 隔离 MySQL 8 验证 | PENDING | 尚未执行 |
+| Migration 隔离 MySQL 8 验证 | PASS | 一次性 MySQL 8 容器完成 `64:0 -> 65:0`、重复 up、事实保留 down、重新 up、文档健康约束、申诉约束和请求索引验证；CI 复验仍待 PR |
 | 测试环境部署与真实浏览器 | PENDING | 尚未执行 |
 | 真实 Bifrost 与人民币对账 | PENDING | 尚未执行 |
 | 越权、吊销、不调用上游 | PENDING | 尚未执行 |

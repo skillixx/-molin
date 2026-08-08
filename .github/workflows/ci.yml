@@ -69,6 +69,12 @@ jobs:
         working-directory: server
         run: go build -o /dev/null ./cmd/api
 
+      - name: 隔离验证 G6 MySQL 8 迁移
+        env:
+          AI_GATEWAY_G6_ISOLATED_APPROVED: "YES"
+          G6_DOCKER_PULL_POLICY: missing
+        run: bash infra/scripts/verify-ai-gateway-g6-customer.sh
+
   phase5-release-safety:
     name: 阶段 5 短信发布安全门禁
     runs-on: ubuntu-latest
@@ -81,7 +87,7 @@ jobs:
       - name: 安装 Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: |
             web/admin-console/package-lock.json
@@ -349,3 +355,7 @@ jobs:
       - name: 生产构建
         working-directory: web/user-console
         run: npm run build
+
+      - name: G6 用户完整链路浏览器验收
+        working-directory: web/user-console
+        run: npm run test:g6-e2e

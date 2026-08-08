@@ -52,12 +52,12 @@ mysql_exec -e 'SELECT 1' >/dev/null 2>&1 || {
 for migration in "${repo_root}"/server/migrations/*.up.sql; do
   [[ "${migration}" == "${up65}" ]] && continue
   docker exec -i -e "MYSQL_PWD=${password}" "${container}" \
-    mysql -uroot --database="${database}" < "${migration}"
+    mysql -uroot --database="${database}" < "${migration}" >/dev/null
 done
 mysql_exec -e 'CREATE TABLE schema_migrations (version BIGINT NOT NULL PRIMARY KEY, dirty BOOLEAN NOT NULL); INSERT INTO schema_migrations(version,dirty) VALUES(64,0);'
 mysql_exec -e 'UPDATE schema_migrations SET dirty=1 WHERE version=64 AND dirty=0;'
 docker exec -i -e "MYSQL_PWD=${password}" "${container}" \
-  mysql -uroot --database="${database}" < "${up65}"
+  mysql -uroot --database="${database}" < "${up65}" >/dev/null
 mysql_exec -e 'UPDATE schema_migrations SET version=65,dirty=0 WHERE version=64 AND dirty=1;'
 
 assert_scalar() {
@@ -89,6 +89,10 @@ assert_scalar "SELECT COUNT(*) FROM information_schema.statistics WHERE table_sc
 mysql_exec <<'SQL'
 INSERT INTO users(id,email,password_hash,real_name_status,status)
 VALUES (965,'g6@example.invalid','test-only','verified','active');
+INSERT INTO token_channels(id,code,name,type,base_url,api_key_encrypted,status,priority,health_status)
+VALUES (965,'g6-bifrost','G6 Bifrost','openai_compatible','http://bifrost.invalid','encrypted-test-only','active',100,'healthy');
+INSERT INTO token_models(id,logical_model_code,display_name,provider_name,modality,channel_id,upstream_model,status,docs_url,quick_start_url,updated_by)
+VALUES (965,'molin/g6-test','G6 Test','Test','chat',965,'openrouter/test/model','inactive','https://docs.invalid/api','https://docs.invalid/quick',965);
 INSERT INTO ai_projects(id,user_id,name,status,budget_mode,timezone)
 VALUES (965,965,'G6 Isolated','active','disabled','Asia/Shanghai');
 INSERT INTO api_keys(id,user_id,project_id,key_prefix,key_hash,name,billing_mode,model_scope,scope_mode,status)
@@ -100,23 +104,23 @@ VALUES ('DSP-G6-ISOLATED','req_g6_isolated_965',965,'隔离测试账单申诉说
 SQL
 
 # 重复执行 up 不得覆盖文档健康状态或删除申诉事实。
-mysql_exec -e "UPDATE token_models SET docs_url_health_status='unhealthy' WHERE id=(SELECT id FROM (SELECT id FROM token_models ORDER BY id LIMIT 1) AS selected_model)" >/dev/null 2>&1 || true
+mysql_exec -e "UPDATE token_models SET docs_url_health_status='unhealthy' WHERE id=965"
 docker exec -i -e "MYSQL_PWD=${password}" "${container}" \
-  mysql -uroot --database="${database}" < "${up65}"
+  mysql -uroot --database="${database}" < "${up65}" >/dev/null
 assert_scalar "SELECT COUNT(*) FROM ai_billing_disputes WHERE dispute_no='DSP-G6-ISOLATED'" "1" "repeat_up_dispute_fact"
 assert_rejected "INSERT INTO ai_billing_disputes(dispute_no,request_id,user_id,reason,status) VALUES ('DSP-G6-DUP','req_g6_isolated_965',965,'重复申诉必须被唯一约束拒绝','submitted')" "dispute_unique"
-assert_rejected "UPDATE token_models SET docs_url_health_status='invalid' LIMIT 1" "document_health_check"
+assert_rejected "UPDATE token_models SET docs_url_health_status='invalid' WHERE id=965" "document_health_check"
 
 # down 采用事实保留策略，随后重新 up 验证版本可恢复且事实不丢失。
 mysql_exec -e 'UPDATE schema_migrations SET dirty=1 WHERE version=65 AND dirty=0;'
 docker exec -i -e "MYSQL_PWD=${password}" "${container}" \
-  mysql -uroot --database="${database}" < "${down65}"
+  mysql -uroot --database="${database}" < "${down65}" >/dev/null
 mysql_exec -e 'UPDATE schema_migrations SET version=64,dirty=0 WHERE version=65 AND dirty=1;'
 assert_scalar "SELECT COUNT(*) FROM ai_billing_disputes WHERE dispute_no='DSP-G6-ISOLATED'" "1" "down_dispute_fact"
 
 mysql_exec -e 'UPDATE schema_migrations SET dirty=1 WHERE version=64 AND dirty=0;'
 docker exec -i -e "MYSQL_PWD=${password}" "${container}" \
-  mysql -uroot --database="${database}" < "${up65}"
+  mysql -uroot --database="${database}" < "${up65}" >/dev/null
 mysql_exec -e 'UPDATE schema_migrations SET version=65,dirty=0 WHERE version=64 AND dirty=1;'
 assert_scalar "SELECT COUNT(*) FROM ai_billing_disputes WHERE dispute_no='DSP-G6-ISOLATED'" "1" "reup_dispute_fact"
 assert_scalar "SELECT CONCAT(version, CHAR(58), dirty) FROM schema_migrations" "65:0" "reup_version"
