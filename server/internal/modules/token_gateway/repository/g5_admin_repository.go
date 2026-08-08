@@ -6,6 +6,7 @@ import (
 	"errors"
 	"hash/fnv"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -153,7 +154,8 @@ func (r *G5AdminRepository) PublishModel(ctx context.Context, modelID, operatorI
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&item, modelID).Error; err != nil {
 			return err
 		}
-		if item.ChannelID == nil || item.UpstreamModel == nil || item.DocsURL == nil || item.QuickStartURL == nil {
+		if item.ChannelID == nil || item.UpstreamModel == nil || item.DocsURL == nil || item.QuickStartURL == nil ||
+			item.DocsURLHealthStatus != "healthy" || item.QuickStartURLHealthStatus != "healthy" {
 			return ErrModelReleaseConflict
 		}
 		var priceCount int64
@@ -263,7 +265,10 @@ func (r *G5AdminRepository) RollbackModel(ctx context.Context, modelID, targetVe
 			"logical_model_code": snapshot.LogicalModelCode, "display_name": snapshot.DisplayName, "provider_name": snapshot.ProviderName,
 			"description": snapshot.Description, "capabilities_json": snapshot.Capabilities, "context_window": snapshot.ContextWindow,
 			"intro_url": snapshot.IntroURL, "docs_url": snapshot.DocsURL, "quick_start_url": snapshot.QuickStartURL,
-			"modality": snapshot.Modality, "product_id": snapshot.ProductID, "channel_id": snapshot.ChannelID,
+			"intro_url_health_status":       rollbackDocumentHealth(snapshot.IntroURL, snapshot.IntroURLHealthStatus),
+			"docs_url_health_status":        rollbackDocumentHealth(snapshot.DocsURL, snapshot.DocsURLHealthStatus),
+			"quick_start_url_health_status": rollbackDocumentHealth(snapshot.QuickStartURL, snapshot.QuickStartURLHealthStatus),
+			"modality":                      snapshot.Modality, "product_id": snapshot.ProductID, "channel_id": snapshot.ChannelID,
 			"upstream_model": snapshot.UpstreamModel, "visible_scope": snapshot.VisibleScope, "target_audience_json": snapshot.TargetAudience,
 			"status": "active", "release_version_no": release.VersionNo, "published_at": now, "updated_by": operatorID,
 		}
@@ -277,6 +282,16 @@ func (r *G5AdminRepository) RollbackModel(ctx context.Context, modelID, targetVe
 		return nil
 	})
 	return &release, err
+}
+
+func rollbackDocumentHealth(value *string, status string) string {
+	if value == nil || strings.TrimSpace(*value) == "" {
+		return "unpublished"
+	}
+	if status == "" {
+		return "unknown"
+	}
+	return status
 }
 
 // validatePublishRoute 保证上架目录至少有一条指向可用渠道的生效 Bifrost 路由。

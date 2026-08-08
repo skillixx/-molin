@@ -237,7 +237,7 @@ func createG5ChannelAndModel(t *testing.T, db *gorm.DB, modelCode string, now ti
 	}
 	docsURL, quickURL, upstream := "https://docs.invalid/api", "https://docs.invalid/quick", "openrouter/test/model"
 	operatorID := uint64(901)
-	item := model.TokenModel{LogicalModelCode: modelCode, DisplayName: "G5 Integration", ProviderName: "Test", Modality: "chat", ChannelID: &channel.ID, UpstreamModel: &upstream, Status: "inactive", DocsURL: &docsURL, QuickStartURL: &quickURL, VisibleScope: "all", UpdatedBy: &operatorID, CreatedAt: now}
+	item := model.TokenModel{LogicalModelCode: modelCode, DisplayName: "G5 Integration", ProviderName: "Test", Modality: "chat", ChannelID: &channel.ID, UpstreamModel: &upstream, Status: "inactive", DocsURL: &docsURL, DocsURLHealthStatus: "healthy", QuickStartURL: &quickURL, QuickStartURLHealthStatus: "healthy", VisibleScope: "all", UpdatedBy: &operatorID, CreatedAt: now}
 	if err := db.Create(&item).Error; err != nil {
 		t.Fatal(err)
 	}

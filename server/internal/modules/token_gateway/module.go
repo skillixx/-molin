@@ -24,6 +24,7 @@ type Module struct {
 	GovernanceService *service.GovernanceService
 	GovernanceAdmin   *service.GovernanceAdminService
 	G5Admin           *service.G5AdminService
+	G6User            *service.G6UserService
 }
 
 // New 构造 token_gateway 模块依赖。
@@ -49,6 +50,7 @@ func New(db *gorm.DB, redisClient redis.UniversalClient, tokenProviderKey, apiKe
 	outboxRepo := repository.NewG3OutboxRepository(db)
 	governanceRepo := repository.NewG4GovernanceRepository(db)
 	g5AdminRepo := repository.NewG5AdminRepository(db)
+	g6UserRepo := repository.NewG6UserRepository(db)
 	catalogService := service.NewCatalogService(modelRepo)
 	pricingService := service.NewPricingService(pricingRepo, defaultMaxTokens)
 	billingService := service.NewAIBillingService(db, pricingService, pricingRepo, walletHolds)
@@ -73,6 +75,7 @@ func New(db *gorm.DB, redisClient redis.UniversalClient, tokenProviderKey, apiKe
 		GovernanceService: governanceService,
 		GovernanceAdmin:   service.NewGovernanceAdminService(governanceRepo).WithOutboxDeadRequeuer(outboxRepo),
 		G5Admin:           service.NewG5AdminService(g5AdminRepo, pricingRepo),
+		G6User:            service.NewG6UserService(g6UserRepo, catalogService).WithResourceDefaults(resourceDefaults),
 	}
 	// 未配置 HMAC 密钥时不注册 Project SK 管理能力，防止生成不可安全校验的密钥。
 	if apiKeyHMACSecret != "" {

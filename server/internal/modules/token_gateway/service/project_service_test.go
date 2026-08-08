@@ -44,11 +44,12 @@ func TestNormalizeProjectTimezone(t *testing.T) {
 }
 
 type memoryProjectStore struct {
-	project  model.AIProject
-	keys     map[uint64]authmodel.APIKey
-	scopes   map[uint64][]string
-	nextID   uint64
-	modelsOK bool
+	project        model.AIProject
+	keys           map[uint64]authmodel.APIKey
+	scopes         map[uint64][]string
+	nextID         uint64
+	modelsOK       bool
+	realNameStatus string
 }
 
 type memoryProjectAudit struct {
@@ -65,7 +66,7 @@ func (a *memoryProjectAudit) Record(_ context.Context, _ *uint64, _, action stri
 func newMemoryProjectStore() *memoryProjectStore {
 	return &memoryProjectStore{
 		project: model.AIProject{ID: 9, UserID: 5, Name: "演示项目", Status: ProjectStatusActive},
-		keys:    map[uint64]authmodel.APIKey{}, scopes: map[uint64][]string{}, nextID: 10, modelsOK: true,
+		keys:    map[uint64]authmodel.APIKey{}, scopes: map[uint64][]string{}, nextID: 10, modelsOK: true, realNameStatus: "verified",
 	}
 }
 func (s *memoryProjectStore) CreateProject(_ context.Context, project *model.AIProject) error {
@@ -156,6 +157,19 @@ func (s *memoryProjectStore) RotateProjectKey(_ context.Context, oldKey *authmod
 func (s *memoryProjectStore) ActiveChatModelsExist(_ context.Context, _ []string) (bool, error) {
 	return s.modelsOK, nil
 }
+func (s *memoryProjectStore) UserRealNameStatus(_ context.Context, _ uint64) (string, error) {
+	return s.realNameStatus, nil
+}
+
+func TestProjectKeyRequiresVerifiedRealName(t *testing.T) {
+	store := newMemoryProjectStore()
+	store.realNameStatus = "pending"
+	projectService := NewProjectService(store, "secret").WithVisibilityChecker(fakeVisibilityChecker{visible: true})
+	_, _, err := projectService.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, Name: "未实名密钥"})
+	if !errors.Is(err, ErrRealNameRequired) {
+		t.Fatalf("未实名用户不得签发可调用 SK: %v", err)
+	}
+}
 
 func TestProjectKeyDefaultsToDenyAllAllowlistAndStoresOnlyHash(t *testing.T) {
 	store := newMemoryProjectStore()
@@ -176,11 +190,11 @@ func TestProjectKeyDefaultsToDenyAllAllowlistAndStoresOnlyHash(t *testing.T) {
 func TestProjectKeyAllModeRequiresExplicitEmptyModelList(t *testing.T) {
 	store := newMemoryProjectStore()
 	service := NewProjectService(store, "secret").WithVisibilityChecker(fakeVisibilityChecker{visible: true})
-	_, _, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, ScopeMode: ScopeModeAll, ModelCodes: []string{"molin/qwen-turbo"}})
+	_, _, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, Name: "全部模型密钥", ScopeMode: ScopeModeAll, ModelCodes: []string{"molin/qwen-turbo"}})
 	if !errors.Is(err, ErrScopeModeInvalid) {
 		t.Fatalf("all 必须由用户明确选择且不能混用 allowlist: %v", err)
 	}
-	_, view, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, ScopeMode: ScopeModeAll})
+	_, view, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, Name: "全部模型密钥", ScopeMode: ScopeModeAll})
 	if err != nil || view.ScopeMode != ScopeModeAll {
 		t.Fatalf("显式 all 应签发成功: view=%+v err=%v", view, err)
 	}
@@ -189,7 +203,7 @@ func TestProjectKeyAllModeRequiresExplicitEmptyModelList(t *testing.T) {
 func TestProjectKeyRotateRevokesOldKeyAndReturnsSecretOnce(t *testing.T) {
 	store := newMemoryProjectStore()
 	service := NewProjectService(store, "rotate-secret").WithVisibilityChecker(fakeVisibilityChecker{visible: true})
-	oldPlaintext, oldView, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, ModelCodes: []string{"molin/qwen-turbo"}})
+	oldPlaintext, oldView, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, Name: "轮换密钥", ModelCodes: []string{"molin/qwen-turbo"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,26 +222,29 @@ func TestProjectKeyRotateRevokesOldKeyAndReturnsSecretOnce(t *testing.T) {
 func TestProjectKeyRejectsInactiveProjectInvalidModelAndExpiredTime(t *testing.T) {
 	store := newMemoryProjectStore()
 	service := NewProjectService(store, "validation-secret").WithVisibilityChecker(fakeVisibilityChecker{visible: true})
+	if _, _, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, Name: "  "}); !errors.Is(err, ErrKeyNameInvalid) {
+		t.Fatalf("空 SK 名称必须被后端拒绝: %v", err)
+	}
 	store.project.Status = ProjectStatusSuspended
-	if _, _, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9}); !errors.Is(err, ErrProjectInactive) {
+	if _, _, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, Name: "停用项目密钥"}); !errors.Is(err, ErrProjectInactive) {
 		t.Fatalf("停用 Project 不得签发 SK: %v", err)
 	}
 	store.project.Status = ProjectStatusActive
 	store.modelsOK = false
-	if _, _, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, ModelCodes: []string{"missing-model"}}); !errors.Is(err, ErrScopeModelInvalid) {
+	if _, _, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, Name: "缺失模型密钥", ModelCodes: []string{"missing-model"}}); !errors.Is(err, ErrScopeModelInvalid) {
 		t.Fatalf("不存在或非文字模型不得进入 allowlist: %v", err)
 	}
 	store.modelsOK = true
 	service.WithVisibilityChecker(fakeVisibilityChecker{visible: false})
-	if _, _, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, ModelCodes: []string{"hidden-model"}}); !errors.Is(err, ErrScopeModelInvalid) {
+	if _, _, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, Name: "隐藏模型密钥", ModelCodes: []string{"hidden-model"}}); !errors.Is(err, ErrScopeModelInvalid) {
 		t.Fatalf("当前用户不可见模型不得进入 allowlist: %v", err)
 	}
 	service.WithVisibilityChecker(fakeVisibilityChecker{visible: true})
 	past := time.Now().Add(-time.Second)
-	if _, _, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, ExpiresAt: &past}); !errors.Is(err, ErrKeyExpiresAtInvalid) {
+	if _, _, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, Name: "过期密钥", ExpiresAt: &past}); !errors.Is(err, ErrKeyExpiresAtInvalid) {
 		t.Fatalf("过期时间不得早于当前时间: %v", err)
 	}
-	if _, _, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 6, ProjectID: 9}); !errors.Is(err, repository.ErrProjectNotFound) {
+	if _, _, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 6, ProjectID: 9, Name: "越权密钥"}); !errors.Is(err, repository.ErrProjectNotFound) {
 		t.Fatalf("跨用户访问 Project 必须按不存在处理: %v", err)
 	}
 }
@@ -238,7 +255,7 @@ func TestProjectKeyLifecycleWritesAuditWithoutPlaintext(t *testing.T) {
 	service := NewProjectService(store, "audit-secret").
 		WithVisibilityChecker(fakeVisibilityChecker{visible: true}).
 		WithAuditRecorder(audit)
-	plaintext, view, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, ModelCodes: []string{"molin/qwen-turbo"}, IP: "127.0.0.1"})
+	plaintext, view, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, Name: "审计密钥", ModelCodes: []string{"molin/qwen-turbo"}, IP: "127.0.0.1"})
 	if err != nil {
 		t.Fatal(err)
 	}

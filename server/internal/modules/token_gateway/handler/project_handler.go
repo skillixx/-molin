@@ -196,8 +196,10 @@ func (h *ProjectHandler) writeError(w http.ResponseWriter, err error) {
 		response.Error(w, http.StatusNotFound, 40400, "资源不存在")
 	case errors.Is(err, repository.ErrProjectNameExists):
 		response.Error(w, http.StatusConflict, 40900, "Project 名称已存在")
-	case errors.Is(err, service.ErrProjectInvalid), errors.Is(err, service.ErrScopeModeInvalid), errors.Is(err, service.ErrScopeModelInvalid), errors.Is(err, service.ErrKeyExpiresAtInvalid):
+	case errors.Is(err, service.ErrProjectInvalid), errors.Is(err, service.ErrScopeModeInvalid), errors.Is(err, service.ErrScopeModelInvalid), errors.Is(err, service.ErrKeyExpiresAtInvalid), errors.Is(err, service.ErrKeyNameInvalid):
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
+	case errors.Is(err, service.ErrRealNameRequired):
+		response.Error(w, http.StatusBadRequest, 70001, "需要先完成实名认证")
 	case errors.Is(err, service.ErrProjectInactive):
 		response.Error(w, http.StatusConflict, 40900, "Project 已停用")
 	default:

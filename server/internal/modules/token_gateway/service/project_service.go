@@ -31,6 +31,7 @@ var (
 	ErrScopeModeInvalid    = errors.New("模型权限模式无效")
 	ErrScopeModelInvalid   = errors.New("授权模型不存在、未发布或不是文字模型")
 	ErrKeyExpiresAtInvalid = errors.New("SK 过期时间必须晚于当前时间")
+	ErrKeyNameInvalid      = errors.New("SK 名称不能为空且不能超过 191 个字符")
 )
 
 // ProjectService 管理单用户 Project。G2 不引入组织成员、共享钱包和预算硬限制。
@@ -57,6 +58,7 @@ type projectStore interface {
 	RevokeProjectKey(ctx context.Context, userID, projectID, keyID uint64) error
 	RotateProjectKey(ctx context.Context, oldKey *authmodel.APIKey, newKey *authmodel.APIKey, scopes []authmodel.APIKeyModelScope) error
 	ActiveChatModelsExist(ctx context.Context, codes []string) (bool, error)
+	UserRealNameStatus(ctx context.Context, userID uint64) (string, error)
 }
 
 func NewProjectService(repo projectStore, hmacSecret string) *ProjectService {
@@ -181,6 +183,13 @@ type ProjectKeyView struct {
 }
 
 func (s *ProjectService) IssueKey(ctx context.Context, in IssueProjectKeyInput) (string, ProjectKeyView, error) {
+	if err := s.requireVerifiedUser(ctx, in.UserID); err != nil {
+		return "", ProjectKeyView{}, err
+	}
+	name := strings.TrimSpace(in.Name)
+	if name == "" || len(name) > 191 {
+		return "", ProjectKeyView{}, ErrKeyNameInvalid
+	}
 	project, err := s.repo.FindProject(ctx, in.UserID, in.ProjectID)
 	if err != nil {
 		return "", ProjectKeyView{}, err
@@ -201,7 +210,7 @@ func (s *ProjectService) IssueKey(ctx context.Context, in IssueProjectKeyInput) 
 	}
 	key := &authmodel.APIKey{
 		UserID: in.UserID, ProjectID: &in.ProjectID, KeyPrefix: prefix, KeyHash: hash,
-		Name: strings.TrimSpace(in.Name), BillingMode: "postpaid", ScopeMode: mode,
+		Name: name, BillingMode: "postpaid", ScopeMode: mode,
 		Status: "active", ExpiresAt: in.ExpiresAt,
 	}
 	scopes := buildScopeModels(in.UserID, in.ProjectID, models)
@@ -240,6 +249,9 @@ func (s *ProjectService) RevokeKey(ctx context.Context, userID, projectID, keyID
 }
 
 func (s *ProjectService) RotateKey(ctx context.Context, userID, projectID, keyID uint64, ip string) (string, ProjectKeyView, error) {
+	if err := s.requireVerifiedUser(ctx, userID); err != nil {
+		return "", ProjectKeyView{}, err
+	}
 	oldKey, err := s.repo.FindProjectKey(ctx, userID, projectID, keyID)
 	if err != nil {
 		return "", ProjectKeyView{}, err
@@ -265,6 +277,18 @@ func (s *ProjectService) RotateKey(ctx context.Context, userID, projectID, keyID
 	}
 	s.recordKeyAudit(ctx, userID, "rotate_project_key", newKey.ID, projectID, ip, map[string]interface{}{"rotated_from_id": oldKey.ID, "scope_mode": oldKey.ScopeMode, "model_codes": models})
 	return plaintext, projectKeyView(newKey, models), nil
+}
+
+// requireVerifiedUser 在签发或轮换可调用 SK 前重新读取数据库实名状态，不能信任前端路由守卫。
+func (s *ProjectService) requireVerifiedUser(ctx context.Context, userID uint64) error {
+	status, err := s.repo.UserRealNameStatus(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if status != "verified" {
+		return ErrRealNameRequired
+	}
+	return nil
 }
 
 func (s *ProjectService) validateScope(ctx context.Context, userID uint64, mode string, modelCodes []string) (string, []string, error) {

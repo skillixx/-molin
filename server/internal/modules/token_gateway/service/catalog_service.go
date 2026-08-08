@@ -26,8 +26,9 @@ var (
 
 // 模态与状态白名单。
 var (
-	validModalities  = map[string]bool{"chat": true, "image": true, "audio": true, "video": true}
-	validModelStatus = map[string]bool{"active": true, "inactive": true}
+	validModalities           = map[string]bool{"chat": true, "image": true, "audio": true, "video": true}
+	validModelStatus          = map[string]bool{"active": true, "inactive": true}
+	validDocumentHealthStatus = map[string]bool{"unpublished": true, "unknown": true, "healthy": true, "unhealthy": true}
 )
 
 // CatalogService 对外模型目录 CRUD 服务（含 channel_id/upstream_model 路由设置 + 定向可见性）。
@@ -94,25 +95,37 @@ func (s *CatalogService) Create(ctx context.Context, req dto.CreateModelReq) (*d
 	}
 
 	m := &model.TokenModel{
-		LogicalModelCode: code,
-		DisplayName:      req.DisplayName,
-		ProviderName:     strings.TrimSpace(req.ProviderName),
-		Description:      req.Description,
-		CapabilitiesJSON: req.Capabilities,
-		ContextWindow:    req.ContextWindow,
-		IntroURL:         req.IntroURL,
-		DocsURL:          req.DocsURL,
-		QuickStartURL:    req.QuickStartURL,
-		Modality:         modality,
-		ProductID:        req.ProductID,
-		ChannelID:        req.ChannelID,
-		UpstreamModel:    req.UpstreamModel,
-		Status:           status,
-		VisibleScope:     scope,
-		TargetAudience:   audience,
-		SortOrder:        req.SortOrder,
+		LogicalModelCode:          code,
+		DisplayName:               req.DisplayName,
+		ProviderName:              strings.TrimSpace(req.ProviderName),
+		Description:               req.Description,
+		CapabilitiesJSON:          req.Capabilities,
+		ContextWindow:             req.ContextWindow,
+		IntroURL:                  req.IntroURL,
+		IntroURLHealthStatus:      documentHealthStatus(req.IntroURL, req.IntroURLHealthStatus),
+		DocsURL:                   req.DocsURL,
+		DocsURLHealthStatus:       documentHealthStatus(req.DocsURL, req.DocsURLHealthStatus),
+		QuickStartURL:             req.QuickStartURL,
+		QuickStartURLHealthStatus: documentHealthStatus(req.QuickStartURL, req.QuickStartURLHealthStatus),
+		Modality:                  modality,
+		ProductID:                 req.ProductID,
+		ChannelID:                 req.ChannelID,
+		UpstreamModel:             req.UpstreamModel,
+		Status:                    status,
+		VisibleScope:              scope,
+		TargetAudience:            audience,
+		SortOrder:                 req.SortOrder,
 	}
 	if err := validateModelMetadata(m.CapabilitiesJSON, m.IntroURL, m.DocsURL, m.QuickStartURL); err != nil {
+		return nil, err
+	}
+	if err := validateDocumentHealth(m.IntroURL, m.IntroURLHealthStatus, "模型介绍"); err != nil {
+		return nil, err
+	}
+	if err := validateDocumentHealth(m.DocsURL, m.DocsURLHealthStatus, "API 文档"); err != nil {
+		return nil, err
+	}
+	if err := validateDocumentHealth(m.QuickStartURL, m.QuickStartURLHealthStatus, "快速入门"); err != nil {
 		return nil, err
 	}
 	if err := s.repo.Create(ctx, m); err != nil {
@@ -218,7 +231,28 @@ func (s *CatalogService) Update(ctx context.Context, id uint64, req dto.UpdateMo
 				return nil, newValidation(field + " 必须是 HTTP/HTTPS 静态网页地址")
 			}
 			updates[field] = trimmed
+			statusField := field + "_health_status"
+			if trimmed == "" {
+				updates[statusField] = "unpublished"
+			} else {
+				// 文档地址发生变化后必须重新完成人工或监控验证，不能沿用旧健康结论。
+				updates[statusField] = "unknown"
+			}
 		}
+	}
+	for field, value := range map[string]*string{
+		"intro_url_health_status":       req.IntroURLHealthStatus,
+		"docs_url_health_status":        req.DocsURLHealthStatus,
+		"quick_start_url_health_status": req.QuickStartURLHealthStatus,
+	} {
+		if value == nil {
+			continue
+		}
+		status := strings.TrimSpace(*value)
+		if !validDocumentHealthStatus[status] {
+			return nil, newValidation(field + " 参数错误")
+		}
+		updates[field] = status
 	}
 	if req.Modality != nil {
 		if !validModalities[*req.Modality] {
@@ -280,28 +314,31 @@ func modelToResp(m *model.TokenModel) *dto.ModelResp {
 		scope = scopeAll
 	}
 	return &dto.ModelResp{
-		ID:               m.ID,
-		LogicalModelCode: m.LogicalModelCode,
-		DisplayName:      m.DisplayName,
-		ProviderName:     m.ProviderName,
-		Description:      m.Description,
-		Capabilities:     m.CapabilitiesJSON,
-		ContextWindow:    m.ContextWindow,
-		IntroURL:         m.IntroURL,
-		DocsURL:          m.DocsURL,
-		QuickStartURL:    m.QuickStartURL,
-		Modality:         m.Modality,
-		ProductID:        m.ProductID,
-		ChannelID:        m.ChannelID,
-		UpstreamModel:    m.UpstreamModel,
-		Status:           m.Status,
-		VisibleScope:     scope,
-		TargetAudience:   audienceToDTO(scope, m.TargetAudience),
-		SortOrder:        m.SortOrder,
-		ReleaseVersionNo: m.ReleaseVersionNo,
-		PublishedAt:      m.PublishedAt,
-		CreatedAt:        m.CreatedAt,
-		UpdatedAt:        m.UpdatedAt,
+		ID:                        m.ID,
+		LogicalModelCode:          m.LogicalModelCode,
+		DisplayName:               m.DisplayName,
+		ProviderName:              m.ProviderName,
+		Description:               m.Description,
+		Capabilities:              m.CapabilitiesJSON,
+		ContextWindow:             m.ContextWindow,
+		IntroURL:                  m.IntroURL,
+		IntroURLHealthStatus:      m.IntroURLHealthStatus,
+		DocsURL:                   m.DocsURL,
+		DocsURLHealthStatus:       m.DocsURLHealthStatus,
+		QuickStartURL:             m.QuickStartURL,
+		QuickStartURLHealthStatus: m.QuickStartURLHealthStatus,
+		Modality:                  m.Modality,
+		ProductID:                 m.ProductID,
+		ChannelID:                 m.ChannelID,
+		UpstreamModel:             m.UpstreamModel,
+		Status:                    m.Status,
+		VisibleScope:              scope,
+		TargetAudience:            audienceToDTO(scope, m.TargetAudience),
+		SortOrder:                 m.SortOrder,
+		ReleaseVersionNo:          m.ReleaseVersionNo,
+		PublishedAt:               m.PublishedAt,
+		CreatedAt:                 m.CreatedAt,
+		UpdatedAt:                 m.UpdatedAt,
 	}
 }
 
@@ -320,6 +357,27 @@ func validateModelMetadata(capabilities json.RawMessage, urls ...*string) error 
 func validDocumentationURL(raw string) bool {
 	parsed, err := url.ParseRequestURI(raw)
 	return err == nil && parsed.Host != "" && (parsed.Scheme == "http" || parsed.Scheme == "https")
+}
+
+func documentHealthStatus(documentURL *string, requested string) string {
+	if documentURL == nil || strings.TrimSpace(*documentURL) == "" {
+		return "unpublished"
+	}
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		return "unknown"
+	}
+	return requested
+}
+
+func validateDocumentHealth(documentURL *string, status, label string) error {
+	if !validDocumentHealthStatus[status] {
+		return newValidation(label + "健康状态参数错误")
+	}
+	if (documentURL == nil || strings.TrimSpace(*documentURL) == "") && status != "unpublished" {
+		return newValidation(label + "未配置时健康状态必须为 unpublished")
+	}
+	return nil
 }
 
 // audienceToDTO 把 target_audience_json 原文解析为响应 DTO（scope=all → nil）。

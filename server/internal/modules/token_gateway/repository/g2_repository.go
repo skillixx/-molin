@@ -180,7 +180,7 @@ func (r *G2Repository) ActiveChatModelsExist(ctx context.Context, codes []string
 	}
 	var count int64
 	err := r.db.WithContext(ctx).Model(&model.TokenModel{}).
-		Where("logical_model_code IN ? AND status = 'active' AND modality = 'chat'", codes).
+		Where("logical_model_code IN ? AND status = 'active' AND modality = 'chat' AND release_version_no > 0 AND published_at IS NOT NULL", codes).
 		Distinct("logical_model_code").Count(&count).Error
 	return count == int64(len(codes)), err
 }
