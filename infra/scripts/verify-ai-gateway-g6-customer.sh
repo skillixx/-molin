@@ -105,8 +105,15 @@ INSERT INTO token_models(id,logical_model_code,display_name,provider_name,modali
 VALUES (965,'molin/g6-test','G6 Test','Test','chat',965,'openrouter/test/model','inactive','https://docs.invalid/api','https://docs.invalid/quick',965);
 INSERT INTO ai_projects(id,user_id,name,status,budget_mode,timezone)
 VALUES (965,965,'G6 Isolated','active','disabled','Asia/Shanghai');
+INSERT INTO ai_projects(id,user_id,name,status,budget_mode,timezone)
+VALUES (966,965,'G6 Archived','archived','disabled','Asia/Shanghai');
 INSERT INTO api_keys(id,user_id,project_id,key_prefix,key_hash,name,billing_mode,model_scope,scope_mode,status)
 VALUES (965,965,965,'sk-g6-test','test-hash-only','G6 Test Key','postpaid','','allowlist','active');
+INSERT INTO ai_budget_policies(scope_type,scope_id,mode,monthly_limit,updated_by)
+VALUES ('project',965,'hard',100,965),('project',966,'hard',999,965);
+INSERT INTO ai_budget_overrides(scope_type,scope_id,extra_amount,reason,operator_id,expires_at)
+VALUES ('project',965,5,'G6 有效临时增额',965,'2026-08-09 00:00:00'),
+       ('project',965,50,'G6 已过期临时增额',965,'2026-08-07 00:00:00');
 INSERT INTO ai_requests(request_id,user_id,project_id,api_key_id,logical_model_code,modality,moderation_status,execution_status,billing_status)
 VALUES ('req_g6_isolated_965',965,965,965,'molin/g6-test','chat','passed','succeeded','settled');
 INSERT INTO ai_billing_disputes(dispute_no,request_id,user_id,reason,status)

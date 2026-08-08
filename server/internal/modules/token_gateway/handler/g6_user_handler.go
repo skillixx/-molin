@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -125,27 +126,60 @@ func (h *G6UserHandler) ExportRequests(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, 40000, "导出记录超过 5000 条，请缩小时间范围")
 		return
 	}
-	if !h.recordAudit(r, "request_ledger.export", "user", strconv.FormatUint(userID, 10), map[string]any{"count": len(items)}) {
-		response.Error(w, http.StatusInternalServerError, 50000, "导出审计失败")
+	var output bytes.Buffer
+	output.Write([]byte{0xEF, 0xBB, 0xBF})
+	writer := csv.NewWriter(&output)
+	if err := writer.Write([]string{"请求 ID", "Project", "SK 名称", "SK 前缀", "模型", "执行状态", "结算状态", "输入 Token", "输出 Token", "结算金额", "创建时间"}); err != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "生成导出文件失败")
 		return
 	}
-	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=ai-requests-%s.csv", time.Now().Format("20060102-150405")))
-	_, _ = w.Write([]byte{0xEF, 0xBB, 0xBF})
-	writer := csv.NewWriter(w)
-	_ = writer.Write([]string{"请求 ID", "Project", "SK 名称", "SK 前缀", "模型", "执行状态", "结算状态", "输入 Token", "输出 Token", "结算金额", "创建时间"})
 	for i := range items {
 		amount := "0"
 		if items[i].SettledAmount != nil {
 			amount = items[i].SettledAmount.String()
 		}
-		_ = writer.Write([]string{
+		if err := writer.Write([]string{
 			csvSafe(items[i].RequestID), csvSafe(items[i].ProjectName), csvSafe(items[i].APIKeyName), csvSafe(items[i].APIKeyPrefix),
 			csvSafe(items[i].LogicalModelCode), items[i].ExecutionStatus, items[i].BillingStatus,
 			items[i].InputTokens.String(), items[i].OutputTokens.String(), amount, items[i].CreatedAt.Format(time.RFC3339),
-		})
+		}); err != nil {
+			response.Error(w, http.StatusInternalServerError, 50000, "生成导出文件失败")
+			return
+		}
 	}
 	writer.Flush()
+	if err := writer.Error(); err != nil {
+		response.Error(w, http.StatusInternalServerError, 50000, "生成导出文件失败")
+		return
+	}
+	if !h.recordAudit(r, "request_ledger.export", "user", strconv.FormatUint(userID, 10), exportAuditSummary(filter, len(items))) {
+		response.Error(w, http.StatusInternalServerError, 50000, "导出审计失败")
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=ai-requests-%s.csv", time.Now().Format("20060102-150405")))
+	if _, err := w.Write(output.Bytes()); err != nil {
+		// 响应开始后不能再改写为 JSON 错误，只补充脱敏失败审计供运维追踪。
+		h.recordAudit(r, "request_ledger.export_delivery_failed", "user", strconv.FormatUint(userID, 10), exportAuditSummary(filter, len(items)))
+	}
+}
+
+// exportAuditSummary 只记录筛选元数据，不记录提示词、响应正文或密钥明文。
+func exportAuditSummary(filter repository.G6RequestFilter, count int) map[string]any {
+	summary := map[string]any{"count": count, "model": filter.LogicalModelCode, "status": filter.Status}
+	if filter.ProjectID != nil {
+		summary["project_id"] = *filter.ProjectID
+	}
+	if filter.APIKeyID != nil {
+		summary["api_key_id"] = *filter.APIKeyID
+	}
+	if filter.Start != nil {
+		summary["start"] = filter.Start.UTC().Format(time.RFC3339)
+	}
+	if filter.End != nil {
+		summary["end"] = filter.End.UTC().Format(time.RFC3339)
+	}
+	return summary
 }
 
 type createBillingDisputeRequest struct {

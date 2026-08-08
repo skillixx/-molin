@@ -63,6 +63,9 @@ func TestCapabilityFilterRequiresEnabledStructuredValue(t *testing.T) {
 	if !capabilityEnabled(json.RawMessage(`{"reasoning":true}`), "reasoning") || !capabilityEnabled(json.RawMessage(`["stream","tool"]`), "tool") {
 		t.Fatal("已启用的对象或数组能力应被命中")
 	}
+	if !capabilityEnabled(json.RawMessage(`{"Stream":true}`), "stream") {
+		t.Fatal("对象形式能力的键名必须大小写不敏感")
+	}
 }
 
 func TestDisplayedBudgetIncludesActiveOverride(t *testing.T) {

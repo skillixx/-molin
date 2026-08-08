@@ -57,10 +57,10 @@ async function loadProjects() {
   loading.value = true
   try {
     const loaded: AIProject[] = []
-    for (let page = 1; ; page += 1) {
+    for (let page = 1; page <= 1000; page += 1) {
       const result = await listAIProjects({ page, page_size: 100 })
       loaded.push(...result.items)
-      if (loaded.length >= result.total) break
+      if (result.items.length === 0 || loaded.length >= result.total) break
     }
     projects.value = loaded
     if (!selectedProjectID.value && projects.value.length) selectedProjectID.value = projects.value.find((item) => item.status === 'active')?.id || projects.value[0].id
@@ -70,10 +70,10 @@ async function loadProjects() {
 
 async function loadModels() {
   const loaded: AIModelCatalogItem[] = []
-  for (let page = 1; ; page += 1) {
+  for (let page = 1; page <= 1000; page += 1) {
     const result = await listAIModels({ page, page_size: 100 })
     loaded.push(...result.items)
-    if (loaded.length >= result.total) break
+    if (result.items.length === 0 || loaded.length >= result.total) break
   }
   models.value = loaded
 }

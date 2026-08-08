@@ -71,15 +71,15 @@ async function refreshAll() {
 async function loadFilters() {
   const loadedProjects: AIProject[] = []
   const loadedModels: AIModelCatalogItem[] = []
-  for (let page = 1; ; page += 1) {
+  for (let page = 1; page <= 1000; page += 1) {
     const result = await listAIProjects({ page, page_size: 100 })
     loadedProjects.push(...result.items)
-    if (loadedProjects.length >= result.total) break
+    if (result.items.length === 0 || loadedProjects.length >= result.total) break
   }
-  for (let page = 1; ; page += 1) {
+  for (let page = 1; page <= 1000; page += 1) {
     const result = await listAIModels({ page, page_size: 100 })
     loadedModels.push(...result.items)
-    if (loadedModels.length >= result.total) break
+    if (result.items.length === 0 || loadedModels.length >= result.total) break
   }
   projects.value = loadedProjects
   models.value = loadedModels

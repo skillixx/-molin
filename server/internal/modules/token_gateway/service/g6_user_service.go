@@ -118,7 +118,14 @@ func capabilityEnabled(raw json.RawMessage, capability string) bool {
 			}
 		}
 	case map[string]interface{}:
-		enabled, exists := typed[capability]
+		var enabled interface{}
+		var exists bool
+		for key, value := range typed {
+			if strings.EqualFold(strings.TrimSpace(key), capability) {
+				enabled, exists = value, true
+				break
+			}
+		}
 		if !exists {
 			return false
 		}
@@ -234,7 +241,7 @@ func (s *G6UserService) Overview(ctx context.Context, userID uint64, timezone st
 	if err != nil {
 		return nil, err
 	}
-	budget, err := s.repo.SumMonthlyBudget(ctx, userID)
+	budget, err := s.repo.SumMonthlyBudget(ctx, userID, s.now())
 	if err != nil {
 		return nil, err
 	}

@@ -348,12 +348,19 @@ func (r *G6UserRepository) AggregateUsage(ctx context.Context, userID uint64, st
 	return result, err
 }
 
-func (r *G6UserRepository) SumMonthlyBudget(ctx context.Context, userID uint64) (*decimal.Decimal, error) {
+func (r *G6UserRepository) SumMonthlyBudget(ctx context.Context, userID uint64, at time.Time) (*decimal.Decimal, error) {
 	var value *decimal.Decimal
 	err := r.db.WithContext(ctx).Table("ai_budget_policies AS policies").
 		Joins("JOIN ai_projects AS projects ON projects.id = policies.scope_id AND policies.scope_type = 'project'").
-		Where("projects.user_id = ? AND policies.mode IN ('soft','hard') AND policies.monthly_limit IS NOT NULL", userID).
-		Select("SUM(policies.monthly_limit)").Scan(&value).Error
+		Where("projects.user_id = ? AND projects.status <> 'archived' AND policies.mode IN ('soft','hard') AND policies.monthly_limit IS NOT NULL", userID).
+		Select(`SUM(policies.monthly_limit + COALESCE((
+			SELECT SUM(overrides.extra_amount)
+			FROM ai_budget_overrides AS overrides
+			WHERE overrides.scope_type = 'project'
+			  AND overrides.scope_id = policies.scope_id
+			  AND overrides.revoked_at IS NULL
+			  AND overrides.expires_at > ?
+		), 0))`, at).Scan(&value).Error
 	return value, err
 }
 
