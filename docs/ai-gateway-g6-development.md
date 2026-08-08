@@ -1,6 +1,6 @@
 # AI 网关 G6 用户端客户旅程开发说明
 
-> 状态：测试环境真实 E2E、Migration 000066、独立 QA 与真实浏览器可读性复验已通过，最新 CI、独立评审和产品整改复验中。G5 验收提交为 `60b569f`，G6 实际开发基线为 `origin/main@c4126a6`；最终状态以 `docs/ai-gateway-g6-acceptance.md` 为准。
+> 状态：G6 测试环境真实 E2E、Migration 000066、独立代码评审、独立 QA、产品复验和 CI 均已通过，PR #325 已获准合并。G5 验收提交为 `60b569f`，G6 实际开发基线为 `origin/main@c4126a6`；最终状态以 `docs/ai-gateway-g6-acceptance.md` 为准。
 
 ## 1. 阶段目标
 
