@@ -457,6 +457,8 @@ Migration `000063_create_ai_gateway_g4_governance` 新增以下 expand 表：
 
 Migration `000065_create_ai_gateway_g6_customer_journey` 新增 `ai_billing_disputes`，以 `(request_id,user_id)` 唯一约束保证同一用户对同一请求只能存在一条账单申诉。申诉只保存编号、request_id、用户说明、状态、处理意见和审计时间，不保存提示词、响应正文或任何密钥；外键限制请求、用户和处理人均可追溯。
 
+Migration `000066_enforce_ai_dispute_request_owner` 在 `ai_requests(request_id,user_id)` 增加组合唯一索引，并让 `ai_billing_disputes(request_id,user_id)` 通过组合外键引用该索引。这样不论写入来自用户 API、管理脚本还是异步任务，数据库都会拒绝“用户 B 申诉用户 A 请求”的跨用户事实。该迁移的 down 同样采用事实保留策略，不自动移除客户权益约束。
+
 `token_models` 增加模型介绍、API 文档和快速入门三个 URL 的健康状态，状态为 `unpublished/unknown/healthy/unhealthy`。静态网页正文仍由外部站点托管，墨灵不保存 Markdown 或 HTML。地址变化后状态自动回到 `unknown`；发布操作要求 API 文档和快速入门均为 `healthy`，健康状态随不可变模型发布快照冻结。历史 G5 快照没有该字段时，只在发布 URL 与当前 URL 完全一致时兼容迁移后的状态。
 
 `ai_requests` 增加 `(user_id,execution_status,billing_status,created_at)` 查询索引，支持本人请求账本筛选。G6 不创建第二套 Usage 或财务表：用户用量、价格快照和钱包关联继续分别以 `ai_usage_items`、`ai_requests.price_snapshot_json` 和 `ai_request_wallet_links` 为事实源。000065 down 为事实保留型 no-op，不删除申诉和财务关联事实。

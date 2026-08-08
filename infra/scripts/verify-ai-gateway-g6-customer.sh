@@ -13,6 +13,8 @@ command -v openssl >/dev/null 2>&1 || { echo "G6_VERIFY=FAILED reason=openssl_mi
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 up65="${repo_root}/server/migrations/000065_create_ai_gateway_g6_customer_journey.up.sql"
 down65="${repo_root}/server/migrations/000065_create_ai_gateway_g6_customer_journey.down.sql"
+up66="${repo_root}/server/migrations/000066_enforce_ai_dispute_request_owner.up.sql"
+down66="${repo_root}/server/migrations/000066_enforce_ai_dispute_request_owner.down.sql"
 suffix="${RANDOM}-$$"
 container="molin-g6-mysql-${suffix}"
 database="molin_g6_contract"
@@ -59,7 +61,7 @@ fi
 
 # 空库先应用到 G5，再显式验证 64 -> 65 的版本流转。
 for migration in "${repo_root}"/server/migrations/*.up.sql; do
-  [[ "${migration}" == "${up65}" ]] && continue
+  [[ "${migration}" == "${up65}" || "${migration}" == "${up66}" ]] && continue
   docker exec -i -e "MYSQL_PWD=${password}" "${container}" \
     mysql -uroot --database="${database}" < "${migration}" >/dev/null
 done
@@ -76,6 +78,10 @@ mysql_exec -e 'UPDATE schema_migrations SET dirty=1 WHERE version=64 AND dirty=0
 docker exec -i -e "MYSQL_PWD=${password}" "${container}" \
   mysql -uroot --database="${database}" < "${up65}" >/dev/null
 mysql_exec -e 'UPDATE schema_migrations SET version=65,dirty=0 WHERE version=64 AND dirty=1;'
+mysql_exec -e 'UPDATE schema_migrations SET dirty=1 WHERE version=65 AND dirty=0;'
+docker exec -i -e "MYSQL_PWD=${password}" "${container}" \
+  mysql -uroot --database="${database}" < "${up66}" >/dev/null
+mysql_exec -e 'UPDATE schema_migrations SET version=66,dirty=0 WHERE version=65 AND dirty=1;'
 
 assert_scalar() {
   local sql="$1"
@@ -98,15 +104,18 @@ assert_rejected() {
   fi
 }
 
-assert_scalar "SELECT CONCAT(version, CHAR(58), dirty) FROM schema_migrations" "65:0" "first_up_version"
+assert_scalar "SELECT CONCAT(version, CHAR(58), dirty) FROM schema_migrations" "66:0" "first_up_version"
 assert_scalar "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='token_models' AND column_name IN ('intro_url_health_status','docs_url_health_status','quick_start_url_health_status')" "3" "document_health_columns"
-assert_scalar "SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema=DATABASE() AND constraint_name IN ('chk_token_models_intro_url_health','chk_token_models_docs_url_health','chk_token_models_quick_start_url_health','uk_ai_billing_disputes_request_user','chk_ai_billing_disputes_status','chk_ai_billing_disputes_reason')" "6" "named_constraints"
+assert_scalar "SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema=DATABASE() AND constraint_name IN ('chk_token_models_intro_url_health','chk_token_models_docs_url_health','chk_token_models_quick_start_url_health','uk_ai_billing_disputes_request_user','chk_ai_billing_disputes_status','chk_ai_billing_disputes_reason','fk_ai_billing_disputes_request_owner')" "7" "named_constraints"
 assert_scalar "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name='ai_requests' AND index_name='idx_ai_requests_user_states_created'" "4" "request_index_columns"
+assert_scalar "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name='ai_requests' AND index_name='uk_ai_requests_request_user'" "2" "request_owner_index_columns"
 assert_scalar "SELECT CONCAT(docs_url_health_status, CHAR(58), quick_start_url_health_status) FROM token_models WHERE id=964" "unknown:unknown" "legacy_document_health_unknown"
 
 mysql_exec <<'SQL'
 INSERT INTO users(id,email,password_hash,real_name_status,status)
 VALUES (965,'g6@example.invalid','test-only','verified','active');
+INSERT INTO users(id,email,password_hash,real_name_status,status)
+VALUES (966,'g6-other@example.invalid','test-only','verified','active');
 INSERT INTO token_channels(id,code,name,type,base_url,api_key_encrypted,status,priority,health_status)
 VALUES (965,'g6-bifrost','G6 Bifrost','openai_compatible','http://bifrost.invalid','encrypted-test-only','active',100,'healthy');
 INSERT INTO token_models(id,logical_model_code,display_name,provider_name,modality,channel_id,upstream_model,status,docs_url,quick_start_url,updated_by)
@@ -142,9 +151,16 @@ docker exec -i -e "MYSQL_PWD=${password}" "${container}" \
   mysql -uroot --database="${database}" < "${up65}" >/dev/null
 assert_scalar "SELECT COUNT(*) FROM ai_billing_disputes WHERE dispute_no='DSP-G6-ISOLATED'" "1" "repeat_up_dispute_fact"
 assert_rejected "INSERT INTO ai_billing_disputes(dispute_no,request_id,user_id,reason,status) VALUES ('DSP-G6-DUP','req_g6_isolated_965',965,'重复申诉必须被唯一约束拒绝','submitted')" "dispute_unique"
+assert_rejected "INSERT INTO ai_billing_disputes(dispute_no,request_id,user_id,reason,status) VALUES ('DSP-G6-CROSS','req_g6_isolated_965',966,'跨用户申诉必须被组合外键拒绝','submitted')" "dispute_request_owner"
 assert_rejected "UPDATE token_models SET docs_url_health_status='invalid' WHERE id=965" "document_health_check"
 
 # down 采用事实保留策略，随后重新 up 验证版本可恢复且事实不丢失。
+mysql_exec -e 'UPDATE schema_migrations SET dirty=1 WHERE version=66 AND dirty=0;'
+docker exec -i -e "MYSQL_PWD=${password}" "${container}" \
+  mysql -uroot --database="${database}" < "${down66}" >/dev/null
+mysql_exec -e 'UPDATE schema_migrations SET version=65,dirty=0 WHERE version=66 AND dirty=1;'
+assert_scalar "SELECT COUNT(*) FROM ai_billing_disputes WHERE dispute_no='DSP-G6-ISOLATED'" "1" "down66_dispute_fact"
+
 mysql_exec -e 'UPDATE schema_migrations SET dirty=1 WHERE version=65 AND dirty=0;'
 docker exec -i -e "MYSQL_PWD=${password}" "${container}" \
   mysql -uroot --database="${database}" < "${down65}" >/dev/null
@@ -155,7 +171,11 @@ mysql_exec -e 'UPDATE schema_migrations SET dirty=1 WHERE version=64 AND dirty=0
 docker exec -i -e "MYSQL_PWD=${password}" "${container}" \
   mysql -uroot --database="${database}" < "${up65}" >/dev/null
 mysql_exec -e 'UPDATE schema_migrations SET version=65,dirty=0 WHERE version=64 AND dirty=1;'
+mysql_exec -e 'UPDATE schema_migrations SET dirty=1 WHERE version=65 AND dirty=0;'
+docker exec -i -e "MYSQL_PWD=${password}" "${container}" \
+  mysql -uroot --database="${database}" < "${up66}" >/dev/null
+mysql_exec -e 'UPDATE schema_migrations SET version=66,dirty=0 WHERE version=65 AND dirty=1;'
 assert_scalar "SELECT COUNT(*) FROM ai_billing_disputes WHERE dispute_no='DSP-G6-ISOLATED'" "1" "reup_dispute_fact"
-assert_scalar "SELECT CONCAT(version, CHAR(58), dirty) FROM schema_migrations" "65:0" "reup_version"
+assert_scalar "SELECT CONCAT(version, CHAR(58), dirty) FROM schema_migrations" "66:0" "reup_version"
 
-echo "G6_VERIFY=PASS mysql=8.0 isolated=true schema=65:0 repeated_up=true fact_preserving_down=true reup=true document_health=true dispute_constraints=true request_index=true project_database=false"
+echo "G6_VERIFY=PASS mysql=8.0 isolated=true schema=66:0 repeated_up=true fact_preserving_down=true reup=true document_health=true dispute_constraints=true dispute_owner=true request_index=true project_database=false"

@@ -18,7 +18,7 @@ G6 只交付已发布文字模型的用户端商业闭环：模型发现、价�
 | 用量记录 | `/api/token/usage` 读取旧 `token_usage_logs`，不能完整解释 G3 价格快照、钱包预占和结算 | 新增以 `ai_requests` 为事实源的用户账本、总览和详情接口；旧接口保留兼容 |
 | 价格与结算 | `ai_price_versions`、`ai_price_skus`、`ai_requests.price_snapshot_json`、`ai_request_wallet_links` 已存在 | 只输出销售价格和用户财务事实；禁止输出 `cost_unit_price`、上游成本和原始快照 |
 | 导出 | 无 AI 请求账本 CSV 导出 | 新增本人范围、时间范围和条数上限的 CSV 导出，执行公式注入防护 |
-| 账单申诉 | 只有内容安全申诉，无账单申诉事实 | Migration `000065` 新增 `ai_billing_disputes`，按 `request_id + user_id` 幂等受理并可追踪 |
+| 账单申诉 | 只有内容安全申诉，无账单申诉事实 | Migration `000065` 新增 `ai_billing_disputes`，按 `request_id + user_id` 幂等受理并可追踪；`000066` 用组合外键强制申诉用户与请求归属一致 |
 | 用户导航 | `/api-keys`、`/token/usage`、`/consumption` 入口割裂 | 新增 `/ai/models`、`/ai/models/:modelCode`、`/ai/api-keys`、`/ai/usage`，旧 Token 路由重定向 |
 
 ## 3. 后端设计

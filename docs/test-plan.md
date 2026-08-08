@@ -1041,6 +1041,6 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - CSV 要求 93 天以内且最多 5000 行，覆盖 `= + - @` 公式注入；重复账单申诉保持一条事实并返回冲突。
 - Playwright 覆盖搜索 URL、详情、复制、文档状态、Project 编辑、SK 一次展示/轮换/吊销、用量详情、导出、申诉、空/错误和 1440/768/375 无横向溢出。
 - 本地执行 `gofmt`、`go test -count=1 ./...`、`go test -race ./...`、`go vet ./...`、`go mod verify`，管理端和用户端执行 `type-check/lint/build`，用户端执行 `test:g6-e2e`。
-- 测试环境必须备份后部署 Migration 000065、API、管理端和用户端；使用专用实名测试用户与最低成本文字模型执行唯一幂等真实 Bifrost 请求。
+- 测试环境必须备份后部署 Migration 000065、000066、API、管理端和用户端；验证数据库拒绝跨用户申诉，再使用专用实名测试用户与最低成本文字模型执行唯一幂等真实 Bifrost 请求。
 - 真实 E2E 必须验证目录发布快照、Project SK scope、request_id、Usage、价格快照、销售金额、钱包扣费、越权拒绝和吊销后不上游；凭据回收后保留不可变账本证据。
 - CI、独立代码评审、QA 与产品经理均须 PASS，P0=0、P1=0，才能合并并声明 G6 完成；Mock 浏览器通过不等于真实测试环境验收。

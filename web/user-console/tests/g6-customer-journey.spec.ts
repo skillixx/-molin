@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 const ok = (data: unknown) => ({ code: 0, message: 'ok', data })
 const pageData = (items: unknown[]) => ({ items, page: 1, page_size: 20, total: items.length })
@@ -70,6 +70,20 @@ async function mockG6(page: Page, options: MockG6Options = {}) {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ok(data)) })
   })
   return writes
+}
+
+async function expectInsideViewport(locator: Locator, page: Page) {
+  await locator.scrollIntoViewIfNeeded()
+  await expect(locator).toBeVisible()
+  const box = await locator.boundingBox()
+  const viewport = page.viewportSize()
+  expect(box).not.toBeNull()
+  expect(viewport).not.toBeNull()
+  if (!box || !viewport) return
+  expect(box.x).toBeGreaterThanOrEqual(0)
+  expect(box.y).toBeGreaterThanOrEqual(0)
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1)
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1)
 }
 
 test('G6 模型发现到 Project SK 一次展示链路可操作', async ({ page }) => {
@@ -204,12 +218,15 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 1000 }, { name: 
     }
     await page.goto('/ai/models')
     await expect(page.getByRole('heading', { name: '模型市场' })).toBeVisible()
+    await expectInsideViewport(page.getByLabel('搜索模型'), page)
     await assertNoOverflow()
     await page.goto('/ai/models/molin%2Fqwen-turbo')
     await expect(page.getByRole('heading', { name: '通义千问 Turbo' })).toBeVisible()
+    await expectInsideViewport(page.getByRole('button', { name: '快速入门' }).first(), page)
     await assertNoOverflow()
     await page.goto('/ai/api-keys')
     await expect(page.getByRole('heading', { name: 'Project 与 API Key' })).toBeVisible()
+    await expectInsideViewport(page.getByRole('button', { name: '创建 API Key' }).first(), page)
     await assertNoOverflow()
     await page.goto('/ai/usage')
     await expect(page.getByRole('heading', { name: '用量与账单' })).toBeVisible()
@@ -218,7 +235,9 @@ for (const viewport of [{ name: 'desktop', width: 1440, height: 1000 }, { name: 
       ? page.getByRole('link', { name: /req_g6_e2e_001/ })
       : page.getByRole('button', { name: 'req_g6_e2e_001' })
     await requestEntry.click()
-    await expect(page.getByRole('dialog', { name: '请求账单详情' })).toBeVisible()
+    const detailDialog = page.getByRole('dialog', { name: '请求账单详情' })
+    await expect(detailDialog).toBeVisible()
+    await expectInsideViewport(detailDialog.getByText('计价明细'), page)
     await assertNoOverflow()
   })
 }

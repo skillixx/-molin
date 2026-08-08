@@ -13,7 +13,7 @@
 | G6 实际开发基线 | `origin/main@c4126a6` |
 | 当前分支提交 | `9c325b6` |
 | 测试环境应用提交 | `9efb1bd`（后续 `b80af84` 仅调整 CI 隔离探活脚本） |
-| Migration | `000065_create_ai_gateway_g6_customer_journey` |
+| Migration | `000065_create_ai_gateway_g6_customer_journey`、`000066_enforce_ai_dispute_request_owner` |
 | 部署范围 | 仅测试环境，禁止生产 |
 | 多模态范围 | 仅已发布文字模型 |
 
@@ -28,14 +28,14 @@
 | 全量 Go/vet/mod verify | PASS | 本地 `go test -count=1 ./...`、`go vet ./...`、`go mod verify`；GitHub Actions Linux 执行 `go test -v -race -count=1 ./...` 通过 |
 | 两端 lint/build | PASS | 用户端与管理端均通过 `type-check`、`lint`、`build`；用户端生产依赖审计为 0 个漏洞 |
 | 可重复镜像构建 | PASS | `golang:1.25-alpine` 服务端、`node:24-alpine` 用户端和管理端镜像均完成本地 Docker 构建；Vite 5 开发依赖审计告警作为升级事项保留，不进入运行时镜像 |
-| Migration 隔离 MySQL 8 验证 | PASS | 一次性 MySQL 8 容器完成 `64:0 -> 65:0`、重复 up、事实保留 down、重新 up、历史文档初始化为 unknown、文档健康/申诉约束、请求索引，并以真实 GORM 验证跨用户隔离、重复申诉和 SK 审计失败事务回滚；`b80af84` 增加连续三次就绪判定和失败诊断，本地复验通过 |
+| Migration 隔离 MySQL 8 验证 | PASS | 一次性 MySQL 8 容器完成 `64:0 -> 65:0 -> 66:0`、重复 up、事实保留 down、重新 up、历史文档初始化、文档健康/申诉约束、请求索引、跨用户申诉组合外键拒绝，并以真实 GORM 验证租户隔离、重复申诉和 SK 审计失败事务回滚 |
 | 测试环境部署与真实浏览器 | PASS | 测试环境 schema `65:0`；桌面 `1440x1000` 与手机 `375x812` 真实页面通过，模型市场、人民币价格、快速入门、已撤销 SK、请求详情和申诉可追溯；两个宽度均无横向溢出 |
 | 真实 Bifrost 与人民币对账 | PASS | Bifrost 负载入口 `127.0.0.1:18080`、两个节点健康；真实 request `req_478e03928009d186` 已结算 `0.00000100 CNY`，Usage 与钱包差异均为 `0.00000000`，价格版本 `v2` |
 | 越权、吊销、不调用上游 | PASS | 跨用户请求详情返回 404；安全命中和 SK 吊销后均在网关前拒绝且未产生上游执行尝试；重复申诉返回 409 |
 | 测试凭据回收 | PASS | 清理前测试集合为用户 2、活跃 SK 0、未归档 Project 1、请求事实 4；清理后为 `0|0|0|4`，会话撤销，本地和远程浏览器 JWT 已删除 |
 | GitHub CI | PENDING | 原 PR #324 在 `b80af84` 六项检查全绿；因分支命名规范迁移至替代 PR #325，等待最终提交 `9c325b6` 的 CI 复验 |
 | 独立 QA | PASS | 独立测试工程师复跑全量 Go、vet、mod verify、两端 type-check/lint/build、10 条 G6 Playwright 和隔离 MySQL 8；P0/P1/P2/P3 均为 0 |
-| 独立评审与产品 | PENDING | 最终代码评审进行中；产品首轮提出证据固化、响应式覆盖和详情失败状态问题，均已整改，等待复验 |
+| 独立评审与产品 | PENDING | 最终代码评审 P0=0、P1=0并允许合并；其 P2 申诉归属数据库约束和 P3 响应式断言也已继续整改，等待最新提交复核与产品复验 |
 
 ## 3. 测试环境真实 E2E 证据
 
