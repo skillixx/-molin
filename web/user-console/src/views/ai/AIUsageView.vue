@@ -26,6 +26,8 @@ const models = ref<AIModelCatalogItem[]>([])
 const detail = ref<AIRequestDetail>()
 const detailVisible = ref(false)
 const detailLoading = ref(false)
+const detailError = ref('')
+const detailRequestID = ref('')
 const disputeVisible = ref(false)
 const disputeReason = ref('')
 const submittingDispute = ref(false)
@@ -100,7 +102,15 @@ async function openDetail(requestID: string) {
   detailVisible.value = true
   detailLoading.value = true
   detail.value = undefined
-  try { detail.value = await getAIRequest(requestID) } finally { detailLoading.value = false }
+  detailError.value = ''
+  detailRequestID.value = requestID
+  try {
+    detail.value = await getAIRequest(requestID)
+  } catch (error) {
+    detailError.value = error instanceof Error ? error.message : '请求账单详情暂时无法加载'
+  } finally {
+    detailLoading.value = false
+  }
 }
 
 async function handleExport() {
@@ -187,6 +197,9 @@ function errorLabel(value?: string) {
 
     <el-drawer v-model="detailVisible" title="请求账单详情" size="min(640px, 100%)">
       <div v-loading="detailLoading" class="detail-body">
+        <el-alert v-if="detailError" type="error" show-icon :closable="false" title="请求账单详情加载失败" :description="detailError">
+          <template #default><el-button link type="primary" @click="openDetail(detailRequestID)">重新加载</el-button></template>
+        </el-alert>
         <template v-if="detail">
           <dl class="detail-grid"><div><dt>请求 ID</dt><dd>{{ detail.request_id }}</dd></div><div><dt>模型</dt><dd>{{ detail.logical_model_code }}</dd></div><div><dt>Project</dt><dd>{{ detail.project_name }}</dd></div><div><dt>API Key</dt><dd>{{ detail.api_key_name }} · {{ detail.api_key_prefix }}</dd></div><div><dt>安全状态</dt><dd><RequestStatusTag :status="detail.moderation_status" /></dd></div><div><dt>执行状态</dt><dd><RequestStatusTag :status="detail.execution_status" /></dd></div><div><dt>结算状态</dt><dd><RequestStatusTag :status="detail.billing_status" /></dd></div><div><dt>价格版本</dt><dd>v{{ detail.price_version_no }}</dd></div><div><dt>结算金额</dt><dd class="money-cell">{{ money(detail.settled_amount) }}</dd></div></dl>
           <el-alert v-if="detail.error_code" type="warning" :closable="false" show-icon :title="errorLabel(detail.error_code)" :description="`错误码：${detail.error_code}`" />

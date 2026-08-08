@@ -20,7 +20,7 @@ const project = { id: 7, name: '客服生产环境', status: 'active', budget_mo
 const key = { id: 9, project_id: 7, name: '客服服务', key_prefix: 'sk-molin-AbCd', scope_mode: 'allowlist', model_codes: ['molin/qwen-turbo'], status: 'active', created_at: '2026-08-08T08:00:00Z' }
 const request = { request_id: 'req_g6_e2e_001', project_id: 7, project_name: project.name, api_key_id: 9, api_key_name: key.name, api_key_prefix: key.key_prefix, logical_model_code: model.logical_model_code, moderation_status: 'passed', execution_status: 'succeeded', billing_status: 'settled', input_tokens: '12', output_tokens: '4', reasoning_tokens: '0', cached_tokens: '0', quoted_amount: '0.01000000', settled_amount: '0.00000100', created_at: '2026-08-08T08:00:00Z', completed_at: '2026-08-08T08:00:01Z' }
 
-type MockG6Options = { catalogItems?: Array<typeof model>; detailModel?: typeof model; failCatalog?: boolean }
+type MockG6Options = { catalogItems?: Array<typeof model>; detailModel?: typeof model; failCatalog?: boolean; failRequestDetail?: boolean }
 
 async function mockG6(page: Page, options: MockG6Options = {}) {
   const writes: Array<{ method: string; path: string; body: unknown }> = []
@@ -36,6 +36,10 @@ async function mockG6(page: Page, options: MockG6Options = {}) {
     const method = route.request().method()
     if (options.failCatalog && path === '/api/token/catalog/models') {
       await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 50300, message: '目录暂不可用' }) })
+      return
+    }
+    if (options.failRequestDetail && path === '/api/token/customer/requests/req_g6_e2e_001') {
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 50300, message: '账单详情暂不可用' }) })
       return
     }
     if (path.endsWith('/customer/requests/export')) {
@@ -181,13 +185,40 @@ test('G6 手机账单使用全宽筛选抽屉并支持键盘打开请求', async
   await expect(page.getByRole('dialog', { name: '请求账单详情' })).toBeVisible()
 })
 
+test('G6 请求详情加载失败显示可重试状态', async ({ page }) => {
+  await mockG6(page, { failRequestDetail: true })
+  await page.goto('/ai/usage')
+  await page.getByRole('button', { name: 'req_g6_e2e_001' }).click()
+  const drawer = page.getByRole('dialog', { name: '请求账单详情' })
+  await expect(drawer.getByText('请求账单详情加载失败')).toBeVisible()
+  await expect(drawer.getByRole('button', { name: '重新加载' })).toBeVisible()
+})
+
 for (const viewport of [{ name: 'desktop', width: 1440, height: 1000 }, { name: 'tablet', width: 768, height: 1024 }, { name: 'mobile', width: 375, height: 812 }]) {
-  test(`G6 模型市场 ${viewport.name} 无横向溢出`, async ({ page }) => {
+  test(`G6 客户旅程页面 ${viewport.name} 无横向溢出`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height })
     await mockG6(page)
+    const assertNoOverflow = async () => {
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+      expect(overflow).toBeLessThanOrEqual(1)
+    }
     await page.goto('/ai/models')
     await expect(page.getByRole('heading', { name: '模型市场' })).toBeVisible()
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
-    expect(overflow).toBeLessThanOrEqual(1)
+    await assertNoOverflow()
+    await page.goto('/ai/models/molin%2Fqwen-turbo')
+    await expect(page.getByRole('heading', { name: '通义千问 Turbo' })).toBeVisible()
+    await assertNoOverflow()
+    await page.goto('/ai/api-keys')
+    await expect(page.getByRole('heading', { name: 'Project 与 API Key' })).toBeVisible()
+    await assertNoOverflow()
+    await page.goto('/ai/usage')
+    await expect(page.getByRole('heading', { name: '用量与账单' })).toBeVisible()
+    await assertNoOverflow()
+    const requestEntry = viewport.width <= 720
+      ? page.getByRole('link', { name: /req_g6_e2e_001/ })
+      : page.getByRole('button', { name: 'req_g6_e2e_001' })
+    await requestEntry.click()
+    await expect(page.getByRole('dialog', { name: '请求账单详情' })).toBeVisible()
+    await assertNoOverflow()
   })
 }
