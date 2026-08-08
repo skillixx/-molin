@@ -54,6 +54,18 @@ func TestBillingDisputeRejectsCredentialLikeText(t *testing.T) {
 	}
 }
 
+func TestPublicMeterSourceMapsInternalValues(t *testing.T) {
+	if got := publicMeterSource("provider"); got != "provider_confirmed" {
+		t.Fatalf("上游计量来源必须映射为公开枚举 provider_confirmed，实际 %s", got)
+	}
+	if got := publicMeterSource("reconciled"); got != "reconciled" {
+		t.Fatalf("人工核定来源必须保留公开枚举 reconciled，实际 %s", got)
+	}
+	if got := publicMeterSource("unexpected_internal_value"); got != "provider_confirmed" {
+		t.Fatalf("未知内部来源不得泄漏到客户接口，实际 %s", got)
+	}
+}
+
 func TestEffectiveLimitUsesOwnedPolicyOverride(t *testing.T) {
 	defaults := ResourceLimits{Concurrency: 5, RPM: 60, TPM: 100000}
 	policies := map[string]model.AIResourcePolicy{"api_key:9": {ConcurrencyLimit: 2, RPMLimit: 20, TPMLimit: 30000}}

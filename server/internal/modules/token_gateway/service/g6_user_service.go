@@ -395,7 +395,7 @@ func (s *G6UserService) RequestDetail(ctx context.Context, userID uint64, reques
 			continue
 		}
 		lines = append(lines, dto.UserRequestPriceLine{
-			MeterType: billed[i].MeterType, MeterSource: billed[i].Source, Quantity: billed[i].Quantity, SaleUnitPrice: *billed[i].UnitPrice,
+			MeterType: billed[i].MeterType, MeterSource: publicMeterSource(billed[i].Source), Quantity: billed[i].Quantity, SaleUnitPrice: *billed[i].UnitPrice,
 			Scale: scale, Amount: *billed[i].Amount, Currency: snapshot.Currency,
 		})
 	}
@@ -420,6 +420,14 @@ func (s *G6UserService) RequestDetail(ctx context.Context, userID uint64, reques
 		detail.Dispute = &resp
 	}
 	return detail, nil
+}
+
+// publicMeterSource 将内部计量来源收敛为稳定的客户接口枚举，避免泄漏仓储实现值。
+func publicMeterSource(source string) string {
+	if source == "reconciled" {
+		return "reconciled"
+	}
+	return "provider_confirmed"
 }
 
 func (s *G6UserService) CreateDispute(ctx context.Context, userID uint64, requestID, reason string) (*dto.BillingDisputeResp, error) {
