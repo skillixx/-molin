@@ -215,6 +215,7 @@ feature/{开发者标识}-{模块}-{功能描述}
   backend-a   — 后端 A
   backend-b   — 后端 B
   backend-c   — 后端 C
+  backend-d   — 后端 D（AI 网关 / Agent / Skill）
   frontend-a  — 前端 A
   frontend-b  — 前端 B
   ops         — 运维
@@ -234,6 +235,7 @@ feature/{开发者标识}-{模块}-{功能描述}
 | 后端 C | asset / membership / app / content | `feature/backend-c-asset-management` |
 | 后端 C | asset / membership / app / content | `feature/backend-c-provision-handler` |
 | 后端 C | asset / membership / app / content | `feature/backend-c-content-cms` |
+| 后端 D | token_gateway / agent / skill | `feature/backend-d-ai-gateway-customer-journey` |
 | 前端 A | web/admin-console | `feature/frontend-a-admin-login-layout` |
 | 前端 A | web/admin-console | `feature/frontend-a-admin-user-management` |
 | 前端 B | web/user-console | `feature/frontend-b-user-register-login` |

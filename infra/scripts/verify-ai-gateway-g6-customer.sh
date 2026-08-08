@@ -124,15 +124,22 @@ INSERT INTO ai_projects(id,user_id,name,status,budget_mode,timezone)
 VALUES (965,965,'G6 Isolated','active','disabled','Asia/Shanghai');
 INSERT INTO ai_projects(id,user_id,name,status,budget_mode,timezone)
 VALUES (966,965,'G6 Archived','archived','disabled','Asia/Shanghai');
+INSERT INTO ai_projects(id,user_id,name,status,budget_mode,timezone)
+VALUES (967,965,'G6 No Budget','active','disabled','Asia/Shanghai');
 INSERT INTO api_keys(id,user_id,project_id,key_prefix,key_hash,name,billing_mode,model_scope,scope_mode,status)
 VALUES (965,965,965,'sk-g6-test','test-hash-only','G6 Test Key','postpaid','','allowlist','active');
+INSERT INTO api_keys(id,user_id,project_id,key_prefix,key_hash,name,billing_mode,model_scope,scope_mode,status)
+VALUES (967,965,967,'sk-g6-no-budget','test-no-budget-hash','G6 No Budget Key','postpaid','','allowlist','active');
 INSERT INTO ai_budget_policies(scope_type,scope_id,mode,monthly_limit,updated_by)
 VALUES ('project',965,'hard',100,965),('project',966,'hard',999,965);
 INSERT INTO ai_budget_overrides(scope_type,scope_id,extra_amount,reason,operator_id,expires_at)
 VALUES ('project',965,5,'G6 有效临时增额',965,'2026-08-09 00:00:00'),
        ('project',965,50,'G6 已过期临时增额',965,'2026-08-07 00:00:00');
-INSERT INTO ai_requests(request_id,user_id,project_id,api_key_id,logical_model_code,modality,moderation_status,execution_status,billing_status)
-VALUES ('req_g6_isolated_965',965,965,965,'molin/g6-test','chat','passed','succeeded','settled');
+INSERT INTO ai_requests(request_id,user_id,project_id,api_key_id,logical_model_code,modality,moderation_status,execution_status,billing_status,price_snapshot_json,quoted_amount,settled_amount)
+VALUES ('req_g6_isolated_965',965,965,965,'molin/g6-test','chat','passed','succeeded','settled',
+        '{"price_version_id":965,"logical_model_code":"molin/g6-test","version_no":1,"currency":"CNY","rounding_mode":"ceil_8","failure_charge_policy":"confirmed_usage","minimum_charge":"0.000001","skus":{"input_tokens":{"meter_type":"input_tokens","sale_unit_price":"0.8","scale":"1000000","currency":"CNY"},"output_tokens":{"meter_type":"output_tokens","sale_unit_price":"2","scale":"1000000","currency":"CNY"}}}',
+        0.00002600,0.00002600),
+       ('req_g6_no_budget_967',965,967,967,'molin/g6-test','chat','passed','succeeded','settled',NULL,500,500);
 INSERT INTO ai_usage_items(request_id,meter_type,source,sequence_no,quantity,unit_price,amount)
 VALUES ('req_g6_isolated_965','input_tokens','provider',0,12,NULL,NULL),
        ('req_g6_isolated_965','output_tokens','provider',0,4,NULL,NULL),
@@ -141,7 +148,8 @@ VALUES ('req_g6_isolated_965','input_tokens','provider',0,12,NULL,NULL),
        ('req_g6_isolated_965','input_tokens','reconciled',1,20,0.8,0.00001600),
        ('req_g6_isolated_965','output_tokens','reconciled',1,5,2,0.00001000);
 INSERT INTO ai_budget_reservations(request_id,user_id,project_id,api_key_id,reserved_amount,settled_amount,status,daily_period_start,monthly_period_start,expires_at,released_at)
-VALUES ('req_g6_isolated_965',965,965,965,25,21,'settled','2026-08-07 16:00:00','2026-07-31 16:00:00','2026-08-09 00:00:00','2026-08-08 00:00:00');
+VALUES ('req_g6_isolated_965',965,965,965,25,21,'settled','2026-08-07 16:00:00','2026-07-31 16:00:00','2026-08-09 00:00:00','2026-08-08 00:00:00'),
+       ('req_g6_no_budget_967',965,967,967,500,500,'settled','2026-08-07 16:00:00','2026-07-31 16:00:00','2026-08-09 00:00:00','2026-08-08 00:00:00');
 INSERT INTO ai_billing_disputes(dispute_no,request_id,user_id,reason,status)
 VALUES ('DSP-G6-ISOLATED','req_g6_isolated_965',965,'隔离测试账单申诉说明不少于十个字符','submitted');
 SQL
@@ -151,7 +159,7 @@ host_port="$(docker port "${container}" 3306/tcp | sed -E 's/.*:([0-9]+)$/\1/' |
 (
   cd "${repo_root}/server"
   AI_GATEWAY_G6_MYSQL_DSN="root:${password}@tcp(127.0.0.1:${host_port})/${database}?parseTime=true&charset=utf8mb4" \
-    go test -count=1 ./internal/modules/token_gateway/repository -run '^TestG6UserRepositoryMySQLIsolation$' >/dev/null
+    go test -count=1 ./internal/modules/token_gateway/repository ./internal/modules/token_gateway/service -run '^TestG6User(RepositoryMySQLIsolation|ServiceMySQLReconciledDetail)$' >/dev/null
 )
 
 # 重复执行 up 不得覆盖文档健康状态或删除申诉事实。

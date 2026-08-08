@@ -401,7 +401,13 @@ func (r *G6UserRepository) SumMonthlyBudget(ctx context.Context, userID uint64, 
 // 预算准入在 reservation 中固化周期起点，因此不能用用户传入的单一时区重新切分月份。
 func (r *G6UserRepository) SumCurrentProjectBudgetUsage(ctx context.Context, userID uint64, at time.Time) (decimal.Decimal, error) {
 	var projects []model.AIProject
-	if err := r.db.WithContext(ctx).Where("user_id = ? AND status <> 'archived'", userID).Find(&projects).Error; err != nil {
+	// 分子与预算分母必须使用同一组 Project，未启用月预算的消费不能污染预算使用率。
+	if err := r.db.WithContext(ctx).Table("ai_projects AS projects").
+		Select("projects.*").
+		Joins("JOIN ai_budget_policies AS policies ON policies.scope_type = 'project' AND policies.scope_id = projects.id").
+		Where("projects.user_id = ? AND projects.status <> 'archived'", userID).
+		Where("policies.mode IN ('soft','hard') AND policies.monthly_limit IS NOT NULL").
+		Find(&projects).Error; err != nil {
 		return decimal.Zero, err
 	}
 	if len(projects) == 0 {

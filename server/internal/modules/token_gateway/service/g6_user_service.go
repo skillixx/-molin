@@ -395,7 +395,7 @@ func (s *G6UserService) RequestDetail(ctx context.Context, userID uint64, reques
 			continue
 		}
 		lines = append(lines, dto.UserRequestPriceLine{
-			MeterType: billed[i].MeterType, MeterSource: "provider_confirmed", Quantity: billed[i].Quantity, SaleUnitPrice: *billed[i].UnitPrice,
+			MeterType: billed[i].MeterType, MeterSource: billed[i].Source, Quantity: billed[i].Quantity, SaleUnitPrice: *billed[i].UnitPrice,
 			Scale: scale, Amount: *billed[i].Amount, Currency: snapshot.Currency,
 		})
 	}

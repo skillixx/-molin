@@ -65,7 +65,7 @@ async function mockG6(page: Page, options: MockG6Options = {}) {
     else if (path === '/api/token/customer/limits') data = { user: { scope_type: 'user', scope_id: 1, name: '本人总限制', concurrency: 20, rpm: 200, tpm: 500000, source: 'platform_default' }, projects: [{ scope_type: 'project', scope_id: 7, name: project.name, concurrency: 10, rpm: 120, tpm: 300000, source: 'policy_override', budget_mode: 'hard', monthly_budget: '105.00000000', budget_override: '5.00000000' }], api_keys: [{ scope_type: 'api_key', scope_id: 9, name: key.name, concurrency: 5, rpm: 60, tpm: 120000, source: 'platform_default', budget_mode: 'disabled' }] }
     else if (path === '/api/token/customer/usage/overview') data = { today_requests: 1, today_input_tokens: '12', today_output_tokens: '4', today_amount: '0.00000100', month_requests: 8, month_input_tokens: '120', month_output_tokens: '48', month_amount: '0.00002000', monthly_budget: '105.00000000', monthly_budget_usage_percent: '0.00', currency: 'CNY' }
     else if (path === '/api/token/customer/requests') data = pageData([request])
-    else if (path === '/api/token/customer/requests/req_g6_e2e_001' && method === 'GET') data = { ...request, price_version_id: 3, price_version_no: 3, failure_charge_policy: 'confirmed_usage', rounding_mode: 'ceil_8', minimum_charge: '0.000001', price_lines: [{ meter_type: 'input_tokens', meter_source: 'provider_confirmed', quantity: '12', sale_unit_price: '0.80000000', scale: '1000000', amount: '0.00000001', currency: 'CNY' }, { meter_type: 'output_tokens', meter_source: 'provider_confirmed', quantity: '4', sale_unit_price: '2.00000000', scale: '1000000', amount: '0.00000001', currency: 'CNY' }], wallet_hold_id: 31, settle_transaction_id: 32 }
+    else if (path === '/api/token/customer/requests/req_g6_e2e_001' && method === 'GET') data = { ...request, price_version_id: 3, price_version_no: 3, failure_charge_policy: 'confirmed_usage', rounding_mode: 'ceil_8', minimum_charge: '0.000001', price_lines: [{ meter_type: 'input_tokens', meter_source: 'reconciled', quantity: '12', sale_unit_price: '0.80000000', scale: '1000000', amount: '0.00000001', currency: 'CNY' }, { meter_type: 'output_tokens', meter_source: 'reconciled', quantity: '4', sale_unit_price: '2.00000000', scale: '1000000', amount: '0.00000001', currency: 'CNY' }], wallet_hold_id: 31, settle_transaction_id: 32 }
     else if (path.endsWith('/disputes') && method === 'POST') data = { dispute_no: 'DSP-TEST001', request_id: request.request_id, reason: '本次费用与预期不一致，请帮助核查。', status: 'submitted', created_at: '2026-08-08T09:00:00Z' }
     else if (method !== 'GET') data = { updated: true }
     else data = pageData([])
@@ -175,6 +175,7 @@ test('G6 请求账本可查看价格、钱包关联并提交申诉', async ({ pa
   const detailDrawer = page.getByRole('dialog', { name: '请求账单详情' })
   await expect(page.getByText('结算流水 #32')).toBeVisible()
   await expect(detailDrawer.getByText('安全通过')).toBeVisible()
+  await expect(detailDrawer.getByText('人工核定用量')).toHaveCount(2)
   await expect(detailDrawer).toHaveCSS('background-color', 'rgb(14, 21, 33)')
   await expect(detailDrawer.getByText(request.request_id)).toHaveCSS('color', 'rgb(248, 250, 252)')
   await page.getByRole('button', { name: '对本次账单有疑问' }).click()
