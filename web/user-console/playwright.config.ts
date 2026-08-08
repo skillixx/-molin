@@ -15,7 +15,7 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: 'npm.cmd run build && npm.cmd run preview -- --port 5196',
+    command: 'npm run build && npm run preview -- --port 5196',
     url: 'http://127.0.0.1:5196',
     reuseExistingServer: false,
     timeout: 120_000,

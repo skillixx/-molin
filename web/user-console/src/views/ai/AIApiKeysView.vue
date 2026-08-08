@@ -56,16 +56,26 @@ async function loadLimits() { limits.value = await getAIResourceLimits() }
 async function loadProjects() {
   loading.value = true
   try {
-    const result = await listAIProjects({ page: 1, page_size: 100 })
-    projects.value = result.items
+    const loaded: AIProject[] = []
+    for (let page = 1; ; page += 1) {
+      const result = await listAIProjects({ page, page_size: 100 })
+      loaded.push(...result.items)
+      if (loaded.length >= result.total) break
+    }
+    projects.value = loaded
     if (!selectedProjectID.value && projects.value.length) selectedProjectID.value = projects.value.find((item) => item.status === 'active')?.id || projects.value[0].id
     if (selectedProjectID.value) await loadKeys(selectedProjectID.value)
   } finally { loading.value = false }
 }
 
 async function loadModels() {
-  const result = await listAIModels({ page: 1, page_size: 100 })
-  models.value = result.items
+  const loaded: AIModelCatalogItem[] = []
+  for (let page = 1; ; page += 1) {
+    const result = await listAIModels({ page, page_size: 100 })
+    loaded.push(...result.items)
+    if (loaded.length >= result.total) break
+  }
+  models.value = loaded
 }
 
 async function selectProject(id: number) {
@@ -154,6 +164,15 @@ async function copySecret() {
   ElMessage.success('完整密钥已复制，请立即安全保存')
 }
 
+function clearIssuedSecret() {
+  issuedKey.value = undefined
+  router.replace({ query: {} })
+}
+
+function closeSecretDialog() {
+  secretDialog.value = false
+}
+
 async function rotateKey(row: unknown) {
   const item = row as ProjectKey
   if (!selectedProjectID.value) return
@@ -204,7 +223,7 @@ async function archiveProject() {
         <button v-for="project in projects" :key="project.id" type="button" class="project-item" :class="{ active: project.id === selectedProjectID }" @click="selectProject(project.id)">
           <span class="project-name">{{ project.name }}</span>
           <el-tag :type="project.status === 'active' ? 'success' : 'info'" size="small" effect="plain">{{ project.status === 'active' ? '可用' : '已归档' }}</el-tag>
-          <small>{{ project.budget_mode === 'disabled' ? '预算未启用' : `月预算 ¥${project.monthly_budget || '0'}` }}</small>
+          <small>{{ limits?.projects.find((item) => item.scope_id === project.id)?.budget_mode === 'disabled' ? '预算未启用' : `月预算 ¥${limits?.projects.find((item) => item.scope_id === project.id)?.monthly_budget || '未设置'}` }}</small>
         </button>
         <el-empty v-if="projects.length === 0" description="还没有 Project" :image-size="72" />
       </aside>
@@ -223,13 +242,14 @@ async function archiveProject() {
               <el-table-column label="模型范围" min-width="210"><template #default="{ row }"><span v-if="row.scope_mode === 'all'">全部已授权模型</span><span v-else>{{ row.model_codes.join('、') || '拒绝全部' }}</span></template></el-table-column>
               <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small">{{ row.status === 'active' ? '可用' : '已吊销' }}</el-tag></template></el-table-column>
               <el-table-column label="最近使用" min-width="155"><template #default="{ row }">{{ row.last_used_at ? formatDateTime(row.last_used_at) : '尚未使用' }}</template></el-table-column>
-              <el-table-column label="有效限制" min-width="170"><template #default="{ row }"><span v-if="keyLimit(row.id)">并发 {{ keyLimit(row.id)?.concurrency }} · RPM {{ keyLimit(row.id)?.rpm }} · TPM {{ keyLimit(row.id)?.tpm }}</span><span v-else>平台默认</span></template></el-table-column>
+              <el-table-column label="创建时间" min-width="155"><template #default="{ row }">{{ formatDateTime(row.created_at) }}</template></el-table-column>
+              <el-table-column label="有效限制" min-width="170"><template #default="{ row }"><span v-if="row.status !== 'active'">已停止执行</span><span v-else-if="keyLimit(row.id)">并发 {{ keyLimit(row.id)?.concurrency }} · RPM {{ keyLimit(row.id)?.rpm }} · TPM {{ keyLimit(row.id)?.tpm }}</span><span v-else>加载中</span></template></el-table-column>
               <el-table-column label="操作" width="156" fixed="right"><template #default="{ row }"><el-tooltip content="轮换密钥"><el-button text circle :icon="RefreshRight" aria-label="轮换 API Key" :loading="actionKeyID === row.id" :disabled="row.status !== 'active'" @click="rotateKey(row)" /></el-tooltip><el-tooltip content="吊销密钥"><el-button text circle type="danger" :icon="Remove" aria-label="吊销 API Key" :loading="actionKeyID === row.id" :disabled="row.status !== 'active'" @click="revokeKey(row)" /></el-tooltip></template></el-table-column>
             </el-table>
           </div>
 
           <div class="mobile-keys">
-            <article v-for="item in keys" :key="item.id" class="key-card"><div><strong>{{ item.name }}</strong><el-tag :type="item.status === 'active' ? 'success' : 'info'" size="small">{{ item.status === 'active' ? '可用' : '已吊销' }}</el-tag></div><code>{{ item.key_prefix }}</code><p>{{ item.scope_mode === 'all' ? '全部已授权模型' : (item.model_codes.join('、') || '拒绝全部') }}</p><p v-if="keyLimit(item.id)">有效限制：并发 {{ keyLimit(item.id)?.concurrency }} · RPM {{ keyLimit(item.id)?.rpm }} · TPM {{ keyLimit(item.id)?.tpm }}</p><div class="card-actions"><el-button :icon="RefreshRight" :disabled="item.status !== 'active'" @click="rotateKey(item)">轮换</el-button><el-button type="danger" plain :icon="Remove" :disabled="item.status !== 'active'" @click="revokeKey(item)">吊销</el-button></div></article>
+            <article v-for="item in keys" :key="item.id" class="key-card"><div><strong>{{ item.name }}</strong><el-tag :type="item.status === 'active' ? 'success' : 'info'" size="small">{{ item.status === 'active' ? '可用' : '已吊销' }}</el-tag></div><code>{{ item.key_prefix }}</code><p>{{ item.scope_mode === 'all' ? '全部已授权模型' : (item.model_codes.join('、') || '拒绝全部') }}</p><p>创建于 {{ formatDateTime(item.created_at) }}</p><p v-if="item.status !== 'active'">已停止执行</p><p v-else-if="keyLimit(item.id)">有效限制：并发 {{ keyLimit(item.id)?.concurrency }} · RPM {{ keyLimit(item.id)?.rpm }} · TPM {{ keyLimit(item.id)?.tpm }}</p><div class="card-actions"><el-button :icon="RefreshRight" :disabled="item.status !== 'active'" @click="rotateKey(item)">轮换</el-button><el-button type="danger" plain :icon="Remove" :disabled="item.status !== 'active'" @click="revokeKey(item)">吊销</el-button></div></article>
             <el-empty v-if="keys.length === 0" description="当前 Project 还没有 API Key" />
           </div>
         </template>
@@ -241,7 +261,7 @@ async function archiveProject() {
 
     <el-dialog v-model="keyDialog" title="创建平台 SK" width="min(560px, 94vw)"><el-form label-position="top"><el-form-item label="密钥名称" required><el-input v-model="keyForm.name" maxlength="80" placeholder="例如：订单系统" /></el-form-item><el-form-item label="模型权限"><el-radio-group v-model="keyForm.scope_mode"><el-radio-button value="allowlist">指定模型</el-radio-button><el-radio-button value="all">全部模型</el-radio-button></el-radio-group></el-form-item><el-form-item v-if="keyForm.scope_mode === 'allowlist'" label="允许模型" required><el-select v-model="keyForm.model_codes" multiple filterable collapse-tags><el-option v-for="item in models" :key="item.logical_model_code" :label="`${item.display_name} · ${item.logical_model_code}`" :value="item.logical_model_code" /></el-select></el-form-item><el-form-item label="过期时间（可选）"><el-date-picker v-model="keyForm.expires_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" placeholder="长期有效" /></el-form-item></el-form><template #footer><el-button @click="keyDialog = false">取消</el-button><el-button type="primary" :loading="saving" @click="createKey">签发密钥</el-button></template></el-dialog>
 
-    <el-dialog v-model="secretDialog" title="立即保存完整密钥" width="min(620px, 94vw)" :close-on-click-modal="false"><el-alert type="warning" show-icon :closable="false" title="关闭后无法再次查看，只能重新轮换。" /><div v-if="issuedKey" class="secret-box"><code>{{ issuedKey.secret_key }}</code><el-button :icon="CopyDocument" @click="copySecret">复制</el-button></div><template #footer><el-button type="primary" @click="secretDialog = false; router.replace({ query: {} })">我已安全保存</el-button></template></el-dialog>
+    <el-dialog v-model="secretDialog" title="立即保存完整密钥" width="min(620px, 94vw)" :close-on-click-modal="false" destroy-on-close @closed="clearIssuedSecret"><el-alert type="warning" show-icon :closable="false" title="关闭后无法再次查看，只能重新轮换。" /><div v-if="issuedKey" class="secret-box"><code>{{ issuedKey.secret_key }}</code><el-button :icon="CopyDocument" @click="copySecret">复制</el-button></div><template #footer><el-button type="primary" @click="closeSecretDialog">我已安全保存</el-button></template></el-dialog>
   </section>
 </template>
 

@@ -202,6 +202,8 @@ func (h *ProjectHandler) writeError(w http.ResponseWriter, err error) {
 		response.Error(w, http.StatusBadRequest, 70001, "需要先完成实名认证")
 	case errors.Is(err, service.ErrProjectInactive):
 		response.Error(w, http.StatusConflict, 40900, "Project 已停用")
+	case errors.Is(err, service.ErrSecurityAuditUnavailable):
+		response.Error(w, http.StatusServiceUnavailable, 50300, "安全审计服务暂不可用，请稍后重试")
 	default:
 		response.Error(w, http.StatusInternalServerError, 50000, "Project 操作失败")
 	}

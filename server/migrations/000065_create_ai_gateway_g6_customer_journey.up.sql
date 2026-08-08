@@ -5,19 +5,19 @@
 SET @g6_had_intro_health = EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'token_models' AND column_name = 'intro_url_health_status');
 SET @g6_add_intro_health = IF(@g6_had_intro_health, 'SELECT 1', 'ALTER TABLE token_models ADD COLUMN intro_url_health_status VARCHAR(16) NOT NULL DEFAULT ''unpublished'' AFTER intro_url');
 PREPARE stmt FROM @g6_add_intro_health; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-SET @g6_init_intro_health = IF(@g6_had_intro_health, 'SELECT 1', 'UPDATE token_models SET intro_url_health_status = IF(intro_url IS NULL OR TRIM(intro_url) = '''', ''unpublished'', ''healthy'')');
+SET @g6_init_intro_health = IF(@g6_had_intro_health, 'SELECT 1', 'UPDATE token_models SET intro_url_health_status = IF(intro_url IS NULL OR TRIM(intro_url) = '''', ''unpublished'', ''unknown'')');
 PREPARE stmt FROM @g6_init_intro_health; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 SET @g6_had_docs_health = EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'token_models' AND column_name = 'docs_url_health_status');
 SET @g6_add_docs_health = IF(@g6_had_docs_health, 'SELECT 1', 'ALTER TABLE token_models ADD COLUMN docs_url_health_status VARCHAR(16) NOT NULL DEFAULT ''unpublished'' AFTER docs_url');
 PREPARE stmt FROM @g6_add_docs_health; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-SET @g6_init_docs_health = IF(@g6_had_docs_health, 'SELECT 1', 'UPDATE token_models SET docs_url_health_status = IF(docs_url IS NULL OR TRIM(docs_url) = '''', ''unpublished'', ''healthy'')');
+SET @g6_init_docs_health = IF(@g6_had_docs_health, 'SELECT 1', 'UPDATE token_models SET docs_url_health_status = IF(docs_url IS NULL OR TRIM(docs_url) = '''', ''unpublished'', ''unknown'')');
 PREPARE stmt FROM @g6_init_docs_health; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 SET @g6_had_quick_health = EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'token_models' AND column_name = 'quick_start_url_health_status');
 SET @g6_add_quick_health = IF(@g6_had_quick_health, 'SELECT 1', 'ALTER TABLE token_models ADD COLUMN quick_start_url_health_status VARCHAR(16) NOT NULL DEFAULT ''unpublished'' AFTER quick_start_url');
 PREPARE stmt FROM @g6_add_quick_health; EXECUTE stmt; DEALLOCATE PREPARE stmt;
-SET @g6_init_quick_health = IF(@g6_had_quick_health, 'SELECT 1', 'UPDATE token_models SET quick_start_url_health_status = IF(quick_start_url IS NULL OR TRIM(quick_start_url) = '''', ''unpublished'', ''healthy'')');
+SET @g6_init_quick_health = IF(@g6_had_quick_health, 'SELECT 1', 'UPDATE token_models SET quick_start_url_health_status = IF(quick_start_url IS NULL OR TRIM(quick_start_url) = '''', ''unpublished'', ''unknown'')');
 PREPARE stmt FROM @g6_init_quick_health; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 SET @g6_add_intro_health_check = IF(EXISTS(SELECT 1 FROM information_schema.table_constraints WHERE constraint_schema = DATABASE() AND table_name = 'token_models' AND constraint_name = 'chk_token_models_intro_url_health'), 'SELECT 1', 'ALTER TABLE token_models ADD CONSTRAINT chk_token_models_intro_url_health CHECK (intro_url_health_status IN (''unpublished'',''unknown'',''healthy'',''unhealthy''))');

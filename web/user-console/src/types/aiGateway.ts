@@ -35,6 +35,7 @@ export interface AIProject {
   name: string
   status: 'active' | 'suspended' | 'archived'
   monthly_budget?: string
+  budget_override?: string
   budget_mode: 'disabled' | 'soft' | 'hard'
   timezone: string
   created_at: string
@@ -79,7 +80,10 @@ export interface EffectiveResourceLimit {
   concurrency: number
   rpm: number
   tpm: number
-  source: 'platform_default' | 'policy_override'
+  source: 'platform_default' | 'policy_override' | 'inherited_parent'
+  budget_mode?: 'disabled' | 'soft' | 'hard'
+  daily_budget?: string
+  monthly_budget?: string
 }
 
 export interface UserResourceLimits {

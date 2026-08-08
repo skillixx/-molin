@@ -5,10 +5,11 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
-	"log"
 	"strconv"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 
 	authmodel "molin/server/internal/modules/auth/model"
 	"molin/server/internal/modules/token_gateway/model"
@@ -26,12 +27,13 @@ const (
 )
 
 var (
-	ErrProjectInvalid      = errors.New("Project 参数错误")
-	ErrProjectInactive     = errors.New("Project 已停用")
-	ErrScopeModeInvalid    = errors.New("模型权限模式无效")
-	ErrScopeModelInvalid   = errors.New("授权模型不存在、未发布或不是文字模型")
-	ErrKeyExpiresAtInvalid = errors.New("SK 过期时间必须晚于当前时间")
-	ErrKeyNameInvalid      = errors.New("SK 名称不能为空且不能超过 191 个字符")
+	ErrProjectInvalid           = errors.New("Project 参数错误")
+	ErrProjectInactive          = errors.New("Project 已停用")
+	ErrScopeModeInvalid         = errors.New("模型权限模式无效")
+	ErrScopeModelInvalid        = errors.New("授权模型不存在、未发布或不是文字模型")
+	ErrKeyExpiresAtInvalid      = errors.New("SK 过期时间必须晚于当前时间")
+	ErrKeyNameInvalid           = errors.New("SK 名称不能为空且不能超过 191 个字符")
+	ErrSecurityAuditUnavailable = errors.New("安全审计服务暂不可用")
 )
 
 // ProjectService 管理单用户 Project。G2 不引入组织成员、共享钱包和预算硬限制。
@@ -43,7 +45,7 @@ type ProjectService struct {
 }
 
 type projectAuditRecorder interface {
-	Record(ctx context.Context, operatorID *uint64, module, action string, targetType, targetID *string, ip string, requestSummary any) error
+	RecordWithTx(ctx context.Context, tx *gorm.DB, operatorID *uint64, module, action string, targetType, targetID *string, ip string, requestSummary any) error
 }
 
 type projectStore interface {
@@ -51,12 +53,12 @@ type projectStore interface {
 	FindProject(ctx context.Context, userID, projectID uint64) (*model.AIProject, error)
 	ListProjects(ctx context.Context, userID uint64, offset, limit int) ([]model.AIProject, int64, error)
 	UpdateProject(ctx context.Context, userID, projectID uint64, updates map[string]interface{}) error
-	CreateProjectKey(ctx context.Context, key *authmodel.APIKey, scopes []authmodel.APIKeyModelScope) error
+	CreateProjectKey(ctx context.Context, key *authmodel.APIKey, scopes []authmodel.APIKeyModelScope, audit repository.ProjectKeyAudit) error
 	ListProjectKeys(ctx context.Context, userID, projectID uint64) ([]authmodel.APIKey, error)
 	FindProjectKey(ctx context.Context, userID, projectID, keyID uint64) (*authmodel.APIKey, error)
 	ListKeyScopes(ctx context.Context, keyID uint64) ([]string, error)
-	RevokeProjectKey(ctx context.Context, userID, projectID, keyID uint64) error
-	RotateProjectKey(ctx context.Context, oldKey *authmodel.APIKey, newKey *authmodel.APIKey, scopes []authmodel.APIKeyModelScope) error
+	RevokeProjectKey(ctx context.Context, userID, projectID, keyID uint64, audit repository.ProjectKeyAudit) error
+	RotateProjectKey(ctx context.Context, oldKey *authmodel.APIKey, newKey *authmodel.APIKey, scopes []authmodel.APIKeyModelScope, audit repository.ProjectKeyAudit) error
 	ActiveChatModelsExist(ctx context.Context, codes []string) (bool, error)
 	UserRealNameStatus(ctx context.Context, userID uint64) (string, error)
 }
@@ -214,10 +216,13 @@ func (s *ProjectService) IssueKey(ctx context.Context, in IssueProjectKeyInput) 
 		Status: "active", ExpiresAt: in.ExpiresAt,
 	}
 	scopes := buildScopeModels(in.UserID, in.ProjectID, models)
-	if err := s.repo.CreateProjectKey(ctx, key, scopes); err != nil {
+	audit, err := s.keyAudit(ctx, in.UserID, "create_project_key", in.ProjectID, in.IP, map[string]interface{}{"scope_mode": mode, "model_codes": models, "expires_at": in.ExpiresAt})
+	if err != nil {
 		return "", ProjectKeyView{}, err
 	}
-	s.recordKeyAudit(ctx, in.UserID, "create_project_key", key.ID, in.ProjectID, in.IP, map[string]interface{}{"scope_mode": mode, "model_codes": models, "expires_at": in.ExpiresAt})
+	if err := s.repo.CreateProjectKey(ctx, key, scopes, audit); err != nil {
+		return "", ProjectKeyView{}, err
+	}
 	return plaintext, projectKeyView(key, models), nil
 }
 
@@ -241,10 +246,13 @@ func (s *ProjectService) ListKeys(ctx context.Context, userID, projectID uint64)
 }
 
 func (s *ProjectService) RevokeKey(ctx context.Context, userID, projectID, keyID uint64, ip string) error {
-	if err := s.repo.RevokeProjectKey(ctx, userID, projectID, keyID); err != nil {
+	audit, err := s.keyAudit(ctx, userID, "revoke_project_key", projectID, ip, nil)
+	if err != nil {
 		return err
 	}
-	s.recordKeyAudit(ctx, userID, "revoke_project_key", keyID, projectID, ip, nil)
+	if err := s.repo.RevokeProjectKey(ctx, userID, projectID, keyID, audit); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -272,10 +280,13 @@ func (s *ProjectService) RotateKey(ctx context.Context, userID, projectID, keyID
 		Name: oldKey.Name, BillingMode: "postpaid", ScopeMode: oldKey.ScopeMode,
 		Status: "active", ExpiresAt: oldKey.ExpiresAt, RotatedFromID: &oldKey.ID,
 	}
-	if err := s.repo.RotateProjectKey(ctx, oldKey, newKey, buildScopeModels(userID, projectID, models)); err != nil {
+	audit, err := s.keyAudit(ctx, userID, "rotate_project_key", projectID, ip, map[string]interface{}{"rotated_from_id": oldKey.ID, "scope_mode": oldKey.ScopeMode, "model_codes": models})
+	if err != nil {
 		return "", ProjectKeyView{}, err
 	}
-	s.recordKeyAudit(ctx, userID, "rotate_project_key", newKey.ID, projectID, ip, map[string]interface{}{"rotated_from_id": oldKey.ID, "scope_mode": oldKey.ScopeMode, "model_codes": models})
+	if err := s.repo.RotateProjectKey(ctx, oldKey, newKey, buildScopeModels(userID, projectID, models), audit); err != nil {
+		return "", ProjectKeyView{}, err
+	}
 	return plaintext, projectKeyView(newKey, models), nil
 }
 
@@ -325,21 +336,22 @@ func (s *ProjectService) validateScope(ctx context.Context, userID uint64, mode 
 	return mode, models, nil
 }
 
-func (s *ProjectService) recordKeyAudit(ctx context.Context, userID uint64, action string, keyID, projectID uint64, ip string, summary map[string]interface{}) {
+func (s *ProjectService) keyAudit(ctx context.Context, userID uint64, action string, projectID uint64, ip string, summary map[string]interface{}) (repository.ProjectKeyAudit, error) {
 	if s.auditRecorder == nil {
-		return
+		return nil, ErrSecurityAuditUnavailable
 	}
 	if summary == nil {
 		summary = map[string]interface{}{}
 	}
 	summary["project_id"] = projectID
 	targetType := "api_key"
-	targetID := strconv.FormatUint(keyID, 10)
-	auditContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-	defer cancel()
-	if err := s.auditRecorder.Record(auditContext, &userID, "token_gateway", action, &targetType, &targetID, ip, summary); err != nil {
-		log.Printf("[token_gateway] Project SK 审计写入失败 action=%s project_id=%d key_id=%d: %v", action, projectID, keyID, err)
-	}
+	return func(tx *gorm.DB, keyID uint64) error {
+		targetID := strconv.FormatUint(keyID, 10)
+		if err := s.auditRecorder.RecordWithTx(ctx, tx, &userID, "token_gateway", action, &targetType, &targetID, ip, summary); err != nil {
+			return ErrSecurityAuditUnavailable
+		}
+		return nil
+	}, nil
 }
 
 func (s *ProjectService) generateKey() (string, string, string, error) {

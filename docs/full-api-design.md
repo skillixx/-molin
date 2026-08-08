@@ -2562,10 +2562,10 @@ G5 路由仅在确认请求未发送时按 `max_retries` 重试；超时、结�
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/token/catalog/models` | 已发布文字模型；支持 `q/provider/capability/context_min/context_max/sort/page/page_size` |
+| GET | `/api/token/catalog/models` | 已发布文字模型；支持 `q/provider/capability/service_status/context_min/context_max/sort/page/page_size` |
 | GET | `/api/token/catalog/models/{model_code}` | 发布快照详情、当前人民币销售价格及文档健康状态 |
 | GET | `/api/token/customer/usage/overview?timezone=Asia/Shanghai` | 今日、本月请求、Token、已结算金额和预算进度 |
-| GET | `/api/token/customer/limits` | 用户、Project、平台 SK 的有效并发/RPM/TPM 及来源 |
+| GET | `/api/token/customer/limits` | 用户、Project、平台 SK 经父级收紧后的有效并发/RPM/TPM、来源，以及包含当前临时增额的 G4 实际预算策略 |
 | GET | `/api/token/customer/requests` | 本人请求账本，支持 `project_id/api_key_id/model/status/start/end/page/page_size` |
 | GET | `/api/token/customer/requests/{request_id}` | 三维状态、确认用量、价格版本、销售计价行、钱包流水和申诉 |
 | GET | `/api/token/customer/requests/export` | 本人 CSV；必须提供不超过 93 天的 `start/end`，最多 5000 行 |

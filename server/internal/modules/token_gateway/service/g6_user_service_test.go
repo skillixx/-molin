@@ -47,6 +47,34 @@ func TestEffectiveLimitUsesOwnedPolicyOverride(t *testing.T) {
 	}
 }
 
+func TestEffectiveLimitIsClampedByParent(t *testing.T) {
+	parent := effectiveLimit("user", 5, "本人", ResourceLimits{Concurrency: 2, RPM: 30, TPM: 50000}, nil)
+	child := effectiveLimit("project", 9, "生产", ResourceLimits{Concurrency: 10, RPM: 100, TPM: 200000}, nil)
+	got := clampLimit(child, parent)
+	if got.Concurrency != 2 || got.RPM != 30 || got.TPM != 50000 || got.Source != "inherited_parent" {
+		t.Fatalf("子级展示必须反映父级实际门禁: %+v", got)
+	}
+}
+
+func TestCapabilityFilterRequiresEnabledStructuredValue(t *testing.T) {
+	if capabilityEnabled(json.RawMessage(`{"reasoning":false}`), "reasoning") {
+		t.Fatal("显式关闭的能力不得被子串筛选命中")
+	}
+	if !capabilityEnabled(json.RawMessage(`{"reasoning":true}`), "reasoning") || !capabilityEnabled(json.RawMessage(`["stream","tool"]`), "tool") {
+		t.Fatal("已启用的对象或数组能力应被命中")
+	}
+}
+
+func TestDisplayedBudgetIncludesActiveOverride(t *testing.T) {
+	daily := decimal.NewFromInt(10)
+	monthly := decimal.NewFromInt(100)
+	limit := effectiveLimit("project", 9, "生产", ResourceLimits{}, nil)
+	applyBudget(&limit, model.AIBudgetPolicy{ID: 1, Mode: model.AIBudgetHard, DailyLimit: &daily, MonthlyLimit: &monthly}, decimal.NewFromInt(5))
+	if limit.DailyBudget == nil || !limit.DailyBudget.Equal(decimal.NewFromInt(15)) || limit.MonthlyBudget == nil || !limit.MonthlyBudget.Equal(decimal.NewFromInt(105)) {
+		t.Fatalf("用户展示预算必须与执行链路的临时增额一致: %+v", limit)
+	}
+}
+
 func containsAny(value string, candidates ...string) bool {
 	for _, candidate := range candidates {
 		if len(candidate) > 0 && len(value) >= len(candidate) {

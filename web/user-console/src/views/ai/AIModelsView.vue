@@ -6,6 +6,7 @@ import { CopyDocument, Filter, Search } from '@element-plus/icons-vue'
 import { listAIModels } from '@/api/aiGateway'
 import ModelPriceSummary from '@/components/ai/ModelPriceSummary.vue'
 import type { AIModelCatalogItem } from '@/types/aiGateway'
+import { formatDateTime } from '@/utils/display'
 
 const route = useRoute()
 const router = useRouter()
@@ -18,6 +19,7 @@ const filters = reactive({
   q: String(route.query.q || ''),
   provider: String(route.query.provider || ''),
   capability: String(route.query.capability || ''),
+  service_status: String(route.query.service_status || ''),
   context: String(route.query.context || ''),
   sort: String(route.query.sort || 'latest'),
   page: Number(route.query.page || 1),
@@ -31,6 +33,7 @@ const queryParams = computed(() => {
     q: filters.q || undefined,
     provider: filters.provider || undefined,
     capability: filters.capability || undefined,
+    service_status: filters.service_status || undefined,
     context_min: contextMin || undefined,
     context_max: contextMax || undefined,
     sort: filters.sort as 'latest' | 'price_asc' | 'context_desc',
@@ -41,13 +44,23 @@ const queryParams = computed(() => {
 
 onMounted(fetchModels)
 
-watch(() => [filters.q, filters.provider, filters.capability, filters.context, filters.sort], () => {
+watch(() => [filters.q, filters.provider, filters.capability, filters.service_status, filters.context, filters.sort], () => {
   filters.page = 1
   clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => {
     syncQuery()
-    fetchModels()
   }, 300)
+})
+
+watch(() => route.fullPath, () => {
+  filters.q = String(route.query.q || '')
+  filters.provider = String(route.query.provider || '')
+  filters.capability = String(route.query.capability || '')
+  filters.service_status = String(route.query.service_status || '')
+  filters.context = String(route.query.context || '')
+  filters.sort = String(route.query.sort || 'latest')
+  filters.page = Number(route.query.page || 1)
+  fetchModels()
 })
 
 async function fetchModels() {
@@ -66,7 +79,7 @@ async function fetchModels() {
 
 function syncQuery() {
   const query: Record<string, string> = {}
-  Object.entries({ q: filters.q, provider: filters.provider, capability: filters.capability, context: filters.context, sort: filters.sort }).forEach(([key, value]) => {
+  Object.entries({ q: filters.q, provider: filters.provider, capability: filters.capability, service_status: filters.service_status, context: filters.context, sort: filters.sort }).forEach(([key, value]) => {
     if (value) query[key] = String(value)
   })
   if (filters.page > 1) query.page = String(filters.page)
@@ -76,7 +89,6 @@ function syncQuery() {
 function changePage(page: number) {
   filters.page = page
   syncQuery()
-  fetchModels()
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
@@ -113,6 +125,7 @@ function formatContext(value: number) {
           <el-option label="推理" value="reasoning" />
           <el-option label="工具调用" value="tool" />
         </el-select>
+        <el-select v-model="filters.service_status" clearable placeholder="服务状态" aria-label="筛选服务状态"><el-option label="可用" value="available" /></el-select>
         <el-select v-model="filters.context" clearable placeholder="上下文" aria-label="筛选上下文">
           <el-option label="32K 以下" value="1-32768" />
           <el-option label="32K - 128K" value="32768-131072" />
@@ -133,7 +146,7 @@ function formatContext(value: number) {
     </el-alert>
 
     <div v-loading="loading" class="model-list" aria-live="polite">
-      <article v-for="item in items" :key="item.logical_model_code" class="model-row" @click="openDetail(item.logical_model_code)">
+      <article v-for="item in items" :key="item.logical_model_code" class="model-row" role="link" tabindex="0" @click="openDetail(item.logical_model_code)" @keydown.enter="openDetail(item.logical_model_code)" @keydown.space.prevent="openDetail(item.logical_model_code)">
         <div class="model-main">
           <div class="model-title-line">
             <h2>{{ item.display_name }}</h2>
@@ -148,6 +161,7 @@ function formatContext(value: number) {
             <span>{{ item.provider_name }}</span>
             <span>{{ formatContext(item.context_window) }} 上下文</span>
             <span>价格版本 v{{ item.price_version_no }}</span>
+            <span>更新于 {{ formatDateTime(item.published_at) }}</span>
           </div>
         </div>
         <ModelPriceSummary :prices="item.prices" compact />
@@ -162,6 +176,7 @@ function formatContext(value: number) {
       <div class="mobile-filter-form">
         <el-input v-model="filters.provider" clearable placeholder="厂商" />
         <el-select v-model="filters.capability" clearable placeholder="能力"><el-option label="流式输出" value="stream" /><el-option label="推理" value="reasoning" /><el-option label="工具调用" value="tool" /></el-select>
+        <el-select v-model="filters.service_status" clearable placeholder="服务状态"><el-option label="可用" value="available" /></el-select>
         <el-select v-model="filters.context" clearable placeholder="上下文"><el-option label="32K 以下" value="1-32768" /><el-option label="32K - 128K" value="32768-131072" /><el-option label="128K 以上" value="131072-10000000" /></el-select>
         <el-select v-model="filters.sort"><el-option label="最新发布" value="latest" /><el-option label="价格从低到高" value="price_asc" /><el-option label="上下文从高到低" value="context_desc" /></el-select>
         <el-button type="primary" @click="mobileFilters = false">查看结果</el-button>
@@ -177,15 +192,16 @@ function formatContext(value: number) {
 h1 { margin: 0; font-size: 24px; letter-spacing: 0; }
 .page-header p:last-child { margin: 8px 0 0; color: var(--color-text-muted); font-size: 14px; }
 .toolbar { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(600px, 2fr); gap: 10px; padding: 14px 0; border-block: 1px solid var(--color-border); }
-.desktop-filters { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 8px; }
+.desktop-filters { display: grid; grid-template-columns: repeat(5, minmax(110px, 1fr)); gap: 8px; }
 .mobile-filter-button { display: none; }
 .model-list { min-height: 240px; }
 .model-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(290px, 410px); gap: 24px; align-items: center; padding: 20px 16px; border-bottom: 1px solid var(--color-border); cursor: pointer; transition: background .2s, border-color .2s; }
 .model-row:hover { background: rgba(34, 211, 238, .055); border-color: rgba(34, 211, 238, .3); }
+.model-row:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
 .model-main { min-width: 0; }
 .model-title-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .model-title-line h2 { margin: 0; font-size: 17px; letter-spacing: 0; }
-.model-code { display: inline-flex; max-width: 100%; align-items: center; gap: 7px; margin-top: 8px; padding: 0; border: 0; background: transparent; color: #8fdbea; cursor: pointer; }
+.model-code { display: inline-flex; max-width: 100%; min-height: 44px; align-items: center; gap: 7px; margin-top: 2px; padding: 0; border: 0; background: transparent; color: #8fdbea; cursor: pointer; }
 .model-code span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .description { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin: 10px 0; color: var(--color-text-muted); line-height: 1.6; font-size: 14px; }
 .model-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--color-text-disabled); font-size: 12px; }

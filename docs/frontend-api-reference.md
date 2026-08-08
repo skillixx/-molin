@@ -2588,7 +2588,7 @@ DELETE /api/token/projects/{id}/keys/{key_id}
 
 | 页面 | 接口 | 关键交互 |
 |---|---|---|
-| `/ai/models` | `GET /api/token/catalog/models` | 搜索、筛选、排序同步 URL Query；加载、空和错误可重试 |
+| `/ai/models` | `GET /api/token/catalog/models` | 搜索、能力、服务状态、上下文和排序双向同步 URL Query；加载、空和错误可重试 |
 | `/ai/models/:modelCode` | `GET /api/token/catalog/models/{model_code}` | 复制模型代码/Base URL、查看人民币价格、文档健康门禁、创建 SK 导航 |
 | `/ai/api-keys` | `/api/token/projects*` | Project 创建/编辑/归档，平台 SK 签发/轮换/吊销及一次明文展示 |
 | `/ai/usage` | `/api/token/customer/usage/overview`、`limits`、`requests*` | 总览、Project/SK/模型/状态/时间筛选、详情、CSV 和申诉 |

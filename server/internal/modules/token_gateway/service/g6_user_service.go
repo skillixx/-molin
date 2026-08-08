@@ -29,12 +29,13 @@ const publicMinimumCharge = "0.000001"
 
 // PublicModelFilter 是模型市场搜索、筛选和排序条件。
 type PublicModelFilter struct {
-	Keyword    string
-	Provider   string
-	Capability string
-	ContextMin uint64
-	ContextMax uint64
-	Sort       string
+	Keyword       string
+	Provider      string
+	Capability    string
+	ServiceStatus string
+	ContextMin    uint64
+	ContextMax    uint64
+	Sort          string
 }
 
 // G6UserService 组合已发布目录、价格和用户请求账本，不参与执行或结算状态写入。
@@ -83,7 +84,10 @@ func (s *G6UserService) ListModels(ctx context.Context, userID uint64, filter Pu
 		if filter.ContextMax > 0 && item.ContextWindow > filter.ContextMax {
 			continue
 		}
-		if capability != "" && !strings.Contains(strings.ToLower(string(item.Capabilities)), capability) {
+		if capability != "" && !capabilityEnabled(item.Capabilities, capability) {
+			continue
+		}
+		if filter.ServiceStatus != "" && !strings.EqualFold(strings.TrimSpace(filter.ServiceStatus), item.ServiceStatus) {
 			continue
 		}
 		items = append(items, item)
@@ -99,6 +103,33 @@ func (s *G6UserService) ListModels(ctx context.Context, userID uint64, filter Pu
 		end = len(items)
 	}
 	return items[start:end], total, nil
+}
+
+func capabilityEnabled(raw json.RawMessage, capability string) bool {
+	var value interface{}
+	if json.Unmarshal(raw, &value) != nil {
+		return false
+	}
+	switch typed := value.(type) {
+	case []interface{}:
+		for _, item := range typed {
+			if text, ok := item.(string); ok && strings.EqualFold(strings.TrimSpace(text), capability) {
+				return true
+			}
+		}
+	case map[string]interface{}:
+		enabled, exists := typed[capability]
+		if !exists {
+			return false
+		}
+		switch flag := enabled.(type) {
+		case bool:
+			return flag
+		case string:
+			return strings.EqualFold(flag, "true")
+		}
+	}
+	return false
 }
 
 func (s *G6UserService) GetModel(ctx context.Context, userID uint64, modelCode string) (*dto.PublicModelCatalogItem, error) {
@@ -228,7 +259,17 @@ func (s *G6UserService) ResourceLimits(ctx context.Context, userID uint64) (*dto
 	if err != nil {
 		return nil, err
 	}
-	result := &dto.UserResourceLimits{User: effectiveLimit("user", userID, "本人总限制", s.resourceDefaults.User, policies)}
+	budgets, err := s.repo.FindBudgetPolicies(ctx, scopes)
+	if err != nil {
+		return nil, err
+	}
+	overrides, err := s.repo.FindActiveBudgetOverrides(ctx, scopes, s.now())
+	if err != nil {
+		return nil, err
+	}
+	userLimit := effectiveLimit("user", userID, "本人总限制", s.resourceDefaults.User, policies)
+	result := &dto.UserResourceLimits{User: userLimit}
+	projectLimits := make(map[uint64]dto.EffectiveResourceLimit)
 	for i := range scopes {
 		defaults := s.resourceDefaults.Project
 		if scopes[i].ScopeType == "api_key" {
@@ -236,12 +277,62 @@ func (s *G6UserService) ResourceLimits(ctx context.Context, userID uint64) (*dto
 		}
 		limit := effectiveLimit(scopes[i].ScopeType, scopes[i].ScopeID, scopes[i].Name, defaults, policies)
 		if scopes[i].ScopeType == "project" {
+			limit = clampLimit(limit, userLimit)
+			key := "project:" + strconv.FormatUint(scopes[i].ScopeID, 10)
+			applyBudget(&limit, budgets[key], overrides[key])
+			projectLimits[scopes[i].ScopeID] = limit
 			result.Projects = append(result.Projects, limit)
 		} else {
+			limit = clampLimit(limit, userLimit)
+			if parent, ok := projectLimits[scopes[i].ProjectID]; ok {
+				limit = clampLimit(limit, parent)
+			}
+			key := "api_key:" + strconv.FormatUint(scopes[i].ScopeID, 10)
+			applyBudget(&limit, budgets[key], overrides[key])
 			result.APIKeys = append(result.APIKeys, limit)
 		}
 	}
 	return result, nil
+}
+
+func clampLimit(child, parent dto.EffectiveResourceLimit) dto.EffectiveResourceLimit {
+	before := child
+	child.Concurrency = minPositive(child.Concurrency, parent.Concurrency)
+	child.RPM = minPositive(child.RPM, parent.RPM)
+	child.TPM = minPositive(child.TPM, parent.TPM)
+	if child.Concurrency != before.Concurrency || child.RPM != before.RPM || child.TPM != before.TPM {
+		child.Source = "inherited_parent"
+	}
+	return child
+}
+
+func minPositive(left, right uint64) uint64 {
+	if left == 0 {
+		return right
+	}
+	if right == 0 || left < right {
+		return left
+	}
+	return right
+}
+
+func applyBudget(limit *dto.EffectiveResourceLimit, policy model.AIBudgetPolicy, override decimal.Decimal) {
+	if policy.ID == 0 {
+		limit.BudgetMode = model.AIBudgetDisabled
+		return
+	}
+	limit.BudgetMode, limit.DailyBudget, limit.MonthlyBudget = policy.Mode, policy.DailyLimit, policy.MonthlyLimit
+	if override.GreaterThan(decimal.Zero) {
+		limit.BudgetOverride = &override
+		if limit.DailyBudget != nil {
+			value := limit.DailyBudget.Add(override)
+			limit.DailyBudget = &value
+		}
+		if limit.MonthlyBudget != nil {
+			value := limit.MonthlyBudget.Add(override)
+			limit.MonthlyBudget = &value
+		}
+	}
 }
 
 func effectiveLimit(scopeType string, scopeID uint64, name string, defaults ResourceLimits, policies map[string]model.AIResourcePolicy) dto.EffectiveResourceLimit {
@@ -253,7 +344,11 @@ func effectiveLimit(scopeType string, scopeID uint64, name string, defaults Reso
 }
 
 func (s *G6UserService) RequestDetail(ctx context.Context, userID uint64, requestID string) (*dto.UserRequestDetail, error) {
-	row, err := s.repo.FindRequestRow(ctx, userID, strings.TrimSpace(requestID))
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" || len(requestID) > 128 {
+		return nil, ErrUserRequestNotFound
+	}
+	row, err := s.repo.FindRequestRow(ctx, userID, requestID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrUserRequestNotFound
 	}
@@ -313,11 +408,15 @@ func (s *G6UserService) RequestDetail(ctx context.Context, userID uint64, reques
 }
 
 func (s *G6UserService) CreateDispute(ctx context.Context, userID uint64, requestID, reason string) (*dto.BillingDisputeResp, error) {
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" || len(requestID) > 128 {
+		return nil, ErrUserRequestNotFound
+	}
 	reason = strings.TrimSpace(reason)
 	if len([]rune(reason)) < 10 || len([]rune(reason)) > 1000 {
 		return nil, ErrDisputeReasonInvalid
 	}
-	if _, err := s.repo.FindRequestFact(ctx, userID, strings.TrimSpace(requestID)); errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := s.repo.FindRequestFact(ctx, userID, requestID); errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrUserRequestNotFound
 	} else if err != nil {
 		return nil, err

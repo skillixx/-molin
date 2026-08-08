@@ -17,6 +17,7 @@ export interface ModelCatalogFilters {
   q?: string
   provider?: string
   capability?: string
+  service_status?: string
   context_min?: number
   context_max?: number
   sort?: 'name' | 'latest' | 'price_asc' | 'context_desc'

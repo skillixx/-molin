@@ -183,7 +183,7 @@ func (h *G6UserHandler) CreateDispute(w http.ResponseWriter, r *http.Request) {
 }
 
 func parsePublicModelFilter(w http.ResponseWriter, r *http.Request) (service.PublicModelFilter, bool) {
-	filter := service.PublicModelFilter{Keyword: r.URL.Query().Get("q"), Provider: r.URL.Query().Get("provider"), Capability: r.URL.Query().Get("capability"), Sort: r.URL.Query().Get("sort")}
+	filter := service.PublicModelFilter{Keyword: r.URL.Query().Get("q"), Provider: r.URL.Query().Get("provider"), Capability: r.URL.Query().Get("capability"), ServiceStatus: r.URL.Query().Get("service_status"), Sort: r.URL.Query().Get("sort")}
 	var err error
 	if value := strings.TrimSpace(r.URL.Query().Get("context_min")); value != "" {
 		filter.ContextMin, err = strconv.ParseUint(value, 10, 64)

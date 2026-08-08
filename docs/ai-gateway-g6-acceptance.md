@@ -2,14 +2,15 @@
 
 > 当前状态：**进行中，尚未通过阶段门禁。**
 >
-> 已有证据仅覆盖当前工作树的本地代码、单元测试、类型检查和 Mock 浏览器旅程。测试环境部署、Migration 000065、真实 Bifrost 请求、金额/钱包对账、越权验证、凭据回收、CI、独立 QA 与产品双签尚未完成前，不得声明 G6 完成或允许生产开放。
+> 已有证据覆盖当前工作树的本地代码、单元测试、隔离 MySQL 8/GORM 集成测试、类型检查和 Mock 浏览器旅程。测试环境部署及 Migration 000065、真实 Bifrost 请求、金额/钱包对账、凭据回收、CI、独立 QA 与产品双签尚未完成前，不得声明 G6 完成或允许生产开放。
 
 ## 1. 验收对象
 
 | 项目 | 当前值 |
 |---|---|
 | 分支 | `codex/ai-gateway-g6-customer-journey` |
-| 基线 | `origin/main@60b569f` |
+| G5 验收提交 | `60b569f` |
+| G6 实际开发基线 | `origin/main@c4126a6` |
 | Migration | `000065_create_ai_gateway_g6_customer_journey` |
 | 部署范围 | 仅测试环境，禁止生产 |
 | 多模态范围 | 仅已发布文字模型 |
@@ -21,10 +22,10 @@
 | Token 网关定向 Go 测试 | PASS | `go test -count=1 ./internal/modules/token_gateway/... ./migrations` |
 | 用户端类型检查 | PASS | `npm.cmd run type-check` |
 | 管理端类型检查 | PASS | `npm.cmd run type-check` |
-| 用户端 Playwright | PASS | 生产构建预览下 8 条通过，并重复执行为 16/16：客户链路、Project/SK、文档状态、空/错误、账本/导出/申诉及三宽度 |
+| 用户端 Playwright | PASS | 生产构建预览下 9 条通过：客户链路、Project/SK 一次性明文清理、文档状态、URL 前进后退、空/错误、账本三维状态/导出/申诉、手机全宽筛选抽屉、键盘操作及三宽度 |
 | 全量 Go/vet/mod verify | PASS | `go test -count=1 ./...`、`go vet ./...`、`go mod verify`；Windows 因 `CGO_ENABLED=0` 不执行竞态检测，Linux `-race` 仍待测试环境执行 |
 | 两端 lint/build | PASS | 用户端与管理端均通过 `type-check`、`lint`、`build`；用户端生产依赖审计为 0 个漏洞 |
-| Migration 隔离 MySQL 8 验证 | PASS | 一次性 MySQL 8 容器完成 `64:0 -> 65:0`、重复 up、事实保留 down、重新 up、文档健康约束、申诉约束和请求索引验证；CI 复验仍待 PR |
+| Migration 隔离 MySQL 8 验证 | PASS | 一次性 MySQL 8 容器完成 `64:0 -> 65:0`、重复 up、事实保留 down、重新 up、历史文档初始化为 unknown、文档健康/申诉约束、请求索引，并以真实 GORM 验证跨用户隔离、重复申诉和 SK 审计失败事务回滚；CI 复验仍待 PR |
 | 测试环境部署与真实浏览器 | PENDING | 尚未执行 |
 | 真实 Bifrost 与人民币对账 | PENDING | 尚未执行 |
 | 越权、吊销、不调用上游 | PENDING | 尚未执行 |

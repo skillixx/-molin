@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,50 +40,85 @@ func (r *G6UserRepository) ListPublishedCatalog(ctx context.Context, at time.Tim
 	).Order("sort_order ASC, id ASC").Find(&models).Error; err != nil {
 		return nil, err
 	}
-	rows := make([]PublishedCatalogRow, 0, len(models))
+	if len(models) == 0 {
+		return []PublishedCatalogRow{}, nil
+	}
+	modelIDs := make([]uint64, 0, len(models))
 	for i := range models {
-		var release model.AIModelReleaseVersion
-		if err := r.db.WithContext(ctx).Where("model_id = ? AND status = 'active'", models[i].ID).Order("version_no DESC").First(&release).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				continue
-			}
-			return nil, err
+		modelIDs = append(modelIDs, models[i].ID)
+	}
+	var releases []model.AIModelReleaseVersion
+	if err := r.db.WithContext(ctx).Where("model_id IN ? AND status = 'active'", modelIDs).Order("model_id ASC, version_no DESC").Find(&releases).Error; err != nil {
+		return nil, err
+	}
+	releaseByModel := make(map[uint64]model.AIModelReleaseVersion, len(models))
+	snapshotByModel := make(map[uint64]model.TokenModelReleaseSnapshot, len(models))
+	modelCodes := make([]string, 0, len(models))
+	for i := range releases {
+		if _, exists := releaseByModel[releases[i].ModelID]; exists {
+			continue
 		}
 		var snapshot model.TokenModelReleaseSnapshot
-		if err := json.Unmarshal(release.SnapshotJSON, &snapshot); err != nil || snapshot.LogicalModelCode == "" || snapshot.Modality != "chat" {
+		if json.Unmarshal(releases[i].SnapshotJSON, &snapshot) != nil || snapshot.LogicalModelCode == "" || snapshot.Modality != "chat" {
 			continue
 		}
-		var routeCount int64
-		err := r.db.WithContext(ctx).Table("ai_model_routes AS routes").
+		releaseByModel[releases[i].ModelID], snapshotByModel[releases[i].ModelID] = releases[i], snapshot
+		modelCodes = append(modelCodes, snapshot.LogicalModelCode)
+	}
+	var routableCodes []string
+	if len(modelCodes) > 0 {
+		if err := r.db.WithContext(ctx).Table("ai_model_routes AS routes").Distinct("routes.logical_model_code").
 			Joins("JOIN token_channels AS channels ON channels.id = routes.channel_id").
 			Joins("LEFT JOIN ai_model_route_runtime_states AS runtime ON runtime.route_id = routes.id").
-			Where("routes.logical_model_code = ? AND routes.status = 'active' AND channels.status = 'active' AND channels.health_status = 'healthy' AND (runtime.circuit_open_until IS NULL OR runtime.circuit_open_until <= ?)", snapshot.LogicalModelCode, at.UTC()).
-			Count(&routeCount).Error
-		if err != nil {
+			Where("routes.logical_model_code IN ? AND routes.status = 'active' AND channels.status = 'active' AND channels.health_status = 'healthy' AND (runtime.circuit_open_until IS NULL OR runtime.circuit_open_until <= ?)", modelCodes, at.UTC()).
+			Pluck("routes.logical_model_code", &routableCodes).Error; err != nil {
 			return nil, err
 		}
-		if routeCount == 0 {
-			continue
-		}
-		var version model.AIPriceVersion
-		err = r.db.WithContext(ctx).Where(
-			"logical_model_code = ? AND status = 'active' AND currency = 'CNY' AND effective_at <= ? AND (expires_at IS NULL OR expires_at > ?) AND cost_expires_at > ?",
-			snapshot.LogicalModelCode, at, at, at,
-		).Order("version_no DESC").First(&version).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			continue
-		}
-		if err != nil {
+	}
+	routable := make(map[string]bool, len(routableCodes))
+	for _, code := range routableCodes {
+		routable[code] = true
+	}
+	var versions []model.AIPriceVersion
+	if len(routableCodes) > 0 {
+		if err := r.db.WithContext(ctx).Where("logical_model_code IN ? AND status = 'active' AND currency = 'CNY' AND effective_at <= ? AND (expires_at IS NULL OR expires_at > ?) AND cost_expires_at > ?", routableCodes, at, at, at).
+			Order("logical_model_code ASC, version_no DESC").Find(&versions).Error; err != nil {
 			return nil, err
 		}
-		var skus []model.AIPriceSKU
-		if err := r.db.WithContext(ctx).Where("price_version_id = ?", version.ID).Order("meter_type ASC, id ASC").Find(&skus).Error; err != nil {
+	}
+	versionByCode := make(map[string]model.AIPriceVersion, len(versions))
+	versionIDs := make([]uint64, 0, len(versions))
+	for i := range versions {
+		if _, exists := versionByCode[versions[i].LogicalModelCode]; !exists {
+			versionByCode[versions[i].LogicalModelCode] = versions[i]
+			versionIDs = append(versionIDs, versions[i].ID)
+		}
+	}
+	var allSKUs []model.AIPriceSKU
+	if len(versionIDs) > 0 {
+		if err := r.db.WithContext(ctx).Where("price_version_id IN ?", versionIDs).Order("meter_type ASC, id ASC").Find(&allSKUs).Error; err != nil {
 			return nil, err
 		}
-		if len(skus) == 0 {
+	}
+	skusByVersion := make(map[uint64][]model.AIPriceSKU, len(versionIDs))
+	for i := range allSKUs {
+		skusByVersion[allSKUs[i].PriceVersionID] = append(skusByVersion[allSKUs[i].PriceVersionID], allSKUs[i])
+	}
+	rows := make([]PublishedCatalogRow, 0, len(models))
+	for i := range models {
+		release, ok := releaseByModel[models[i].ID]
+		if !ok {
 			continue
 		}
-		rows = append(rows, PublishedCatalogRow{Model: models[i], Release: release, Snapshot: snapshot, PriceVersion: version, PriceSKUs: skus})
+		snapshot := snapshotByModel[models[i].ID]
+		if !routable[snapshot.LogicalModelCode] {
+			continue
+		}
+		version, ok := versionByCode[snapshot.LogicalModelCode]
+		if !ok || len(skusByVersion[version.ID]) == 0 {
+			continue
+		}
+		rows = append(rows, PublishedCatalogRow{Model: models[i], Release: release, Snapshot: snapshot, PriceVersion: version, PriceSKUs: skusByVersion[version.ID]})
 	}
 	return rows, nil
 }
@@ -213,19 +249,73 @@ type UsageAggregate struct {
 type OwnedResourceScope struct {
 	ScopeType string
 	ScopeID   uint64
+	ProjectID uint64
 	Name      string
 }
 
 func (r *G6UserRepository) ListOwnedResourceScopes(ctx context.Context, userID uint64) ([]OwnedResourceScope, error) {
 	var projects []OwnedResourceScope
-	if err := r.db.WithContext(ctx).Table("ai_projects").Select("'project' AS scope_type, id AS scope_id, name").Where("user_id = ? AND status <> 'archived'", userID).Scan(&projects).Error; err != nil {
+	if err := r.db.WithContext(ctx).Table("ai_projects").Select("'project' AS scope_type, id AS scope_id, id AS project_id, name").Where("user_id = ? AND status <> 'archived'", userID).Scan(&projects).Error; err != nil {
 		return nil, err
 	}
 	var keys []OwnedResourceScope
-	if err := r.db.WithContext(ctx).Table("api_keys").Select("'api_key' AS scope_type, id AS scope_id, name").Where("user_id = ? AND project_id IS NOT NULL AND status = 'active'", userID).Scan(&keys).Error; err != nil {
+	if err := r.db.WithContext(ctx).Table("api_keys").Select("'api_key' AS scope_type, id AS scope_id, project_id, name").Where("user_id = ? AND project_id IS NOT NULL AND status = 'active'", userID).Scan(&keys).Error; err != nil {
 		return nil, err
 	}
 	return append(projects, keys...), nil
+}
+
+func (r *G6UserRepository) FindBudgetPolicies(ctx context.Context, scopes []OwnedResourceScope) (map[string]model.AIBudgetPolicy, error) {
+	conditions := make([]string, 0, len(scopes))
+	args := make([]interface{}, 0, len(scopes)*2)
+	for i := range scopes {
+		conditions = append(conditions, "(scope_type = ? AND scope_id = ?)")
+		args = append(args, scopes[i].ScopeType, scopes[i].ScopeID)
+	}
+	if len(conditions) == 0 {
+		return map[string]model.AIBudgetPolicy{}, nil
+	}
+	var policies []model.AIBudgetPolicy
+	if err := r.db.WithContext(ctx).Where("("+strings.Join(conditions, " OR ")+")", args...).Find(&policies).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[string]model.AIBudgetPolicy, len(policies))
+	for i := range policies {
+		result[policies[i].ScopeType+":"+strconv.FormatUint(policies[i].ScopeID, 10)] = policies[i]
+	}
+	return result, nil
+}
+
+type activeBudgetOverride struct {
+	ScopeType string
+	ScopeID   uint64
+	Amount    decimal.Decimal
+}
+
+func (r *G6UserRepository) FindActiveBudgetOverrides(ctx context.Context, scopes []OwnedResourceScope, at time.Time) (map[string]decimal.Decimal, error) {
+	conditions := make([]string, 0, len(scopes))
+	args := make([]interface{}, 0, len(scopes)*2)
+	for i := range scopes {
+		conditions = append(conditions, "(scope_type = ? AND scope_id = ?)")
+		args = append(args, scopes[i].ScopeType, scopes[i].ScopeID)
+	}
+	if len(conditions) == 0 {
+		return map[string]decimal.Decimal{}, nil
+	}
+	var rows []activeBudgetOverride
+	err := r.db.WithContext(ctx).Model(&model.AIBudgetOverride{}).
+		Select("scope_type, scope_id, SUM(extra_amount) AS amount").
+		Where("revoked_at IS NULL AND expires_at > ?", at).
+		Where("("+strings.Join(conditions, " OR ")+")", args...).
+		Group("scope_type, scope_id").Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]decimal.Decimal, len(rows))
+	for i := range rows {
+		result[rows[i].ScopeType+":"+strconv.FormatUint(rows[i].ScopeID, 10)] = rows[i].Amount
+	}
+	return result, nil
 }
 
 func (r *G6UserRepository) FindResourcePolicies(ctx context.Context, userID uint64, scopes []OwnedResourceScope) (map[string]model.AIResourcePolicy, error) {

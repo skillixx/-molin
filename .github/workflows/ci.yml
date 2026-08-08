@@ -358,4 +358,6 @@ jobs:
 
       - name: G6 用户完整链路浏览器验收
         working-directory: web/user-console
-        run: npm run test:g6-e2e
+        run: |
+          npx playwright install --with-deps chrome
+          npm run test:g6-e2e

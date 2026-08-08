@@ -58,13 +58,17 @@ type UsageOverview struct {
 
 // EffectiveResourceLimit 是某一层最终生效的并发、RPM 和 TPM 限制。
 type EffectiveResourceLimit struct {
-	ScopeType   string `json:"scope_type"`
-	ScopeID     uint64 `json:"scope_id"`
-	Name        string `json:"name"`
-	Concurrency uint64 `json:"concurrency"`
-	RPM         uint64 `json:"rpm"`
-	TPM         uint64 `json:"tpm"`
-	Source      string `json:"source"`
+	ScopeType      string           `json:"scope_type"`
+	ScopeID        uint64           `json:"scope_id"`
+	Name           string           `json:"name"`
+	Concurrency    uint64           `json:"concurrency"`
+	RPM            uint64           `json:"rpm"`
+	TPM            uint64           `json:"tpm"`
+	Source         string           `json:"source"`
+	BudgetMode     string           `json:"budget_mode,omitempty"`
+	DailyBudget    *decimal.Decimal `json:"daily_budget,omitempty"`
+	MonthlyBudget  *decimal.Decimal `json:"monthly_budget,omitempty"`
+	BudgetOverride *decimal.Decimal `json:"budget_override,omitempty"`
 }
 
 // UserResourceLimits 汇总本人、Project 和 Project SK 的当前有效资源限制。

@@ -56,7 +56,7 @@ async function mockG6(page: Page, options: MockG6Options = {}) {
     else if (path === '/api/token/projects/7/keys' && method === 'POST') data = { ...key, id: 10, name: '新密钥', secret_key: 'sk-molin-test-only-once' }
     else if (path === '/api/token/projects/7/keys/9/rotate' && method === 'POST') data = { ...key, secret_key: 'sk-molin-rotated-only-once' }
     else if (path === '/api/token/projects/7/keys/9' && method === 'DELETE') data = null
-    else if (path === '/api/token/customer/limits') data = { user: { scope_type: 'user', scope_id: 1, name: '本人总限制', concurrency: 20, rpm: 200, tpm: 500000, source: 'platform_default' }, projects: [{ scope_type: 'project', scope_id: 7, name: project.name, concurrency: 10, rpm: 120, tpm: 300000, source: 'policy_override' }], api_keys: [{ scope_type: 'api_key', scope_id: 9, name: key.name, concurrency: 5, rpm: 60, tpm: 120000, source: 'platform_default' }] }
+    else if (path === '/api/token/customer/limits') data = { user: { scope_type: 'user', scope_id: 1, name: '本人总限制', concurrency: 20, rpm: 200, tpm: 500000, source: 'platform_default' }, projects: [{ scope_type: 'project', scope_id: 7, name: project.name, concurrency: 10, rpm: 120, tpm: 300000, source: 'policy_override', budget_mode: 'hard', monthly_budget: '105.00000000', budget_override: '5.00000000' }], api_keys: [{ scope_type: 'api_key', scope_id: 9, name: key.name, concurrency: 5, rpm: 60, tpm: 120000, source: 'platform_default', budget_mode: 'disabled' }] }
     else if (path === '/api/token/customer/usage/overview') data = { today_requests: 1, today_input_tokens: '12', today_output_tokens: '4', today_amount: '0.00000100', month_requests: 8, month_input_tokens: '120', month_output_tokens: '48', month_amount: '0.00002000', monthly_budget: '100.00000000', monthly_budget_usage_percent: '0.01', currency: 'CNY' }
     else if (path === '/api/token/customer/requests') data = pageData([request])
     else if (path === '/api/token/customer/requests/req_g6_e2e_001' && method === 'GET') data = { ...request, price_version_id: 3, price_version_no: 3, failure_charge_policy: 'confirmed_usage', rounding_mode: 'ceil_8', minimum_charge: '0.000001', price_lines: [{ meter_type: 'input_tokens', meter_source: 'provider_confirmed', quantity: '12', sale_unit_price: '0.80000000', scale: '1000000', amount: '0.00000001', currency: 'CNY' }, { meter_type: 'output_tokens', meter_source: 'provider_confirmed', quantity: '4', sale_unit_price: '2.00000000', scale: '1000000', amount: '0.00000001', currency: 'CNY' }], wallet_hold_id: 31, settle_transaction_id: 32 }
@@ -75,7 +75,9 @@ test('G6 模型发现到 Project SK 一次展示链路可操作', async ({ page 
   await page.goto('/ai/models')
   await expect(page.getByRole('heading', { name: '模型市场' })).toBeVisible()
   await expect(page.getByText('通义千问 Turbo')).toBeVisible()
-  await page.getByText('通义千问 Turbo').click()
+  const modelEntry = page.getByRole('link', { name: /通义千问 Turbo/ })
+  await modelEntry.focus()
+  await modelEntry.press('Enter')
   await expect(page.getByRole('heading', { name: '通义千问 Turbo' })).toBeVisible()
   await expect(page.getByText('¥0.80000000')).toBeVisible()
   await expect(page.getByText('http://127.0.0.1:5196')).toBeVisible()
@@ -91,6 +93,8 @@ test('G6 模型发现到 Project SK 一次展示链路可操作', async ({ page 
   await dialog.getByRole('button', { name: '签发密钥' }).click()
   const secretDialog = page.getByRole('dialog', { name: '立即保存完整密钥' })
   await expect(secretDialog.getByText('sk-molin-test-only-once')).toBeVisible()
+  await secretDialog.getByRole('button', { name: '我已安全保存' }).click()
+  await expect(page.getByText('sk-molin-test-only-once')).toHaveCount(0)
   await expect.poll(() => writes.some(item => item.path === '/api/token/projects/7/keys' && item.method === 'POST')).toBeTruthy()
   expect(writes.find(item => item.path === '/api/token/projects/7/keys')?.body).toMatchObject({ scope_mode: 'allowlist', model_codes: ['molin/qwen-turbo'] })
   expect(errors).toEqual([])
@@ -125,6 +129,8 @@ test('G6 搜索条件同步 URL，未发布或异常文档不可打开', async (
   const introButton = page.getByRole('button', { name: '模型介绍' }).first()
   await expect(introButton).toBeDisabled()
   await expect(page.getByRole('button', { name: '快速入门' }).first()).toBeEnabled()
+  await page.goBack()
+  await expect(page.getByLabel('搜索模型')).toHaveValue('qwen turbo')
 })
 
 test('G6 模型市场具有空状态和接口错误重试状态', async ({ page }) => {
@@ -147,6 +153,7 @@ test('G6 请求账本可查看价格、钱包关联并提交申诉', async ({ pa
   await expect(requestEntry).toBeVisible()
   await requestEntry.click()
   await expect(page.getByText('结算流水 #32')).toBeVisible()
+  await expect(page.getByRole('dialog', { name: '请求账单详情' }).getByText('安全通过')).toBeVisible()
   await page.getByRole('button', { name: '对本次账单有疑问' }).click()
   const dialog = page.getByRole('dialog', { name: '提交账单申诉' })
   await dialog.getByRole('textbox').fill('本次费用与预期不一致，请帮助核查。')
@@ -157,6 +164,21 @@ test('G6 请求账本可查看价格、钱包关联并提交申诉', async ({ pa
   const download = page.waitForEvent('download')
   await page.getByRole('button', { name: '导出 CSV' }).click()
   await expect((await download).suggestedFilename()).toMatch(/^ai-requests-\d{4}-\d{2}-\d{2}\.csv$/)
+})
+
+test('G6 手机账单使用全宽筛选抽屉并支持键盘打开请求', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 })
+  await mockG6(page)
+  await page.goto('/ai/usage')
+  await page.getByRole('button', { name: '筛选账单' }).click()
+  const drawer = page.getByRole('dialog', { name: '筛选账单' })
+  await expect(drawer).toBeVisible()
+  await expect(drawer).toHaveCSS('width', '375px')
+  await drawer.getByRole('button', { name: '查看结果' }).click()
+  const requestCard = page.getByRole('link', { name: /req_g6_e2e_001/ })
+  await requestCard.focus()
+  await requestCard.press('Enter')
+  await expect(page.getByRole('dialog', { name: '请求账单详情' })).toBeVisible()
 })
 
 for (const viewport of [{ name: 'desktop', width: 1440, height: 1000 }, { name: 'tablet', width: 768, height: 1024 }, { name: 'mobile', width: 375, height: 812 }]) {
