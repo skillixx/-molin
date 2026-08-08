@@ -1,6 +1,6 @@
 # AI 网关 G6 验收记录
 
-> 当前状态：**测试环境 E2E、Migration 000066 和独立 QA 已通过，最新 CI 与产品整改复验中，尚未通过阶段门禁。**
+> 当前状态：**测试环境 E2E、Migration 000066、最终独立代码评审和独立 QA 已通过；最新 CI 与产品最终复验中，尚未通过阶段门禁。**
 >
 > 已有证据覆盖本地代码、自动化测试、隔离 MySQL 8、测试环境 Migration 000065、真实 Bifrost 请求、人民币金额/钱包对账、真实浏览器旅程和凭据回收。CI、最终独立评审、QA 与产品双签完成前，不得声明 G6 完成或允许生产开放。
 
@@ -11,8 +11,8 @@
 | 分支 | `feature/backend-d-ai-gateway-g6-customer-journey` |
 | G5 验收提交 | `60b569f` |
 | G6 实际开发基线 | `origin/main@c4126a6` |
-| 最新功能与证据提交 | `ad54b6d` |
-| 测试环境应用提交 | `bfd6643` |
+| 最新功能提交 | `4b84b89` |
+| 测试环境应用提交 | `4b84b89` |
 | Migration | `000065_create_ai_gateway_g6_customer_journey`、`000066_enforce_ai_dispute_request_owner` |
 | 部署范围 | 仅测试环境，禁止生产 |
 | 多模态范围 | 仅已发布文字模型 |
@@ -33,15 +33,16 @@
 | 真实 Bifrost 与人民币对账 | PASS | Bifrost 负载入口 `127.0.0.1:18080`、两个节点健康；真实 request `req_478e03928009d186` 已结算 `0.00000100 CNY`，Usage 与钱包差异均为 `0.00000000`，价格版本 `v2` |
 | 越权、吊销、不调用上游 | PASS | 跨用户请求详情返回 404；安全命中和 SK 吊销后均在网关前拒绝且未产生上游执行尝试；重复申诉返回 409 |
 | 测试凭据回收 | PASS | 清理前测试集合为用户 2、活跃 SK 0、未归档 Project 1、请求事实 4；清理后为 `0|0|0|4`，会话撤销，本地和远程浏览器 JWT 已删除 |
-| GitHub CI | PENDING | PR #325 最新代码检查中；阶段 5 敏感扫描曾将申诉拦截测试样本误判为真实凭据，已将样本拆分为运行时拼接并等待复验 |
-| 独立 QA | PASS | 独立测试工程师复跑全量 Go、vet、mod verify、两端 type-check/lint/build、10 条 G6 Playwright 和隔离 MySQL 8；P0/P1/P2/P3 均为 0 |
-| 独立评审与产品 | PENDING | 长时评审发现人工核定用量展示和真实账单抽屉对比度两个 P1，现已修复并补回归；申诉密钥拒绝、审计原文保护和跨 Project 预算周期也已闭合，等待最新提交复核与产品复验 |
+| GitHub CI | PENDING | 功能提交 `4b84b89` 六项检查全绿；本次 DTO 预算比例断言和验收报告提交后执行最终一轮 CI |
+| 独立 QA | PASS | [独立 QA 报告](ai-gateway-g6-qa-report.md)：全量 Go、vet、mod verify、两端检查、10 条 Playwright、隔离 MySQL 8 和六项 CI 通过；P0/P1/P2/P3 均为 0 |
+| 独立代码评审 | PASS | [独立评审记录](ai-gateway-g6-independent-review.md)：人工核定来源、预算 Project 集合和公开来源枚举三轮问题全部关闭；P0/P1/P2/P3 均为 0 |
+| 产品复验 | PENDING | 产品功能初验通过；backend-d 分支规范与可追溯 QA/评审报告已补齐，等待最终签署 |
 
 ## 3. 测试环境真实 E2E 证据
 
 | 项目 | 结果 |
 |---|---|
-| API 部署 | change `g6-bfd6643`，SHA256 `dd18c12d7578a694ea47ae79d53ec8e0693689acdbdc844ada46c54bab723955`，回滚目录 `/home/pc/molin/rollback/g6-bfd6643` |
+| API 部署 | change `g6-4b84b89`，SHA256 `685b067d674a17e53811d418d187f8b77f9c86240f5c2bc25cb771b744eee4e3`，回滚目录 `/home/pc/molin/rollback/g6-4b84b89` |
 | 完整前后端部署 | change `g6-75a3001-r1`，回滚目录 `/home/pc/molin/rollback/g6-75a3001-r1` |
 | API 增量部署 | change `g6-9efb1bd`，回滚目录 `/home/pc/molin/rollback/g6-9efb1bd` |
 | Migration 000066 | change `g6-4ef93de-m66`，`65:0 -> 66:0`；组合外键 1、组合索引 2 列、不一致事实 0；回滚备份 `/home/pc/molin/rollback/g6-4ef93de-m66`，SHA256 `38cd5bfc3d056b74c644368270650d0998a55c1c6d2a0ff17d0ef19445ec3457` |
