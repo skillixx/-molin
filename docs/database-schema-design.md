@@ -453,6 +453,14 @@ Migration `000063_create_ai_gateway_g4_governance` 新增以下 expand 表：
 
 预算预留不是第二套财务账本：reserved_amount 来自 G3 报价快照，settled_amount 只读取 G3 终态；日/月归属以准入时固化的 `daily_period_start/monthly_period_start` 为准，跨午夜结算不改变周期。Redis 不保存预算金额，只保存带 TTL 的并发与速率状态。000063 down 为事实保留型 no-op，应用回滚不得删除安全、预算和补偿记录。
 
+#### 3.5.5 AI 网关 Phase 1 G6 用户客户旅程
+
+Migration `000065_create_ai_gateway_g6_customer_journey` 新增 `ai_billing_disputes`，以 `(request_id,user_id)` 唯一约束保证同一用户对同一请求只能存在一条账单申诉。申诉只保存编号、request_id、用户说明、状态、处理意见和审计时间，不保存提示词、响应正文或任何密钥；外键限制请求、用户和处理人均可追溯。
+
+`token_models` 增加模型介绍、API 文档和快速入门三个 URL 的健康状态，状态为 `unpublished/unknown/healthy/unhealthy`。静态网页正文仍由外部站点托管，墨灵不保存 Markdown 或 HTML。地址变化后状态自动回到 `unknown`；发布操作要求 API 文档和快速入门均为 `healthy`，健康状态随不可变模型发布快照冻结。历史 G5 快照没有该字段时，只在发布 URL 与当前 URL 完全一致时兼容迁移后的状态。
+
+`ai_requests` 增加 `(user_id,execution_status,billing_status,created_at)` 查询索引，支持本人请求账本筛选。G6 不创建第二套 Usage 或财务表：用户用量、价格快照和钱包关联继续分别以 `ai_usage_items`、`ai_requests.price_snapshot_json` 和 `ai_request_wallet_links` 为事实源。000065 down 为事实保留型 no-op，不删除申诉和财务关联事实。
+
 ## 4. 关键状态
 
 用户状态：

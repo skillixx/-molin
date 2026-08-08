@@ -2581,3 +2581,18 @@ DELETE /api/token/projects/{id}/keys/{key_id}
 - 路由编辑必须回传当前 `version_no`；收到 409 时提示刷新，禁止静默覆盖。
 - 发布、审批、暂停、退役、下架均需二次确认；按钮在请求中进入 loading，失败后恢复可操作。
 - 价格固定展示 `input_tokens/output_tokens/cached_tokens/reasoning_tokens` 四项，不在 G5 页面伪造图片或视频计量。
+
+## AI 网关 G6 用户控制台
+
+页面与接口映射：
+
+| 页面 | 接口 | 关键交互 |
+|---|---|---|
+| `/ai/models` | `GET /api/token/catalog/models` | 搜索、筛选、排序同步 URL Query；加载、空和错误可重试 |
+| `/ai/models/:modelCode` | `GET /api/token/catalog/models/{model_code}` | 复制模型代码/Base URL、查看人民币价格、文档健康门禁、创建 SK 导航 |
+| `/ai/api-keys` | `/api/token/projects*` | Project 创建/编辑/归档，平台 SK 签发/轮换/吊销及一次明文展示 |
+| `/ai/usage` | `/api/token/customer/usage/overview`、`limits`、`requests*` | 总览、Project/SK/模型/状态/时间筛选、详情、CSV 和申诉 |
+
+旧 `/api-keys` 重定向 `/ai/api-keys`，旧 `/token/usage` 重定向 `/ai/usage`；通用商品 `/consumption` 保留，不得与 AI 请求账本混用。`VITE_AI_GATEWAY_BASE_URL` 用于展示客户公开网关地址，留空时使用当前站点来源；完整 SK 只能在签发或轮换响应中显示一次，不进入 URL、localStorage、日志或文档。
+
+文档字段为 `intro_url/docs_url/quick_start_url`，对应健康状态为 `unpublished/unknown/healthy/unhealthy`。仅 `healthy` 可点击；其余状态禁用并通过 Tooltip 解释。外部网页用 `noopener,noreferrer` 安全新窗口打开。模型和账本金额保持服务端 Decimal 字符串，不先转成浮点数参与提交或对账。

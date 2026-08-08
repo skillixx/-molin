@@ -2555,3 +2555,24 @@ Body 使用 `resolution=release|settle`；`settle` 时同时提交 `prompt_token
 G5 路由仅在确认请求未发送时按 `max_retries` 重试；超时、结果未知、已收到 HTTP/SSE 数据均禁止重试。安全失败达到阈值后写入共享熔断表并开启 30 秒窗口，后续请求按优先级和回退顺序选择其他路由。
 
 新增权限：`ai_gateway:model_manage`、`ai_gateway:price_manage`、`ai_gateway:route_manage`。冲突统一返回 `409/40900`，不满足发布门禁返回 `409/40900`，参数错误返回 `400/40000`。
+
+## AI 网关 G6 用户端模型市场与请求账本接口
+
+以下接口均要求用户 JWT，`user_id` 只取鉴权上下文，禁止由 Query 或 Body 覆盖。模型目录还执行发布快照可见性规则；Project、平台 SK、请求、钱包关联和申诉均强制本人隔离。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/token/catalog/models` | 已发布文字模型；支持 `q/provider/capability/context_min/context_max/sort/page/page_size` |
+| GET | `/api/token/catalog/models/{model_code}` | 发布快照详情、当前人民币销售价格及文档健康状态 |
+| GET | `/api/token/customer/usage/overview?timezone=Asia/Shanghai` | 今日、本月请求、Token、已结算金额和预算进度 |
+| GET | `/api/token/customer/limits` | 用户、Project、平台 SK 的有效并发/RPM/TPM 及来源 |
+| GET | `/api/token/customer/requests` | 本人请求账本，支持 `project_id/api_key_id/model/status/start/end/page/page_size` |
+| GET | `/api/token/customer/requests/{request_id}` | 三维状态、确认用量、价格版本、销售计价行、钱包流水和申诉 |
+| GET | `/api/token/customer/requests/export` | 本人 CSV；必须提供不超过 93 天的 `start/end`，最多 5000 行 |
+| POST | `/api/token/customer/requests/{request_id}/disputes` | 对本人请求提交唯一账单申诉，body `{"reason":"10-1000 字"}` |
+
+模型目录使用扁平分页 `{items,page,page_size,total}`。每个模型只返回公开代码、名称、厂商、说明、能力、上下文、文档 URL 与健康状态、发布版本、服务状态和人民币销售 SKU；禁止返回渠道、Bifrost 地址、上游模型、成本价或密钥。公开内容来自 `ai_model_release_versions.snapshot_json`，当前价格和健康路由只作为运行状态聚合，后台未发布工作副本不得提前泄漏。
+
+请求详情的 `price_lines[]` 包含 `meter_type/meter_source/quantity/sale_unit_price/scale/amount/currency`；`meter_source=provider_confirmed` 表示上游确认用量。金额和 Token 数量使用 Decimal JSON 字符串。详情不返回提示词、响应正文、完整 SK、内部执行模型或上游响应头。
+
+CSV 使用 UTF-8 BOM，任何以 `= + - @` 开头的单元格增加安全前缀；导出和申诉均写审计。申诉按 `(request_id,user_id)` 幂等，重复提交返回 409。未实名用户不能签发或轮换可调用平台 SK；吊销仍允许，以便用户及时止损。

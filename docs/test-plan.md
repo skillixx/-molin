@@ -1030,3 +1030,17 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - 000063 up 可重复执行；down/re-up 保留治理事实；不得写旧 `token_usage_logs`。
 - 必须执行本地全量测试、Linux `go test -race -count=1 ./...`、G3 回归和 `verify-ai-gateway-g4-governance.sh`。
 - 独立 QA 与产品经理均需给出 P0/P1/P2；P0/P1 为 0 才允许提交阶段完成结论。
+
+## AI 网关 Phase 1 G6 验收
+
+- 模型目录只出现本人可见、已发布、文字、当前有有效人民币价格且存在健康路由的模型；后台工作副本修改不得在重新发布前影响用户端。
+- 目录和详情不得包含 `cost_unit_price`、渠道、上游模型、Bifrost 地址、上游密钥或完整平台 SK；文档非 healthy 时必须禁用并说明原因。
+- Project 创建、编辑、归档和平台 SK 签发、轮换、吊销均强制本人隔离；未实名签发/轮换返回 70001；完整 SK 只出现一次，危险操作二次确认。
+- 请求账本按 Project、SK、模型、状态和时间筛选；详情可将 request_id、确认用量、价格版本、销售计价行、结算金额和钱包流水对账，差异必须为 0。
+- 用户 A 查询用户 B 的 Project、SK、请求详情、导出和申诉均不可成功；响应不得泄漏记录是否存在的敏感细节。
+- CSV 要求 93 天以内且最多 5000 行，覆盖 `= + - @` 公式注入；重复账单申诉保持一条事实并返回冲突。
+- Playwright 覆盖搜索 URL、详情、复制、文档状态、Project 编辑、SK 一次展示/轮换/吊销、用量详情、导出、申诉、空/错误和 1440/768/375 无横向溢出。
+- 本地执行 `gofmt`、`go test -count=1 ./...`、`go test -race ./...`、`go vet ./...`、`go mod verify`，管理端和用户端执行 `type-check/lint/build`，用户端执行 `test:g6-e2e`。
+- 测试环境必须备份后部署 Migration 000065、API、管理端和用户端；使用专用实名测试用户与最低成本文字模型执行唯一幂等真实 Bifrost 请求。
+- 真实 E2E 必须验证目录发布快照、Project SK scope、request_id、Usage、价格快照、销售金额、钱包扣费、越权拒绝和吊销后不上游；凭据回收后保留不可变账本证据。
+- CI、独立代码评审、QA 与产品经理均须 PASS，P0=0、P1=0，才能合并并声明 G6 完成；Mock 浏览器通过不等于真实测试环境验收。
