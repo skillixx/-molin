@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"fmt"
@@ -24,6 +25,7 @@ var rejectedInternalTokens = map[string]struct{}{
 type MetricsHandler struct {
 	emailSvc       *service.EmailService
 	smsMetrics     SMSMetricsReader
+	aiMetrics      AIGatewayMetricsReader
 	token          string
 	allowed        []netip.Prefix
 	trustedProxies []netip.Prefix
@@ -34,6 +36,12 @@ type MetricsHandler struct {
 type SMSMetricsReader interface {
 	SMSProviderMetricValue(scene, result string) uint64
 	SMSProviderDuration(scene string) (count uint64, totalNanoseconds uint64)
+}
+
+// AIGatewayMetricsReader 只返回已经完成低基数约束和脱敏处理的 Prometheus 文本。
+// 统一指标处理器不接触请求明细、用户身份、Project 或任何密钥。
+type AIGatewayMetricsReader interface {
+	AIGatewayPrometheus(ctx context.Context) (string, error)
 }
 
 func NewMetricsHandler(emailSvc *service.EmailService, cfg config.Config, smsReaders ...SMSMetricsReader) *MetricsHandler {
@@ -51,6 +59,13 @@ func NewMetricsHandler(emailSvc *service.EmailService, cfg config.Config, smsRea
 		trustedProxies: trusted,
 		ready:          emailSvc != nil && validInternalToken(cfg.InternalAPIToken) && allowedOK && trustedOK,
 	}
+}
+
+// WithAIGatewayMetrics 在 Token 网关完成延迟装配后接入统一指标端点。
+// Handler 在路由注册时已经创建，因此这里保留链式注入，避免新增第二个 metrics 路径。
+func (h *MetricsHandler) WithAIGatewayMetrics(reader AIGatewayMetricsReader) *MetricsHandler {
+	h.aiMetrics = reader
+	return h
 }
 
 func validInternalToken(token string) bool {
@@ -149,6 +164,16 @@ func (h *MetricsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusForbidden, 40003, "无权限")
 		return
 	}
+	aiMetricsText := ""
+	if h.aiMetrics != nil {
+		var err error
+		aiMetricsText, err = h.aiMetrics.AIGatewayPrometheus(r.Context())
+		if err != nil {
+			// 指标事实不可用时失败关闭，避免监控把缺失的财务差额误判为正常零值。
+			response.Error(w, http.StatusServiceUnavailable, 50300, "指标服务暂不可用")
+			return
+		}
+	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -172,24 +197,29 @@ func (h *MetricsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if h.smsMetrics == nil {
-		return
-	}
-	_, _ = fmt.Fprintln(w, "# HELP sms_provider_calls_total 短信供应商提交调用总数，accepted 仅表示供应商受理。")
-	_, _ = fmt.Fprintln(w, "# TYPE sms_provider_calls_total counter")
-	smsScenes := []string{"register", "login", "reset_password", "bind_phone", "admin_verify"}
-	smsResults := []string{"accepted", "timeout", "rate_limit", "signature", "template", "arrears", "network", "rejected"}
-	for _, scene := range smsScenes {
-		for _, result := range smsResults {
-			value := h.smsMetrics.SMSProviderMetricValue(scene, result)
-			_, _ = fmt.Fprintf(w, "sms_provider_calls_total{scene=%q,result=%q} %d\n", scene, result, value)
+	if h.smsMetrics != nil {
+		_, _ = fmt.Fprintln(w, "# HELP sms_provider_calls_total 短信供应商提交调用总数，accepted 仅表示供应商受理。")
+		_, _ = fmt.Fprintln(w, "# TYPE sms_provider_calls_total counter")
+		smsScenes := []string{"register", "login", "reset_password", "bind_phone", "admin_verify"}
+		smsResults := []string{"accepted", "timeout", "rate_limit", "signature", "template", "arrears", "network", "rejected"}
+		for _, scene := range smsScenes {
+			for _, result := range smsResults {
+				value := h.smsMetrics.SMSProviderMetricValue(scene, result)
+				_, _ = fmt.Fprintf(w, "sms_provider_calls_total{scene=%q,result=%q} %d\n", scene, result, value)
+			}
+		}
+		_, _ = fmt.Fprintln(w, "# HELP sms_provider_request_duration_seconds 短信供应商提交调用累计耗时秒数。")
+		_, _ = fmt.Fprintln(w, "# TYPE sms_provider_request_duration_seconds summary")
+		for _, scene := range smsScenes {
+			count, totalNanoseconds := h.smsMetrics.SMSProviderDuration(scene)
+			_, _ = fmt.Fprintf(w, "sms_provider_request_duration_seconds_sum{scene=%q} %.9f\n", scene, float64(totalNanoseconds)/float64(time.Second))
+			_, _ = fmt.Fprintf(w, "sms_provider_request_duration_seconds_count{scene=%q} %d\n", scene, count)
 		}
 	}
-	_, _ = fmt.Fprintln(w, "# HELP sms_provider_request_duration_seconds 短信供应商提交调用累计耗时秒数。")
-	_, _ = fmt.Fprintln(w, "# TYPE sms_provider_request_duration_seconds summary")
-	for _, scene := range smsScenes {
-		count, totalNanoseconds := h.smsMetrics.SMSProviderDuration(scene)
-		_, _ = fmt.Fprintf(w, "sms_provider_request_duration_seconds_sum{scene=%q} %.9f\n", scene, float64(totalNanoseconds)/float64(time.Second))
-		_, _ = fmt.Fprintf(w, "sms_provider_request_duration_seconds_count{scene=%q} %d\n", scene, count)
+	if aiMetricsText != "" {
+		_, _ = fmt.Fprint(w, aiMetricsText)
+		if !strings.HasSuffix(aiMetricsText, "\n") {
+			_, _ = fmt.Fprintln(w)
+		}
 	}
 }

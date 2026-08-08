@@ -118,6 +118,7 @@ type RequestOrchestratorService struct {
 	billing        *AIBillingService
 	governance     *GovernanceService
 	routeResolver  runtimeRouteResolver
+	metrics        *AIGatewayMetrics
 	prepared       sync.Map
 	activeTickets  sync.Map
 }
@@ -146,6 +147,12 @@ func (s *RequestOrchestratorService) WithBillingService(billing *AIBillingServic
 // WithGovernance 启用 G4 内容安全、预算和分布式资源治理链路。
 func (s *RequestOrchestratorService) WithGovernance(governance *GovernanceService) *RequestOrchestratorService {
 	s.governance = governance
+	return s
+}
+
+// WithMetrics 注入 G7 低基数指标记录器；nil 时不改变既有请求行为。
+func (s *RequestOrchestratorService) WithMetrics(metrics *AIGatewayMetrics) *RequestOrchestratorService {
+	s.metrics = metrics
 	return s
 }
 
@@ -248,6 +255,8 @@ func (s *RequestOrchestratorService) Prepare(ctx context.Context, cmd PrepareCom
 	if tokenModel.Status != "active" || tokenModel.Modality != "chat" {
 		return nil, ErrG2ModelUnavailable
 	}
+	// 只有数据库准入成功的逻辑模型才能成为指标标签，任意请求输入都会收敛到 other。
+	s.metrics.AllowLogicalModel(tokenModel.LogicalModelCode)
 	var runtimeRoute *model.AIModelRoute
 	if s.routeResolver != nil {
 		route, routeErr := s.routeResolver.ResolveActiveRoute(ctx, cmd.LogicalModel, cmd.RequestID)
@@ -432,6 +441,15 @@ func (s *RequestOrchestratorService) Execute(ctx context.Context, requestID stri
 		return ErrPreparedRequestMissing
 	}
 	prepared := value.(*PreparedRequest)
+	metricStartedAt := time.Now()
+	metricOutcome := "failure"
+	requestType := "json"
+	if prepared.command.Stream {
+		requestType = "stream"
+	}
+	defer func() {
+		s.metrics.RecordRequest(prepared.command.LogicalModel, requestType, metricOutcome, time.Since(metricStartedAt))
+	}()
 	if prepared.governanceTicket != nil {
 		s.activeTickets.Store(requestID, prepared.governanceTicket)
 		defer func() {
@@ -493,11 +511,15 @@ func (s *RequestOrchestratorService) Execute(ctx context.Context, requestID stri
 		maxRetries = prepared.runtimeRoute.MaxRetries
 	}
 	for retryNo := uint64(0); ; retryNo++ {
+		if retryNo > 0 {
+			s.metrics.RecordUpstreamRetry(prepared.command.LogicalModel, driver.Name())
+		}
 		if prepared.command.Stream {
 			executed, err = driver.ChatCompletionStream(executionCtx, executionRequest)
 		} else {
 			executed, err = driver.ChatCompletion(executionCtx, executionRequest)
 		}
+		s.metrics.RecordUpstream(prepared.command.LogicalModel, driver.Name(), upstreamMetricOutcome(executed, err))
 		if err == nil || !safeRequestNotSent(executed, err) || retryNo >= maxRetries {
 			break
 		}
@@ -556,9 +578,42 @@ func (s *RequestOrchestratorService) Execute(ctx context.Context, requestID stri
 	}
 	defer executed.Response.Body.Close()
 	if prepared.command.Stream && executed.Response.StatusCode >= 200 && executed.Response.StatusCode < 300 {
-		return s.executeStream(executionCtx, sink, driver, executed, prepared.command.LogicalModel, requestID)
+		executeErr := s.executeStream(executionCtx, sink, driver, executed, prepared.command.LogicalModel, requestID)
+		if executeErr == nil && executed.Attempt.RequestExecutionStatus() == model.AIExecutionSucceeded {
+			metricOutcome = "success"
+		}
+		return executeErr
 	}
-	return s.executeJSON(executionCtx, sink, executed, requestID)
+	executeErr := s.executeJSON(executionCtx, sink, executed, prepared.command.LogicalModel, driver.Name(), requestID)
+	if executeErr == nil && executed.Attempt.RequestExecutionStatus() == model.AIExecutionSucceeded {
+		metricOutcome = "success"
+	}
+	return executeErr
+}
+
+func upstreamMetricOutcome(executed *ExecutionResponse, err error) string {
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return "timeout"
+		}
+		return "unknown"
+	}
+	if executed == nil || executed.Response == nil {
+		return "malformed"
+	}
+	status := executed.Response.StatusCode
+	switch {
+	case status >= 200 && status < 300:
+		return "success"
+	case status == http.StatusTooManyRequests:
+		return "rate_limited"
+	case status >= 400 && status < 500:
+		return "client_error"
+	case status >= 500:
+		return "server_error"
+	default:
+		return "unknown"
+	}
 }
 
 func safeRequestNotSent(executed *ExecutionResponse, err error) bool {
@@ -571,7 +626,7 @@ func safeRequestNotSent(executed *ExecutionResponse, err error) bool {
 	return !executionResultUnknown(err)
 }
 
-func (s *RequestOrchestratorService) executeJSON(ctx context.Context, sink StreamSink, executed *ExecutionResponse, requestID string) error {
+func (s *RequestOrchestratorService) executeJSON(ctx context.Context, sink StreamSink, executed *ExecutionResponse, logicalModel, driverName, requestID string) error {
 	body, err := io.ReadAll(io.LimitReader(executed.Response.Body, 8<<20))
 	if err != nil {
 		if finalizeErr := s.finalizeAfterExecution(ctx, requestID, ExecutionResult{Attempt: failedAttempt(executed.Attempt, "response_read_error", true), ErrorCode: "response_read_error"}); finalizeErr != nil {
@@ -599,6 +654,9 @@ func (s *RequestOrchestratorService) executeJSON(ctx context.Context, sink Strea
 		}
 	}
 	result := ExecutionResult{Attempt: executed.Attempt, Usage: executed.Usage, CustomerChargeWaived: moderationErr != nil}
+	if executed.Response.StatusCode >= 200 && executed.Response.StatusCode < 300 && !executed.Usage.Present {
+		s.metrics.RecordUsageMissing(logicalModel, "json")
+	}
 	if moderationErr != nil {
 		result.ErrorCode = "output_moderation_blocked"
 	}
@@ -637,6 +695,11 @@ func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink Str
 	sink.SetHeader("Cache-Control", "no-cache")
 	sink.SetHeader("Connection", "keep-alive")
 	clientDisconnected := sink.WriteHeader(http.StatusOK) != nil
+	defer func() {
+		if clientDisconnected {
+			s.metrics.RecordStreamInterruption(logicalModel, driver.Name())
+		}
+	}()
 	scanner := bufio.NewScanner(executed.Response.Body)
 	scanner.Buffer(make([]byte, 64*1024), 2*1024*1024)
 	usage := ExecutionUsage{}
@@ -648,6 +711,7 @@ func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink Str
 	var normalizedSafeTail string
 	var moderationErr error
 	outputBlocked := false
+	firstPublicPayloadWritten := false
 	flushSegment := func(force bool) {
 		if pendingPayload.Len() == 0 || (!force && pendingText.Len() < 512 && !strings.ContainsAny(pendingText.String(), "。！？.!?\n")) {
 			return
@@ -679,6 +743,9 @@ func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink Str
 		if !outputBlocked && !clientDisconnected {
 			if err := sink.Write(append([]byte(nil), pendingPayload.Bytes()...)); err != nil || sink.Flush() != nil {
 				clientDisconnected = true
+			} else if !firstPublicPayloadWritten {
+				firstPublicPayloadWritten = true
+				s.metrics.RecordTTFT(logicalModel, driver.Name(), time.Since(executed.Attempt.StartedAt))
 			}
 		}
 		pendingPayload.Reset()
@@ -723,6 +790,9 @@ func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink Str
 		executed.Attempt.FinishedAt = time.Now()
 		executed.Attempt.Outcome = "success"
 		executed.Attempt.ResultUnknown = false
+	}
+	if executed.Attempt.RequestExecutionStatus() == model.AIExecutionSucceeded && !usage.Present {
+		s.metrics.RecordUsageMissing(logicalModel, "stream")
 	}
 	// 输出审核状态必须在财务终态前持久化；写入失败同样失败关闭并免除用户费用。
 	if ticket != nil && moderationErr == nil {

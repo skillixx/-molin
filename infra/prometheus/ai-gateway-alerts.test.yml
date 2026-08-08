@@ -1,0 +1,105 @@
+rule_files:
+  - /rules/ai-gateway-alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: 可用性失败率超过百分之一且样本达到二十后触发
+    interval: 1m
+    input_series:
+      - series: 'molin_ai_gateway_requests_total{logical_model_code="molin/test",request_type="json",outcome="success"}'
+        values: '0 0 0 0 0 19 19 19 19'
+      - series: 'molin_ai_gateway_requests_total{logical_model_code="molin/test",request_type="json",outcome="failure"}'
+        values: '0 0 0 0 0 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: MolinAIGatewayAvailabilitySLOBreach
+        exp_alerts:
+          - exp_labels:
+              module: token_gateway
+              severity: critical
+              slo: availability
+            exp_annotations:
+              summary: AI 网关可用性低于 99% SLO
+              description: 最近五分钟至少二十次已执行请求，失败率持续两分钟超过 1%，应停止测试流量并检查上游、账务及治理依赖。
+
+  - name: 可用性失败率高但样本不足二十时不触发
+    interval: 1m
+    input_series:
+      - series: 'molin_ai_gateway_requests_total{logical_model_code="molin/test",request_type="json",outcome="success"}'
+        values: '0 0 0 0 0 8 8 8'
+      - series: 'molin_ai_gateway_requests_total{logical_model_code="molin/test",request_type="json",outcome="failure"}'
+        values: '0 0 0 0 0 1 1 1'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: MolinAIGatewayAvailabilitySLOBreach
+        exp_alerts: []
+
+  - name: 任一账单差额立即触发P0告警
+    interval: 1m
+    input_series:
+      - series: 'molin_ai_gateway_billing_difference_cny{kind="request_wallet"}'
+        values: '0 0.01 0.01'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: MolinAIGatewayBillingDifference
+        exp_alerts:
+          - exp_labels:
+              kind: request_wallet
+              module: token_gateway
+              p_level: p0
+              severity: critical
+            exp_annotations:
+              summary: AI 网关账单链路出现非零差额
+              description: 对账口径 request_wallet 出现人民币差额 0.01，禁止自动修账、退款或补扣。
+
+  - name: 成功执行缺失Usage立即触发
+    interval: 1m
+    input_series:
+      - series: 'molin_ai_gateway_usage_missing_total{logical_model_code="molin/test",request_type="stream"}'
+        values: '0 1 1'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: MolinAIGatewayUsageMissing
+        exp_alerts:
+          - exp_labels:
+              logical_model_code: molin/test
+              module: token_gateway
+              request_type: stream
+              severity: critical
+            exp_annotations:
+              summary: AI 网关成功执行缺失可信 Usage
+              description: 逻辑模型 molin/test 的 stream 请求出现 Usage 缺失，必须保留预占并进入只读对账。
+
+  - name: Outbox积压超过五分钟并持续一分钟触发
+    interval: 1m
+    input_series:
+      - series: 'molin_ai_gateway_outbox_oldest_age_seconds{status="pending"}'
+        values: '0 301 361 421'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: MolinAIGatewayOutboxBacklogStale
+        exp_alerts:
+          - exp_labels:
+              module: token_gateway
+              severity: critical
+              status: pending
+            exp_annotations:
+              summary: AI 网关 Outbox 积压超过五分钟
+              description: 状态 pending 的最老 Outbox 事件年龄为 361 秒，请检查 RabbitMQ 和发布 Worker。
+
+  - name: 心跳失败立即触发
+    interval: 1m
+    input_series:
+      - series: 'molin_ai_gateway_heartbeat_failures_total'
+        values: '0 1 1'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: MolinAIGatewayHeartbeatFailure
+        exp_alerts:
+          - exp_labels:
+              module: token_gateway
+              severity: critical
+            exp_annotations:
+              summary: AI 网关并发租约心跳失败
+              description: 最近五分钟出现租约心跳失败，请停止新增测试流量并检查 Redis；请求执行必须失败关闭。

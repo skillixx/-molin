@@ -459,6 +459,64 @@ func TestRequestOrchestratorRetriesOnlyConfirmedNotSentAndResetsCircuit(t *testi
 	}
 }
 
+func TestRequestOrchestratorMetricsCountRetriesWithoutCountingIdempotentReplay(t *testing.T) {
+	store := newMemoryOrchestratorStore()
+	driver := &fakeOrchestratorDriver{failuresBeforeSuccess: 2}
+	metrics := NewAIGatewayMetrics(nil)
+	resolver := &recordingRuntimeRouteResolver{fakeRuntimeRouteResolver: fakeRuntimeRouteResolver{route: model.AIModelRoute{ID: 189, ChannelID: 4, ProviderModel: "openrouter/runtime-model", TimeoutMS: 5000, MaxRetries: 2, CircuitBreakerThreshold: 3}}}
+	orchestrator := NewRequestOrchestrator(store, fakeChannelReader{channel: model.TokenChannel{ID: 4, Code: "bifrost-main", BaseURL: "http://unused", Status: "active"}}, nil).
+		WithVisibilityChecker(fakeVisibilityChecker{visible: true}).WithRouteResolver(resolver).WithMetrics(metrics)
+	orchestrator.SetExecutionDriverSelector(staticExecutionDriverSelector{driver: driver})
+	body := map[string]interface{}{"messages": []interface{}{"same"}}
+	prepared := prepareTestRequest(t, orchestrator, "req-g7-metrics", "idem-g7-metrics", body)
+	if err := orchestrator.Execute(context.Background(), prepared.RequestID, &memorySink{}); err != nil {
+		t.Fatalf("带安全重试的指标请求执行失败: %v", err)
+	}
+	replay := prepareTestRequest(t, orchestrator, "req-g7-metrics-replay", "idem-g7-metrics", body)
+	if !replay.Existing || replay.RequestID != prepared.RequestID {
+		t.Fatalf("幂等回放未返回原请求: %+v", replay)
+	}
+
+	text, err := metrics.AIGatewayPrometheus(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		`molin_ai_gateway_requests_total{logical_model_code="molin/qwen-turbo",request_type="json",outcome="success"} 1`,
+		`molin_ai_gateway_upstream_requests_total{logical_model_code="molin/qwen-turbo",driver="bifrost",outcome="unknown"} 2`,
+		`molin_ai_gateway_upstream_requests_total{logical_model_code="molin/qwen-turbo",driver="bifrost",outcome="success"} 1`,
+		`molin_ai_gateway_upstream_retries_total{logical_model_code="molin/qwen-turbo",driver="bifrost"} 2`,
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("缺少编排事件指标 %q\n%s", expected, text)
+		}
+	}
+}
+
+func TestRequestOrchestratorMetricsObserveTTFTAndClientDisconnect(t *testing.T) {
+	store := newMemoryOrchestratorStore()
+	metrics := NewAIGatewayMetrics(nil)
+	orchestrator := newTestOrchestrator(store).WithMetrics(metrics)
+	driver := &fakeOrchestratorDriver{}
+	orchestrator.SetExecutionDriverSelector(staticExecutionDriverSelector{driver: driver})
+	prepared := prepareTestRequest(t, orchestrator, "req-g7-stream-metrics", "", map[string]interface{}{"messages": []interface{}{"stream"}})
+	prepared.command.Stream = true
+	prepared.command.Body["stream"] = true
+	if err := orchestrator.Execute(context.Background(), prepared.RequestID, &memorySink{failWrite: true}); err != nil {
+		t.Fatalf("客户端断连后服务端仍应完成读取与结算: %v", err)
+	}
+	text, err := metrics.AIGatewayPrometheus(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, `molin_ai_gateway_stream_interruptions_total{logical_model_code="molin/qwen-turbo",driver="bifrost"} 1`) {
+		t.Fatalf("流式断连未计入指标:\n%s", text)
+	}
+	if strings.Contains(text, `molin_ai_gateway_ttft_seconds_count{logical_model_code="molin/qwen-turbo",driver="bifrost"} 1`) {
+		t.Fatalf("首段未成功写给客户端时不得伪造 TTFT:\n%s", text)
+	}
+}
+
 func TestRequestOrchestratorOpensCircuitAfterSafeRetriesExhausted(t *testing.T) {
 	store := newMemoryOrchestratorStore()
 	driver := &fakeOrchestratorDriver{failuresBeforeSuccess: 5}

@@ -63,6 +63,13 @@ type ResourceLimiter struct {
 	renewLua   *redis.Script
 	releaseLua *redis.Script
 	reconcile  *redis.Script
+	metrics    *AIGatewayMetrics
+}
+
+// WithMetrics 注入四层租约、限流拒绝和幽灵租约指标记录器。
+func (s *ResourceLimiter) WithMetrics(metrics *AIGatewayMetrics) *ResourceLimiter {
+	s.metrics = metrics
+	return s
 }
 
 func NewResourceLimiter(client redis.UniversalClient, policies resourcePolicyReader, defaults ResourceDefaults) *ResourceLimiter {
@@ -115,6 +122,12 @@ func (s *ResourceLimiter) Acquire(ctx context.Context, requestID string, userID,
 		scopeIndex, _ := toInt64(result[1])
 		reason, _ := toInt64(result[2])
 		retryMS, _ := toInt64(result[3])
+		if len(result) >= 5 {
+			ghosts, _ := toInt64(result[4])
+			if ghosts > 0 {
+				s.metrics.RecordGhostLease(uint64(ghosts))
+			}
+		}
 		if scopeIndex < 1 || scopeIndex > int64(len(scopes)) {
 			return nil, ErrResourceUnavailable
 		}
@@ -123,10 +136,27 @@ func (s *ResourceLimiter) Acquire(ctx context.Context, requestID string, userID,
 		if reason == 1 {
 			cause = ErrConcurrencyExceeded
 			limitType = "concurrency"
+			s.metrics.RecordConcurrencyRejection(scopes[scopeIndex-1])
 		} else if reason == 3 {
 			limitType = "tpm"
 		}
 		return nil, &ResourceLimitError{Cause: cause, LimitScope: scopes[scopeIndex-1], LimitType: limitType, RetryAfter: time.Duration(max(retryMS, 1000)) * time.Millisecond}
+	}
+	if len(result) >= 2 {
+		ghosts, _ := toInt64(result[1])
+		if ghosts > 0 {
+			s.metrics.RecordGhostLease(uint64(ghosts))
+		}
+	}
+	// Lua 返回每层 ZADD 的新增结果；同一 request_id 重放只刷新租约，不重复增加进程 Gauge。
+	for index, scope := range scopes {
+		if len(result) <= index+2 {
+			break
+		}
+		added, _ := toInt64(result[index+2])
+		if added > 0 {
+			s.metrics.RecordConcurrencyLease(scope, 1)
+		}
 	}
 	return &ResourceTicket{LeaseID: requestID, Scopes: scopes, Keys: keys, ReservedTPM: reservedTokens}, nil
 }
@@ -146,8 +176,18 @@ func (s *ResourceLimiter) Release(ctx context.Context, ticket *ResourceTicket) e
 	if s == nil || ticket == nil || len(ticket.Keys) != 16 {
 		return nil
 	}
-	if _, err := s.releaseLua.Run(ctx, s.redis, ticket.Keys, ticket.LeaseID).Result(); err != nil {
+	removed, err := s.releaseLua.Run(ctx, s.redis, ticket.Keys, ticket.LeaseID).Slice()
+	if err != nil {
 		return ErrResourceUnavailable
+	}
+	for index, scope := range ticket.Scopes {
+		if index >= len(removed) {
+			break
+		}
+		count, _ := toInt64(removed[index])
+		if count > 0 {
+			s.metrics.RecordConcurrencyLease(scope, -1)
+		}
 	}
 	return nil
 }
@@ -174,6 +214,7 @@ func (s *ResourceLimiter) StartHeartbeat(ctx context.Context, ticket *ResourceTi
 				return
 			case <-ticker.C:
 				if err := s.Renew(context.WithoutCancel(ctx), ticket); err != nil {
+					s.metrics.RecordHeartbeatFailure()
 					result <- err
 					return
 				}
@@ -216,25 +257,26 @@ local tokens = tonumber(ARGV[5])
 local lease_ttl = tonumber(ARGV[6])
 local window_ttl = tonumber(ARGV[7])
 local window_duration = tonumber(ARGV[8])
+local ghost_count = 0
 for i = 0, 3 do
   local base = i * 4
   local limit_base = 9 + i * 3
   local concurrency_limit = tonumber(ARGV[limit_base])
   local rpm_limit = tonumber(ARGV[limit_base + 1])
   local tpm_limit = tonumber(ARGV[limit_base + 2])
-  redis.call('ZREMRANGEBYSCORE', KEYS[base + 1], 0, now)
+  ghost_count = ghost_count + redis.call('ZREMRANGEBYSCORE', KEYS[base + 1], 0, now)
   if redis.call('ZCARD', KEYS[base + 1]) >= concurrency_limit then
     local oldest = redis.call('ZRANGE', KEYS[base + 1], 0, 0, 'WITHSCORES')
     local retry = 1000
     if #oldest == 2 then retry = math.max(1000, tonumber(oldest[2]) - now) end
-    return {0, i + 1, 1, retry}
+    return {0, i + 1, 1, retry, ghost_count}
   end
   redis.call('ZREMRANGEBYSCORE', KEYS[base + 2], 0, window_start)
   if redis.call('ZCARD', KEYS[base + 2]) >= rpm_limit then
     local oldest = redis.call('ZRANGE', KEYS[base + 2], 0, 0, 'WITHSCORES')
     local retry = 1000
     if #oldest == 2 then retry = math.max(1000, tonumber(oldest[2]) + window_duration - now) end
-    return {0, i + 1, 2, retry}
+    return {0, i + 1, 2, retry, ghost_count}
   end
   local expired = redis.call('ZRANGEBYSCORE', KEYS[base + 3], 0, window_start)
   for _, member in ipairs(expired) do redis.call('HDEL', KEYS[base + 4], member) end
@@ -246,12 +288,13 @@ for i = 0, 3 do
     local oldest = redis.call('ZRANGE', KEYS[base + 3], 0, 0, 'WITHSCORES')
     local retry = 1000
     if #oldest == 2 then retry = math.max(1000, tonumber(oldest[2]) + window_duration - now) end
-    return {0, i + 1, 3, retry}
+    return {0, i + 1, 3, retry, ghost_count}
   end
 end
+local added = {}
 for i = 0, 3 do
   local base = i * 4
-  redis.call('ZADD', KEYS[base + 1], lease_expire, lease)
+  added[i + 1] = redis.call('ZADD', KEYS[base + 1], lease_expire, lease)
   redis.call('PEXPIRE', KEYS[base + 1], lease_ttl * 2)
   redis.call('ZADD', KEYS[base + 2], now, lease)
   redis.call('PEXPIRE', KEYS[base + 2], window_ttl)
@@ -260,7 +303,7 @@ for i = 0, 3 do
   redis.call('PEXPIRE', KEYS[base + 3], window_ttl)
   redis.call('PEXPIRE', KEYS[base + 4], window_ttl)
 end
-return {1}
+return {1, ghost_count, added[1], added[2], added[3], added[4]}
 `
 
 const resourceRenewLua = `
@@ -277,8 +320,9 @@ return 1
 `
 
 const resourceReleaseLua = `
-for i = 0, 3 do redis.call('ZREM', KEYS[i * 4 + 1], ARGV[1]) end
-return 1
+local removed = {}
+for i = 0, 3 do removed[i + 1] = redis.call('ZREM', KEYS[i * 4 + 1], ARGV[1]) end
+return {removed[1], removed[2], removed[3], removed[4]}
 `
 
 const resourceReconcileLua = `

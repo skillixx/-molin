@@ -1045,3 +1045,17 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - 测试环境必须备份后部署 Migration 000065、000066、API、管理端和用户端；验证数据库拒绝跨用户申诉，再使用专用实名测试用户与最低成本文字模型执行唯一幂等真实 Bifrost 请求。
 - 真实 E2E 必须验证目录发布快照、Project SK scope、request_id、Usage、价格快照、销售金额、钱包扣费、越权拒绝和吊销后不上游；凭据回收后保留不可变账本证据。
 - CI、独立代码评审、QA 与产品经理均须 PASS，P0=0、P1=0，才能合并并声明 G6 完成；Mock 浏览器通过不等于真实测试环境验收。
+
+## AI 网关 G7 可靠性验收
+
+- `/api/internal/metrics` 必须继续通过内部 Token、来源 IP allowlist 和可信代理双闸；非法配置、重复 Token Header、伪造 XFF/X-Real-IP 和数据库 Gauge 读取失败均失败关闭，错误响应不得泄漏内部原因。
+- AI 指标不得包含 request_id、用户、Project、平台 SK、提示词、响应正文或密钥；逻辑模型最多 32 个准入值，超限/非法值统一为 `other`。进程并发写指标和 Prometheus 抓取必须通过 Linux race。
+- Prometheus 规则必须覆盖 99% 可用性、P95 请求耗时、P95 TTFT、上游失败、Usage 缺失、流式断连、三项账单差额、四类异常、账务异常/超龄、未释放预占、Outbox/补偿积压、心跳失败和幽灵租约，并由 promtool 阈值单测验证。
+- Grafana SLO 看板必须由 provisioning 自动加载，UID 固定 `molin-ai-gateway-g7`，仅绑定本机回环；验证 health、数据源、14 个面板、常用刷新/时间范围和无错误日志。
+- `ai-gateway-reconcile` 只允许精确非生产 allowlist 与精确 `YES` 批准值，在 MySQL READ ONLY、REPEATABLE READ 事务执行。任何三项金额差额或四类异常非零时输出 FAIL 并退出 2；禁止修账、退款、补扣、释放预占或重排任务。
+- G7 隔离脚本必须从空库应用当前全部 up migration，使用 103 个虚构租户/钱包和 Fake 上游；不连接项目库、不映射数据库端口、不调用付费上游，退出清理精确临时容器和网络。
+- 100 个独立钱包并发完整请求全部结算；既有单钱包 100 并发不得超扣。20 路同幂等键只能创建、执行、结算和扣费一次。
+- 流式客户端断连后继续读取可信 Usage 并结算；Fake 上游停止时未发送请求释放预占，恢复后同幂等键安全重试。真实停止 Redis 时治理失败关闭，恢复后租约可重新准入且无幽灵租约残留。
+- 最终请求账本↔Usage、账本↔预占、账本↔钱包消费流水均为 `0.00000000 CNY`；重复结算、成功未结算、缺失价格快照、缺失钱包流水、未释放预占、Outbox 活跃积压和补偿活跃积压均为 0。
+- 测试环境必须先核对目标、实际进程、环境文件、schema `66:0`、活动任务、ChangeId 和回滚目录，再部署 API/监控资产并执行 Fake-only E2E。生产、多模态、真实客户和付费上游压力测试均不在范围。
+- 精确 PR HEAD 的 CI、独立代码评审、独立 QA 和产品经理均须 PASS，P0=0、P1=0，才允许合并并声明 G7 完成。

@@ -1,0 +1,13 @@
+# Grafana 仅通过监控内网读取 Prometheus，不在配置中保存任何凭据。
+apiVersion: 1
+
+datasources:
+  - name: Molin Prometheus
+    uid: molin-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s

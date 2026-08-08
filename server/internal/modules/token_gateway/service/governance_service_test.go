@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -136,7 +137,8 @@ func TestGovernanceHardBudgetStopsBeforeResource(t *testing.T) {
 	safetyRepo := &memorySafetyRepository{policy: testSafetyPolicy(t)}
 	budget := &memoryBudgetRepository{reserveErr: repository.ErrBudgetLimitExceeded}
 	limiter := &memoryResourceLimiter{}
-	governance := NewGovernanceService(NewSafetyService(safetyRepo, "0123456789abcdef0123456789abcdef"), budget, limiter)
+	metrics := NewAIGatewayMetrics(nil)
+	governance := NewGovernanceService(NewSafetyService(safetyRepo, "0123456789abcdef0123456789abcdef"), budget, limiter).WithMetrics(metrics)
 	subject := SafetySubject{RequestID: "req-governance-2", UserID: 1, ProjectID: 2, APIKeyID: 3}
 	body := map[string]interface{}{"messages": []interface{}{map[string]interface{}{"role": "user", "content": "正常问题"}}}
 	decision, _ := governance.CheckInput(context.Background(), subject, body)
@@ -149,6 +151,13 @@ func TestGovernanceHardBudgetStopsBeforeResource(t *testing.T) {
 	}
 	if limiter.released != 0 {
 		t.Fatal("预算拒绝前不得创建资源租约")
+	}
+	metricText, metricErr := metrics.AIGatewayPrometheus(context.Background())
+	if metricErr != nil {
+		t.Fatal(metricErr)
+	}
+	if !strings.Contains(metricText, `molin_ai_gateway_rejections_total{rejection_reason="budget_limit"} 1`) {
+		t.Fatalf("预算拒绝未进入低基数指标:\n%s", metricText)
 	}
 }
 

@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,6 +25,15 @@ func emptyMetricsService() *service.EmailService {
 }
 
 type fakeSMSMetricsReader struct{}
+
+type fakeAIGatewayMetricsReader struct {
+	text string
+	err  error
+}
+
+func (f fakeAIGatewayMetricsReader) AIGatewayPrometheus(context.Context) (string, error) {
+	return f.text, f.err
+}
 
 func (fakeSMSMetricsReader) SMSProviderMetricValue(scene, result string) uint64 {
 	if scene == "register" && result == "accepted" {
@@ -94,6 +105,32 @@ func TestMetricsExportsClosedSMSSeriesWithoutSensitiveLabels(t *testing.T) {
 		if strings.Contains(strings.ToLower(body), forbidden+"=") {
 			t.Fatalf("短信指标出现禁止的高基数或敏感标签: %s", forbidden)
 		}
+	}
+}
+
+func TestMetricsAppendsAIGatewayFamiliesWithoutSensitiveLabels(t *testing.T) {
+	cfg := validMetricsConfig()
+	ai := fakeAIGatewayMetricsReader{text: "# HELP molin_ai_gateway_requests_total AI 网关请求总数。\n# TYPE molin_ai_gateway_requests_total counter\nmolin_ai_gateway_requests_total{logical_model_code=\"molin/qwen-turbo\",request_type=\"json\",outcome=\"success\"} 2\n"}
+	h := NewMetricsHandler(emptyMetricsService(), cfg).WithAIGatewayMetrics(ai)
+	resp := httptest.NewRecorder()
+	h.ServeHTTP(resp, metricsRequest(http.MethodGet, "192.0.2.10:4321", cfg.InternalAPIToken))
+	if resp.Code != http.StatusOK || !strings.Contains(resp.Body.String(), "molin_ai_gateway_requests_total") {
+		t.Fatalf("AI 网关指标必须追加到统一端点: status=%d body=%s", resp.Code, resp.Body.String())
+	}
+	for _, forbidden := range []string{"request_id=", "user_id=", "project_id=", "api_key=", "secret_key=", "prompt="} {
+		if strings.Contains(strings.ToLower(resp.Body.String()), forbidden) {
+			t.Fatalf("AI 网关指标出现禁止标签或正文: %s", forbidden)
+		}
+	}
+}
+
+func TestMetricsFailsClosedWhenAIGatewaySnapshotUnavailable(t *testing.T) {
+	cfg := validMetricsConfig()
+	h := NewMetricsHandler(emptyMetricsService(), cfg).WithAIGatewayMetrics(fakeAIGatewayMetricsReader{err: errors.New("db down")})
+	resp := httptest.NewRecorder()
+	h.ServeHTTP(resp, metricsRequest(http.MethodGet, "192.0.2.10:4321", cfg.InternalAPIToken))
+	if resp.Code != http.StatusServiceUnavailable || strings.Contains(resp.Body.String(), "email_adapter_calls_total") || strings.Contains(resp.Body.String(), "db down") {
+		t.Fatalf("AI 指标采集失败必须使用不泄露内部原因的 503: status=%d body=%s", resp.Code, resp.Body.String())
 	}
 }
 

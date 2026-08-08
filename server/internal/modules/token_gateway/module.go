@@ -12,6 +12,7 @@ import (
 
 // Module 聚合 token_gateway 模块对外暴露的服务，便于 bootstrap 统一装配。
 type Module struct {
+	Metrics           *service.AIGatewayMetrics
 	ChannelService    *service.ChannelService
 	CatalogService    *service.CatalogService
 	ForwardService    *service.ForwardService
@@ -55,15 +56,19 @@ func New(db *gorm.DB, redisClient redis.UniversalClient, tokenProviderKey, apiKe
 	pricingService := service.NewPricingService(pricingRepo, defaultMaxTokens)
 	billingService := service.NewAIBillingService(db, pricingService, pricingRepo, walletHolds)
 	safetyService := service.NewSafetyService(governanceRepo, apiKeyHMACSecret)
-	resourceLimiter := service.NewResourceLimiter(redisClient, governanceRepo, resourceDefaults)
-	governanceService := service.NewGovernanceService(safetyService, governanceRepo, resourceLimiter)
+	metrics := service.NewAIGatewayMetrics(service.NewAIGatewayDBGaugeCollector(db))
+	billingService.WithMetrics(metrics)
+	resourceLimiter := service.NewResourceLimiter(redisClient, governanceRepo, resourceDefaults).WithMetrics(metrics)
+	governanceService := service.NewGovernanceService(safetyService, governanceRepo, resourceLimiter).WithMetrics(metrics)
 	orchestrator := service.NewRequestOrchestrator(g2Repo, channelRepo, cipher).
 		WithVisibilityChecker(catalogService).
 		WithBillingService(billingService).
 		WithGovernance(governanceService).
-		WithRouteResolver(g5AdminRepo)
+		WithRouteResolver(g5AdminRepo).
+		WithMetrics(metrics)
 
 	module := &Module{
+		Metrics:           metrics,
 		ChannelService:    service.NewChannelService(channelRepo, cipher),
 		CatalogService:    catalogService,
 		ForwardService:    service.NewForwardService(modelRepo, channelRepo, usageRepo, cipher, assetGate, reporter, scopeResolver),

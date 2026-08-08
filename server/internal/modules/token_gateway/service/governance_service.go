@@ -51,7 +51,14 @@ type GovernanceService struct {
 	safety  *SafetyService
 	budget  budgetRepository
 	limiter resourceLimiter
+	metrics *AIGatewayMetrics
 	now     func() time.Time
+}
+
+// WithMetrics 注入安全、预算和资源治理拒绝指标。
+func (s *GovernanceService) WithMetrics(metrics *AIGatewayMetrics) *GovernanceService {
+	s.metrics = metrics
+	return s
 }
 
 func NewGovernanceService(safety *SafetyService, budget budgetRepository, limiter resourceLimiter) *GovernanceService {
@@ -76,6 +83,9 @@ func (s *GovernanceService) CheckInput(ctx context.Context, subject SafetySubjec
 	decision, err := s.safety.ModerateInput(ctx, subject, body)
 	if errors.Is(err, ErrContentPolicyViolation) {
 		s.recordRejection(ctx, subject, "content_policy_violation", "user", strconv.FormatUint(subject.UserID, 10))
+	} else if err != nil {
+		// 分类器超时、依赖错误和无法判定都属于失败关闭，不暴露内部错误原文。
+		s.recordRejection(ctx, subject, "fail_closed", "user", strconv.FormatUint(subject.UserID, 10))
 	}
 	return decision, err
 }
@@ -134,11 +144,31 @@ func (s *GovernanceService) AdmitAfterSafety(ctx context.Context, subject Safety
 }
 
 func (s *GovernanceService) recordRejection(ctx context.Context, subject SafetySubject, reason, scopeType, scopeID string) {
+	s.metrics.RecordRejection(metricRejectionReason(reason))
 	recorder, ok := s.budget.(gatewayRejectionRecorder)
 	if !ok || strings.TrimSpace(subject.RequestID) == "" {
 		return
 	}
 	_ = recorder.RecordGatewayRejection(context.WithoutCancel(ctx), &model.AIGatewayRejectionEvent{RequestID: subject.RequestID, LogicalModelCode: subject.LogicalModelCode, ReasonCode: reason, ScopeType: scopeType, ScopeID: scopeID})
+}
+
+func metricRejectionReason(reason string) string {
+	switch reason {
+	case "content_policy_violation":
+		return "content_policy"
+	case "budget_limit_exceeded":
+		return "budget_limit"
+	case "concurrency_limit_exceeded":
+		return "concurrency_limit"
+	case "rpm_limit_exceeded":
+		return "rpm_limit"
+	case "tpm_limit_exceeded":
+		return "tpm_limit"
+	case "fail_closed":
+		return "fail_closed"
+	default:
+		return "other"
+	}
 }
 
 func rejectionScopeID(subject SafetySubject, scope string) string {

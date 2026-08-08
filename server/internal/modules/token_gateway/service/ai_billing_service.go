@@ -59,7 +59,14 @@ type AIBillingService struct {
 	pricing     *PricingService
 	priceRepo   priceVersionSuspender
 	walletHolds *billingservice.WalletHoldService
+	metrics     *AIGatewayMetrics
 	now         func() time.Time
+}
+
+// WithMetrics 注入财务状态转移指标；仅在事务真实提交后计数，幂等回放不会重复增加。
+func (s *AIBillingService) WithMetrics(metrics *AIGatewayMetrics) *AIBillingService {
+	s.metrics = metrics
+	return s
 }
 
 func NewAIBillingService(db *gorm.DB, pricing *PricingService, priceRepo priceVersionSuspender, walletHolds *billingservice.WalletHoldService) *AIBillingService {
@@ -99,6 +106,7 @@ func (s *AIBillingService) PrepareQuotedRequest(ctx context.Context, request *mo
 	if err != nil {
 		return nil, err
 	}
+	s.metrics.RecordBillingTransition(model.AIBillingHeld)
 	return &BillingPreparation{
 		BillingStatus: model.AIBillingHeld, QuotedAmount: quote.QuotedAmount,
 		HeldAmount: quote.HeldAmount, PriceVersion: quote.Snapshot.PriceVersionID, MaxTokens: quote.MaxTokens,
@@ -147,6 +155,7 @@ func (s *AIBillingService) PrepareRetryQuotedRequest(ctx context.Context, previo
 	if err != nil {
 		return nil, err
 	}
+	s.metrics.RecordBillingTransition(model.AIBillingHeld)
 	return &BillingPreparation{BillingStatus: model.AIBillingHeld, QuotedAmount: quote.QuotedAmount, HeldAmount: quote.HeldAmount, PriceVersion: quote.Snapshot.PriceVersionID, MaxTokens: quote.MaxTokens}, nil
 }
 
@@ -183,7 +192,9 @@ func (s *AIBillingService) FinalizeRequest(ctx context.Context, requestID string
 	}
 	pendingCommitted := false
 	exceptionCommitted := false
+	transitionedStatus := ""
 	err := retryFinancialTransaction(context.WithoutCancel(ctx), func() error {
+		transitionedStatus = ""
 		return s.db.WithContext(context.WithoutCancel(ctx)).Transaction(func(tx *gorm.DB) error {
 			request, link, err := lockRequestAndLink(tx, requestID)
 			if err != nil {
@@ -218,6 +229,7 @@ func (s *AIBillingService) FinalizeRequest(ctx context.Context, requestID string
 						return err
 					}
 					pendingCommitted = true
+					transitionedStatus = model.AIBillingSettlementPending
 					return nil
 				}
 				costed, err := s.pricing.CalculateProviderCost(requestID, request.PriceSnapshotJSON, result.Usage)
@@ -238,7 +250,11 @@ func (s *AIBillingService) FinalizeRequest(ctx context.Context, requestID string
 				if err := updateRequestBillingTx(tx, request, executionStatus, model.AIBillingReleased, result.ClientDisconnected, &zero, errorClass, errorCode, ledgerAttempt.ExecutionModelCode, completed); err != nil {
 					return err
 				}
-				return createOutboxTx(tx, requestID, "billing_content_policy_waived", model.AIBillingReleased, zero, completed)
+				if err := createOutboxTx(tx, requestID, "billing_content_policy_waived", model.AIBillingReleased, zero, completed); err != nil {
+					return err
+				}
+				transitionedStatus = model.AIBillingReleased
+				return nil
 			}
 
 			// 结果未知时即使已经看到 Usage 也不能证明它是最终事实，必须保留 hold 等待对账。
@@ -256,6 +272,7 @@ func (s *AIBillingService) FinalizeRequest(ctx context.Context, requestID string
 					return err
 				}
 				pendingCommitted = true
+				transitionedStatus = model.AIBillingSettlementPending
 				return nil
 			}
 
@@ -271,7 +288,11 @@ func (s *AIBillingService) FinalizeRequest(ctx context.Context, requestID string
 				if err := updateRequestBillingTx(tx, request, executionStatus, model.AIBillingReleased, result.ClientDisconnected, &zero, errorClass, errorCode, ledgerAttempt.ExecutionModelCode, completed); err != nil {
 					return err
 				}
-				return createOutboxTx(tx, requestID, "billing_released", model.AIBillingReleased, zero, completed)
+				if err := createOutboxTx(tx, requestID, "billing_released", model.AIBillingReleased, zero, completed); err != nil {
+					return err
+				}
+				transitionedStatus = model.AIBillingReleased
+				return nil
 			}
 
 			applyMinimum := executionStatus == model.AIExecutionSucceeded && result.Usage.PromptTokens+result.Usage.CompletionTokens > 0
@@ -315,6 +336,7 @@ func (s *AIBillingService) FinalizeRequest(ctx context.Context, requestID string
 					return err
 				}
 				exceptionCommitted = true
+				transitionedStatus = model.AIBillingException
 				return nil
 			}
 			settled, err := s.walletHolds.SettleHoldTx(tx, link.WalletHoldID, billed.FinalAmount, requestID+":settle")
@@ -336,11 +358,18 @@ func (s *AIBillingService) FinalizeRequest(ctx context.Context, requestID string
 			if err := updateRequestBillingTx(tx, request, executionStatus, model.AIBillingSettled, result.ClientDisconnected, &billed.FinalAmount, errorClass, errorCode, ledgerAttempt.ExecutionModelCode, completed); err != nil {
 				return err
 			}
-			return createOutboxTx(tx, requestID, "billing_settled", model.AIBillingSettled, billed.FinalAmount, completed)
+			if err := createOutboxTx(tx, requestID, "billing_settled", model.AIBillingSettled, billed.FinalAmount, completed); err != nil {
+				return err
+			}
+			transitionedStatus = model.AIBillingSettled
+			return nil
 		})
 	})
 	if err != nil {
 		return err
+	}
+	if transitionedStatus != "" {
+		s.metrics.RecordBillingTransition(transitionedStatus)
 	}
 	if exceptionCommitted {
 		return &BillingStatusError{RequestID: requestID, Cause: ErrBillingException}
@@ -361,7 +390,9 @@ func (s *AIBillingService) AbortBeforeExecution(ctx context.Context, requestID s
 	attempt.Outcome = "failed"
 	attempt.ErrorClass = "request_not_sent"
 	attempt.ResultUnknown = false
-	return retryFinancialTransaction(context.WithoutCancel(ctx), func() error {
+	transitioned := false
+	err := retryFinancialTransaction(context.WithoutCancel(ctx), func() error {
+		transitioned = false
 		return s.db.WithContext(context.WithoutCancel(ctx)).Transaction(func(tx *gorm.DB) error {
 			request, link, err := lockRequestAndLink(tx, requestID)
 			if err != nil {
@@ -389,9 +420,17 @@ func (s *AIBillingService) AbortBeforeExecution(ctx context.Context, requestID s
 			if err := updateRequestBillingTx(tx, request, model.AIExecutionFailed, model.AIBillingReleased, false, &zero, errorClass, errorClass, ledgerAttempt.ExecutionModelCode, s.now()); err != nil {
 				return err
 			}
-			return createOutboxTx(tx, requestID, "billing_released", model.AIBillingReleased, zero, s.now())
+			if err := createOutboxTx(tx, requestID, "billing_released", model.AIBillingReleased, zero, s.now()); err != nil {
+				return err
+			}
+			transitioned = true
+			return nil
 		})
 	})
+	if err == nil && transitioned {
+		s.metrics.RecordBillingTransition(model.AIBillingReleased)
+	}
+	return err
 }
 
 // ReconcileInterrupted 收敛持有资金但进程中断的请求，不会重放任何上游调用。

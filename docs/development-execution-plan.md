@@ -331,7 +331,7 @@
 - Agent 模板管理、用户 Agent 创建和定制订单（agent）。
 - Skills 管理、版本、购买、安装、Agent 绑定（skill）。
 
-AI 网关 Phase 1 按 G0-G6 独立门禁推进。当前 G2 仅实现 Project、Project SK、显式模型权限、RequestOrchestrator 和无收费文字请求正式账本；价格、钱包预占/扣费/结算、预算硬限制、限流、内容审核、多模态和 UI 均不得提前进入。G2 详细设计与验收见 `docs/ai-gateway-g2-development.md` 和 `docs/ai-gateway-g2-acceptance.md`。
+AI 网关 Phase 1 的商业文字链路按 G0-G6 独立门禁完成；G7 作为生产开放前的可靠性扩展门禁，补齐低基数指标、Prometheus 告警、Grafana SLO、只读财务核对、100 并发、幂等、流式断连、Fake 上游/Redis 混沌和安全验收。G7 不推进数据库版本，不包含生产部署、真实客户灰度或图片/视频模型；最终状态以 `docs/ai-gateway-g7-acceptance.md` 为准。
 
 ### Week 10–12：GPU 服务器出售（第三阶段）
 

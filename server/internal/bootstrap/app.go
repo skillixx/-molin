@@ -729,7 +729,7 @@ func NewApp() (*App, error) {
 	})
 
 	// 注册各模块路由（authService 实现 BanChecker 接口，用于封禁黑名单检查）
-	authmod.RegisterRoutes(mux, authService, verifySvc, emailSvc, cfg, iamService, scopeService, redisClient, publicSourceIP, apiKeyService, smsDispatcher)
+	metricsHandler := authmod.RegisterRoutes(mux, authService, verifySvc, emailSvc, cfg, iamService, scopeService, redisClient, publicSourceIP, apiKeyService, smsDispatcher)
 	authmod.RegisterEmailBootstrapRoute(mux, emailBootstrapSvc, cfg, authService, iamService, iamService)
 	smsmod.RegisterAdminRoutes(mux, smsAdminSvc, cfg, iamService, authService, auditSvc)
 	iammod.RegisterRoutes(mux, iamService, groupService, cfg.JWTSecret, authService, authService)
@@ -834,6 +834,8 @@ func NewApp() (*App, error) {
 		if tokenGatewayModule, tgErr := tokengatewaymod.New(gormDB, redisClient, cfg.TokenProviderKey, cfg.APIKeyHMACSecret, assetService, tokenReporter, tokenScopeResolver, walletHoldService, outboxPublisher, g3DefaultMaxTokens, resourceDefaults); tgErr != nil {
 			log.Printf("[token_gateway] 初始化失败，管理端/用户端未启用: %v", tgErr)
 		} else {
+			// Token 网关成功装配后才追加 AI 指标；模块关闭时保留既有邮件/短信指标端点。
+			metricsHandler.WithAIGatewayMetrics(tokenGatewayModule.Metrics)
 			// 执行层默认继续使用原生 Go 转发器；只有显式配置 bifrost 且内部鉴权完整时才切换。
 			if driverErr := tokenGatewayModule.ForwardService.ConfigureExecutionDriver(
 				cfg.TokenExecutionDriver, cfg.BifrostBaseURL, cfg.BifrostInternalToken,
