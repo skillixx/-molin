@@ -243,6 +243,8 @@ func (d *NativeOpenAICompatibleDriver) execute(ctx context.Context, in Execution
 	started := time.Now()
 	body := cloneExecutionBody(in.Body)
 	body["model"] = in.ProviderModel
+	// 驱动方法决定是否流式，必须覆盖客户端请求体中的冲突值，避免流式链路误收普通 JSON 或反向误开流。
+	body["stream"] = stream
 	if stream {
 		injectStreamUsage(body)
 	}
@@ -376,6 +378,8 @@ func (d *BifrostDriver) execute(ctx context.Context, in ExecutionRequest, stream
 	}
 	body := cloneExecutionBody(in.Body)
 	body["model"] = providerModel
+	// 驱动方法决定是否流式，必须覆盖客户端请求体中的冲突值，确保 Bifrost 协议与本地读取方式一致。
+	body["stream"] = stream
 	if stream {
 		injectStreamUsage(body)
 	}

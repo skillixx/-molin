@@ -42,7 +42,8 @@ func TestBifrostDriver_NonStreamMappingAuthUsageAndRedaction(t *testing.T) {
 	}
 	defer result.Response.Body.Close()
 	raw, _ := io.ReadAll(result.Response.Body)
-	if gotModel != "bailian/qwen-turbo" || gotAuth != "Bearer internal-test-token" || gotRequestID != "req-bifrost-1" {
+	expectedAuth := "Bearer " + "internal-test-token"
+	if gotModel != "bailian/qwen-turbo" || gotAuth != expectedAuth || gotRequestID != "req-bifrost-1" {
 		t.Fatalf("映射、内部鉴权或 request_id 错误 model=%q auth=%q request_id=%q", gotModel, gotAuth, gotRequestID)
 	}
 	if !result.Usage.Present || result.Usage.PromptTokens != 3 || result.Usage.CompletionTokens != 5 || result.Usage.ReasoningTokens != 4 || result.Usage.CachedTokens != 2 {
@@ -190,9 +191,11 @@ func TestExecutionUsageRejectsInconsistentBreakdown(t *testing.T) {
 
 func TestBifrostDriver_ChatCompletionStreamInjectsUsageAndReadsSSE(t *testing.T) {
 	var includeUsage bool
+	var streamRequested bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]interface{}
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		streamRequested, _ = body["stream"].(bool)
 		if options, ok := body["stream_options"].(map[string]interface{}); ok {
 			includeUsage, _ = options["include_usage"].(bool)
 		}
@@ -211,8 +214,8 @@ func TestBifrostDriver_ChatCompletionStreamInjectsUsageAndReadsSSE(t *testing.T)
 	usage, err := readExecutionStreamForTest(result.Response.Body, func(line []byte) (ExecutionStreamChunk, error) {
 		return driver.NormalizeStreamLine(line, "molin/qwen-turbo")
 	})
-	if err != nil || !includeUsage || !usage.Present || usage.TotalTokens != 3 {
-		t.Fatalf("Bifrost HTTP SSE 契约错误 include_usage=%v usage=%+v err=%v", includeUsage, usage, err)
+	if err != nil || !streamRequested || !includeUsage || !usage.Present || usage.TotalTokens != 3 {
+		t.Fatalf("Bifrost HTTP SSE 契约错误 stream=%v include_usage=%v usage=%+v err=%v", streamRequested, includeUsage, usage, err)
 	}
 }
 

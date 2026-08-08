@@ -32,13 +32,14 @@ var (
 	outboxStatuses       = []string{"pending", "publishing", "dead"}
 	compensationStatuses = []string{"pending", "retry", "dead", "manual_review"}
 	differenceKinds      = []string{"request_usage", "request_hold", "request_wallet"}
-	billingAnomalyKinds  = []string{"duplicate_settlement", "unbilled_execution", "missing_price_snapshot", "missing_wallet_transaction"}
+	billingAnomalyKinds  = []string{"duplicate_settlement", "unbilled_execution", "missing_price_snapshot", "missing_wallet_transaction", "missing_usage", "completed_pending", "billing_exception"}
 )
 
-// AIGatewayAmountGauge 表示一个只读事实集合的数量和人民币金额。
+// AIGatewayAmountGauge 表示一个只读事实集合的数量、人民币金额和最老事实年龄。
 type AIGatewayAmountGauge struct {
-	Count  uint64
-	Amount decimal.Decimal
+	Count            uint64
+	Amount           decimal.Decimal
+	OldestAgeSeconds uint64
 }
 
 // AIGatewayBacklogGauge 表示积压数量与最老任务年龄，单位为秒。
@@ -56,11 +57,18 @@ type AIGatewayGaugeSnapshot struct {
 	CompensationBacklog map[string]AIGatewayBacklogGauge
 	BillingDifferences  map[string]decimal.Decimal
 	BillingAnomalies    map[string]uint64
+	BillingAmounts      map[string]decimal.Decimal
+	SecurityFindings    map[string]uint64
 }
 
 // AIGatewayGaugeCollector 只允许执行 SELECT 聚合，不拥有任何修复、补偿或钱包写入能力。
 type AIGatewayGaugeCollector interface {
 	CollectAIGatewayGauges(ctx context.Context, now time.Time) (AIGatewayGaugeSnapshot, error)
+}
+
+// AIGatewayConcurrencyGaugeCollector 从 Redis 共享租约事实读取四层当前值，避免多实例各自维护 Gauge 后发生漂移。
+type AIGatewayConcurrencyGaugeCollector interface {
+	CollectConcurrencyLeases(ctx context.Context) (map[string]uint64, error)
 }
 
 type requestMetricKey struct {
@@ -91,8 +99,9 @@ type histogramValue struct {
 type AIGatewayMetrics struct {
 	mu sync.RWMutex
 
-	collector AIGatewayGaugeCollector
-	models    map[string]struct{}
+	collector            AIGatewayGaugeCollector
+	concurrencyCollector AIGatewayConcurrencyGaugeCollector
+	models               map[string]struct{}
 
 	requests              map[requestMetricKey]uint64
 	requestDurations      map[string]*histogramValue
@@ -107,6 +116,17 @@ type AIGatewayMetrics struct {
 	concurrencyRejections map[string]uint64
 	heartbeatFailures     uint64
 	ghostLeases           uint64
+}
+
+// WithConcurrencyGaugeCollector 注入 Redis 权威租约采集器；只应在模块装配阶段调用一次。
+func (m *AIGatewayMetrics) WithConcurrencyGaugeCollector(collector AIGatewayConcurrencyGaugeCollector) *AIGatewayMetrics {
+	if m == nil {
+		return m
+	}
+	m.mu.Lock()
+	m.concurrencyCollector = collector
+	m.mu.Unlock()
+	return m
 }
 
 func NewAIGatewayMetrics(collector AIGatewayGaugeCollector) *AIGatewayMetrics {
@@ -314,6 +334,17 @@ func (m *AIGatewayMetrics) AIGatewayPrometheus(ctx context.Context) (string, err
 		}
 	}
 	m.mu.RLock()
+	concurrencyCollector := m.concurrencyCollector
+	m.mu.RUnlock()
+	var sharedConcurrencyLeases map[string]uint64
+	if concurrencyCollector != nil {
+		var err error
+		sharedConcurrencyLeases, err = concurrencyCollector.CollectConcurrencyLeases(ctx)
+		if err != nil {
+			return "", err
+		}
+	}
+	m.mu.RLock()
 	defer m.mu.RUnlock()
 	var out strings.Builder
 	writeCounterHeader(&out, "molin_ai_gateway_requests_total", "AI 网关逻辑请求总数。")
@@ -348,6 +379,8 @@ func (m *AIGatewayMetrics) AIGatewayPrometheus(ctx context.Context) (string, err
 	fmt.Fprintf(&out, "molin_ai_gateway_unreleased_holds %d\n", gauges.UnreleasedHolds.Count)
 	writeGaugeHeader(&out, "molin_ai_gateway_unreleased_holds_amount_cny", "AI 网关当前未释放钱包预占金额。")
 	fmt.Fprintf(&out, "molin_ai_gateway_unreleased_holds_amount_cny %s\n", gauges.UnreleasedHolds.Amount.StringFixed(8))
+	writeGaugeHeader(&out, "molin_ai_gateway_unreleased_holds_oldest_age_seconds", "AI 网关当前最老未释放钱包预占年龄，单位秒。")
+	fmt.Fprintf(&out, "molin_ai_gateway_unreleased_holds_oldest_age_seconds %d\n", gauges.UnreleasedHolds.OldestAgeSeconds)
 	writeBacklog(&out, "outbox", outboxStatuses, gauges.OutboxBacklog)
 	writeBacklog(&out, "compensation", compensationStatuses, gauges.CompensationBacklog)
 	writeGaugeHeader(&out, "molin_ai_gateway_billing_difference_cny", "AI 网关账单聚合差额。")
@@ -358,10 +391,20 @@ func (m *AIGatewayMetrics) AIGatewayPrometheus(ctx context.Context) (string, err
 	for _, kind := range billingAnomalyKinds {
 		fmt.Fprintf(&out, "molin_ai_gateway_billing_anomalies{kind=%q} %d\n", kind, gauges.BillingAnomalies[kind])
 	}
-	writeGaugeHeader(&out, "molin_ai_gateway_concurrency_leases", "当前进程持有的 AI 网关并发租约数量。")
+	writeGaugeHeader(&out, "molin_ai_gateway_billing_amount_cny", "AI 网关账本、模型 Usage 与钱包消费聚合金额。")
+	for _, kind := range []string{"request_settled", "model_usage", "wallet_consumed"} {
+		fmt.Fprintf(&out, "molin_ai_gateway_billing_amount_cny{kind=%q} %s\n", kind, gauges.BillingAmounts[kind].StringFixed(8))
+	}
+	writeGaugeHeader(&out, "molin_ai_gateway_security_findings", "AI 网关已进入安全审计的高危发现数量。")
+	fmt.Fprintf(&out, "molin_ai_gateway_security_findings{kind=%q} %d\n", "secret_leak", gauges.SecurityFindings["secret_leak"])
+	writeGaugeHeader(&out, "molin_ai_gateway_concurrency_leases", "Redis 中当前有效的 AI 网关共享并发租约数量。")
 	writeCounterHeader(&out, "molin_ai_gateway_concurrency_rejections_total", "AI 网关并发租约拒绝总数。")
 	for _, scope := range metricScopes {
-		fmt.Fprintf(&out, "molin_ai_gateway_concurrency_leases{scope=%q} %d\n", scope, m.concurrencyLeases[scope])
+		leaseCount := m.concurrencyLeases[scope]
+		if sharedConcurrencyLeases != nil {
+			leaseCount = int64(sharedConcurrencyLeases[scope])
+		}
+		fmt.Fprintf(&out, "molin_ai_gateway_concurrency_leases{scope=%q} %d\n", scope, leaseCount)
 		fmt.Fprintf(&out, "molin_ai_gateway_concurrency_rejections_total{scope=%q} %d\n", scope, m.concurrencyRejections[scope])
 	}
 	writeCounterHeader(&out, "molin_ai_gateway_heartbeat_failures_total", "AI 网关并发租约心跳失败总数。")

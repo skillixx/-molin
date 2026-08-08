@@ -63,7 +63,7 @@ func TestAIGatewayMetricsExportsClosedSeriesAndReadOnlyGauges(t *testing.T) {
 	collector := fakeAIGatewayGaugeCollector{snapshot: AIGatewayGaugeSnapshot{
 		BillingRequests:     map[string]uint64{"held": 2, "settled": 7},
 		BillingOldestAge:    map[string]uint64{"held": 75},
-		UnreleasedHolds:     AIGatewayAmountGauge{Count: 2, Amount: decimal.RequireFromString("0.12000000")},
+		UnreleasedHolds:     AIGatewayAmountGauge{Count: 2, Amount: decimal.RequireFromString("0.12000000"), OldestAgeSeconds: 360},
 		OutboxBacklog:       map[string]AIGatewayBacklogGauge{"pending": {Count: 3, OldestAgeSeconds: 45}},
 		CompensationBacklog: map[string]AIGatewayBacklogGauge{"retry": {Count: 1, OldestAgeSeconds: 90}},
 		BillingDifferences:  map[string]decimal.Decimal{"request_usage": decimal.Zero, "request_wallet": decimal.Zero},
@@ -95,6 +95,7 @@ func TestAIGatewayMetricsExportsClosedSeriesAndReadOnlyGauges(t *testing.T) {
 		`molin_ai_gateway_request_duration_seconds_bucket{request_type="json",le="0.02"} 2`,
 		`molin_ai_gateway_ttft_seconds_bucket{logical_model_code="molin/qwen-turbo",driver="bifrost",le="0.03"} 1`,
 		`molin_ai_gateway_stream_interruptions_total{logical_model_code="molin/qwen-turbo",driver="bifrost"} 1`,
+		`molin_ai_gateway_unreleased_holds_oldest_age_seconds 360`,
 		`molin_ai_gateway_upstream_requests_total{logical_model_code="molin/qwen-turbo",driver="bifrost",outcome="rate_limited"} 1`,
 		`molin_ai_gateway_billing_requests{billing_state="settled"} 7`,
 		`molin_ai_gateway_billing_oldest_age_seconds{billing_state="held"} 75`,
@@ -131,25 +132,31 @@ func TestAIGatewayDBGaugeCollectorReadsFinancialFactsWithoutWrites(t *testing.T)
 		WithArgs(now).
 		WillReturnRows(sqlmock.NewRows([]string{"billing_status", "count", "oldest_age_seconds"}).AddRow("held", 2, 75).AddRow("settled", 7, 10))
 	mock.ExpectQuery("SELECT COUNT\\(\\*\\) AS count,.*FROM wallet_holds AS holds.*status = \\?").
-		WithArgs("holding").
-		WillReturnRows(sqlmock.NewRows([]string{"count", "amount"}).AddRow(2, "0.12000000"))
+		WithArgs(now, "holding").
+		WillReturnRows(sqlmock.NewRows([]string{"count", "amount", "oldest_age_seconds"}).AddRow(2, "0.12000000", 320))
 	mock.ExpectQuery("SELECT status, COUNT\\(\\*\\) AS count,.*FROM ai_outbox_events.*status IN \\(").
 		WithArgs(now, "pending", "publishing", "dead").
 		WillReturnRows(sqlmock.NewRows([]string{"status", "count", "oldest_age_seconds"}).AddRow("pending", 3, 45))
 	mock.ExpectQuery("SELECT status, COUNT\\(\\*\\) AS count,.*FROM ai_compensation_tasks.*status IN \\(").
 		WithArgs(now, "pending", "retry", "dead", "manual_review").
 		WillReturnRows(sqlmock.NewRows([]string{"status", "count", "oldest_age_seconds"}).AddRow("retry", 1, 90))
+	mock.ExpectQuery("WITH selected_usage AS.*request_settled").
+		WillReturnRows(sqlmock.NewRows([]string{"request_settled", "model_usage", "wallet_consumed"}).AddRow("1.25000000", "1.25000000", "1.25000000"))
+	mock.ExpectQuery("SELECT COUNT\\(DISTINCT target_id\\) FROM audit_logs.*target_type = \\?.*created_at >= \\?").
+		WithArgs("token_gateway", "secret_leak_detected", "api_key", now.Add(-5*time.Minute)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	mock.ExpectQuery("WITH selected_usage AS.*duplicate_settlement").
-		WithArgs(now.Add(-5 * time.Minute)).
+		WithArgs(now.Add(-5*time.Minute), now.Add(-5*time.Minute)).
 		WillReturnRows(sqlmock.NewRows([]string{
-			"request_usage_difference", "request_hold_difference", "request_wallet_difference", "duplicate_settlement", "unbilled_execution", "missing_price_snapshot", "missing_wallet_transaction",
-		}).AddRow("0.00000000", "0.00000000", "0.00000000", 0, 0, 0, 0))
+			"request_usage_difference", "request_hold_difference", "request_wallet_difference", "duplicate_settlement", "unbilled_execution", "missing_price_snapshot", "missing_wallet_transaction", "missing_usage", "completed_pending", "billing_exception",
+		}).AddRow("0.00000000", "0.00000000", "0.00000000", 0, 0, 0, 0, 0, 0, 0))
 
 	snapshot, err := NewAIGatewayDBGaugeCollector(db).CollectAIGatewayGauges(context.Background(), now)
 	if err != nil {
 		t.Fatalf("采集数据库指标失败: %v", err)
 	}
-	if snapshot.BillingRequests["settled"] != 7 || snapshot.BillingOldestAge["held"] != 75 || snapshot.UnreleasedHolds.Count != 2 || !snapshot.UnreleasedHolds.Amount.Equal(decimal.RequireFromString("0.12000000")) {
+	if snapshot.BillingRequests["settled"] != 7 || snapshot.BillingOldestAge["held"] != 75 || snapshot.UnreleasedHolds.Count != 2 ||
+		!snapshot.UnreleasedHolds.Amount.Equal(decimal.RequireFromString("0.12000000")) || snapshot.UnreleasedHolds.OldestAgeSeconds != 320 {
 		t.Fatalf("账务状态或预占快照错误: %+v", snapshot)
 	}
 	if snapshot.OutboxBacklog["pending"].OldestAgeSeconds != 45 || snapshot.CompensationBacklog["retry"].OldestAgeSeconds != 90 {
@@ -160,5 +167,76 @@ func TestAIGatewayDBGaugeCollectorReadsFinancialFactsWithoutWrites(t *testing.T)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("Gauge 采集器必须只执行约定的 SELECT 聚合: %v", err)
+	}
+}
+
+func TestReconciliationIssuesExposeHoldSettlementLinkMismatch(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("创建只读对账数据库桩失败: %v", err)
+	}
+	defer sqlDB.Close()
+	db, err := gorm.Open(mysql.New(mysql.Config{Conn: sqlDB, SkipInitializeWithVersion: true}), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatalf("创建 GORM 连接失败: %v", err)
+	}
+	now := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
+	cutoff := now.Add(-unbilledExecutionGracePeriod)
+	mock.ExpectQuery("WITH selected_usage AS.*hold_settle_transaction_id").
+		WithArgs(cutoff, cutoff, cutoff, 10).
+		WillReturnRows(sqlmock.NewRows([]string{"request_id", "issue_code", "billing_status", "expected_value", "actual_value"}).
+			AddRow("req-hold-link-mismatch", "missing_wallet_transaction", "settled", "request=link=hold=transaction", "inconsistent_or_missing"))
+
+	issues, err := NewAIGatewayDBGaugeCollector(db).CollectAIGatewayReconciliationIssues(context.Background(), now, 10)
+	if err != nil {
+		t.Fatalf("读取 request_id 级对账证据失败: %v", err)
+	}
+	if len(issues) != 1 || issues[0].RequestID != "req-hold-link-mismatch" || issues[0].IssueCode != "missing_wallet_transaction" {
+		t.Fatalf("hold 与 link 结算流水不一致必须返回 request_id 证据: %+v", issues)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("对账明细 SQL 未覆盖 hold 结算流水一致性: %v", err)
+	}
+}
+
+func TestReconciliationSQLUsesNullSafeSettlementAndCompleteHoldEvidence(t *testing.T) {
+	for name, query := range map[string]string{"聚合": aiGatewayReconciliationSQL, "明细": aiGatewayReconciliationIssuesSQL} {
+		if !strings.Contains(query, "NOT (links.settled_amount <=> requests.settled_amount)") &&
+			!strings.Contains(query, "NOT (link_settled_amount <=> settled_amount)") {
+			t.Fatalf("%s SQL 必须用 NULL-safe 比较 link 结算金额", name)
+		}
+		if !strings.Contains(query, "holds.settled_amount IS NULL") &&
+			!strings.Contains(query, "hold_settled_amount IS NULL") {
+			t.Fatalf("%s SQL 必须把 wallet_holds.settled_amount 缺失视为结算链异常", name)
+		}
+	}
+	if !strings.Contains(aiGatewayReconciliationIssuesSQL, "CAST(COALESCE(held_amount, 0) AS CHAR), CAST(COALESCE(link_held_amount, 0) AS CHAR)") ||
+		!strings.Contains(aiGatewayReconciliationIssuesSQL, "CAST(COALESCE(link_held_amount, 0) AS CHAR), CAST(COALESCE(hold_amount, 0) AS CHAR)") ||
+		!strings.Contains(aiGatewayReconciliationIssuesSQL, "CAST(COALESCE(link_held_amount, 0) AS CHAR), CAST(COALESCE(release_transaction_amount, 0) AS CHAR)") {
+		t.Fatal("预占差额明细必须分别展示 request→link、link→hold 与 link→release 三段实际值")
+	}
+	for name, query := range map[string]string{"聚合": aiGatewayReconciliationSQL, "明细": aiGatewayReconciliationIssuesSQL} {
+		if !strings.Contains(query, "meter_type IN ('input_tokens','output_tokens','total_tokens')) <> 3") ||
+			!strings.Contains(query, "raw_usage.source = 'provider'") || !strings.Contains(query, "raw_usage.source NOT IN ('provider','provider_cost')") ||
+			!strings.Contains(query, "meter_count, 0) <> 4") || !strings.Contains(query, "row_count, 0) <> 4") ||
+			!strings.Contains(query, "incomplete_count, 0) <> 0") || !strings.Contains(query, "selected_usage.input_quantity + selected_usage.cached_quantity") &&
+			!strings.Contains(query, "selected_input_quantity + selected_cached_quantity") {
+			t.Fatalf("%s SQL 必须分别验证三项原始 Usage 和四项销售计费 Usage", name)
+		}
+		if !strings.Contains(query, "'released', 'exception'") || !strings.Contains(query, "JSON_TYPE(JSON_EXTRACT") ||
+			!strings.Contains(query, "price_versions") || !strings.Contains(query, "logical_model_code") ||
+			!strings.Contains(query, "JSON_LENGTH(JSON_EXTRACT") || !strings.Contains(query, "<> 4") ||
+			!strings.Contains(query, "price_versions.version_no") && !strings.Contains(query, "price_version_fact_version_no") ||
+			!strings.Contains(query, "ai_price_skus AS snapshot_sku") ||
+			!strings.Contains(query, "$.skus.reasoning_tokens.sale_unit_price") || !strings.Contains(query, "$.skus.reasoning_tokens.scale") {
+			t.Fatalf("%s SQL 必须验证所有财务状态的完整价格快照结构", name)
+		}
+		if !strings.Contains(query, "output_moderation_blocked") || !strings.Contains(query, "manual_reconciled") {
+			t.Fatalf("%s SQL 不得把合法输出审核免单或人工核定 release 误报为 P0", name)
+		}
+		if !strings.Contains(query, "'held', 'settlement_pending', 'exception'") ||
+			!strings.Contains(query, "settle_transaction_id IS NOT NULL") || !strings.Contains(query, "release_transaction_id IS NOT NULL") {
+			t.Fatalf("%s SQL 必须拒绝在途或异常状态提前挂接结算/释放流水", name)
+		}
 	}
 }

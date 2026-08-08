@@ -7,7 +7,7 @@
 - API：增加 AI 网关指标采集和只读对账命令，不新增公开客户 API。
 - 监控：Prometheus 增加 AI 告警规则；新增 Grafana SLO 看板。
 - 数据库：G7 无新 Migration；只读取现有 `ai_requests`、`ai_usage_items`、钱包、Outbox 和补偿事实。
-- 测试：Fake 上游和临时 MySQL/Redis 容器，不产生付费上游费用。
+- 测试：可达的本机 Fake HTTP 上游和临时 MySQL/Redis 容器，不冒充 Bifrost 节点，不产生付费上游费用。
 
 ## 2. 上线前只读检查
 
@@ -27,15 +27,16 @@ AI_GATEWAY_G7_ISOLATED_APPROVED=YES G7_DOCKER_PULL_POLICY=missing \
   bash infra/scripts/verify-ai-gateway-g7-reliability.sh
 ```
 
-只接受末行 `G7_VERIFY=PASS`，并确认 `project_database=false`、`paid_upstream=false`、三项 difference 为 0、四类 anomaly 为 0。脚本退出后不得残留 `molin-g7-*` 临时容器或网络。
+只接受末行 `G7_VERIFY=PASS`，并确认 `project_database=false`、`paid_upstream=false`、`total_requests=1000`、`concurrency=100`、`idempotency=100`、三项 difference 为 0、七类 anomaly/hold/积压为 0。脚本还会在事务内注入七类财务损坏，必须证明聚合与 request_id 明细都失败关闭并成功回滚；脚本退出后不得残留 `molin-g7-*` 临时容器或网络。
 
 ## 4. 测试环境部署
 
 1. 为当前提交构建 API 二进制或镜像并计算 SHA256。
 2. 创建带 ChangeId 的回滚目录，保存旧 API、Compose/Prometheus/Grafana 配置和实际环境文件的权限/校验值；环境文件本体不得进入 Git。
 3. 原子替换 API 和监控配置，先运行 `promtool`、`docker compose ... config --quiet`，再受控重启 API、Prometheus 和 Grafana。
-4. 不执行 Migration；若远端 schema 不是 `66:0`，停止部署并按 G6 手册处理，禁止用 G7 顺带升级。
-5. 验证 `/api/health`、`/api/ready`、Prometheus target、Grafana `/api/health` 和 UID `molin-ai-gateway-g7`。
+4. 将 `molin-blackbox-exporter` 受控接入现有 `bifrost-net`，确认只探测两个 `/health` 地址且不携带内部 Token；未接网前节点不足告警保持触发，不得静默禁用。
+5. 不执行 Migration；若远端 schema 不是 `66:0`，停止部署并按 G6 手册处理，禁止用 G7 顺带升级。
+6. 验证 `/api/health`、`/api/ready`、Prometheus target、两个 Bifrost probe、Grafana `/api/health` 和 UID `molin-ai-gateway-g7`。
 
 Grafana 默认只绑定 `127.0.0.1:13000`。远程查看示例：
 
@@ -47,9 +48,9 @@ ssh -L 13000:127.0.0.1:13000 <test-user>@<test-host>
 
 ## 5. 测试环境 E2E
 
-1. 使用专用测试管理员/用户和 Fake 上游执行唯一 ChangeId 的文字请求。
+1. 使用专用测试管理员/用户和 Fake HTTP 上游执行唯一 ChangeId 的文字请求。
 2. 验证 JSON、SSE、客户端断连、相同幂等键重放；断连后请求仍形成可信 Usage 和财务终态。
-3. 在受控窗口停止 Fake 上游，确认未发送请求释放预占；恢复后重新请求成功。
+3. 在受控窗口真实停止 Fake HTTP 服务，确认未发送请求释放预占；启动新 Fake 服务后重新请求成功。
 4. 在受控窗口停止 Redis，确认治理失败关闭；恢复后确认租约可重新准入且无幽灵租约。
 5. 运行只读核对：
 
@@ -58,7 +59,7 @@ APP_ENV=test AI_GATEWAY_RECONCILE_READ_ONLY=YES \
   ./ai-gateway-reconcile --format json
 ```
 
-6. 验证报告 `status=PASS`、`has_mismatch=false`、三项差额 `0.00000000`、四类异常 0、未释放预占 0。
+6. 验证报告 `status=PASS`、`has_mismatch=false`、三项差额 `0.00000000`、七类聚合异常 0、未释放预占/Outbox/补偿为 0、`issues=[]`。
 7. 验证指标端点：无 Token、错误 Token、非 allowlist 来源均为 403；正确内部凭据返回 Prometheus 文本且不含用户、Project、SK、正文或请求明细。
 8. 验收后回收专用会话/SK；保留脱敏请求和账务事实，不删除或篡改历史账本。
 
@@ -72,7 +73,7 @@ APP_ENV=test AI_GATEWAY_RECONCILE_READ_ONLY=YES \
 
 ## 7. 回滚
 
-1. 停止当前 ChangeId 的验证流量和混沌动作，确保 Fake 上游与 Redis 已恢复。
+1. 停止当前 ChangeId 的验证流量和混沌动作，确保 Fake HTTP 上游与 Redis 已恢复。
 2. 恢复旧 API 二进制和旧 Prometheus/Grafana 配置，受控重启对应服务。
 3. G7 无数据库 down；不得删除请求、Usage、钱包流水、Outbox 或补偿事实。
 4. 验证健康、旧指标、钱包不变量和 `schema_migrations=66:0`。

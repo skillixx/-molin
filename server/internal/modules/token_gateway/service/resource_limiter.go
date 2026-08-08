@@ -66,9 +66,12 @@ type ResourceLimiter struct {
 	metrics    *AIGatewayMetrics
 }
 
-// WithMetrics 注入四层租约、限流拒绝和幽灵租约指标记录器。
+// WithMetrics 注入四层租约、限流拒绝和幽灵租约指标记录器，并把共享租约 Gauge 绑定到 Redis 权威事实。
 func (s *ResourceLimiter) WithMetrics(metrics *AIGatewayMetrics) *ResourceLimiter {
 	s.metrics = metrics
+	if metrics != nil {
+		metrics.WithConcurrencyGaugeCollector(s)
+	}
 	return s
 }
 
@@ -94,7 +97,7 @@ func (s *ResourceLimiter) Acquire(ctx context.Context, requestID string, userID,
 	}
 	scopes := []string{"user", "project", "api_key", "model"}
 	limits := []ResourceLimits{s.defaults.User, s.defaults.Project, s.defaults.APIKey, s.defaults.Model}
-	keys := make([]string, 0, 16)
+	keys := make([]string, 0, 20)
 	for index, scope := range scopes {
 		if policy, ok := policies[scope]; ok {
 			limits[index] = ResourceLimits{Concurrency: policy.ConcurrencyLimit, RPM: policy.RPMLimit, TPM: policy.TPMLimit}
@@ -104,6 +107,10 @@ func (s *ResourceLimiter) Acquire(ctx context.Context, requestID string, userID,
 		}
 		prefix := "molin:{ai-g4}:" + scope + ":" + scopeKeys[scope]
 		keys = append(keys, prefix+":concurrency", prefix+":rpm", prefix+":tpm:time", prefix+":tpm:value")
+	}
+	// 四个共享索引只用于跨实例 Gauge；准入仍由上面的实体级 ZSET 原子判定。
+	for _, scope := range scopes {
+		keys = append(keys, concurrencyMetricKey(scope))
 	}
 	now := time.Now()
 	args := []interface{}{requestID, now.UnixMilli(), now.Add(s.leaseTTL).UnixMilli(), now.Add(-s.windowTTL).UnixMilli(), reservedTokens, s.leaseTTL.Milliseconds(), (2 * s.windowTTL).Milliseconds(), s.windowTTL.Milliseconds()}
@@ -148,21 +155,11 @@ func (s *ResourceLimiter) Acquire(ctx context.Context, requestID string, userID,
 			s.metrics.RecordGhostLease(uint64(ghosts))
 		}
 	}
-	// Lua 返回每层 ZADD 的新增结果；同一 request_id 重放只刷新租约，不重复增加进程 Gauge。
-	for index, scope := range scopes {
-		if len(result) <= index+2 {
-			break
-		}
-		added, _ := toInt64(result[index+2])
-		if added > 0 {
-			s.metrics.RecordConcurrencyLease(scope, 1)
-		}
-	}
 	return &ResourceTicket{LeaseID: requestID, Scopes: scopes, Keys: keys, ReservedTPM: reservedTokens}, nil
 }
 
 func (s *ResourceLimiter) Renew(ctx context.Context, ticket *ResourceTicket) error {
-	if s == nil || ticket == nil || len(ticket.Keys) != 16 {
+	if s == nil || ticket == nil || len(ticket.Keys) != 20 {
 		return ErrResourceUnavailable
 	}
 	result, err := s.renewLua.Run(ctx, s.redis, ticket.Keys, ticket.LeaseID, time.Now().Add(s.leaseTTL).UnixMilli(), s.leaseTTL.Milliseconds()).Int64()
@@ -173,33 +170,54 @@ func (s *ResourceLimiter) Renew(ctx context.Context, ticket *ResourceTicket) err
 }
 
 func (s *ResourceLimiter) Release(ctx context.Context, ticket *ResourceTicket) error {
-	if s == nil || ticket == nil || len(ticket.Keys) != 16 {
+	if s == nil || ticket == nil || len(ticket.Keys) != 20 {
 		return nil
 	}
-	removed, err := s.releaseLua.Run(ctx, s.redis, ticket.Keys, ticket.LeaseID).Slice()
-	if err != nil {
+	if _, err := s.releaseLua.Run(ctx, s.redis, ticket.Keys, ticket.LeaseID).Result(); err != nil {
 		return ErrResourceUnavailable
-	}
-	for index, scope := range ticket.Scopes {
-		if index >= len(removed) {
-			break
-		}
-		count, _ := toInt64(removed[index])
-		if count > 0 {
-			s.metrics.RecordConcurrencyLease(scope, -1)
-		}
 	}
 	return nil
 }
 
 func (s *ResourceLimiter) ReconcileTokens(ctx context.Context, ticket *ResourceTicket, actual uint64) error {
-	if s == nil || ticket == nil || len(ticket.Keys) != 16 {
+	if s == nil || ticket == nil || len(ticket.Keys) != 20 {
 		return nil
 	}
 	if _, err := s.reconcile.Run(ctx, s.redis, ticket.Keys, ticket.LeaseID, actual).Result(); err != nil {
 		return ErrResourceUnavailable
 	}
 	return nil
+}
+
+// CollectConcurrencyLeases 直接读取共享索引中尚未过期的租约，不按进程求和，也不会在指标抓取时修改 Redis。
+func (s *ResourceLimiter) CollectConcurrencyLeases(ctx context.Context) (map[string]uint64, error) {
+	if s == nil || s.redis == nil {
+		return nil, ErrResourceUnavailable
+	}
+	minimumScore := "(" + strconv.FormatInt(time.Now().UnixMilli(), 10)
+	pipeline := s.redis.Pipeline()
+	commands := make(map[string]*redis.IntCmd, len(metricScopes))
+	for _, scope := range metricScopes {
+		commands[scope] = pipeline.ZCount(ctx, concurrencyMetricKey(scope), minimumScore, "+inf")
+	}
+	if _, err := pipeline.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
+		return nil, ErrResourceUnavailable
+	}
+	result := make(map[string]uint64, len(metricScopes))
+	for scope, command := range commands {
+		count, err := command.Result()
+		if err != nil && !errors.Is(err, redis.Nil) {
+			return nil, ErrResourceUnavailable
+		}
+		if count > 0 {
+			result[scope] = uint64(count)
+		}
+	}
+	return result, nil
+}
+
+func concurrencyMetricKey(scope string) string {
+	return "molin:{ai-g4}:metrics:concurrency:" + scope
 }
 
 func (s *ResourceLimiter) StartHeartbeat(ctx context.Context, ticket *ResourceTicket) <-chan error {
@@ -258,25 +276,29 @@ local lease_ttl = tonumber(ARGV[6])
 local window_ttl = tonumber(ARGV[7])
 local window_duration = tonumber(ARGV[8])
 local ghost_count = 0
+local ghosts = {0, 0, 0, 0}
+-- 共享指标索引与实体租约使用相同过期时间；准入时顺手清理，避免持续流量下积累已过期成员。
+for i = 0, 3 do redis.call('ZREMRANGEBYSCORE', KEYS[17 + i], 0, now) end
 for i = 0, 3 do
   local base = i * 4
   local limit_base = 9 + i * 3
   local concurrency_limit = tonumber(ARGV[limit_base])
   local rpm_limit = tonumber(ARGV[limit_base + 1])
   local tpm_limit = tonumber(ARGV[limit_base + 2])
-  ghost_count = ghost_count + redis.call('ZREMRANGEBYSCORE', KEYS[base + 1], 0, now)
+  ghosts[i + 1] = redis.call('ZREMRANGEBYSCORE', KEYS[base + 1], 0, now)
+  ghost_count = ghost_count + ghosts[i + 1]
   if redis.call('ZCARD', KEYS[base + 1]) >= concurrency_limit then
     local oldest = redis.call('ZRANGE', KEYS[base + 1], 0, 0, 'WITHSCORES')
     local retry = 1000
     if #oldest == 2 then retry = math.max(1000, tonumber(oldest[2]) - now) end
-    return {0, i + 1, 1, retry, ghost_count}
+    return {0, i + 1, 1, retry, ghost_count, ghosts[1], ghosts[2], ghosts[3], ghosts[4]}
   end
   redis.call('ZREMRANGEBYSCORE', KEYS[base + 2], 0, window_start)
   if redis.call('ZCARD', KEYS[base + 2]) >= rpm_limit then
     local oldest = redis.call('ZRANGE', KEYS[base + 2], 0, 0, 'WITHSCORES')
     local retry = 1000
     if #oldest == 2 then retry = math.max(1000, tonumber(oldest[2]) + window_duration - now) end
-    return {0, i + 1, 2, retry, ghost_count}
+    return {0, i + 1, 2, retry, ghost_count, ghosts[1], ghosts[2], ghosts[3], ghosts[4]}
   end
   local expired = redis.call('ZRANGEBYSCORE', KEYS[base + 3], 0, window_start)
   for _, member in ipairs(expired) do redis.call('HDEL', KEYS[base + 4], member) end
@@ -288,7 +310,7 @@ for i = 0, 3 do
     local oldest = redis.call('ZRANGE', KEYS[base + 3], 0, 0, 'WITHSCORES')
     local retry = 1000
     if #oldest == 2 then retry = math.max(1000, tonumber(oldest[2]) + window_duration - now) end
-    return {0, i + 1, 3, retry, ghost_count}
+    return {0, i + 1, 3, retry, ghost_count, ghosts[1], ghosts[2], ghosts[3], ghosts[4]}
   end
 end
 local added = {}
@@ -302,8 +324,10 @@ for i = 0, 3 do
   redis.call('HSET', KEYS[base + 4], lease, tokens)
   redis.call('PEXPIRE', KEYS[base + 3], window_ttl)
   redis.call('PEXPIRE', KEYS[base + 4], window_ttl)
+  redis.call('ZADD', KEYS[17 + i], lease_expire, lease)
+  redis.call('PEXPIRE', KEYS[17 + i], lease_ttl * 2)
 end
-return {1, ghost_count, added[1], added[2], added[3], added[4]}
+return {1, ghost_count, added[1], added[2], added[3], added[4], ghosts[1], ghosts[2], ghosts[3], ghosts[4]}
 `
 
 const resourceRenewLua = `
@@ -315,13 +339,18 @@ for i = 0, 3 do
   local key = KEYS[i * 4 + 1]
   redis.call('ZADD', key, 'XX', tonumber(ARGV[2]), ARGV[1])
   redis.call('PEXPIRE', key, tonumber(ARGV[3]) * 2)
+  redis.call('ZADD', KEYS[17 + i], 'XX', tonumber(ARGV[2]), ARGV[1])
+  redis.call('PEXPIRE', KEYS[17 + i], tonumber(ARGV[3]) * 2)
 end
 return 1
 `
 
 const resourceReleaseLua = `
 local removed = {}
-for i = 0, 3 do removed[i + 1] = redis.call('ZREM', KEYS[i * 4 + 1], ARGV[1]) end
+for i = 0, 3 do
+  removed[i + 1] = redis.call('ZREM', KEYS[i * 4 + 1], ARGV[1])
+  redis.call('ZREM', KEYS[17 + i], ARGV[1])
+end
 return {removed[1], removed[2], removed[3], removed[4]}
 `
 

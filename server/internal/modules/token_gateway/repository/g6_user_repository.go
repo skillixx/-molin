@@ -244,6 +244,18 @@ func (r *G6UserRepository) FindRequestFact(ctx context.Context, userID uint64, r
 	return &request, nil
 }
 
+// FindActiveAPIKeyHash 只返回请求所属用户当前有效 SK 的 HMAC，用于确认用户提交的是实际已签发凭据而不是伪造字符串。
+func (r *G6UserRepository) FindActiveAPIKeyHash(ctx context.Context, userID, apiKeyID uint64) (string, error) {
+	var row struct {
+		KeyHash string `gorm:"column:key_hash"`
+	}
+	if err := r.db.WithContext(ctx).Table("api_keys").Select("key_hash").
+		Where("id = ? AND user_id = ? AND status = 'active' AND (expires_at IS NULL OR expires_at > ?)", apiKeyID, userID, time.Now().UTC()).Take(&row).Error; err != nil {
+		return "", err
+	}
+	return row.KeyHash, nil
+}
+
 func (r *G6UserRepository) ListBilledUsage(ctx context.Context, requestID string) ([]model.AIUsageItem, error) {
 	var items []model.AIUsageItem
 	err := r.db.WithContext(ctx).Table("ai_usage_items AS usage_items").

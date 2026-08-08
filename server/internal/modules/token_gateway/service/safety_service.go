@@ -98,6 +98,10 @@ func (s *SafetyService) ModerateOutput(ctx context.Context, subject SafetySubjec
 func (s *SafetyService) moderate(ctx context.Context, subject SafetySubject, direction, content string) (*SafetyDecision, error) {
 	policy, err := s.policyLoad(ctx)
 	if err != nil || policy == nil || policy.Status != model.AISafetyPolicyActive {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			// 保留失败关闭的公开错误，同时携带超时原因供低基数可观测指标准确分类。
+			return nil, errors.Join(ErrModerationUnavailable, context.DeadlineExceeded)
+		}
 		return nil, ErrModerationUnavailable
 	}
 	decision := &SafetyDecision{Allowed: true, PolicyVersion: policy.VersionNo, PolicyID: policy.ID, RefusalMessage: DefaultSafetyRefusal}

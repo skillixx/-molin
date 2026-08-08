@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -18,16 +19,29 @@ import (
 	"molin/server/internal/modules/token_gateway/dto"
 	"molin/server/internal/modules/token_gateway/model"
 	"molin/server/internal/modules/token_gateway/repository"
+	pkgcrypto "molin/server/pkg/crypto"
 )
 
 var (
-	ErrPublicModelNotFound   = errors.New("模型不存在、未发布或当前不可用")
-	ErrUserRequestNotFound   = errors.New("请求记录不存在")
-	ErrDisputeReasonInvalid  = errors.New("申诉说明长度应为 10 至 1000 个字符")
-	ErrDisputeContainsSecret = errors.New("申诉说明不能包含 API Key、Token 或其他密钥")
+	ErrPublicModelNotFound             = errors.New("模型不存在、未发布或当前不可用")
+	ErrUserRequestNotFound             = errors.New("请求记录不存在")
+	ErrDisputeReasonInvalid            = errors.New("申诉说明长度应为 10 至 1000 个字符")
+	ErrDisputeContainsSecret           = errors.New("申诉说明不能包含 API Key、Token 或其他密钥")
+	ErrDisputeContainsUnverifiedSecret = errors.New("申诉说明不能包含 API Key、Token 或其他密钥")
 )
 
 var credentialLikePattern = regexp.MustCompile(`(?i)(sk-[a-z0-9_-]{8,}|bearer\s+[a-z0-9._~+/=-]{8,}|(?:api[_ -]?key|access[_ -]?token|secret)\s*[:=]\s*\S{6,}|eyJ[a-z0-9_-]{8,}\.[a-z0-9_-]{8,}\.[a-z0-9_-]{8,})`)
+
+// 平台 SK 的随机段使用 Base64URL 无填充编码，因此除字母数字外还必须允许连字符和下划线。
+var platformAPIKeyPattern = regexp.MustCompile(`sk-molin-[0-9A-Za-z_-]{16,128}`)
+
+// ConfirmedCredentialLeakError 只表示 HMAC 已精确匹配请求所属有效平台 SK 的确认泄漏，不携带明文或 Hash。
+type ConfirmedCredentialLeakError struct {
+	APIKeyID uint64
+}
+
+func (e *ConfirmedCredentialLeakError) Error() string { return ErrDisputeContainsSecret.Error() }
+func (e *ConfirmedCredentialLeakError) Unwrap() error { return ErrDisputeContainsSecret }
 
 const publicMinimumCharge = "0.000001"
 
@@ -48,10 +62,17 @@ type G6UserService struct {
 	catalog          *CatalogService
 	now              func() time.Time
 	resourceDefaults ResourceDefaults
+	apiKeyHMACSecret string
 }
 
 func (s *G6UserService) WithResourceDefaults(defaults ResourceDefaults) *G6UserService {
 	s.resourceDefaults = defaults
+	return s
+}
+
+// WithAPIKeyHMACSecret 注入平台 SK 的 HMAC 密钥，仅用于确认命中，不保存或输出用户提交的凭据。
+func (s *G6UserService) WithAPIKeyHMACSecret(secret string) *G6UserService {
+	s.apiKeyHMACSecret = secret
 	return s
 }
 
@@ -439,13 +460,22 @@ func (s *G6UserService) CreateDispute(ctx context.Context, userID uint64, reques
 	if len([]rune(reason)) < 10 || len([]rune(reason)) > 1000 {
 		return nil, ErrDisputeReasonInvalid
 	}
-	if credentialLikePattern.MatchString(reason) {
-		return nil, ErrDisputeContainsSecret
-	}
-	if _, err := s.repo.FindRequestFact(ctx, userID, requestID); errors.Is(err, gorm.ErrRecordNotFound) {
+	request, err := s.repo.FindRequestFact(ctx, userID, requestID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrUserRequestNotFound
 	} else if err != nil {
 		return nil, err
+	}
+	if credentialLikePattern.MatchString(reason) {
+		confirmed, confirmErr := s.confirmedRequestCredential(ctx, userID, request, reason)
+		if confirmErr != nil {
+			return nil, confirmErr
+		}
+		if confirmed {
+			return nil, &ConfirmedCredentialLeakError{APIKeyID: *request.APIKeyID}
+		}
+		// 疑似但无法确认的文本同样禁止入库，但不能污染需要 P0 处置的确认泄漏数据源。
+		return nil, ErrDisputeContainsUnverifiedSecret
 	}
 	disputeNo, err := newDisputeNo()
 	if err != nil {
@@ -457,6 +487,33 @@ func (s *G6UserService) CreateDispute(ctx context.Context, userID uint64, reques
 	}
 	resp := disputeDTO(dispute)
 	return &resp, nil
+}
+
+func (s *G6UserService) confirmedRequestCredential(ctx context.Context, userID uint64, request *model.AIRequest, reason string) (bool, error) {
+	if s == nil || s.repo == nil || request == nil || request.APIKeyID == nil || *request.APIKeyID == 0 || s.apiKeyHMACSecret == "" {
+		return false, nil
+	}
+	storedHash, err := s.repo.FindActiveAPIKeyHash(ctx, userID, *request.APIKeyID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return matchesPlatformCredential(reason, storedHash, s.apiKeyHMACSecret), nil
+}
+
+func matchesPlatformCredential(reason, storedHash, hmacSecret string) bool {
+	if storedHash == "" || hmacSecret == "" {
+		return false
+	}
+	for _, candidate := range platformAPIKeyPattern.FindAllString(reason, -1) {
+		candidateHash := pkgcrypto.HMAC256(candidate, hmacSecret)
+		if subtle.ConstantTimeCompare([]byte(candidateHash), []byte(storedHash)) == 1 {
+			return true
+		}
+	}
+	return false
 }
 
 func requestRowDTO(row repository.RequestLedgerRow) dto.UserRequestLedgerItem {

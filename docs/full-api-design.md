@@ -1699,9 +1699,9 @@ email_adapter_calls_total{operation="...",scene="...",result="..."}
 
 **AI 网关 G7 指标增量：**
 
-Token 与来源 IP 安全闸完全不变。AI 网关模块装配成功后追加 `molin_ai_gateway_*` 指标，覆盖请求量/耗时、TTFT、流式断连、上游结果/重试、Usage 缺失、治理拒绝、四层并发租约、账务状态、钱包预占、Outbox/补偿积压及账单差额。逻辑模型必须由数据库准入且最多 32 个，超出或非法值收敛为 `other`；其他标签均为封闭枚举。禁止出现 `request_id/user_id/project_id/api_key/prompt/secret` 或任何正文、密钥、错误原文。
+Token 与来源 IP 安全闸完全不变。AI 网关模块装配成功后追加 `molin_ai_gateway_*` 指标，覆盖请求量/耗时、TTFT、流式断连、上游结果/重试、Usage 缺失、治理拒绝、四层并发租约、账务状态、钱包预占数量/金额/最老年龄、Outbox/补偿积压、账单差额、三方金额和已确认平台 SK 泄漏。对账识别的 `missing_usage` 与在线缺失计数接入同一 P1 告警；最老未释放预占超过 300 秒或总额超过 10 元接入 P1。泄漏事实必须先校验请求归属，再以 HMAC 精确匹配请求所属有效 SK，通用疑似文本只拒绝入库且不得升级 P0；五分钟窗口按唯一 API Key 计数。逻辑模型必须由数据库准入且最多 32 个，超出或非法值收敛为 `other`；其他标签均为封闭枚举。禁止出现 `request_id/user_id/project_id/api_key/prompt/secret` 或任何正文、密钥、错误原文。
 
-持久 Gauge 读取失败时端点返回 `503/50300「指标服务暂不可用」`，不输出邮件/短信/AI 的部分文本，也不回显数据库错误。三项财务差额为：`request_usage`、`request_hold`、`request_wallet`；四类异常为：`duplicate_settlement`、`unbilled_execution`、`missing_price_snapshot`、`missing_wallet_transaction`。金额以 CNY Decimal 文本输出。
+持久 Gauge 读取失败时端点返回 `503/50300「指标服务暂不可用」`，不输出邮件/短信/AI 的部分文本，也不回显数据库错误。三项财务差额为：`request_usage`、`request_hold`、`request_wallet`；七类异常为：`duplicate_settlement`、`unbilled_execution`、`missing_price_snapshot`、`missing_wallet_transaction`、`missing_usage`、`completed_pending`、`billing_exception`。三方金额固定为 `request_settled`、`model_usage`、`wallet_consumed`；安全发现当前只允许 `secret_leak`。金额以 CNY Decimal 文本输出。
 
 **反向代理边界：** 反向代理只能从专用监控网络暴露该路径，必须删除 `X-Forwarded-For` 与 `Forwarded`，并覆盖而非追加 `X-Real-IP` 为代理直接看到的单一客户端 IP；代理自身地址必须显式位于 `INTERNAL_TRUSTED_PROXY_IPS`。网络隔离只是附加防护，应用层 Token 与来源 IP 双闸必须始终执行，禁止因请求来自内网、回环地址或反向代理而绕过任一安全闸。
 

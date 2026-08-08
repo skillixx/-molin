@@ -42,19 +42,22 @@ type reportBacklogGauge struct {
 }
 
 type reconciliationReport struct {
-	GeneratedAt         time.Time                     `json:"generated_at"`
-	Mode                string                        `json:"mode"`
-	Status              string                        `json:"status"`
-	HasMismatch         bool                          `json:"has_mismatch"`
-	DifferencesCNY      map[string]string             `json:"differences_cny"`
-	Anomalies           map[string]uint64             `json:"anomalies"`
-	BillingRequests     map[string]uint64             `json:"billing_requests"`
-	BillingOldestAge    map[string]uint64             `json:"billing_oldest_age_seconds"`
-	UnreleasedHolds     reportAmountGauge             `json:"unreleased_holds"`
-	OutboxBacklog       map[string]reportBacklogGauge `json:"outbox_backlog"`
-	CompensationBacklog map[string]reportBacklogGauge `json:"compensation_backlog"`
-	Checks              []reconciliationCheck         `json:"checks"`
-	SafetyStatement     string                        `json:"safety_statement"`
+	GeneratedAt         time.Time                              `json:"generated_at"`
+	Mode                string                                 `json:"mode"`
+	Status              string                                 `json:"status"`
+	HasMismatch         bool                                   `json:"has_mismatch"`
+	DifferencesCNY      map[string]string                      `json:"differences_cny"`
+	Anomalies           map[string]uint64                      `json:"anomalies"`
+	BillingRequests     map[string]uint64                      `json:"billing_requests"`
+	BillingOldestAge    map[string]uint64                      `json:"billing_oldest_age_seconds"`
+	UnreleasedHolds     reportAmountGauge                      `json:"unreleased_holds"`
+	OutboxBacklog       map[string]reportBacklogGauge          `json:"outbox_backlog"`
+	CompensationBacklog map[string]reportBacklogGauge          `json:"compensation_backlog"`
+	Issues              []service.AIGatewayReconciliationIssue `json:"issues"`
+	IssueCount          int                                    `json:"issue_count"`
+	IssuesTruncated     bool                                   `json:"issues_truncated"`
+	Checks              []reconciliationCheck                  `json:"checks"`
+	SafetyStatement     string                                 `json:"safety_statement"`
 }
 
 func main() {
@@ -98,15 +101,21 @@ func run(args []string, output io.Writer) error {
 	defer cancel()
 	now := time.Now().UTC()
 	var snapshot service.AIGatewayGaugeSnapshot
+	var issues []service.AIGatewayReconciliationIssue
 	// MySQL READ ONLY 事务从数据库侧阻止 INSERT、UPDATE、DELETE 和 DDL，命令本身不具备修账路径。
 	if err := gormDB.WithContext(ctx).Transaction(func(txDB *gorm.DB) error {
 		var collectErr error
-		snapshot, collectErr = service.NewAIGatewayDBGaugeCollector(txDB).CollectAIGatewayGauges(ctx, now)
+		collector := service.NewAIGatewayDBGaugeCollector(txDB)
+		snapshot, collectErr = collector.CollectAIGatewayGauges(ctx, now)
+		if collectErr != nil {
+			return collectErr
+		}
+		issues, collectErr = collector.CollectAIGatewayReconciliationIssues(ctx, now, 501)
 		return collectErr
 	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}); err != nil {
 		return fmt.Errorf("读取对账事实失败：%w", err)
 	}
-	report := buildReport(snapshot, now)
+	report := buildReport(snapshot, issues, now)
 	if err := renderReport(output, report, strings.ToLower(strings.TrimSpace(*format))); err != nil {
 		return err
 	}
@@ -130,7 +139,7 @@ func validateSafetyGate(appEnv, approved string) error {
 	return nil
 }
 
-func buildReport(snapshot service.AIGatewayGaugeSnapshot, generatedAt time.Time) reconciliationReport {
+func buildReport(snapshot service.AIGatewayGaugeSnapshot, issues []service.AIGatewayReconciliationIssue, generatedAt time.Time) reconciliationReport {
 	differenceNames := map[string]string{
 		"request_usage":  "账本↔Usage",
 		"request_hold":   "账本↔钱包预占",
@@ -141,9 +150,18 @@ func buildReport(snapshot service.AIGatewayGaugeSnapshot, generatedAt time.Time)
 		"unbilled_execution":         "执行成功但未结算",
 		"missing_price_snapshot":     "缺失冻结价格快照",
 		"missing_wallet_transaction": "缺失钱包结算流水",
+		"missing_usage":              "成功执行缺失可信 Usage",
+		"completed_pending":          "已完成请求账务未收敛",
+		"billing_exception":          "账务异常未处理",
 	}
 	differenceOrder := []string{"request_usage", "request_hold", "request_wallet"}
-	anomalyOrder := []string{"duplicate_settlement", "unbilled_execution", "missing_price_snapshot", "missing_wallet_transaction"}
+	anomalyOrder := []string{"duplicate_settlement", "unbilled_execution", "missing_price_snapshot", "missing_wallet_transaction", "missing_usage", "completed_pending", "billing_exception"}
+	const issueLimit = 500
+	issueCount := len(issues)
+	issuesTruncated := len(issues) > issueLimit
+	if issuesTruncated {
+		issues = issues[:issueLimit]
+	}
 	report := reconciliationReport{
 		GeneratedAt: generatedAt.UTC(), Mode: "read_only", Status: "PASS",
 		DifferencesCNY:   make(map[string]string, len(differenceOrder)),
@@ -152,6 +170,7 @@ func buildReport(snapshot service.AIGatewayGaugeSnapshot, generatedAt time.Time)
 		BillingOldestAge: cloneUintMap(snapshot.BillingOldestAge),
 		UnreleasedHolds:  reportAmountGauge{Count: snapshot.UnreleasedHolds.Count, Amount: snapshot.UnreleasedHolds.Amount.StringFixed(8)},
 		OutboxBacklog:    convertBacklog(snapshot.OutboxBacklog), CompensationBacklog: convertBacklog(snapshot.CompensationBacklog),
+		Issues: issues, IssueCount: issueCount, IssuesTruncated: issuesTruncated,
 		SafetyStatement: "本报告来自 MySQL READ ONLY 事务；命令不会修账、退款、补扣、释放预占、重排任务或修改任何业务状态。",
 	}
 	for _, code := range differenceOrder {
@@ -172,10 +191,28 @@ func buildReport(snapshot service.AIGatewayGaugeSnapshot, generatedAt time.Time)
 			report.HasMismatch = true
 		}
 	}
+	appendCountCheck := func(code, name string, count uint64) {
+		passed := count == 0
+		report.Checks = append(report.Checks, reconciliationCheck{Code: code, Name: name, Kind: "anomaly_count", Value: fmt.Sprintf("%d", count), Passed: passed})
+		if !passed {
+			report.HasMismatch = true
+		}
+	}
+	appendCountCheck("unreleased_hold", "未释放钱包预占", report.UnreleasedHolds.Count)
+	appendCountCheck("outbox_unsettled", "Outbox 未收敛", backlogCount(report.OutboxBacklog))
+	appendCountCheck("compensation_unsettled", "补偿任务未收敛", backlogCount(report.CompensationBacklog))
 	if report.HasMismatch {
 		report.Status = "FAIL"
 	}
 	return report
+}
+
+func backlogCount(backlog map[string]reportBacklogGauge) uint64 {
+	var total uint64
+	for _, item := range backlog {
+		total += item.Count
+	}
+	return total
 }
 
 func renderReport(output io.Writer, report reconciliationReport, format string) error {

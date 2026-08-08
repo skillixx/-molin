@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/json"
@@ -34,12 +35,17 @@ var (
 
 // G6UserHandler 提供模型市场、用量总览、请求账本、导出和账单申诉接口。
 type G6UserHandler struct {
-	service *service.G6UserService
-	audit   governanceAuditRecorder
+	service       *service.G6UserService
+	audit         governanceAuditRecorder
+	createDispute func(context.Context, uint64, string, string) (*dto.BillingDisputeResp, error)
 }
 
 func NewG6UserHandler(userService *service.G6UserService, audit governanceAuditRecorder) *G6UserHandler {
-	return &G6UserHandler{service: userService, audit: audit}
+	handler := &G6UserHandler{service: userService, audit: audit}
+	if userService != nil {
+		handler.createDispute = userService.CreateDispute
+	}
+	return handler
 }
 
 func (h *G6UserHandler) ListModels(w http.ResponseWriter, r *http.Request) {
@@ -215,9 +221,25 @@ func (h *G6UserHandler) CreateDispute(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusInternalServerError, 50000, "申诉审计失败")
 		return
 	}
-	dispute, err := h.service.CreateDispute(r.Context(), userID, requestID, request.Reason)
+	if h.createDispute == nil {
+		response.Error(w, http.StatusServiceUnavailable, 50300, "账单申诉服务不可用")
+		return
+	}
+	dispute, err := h.createDispute(r.Context(), userID, requestID, request.Reason)
+	var confirmedLeak *service.ConfirmedCredentialLeakError
 	switch {
-	case errors.Is(err, service.ErrDisputeReasonInvalid), errors.Is(err, service.ErrDisputeContainsSecret):
+	case errors.As(err, &confirmedLeak):
+		// 只记录检测来源与拦截结果，绝不把命中的密钥、申诉正文或匹配片段写入审计日志。
+		// 只有 HMAC 精确匹配请求所属有效平台 SK 才进入 P0 数据源；按 API Key 聚合避免同一凭据重复污染告警。
+		apiKeyID := strconv.FormatUint(confirmedLeak.APIKeyID, 10)
+		if !h.recordAudit(r, "secret_leak_detected", "api_key", apiKeyID, map[string]any{"source": "billing_dispute", "blocked": true, "confirmed": true}) {
+			response.Error(w, http.StatusInternalServerError, 50000, "安全审计失败")
+			return
+		}
+		response.Error(w, http.StatusBadRequest, 40000, service.ErrDisputeContainsSecret.Error())
+	case errors.Is(err, service.ErrDisputeContainsUnverifiedSecret):
+		response.Error(w, http.StatusBadRequest, 40000, service.ErrDisputeContainsSecret.Error())
+	case errors.Is(err, service.ErrDisputeReasonInvalid):
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 	case errors.Is(err, service.ErrUserRequestNotFound):
 		response.Error(w, http.StatusNotFound, 40400, err.Error())

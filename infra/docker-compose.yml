@@ -62,6 +62,7 @@ services:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/email-alerts.yml:/etc/prometheus/rules/email-alerts.yml:ro
       - ./prometheus/ai-gateway-alerts.yml:/etc/prometheus/rules/ai-gateway-alerts.yml:ro
+      - ./prometheus/targets:/etc/prometheus/targets:ro
       - prometheus-data:/prometheus
     secrets:
       - source: internal_api_token
@@ -73,6 +74,22 @@ services:
       monitoring:
         # 固定测试容器地址，便于 INTERNAL_ALLOWED_IPS 精确放行。
         ipv4_address: ${PROMETHEUS_CONTAINER_IP:-172.31.250.10}
+    security_opt:
+      - no-new-privileges:true
+
+  blackbox-exporter:
+    # 固定官方 0.28.0；仅执行测试内网 HTTP 2xx 探测，不携带 Bifrost 内部 Token 或上游密钥。
+    image: prom/blackbox-exporter:v0.28.0
+    container_name: molin-blackbox-exporter
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/blackbox_exporter/config.yml
+    volumes:
+      - ./prometheus/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    networks:
+      monitoring:
+        ipv4_address: ${BLACKBOX_CONTAINER_IP:-172.31.250.12}
     security_opt:
       - no-new-privileges:true
 

@@ -294,6 +294,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # G7 敏感信息扫描需要完整比较当前 PR 与 main 的共同基线。
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: 校验 G7 变更 Go 文件格式
+        run: |
+          mapfile -t changed_go_files < <(git diff --name-only --diff-filter=ACMR origin/main...HEAD -- ':(glob)server/**/*.go')
+          if ((${#changed_go_files[@]} > 0)); then
+            unformatted="$(gofmt -l "${changed_go_files[@]}")"
+            test -z "$unformatted" || { printf '以下 G7 Go 文件未通过 gofmt：\n%s\n' "$unformatted"; exit 1; }
+          fi
 
       - name: 校验 G7 脚本和可观测资产
         env:
@@ -302,6 +317,11 @@ jobs:
           bash -n infra/scripts/verify-ai-gateway-g7-reliability.sh
           python -m json.tool infra/grafana/dashboards/ai-gateway-slo.json >/dev/null
           docker compose --profile monitoring -f infra/docker-compose.yml config --quiet
+          test "$(grep -c '^[[:space:]]*- alert:' infra/prometheus/ai-gateway-alerts.yml)" -eq "$(grep -c '^[[:space:]]*runbook_url:' infra/prometheus/ai-gateway-alerts.yml)"
+          test "$(grep -c '^[[:space:]]*- alert:' infra/prometheus/ai-gateway-alerts.yml)" -eq "$(grep -c '^[[:space:]]*p_level:' infra/prometheus/ai-gateway-alerts.yml)"
+          while IFS= read -r anchor; do
+            grep -Fq "<a id=\"${anchor}\"></a>" docs/ai-gateway-g7-alert-runbook.md
+          done < <(sed -n 's/.*runbook_url:.*#\([^[:space:]]*\).*/\1/p' infra/prometheus/ai-gateway-alerts.yml)
           docker run --rm --entrypoint=/bin/promtool \
             --workdir=/rules \
             -v "${{ github.workspace }}/infra/prometheus:/rules:ro" \
@@ -312,6 +332,9 @@ jobs:
             -v "${{ github.workspace }}/infra/prometheus:/rules:ro" \
             prom/prometheus:v3.12.0-distroless \
             test rules ai-gateway-alerts.test.yml
+
+      - name: 扫描 G7 分支敏感信息
+        run: python scripts/verify-sms-phase5-sensitive-data.py --repo-root . --base-ref origin/main
 
       - name: 隔离验证 100 并发、幂等、断连、混沌与只读对账
         env:

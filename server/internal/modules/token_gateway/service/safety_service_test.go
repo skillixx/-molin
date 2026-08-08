@@ -13,14 +13,20 @@ import (
 )
 
 type memorySafetyRepository struct {
-	policy    *model.AISafetyPolicyVersion
-	events    []model.AISafetyEvent
-	suspended bool
-	err       error
-	marked    map[string]string
+	policy     *model.AISafetyPolicyVersion
+	events     []model.AISafetyEvent
+	suspended  bool
+	err        error
+	markErr    error
+	waitPolicy bool
+	marked     map[string]string
 }
 
-func (r *memorySafetyRepository) ActiveSafetyPolicy(context.Context) (*model.AISafetyPolicyVersion, error) {
+func (r *memorySafetyRepository) ActiveSafetyPolicy(ctx context.Context) (*model.AISafetyPolicyVersion, error) {
+	if r.waitPolicy {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	if r.err != nil {
 		return nil, r.err
 	}
@@ -47,7 +53,7 @@ func (r *memorySafetyRepository) MarkModeration(_ context.Context, requestID, st
 		r.marked = map[string]string{}
 	}
 	r.marked[requestID] = status
-	return r.err
+	return r.markErr
 }
 
 func testSafetyPolicy(t *testing.T) *model.AISafetyPolicyVersion {

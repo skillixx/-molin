@@ -26,12 +26,12 @@ func TestBuildReportPassesOnlyWhenEveryFinancialCheckIsZero(t *testing.T) {
 			"duplicate_settlement": 0, "unbilled_execution": 0, "missing_price_snapshot": 0, "missing_wallet_transaction": 0,
 		},
 	}
-	report := buildReport(snapshot, time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC))
+	report := buildReport(snapshot, nil, time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC))
 	if report.Status != "PASS" || report.HasMismatch {
 		t.Fatalf("零差额、零异常必须通过: %+v", report)
 	}
-	if len(report.Checks) != 7 {
-		t.Fatalf("必须覆盖三段金额差额和四类异常，实际 %d 项", len(report.Checks))
+	if len(report.Checks) != 13 {
+		t.Fatalf("必须覆盖三段差额、七类账务异常、预占及两类积压，实际 %d 项", len(report.Checks))
 	}
 	var out bytes.Buffer
 	if err := renderReport(&out, report, "json"); err != nil {
@@ -52,7 +52,7 @@ func TestBuildReportFailsOnAnyDifferenceOrAnomaly(t *testing.T) {
 		BillingDifferences:  map[string]decimal.Decimal{"request_usage": decimal.RequireFromString("0.01000000")},
 		BillingAnomalies:    map[string]uint64{"missing_wallet_transaction": 1},
 	}
-	report := buildReport(snapshot, time.Now().UTC())
+	report := buildReport(snapshot, []service.AIGatewayReconciliationIssue{{RequestID: "req-bad", IssueCode: "missing_wallet_transaction"}}, time.Now().UTC())
 	if report.Status != "FAIL" || !report.HasMismatch {
 		t.Fatalf("任一非零差额或异常必须失败: %+v", report)
 	}
@@ -64,6 +64,20 @@ func TestBuildReportFailsOnAnyDifferenceOrAnomaly(t *testing.T) {
 		if !strings.Contains(out.String(), expected) {
 			t.Fatalf("中文摘要缺少 %q:\n%s", expected, out.String())
 		}
+	}
+}
+
+func TestBuildReportFailsOnHoldsAndBacklogs(t *testing.T) {
+	snapshot := service.AIGatewayGaugeSnapshot{
+		BillingRequests: map[string]uint64{}, BillingOldestAge: map[string]uint64{},
+		UnreleasedHolds:     service.AIGatewayAmountGauge{Count: 1, Amount: decimal.RequireFromString("0.5")},
+		OutboxBacklog:       map[string]service.AIGatewayBacklogGauge{"pending": {Count: 2}},
+		CompensationBacklog: map[string]service.AIGatewayBacklogGauge{"retry": {Count: 3}},
+		BillingDifferences:  map[string]decimal.Decimal{}, BillingAnomalies: map[string]uint64{},
+	}
+	report := buildReport(snapshot, nil, time.Now().UTC())
+	if report.Status != "FAIL" || !report.HasMismatch {
+		t.Fatalf("未释放 hold、Outbox 或补偿积压均不得误报 PASS: %+v", report)
 	}
 }
 
