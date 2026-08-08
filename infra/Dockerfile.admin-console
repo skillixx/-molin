@@ -1,7 +1,7 @@
 # 管理后台生产镜像
 # 构建命令：docker build -f infra/Dockerfile.admin-console -t molin-admin .
 
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /build
 COPY web/shared/ ../shared/

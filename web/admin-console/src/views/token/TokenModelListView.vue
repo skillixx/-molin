@@ -91,9 +91,9 @@
         <el-form-item label="供应商" prop="provider_name"><el-input v-model="form.provider_name" placeholder="如：阿里云百炼" /></el-form-item>
         <el-form-item label="模型介绍"><el-input v-model="form.description" type="textarea" :rows="3" maxlength="1000" show-word-limit /></el-form-item>
         <el-form-item label="上下文窗口"><el-input-number v-model="form.context_window" :min="0" :step="1000" style="width:100%" /></el-form-item>
-        <el-form-item label="介绍网页"><el-input v-model="form.intro_url" placeholder="https://docs.example.com/models/intro" /></el-form-item>
-        <el-form-item label="操作文档"><el-input v-model="form.docs_url" placeholder="https://docs.example.com/models/api" /></el-form-item>
-        <el-form-item label="快速入门"><el-input v-model="form.quick_start_url" placeholder="https://docs.example.com/models/quick-start" /><div class="form-tip">填写静态网页地址，无需维护 Markdown 文件。</div></el-form-item>
+        <el-form-item label="介绍网页"><div class="document-field"><el-input v-model="form.intro_url" placeholder="https://docs.example.com/models/intro" /><el-select v-model="form.intro_url_health_status" aria-label="介绍网页健康状态"><el-option label="未发布" value="unpublished" /><el-option label="待检查" value="unknown" /><el-option label="正常" value="healthy" /><el-option label="异常" value="unhealthy" /></el-select></div></el-form-item>
+        <el-form-item label="操作文档"><div class="document-field"><el-input v-model="form.docs_url" placeholder="https://docs.example.com/models/api" /><el-select v-model="form.docs_url_health_status" aria-label="操作文档健康状态"><el-option label="未发布" value="unpublished" /><el-option label="待检查" value="unknown" /><el-option label="正常" value="healthy" /><el-option label="异常" value="unhealthy" /></el-select></div></el-form-item>
+        <el-form-item label="快速入门"><div class="document-field"><el-input v-model="form.quick_start_url" placeholder="https://docs.example.com/models/quick-start" /><el-select v-model="form.quick_start_url_health_status" aria-label="快速入门健康状态"><el-option label="未发布" value="unpublished" /><el-option label="待检查" value="unknown" /><el-option label="正常" value="healthy" /><el-option label="异常" value="unhealthy" /></el-select></div><div class="form-tip">填写静态网页地址并确认健康状态，无需维护 Markdown 文件。</div></el-form-item>
         <el-form-item label="模态" prop="modality">
           <el-select v-model="form.modality" style="width: 100%">
             <el-option label="对话" value="chat" />
@@ -225,6 +225,7 @@ import type { Role } from '@/types/user'
 import type {
   CreateTokenModelReq,
   TokenChannel,
+  TokenDocumentHealthStatus,
   TokenModelGroupRole,
   TokenModel,
   TokenModelModality,
@@ -263,8 +264,11 @@ const form = reactive<{
   description: string
   context_window: number
   intro_url: string
+  intro_url_health_status: TokenDocumentHealthStatus
   docs_url: string
+  docs_url_health_status: TokenDocumentHealthStatus
   quick_start_url: string
+  quick_start_url_health_status: TokenDocumentHealthStatus
   modality: TokenModelModality
   channel_id: number | undefined
   upstream_model: string
@@ -278,7 +282,7 @@ const form = reactive<{
 }>({
   logical_model_code: '',
   display_name: '',
-  provider_name: '', description: '', context_window: 0, intro_url: '', docs_url: '', quick_start_url: '',
+  provider_name: '', description: '', context_window: 0, intro_url: '', intro_url_health_status: 'unpublished', docs_url: '', docs_url_health_status: 'unpublished', quick_start_url: '', quick_start_url_health_status: 'unpublished',
   modality: 'chat',
   channel_id: undefined,
   upstream_model: '',
@@ -391,7 +395,7 @@ function openCreate() {
   editingId.value = 0
   form.logical_model_code = ''
   form.display_name = ''
-  form.provider_name = ''; form.description = ''; form.context_window = 0; form.intro_url = ''; form.docs_url = ''; form.quick_start_url = ''
+  form.provider_name = ''; form.description = ''; form.context_window = 0; form.intro_url = ''; form.intro_url_health_status = 'unpublished'; form.docs_url = ''; form.docs_url_health_status = 'unpublished'; form.quick_start_url = ''; form.quick_start_url_health_status = 'unpublished'
   form.modality = 'chat'
   form.channel_id = undefined
   form.upstream_model = ''
@@ -421,8 +425,11 @@ function fillFormFromModel(model: TokenModel) {
   form.description = model.description || ''
   form.context_window = model.context_window || 0
   form.intro_url = model.intro_url || ''
+  form.intro_url_health_status = model.intro_url_health_status || 'unpublished'
   form.docs_url = model.docs_url || ''
+  form.docs_url_health_status = model.docs_url_health_status || 'unpublished'
   form.quick_start_url = model.quick_start_url || ''
+  form.quick_start_url_health_status = model.quick_start_url_health_status || 'unpublished'
   form.modality = model.modality
   form.channel_id = model.channel_id
   form.upstream_model = model.upstream_model
@@ -470,7 +477,7 @@ async function handleSave() {
         logical_model_code: form.logical_model_code,
         display_name: form.display_name,
         provider_name: form.provider_name, description: form.description, context_window: form.context_window,
-        intro_url: form.intro_url, docs_url: form.docs_url, quick_start_url: form.quick_start_url,
+        intro_url: form.intro_url, intro_url_health_status: form.intro_url_health_status, docs_url: form.docs_url, docs_url_health_status: form.docs_url_health_status, quick_start_url: form.quick_start_url, quick_start_url_health_status: form.quick_start_url_health_status,
         modality: form.modality,
         channel_id: form.channel_id as number,
         upstream_model: form.upstream_model,
@@ -485,7 +492,7 @@ async function handleSave() {
       const payload: UpdateTokenModelReq = {
         display_name: form.display_name,
         provider_name: form.provider_name, description: form.description, context_window: form.context_window,
-        intro_url: form.intro_url, docs_url: form.docs_url, quick_start_url: form.quick_start_url,
+        intro_url: form.intro_url, intro_url_health_status: form.intro_url_health_status, docs_url: form.docs_url, docs_url_health_status: form.docs_url_health_status, quick_start_url: form.quick_start_url, quick_start_url_health_status: form.quick_start_url_health_status,
         modality: form.modality,
         channel_id: form.channel_id as number,
         upstream_model: form.upstream_model,
@@ -568,6 +575,12 @@ function visibleScopeLabel(row: TokenModel) {
   line-height: 1.5;
   margin-top: 4px;
 }
+.document-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px;
+  gap: 8px;
+  width: 100%;
+}
 .list-card {
   display: flex;
   flex-direction: column;
@@ -591,6 +604,9 @@ function visibleScopeLabel(row: TokenModel) {
   .list-pagination {
     justify-content: flex-end;
     overflow-x: auto;
+  }
+  .document-field {
+    grid-template-columns: 1fr;
   }
 }
 </style>

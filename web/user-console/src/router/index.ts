@@ -50,18 +50,37 @@ const router = createRouter({
         },
         {
           path: 'api-keys',
-          component: () => import('@/views/token/ApiKeyView.vue'),
-          meta: { requiresAuth: true, title: 'API 密钥 — 墨灵' },
+          redirect: '/ai/api-keys',
         },
         {
           path: 'token/usage',
-          component: () => import('@/views/token/TokenUsageView.vue'),
-          meta: { requiresAuth: true, title: '我的用量 — 墨灵' },
+          redirect: '/ai/usage',
         },
         {
           path: 'token/packages',
           component: () => import('@/views/token/TokenPackageView.vue'),
           meta: { requiresAuth: true, title: 'Token 套餐 — 墨灵' },
+        },
+        // G6 AI 服务统一入口：模型发现、Project/SK 和正式请求账本。
+        {
+          path: 'ai/models',
+          component: () => import('@/views/ai/AIModelsView.vue'),
+          meta: { requiresAuth: true, title: 'AI 模型市场 — 墨灵' },
+        },
+        {
+          path: 'ai/models/:modelCode(.*)',
+          component: () => import('@/views/ai/AIModelDetailView.vue'),
+          meta: { requiresAuth: true, title: '模型详情 — 墨灵' },
+        },
+        {
+          path: 'ai/api-keys',
+          component: () => import('@/views/ai/AIApiKeysView.vue'),
+          meta: { requiresAuth: true, title: 'Project 与 API Key — 墨灵' },
+        },
+        {
+          path: 'ai/usage',
+          component: () => import('@/views/ai/AIUsageView.vue'),
+          meta: { requiresAuth: true, title: 'AI 用量与账单 — 墨灵' },
         },
         {
           path: 'agents',

@@ -11,30 +11,32 @@
     "type-check": "vue-tsc --noEmit",
     "lint": "eslint .",
     "test:sms": "node --experimental-strip-types --test tests/privacy.test.ts tests/sms.test.ts",
-    "test:vite-isolation": "node --test tests/vite-proxy-isolation.test.mjs"
+    "test:vite-isolation": "node --test tests/vite-proxy-isolation.test.mjs",
+    "test:g6-e2e": "playwright test tests/g6-customer-journey.spec.ts"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.0",
-    "@vitejs/plugin-vue": "^5.0.0",
-    "axios": "^1.7.0",
+    "axios": "^1.18.0",
     "element-plus": "^2.7.0",
     "pinia": "^2.1.0",
     "uuid": "^11.0.0",
-    "vite": "^5.0.0",
     "vue": "^3.5.0",
     "vue-router": "^4.3.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.54.0",
     "@types/node": "^20.0.0",
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
+    "@vitejs/plugin-vue": "^5.2.4",
     "@vue/eslint-config-typescript": "^14.6.0",
     "eslint": "^9.11.0",
     "eslint-plugin-vue": "^9.28.0",
     "typescript": "^5.4.0",
     "unplugin-auto-import": "^0.18.0",
     "unplugin-vue-components": "^0.27.0",
+    "vite": "^5.4.21",
     "vue-eslint-parser": "^9.0.0",
     "vue-tsc": "^2.1.0"
   }

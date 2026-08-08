@@ -896,7 +896,7 @@ func NewApp() (*App, error) {
 				tokenAPIKeyResolver = &apiKeyResolverAdapter{svc: apiKeyService}
 			}
 			tokengatewaymod.RegisterUserRoutes(mux, tokenGatewayModule.ForwardService, tokenGatewayModule.Orchestrator, tokenGatewayModule.ProjectService, tokenGatewayModule.CatalogService,
-				tokenGatewayModule.UsageService, tokenGatewayModule.GovernanceAdmin, auditSvc, cfg.JWTSecret, authService, tokenAPIKeyResolver)
+				tokenGatewayModule.UsageService, tokenGatewayModule.GovernanceAdmin, tokenGatewayModule.G6User, auditSvc, cfg.JWTSecret, authService, tokenAPIKeyResolver)
 			// 供 workbench 编排端点复用单轮转发（ChatOnce 含门禁/选渠道/计费）。
 			tokenForwardSvc = tokenGatewayModule.ForwardService
 		}

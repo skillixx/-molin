@@ -34,6 +34,7 @@ func TestRegisterUserRoutes_OpenAIAlias(t *testing.T) {
 		&service.CatalogService{},
 		&service.UsageService{},
 		nil,
+		&service.G6UserService{},
 		nil,
 		"test-secret",
 		nil,
@@ -53,6 +54,14 @@ func TestRegisterUserRoutes_OpenAIAlias(t *testing.T) {
 		{"原 models 路由保留", http.MethodGet, "/api/token/models", "GET /api/token/models"},
 		{"本人安全事件", http.MethodGet, "/api/token/safety/events", "GET /api/token/safety/events"},
 		{"提交安全申诉", http.MethodPost, "/api/token/safety/appeals", "POST /api/token/safety/appeals"},
+		{"G6 模型市场", http.MethodGet, "/api/token/catalog/models", "GET /api/token/catalog/models"},
+		{"G6 模型详情", http.MethodGet, "/api/token/catalog/models/molin%2Fqwen", "GET /api/token/catalog/models/{model_code}"},
+		{"G6 用量总览", http.MethodGet, "/api/token/customer/usage/overview", "GET /api/token/customer/usage/overview"},
+		{"G6 有效限制", http.MethodGet, "/api/token/customer/limits", "GET /api/token/customer/limits"},
+		{"G6 请求账本", http.MethodGet, "/api/token/customer/requests", "GET /api/token/customer/requests"},
+		{"G6 账本导出", http.MethodGet, "/api/token/customer/requests/export", "GET /api/token/customer/requests/export"},
+		{"G6 请求详情", http.MethodGet, "/api/token/customer/requests/req-test", "GET /api/token/customer/requests/{request_id}"},
+		{"G6 账单申诉", http.MethodPost, "/api/token/customer/requests/req-test/disputes", "POST /api/token/customer/requests/{request_id}/disputes"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -110,7 +110,7 @@ scripts/
 
 ```dockerfile
 # 多阶段构建
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 WORKDIR /app
 COPY server/go.mod server/go.sum ./
 RUN go mod download

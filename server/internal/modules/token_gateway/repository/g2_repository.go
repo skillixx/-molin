@@ -26,6 +26,9 @@ type G2Repository struct {
 	db *gorm.DB
 }
 
+// ProjectKeyAudit 在 Project SK 事务中写入审计事实；返回错误时业务变更必须一起回滚。
+type ProjectKeyAudit func(tx *gorm.DB, keyID uint64) error
+
 func NewG2Repository(db *gorm.DB) *G2Repository { return &G2Repository{db: db} }
 
 func (r *G2Repository) CreateProject(ctx context.Context, project *model.AIProject) error {
@@ -83,7 +86,7 @@ func isDuplicateKey(err error) bool {
 func IsDuplicateKeyForHandler(err error) bool { return isDuplicateKey(err) }
 
 // CreateProjectKey 在一个事务内创建哈希密钥和 allowlist，避免出现可用密钥但权限未落库的窗口。
-func (r *G2Repository) CreateProjectKey(ctx context.Context, key *authmodel.APIKey, scopes []authmodel.APIKeyModelScope) error {
+func (r *G2Repository) CreateProjectKey(ctx context.Context, key *authmodel.APIKey, scopes []authmodel.APIKeyModelScope, audit ProjectKeyAudit) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(key).Error; err != nil {
 			return err
@@ -92,9 +95,11 @@ func (r *G2Repository) CreateProjectKey(ctx context.Context, key *authmodel.APIK
 			scopes[i].APIKeyID = key.ID
 		}
 		if len(scopes) > 0 {
-			return tx.Create(&scopes).Error
+			if err := tx.Create(&scopes).Error; err != nil {
+				return err
+			}
 		}
-		return nil
+		return audit(tx, key.ID)
 	})
 }
 
@@ -131,23 +136,26 @@ func (r *G2Repository) ListKeyScopes(ctx context.Context, keyID uint64) ([]strin
 	return scopes, err
 }
 
-func (r *G2Repository) RevokeProjectKey(ctx context.Context, userID, projectID, keyID uint64) error {
-	result := r.db.WithContext(ctx).Model(&authmodel.APIKey{}).
-		Where("id = ? AND user_id = ? AND project_id = ? AND status = 'active'", keyID, userID, projectID).
-		Update("status", "revoked")
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		if _, err := r.FindProjectKey(ctx, userID, projectID, keyID); err != nil {
-			return err
+func (r *G2Repository) RevokeProjectKey(ctx context.Context, userID, projectID, keyID uint64, audit ProjectKeyAudit) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&authmodel.APIKey{}).
+			Where("id = ? AND user_id = ? AND project_id = ? AND status = 'active'", keyID, userID, projectID).
+			Update("status", "revoked")
+		if result.Error != nil {
+			return result.Error
 		}
-	}
-	return nil
+		if result.RowsAffected == 0 {
+			var key authmodel.APIKey
+			if err := tx.Where("id = ? AND user_id = ? AND project_id = ?", keyID, userID, projectID).First(&key).Error; err != nil {
+				return ErrProjectKeyNotFound
+			}
+		}
+		return audit(tx, keyID)
+	})
 }
 
 // RotateProjectKey 把新密钥写入和旧密钥吊销放进同一事务，保证轮换不存在双活窗口。
-func (r *G2Repository) RotateProjectKey(ctx context.Context, oldKey *authmodel.APIKey, newKey *authmodel.APIKey, scopes []authmodel.APIKeyModelScope) error {
+func (r *G2Repository) RotateProjectKey(ctx context.Context, oldKey *authmodel.APIKey, newKey *authmodel.APIKey, scopes []authmodel.APIKeyModelScope, audit ProjectKeyAudit) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var locked authmodel.APIKey
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -169,8 +177,11 @@ func (r *G2Repository) RotateProjectKey(ctx context.Context, oldKey *authmodel.A
 				return err
 			}
 		}
-		return tx.Model(&authmodel.APIKey{}).Where("id = ? AND status = 'active'", oldKey.ID).
-			Update("status", "revoked").Error
+		if err := tx.Model(&authmodel.APIKey{}).Where("id = ? AND status = 'active'", oldKey.ID).
+			Update("status", "revoked").Error; err != nil {
+			return err
+		}
+		return audit(tx, newKey.ID)
 	})
 }
 
@@ -180,7 +191,7 @@ func (r *G2Repository) ActiveChatModelsExist(ctx context.Context, codes []string
 	}
 	var count int64
 	err := r.db.WithContext(ctx).Model(&model.TokenModel{}).
-		Where("logical_model_code IN ? AND status = 'active' AND modality = 'chat'", codes).
+		Where("logical_model_code IN ? AND status = 'active' AND modality = 'chat' AND release_version_no > 0 AND published_at IS NOT NULL", codes).
 		Distinct("logical_model_code").Count(&count).Error
 	return count == int64(len(codes)), err
 }

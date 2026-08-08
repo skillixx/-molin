@@ -2,7 +2,7 @@
 
 Molin 云管理平台基于 Vue3 + Go + MySQL，支持商品售卖、计费、用户资产、实名认证、应用管理、会员体系，以及后续 GPU、Agent、Skills、Token 网关等模块。
 
-**技术栈：** Go 1.22（后端 API）+ Vue 3 / TypeScript（前端）+ MySQL 8 + Redis 7 + RabbitMQ + MinIO
+**技术栈：** Go 1.25（后端 API）+ Node.js 24 / Vue 3 / TypeScript（前端）+ MySQL 8 + Redis 7 + RabbitMQ + MinIO
 
 **已上线模块：**
 
@@ -25,6 +25,7 @@ AI 网关 Phase 1：
 - G3 功能分支已实现价格快照、最坏成本报价、钱包 hold、一次终态结算、Outbox 和异常对账；本地全量测试、隔离 MySQL/RabbitMQ 与测试 Linux race 已通过，2026-08-03 独立 QA 和产品经理以 P0=0、P1=0 双签通过，证据见 `docs/ai-gateway-g3-acceptance.md`。不代表允许合并 `main`、生产部署或进入 G4。
 - G4 已完成主线合并、Migration `000060` 至 `000063`、测试环境 Bifrost 部署、百炼/OpenRouter 最低成本真实 E2E、人民币钱包对账和测试凭据回收；最终 QA/产品以 P0=0、P1=0 通过，允许进入 G5 管理后台开发。证据见 `docs/ai-gateway-g4-acceptance.md`；该结论不代表生产上线、多模态能力或真实客户流量已经开放。
 - G5 已完成 AI 网关管理工作台、Migration `000064`、测试环境部署和真实 Bifrost/Bailian 最低成本 E2E；模型发布、人民币价格版本、路由、安全/资源/预算/异常入口均已闭环。PR #321 已合并，最终 QA/产品以 P0=0、P1=0 双签通过，允许进入 G6。证据与生产前残余风险见 `docs/ai-gateway-g5-acceptance.md`。
+- G6 用户端模型市场与完整客户旅程已完成代码、测试环境真实 Bifrost 对账、真实浏览器、Migration 000066、CI、独立代码评审、独立 QA 和产品复验：覆盖发布快照目录、人民币价格、静态文档、Project/平台 SK、快速接入、权威用量账本、CSV 和账单申诉。PR #325 已满足 Ready 与合并门禁；本结论不代表生产开放，边界和证据以 `docs/ai-gateway-g6-acceptance.md` 为准。
 
 > **第一阶段（Week 1-4：平台底座 + 应用售卖闭环）已于 2026-06-07 正式验收通过，并于 2026-06-08 完成最终收尾确认 ✅**
 > 端到端验收 16/16 核心用例、37/37 全部用例通过（通过率 100%）。

@@ -4,6 +4,7 @@
 export type TokenChannelStatus = 'active' | 'inactive'
 // 模型状态：启用 / 停用
 export type TokenModelStatus = 'active' | 'inactive'
+export type TokenDocumentHealthStatus = 'unpublished' | 'unknown' | 'healthy' | 'unhealthy'
 // 模型模态
 export type TokenModelModality = 'chat' | 'image' | 'audio' | 'video'
 export type TokenModelVisibleScope = 'all' | 'groups' | 'roles'
@@ -61,8 +62,11 @@ export interface TokenModel {
   capabilities?: Record<string, unknown> | string[]
   context_window: number
   intro_url?: string | null
+  intro_url_health_status: TokenDocumentHealthStatus
   docs_url?: string | null
+  docs_url_health_status: TokenDocumentHealthStatus
   quick_start_url?: string | null
+  quick_start_url_health_status: TokenDocumentHealthStatus
   modality: TokenModelModality
   product_id: number | null
   channel_id: number
@@ -90,8 +94,11 @@ export interface CreateTokenModelReq {
   capabilities?: Record<string, unknown> | string[]
   context_window?: number
   intro_url?: string | null
+  intro_url_health_status?: TokenDocumentHealthStatus
   docs_url?: string | null
+  docs_url_health_status?: TokenDocumentHealthStatus
   quick_start_url?: string | null
+  quick_start_url_health_status?: TokenDocumentHealthStatus
   modality?: TokenModelModality
   channel_id: number
   upstream_model: string
@@ -112,8 +119,11 @@ export interface UpdateTokenModelReq {
   capabilities?: Record<string, unknown> | string[]
   context_window?: number
   intro_url?: string
+  intro_url_health_status?: TokenDocumentHealthStatus
   docs_url?: string
+  docs_url_health_status?: TokenDocumentHealthStatus
   quick_start_url?: string
+  quick_start_url_health_status?: TokenDocumentHealthStatus
   modality?: TokenModelModality
   channel_id?: number
   upstream_model?: string

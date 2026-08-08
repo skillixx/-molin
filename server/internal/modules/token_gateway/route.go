@@ -135,6 +135,7 @@ func RegisterUserRoutes(
 	catalogSvc *service.CatalogService,
 	usageSvc *service.UsageService,
 	governanceSvc *service.GovernanceAdminService,
+	g6UserSvc *service.G6UserService,
 	auditSvc *auditservice.AuditService,
 	jwtSecret string,
 	banChecker middleware.BanChecker,
@@ -147,6 +148,7 @@ func RegisterUserRoutes(
 	}
 	usageH := handler.NewUsageHandler(usageSvc)
 	governanceH := handler.NewGovernanceHandler(governanceSvc, auditSvc)
+	g6h := handler.NewG6UserHandler(g6UserSvc, auditSvc)
 
 	// 用户端中间件链：双模式鉴权（sk 或登录态 JWT，JWT 路径含封禁/吊销检查）。
 	user := func(next http.HandlerFunc) http.Handler {
@@ -179,6 +181,18 @@ func RegisterUserRoutes(
 	mux.Handle("GET /api/token/usage", user(usageH.ListMine))
 	mux.Handle("GET /api/token/safety/events", jwtUser(governanceH.ListUserEvents))
 	mux.Handle("POST /api/token/safety/appeals", jwtUser(governanceH.CreateAppeal))
+
+	// G6 用户页面只接受登录态 JWT，禁止把平台 SK 放进浏览器 URL、导出请求或本地持久化。
+	if g6UserSvc != nil {
+		mux.Handle("GET /api/token/catalog/models", jwtUser(g6h.ListModels))
+		mux.Handle("GET /api/token/catalog/models/{model_code}", jwtUser(g6h.GetModel))
+		mux.Handle("GET /api/token/customer/usage/overview", jwtUser(g6h.Overview))
+		mux.Handle("GET /api/token/customer/limits", jwtUser(g6h.ResourceLimits))
+		mux.Handle("GET /api/token/customer/requests", jwtUser(g6h.ListRequests))
+		mux.Handle("GET /api/token/customer/requests/export", jwtUser(g6h.ExportRequests))
+		mux.Handle("GET /api/token/customer/requests/{request_id}", jwtUser(g6h.RequestDetail))
+		mux.Handle("POST /api/token/customer/requests/{request_id}/disputes", jwtUser(g6h.CreateDispute))
+	}
 
 	// ---- OpenAI 兼容别名层（/v1/*）----
 	// 让 Cline / Cherry Studio 等「OpenAI 兼容」客户端把 Base URL 填为 https://<域名>/v1，
