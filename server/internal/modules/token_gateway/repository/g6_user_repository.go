@@ -159,9 +159,7 @@ type RequestLedgerRow struct {
 }
 
 func (r *G6UserRepository) requestLedgerQuery(ctx context.Context, filter G6RequestFilter) *gorm.DB {
-	usage := r.db.Table("ai_usage_items").
-		Select("request_id, SUM(CASE WHEN source = 'provider' AND sequence_no = 0 AND meter_type = 'input_tokens' THEN quantity ELSE 0 END) AS input_tokens, SUM(CASE WHEN source = 'provider' AND sequence_no = 0 AND meter_type = 'output_tokens' THEN quantity ELSE 0 END) AS output_tokens, SUM(CASE WHEN source = 'provider' AND sequence_no = 0 AND meter_type = 'reasoning_tokens' THEN quantity ELSE 0 END) AS reasoning_tokens, SUM(CASE WHEN source = 'provider' AND sequence_no = 0 AND meter_type = 'cached_tokens' THEN quantity ELSE 0 END) AS cached_tokens").
-		Group("request_id")
+	usage := r.authoritativeUsageQuery()
 	query := r.db.WithContext(ctx).Table("ai_requests AS requests").
 		Joins("JOIN ai_projects AS projects ON projects.id = requests.project_id AND projects.user_id = requests.user_id").
 		Joins("JOIN api_keys AS keys_table ON keys_table.id = requests.api_key_id AND keys_table.user_id = requests.user_id").
@@ -190,6 +188,30 @@ func (r *G6UserRepository) requestLedgerQuery(ctx context.Context, filter G6Requ
 
 func requestLedgerSelect() string {
 	return "requests.request_id, requests.project_id, projects.name AS project_name, requests.api_key_id, keys_table.name AS api_key_name, keys_table.key_prefix AS api_key_prefix, requests.logical_model_code, requests.moderation_status, requests.execution_status, requests.billing_status, COALESCE(usage_totals.input_tokens, 0) AS input_tokens, COALESCE(usage_totals.output_tokens, 0) AS output_tokens, COALESCE(usage_totals.reasoning_tokens, 0) AS reasoning_tokens, COALESCE(usage_totals.cached_tokens, 0) AS cached_tokens, requests.quoted_amount, requests.settled_amount, requests.error_code, requests.created_at, requests.completed_at"
+}
+
+// authoritativeUsageQuery 优先选择人工核定用量；不存在人工核定事实时才回退到 Provider 原始用量。
+// 这样列表、总览和详情会共同解释最终结算金额，同时仍保留 Provider 原始事实供审计追溯。
+func (r *G6UserRepository) authoritativeUsageQuery() *gorm.DB {
+	candidates := r.db.Table("ai_usage_items AS usage_items").
+		Select(`usage_items.request_id,
+			MAX(CASE WHEN usage_items.source = 'reconciled' AND usage_items.sequence_no = 1 THEN 1 ELSE 0 END) AS has_reconciled,
+			SUM(CASE WHEN usage_items.source = 'provider' AND usage_items.sequence_no = 0 AND usage_items.meter_type = 'input_tokens' THEN usage_items.quantity ELSE 0 END) AS provider_input_tokens,
+			SUM(CASE WHEN usage_items.source = 'provider' AND usage_items.sequence_no = 0 AND usage_items.meter_type = 'output_tokens' THEN usage_items.quantity ELSE 0 END) AS provider_output_tokens,
+			SUM(CASE WHEN usage_items.source = 'provider' AND usage_items.sequence_no = 0 AND usage_items.meter_type = 'reasoning_tokens' THEN usage_items.quantity ELSE 0 END) AS provider_reasoning_tokens,
+			SUM(CASE WHEN usage_items.source = 'provider' AND usage_items.sequence_no = 0 AND usage_items.meter_type = 'cached_tokens' THEN usage_items.quantity ELSE 0 END) AS provider_cached_tokens,
+			SUM(CASE WHEN usage_items.source = 'reconciled' AND usage_items.sequence_no = 1 AND usage_items.meter_type = 'input_tokens' THEN usage_items.quantity ELSE 0 END) AS reconciled_input_tokens,
+			SUM(CASE WHEN usage_items.source = 'reconciled' AND usage_items.sequence_no = 1 AND usage_items.meter_type = 'output_tokens' THEN usage_items.quantity ELSE 0 END) AS reconciled_output_tokens,
+			SUM(CASE WHEN usage_items.source = 'reconciled' AND usage_items.sequence_no = 1 AND usage_items.meter_type = 'reasoning_tokens' THEN usage_items.quantity ELSE 0 END) AS reconciled_reasoning_tokens,
+			SUM(CASE WHEN usage_items.source = 'reconciled' AND usage_items.sequence_no = 1 AND usage_items.meter_type = 'cached_tokens' THEN usage_items.quantity ELSE 0 END) AS reconciled_cached_tokens`).
+		Where("(usage_items.source = 'provider' AND usage_items.sequence_no = 0) OR (usage_items.source = 'reconciled' AND usage_items.sequence_no = 1)").
+		Group("usage_items.request_id")
+	return r.db.Table("(?) AS usage_candidates", candidates).
+		Select(`request_id,
+			CASE WHEN has_reconciled = 1 THEN reconciled_input_tokens ELSE provider_input_tokens END AS input_tokens,
+			CASE WHEN has_reconciled = 1 THEN reconciled_output_tokens ELSE provider_output_tokens END AS output_tokens,
+			CASE WHEN has_reconciled = 1 THEN reconciled_reasoning_tokens ELSE provider_reasoning_tokens END AS reasoning_tokens,
+			CASE WHEN has_reconciled = 1 THEN reconciled_cached_tokens ELSE provider_cached_tokens END AS cached_tokens`)
 }
 
 func (r *G6UserRepository) ListRequests(ctx context.Context, filter G6RequestFilter, offset, limit int) ([]RequestLedgerRow, int64, error) {
@@ -224,8 +246,13 @@ func (r *G6UserRepository) FindRequestFact(ctx context.Context, userID uint64, r
 
 func (r *G6UserRepository) ListBilledUsage(ctx context.Context, requestID string) ([]model.AIUsageItem, error) {
 	var items []model.AIUsageItem
-	err := r.db.WithContext(ctx).Where("request_id = ? AND source = 'provider' AND sequence_no = 1", requestID).
-		Order("meter_type ASC, id ASC").Find(&items).Error
+	err := r.db.WithContext(ctx).Table("ai_usage_items AS usage_items").
+		Where("usage_items.request_id = ? AND usage_items.sequence_no = 1", requestID).
+		Where(`usage_items.source = 'reconciled' OR (usage_items.source = 'provider' AND NOT EXISTS (
+			SELECT 1 FROM ai_usage_items AS reconciled
+			WHERE reconciled.request_id = usage_items.request_id AND reconciled.source = 'reconciled' AND reconciled.sequence_no = 1
+		))`).
+		Order("usage_items.meter_type ASC, usage_items.id ASC").Find(&items).Error
 	return items, err
 }
 
@@ -338,9 +365,7 @@ func (r *G6UserRepository) FindResourcePolicies(ctx context.Context, userID uint
 }
 
 func (r *G6UserRepository) AggregateUsage(ctx context.Context, userID uint64, start, end time.Time) (UsageAggregate, error) {
-	usage := r.db.Table("ai_usage_items").
-		Select("request_id, SUM(CASE WHEN source = 'provider' AND sequence_no = 0 AND meter_type = 'input_tokens' THEN quantity ELSE 0 END) AS input_tokens, SUM(CASE WHEN source = 'provider' AND sequence_no = 0 AND meter_type = 'output_tokens' THEN quantity ELSE 0 END) AS output_tokens").
-		Group("request_id")
+	usage := r.authoritativeUsageQuery()
 	var result UsageAggregate
 	err := r.db.WithContext(ctx).Table("ai_requests AS requests").
 		Joins("LEFT JOIN (?) AS usage_totals ON usage_totals.request_id = requests.request_id", usage).
@@ -370,6 +395,39 @@ func (r *G6UserRepository) SumMonthlyBudget(ctx context.Context, userID uint64, 
 		return nil, err
 	}
 	return &value, nil
+}
+
+// SumCurrentProjectBudgetUsage 按每个 Project 自己的时区和预算月周期汇总已结算金额。
+// 预算准入在 reservation 中固化周期起点，因此不能用用户传入的单一时区重新切分月份。
+func (r *G6UserRepository) SumCurrentProjectBudgetUsage(ctx context.Context, userID uint64, at time.Time) (decimal.Decimal, error) {
+	var projects []model.AIProject
+	if err := r.db.WithContext(ctx).Where("user_id = ? AND status <> 'archived'", userID).Find(&projects).Error; err != nil {
+		return decimal.Zero, err
+	}
+	if len(projects) == 0 {
+		return decimal.Zero, nil
+	}
+	conditions := make([]string, 0, len(projects))
+	args := make([]interface{}, 0, len(projects)*2+1)
+	for i := range projects {
+		location, err := time.LoadLocation(projects[i].Timezone)
+		if err != nil {
+			location, _ = time.LoadLocation("Asia/Shanghai")
+		}
+		now := at.In(location)
+		periodStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, location).UTC()
+		conditions = append(conditions, "(project_id = ? AND monthly_period_start = ?)")
+		args = append(args, projects[i].ID, periodStart)
+	}
+	args = append(args, model.AIBudgetSettled)
+	var raw sql.NullString
+	err := r.db.WithContext(ctx).Model(&model.AIBudgetReservation{}).
+		Where("("+strings.Join(conditions, " OR ")+") AND status = ?", args...).
+		Select("CAST(SUM(settled_amount) AS CHAR)").Scan(&raw).Error
+	if err != nil || !raw.Valid || strings.TrimSpace(raw.String) == "" {
+		return decimal.Zero, err
+	}
+	return decimal.NewFromString(raw.String)
 }
 
 func (r *G6UserRepository) CreateDispute(ctx context.Context, dispute *model.AIBillingDispute) error {

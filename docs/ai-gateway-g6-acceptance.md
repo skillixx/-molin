@@ -11,8 +11,8 @@
 | 分支 | `feature/backend-d-ai-gateway-g6-customer-journey` |
 | G5 验收提交 | `60b569f` |
 | G6 实际开发基线 | `origin/main@c4126a6` |
-| 当前分支提交 | `9c325b6` |
-| 测试环境应用提交 | `9efb1bd`（后续 `b80af84` 仅调整 CI 隔离探活脚本） |
+| 当前分支提交 | `bfd6643`（验收证据固化提交待生成） |
+| 测试环境应用提交 | `bfd6643` |
 | Migration | `000065_create_ai_gateway_g6_customer_journey`、`000066_enforce_ai_dispute_request_owner` |
 | 部署范围 | 仅测试环境，禁止生产 |
 | 多模态范围 | 仅已发布文字模型 |
@@ -33,15 +33,15 @@
 | 真实 Bifrost 与人民币对账 | PASS | Bifrost 负载入口 `127.0.0.1:18080`、两个节点健康；真实 request `req_478e03928009d186` 已结算 `0.00000100 CNY`，Usage 与钱包差异均为 `0.00000000`，价格版本 `v2` |
 | 越权、吊销、不调用上游 | PASS | 跨用户请求详情返回 404；安全命中和 SK 吊销后均在网关前拒绝且未产生上游执行尝试；重复申诉返回 409 |
 | 测试凭据回收 | PASS | 清理前测试集合为用户 2、活跃 SK 0、未归档 Project 1、请求事实 4；清理后为 `0|0|0|4`，会话撤销，本地和远程浏览器 JWT 已删除 |
-| GitHub CI | PENDING | 原 PR #324 在 `b80af84` 六项检查全绿；因分支命名规范迁移至替代 PR #325，等待最终提交 `9c325b6` 的 CI 复验 |
+| GitHub CI | PENDING | PR #325 最新代码检查中；阶段 5 敏感扫描曾将申诉拦截测试样本误判为真实凭据，已将样本拆分为运行时拼接并等待复验 |
 | 独立 QA | PASS | 独立测试工程师复跑全量 Go、vet、mod verify、两端 type-check/lint/build、10 条 G6 Playwright 和隔离 MySQL 8；P0/P1/P2/P3 均为 0 |
-| 独立评审与产品 | PENDING | 最终代码评审 P0=0、P1=0并允许合并；P2 申诉归属已由 Migration 000066 组合外键闭合，P3 已增加关键控件视口边界检查，等待最新提交复核与产品复验 |
+| 独立评审与产品 | PENDING | 长时评审发现人工核定用量展示和真实账单抽屉对比度两个 P1，现已修复并补回归；申诉密钥拒绝、审计原文保护和跨 Project 预算周期也已闭合，等待最新提交复核与产品复验 |
 
 ## 3. 测试环境真实 E2E 证据
 
 | 项目 | 结果 |
 |---|---|
-| API 部署 | `9efb1bd`，SHA256 `a9f73033687875e1e3aa6fe0a413f88eadc000ab4cc1e8545fb57a324fcf48bd` |
+| API 部署 | change `g6-bfd6643`，SHA256 `dd18c12d7578a694ea47ae79d53ec8e0693689acdbdc844ada46c54bab723955`，回滚目录 `/home/pc/molin/rollback/g6-bfd6643` |
 | 完整前后端部署 | change `g6-75a3001-r1`，回滚目录 `/home/pc/molin/rollback/g6-75a3001-r1` |
 | API 增量部署 | change `g6-9efb1bd`，回滚目录 `/home/pc/molin/rollback/g6-9efb1bd` |
 | Migration 000066 | change `g6-4ef93de-m66`，`65:0 -> 66:0`；组合外键 1、组合索引 2 列、不一致事实 0；回滚备份 `/home/pc/molin/rollback/g6-4ef93de-m66`，SHA256 `38cd5bfc3d056b74c644368270650d0998a55c1c6d2a0ff17d0ef19445ec3457` |
@@ -50,7 +50,7 @@
 | 真实请求 | `req_478e03928009d186`，安全通过、执行成功、结算成功，16 输入 Token、1 输出 Token |
 | 金额对账 | 请求结算、销售计量行、钱包消费流水和用户页面均为 `0.00000100 CNY`；Usage 差异和钱包差异均为 0 |
 | 拒绝链路 | 关键词安全拒绝无上游尝试；吊销 SK 后拒绝且无上游尝试；跨用户详情 404；重复申诉 409 |
-| 浏览器证据 | [桌面截图](evidence/g6/g6-real-desktop.png) SHA256 `AC124FF6B9CE2711E9DCDC88FB23431AFAA5575010136BED04DCAFCE1D0099D4`；[手机截图](evidence/g6/g6-real-mobile.png) SHA256 `00CB70AD4F2F9293DAE9D2FE2C4100E3E12EE4292D40111C628C2446432D1109` |
+| 浏览器证据 | [桌面截图](evidence/g6/g6-real-desktop.png) SHA256 `3F750CDF2EA2B1F3CFEB53A7FA940C27BAF60499DBEC321816B5CA46E24399ED`；[手机截图](evidence/g6/g6-real-mobile.png) SHA256 `F75F97580E7AAB95BFD33B5D2C12643B1FC99776BEE7EC2B1328FB64A68A8B05`；真实页面断言抽屉背景 `rgb(14, 21, 33)`、请求 ID 文字 `rgb(248, 250, 252)`，两个视口均无横向溢出 |
 | 清理与审计 | 测试身份、SK、Project、会话和浏览器 JWT 已回收；请求、计量、钱包、申诉事实保留；发布与清理均写审计日志 |
 | 000066 部署后验证 | 跨用户申诉数据库探针被拒绝且残留 0；API `/api/health` 与 Bifrost `/health` 均返回 200 |
 

@@ -2591,7 +2591,7 @@ DELETE /api/token/projects/{id}/keys/{key_id}
 | `/ai/models` | `GET /api/token/catalog/models` | 搜索、能力、服务状态、上下文和排序双向同步 URL Query；加载、空和错误可重试 |
 | `/ai/models/:modelCode` | `GET /api/token/catalog/models/{model_code}` | 复制模型代码/Base URL、查看人民币价格、文档健康门禁、创建 SK 导航 |
 | `/ai/api-keys` | `/api/token/projects*` | Project 创建/编辑/归档，平台 SK 签发/轮换/吊销及一次明文展示 |
-| `/ai/usage` | `/api/token/customer/usage/overview`、`limits`、`requests*` | 总览、Project/SK/模型/状态/时间筛选、详情、CSV 和申诉 |
+| `/ai/usage` | `/api/token/customer/usage/overview`、`limits`、`requests*` | 总览、Project/SK/模型/状态/时间筛选、详情、CSV 和申诉；人工核定后展示 `reconciled` 权威用量，申诉禁止填写任何 SK/Token |
 
 旧 `/api-keys` 重定向 `/ai/api-keys`，旧 `/token/usage` 重定向 `/ai/usage`；通用商品 `/consumption` 保留，不得与 AI 请求账本混用。`VITE_AI_GATEWAY_BASE_URL` 用于展示客户公开网关地址，留空时使用当前站点来源；完整 SK 只能在签发或轮换响应中显示一次，不进入 URL、localStorage、日志或文档。
 

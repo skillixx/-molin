@@ -133,6 +133,15 @@ VALUES ('project',965,5,'G6 有效临时增额',965,'2026-08-09 00:00:00'),
        ('project',965,50,'G6 已过期临时增额',965,'2026-08-07 00:00:00');
 INSERT INTO ai_requests(request_id,user_id,project_id,api_key_id,logical_model_code,modality,moderation_status,execution_status,billing_status)
 VALUES ('req_g6_isolated_965',965,965,965,'molin/g6-test','chat','passed','succeeded','settled');
+INSERT INTO ai_usage_items(request_id,meter_type,source,sequence_no,quantity,unit_price,amount)
+VALUES ('req_g6_isolated_965','input_tokens','provider',0,12,NULL,NULL),
+       ('req_g6_isolated_965','output_tokens','provider',0,4,NULL,NULL),
+       ('req_g6_isolated_965','input_tokens','provider',1,12,0.8,0.00000960),
+       ('req_g6_isolated_965','output_tokens','provider',1,4,2,0.00000800),
+       ('req_g6_isolated_965','input_tokens','reconciled',1,20,0.8,0.00001600),
+       ('req_g6_isolated_965','output_tokens','reconciled',1,5,2,0.00001000);
+INSERT INTO ai_budget_reservations(request_id,user_id,project_id,api_key_id,reserved_amount,settled_amount,status,daily_period_start,monthly_period_start,expires_at,released_at)
+VALUES ('req_g6_isolated_965',965,965,965,25,21,'settled','2026-08-07 16:00:00','2026-07-31 16:00:00','2026-08-09 00:00:00','2026-08-08 00:00:00');
 INSERT INTO ai_billing_disputes(dispute_no,request_id,user_id,reason,status)
 VALUES ('DSP-G6-ISOLATED','req_g6_isolated_965',965,'隔离测试账单申诉说明不少于十个字符','submitted');
 SQL

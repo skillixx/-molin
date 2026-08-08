@@ -38,6 +38,22 @@ func TestPublicCatalogDTOOnlyContainsSalePrice(t *testing.T) {
 	}
 }
 
+func TestBillingDisputeRejectsCredentialLikeText(t *testing.T) {
+	for _, value := range []string{
+		"费用有误，请核查 sk-" + "molin-secret123456",
+		"费用有误 Author" + "ization: Be" + "arer abcdefghijklmnop",
+		"费用有误 api_key=abcdefghijklmnop",
+		"费用有误 e" + "yJabcdefghijk.abcdefghijkl.abcdefghijkl",
+	} {
+		if !credentialLikePattern.MatchString(value) {
+			t.Fatalf("申诉敏感信息检测遗漏: %s", value)
+		}
+	}
+	if credentialLikePattern.MatchString("本次费用与预期不一致，请帮助核查计价明细") {
+		t.Fatal("正常申诉说明不得被误判为密钥")
+	}
+}
+
 func TestEffectiveLimitUsesOwnedPolicyOverride(t *testing.T) {
 	defaults := ResourceLimits{Concurrency: 5, RPM: 60, TPM: 100000}
 	policies := map[string]model.AIResourcePolicy{"api_key:9": {ConcurrencyLimit: 2, RPMLimit: 20, TPMLimit: 30000}}

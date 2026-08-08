@@ -2,11 +2,13 @@ package handler
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +25,11 @@ import (
 const (
 	maxLedgerExportRows = 5000
 	maxLedgerExportDays = 93
+)
+
+var (
+	ledgerRequestIDPattern    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
+	logicalModelFilterPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}/[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$`)
 )
 
 // G6UserHandler 提供模型市场、用量总览、请求账本、导出和账单申诉接口。
@@ -166,7 +173,11 @@ func (h *G6UserHandler) ExportRequests(w http.ResponseWriter, r *http.Request) {
 
 // exportAuditSummary 只记录筛选元数据，不记录提示词、响应正文或密钥明文。
 func exportAuditSummary(filter repository.G6RequestFilter, count int) map[string]any {
-	summary := map[string]any{"count": count, "model": filter.LogicalModelCode, "status": filter.Status}
+	summary := map[string]any{"count": count, "model_filter_set": filter.LogicalModelCode != "", "status": filter.Status}
+	if filter.LogicalModelCode != "" {
+		digest := sha256.Sum256([]byte(filter.LogicalModelCode))
+		summary["model_filter_sha256"] = fmt.Sprintf("%x", digest[:8])
+	}
 	if filter.ProjectID != nil {
 		summary["project_id"] = *filter.ProjectID
 	}
@@ -196,13 +207,17 @@ func (h *G6UserHandler) CreateDispute(w http.ResponseWriter, r *http.Request) {
 	}
 	userID := middleware.UserIDFromContext(r.Context())
 	requestID := strings.TrimSpace(r.PathValue("request_id"))
+	if !ledgerRequestIDPattern.MatchString(requestID) {
+		response.Error(w, http.StatusBadRequest, 40000, "request_id 参数错误")
+		return
+	}
 	if !h.recordAudit(r, "billing_dispute.submit_attempt", "ai_request", requestID, map[string]any{"user_id": userID}) {
 		response.Error(w, http.StatusInternalServerError, 50000, "申诉审计失败")
 		return
 	}
 	dispute, err := h.service.CreateDispute(r.Context(), userID, requestID, request.Reason)
 	switch {
-	case errors.Is(err, service.ErrDisputeReasonInvalid):
+	case errors.Is(err, service.ErrDisputeReasonInvalid), errors.Is(err, service.ErrDisputeContainsSecret):
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 	case errors.Is(err, service.ErrUserRequestNotFound):
 		response.Error(w, http.StatusNotFound, 40400, err.Error())
@@ -238,6 +253,17 @@ func parsePublicModelFilter(w http.ResponseWriter, r *http.Request) (service.Pub
 
 func parseRequestFilter(w http.ResponseWriter, r *http.Request, userID uint64, requireRange bool) (repository.G6RequestFilter, bool) {
 	filter := repository.G6RequestFilter{UserID: userID, LogicalModelCode: strings.TrimSpace(r.URL.Query().Get("model")), Status: strings.TrimSpace(r.URL.Query().Get("status"))}
+	if filter.LogicalModelCode != "" && !logicalModelFilterPattern.MatchString(filter.LogicalModelCode) {
+		response.Error(w, http.StatusBadRequest, 40000, "model 参数错误")
+		return filter, false
+	}
+	if filter.Status != "" {
+		allowed := map[string]bool{"pending": true, "running": true, "succeeded": true, "failed": true, "cancelled": true, "unknown": true, "unquoted": true, "held": true, "settlement_pending": true, "settled": true, "released": true, "exception": true, "passed": true, "rejected": true, "error": true}
+		if !allowed[filter.Status] {
+			response.Error(w, http.StatusBadRequest, 40000, "status 参数错误")
+			return filter, false
+		}
+	}
 	for name, target := range map[string]**uint64{"project_id": &filter.ProjectID, "api_key_id": &filter.APIKeyID} {
 		if value := strings.TrimSpace(r.URL.Query().Get(name)); value != "" {
 			parsed, err := strconv.ParseUint(value, 10, 64)

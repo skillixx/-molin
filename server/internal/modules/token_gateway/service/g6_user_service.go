@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,10 +21,13 @@ import (
 )
 
 var (
-	ErrPublicModelNotFound  = errors.New("模型不存在、未发布或当前不可用")
-	ErrUserRequestNotFound  = errors.New("请求记录不存在")
-	ErrDisputeReasonInvalid = errors.New("申诉说明长度应为 10 至 1000 个字符")
+	ErrPublicModelNotFound   = errors.New("模型不存在、未发布或当前不可用")
+	ErrUserRequestNotFound   = errors.New("请求记录不存在")
+	ErrDisputeReasonInvalid  = errors.New("申诉说明长度应为 10 至 1000 个字符")
+	ErrDisputeContainsSecret = errors.New("申诉说明不能包含 API Key、Token 或其他密钥")
 )
+
+var credentialLikePattern = regexp.MustCompile(`(?i)(sk-[a-z0-9_-]{8,}|bearer\s+[a-z0-9._~+/=-]{8,}|(?:api[_ -]?key|access[_ -]?token|secret)\s*[:=]\s*\S{6,}|eyJ[a-z0-9_-]{8,}\.[a-z0-9_-]{8,}\.[a-z0-9_-]{8,})`)
 
 const publicMinimumCharge = "0.000001"
 
@@ -247,7 +251,11 @@ func (s *G6UserService) Overview(ctx context.Context, userID uint64, timezone st
 	}
 	var percent *decimal.Decimal
 	if budget != nil && budget.GreaterThan(decimal.Zero) {
-		value := month.Amount.Div(*budget).Mul(decimal.NewFromInt(100)).Round(2)
+		budgetUsage, usageErr := s.repo.SumCurrentProjectBudgetUsage(ctx, userID, s.now())
+		if usageErr != nil {
+			return nil, usageErr
+		}
+		value := budgetUsage.Div(*budget).Mul(decimal.NewFromInt(100)).Round(2)
 		percent = &value
 	}
 	return &dto.UsageOverview{
@@ -422,6 +430,9 @@ func (s *G6UserService) CreateDispute(ctx context.Context, userID uint64, reques
 	reason = strings.TrimSpace(reason)
 	if len([]rune(reason)) < 10 || len([]rune(reason)) > 1000 {
 		return nil, ErrDisputeReasonInvalid
+	}
+	if credentialLikePattern.MatchString(reason) {
+		return nil, ErrDisputeContainsSecret
 	}
 	if _, err := s.repo.FindRequestFact(ctx, userID, requestID); errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrUserRequestNotFound

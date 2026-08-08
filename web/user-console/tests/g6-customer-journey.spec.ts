@@ -20,10 +20,11 @@ const project = { id: 7, name: '客服生产环境', status: 'active', budget_mo
 const key = { id: 9, project_id: 7, name: '客服服务', key_prefix: 'sk-molin-AbCd', scope_mode: 'allowlist', model_codes: ['molin/qwen-turbo'], status: 'active', created_at: '2026-08-08T08:00:00Z' }
 const request = { request_id: 'req_g6_e2e_001', project_id: 7, project_name: project.name, api_key_id: 9, api_key_name: key.name, api_key_prefix: key.key_prefix, logical_model_code: model.logical_model_code, moderation_status: 'passed', execution_status: 'succeeded', billing_status: 'settled', input_tokens: '12', output_tokens: '4', reasoning_tokens: '0', cached_tokens: '0', quoted_amount: '0.01000000', settled_amount: '0.00000100', created_at: '2026-08-08T08:00:00Z', completed_at: '2026-08-08T08:00:01Z' }
 
-type MockG6Options = { catalogItems?: Array<typeof model>; detailModel?: typeof model; failCatalog?: boolean; failRequestDetail?: boolean }
+type MockG6Options = { catalogItems?: Array<typeof model>; detailModel?: typeof model; failCatalog?: boolean; failRequestDetail?: boolean; failRequestDetailOnce?: boolean }
 
 async function mockG6(page: Page, options: MockG6Options = {}) {
   const writes: Array<{ method: string; path: string; body: unknown }> = []
+  let requestDetailFailures = 0
   await page.addInitScript(() => localStorage.setItem('access_token', 'g6-e2e-token'))
   await page.route('**/api/**', async route => {
     // Vite 源码目录也包含 /src/api/，仅拦截浏览器发出的真实接口请求。
@@ -38,7 +39,8 @@ async function mockG6(page: Page, options: MockG6Options = {}) {
       await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 50300, message: '目录暂不可用' }) })
       return
     }
-    if (options.failRequestDetail && path === '/api/token/customer/requests/req_g6_e2e_001') {
+    if ((options.failRequestDetail || (options.failRequestDetailOnce && requestDetailFailures === 0)) && path === '/api/token/customer/requests/req_g6_e2e_001') {
+      requestDetailFailures += 1
       await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 50300, message: '账单详情暂不可用' }) })
       return
     }
@@ -170,8 +172,11 @@ test('G6 请求账本可查看价格、钱包关联并提交申诉', async ({ pa
   const requestEntry = page.getByRole('button', { name: 'req_g6_e2e_001' })
   await expect(requestEntry).toBeVisible()
   await requestEntry.click()
+  const detailDrawer = page.getByRole('dialog', { name: '请求账单详情' })
   await expect(page.getByText('结算流水 #32')).toBeVisible()
-  await expect(page.getByRole('dialog', { name: '请求账单详情' }).getByText('安全通过')).toBeVisible()
+  await expect(detailDrawer.getByText('安全通过')).toBeVisible()
+  await expect(detailDrawer).toHaveCSS('background-color', 'rgb(14, 21, 33)')
+  await expect(detailDrawer.getByText(request.request_id)).toHaveCSS('color', 'rgb(248, 250, 252)')
   await page.getByRole('button', { name: '对本次账单有疑问' }).click()
   const dialog = page.getByRole('dialog', { name: '提交账单申诉' })
   await dialog.getByRole('textbox').fill('本次费用与预期不一致，请帮助核查。')
@@ -199,13 +204,15 @@ test('G6 手机账单使用全宽筛选抽屉并支持键盘打开请求', async
   await expect(page.getByRole('dialog', { name: '请求账单详情' })).toBeVisible()
 })
 
-test('G6 请求详情加载失败显示可重试状态', async ({ page }) => {
-  await mockG6(page, { failRequestDetail: true })
+test('G6 请求详情加载失败后可以重试恢复', async ({ page }) => {
+  await mockG6(page, { failRequestDetailOnce: true })
   await page.goto('/ai/usage')
   await page.getByRole('button', { name: 'req_g6_e2e_001' }).click()
   const drawer = page.getByRole('dialog', { name: '请求账单详情' })
   await expect(drawer.getByText('请求账单详情加载失败')).toBeVisible()
-  await expect(drawer.getByRole('button', { name: '重新加载' })).toBeVisible()
+  await drawer.getByRole('button', { name: '重新加载' }).click()
+  await expect(drawer.getByText('结算流水 #32')).toBeVisible()
+  await expect(drawer.getByText('请求账单详情加载失败')).toHaveCount(0)
 })
 
 for (const viewport of [{ name: 'desktop', width: 1440, height: 1000 }, { name: 'tablet', width: 768, height: 1024 }, { name: 'mobile', width: 375, height: 812 }]) {

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shopspring/decimal"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 
@@ -33,9 +34,24 @@ func TestG6UserRepositoryMySQLIsolation(t *testing.T) {
 	if err != nil || withoutBudget != nil {
 		t.Fatalf("未配置月预算时必须返回空预算而不是查询失败: budget=%v err=%v", withoutBudget, err)
 	}
+	budgetUsage, err := repo.SumCurrentProjectBudgetUsage(ctx, 965, time.Date(2026, 8, 8, 0, 0, 0, 0, time.UTC))
+	if err != nil || !budgetUsage.Equal(decimal.NewFromInt(21)) {
+		t.Fatalf("预算进度必须按 Project 固化月周期聚合: usage=%s err=%v", budgetUsage, err)
+	}
 	rows, total, err := repo.ListRequests(ctx, G6RequestFilter{UserID: 965}, 0, 20)
 	if err != nil || total != 1 || len(rows) != 1 || rows[0].RequestID != "req_g6_isolated_965" {
 		t.Fatalf("本人请求账本读取错误: total=%d rows=%+v err=%v", total, rows, err)
+	}
+	if !rows[0].InputTokens.Equal(decimal.NewFromInt(20)) || !rows[0].OutputTokens.Equal(decimal.NewFromInt(5)) {
+		t.Fatalf("人工核定后账本必须展示权威用量: input=%s output=%s", rows[0].InputTokens, rows[0].OutputTokens)
+	}
+	billed, err := repo.ListBilledUsage(ctx, "req_g6_isolated_965")
+	if err != nil || len(billed) != 2 || billed[0].Source != "reconciled" || billed[1].Source != "reconciled" {
+		t.Fatalf("人工核定后计价明细必须只展示 reconciled 事实: items=%+v err=%v", billed, err)
+	}
+	aggregate, err := repo.AggregateUsage(ctx, 965, time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil || !aggregate.InputTokens.Equal(decimal.NewFromInt(20)) || !aggregate.OutputTokens.Equal(decimal.NewFromInt(5)) {
+		t.Fatalf("人工核定后总览必须聚合权威用量: aggregate=%+v err=%v", aggregate, err)
 	}
 	if _, err := repo.FindRequestRow(ctx, 966, "req_g6_isolated_965"); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("跨用户读取必须按不存在处理: %v", err)

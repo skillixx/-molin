@@ -28,8 +28,11 @@ func TestExportAuditSummaryContainsFilters(t *testing.T) {
 	summary := exportAuditSummary(repository.G6RequestFilter{
 		ProjectID: &projectID, APIKeyID: &keyID, LogicalModelCode: "molin/test", Status: "settled", Start: &start, End: &end,
 	}, 8)
-	if summary["count"] != 8 || summary["project_id"] != projectID || summary["api_key_id"] != keyID || summary["model"] != "molin/test" || summary["status"] != "settled" {
+	if summary["count"] != 8 || summary["project_id"] != projectID || summary["api_key_id"] != keyID || summary["model_filter_set"] != true || summary["model_filter_sha256"] == "" || summary["status"] != "settled" {
 		t.Fatalf("导出审计筛选摘要不完整: %+v", summary)
+	}
+	if _, exists := summary["model"]; exists {
+		t.Fatalf("审计摘要不得保存用户提交的模型筛选原文: %+v", summary)
 	}
 	if summary["start"] != "2026-07-31T16:00:00Z" || summary["end"] != "2026-08-01T16:00:00Z" {
 		t.Fatalf("导出审计时间范围必须统一为 UTC: %+v", summary)

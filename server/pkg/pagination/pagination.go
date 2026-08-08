@@ -5,6 +5,8 @@ import (
 	"strconv"
 )
 
+const maxPage = 10000
+
 // Params 分页请求参数。
 type Params struct {
 	Page     int
@@ -20,11 +22,15 @@ type Result struct {
 
 // Parse 从 Query String 解析分页参数，带默认值和边界保护：
 //   - page 默认 1，最小 1
+//   - page 最大 10000，避免恶意超大 OFFSET 拖垮共享数据库
 //   - page_size 默认 20，最大 100
 func Parse(r *http.Request) Params {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	if page < 1 {
 		page = 1
+	}
+	if page > maxPage {
+		page = maxPage
 	}
 	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
 	if pageSize < 1 {

@@ -2564,12 +2564,12 @@ G5 路由仅在确认请求未发送时按 `max_retries` 重试；超时、结�
 |---|---|---|
 | GET | `/api/token/catalog/models` | 已发布文字模型；支持 `q/provider/capability/service_status/context_min/context_max/sort/page/page_size` |
 | GET | `/api/token/catalog/models/{model_code}` | 发布快照详情、当前人民币销售价格及文档健康状态 |
-| GET | `/api/token/customer/usage/overview?timezone=Asia/Shanghai` | 今日、本月请求、Token、已结算金额和预算进度 |
+| GET | `/api/token/customer/usage/overview?timezone=Asia/Shanghai` | 今日、本月请求、Token 和已结算金额按展示时区统计；预算进度按各 Project 在准入时固化的月周期聚合，禁止用单一展示时区重切预算周期 |
 | GET | `/api/token/customer/limits` | 用户、Project、平台 SK 经父级收紧后的有效并发/RPM/TPM、来源，以及包含当前临时增额的 G4 实际预算策略 |
 | GET | `/api/token/customer/requests` | 本人请求账本，支持 `project_id/api_key_id/model/status/start/end/page/page_size` |
 | GET | `/api/token/customer/requests/{request_id}` | 三维状态、确认用量、价格版本、销售计价行、钱包流水和申诉 |
 | GET | `/api/token/customer/requests/export` | 本人 CSV；必须提供不超过 93 天的 `start/end`，最多 5000 行 |
-| POST | `/api/token/customer/requests/{request_id}/disputes` | 对本人请求提交唯一账单申诉，body `{"reason":"10-1000 字"}` |
+| POST | `/api/token/customer/requests/{request_id}/disputes` | 对本人请求提交唯一账单申诉，body `{"reason":"10-1000 字"}`；检测到 API Key、Bearer Token、JWT 或其他密钥样式时拒绝入库 |
 
 模型目录使用扁平分页 `{items,page,page_size,total}`。每个模型只返回公开代码、名称、厂商、说明、能力、上下文、文档 URL 与健康状态、发布版本、服务状态和人民币销售 SKU；禁止返回渠道、Bifrost 地址、上游模型、成本价或密钥。公开内容来自 `ai_model_release_versions.snapshot_json`，当前价格和健康路由只作为运行状态聚合，后台未发布工作副本不得提前泄漏。
 
