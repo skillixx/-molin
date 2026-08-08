@@ -2,7 +2,7 @@
 
 Molin 云管理平台基于 Vue3 + Go + MySQL，支持商品售卖、计费、用户资产、实名认证、应用管理、会员体系，以及后续 GPU、Agent、Skills、Token 网关等模块。
 
-**技术栈：** Go 1.22（后端 API）+ Vue 3 / TypeScript（前端）+ MySQL 8 + Redis 7 + RabbitMQ + MinIO
+**技术栈：** Go 1.25（后端 API）+ Node.js 24 / Vue 3 / TypeScript（前端）+ MySQL 8 + Redis 7 + RabbitMQ + MinIO
 
 **已上线模块：**
 

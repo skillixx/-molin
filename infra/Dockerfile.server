@@ -2,7 +2,7 @@
 # 构建命令：docker build -f infra/Dockerfile.server -t molin-api .
 
 # ---- 构建阶段 ----
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 # 安装 git（go mod download 可能需要）
 RUN apk add --no-cache git

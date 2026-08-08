@@ -25,6 +25,7 @@
 | 用户端 Playwright | PASS | 生产构建预览下 9 条通过：客户链路、Project/SK 一次性明文清理、文档状态、URL 前进后退、空/错误、账本三维状态/导出/申诉、手机全宽筛选抽屉、键盘操作及三宽度 |
 | 全量 Go/vet/mod verify | PASS | `go test -count=1 ./...`、`go vet ./...`、`go mod verify`；Windows 因 `CGO_ENABLED=0` 不执行竞态检测，Linux `-race` 仍待测试环境执行 |
 | 两端 lint/build | PASS | 用户端与管理端均通过 `type-check`、`lint`、`build`；用户端生产依赖审计为 0 个漏洞 |
+| 可重复镜像构建 | PASS | `golang:1.25-alpine` 服务端、`node:24-alpine` 用户端和管理端镜像均完成本地 Docker 构建；Vite 5 开发依赖审计告警作为升级事项保留，不进入运行时镜像 |
 | Migration 隔离 MySQL 8 验证 | PASS | 一次性 MySQL 8 容器完成 `64:0 -> 65:0`、重复 up、事实保留 down、重新 up、历史文档初始化为 unknown、文档健康/申诉约束、请求索引，并以真实 GORM 验证跨用户隔离、重复申诉和 SK 审计失败事务回滚；CI 复验仍待 PR |
 | 测试环境部署与真实浏览器 | PENDING | 尚未执行 |
 | 真实 Bifrost 与人民币对账 | PENDING | 尚未执行 |
