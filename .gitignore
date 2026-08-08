@@ -44,3 +44,5 @@ infra/.data/
 # 浏览器自动化运行时产物，测试脚本与正式验收截图仍正常入库。
 .playwright-cli/
 web/admin-console/test-results/
+web/user-console/test-results/
+web/user-console/playwright-report/
