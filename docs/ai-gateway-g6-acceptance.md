@@ -11,7 +11,7 @@
 | 分支 | `feature/backend-d-ai-gateway-g6-customer-journey` |
 | G5 验收提交 | `60b569f` |
 | G6 实际开发基线 | `origin/main@c4126a6` |
-| 当前分支提交 | `bfd6643`（验收证据固化提交待生成） |
+| 最新功能与证据提交 | `ad54b6d` |
 | 测试环境应用提交 | `bfd6643` |
 | Migration | `000065_create_ai_gateway_g6_customer_journey`、`000066_enforce_ai_dispute_request_owner` |
 | 部署范围 | 仅测试环境，禁止生产 |
