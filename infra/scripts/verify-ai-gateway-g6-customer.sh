@@ -38,16 +38,24 @@ mysql_exec() {
     mysql -uroot --database="${database}" --batch --skip-column-names "$@"
 }
 
-for _ in $(seq 1 60); do
+ready_streak=0
+for _ in $(seq 1 90); do
   if mysql_exec -e 'SELECT 1' >/dev/null 2>&1; then
-    break
+    ready_streak=$((ready_streak + 1))
+    if [[ "${ready_streak}" -ge 3 ]]; then
+      break
+    fi
+  else
+    ready_streak=0
   fi
   sleep 1
 done
-mysql_exec -e 'SELECT 1' >/dev/null 2>&1 || {
+if [[ "${ready_streak}" -lt 3 ]]; then
   echo "G6_VERIFY=FAILED reason=mysql_not_ready"
+  docker inspect --format 'container_status={{.State.Status}} exit_code={{.State.ExitCode}} oom_killed={{.State.OOMKilled}}' "${container}" || true
+  docker logs --tail 80 "${container}" || true
   exit 2
-}
+fi
 
 # 空库先应用到 G5，再显式验证 64 -> 65 的版本流转。
 for migration in "${repo_root}"/server/migrations/*.up.sql; do
