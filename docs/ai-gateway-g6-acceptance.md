@@ -8,10 +8,10 @@
 
 | 项目 | 当前值 |
 |---|---|
-| 分支 | `codex/ai-gateway-g6-customer-journey` |
+| 分支 | `feature/backend-d-ai-gateway-g6-customer-journey` |
 | G5 验收提交 | `60b569f` |
 | G6 实际开发基线 | `origin/main@c4126a6` |
-| 当前分支提交 | `b80af84` |
+| 当前分支提交 | `9c325b6` |
 | 测试环境应用提交 | `9efb1bd`（后续 `b80af84` 仅调整 CI 隔离探活脚本） |
 | Migration | `000065_create_ai_gateway_g6_customer_journey` |
 | 部署范围 | 仅测试环境，禁止生产 |
@@ -33,7 +33,7 @@
 | 真实 Bifrost 与人民币对账 | PASS | Bifrost 负载入口 `127.0.0.1:18080`、两个节点健康；真实 request `req_478e03928009d186` 已结算 `0.00000100 CNY`，Usage 与钱包差异均为 `0.00000000`，价格版本 `v2` |
 | 越权、吊销、不调用上游 | PASS | 跨用户请求详情返回 404；安全命中和 SK 吊销后均在网关前拒绝且未产生上游执行尝试；重复申诉返回 409 |
 | 测试凭据回收 | PASS | 清理前测试集合为用户 2、活跃 SK 0、未归档 Project 1、请求事实 4；清理后为 `0|0|0|4`，会话撤销，本地和远程浏览器 JWT 已删除 |
-| GitHub CI | PASS | PR #324 六项检查全绿，包括 Linux `-race`、G6 MySQL 8 隔离迁移、G3/G4 回归、两端构建和短信发布安全门禁 |
+| GitHub CI | PENDING | 原 PR #324 在 `b80af84` 六项检查全绿；因分支命名规范迁移至替代 PR #325，等待最终提交 `9c325b6` 的 CI 复验 |
 | 独立 QA | PASS | 独立测试工程师复跑全量 Go、vet、mod verify、两端 type-check/lint/build、10 条 G6 Playwright 和隔离 MySQL 8；P0/P1/P2/P3 均为 0 |
 | 独立评审与产品 | PENDING | 最终代码评审进行中；产品首轮提出证据固化、响应式覆盖和详情失败状态问题，均已整改，等待复验 |
 
@@ -58,4 +58,4 @@
 
 ## 4. 阶段结论
 
-G6 测试环境客户旅程、真实计费链路、CI 和独立 QA 已经通过，但 PR 仍为 Draft，阶段尚未完成。只有最终独立评审无 P0/P1且产品复验 PASS 后，才允许将 PR 转为 Ready、合并并更新本节为最终通过。
+G6 测试环境客户旅程、真实计费链路和独立 QA 已经通过，但替代 PR #325 仍为 Draft，阶段尚未完成。只有新 PR CI 全绿、最终独立评审无 P0/P1且产品复验 PASS 后，才允许将 PR 转为 Ready、合并并更新本节为最终通过。
