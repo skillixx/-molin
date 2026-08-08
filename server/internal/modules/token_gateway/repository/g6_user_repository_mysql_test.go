@@ -29,6 +29,10 @@ func TestG6UserRepositoryMySQLIsolation(t *testing.T) {
 	if err != nil || budget == nil || budget.StringFixed(2) != "105.00" {
 		t.Fatalf("预算总览必须计入有效增额并排除过期增额和归档 Project: budget=%v err=%v", budget, err)
 	}
+	withoutBudget, err := repo.SumMonthlyBudget(ctx, 999999, time.Date(2026, 8, 8, 0, 0, 0, 0, time.UTC))
+	if err != nil || withoutBudget != nil {
+		t.Fatalf("未配置月预算时必须返回空预算而不是查询失败: budget=%v err=%v", withoutBudget, err)
+	}
 	rows, total, err := repo.ListRequests(ctx, G6RequestFilter{UserID: 965}, 0, 20)
 	if err != nil || total != 1 || len(rows) != 1 || rows[0].RequestID != "req_g6_isolated_965" {
 		t.Fatalf("本人请求账本读取错误: total=%d rows=%+v err=%v", total, rows, err)
