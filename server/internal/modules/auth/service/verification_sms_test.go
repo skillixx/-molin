@@ -172,6 +172,29 @@ func TestDisabledSMSDoesNotCreateCodeOrCallSender(t *testing.T) {
 	}
 }
 
+func TestTestSceneAllowlistRejectsNonLoginWithoutSideEffects(t *testing.T) {
+	verificationRepo := &fakeVerificationRepository{}
+	smsRepo := &fakeSMSRepository{binding: testBinding()}
+	mock := smssender.NewMockSender(smssender.Result{ProviderCode: "OK"}, nil)
+	cfg := testSMSConfig()
+	cfg.SMSTestMode = true
+	cfg.SMSTestPhoneWhitelist = []string{"phone-test-value"}
+	cfg.SMSTestSceneAllowlist = []string{"login"}
+	dispatcher := smsservice.NewDispatcher(cfg, smsRepo, mock)
+	guard := &countingSMSGuard{}
+	svc := NewVerificationService(verificationRepo)
+	svc.SetSMSDispatcher(dispatcher)
+	svc.SetSMSVerificationGuard(guard)
+
+	if _, err := svc.SendDetailed(context.Background(), "phone", "phone-test-value", "register"); !errors.Is(err, ErrSMSUnavailable) {
+		t.Fatalf("未放行场景必须返回短信不可用，实际 %v", err)
+	}
+	if verificationRepo.created != nil || guard.sendCalls != 0 || len(smsRepo.logs) != 0 || mock.CallCount() != 0 {
+		t.Fatalf("未放行场景不得产生 OTP、限流占用、发送日志或供应商调用: otp=%t guard=%d logs=%d provider=%d",
+			verificationRepo.created != nil, guard.sendCalls, len(smsRepo.logs), mock.CallCount())
+	}
+}
+
 func TestEmailCodeRemainsIndependentFromSMSDispatcher(t *testing.T) {
 	repo := &fakeVerificationRepository{}
 	svc := NewVerificationService(repo)
@@ -190,6 +213,23 @@ type fakeEmailOTPSender struct{}
 
 func (fakeEmailOTPSender) SendOTP(_ context.Context, _, _, _, _ string, _ int) (EmailAcceptance, uint64, error) {
 	return EmailAcceptance{}, 1, nil
+}
+
+type countingSMSGuard struct {
+	sendCalls int
+}
+
+func (g *countingSMSGuard) AllowSend(context.Context, string, string) (bool, error) {
+	g.sendCalls++
+	return true, nil
+}
+
+func (*countingSMSGuard) AllowCheckAttempt(context.Context, string, string) (bool, error) {
+	return true, nil
+}
+
+func (*countingSMSGuard) ClearCheckFailures(context.Context, string, string) error {
+	return nil
 }
 
 func newTestDispatcher(mock smssender.Sender) *smsservice.Dispatcher {

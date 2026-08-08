@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -51,6 +52,20 @@ type Dispatcher struct {
 	sender   sender.Sender
 	accepted atomic.Uint64
 	failed   atomic.Uint64
+	metrics  *SMSProviderMetrics
+}
+
+// SMSProviderMetrics 只按固定场景和安全错误类别记录供应商调用，禁止加入手机号、请求号或供应商原始错误。
+type SMSProviderMetrics struct {
+	mu              sync.RWMutex
+	calls           map[smsProviderMetricKey]uint64
+	durationCount   map[string]uint64
+	durationNanoSum map[string]uint64
+}
+
+type smsProviderMetricKey struct {
+	Scene  string
+	Result string
 }
 
 // MetricsSnapshot 是阶段 1 的最小运行指标，可由后续监控适配器定期采集。
@@ -60,7 +75,14 @@ type MetricsSnapshot struct {
 }
 
 func NewDispatcher(cfg config.Config, repo smsRepository, smsSender sender.Sender) *Dispatcher {
-	return &Dispatcher{cfg: cfg, repo: repo, sender: smsSender}
+	return &Dispatcher{
+		cfg: cfg, repo: repo, sender: smsSender,
+		metrics: &SMSProviderMetrics{
+			calls:           make(map[smsProviderMetricKey]uint64),
+			durationCount:   make(map[string]uint64),
+			durationNanoSum: make(map[string]uint64),
+		},
+	}
 }
 
 // MetricsSnapshot 返回进程启动以来的供应商受理和失败计数，不包含手机号等敏感字段。
@@ -69,6 +91,66 @@ func (d *Dispatcher) MetricsSnapshot() MetricsSnapshot {
 		return MetricsSnapshot{}
 	}
 	return MetricsSnapshot{Accepted: d.accepted.Load(), Failed: d.failed.Load()}
+}
+
+// SMSProviderMetricValue 返回固定场景与安全结果类别的调用数，供受保护的内部指标端点读取。
+func (d *Dispatcher) SMSProviderMetricValue(scene, result string) uint64 {
+	if d == nil || d.metrics == nil {
+		return 0
+	}
+	d.metrics.mu.RLock()
+	defer d.metrics.mu.RUnlock()
+	return d.metrics.calls[smsProviderMetricKey{Scene: scene, Result: result}]
+}
+
+// SMSProviderDuration 返回指定场景的调用次数和累计纳秒，用于导出 Prometheus sum/count 指标。
+func (d *Dispatcher) SMSProviderDuration(scene string) (uint64, uint64) {
+	if d == nil || d.metrics == nil {
+		return 0, 0
+	}
+	d.metrics.mu.RLock()
+	defer d.metrics.mu.RUnlock()
+	return d.metrics.durationCount[scene], d.metrics.durationNanoSum[scene]
+}
+
+func (d *Dispatcher) recordProviderMetric(scene, result string, duration time.Duration) {
+	if d == nil || d.metrics == nil {
+		return
+	}
+	// 指标写入端同样限制为领域固定场景，避免异常调用把任意字符串沉淀为常驻内存键。
+	if !model.IsFixedScene(scene) {
+		return
+	}
+	result = normalizeSMSProviderResult(result)
+	d.metrics.mu.Lock()
+	d.metrics.calls[smsProviderMetricKey{Scene: scene, Result: result}]++
+	d.metrics.durationCount[scene]++
+	d.metrics.durationNanoSum[scene] += uint64(duration)
+	d.metrics.mu.Unlock()
+}
+
+// normalizeSMSProviderResult 把未知错误类别收敛为 rejected，保证指标始终只有八种低基数结果。
+func normalizeSMSProviderResult(result string) string {
+	switch result {
+	case "accepted", "timeout", "rate_limit", "signature", "template", "arrears", "network", "rejected":
+		return result
+	default:
+		return "rejected"
+	}
+}
+
+func smsProviderResult(err error) string {
+	if err == nil {
+		return "accepted"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	var providerErr *sender.ProviderError
+	if errors.As(err, &providerErr) {
+		return normalizeSMSProviderResult(string(providerErr.Kind))
+	}
+	return "rejected"
 }
 
 func (d *Dispatcher) Prepare(ctx context.Context, scene, phone string) (PreparedSend, error) {
@@ -80,6 +162,10 @@ func (d *Dispatcher) Prepare(ctx context.Context, scene, phone string) (Prepared
 	}
 	if !model.IsFixedScene(scene) {
 		return PreparedSend{}, ErrSceneNotBound
+	}
+	// 测试模式必须同时通过场景与手机号两层白名单；场景拒绝发生在模板查询、OTP 创建和供应商调用之前。
+	if d.cfg.SMSTestMode && !contains(d.cfg.SMSTestSceneAllowlist, scene) {
+		return PreparedSend{}, ErrSMSUnavailable
 	}
 	if d.cfg.SMSTestMode && !contains(d.cfg.SMSTestPhoneWhitelist, phone) {
 		return PreparedSend{}, ErrPhoneNotAllowed
@@ -149,6 +235,7 @@ func (d *Dispatcher) Submit(ctx context.Context, plan PreparedSend, phone, rawCo
 
 // SendProvider 只执行供应商提交，测试发送由调用方在提交前完成幂等抢占并负责终态日志。
 func (d *Dispatcher) SendProvider(ctx context.Context, plan PreparedSend, phone, rawCode, businessRequestID string) (DispatchResult, error) {
+	startedAt := time.Now()
 	params, err := json.Marshal(map[string]string{"code": rawCode})
 	if err != nil {
 		return DispatchResult{}, err
@@ -161,6 +248,7 @@ func (d *Dispatcher) SendProvider(ctx context.Context, plan PreparedSend, phone,
 		BusinessRequestID: businessRequestID,
 		Timeout:           5 * time.Second,
 	})
+	d.recordProviderMetric(plan.Scene, smsProviderResult(sendErr), time.Since(startedAt))
 	if sendErr != nil {
 		d.failed.Add(1)
 		return DispatchResult{ProviderRequestID: result.ProviderRequestID, ProviderCode: result.ProviderCode}, sendErr

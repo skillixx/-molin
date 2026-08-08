@@ -171,6 +171,8 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | [测试计划](docs/test-plan.md) | 接口测试用例、并发安全测试、验收 Checklist |
 | [产品和 MVP 规划](docs/cloud-resource-app-marketplace-mvp.md) | 三阶段交付计划 |
 | [开发执行计划](docs/development-execution-plan.md) | Week 1–12 节奏 |
+| [短信阶段 5 验收报告](docs/sms-phase5-acceptance-report.md) | 灰度发布门禁、测试服运行证据、剩余授权与最终验收状态 |
+| [短信阶段 5 Canary 执行设计](docs/sms-phase5-canary-execution-design.md) | `receipt_only` 五场景计划、双号码隐藏输入候选及真实发送前置门禁 |
 | [Auth 接口测试文档](docs/api-test-auth.md) | Auth 模块手动测试用例（Week 1） |
 | [IAM 接口测试文档](docs/api-test-iam.md) | IAM 模块手动测试用例（Week 1） |
 | [Identity 接口测试文档](docs/api-test-identity.md) | Identity 模块手动测试用例（Week 1） |
@@ -196,7 +198,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 
 ## 开发进度
 
-> 最后更新：2026-06-30
+> 最后更新：2026-08-05
 > 当前阶段：**Week 1 已验收（2026-06-05），Week 2 已验收（2026-06-06），Week 3 已验收（2026-06-07），Week 4 已验收（2026-06-07），第一阶段（Week 1-4）已于 2026-06-07 正式验收通过，并于 2026-06-08 完成最终收尾确认，正式画上句号 ✅（端到端验收 37/37 全部通过，详见 `tests/audit-stage1-final.md`；收尾确认 6/6 全部通过，详见 `tests/audit-stage1-closing-confirm.md`）**
 >
 > **前端进度更新（2026-06-19）**：管理后台（前端 A）与用户控制台（前端 B）的全部业务页面代码已完成并合并到 main（提交 `94b8466 前端甲对接后端丙管理页面`、`f6d85b6 前端乙对接后端丙用户页面` 等）。两端覆盖商品/订单/钱包/资产/会员/内容/应用/消费等模块的页面与 API 封装；后端丙对接任务 FA-06/07/09/10、FB-07/08/09 均已落地（详见各端进度表）。
@@ -260,7 +262,8 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | 阿里云短信验证码阶段 1（数据基础、Sender 适配、五场景关闭态与前端容错） | `modules/sms/`、`modules/auth/`、`web/user-console/`、`server/migrations/000058*` | ✅ PR #314 已合并，阶段 1 正式闭环（`main` 提交 `3aa8f3e`） |
 | 阿里云短信验证码阶段 2（模板同步、场景绑定、9 个管理 API 与安全测试发送） | `modules/sms/`、`modules/auth/`、`modules/iam/`、`server/migrations/000059*` | ✅ PR #315 已于 2026-08-04 Squash 合并至 `main`（`9e50ee1`）；五独立模板同步/绑定、6 条真实收件、九 API、QA、产品及正式评审均通过，P0/P1/P2/P3 均为 0，阶段 2 正式闭环 |
 | 阿里云短信验证码阶段 3（管理后台模板页面） | `web/admin-console/src/views/sms/`、`src/api/sms.ts`、`src/types/sms.ts` | ✅ PR #317 已采用 Squash and merge 合并至 `main`（`e7f29d5`），阶段 3 正式闭环 |
-| 阿里云短信验证码阶段 4（五场景全链路验收） | `modules/auth/`、`modules/sms/`、`web/admin-console/`、`web/user-console/`、`docs/sms-phase4-*` | 🟡 PR #320 已创建；功能提交 `ac33744` 的 GitHub Actions run `30891459024` 5/5 通过，覆盖隔离 MySQL 8、Redis 7、HTTP E2E 与 Linux race；P0/P1=0，P2/P3 已书面处置，等待最新文档提交 CI 及用户合并批准；未部署、未连接阿里云、未发送真实短信 |
+| 阿里云短信验证码阶段 4（五场景全链路验收） | `modules/auth/`、`modules/sms/`、`web/admin-console/`、`web/user-console/`、`docs/sms-phase4-*` | ✅ PR #320 已采用 Merge commit 合并至 `main`（`c9b4783`），阶段 4 正式闭环；阶段 4 自身未部署、未连接阿里云、未发送真实短信 |
+| 阿里云短信验证码阶段 5（灰度部署、代理核验与观察） | `modules/sms/`、内部 metrics、`infra/nginx/`、`infra/prometheus/` | ✅ **测试服交付完成并已长期放行验证码登录**：关闭态部署、实际回滚、journald 留存、Alertmanager 邮件演练、双目标账号/IAM 与白名单、五场景真实收件及五档观察全部通过；2026-08-07 已受控发布 `login` 场景白名单版本，当前保持 `SMS_ENABLED=true`、`SMS_TEST_MODE=true`、仅允许现有双号码白名单的登录验证码，短信告警通过已验证邮件路由通知。生产发布、独立 QA、产品最终确认和合并仍待独立门禁 |
 
 ### 后端 B（product / order / billing / finance_consumer）
 

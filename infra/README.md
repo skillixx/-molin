@@ -21,10 +21,49 @@ docker compose -f infra/docker-compose.yml up -d
 
 - 操作路径：GitHub 仓库 → Actions → 选择「部署测试环境（前端）」工作流 → Run workflow（分支选 main）。
 - 对应工作流文件：`.github/workflows/deploy-test.yml`（`workflow_dispatch`）。
-- **范围：仅前端**。在 runner 上构建 `molin-admin` / `molin-user` 镜像 → 传到测试服务器 → 重建容器（保留 `--add-host api:host-gateway`，nginx 把 `/api` 代理到宿主机上的 `molin-api`）。
+- **范围：仅前端**。在 runner 上构建 `molin-admin` / `molin-user` 镜像 → 传到测试服务器 → 在固定 `molin-sms-proxy` 专网和固定 `.2/.3` 地址重建容器；nginx 经专网网关 `.1` 把 `/api` 代理到宿主机 `molin-api`。部署和自动回滚都会复验容器、固定 IP、首页、`/api/health`，并在同一 API PID 前后两次确认 `SMS_ENABLED=false`。工作流不 POST 发码入口，避免写入 Redis 限流桶；`503/50300` 由 CI 契约和独立验收窗口验证。
 - **需配置 Secrets**（Settings → Secrets and variables → Actions）：`TEST_SERVER_HOST`、`TEST_SERVER_USER`、`TEST_SERVER_PASSWORD`（本服务器为密码认证，SSH 端口 10003）。
 - **后端不在本工作流内**：测试服 `molin-api` 是宿主机二进制（非容器），构建/重启见 `infra/CLAUDE.md` 的「测试服务器」一节，需单独执行。
 - DirectMail 完整配置、端口选择、Migration、模板初始化、生产 Compose 和回滚流程见 `docs/directmail-configuration-deployment-guide.md`。
+
+## 短信阶段 5 灰度边界
+
+阶段 5 的部署、真实短信和生产开关均需单独授权。执行前先运行不访问外部环境的准备度和回滚 Dry Run：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-readiness.ps1 -RunGoTests
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-rollback-dry-run.ps1 -Environment test -CurrentSmsEnabled false
+```
+
+获准进行测试服只读审计时，可执行下列脚本。它固定测试服主机、账号、端口和 ED25519 指纹，只输出安全状态和聚合计数，不修改业务配置；SSH 登录可能增加访问审计日志：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-readonly.ps1
+```
+
+测试服日志策略变更包装器默认只展示计划且不连接远端；只有四项参数另行获批后，才能按
+`docs/sms-phase5-log-retention-runbook.md` 同时使用 `-Apply` 与固定授权短语。不得把脚本存在视为部署授权。
+
+测试或生产环境文件可通过 `-EnvironmentFile` 做不回显值的检查，但目标文件必须已被 Git 忽略。测试服与生产均先保持
+`SMS_ENABLED=false`、`SMS_TEST_MODE=true`。只有白名单 Canary、监控、QA 和产品批准完成后，才能分别授权变更生产开关。
+
+公开验证码流量经过 Nginx/容器时，必须为代理建立专用固定网络并把实际连接 API 的地址或 CIDR 写入
+`TRUSTED_PROXY_IPS`。代理同时必须覆盖单值 `X-Real-IP` 并删除 XFF/Forwarded。不得把默认全部 Docker 网段、
+VPC 全网段或 `0.0.0.0/0` 作为快捷配置。详细计划和回滚见 `docs/sms-phase5-deployment-plan.md`、
+`docs/sms-phase5-reverse-proxy-report.md` 和 `docs/sms-phase5-rollback-runbook.md`。
+
+Alertmanager 邮件候选已在仓库外生成，并于 2026-08-05 在测试服完成关闭态部署：Prometheus 已发现 1 个
+Alertmanager，根路由仍只指向 `discard`，活动告警、通知尝试、邮件和短信发送均为 0。真实接收地址与 SMTP Secret
+继续禁止进入仓库。后续必须按 `docs/sms-phase5-alertmanager-change-runbook.md` 另行批准单次合成告警演练；任何一步
+都不得调用真实短信接口，也不得把关闭态健康检查写成邮件投递成功。
+
+测试服回滚候选只允许使用 `scripts/prepare-sms-phase5-test-server-rollback-candidate.ps1` 生成。先执行 `-SelfTest`；
+真实模式会写入 600 权限候选文件，必须另行批准，且生成后仍不得替换当前环境或重启 API。
+
+测试服 journald 留存状态使用 `scripts/verify-sms-phase5-test-server-log-retention.ps1` 只读审计。该脚本只报告服务、
+持久化和策略完整性，不输出日志正文或配置值，也不会把“配置存在”推定为“已经批准并在运行时生效”。当前四项显式策略
+均缺失，配置变更、journald reload/restart、轮转或 vacuum 均需独立授权；详见
+`docs/sms-phase5-log-retention-runbook.md`。
 
 ## 邮件 Phase 4 测试环境监控
 

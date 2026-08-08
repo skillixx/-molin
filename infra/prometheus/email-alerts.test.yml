@@ -1,0 +1,103 @@
+rule_files:
+  - /rules/email-alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: 短信失败率超过百分之二十且调用达到十次后触发
+    interval: 1m
+    input_series:
+      - series: 'sms_provider_calls_total{scene="register",result="accepted"}'
+        values: '0 0 0 0 0 7 7 7'
+      - series: 'sms_provider_calls_total{scene="register",result="rejected"}'
+        values: '0 0 0 0 0 3 3 3'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: MolinSMSProviderFailureRateHigh
+        exp_alerts:
+          - exp_labels:
+              module: sms
+              scene: register
+              severity: critical
+            exp_annotations:
+              summary: 短信供应商提交失败率超过灰度门禁
+              description: 场景 register 最近五分钟至少提交十次，非受理比例持续超过 20%，应立即关闭 SMS_ENABLED 并保留脱敏证据。
+
+  - name: 短信失败率等于百分之二十时不触发
+    interval: 1m
+    input_series:
+      - series: 'sms_provider_calls_total{scene="login",result="accepted"}'
+        values: '0 0 0 0 0 8 8 8'
+      - series: 'sms_provider_calls_total{scene="login",result="rejected"}'
+        values: '0 0 0 0 0 2 2 2'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: MolinSMSProviderFailureRateHigh
+        exp_alerts: []
+
+  - name: 短信签名异常立即触发配置告警
+    interval: 1m
+    input_series:
+      - series: 'sms_provider_calls_total{scene="admin_verify",result="signature"}'
+        values: '0 0 1 1'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: MolinSMSProviderConfigurationFailure
+        exp_alerts:
+          - exp_labels:
+              module: sms
+              result: signature
+              scene: admin_verify
+              severity: critical
+            exp_annotations:
+              summary: 短信供应商配置或账户异常
+              description: 场景 admin_verify 出现 signature 安全分类，禁止自动重试并检查签名、模板绑定或账户状态。
+
+  - name: 短信网络异常持续一分钟后触发
+    interval: 1m
+    input_series:
+      - series: 'sms_provider_calls_total{scene="bind_phone",result="network"}'
+        values: '0 0 1 1 1'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: MolinSMSProviderTimeoutOrNetworkFailure
+        exp_alerts:
+          - exp_labels:
+              module: sms
+              result: network
+              scene: bind_phone
+              severity: warning
+            exp_annotations:
+              summary: 短信供应商网络调用异常
+              description: 场景 bind_phone 最近五分钟出现 network，accepted 之外的结果不得自动重发。
+
+  - name: 短信平均延迟超过两秒且调用达到十次后触发
+    interval: 1m
+    input_series:
+      - series: 'sms_provider_request_duration_seconds_sum{scene="reset_password"}'
+        values: '0 0 0 0 0 30 30 30 30'
+      - series: 'sms_provider_request_duration_seconds_count{scene="reset_password"}'
+        values: '0 0 0 0 0 10 10 10 10'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: MolinSMSProviderAverageLatencyHigh
+        exp_alerts:
+          - exp_labels:
+              module: sms
+              scene: reset_password
+              severity: warning
+            exp_annotations:
+              summary: 短信供应商平均调用延迟升高
+              description: 场景 reset_password 最近五分钟至少十次调用且平均耗时持续超过两秒，请检查阿里云链路与应用资源。
+
+  - name: 短信平均延迟高但调用不足十次时不触发
+    interval: 1m
+    input_series:
+      - series: 'sms_provider_request_duration_seconds_sum{scene="login"}'
+        values: '0 0 0 0 0 27 27 27 27'
+      - series: 'sms_provider_request_duration_seconds_count{scene="login"}'
+        values: '0 0 0 0 0 9 9 9 9'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: MolinSMSProviderAverageLatencyHigh
+        exp_alerts: []

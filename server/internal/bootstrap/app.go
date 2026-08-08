@@ -729,7 +729,7 @@ func NewApp() (*App, error) {
 	})
 
 	// 注册各模块路由（authService 实现 BanChecker 接口，用于封禁黑名单检查）
-	authmod.RegisterRoutes(mux, authService, verifySvc, emailSvc, cfg, iamService, scopeService, redisClient, publicSourceIP, apiKeyService)
+	authmod.RegisterRoutes(mux, authService, verifySvc, emailSvc, cfg, iamService, scopeService, redisClient, publicSourceIP, apiKeyService, smsDispatcher)
 	authmod.RegisterEmailBootstrapRoute(mux, emailBootstrapSvc, cfg, authService, iamService, iamService)
 	smsmod.RegisterAdminRoutes(mux, smsAdminSvc, cfg, iamService, authService, auditSvc)
 	iammod.RegisterRoutes(mux, iamService, groupService, cfg.JWTSecret, authService, authService)

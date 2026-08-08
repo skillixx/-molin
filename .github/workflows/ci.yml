@@ -41,6 +41,9 @@ jobs:
         working-directory: server
         run: go mod verify
 
+      - name: 校验 GitHub Actions 工作流
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/*.yml
+
       - name: 代码检查（go vet）
         working-directory: server
         run: go vet ./...
@@ -65,6 +68,196 @@ jobs:
       - name: 构建确认
         working-directory: server
         run: go build -o /dev/null ./cmd/api
+
+  phase5-release-safety:
+    name: 阶段 5 短信发布安全门禁
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 敏感信息门禁需要比较阶段分支与主分支的完整共同基线。
+          fetch-depth: 0
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            web/admin-console/package-lock.json
+            web/user-console/package-lock.json
+
+      - name: 构建管理端扫描产物
+        working-directory: web/admin-console
+        run: |
+          npm ci
+          npm run build
+
+      - name: 构建用户端扫描产物
+        working-directory: web/user-console
+        run: |
+          npm ci
+          npm run build
+
+      - name: 校验 Nginx 来源头安全边界
+        run: python infra/nginx/verify_forwarded_headers.py
+
+      - name: 校验短信发布准备度
+        shell: pwsh
+        run: ./scripts/verify-sms-phase5-readiness.ps1 -SelfTest -RunSensitiveScan
+
+      - name: 校验阶段 5 敏感信息门禁契约
+        run: python tests/sms/phase5_sensitive_data_gate_contract.py
+
+      - name: 校验代理专用网络规划
+        shell: pwsh
+        run: ./scripts/verify-sms-phase5-proxy-network-plan.ps1 -SelfTest
+
+      - name: 校验测试服回滚材料与告警通知只读预检资产
+        run: |
+          python tests/sms/phase5_recovery_notification_preflight_contract.py
+          bash -n scripts/verify-sms-phase5-test-server-recovery-readiness.sh
+
+      - name: 校验阶段 5 固定测试服 SSH 身份共享契约
+        run: python tests/sms/phase5_ssh_identity_contract.py
+
+      - name: 校验测试服关闭态只读审计资产
+        run: |
+          python tests/sms/phase5_test_server_readonly_contract.py
+          bash -n scripts/verify-sms-phase5-test-server-readonly.sh
+
+      - name: 离线校验测试服关闭态只读审计包装器
+        shell: pwsh
+        run: ./scripts/verify-sms-phase5-test-server-readonly.ps1 -SelfTest
+
+      - name: 校验测试服前端部署与自动回滚契约
+        run: python tests/sms/phase5_deploy_workflow_contract.py
+
+      - name: 离线校验测试服回滚与通知预检包装器
+        shell: pwsh
+        run: ./scripts/verify-sms-phase5-test-server-recovery-readiness.ps1 -SelfTest
+
+      - name: 校验测试服回滚候选生成资产
+        run: |
+          python tests/sms/phase5_rollback_candidate_contract.py
+          bash -n scripts/prepare-sms-phase5-test-server-rollback-candidate.sh
+
+      - name: 离线校验测试服回滚候选包装器
+        shell: pwsh
+        run: ./scripts/prepare-sms-phase5-test-server-rollback-candidate.ps1 -SelfTest
+
+      - name: 校验测试服回滚候选只读验证资产
+        run: |
+          python tests/sms/phase5_rollback_candidate_verifier_contract.py
+          bash -n scripts/verify-sms-phase5-test-server-rollback-candidate.sh
+          bash scripts/verify-sms-phase5-test-server-rollback-candidate.sh --self-test
+
+      - name: 离线校验测试服回滚候选只读包装器
+        shell: pwsh
+        run: ./scripts/verify-sms-phase5-test-server-rollback-candidate.ps1 -SelfTest
+
+      - name: 校验测试服旧二进制回滚与当前版本恢复演练资产
+        run: |
+          python tests/sms/phase5_rollback_runtime_drill_contract.py
+          bash -n scripts/run-sms-phase5-test-server-rollback-drill.sh
+
+      - name: 离线校验测试服回滚恢复演练包装器
+        shell: pwsh
+        run: ./scripts/prepare-sms-phase5-test-server-rollback-drill.ps1 -ChangeId 20990101T000000Z -SelfTest
+
+      - name: 校验测试服回滚候选暂存与执行后独立验收资产
+        run: |
+          python tests/sms/phase5_rollback_runtime_evidence_contract.py
+          bash -n scripts/stage-sms-phase5-test-server-rollback-drill.sh
+          bash -n scripts/verify-sms-phase5-test-server-rollback-drill.sh
+
+      - name: 校验回滚实际执行包装器安全契约
+        run: python tests/sms/phase5_rollback_runtime_execution_contract.py
+
+      - name: 离线校验测试服回滚候选暂存包装器
+        shell: pwsh
+        run: ./scripts/stage-sms-phase5-test-server-rollback-drill.ps1 -SelfTest
+
+      - name: 离线校验测试服回滚执行证据验证器
+        shell: pwsh
+        run: ./scripts/verify-sms-phase5-test-server-rollback-drill.ps1 -SelfTest
+
+      - name: 校验测试服日志留存只读审计资产
+        run: |
+          python tests/sms/phase5_log_retention_preflight_contract.py
+          bash -n scripts/verify-sms-phase5-test-server-log-retention.sh
+
+      - name: 离线校验测试服日志留存审计包装器
+        shell: pwsh
+        run: ./scripts/verify-sms-phase5-test-server-log-retention.ps1 -SelfTest
+
+      - name: 校验 Alertmanager 通知演练只读预检资产
+        run: |
+          python tests/sms/phase5_alertmanager_drill_readiness_contract.py
+          bash -n scripts/verify-sms-phase5-alertmanager-drill-readiness.sh
+
+      - name: 离线校验 Alertmanager 通知演练只读预检包装器
+        shell: pwsh
+        run: ./scripts/verify-sms-phase5-alertmanager-drill-readiness.ps1 -SelfTest
+
+      - name: 校验测试服 Canary 只读聚合预检
+        run: python tests/sms/phase5_canary_preflight_contract.py
+
+      - name: 校验 Canary 执行计划与五档观察证据门禁
+        run: |
+          python tests/sms/phase5_canary_execution_plan_contract.py
+          python tests/sms/phase5_canary_plan_candidate_contract.py
+          python tests/sms/phase5_canary_target_intake_candidate_contract.py
+          python tests/sms/phase5_canary_target_state_readonly_candidate_contract.py
+          python tests/sms/phase5_canary_whitelist_change_candidate_contract.py
+          python tests/sms/phase5_canary_send_candidate_contract.py
+          python tests/sms/phase5_canary_failure_readonly_diagnostic_contract.py
+          python tests/sms/phase5_canary_postcheck_readonly_candidate_contract.py
+          python tests/sms/phase5_enabled_startup_readonly_diagnostic_contract.py
+          python tests/sms/phase5_legacy_config_cleanup_candidate_contract.py
+          python tests/sms/phase5_observation_evidence_contract.py
+          python tests/sms/phase5_observation_progress_contract.py
+          python tests/sms/phase5_observation_assembler_contract.py
+          python tests/sms/phase5_final_state_assembler_contract.py
+          python tests/sms/phase5_observation_snapshot_candidate_contract.py
+          python tests/sms/phase5_production_target_intake_candidate_contract.py
+          python tests/sms/phase5_production_readonly_baseline_candidate_contract.py
+          python tests/sms/phase5_production_closed_deployment_plan_contract.py
+
+      - name: 离线校验测试服 Canary 聚合预检包装器
+        shell: pwsh
+        run: ./scripts/verify-sms-phase5-test-server-canary-preflight.ps1 -SelfTest
+
+      - name: 校验测试服日志留存变更资产
+        run: |
+          python tests/sms/phase5_log_retention_change_contract.py
+          bash -n scripts/apply-sms-phase5-test-server-log-retention.sh
+          bash scripts/apply-sms-phase5-test-server-log-retention.sh --self-test
+
+      - name: 离线校验测试服日志留存变更包装器
+        shell: pwsh
+        run: ./scripts/apply-sms-phase5-test-server-log-retention.ps1 -SelfTest
+
+      # 测试服只读审计依赖专用 SSH 凭据，不在不可信 PR 上自动连接外部环境；部署窗口由运维手工执行对应脚本。
+
+      - name: 使用 promtool 校验告警规则
+        run: |
+          docker run --rm --entrypoint=/bin/promtool \
+            --workdir=/rules \
+            -v "${{ github.workspace }}/infra/prometheus:/rules:ro" \
+            prom/prometheus:v3.12.0-distroless \
+            check rules email-alerts.yml
+          docker run --rm --entrypoint=/bin/promtool \
+            --workdir=/rules \
+            -v "${{ github.workspace }}/infra/prometheus:/rules:ro" \
+            prom/prometheus:v3.12.0-distroless \
+            test rules email-alerts.test.yml
+
+      - name: 演练测试服与生产关闭回滚
+        shell: pwsh
+        run: |
+          ./scripts/verify-sms-phase5-rollback-dry-run.ps1 -Environment test -CurrentSmsEnabled false
+          ./scripts/verify-sms-phase5-rollback-dry-run.ps1 -Environment production -CurrentSmsEnabled true
 
   gateway-g3:
     name: AI 网关 G3 财务与消息验收

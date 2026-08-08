@@ -22,6 +22,22 @@ func emptyMetricsService() *service.EmailService {
 	return service.NewEmailService(nil, nil, nil, nil, nil, "", "", "test", "mock")
 }
 
+type fakeSMSMetricsReader struct{}
+
+func (fakeSMSMetricsReader) SMSProviderMetricValue(scene, result string) uint64 {
+	if scene == "register" && result == "accepted" {
+		return 2
+	}
+	return 0
+}
+
+func (fakeSMSMetricsReader) SMSProviderDuration(scene string) (uint64, uint64) {
+	if scene == "register" {
+		return 2, 1500000000
+	}
+	return 0, 0
+}
+
 func metricsRequest(method, remote, token string) *http.Request {
 	req := httptest.NewRequest(method, "/api/internal/metrics", nil)
 	req.RemoteAddr = remote
@@ -50,6 +66,33 @@ func TestMetricsSuccessOutputsOnlyClosedTwentyOneSeries(t *testing.T) {
 		}
 		if strings.HasPrefix(line, "email_adapter_calls_total{") && !strings.HasSuffix(line, " 0") {
 			t.Fatalf("启动零值序列必须为 0: %s", line)
+		}
+	}
+}
+
+func TestMetricsExportsClosedSMSSeriesWithoutSensitiveLabels(t *testing.T) {
+	cfg := validMetricsConfig()
+	h := NewMetricsHandler(emptyMetricsService(), cfg, fakeSMSMetricsReader{})
+	resp := httptest.NewRecorder()
+	h.ServeHTTP(resp, metricsRequest(http.MethodGet, "192.0.2.10:4321", cfg.InternalAPIToken))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("短信指标导出失败: %s", resp.Body.String())
+	}
+	body := resp.Body.String()
+	if strings.Count(body, "\nsms_provider_calls_total{") != 40 {
+		t.Fatalf("五场景八结果必须固定导出 40 条序列")
+	}
+	if strings.Count(body, "\nsms_provider_request_duration_seconds_sum{") != 5 || strings.Count(body, "\nsms_provider_request_duration_seconds_count{") != 5 {
+		t.Fatalf("五场景耗时 sum/count 序列不完整")
+	}
+	if !strings.Contains(body, `sms_provider_calls_total{scene="register",result="accepted"} 2`) ||
+		!strings.Contains(body, `sms_provider_request_duration_seconds_sum{scene="register"} 1.500000000`) ||
+		!strings.Contains(body, `sms_provider_request_duration_seconds_count{scene="register"} 2`) {
+		t.Fatalf("短信指标值错误: %s", body)
+	}
+	for _, forbidden := range []string{"phone", "business_request", "provider_code", "template_code", "access_key", "otp"} {
+		if strings.Contains(strings.ToLower(body), forbidden+"=") {
+			t.Fatalf("短信指标出现禁止的高基数或敏感标签: %s", forbidden)
 		}
 	}
 }

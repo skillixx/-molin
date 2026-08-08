@@ -15,6 +15,15 @@ func TestLoadSMSDefaultsToDisabled(t *testing.T) {
 	}
 }
 
+func TestLoadParsesTestSceneAllowlist(t *testing.T) {
+	t.Setenv("SMS_TEST_SCENE_ALLOWLIST", "login, reset_password")
+
+	cfg := Load()
+	if len(cfg.SMSTestSceneAllowlist) != 2 || cfg.SMSTestSceneAllowlist[0] != "login" || cfg.SMSTestSceneAllowlist[1] != "reset_password" {
+		t.Fatalf("测试场景白名单解析错误: %#v", cfg.SMSTestSceneAllowlist)
+	}
+}
+
 func TestValidateSMSFailsClosedWhenRequiredConfigMissing(t *testing.T) {
 	cfg := Config{SMSEnabled: true, SMSProvider: "aliyun"}
 
@@ -77,5 +86,58 @@ func TestValidateSMSRequiresWhitelistInTestMode(t *testing.T) {
 
 	if err := cfg.ValidateSMS(); err == nil {
 		t.Fatal("测试模式白名单为空时必须拒绝启动")
+	}
+}
+
+func TestValidateSMSRequiresSceneAllowlistInTestMode(t *testing.T) {
+	cfg := completeTestSMSConfig()
+	cfg.SMSTestSceneAllowlist = nil
+
+	err := cfg.ValidateSMS()
+	if err == nil || !strings.Contains(err.Error(), "SMS_TEST_SCENE_ALLOWLIST") {
+		t.Fatalf("测试模式场景白名单为空时必须拒绝启动，实际 %v", err)
+	}
+}
+
+func TestValidateSMSRejectsUnknownTestScene(t *testing.T) {
+	cfg := completeTestSMSConfig()
+	cfg.SMSTestSceneAllowlist = []string{"login", "marketing"}
+
+	err := cfg.ValidateSMS()
+	if err == nil || !strings.Contains(err.Error(), "SMS_TEST_SCENE_ALLOWLIST") {
+		t.Fatalf("测试模式场景白名单包含未知场景时必须拒绝启动，实际 %v", err)
+	}
+}
+
+func TestValidateSMSRejectsDuplicateTestScene(t *testing.T) {
+	cfg := completeTestSMSConfig()
+	cfg.SMSTestSceneAllowlist = []string{"login", "login"}
+
+	err := cfg.ValidateSMS()
+	if err == nil || !strings.Contains(err.Error(), "重复场景") {
+		t.Fatalf("测试模式场景白名单包含重复场景时必须拒绝启动，实际 %v", err)
+	}
+}
+
+func TestValidateSMSAcceptsLoginOnlyTestScene(t *testing.T) {
+	cfg := completeTestSMSConfig()
+	cfg.SMSTestSceneAllowlist = []string{"login"}
+
+	if err := cfg.ValidateSMS(); err != nil {
+		t.Fatalf("仅放行登录场景的测试配置应通过校验: %v", err)
+	}
+}
+
+func completeTestSMSConfig() Config {
+	return Config{
+		SMSEnabled:               true,
+		SMSProvider:              "aliyun",
+		SMSAliyunAccessKeyID:     "test-access-key-id",
+		SMSAliyunAccessKeySecret: "secret-value",
+		SMSAliyunSignName:        "test-sign",
+		SMSAliyunEndpoint:        "dysmsapi.aliyuncs.com",
+		SMSPhoneHMACSecret:       strings.Repeat("x", 32),
+		SMSTestMode:              true,
+		SMSTestPhoneWhitelist:    []string{"phone-test-value"},
 	}
 }

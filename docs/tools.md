@@ -445,6 +445,277 @@ proxy_read_timeout 300s;   # 长连接超时时间
 
 ---
 
+### 短信阶段 5 关闭态只读审计
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维 / 测试 / 产品经理 |
+| **涉及模块** | 短信、认证、Nginx、Docker 网络、Prometheus |
+| **涉及功能** | 测试服关闭态发布复核、零发送观察、部署漂移检测 |
+| **代码位置** | `scripts/verify-sms-phase5-test-server-readonly.ps1`、配套 `.sh` |
+
+**作用：** 通过 SSH 执行只读聚合检查，精确核对阶段 5 二进制、固定代理网络与 IP、模板/绑定、短信指标、
+Prometheus 告警与抓取状态，并比较观察窗口前后的发送日志和 Provider 调用总数。脚本不输出 Token、数据库密码、
+手机号或验证码；内部 Token 和数据库密码只通过 stdin 传递，不进入宿主机命令参数。窗口结束会再次确认 API PID、
+短信开关、代理健康和 Prometheus 目标，任一安全条件不符合时返回失败。
+
+```powershell
+# 即时关闭态核验；建议锁定部署清单记录的二进制哈希
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-readonly.ps1 `
+  -ExpectedBinarySHA256 <已核验的64位SHA256>
+
+# 5 分钟只读观察；不会修改配置或发送短信
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-readonly.ps1 `
+  -ExpectedBinarySHA256 <已核验的64位SHA256> -ObservationSeconds 300
+```
+
+真实短信、开启 `SMS_ENABLED`、生产目标连接以及 Git 推送不属于该工具权限范围，仍需独立人工授权。
+
+---
+
+### 短信阶段 5 敏感信息与关闭态门禁
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 开发 / 测试 / 产品经理 |
+| **涉及模块** | 阶段分支、前端构建产物、CI、短信发布准备度 |
+| **涉及功能** | 敏感值离线扫描、受保护环境文件检查、短信关闭态静态检查 |
+| **代码位置** | `scripts/verify-sms-phase5-sensitive-data.py`、`tests/sms/phase5_sensitive_data_gate_contract.py` |
+
+**作用：** 只读比较阶段分支与指定基线，按每个提交相对第一父提交的实际路径扫描新 blob（包括合并冲突解决）和提交说明，并分别扫描 Git index、未暂存/未忽略
+工作树文件及 admin/user `dist` 产物；因此“先提交秘密再删除”“复用基线 blob”“暂存秘密后覆盖工作树”均不能绕过门禁。
+同时检查全部 Git 跟踪及历史中是否存在受保护环境文件。发现真实凭据、JWT、裸阿里云 AccessKey ID、不透明 Bearer Token、
+完整手机号、验证码、供应商原始正文、文本文件 NUL、危险 `SMS_ENABLED` 或关闭 `SMS_TEST_MODE` 时返回失败；布尔值判断与 Go
+运行时 `1/t/true/y/yes/on` 真值表一致，赋值语法覆盖 env、JSON、flow YAML、PowerShell 和命令前缀。裸凭据形态命中即拒绝，
+不再按 `test/example` 等子串放行。输出只包含规则分类、行号、Git 对象摘要和路径 SHA-256；路径安全时附相对路径，手机号、OTP、
+凭据形态及 Unicode 控制/行/段分隔符路径仅显示脱敏标记，不打印命中正文。只读包装器的禁止模式字面量会经过上下文识别，
+不会被误报为真实开启短信。
+
+```powershell
+# 独立扫描阶段分支；不连接服务器、不读取被 Git 忽略的真实环境文件
+python scripts/verify-sms-phase5-sensitive-data.py --repo-root . --base-ref origin/main --require-dist
+
+# 与阶段 5 准备度一起运行；CI 使用完整 Git 历史并先重新构建两套 dist
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-readiness.ps1 `
+  -SelfTest -RunSensitiveScan -SensitiveScanBaseRef origin/main
+```
+
+该门禁通过只证明指定 Git 差异和本地构建产物未命中规则，不等同于测试服/生产日志、密钥系统或短信供应商侧完成审计。
+
+---
+
+### 短信阶段 5 回滚与日志留存门禁
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维 / 测试 / 产品经理 |
+| **涉及模块** | 测试服回滚、固定代理、journald、告警通知链 |
+| **涉及功能** | 回滚材料只读预检、安全回滚候选、旧二进制运行/当前版本恢复演练候选、日志留存策略只读审计与获批后受控变更 |
+| **代码位置** | `scripts/sms-phase5-test-server-ssh.ps1`、`scripts/verify-sms-phase5-test-server-recovery-readiness.ps1`、`scripts/prepare-sms-phase5-test-server-rollback-candidate.ps1`、`scripts/verify-sms-phase5-test-server-rollback-candidate.ps1`、`scripts/prepare-sms-phase5-test-server-rollback-drill.ps1`、`scripts/run-sms-phase5-test-server-rollback-drill.sh`、`scripts/stage-sms-phase5-test-server-rollback-drill.ps1`、`scripts/stage-sms-phase5-test-server-rollback-drill.sh`、`scripts/execute-sms-phase5-test-server-rollback-drill.ps1`、`scripts/verify-sms-phase5-test-server-rollback-drill.ps1`、`scripts/verify-sms-phase5-test-server-rollback-drill.sh`、`scripts/verify-sms-phase5-test-server-log-retention.ps1`、`scripts/apply-sms-phase5-test-server-log-retention.ps1` 及相关 Bash payload |
+
+**作用：** 将“材料存在”“候选可生成”“配置完整”“运行时已验证”拆成独立证据，禁止用旧环境整份覆盖当前固定代理配置，
+也禁止把 journald 配置存在误报为策略已批准。六个阶段 5 远端包装器统一调用共享 SSH 目标与 ED25519 指纹校验，避免固定身份规则分叉；各入口都支持或配有离线安全契约，真实候选生成会写远端文件，必须单独授权。回滚候选验证器按 UTC ChangeId 只读核对文件类型、700/600 权限、SHA-256、短信关闭态、固定代理、必要发布键、废弃键和重复键，不输出任何环境值。日志留存变更入口还支持
+`-ExportOperatorPayload`：在固定授权短语通过后，把四项批准值和测试服 machine-id 摘要冻结为本地运维脚本；该模式与
+`-Apply` 和 `-SelfTest` 互斥，不读取 `known_hosts`、不连接远端，只接受完全限定的本机绝对路径，并拒绝 UNC、设备、映射网络驱动器和含重解析祖先的路径，
+也拒绝覆盖已有文件，并输出 SHA-256 供安全传输后复核。导出成功不代表部署完成。
+
+回滚恢复演练生成器同样只在本地冻结交接脚本：ChangeId、旧/新二进制摘要、现有关闭态候选、Alertmanager `discard`
+配置摘要、10 秒旧版本稳定窗口和 10 秒恢复后稳定窗口全部写入同一候选。候选的 `--preflight` 只读检查固定测试服、
+关闭态、活动告警、通知计数、数据库发送摘要和磁盘余量；`--execute` 还要求输入与 ChangeId 绑定的精确批准短语。
+执行器只向精确 API PID 发送 TERM，超时后才对再次核验的同一 PID 使用 KILL；任何失败都优先恢复当前二进制和原进程环境。
+它不替换 `infra/.env.test`，不 POST 告警或业务接口，不发送邮件或短信。交接候选通过只读预检仍不构成服务重启授权。
+暂存包装器只在独立批准后排他创建远端暂存目录、上传固定摘要 runner，并运行语法、自测和关闭态只读预检；失败清理不用
+递归删除。执行后独立验证器只读复核证据文件集合、当前二进制/环境摘要、双代理、数据库、Provider、Alertmanager、
+Prometheus 和日志敏感值，不以 runner 自报成功替代运行态证据。
+实际执行包装器默认关闭，固定 ChangeId、摘要、主机身份和唯一执行次数；成功后强制进入独立证据验收，失败后仅执行一次
+关闭态恢复只读审计并以失败结束，任何结果都禁止自动重试。
+
+```powershell
+# 本地离线检查，不连接测试服
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-recovery-readiness.ps1 -SelfTest
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-sms-phase5-test-server-rollback-candidate.ps1 -SelfTest
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-rollback-candidate.ps1 -SelfTest
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-sms-phase5-test-server-rollback-drill.ps1 `
+  -ChangeId 20990101T000000Z -SelfTest
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stage-sms-phase5-test-server-rollback-drill.ps1 -SelfTest
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/execute-sms-phase5-test-server-rollback-drill.ps1 -SelfTest
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-rollback-drill.ps1 -SelfTest
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-log-retention.ps1 -SelfTest
+
+# 已获只读测试服审计授权时使用；可能增加 SSH 访问审计日志，但不修改业务配置或发送短信
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-recovery-readiness.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-rollback-candidate.ps1 -ChangeId 20260805T015043Z
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-log-retention.ps1
+
+# 默认只展示候选值，不连接测试服；真实变更还需 -Apply 和固定授权短语
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/apply-sms-phase5-test-server-log-retention.ps1
+
+# sudo 自动化入口不可用时，向受控绝对路径离线导出；占位路径须由运维替换，导出不会连接测试服
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/apply-sms-phase5-test-server-log-retention.ps1 `
+  -ExportOperatorPayload C:\受控目录\apply-journald-retention.sh `
+  -Authorization APPROVE_TEST_JOURNALD_RETENTION
+```
+
+交接包必须通过批准的安全渠道传输，并由有权限的运维在同一获批测试服本地终端核对 SHA-256、完成组织规定的 sudo 身份验证后执行；
+不得在命令、聊天、文件或仓库中传递 sudo 密码。实际回滚、候选生成、journald 配置变更或重载、Alertmanager 部署/演练、
+短信开关及真实发送均不属于只读工具权限。
+
+---
+
+### 短信阶段 5 Alertmanager 通知演练只读预检
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维 / 测试 / 产品经理 |
+| **涉及模块** | Alertmanager、Prometheus、短信关闭态 |
+| **涉及功能** | 在申请一次 firing/resolved 邮件演练授权前验证关闭态和零通知基线 |
+| **代码位置** | `scripts/verify-sms-phase5-alertmanager-drill-readiness.ps1`、`.sh` |
+
+**作用：** 固定测试服、Alertmanager 部署 ChangeId、容器、端口和镜像摘要，只读核对根路由为 `discard`、邮件 receiver
+已加载、配置不含明文 Secret、Secret 文件为 `pc:pc:400`、容器最小权限、Prometheus 活跃目标为 1、活动告警为 0、
+通知累计为 0，以及 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`。脚本没有告警 POST、配置 reload、容器变更或通知发送能力；
+通过时仍固定输出 `notification_drill_execution_authorization_required=true` 和 `receiver_delivery_unverified=true`。
+
+```powershell
+# 本地冻结资产检查，不连接测试服
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-alertmanager-drill-readiness.ps1 -SelfTest
+
+# 固定测试服只读预检
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-alertmanager-drill-readiness.ps1
+```
+
+---
+
+### 短信阶段 5 Alertmanager 演练载荷转换校验
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维 / 测试 |
+| **涉及模块** | Alertmanager 合成告警演练 |
+| **涉及功能** | 在提交告警前离线验证唯一 firing/resolved、精确标签和有效时间顺序 |
+| **代码位置** | `scripts/verify-sms-phase5-alertmanager-drill-payload.ps1` |
+
+**作用：** 只读解析本地候选 JSON，要求 firing 与 resolved 各恰好一条、标签严格匹配测试环境和 ChangeId、两者
+`startsAt` 一致，并拒绝 `resolved.endsAt <= resolved.startsAt`。该检查专门防止把 Alertmanager 的 HTTP 200
+误判为有效 resolved 状态；不连接测试服，不包含告警 POST、配置重载、邮件或短信发送能力。
+
+```powershell
+# 内置正反例自测
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-alertmanager-drill-payload.ps1 -SelfTest
+
+# 校验本次受控候选载荷
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-alertmanager-drill-payload.ps1 `
+  -FiringPayloadPath C:\受控候选目录\firing-alert.json `
+  -ResolvedPayloadPath C:\受控候选目录\resolved-alert.json `
+  -ChangeId <UTC_CHANGE_ID>
+```
+
+---
+
+### 短信阶段 5 Canary 只读聚合预检
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维 / 测试 / 产品经理 |
+| **涉及模块** | 短信关闭态、固定代理、Prometheus、Alertmanager、journald、回滚材料 |
+| **涉及功能** | 在申请真实 Canary 授权前聚合判断全部技术前置条件 |
+| **代码位置** | `scripts/verify-sms-phase5-test-server-canary-preflight.ps1` |
+
+**作用：** 复用四个既有只读验证器，以失败关闭方式聚合关闭态、零发送增量、回滚候选、回滚材料、监控、通知演练
+和日志留存状态。依赖输出必须符合严格键值协议，异常文本、重复键或缺键都会阻断。该工具不包含 HTTP 发送、短信开关
+变更、配置写入或服务重启能力；`canary_preflight_ready=true` 也不等于获准真实发送。Alertmanager 运行态只能证明
+传输存在，真实演练完成后还必须提供精确人工确认短语、UTC ChangeId、仓库外证据 JSON 路径和独立证据 SHA-256。
+工具会校验清单摘要、24 小时有效期，逐份读取五层仓库外原始证据并复算独立摘要，再验证关闭态约束；不能用配置
+存在、任意占位摘要或不存在的证据文件冒充通知可达。
+
+```powershell
+# 本地行为自测，不连接测试服
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-canary-preflight.ps1 -SelfTest
+
+# 固定测试服只读聚合；当前任一门禁缺失时以退出码 2 失败关闭
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-test-server-canary-preflight.ps1
+```
+
+---
+
+### 短信阶段 5 Canary 执行计划门禁
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 产品经理 / 运维 / 测试 |
+| **涉及模块** | 五个短信业务场景、白名单目标角色、发送预算和业务状态变更边界 |
+| **涉及功能** | 在生成真实发送执行器前阻断单号码状态冲突、超预算、重试和敏感值持久化 |
+| **代码位置** | `scripts/verify-sms-phase5-canary-execution-plan.ps1` |
+
+**作用：** 仅离线验证脱敏计划文件。`register` 的未注册目标不能与 `login/reset_password/admin_verify` 的已注册目标
+复用同一号码别名；若选择完整 OTP 消费，还必须显式批准一次性账号、业务状态变更和恢复。本工具不连接测试服、不切换
+短信开关、不调用 HTTP 或供应商。详细边界见 `docs/sms-phase5-canary-execution-design.md`。
+
+```powershell
+# 本地正反例自测；不会创建计划、连接网络或发送短信
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-canary-execution-plan.ps1 -SelfTest
+
+# 对仓库外的脱敏 JSON 计划执行静态验证
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-sms-phase5-canary-execution-plan.ps1 `
+  -PlanFile C:\受控目录\canary-plan.json
+```
+
+---
+
+### 短信阶段 5 五档观察证据校验
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维 / 测试 / 产品经理 |
+| **涉及模块** | 短信累计指标、发送日志、Alertmanager、health/ready、阶段 5 观察报告 |
+| **涉及功能** | 校验 5 分钟、15 分钟、30 分钟、2 小时和 24 小时低敏证据 |
+| **代码位置** | `scripts/verify-sms-phase5-observation-evidence.py` |
+
+**作用：** 对仓库外 JSON 做纯本地契约检查，验证时间覆盖、发送日志守恒、计数单调、关闭态零新增、Provider 失败率和
+平均耗时停止线、活动告警、通知失败及最终开关状态。测试服关闭态恢复会重启 API，因此持久发送日志必须精确为基线加 5，
+当前进程 Provider 计数允许从 0 开始但五窗口不得增长；生产启用态仍要求 Provider 增量与发送日志一致。它不读取线上指标、不连接供应商，也不能把人工填写的 JSON 变成
+真实运行证据；必须与原始只读快照、运行状态和收件确认共同复核。
+
+```powershell
+python scripts/verify-sms-phase5-observation-evidence.py --self-test
+python scripts/verify-sms-phase5-observation-evidence.py --evidence C:\受控目录\phase5-observation.json
+```
+
+---
+
+### 短信阶段 5 五档观察快照与证据组装工具链
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维 / 测试 / 产品经理 |
+| **涉及模块** | 测试服关闭态、发送日志、Provider 指标、Prometheus、Alertmanager、人工收件证据 |
+| **涉及功能** | 生成冻结的五窗口只读 runner，并在 24h 后离线生成最终状态与完整观察证据 |
+| **代码位置** | `scripts/prepare-sms-phase5-observation-snapshot-readonly.ps1`、`scripts/verify-sms-phase5-observation-progress.py`、`scripts/assemble-sms-phase5-final-state.py`、`scripts/assemble-sms-phase5-observation-evidence.py` |
+
+**作用：** 快照生成器只在源 Canary 成功结果摘要匹配时生成工作区外 runner。runner 固定
+`5m/15m/30m/2h/24h` 五个最小经过时间窗口，每个窗口最多执行一次、只允许固定 SSH stdin 单连接和只读查询，
+不内置等待或自动重试。实际连接必须逐窗口取得包含 ChangeId 和完整 runner SHA-256 的人工授权。
+
+24h 快照完成后，最终状态组装器以源 Canary、修正版事后核验和 24h 快照三项完整摘要为输入，拒绝关闭态新增发送、
+计数回退、OTP 消费、告警或通知失败；它只离线写出七个低敏最终状态字段。完整观察组装器随后要求五个快照、人工逐场景
+收件确认、最终状态及全部摘要，并复用权威验证器生成最终 JSON。两个组装器均不联网、不发送短信，也不能替代原始证据。
+
+观察尚未满五档时，可使用进度验证器核验从 5m 开始的连续前缀。它只读取工作区外源结果和快照，不创建补齐文件、
+不伪造未来窗口；每个已有窗口仍必须提供完整 SHA-256。
+
+```powershell
+# 三个入口的离线自测；不会连接测试服或创建真实证据
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  scripts/prepare-sms-phase5-observation-snapshot-readonly.ps1 -SelfTest
+python scripts/assemble-sms-phase5-final-state.py --self-test
+python scripts/assemble-sms-phase5-observation-evidence.py --self-test
+python scripts/verify-sms-phase5-observation-progress.py --self-test
+```
+
+真实组装必须使用工作区外的新输出路径和全部输入文件的完整 SHA-256；命令参数不得包含手机号、Token、OTP 或供应商原始响应。
+
+---
+
 ### MySQL
 
 | 项目 | 说明 |
@@ -536,6 +807,102 @@ mc cp ./file.jpg local/molin-uploads/    # 上传文件
 
 ## 开发辅助工具
 
+### 阶段 5 生产目标元数据候选生成器
+
+| 项目 | 说明 |
+|---|---|
+| **用途** | 在任何生产连接前冻结目标身份、路径、服务形态以及回滚/观察操作者低敏别名 |
+| **使用者** | 运维工程师、测试工程师、产品经理 |
+| **涉及功能** | 生产只读基线、关闭态部署、白名单 Canary 和生产开启的前置身份边界 |
+| **代码位置** | `scripts/prepare-sms-phase5-production-target-intake.ps1` |
+
+默认入口和 `-SelfTest` 均不联网、不提示输入、不创建候选。实际导出只接受非密钥元数据，并把生产 SSH 地址/端口/用户、
+唯一 ED25519 指纹、项目目录、项目内 `.env.prod` 路径、服务形态、API 服务唯一标识、API/Prometheus/Alertmanager 本机端口和操作者别名写入全新的工作区外 JSON。候选固定
+`SMS_ENABLED=false`、`SMS_TEST_MODE=true`、零重试和零发送，并明确生产只读、部署、Canary、正式开启均未获授权。
+密码、私钥、Token、手机号和环境值不得作为参数或输出；生成候选也不会验证生产真实状态。
+
+```powershell
+# 仅运行离线正反例，不生成候选或连接生产
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  scripts/prepare-sms-phase5-production-target-intake.ps1 -SelfTest
+```
+
+### 阶段 5 生产关闭态只读基线候选生成器
+
+| 项目 | 说明 |
+|---|---|
+| **用途** | 从摘要冻结的生产目标元数据生成单次 SSH、低敏输出的关闭态只读基线 runner |
+| **使用者** | 运维工程师、测试工程师、产品经理 |
+| **涉及功能** | 生产环境/进程一致性、health/ready、schema、模板绑定、发送聚合、指标、Prometheus 与 Alertmanager |
+| **代码位置** | `scripts/prepare-sms-phase5-production-readonly-baseline.ps1` |
+
+默认入口与 `-SelfTest` 只验证本地契约，不读取 `known_hosts`、不连接生产、不写候选。实际导出必须绑定生产目标候选完整
+SHA-256，并只在全新的工作区外目录生成一个 runner。runner 默认关闭；后续单独批准 `-ExecuteReadOnly` 后，才重新核验
+唯一 ED25519 指纹并固定 SSH stdin 连接一次。远端负载只读取 `.env.prod` 与进程一致性、服务状态、本机健康接口、数据库
+schema/模板/绑定/发送聚合、内部指标和监控状态，输出固定布尔与聚合计数；不上传、不修改配置、不执行服务操作或业务 POST，
+不发送邮件或短信。执行时必须向全新本地绝对路径以 `CreateNew` 排他保存字段白名单 JSON 和 SHA-256，禁止覆盖；备份可恢复性仍需人工证据，不能由只读 runner 自动推定。
+
+```powershell
+# 仅运行离线正反例，不生成或执行生产 runner
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  scripts/prepare-sms-phase5-production-readonly-baseline.ps1 -SelfTest
+```
+
+### 阶段 5 生产关闭态部署计划生成器
+
+| 项目 | 说明 |
+|---|---|
+| **用途** | 绑定生产目标、关闭态只读结果和全部发布制品摘要，生成默认未授权的部署计划 |
+| **使用者** | 运维工程师、测试工程师、产品经理 |
+| **涉及功能** | 生产关闭态部署、migration 决策、回滚与后续 Canary 人工门禁 |
+| **代码位置** | `scripts/prepare-sms-phase5-production-closed-deployment-plan.ps1` |
+
+默认入口和 `-SelfTest` 均不读取生产证据、不联网、不创建计划。实际导出必须同时绑定生产目标候选、实际只读 runner 与
+结果的完整 SHA-256，并由同一权威只读基线生成器按目标候选与 ChangeId 重新生成 runner；完整文件摘要精确一致后，计划还会冻结生成器自身摘要，避免仅靠注释或死代码伪造结构标记。随后固定发布提交、API 制品、两套前端镜像、备份证据及回滚证据摘要。schema 已达到 59 时只能
+`verify-only`；仅当前 schema 精确为 58 时允许规划 `apply-up-to-59`，并只允许 `schema_ready=false` 单项阻断。低于 58
+必须先走独立 migration 方案，其他阻断结果也不能生成部署计划。
+
+输出计划保持 `SMS_ENABLED=false`、`SMS_TEST_MODE=true`、数据库模板源、五模板/五绑定、四条告警、零自动重试和失败自动
+回滚。计划生成不等于部署、migration、Canary 或正式开启授权，备份证据摘要也不等于恢复能力已经验证。
+
+```powershell
+# 仅运行离线正反例，不读取生产证据或生成真实计划
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  scripts/prepare-sms-phase5-production-closed-deployment-plan.ps1 -SelfTest
+```
+
+### 阶段 5 Canary 双号码本地预检候选生成器
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维 / 测试 / 产品负责人 |
+| **涉及功能** | 为真实收件 Canary 生成默认关闭的双号码隐藏输入 runner |
+| **代码位置** | `scripts/prepare-sms-phase5-canary-target-preflight.ps1` |
+
+生成器绑定 ChangeId、脱敏计划文件和计划 SHA-256，只允许写入全新的本地目录。生成时执行语法、默认关闭和合成值自测；不采集真实手机号、不连接测试服、不修改白名单、不上传、不打开短信开关、不发送短信。生成的 runner 仅在后续独立批准 `-Interactive` 后，才通过隐藏输入在内存中校验两个号码的格式与互异性。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  scripts/prepare-sms-phase5-canary-target-preflight.ps1 -SelfTest
+```
+
+### 阶段 5 Canary 固定测试服双号码状态只读候选生成器
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维 / 测试 / 产品负责人 |
+| **涉及功能** | 生成固定 SSH 身份、默认关闭的双号码注册/IAM/白名单只读预检 runner |
+| **代码位置** | `scripts/prepare-sms-phase5-canary-target-state-readonly.ps1` |
+
+生成器只在全新的本地目录写入候选，并执行 PowerShell 语法、只读 SQL、默认关闭和合成状态自测。runner 只允许单次 SSH stdin 内存传值，远端仅执行 `SELECT`，不会上传文件、修改白名单、调用业务 POST、改变短信开关或发送短信。`-ExecuteReadOnly` 属于后续独立人工门禁，本地生成授权不能直接用于执行。
+
+实际只读执行必须先按 `docs/sms-phase5-canary-execution-design.md` 核对完整 runner SHA-256 并取得独立批准。ChangeId `20260805T132831Z` / runner `4fc5c444...d8e9c` 与 ChangeId `20260805T164138Z` / runner `d00ff59a...7f34` 的一次性执行授权均已消费且返回退出码 2，禁止重试。后者确认是 SSH 参数链丢失 Bash 换行，未进入状态查询。生成器现使用 LF/无 BOM 标准输入把完整脚本交给远端 `bash -s`，并保留失败关闭前输出低敏结果和精确退出码的约束。ChangeId `20260805T170528Z` runner `884ec7f6...c8c3` 随后执行一次并返回退出码 3；唯一失败项为 target-admin 未在白名单，账号/权限、target-new 白名单和零发送增量均通过。该候选已消费并隔离，禁止重试；白名单变更必须使用新的候选与独立授权。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  scripts/prepare-sms-phase5-canary-target-state-readonly.ps1 -SelfTest
+```
+
 ### Git
 
 | 项目 | 说明 |
@@ -604,3 +971,37 @@ swag fmt                                       # 格式化 swag 注释
 ```
 
 **访问地址（开发模式）：** http://localhost:8080/swagger/index.html
+
+### 阶段 5 Canary target-admin 精确白名单变更候选生成器
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维工程师、测试工程师、产品经理 |
+| **涉及功能** | 在关闭态下保留 target-new、只新增 target-admin，并冻结失败自动回滚契约 |
+| **代码位置** | `scripts/prepare-sms-phase5-canary-whitelist-change.ps1` |
+
+生成器默认关闭，只在全新的本地目录导出一个绑定 ChangeId 的 runner；生成和 `-SelfTest` 均不提示手机号、不读取 SSH 身份、不联网。候选通过隐藏输入和内存传递两个自有号码，未来执行前会重新核验 target-new 单项白名单、target-admin 注册/IAM 状态、关闭态、测试模式、Alertmanager `discard` 和零发送基线。它只允许精确新增 target-admin，并冻结环境备份、原进程环境快照、排他锁、一次停止/启动、10 秒稳定观察和失败自动回滚。
+
+本地候选生成授权不继承为测试服执行授权。实际执行必须另行批准完整 ChangeId、runner SHA-256、配置影响、服务信号次数和回滚范围；不得上传 runner，不得发送邮件或短信，除非后续批准明确改变这些边界。
+
+```powershell
+# 仅离线自测，不写候选、不联网
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  scripts/prepare-sms-phase5-canary-whitelist-change.ps1 -SelfTest
+```
+
+### 阶段 5 五场景真实收件默认关闭候选生成器
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 运维工程师、测试工程师、产品经理 |
+| **涉及功能** | 生成绑定新 ChangeId 的五场景真实短信 runner，固定每场景一次、总量 5、零重试和关闭态自动恢复 |
+| **代码位置** | `scripts/prepare-sms-phase5-canary-send-candidate.ps1` |
+
+生成器和 runner 均默认关闭。生成与自测完全离线，不输入手机号或 Token；未来交互执行必须另行批准完整摘要，隐藏输入两个自有手机号和管理员 Bearer Token，并在任一结果后恢复 `SMS_ENABLED=false`。HTTP 成功仅表示业务入口受理本次提交，最终收件必须由号码持有人逐场景人工确认。
+
+```powershell
+# 仅离线自测，不写候选、不联网
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  scripts/prepare-sms-phase5-canary-send-candidate.ps1 -SelfTest
+```

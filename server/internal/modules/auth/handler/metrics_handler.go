@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"molin/server/internal/config"
@@ -22,17 +23,29 @@ var rejectedInternalTokens = map[string]struct{}{
 
 type MetricsHandler struct {
 	emailSvc       *service.EmailService
+	smsMetrics     SMSMetricsReader
 	token          string
 	allowed        []netip.Prefix
 	trustedProxies []netip.Prefix
 	ready          bool
 }
 
-func NewMetricsHandler(emailSvc *service.EmailService, cfg config.Config) *MetricsHandler {
+// SMSMetricsReader 是短信模块向统一内部指标端点提供的最小只读契约，避免观测层接触手机号或请求明细。
+type SMSMetricsReader interface {
+	SMSProviderMetricValue(scene, result string) uint64
+	SMSProviderDuration(scene string) (count uint64, totalNanoseconds uint64)
+}
+
+func NewMetricsHandler(emailSvc *service.EmailService, cfg config.Config, smsReaders ...SMSMetricsReader) *MetricsHandler {
 	allowed, allowedOK := parseInternalNetworks(cfg.InternalAllowedIPs)
 	trusted, trustedOK := parseInternalNetworks(cfg.InternalTrustedProxyIPs)
+	var smsMetrics SMSMetricsReader
+	if len(smsReaders) == 1 {
+		smsMetrics = smsReaders[0]
+	}
 	return &MetricsHandler{
 		emailSvc:       emailSvc,
+		smsMetrics:     smsMetrics,
 		token:          cfg.InternalAPIToken,
 		allowed:        allowed,
 		trustedProxies: trusted,
@@ -158,5 +171,25 @@ func (h *MetricsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				_, _ = fmt.Fprintf(w, "email_adapter_calls_total{operation=%q,scene=%q,result=%q} %d\n", item.operation, scene, result, value)
 			}
 		}
+	}
+	if h.smsMetrics == nil {
+		return
+	}
+	_, _ = fmt.Fprintln(w, "# HELP sms_provider_calls_total 短信供应商提交调用总数，accepted 仅表示供应商受理。")
+	_, _ = fmt.Fprintln(w, "# TYPE sms_provider_calls_total counter")
+	smsScenes := []string{"register", "login", "reset_password", "bind_phone", "admin_verify"}
+	smsResults := []string{"accepted", "timeout", "rate_limit", "signature", "template", "arrears", "network", "rejected"}
+	for _, scene := range smsScenes {
+		for _, result := range smsResults {
+			value := h.smsMetrics.SMSProviderMetricValue(scene, result)
+			_, _ = fmt.Fprintf(w, "sms_provider_calls_total{scene=%q,result=%q} %d\n", scene, result, value)
+		}
+	}
+	_, _ = fmt.Fprintln(w, "# HELP sms_provider_request_duration_seconds 短信供应商提交调用累计耗时秒数。")
+	_, _ = fmt.Fprintln(w, "# TYPE sms_provider_request_duration_seconds summary")
+	for _, scene := range smsScenes {
+		count, totalNanoseconds := h.smsMetrics.SMSProviderDuration(scene)
+		_, _ = fmt.Fprintf(w, "sms_provider_request_duration_seconds_sum{scene=%q} %.9f\n", scene, float64(totalNanoseconds)/float64(time.Second))
+		_, _ = fmt.Fprintf(w, "sms_provider_request_duration_seconds_count{scene=%q} %d\n", scene, count)
 	}
 }

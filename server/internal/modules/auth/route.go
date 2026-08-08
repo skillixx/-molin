@@ -24,10 +24,10 @@ func limitEmailCodeLoginByIP(redisClient *redis.Client, resolver middleware.Publ
 // iamChecker 用于权限校验；scopeResolver 用于数据范围注入（管理员用户列表/详情接口）；
 // redisClient 用于 D-22 修改绑定信息接口的限流。
 // apiKeySvc（S2-甲4）：平台 API Key（sk）管理服务，可为 nil（sk 系统未装配时不注册 /api/keys 路由，灰度安全）。
-func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc *service.VerificationService, emailSvc *service.EmailService, cfg config.Config, iamChecker middleware.IAMChecker, scopeResolver middleware.ScopeResolver, redisClient *redis.Client, publicSourceIP middleware.PublicSourceIPResolver, apiKeySvc *service.APIKeyService) {
+func RegisterRoutes(mux *http.ServeMux, authSvc *service.AuthService, verifySvc *service.VerificationService, emailSvc *service.EmailService, cfg config.Config, iamChecker middleware.IAMChecker, scopeResolver middleware.ScopeResolver, redisClient *redis.Client, publicSourceIP middleware.PublicSourceIPResolver, apiKeySvc *service.APIKeyService, smsMetrics ...handler.SMSMetricsReader) {
 	h := handler.NewAuthHandler(authSvc, verifySvc, cfg)
 	// 内部指标使用无方法模式注册，由处理器显式拒绝 HEAD 等所有非 GET 方法。
-	mux.Handle("/api/internal/metrics", handler.NewMetricsHandler(emailSvc, cfg))
+	mux.Handle("/api/internal/metrics", handler.NewMetricsHandler(emailSvc, cfg, smsMetrics...))
 
 	// D-51：对验证码发送和密码重置接口按 IP 限流（每 IP 每分钟最多 10 次），防止短信轰炸和暴力枚举 OTP
 	const sendCodeIPLimit = 10

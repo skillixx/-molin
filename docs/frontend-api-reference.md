@@ -94,10 +94,12 @@
 
 **POST** `/api/auth/verification-codes/phone` — 发送手机验证码
 
+> 测试环境若启用 `SMS_TEST_MODE=true`，手机号与业务场景必须分别位于 `SMS_TEST_PHONE_WHITELIST` 和 `SMS_TEST_SCENE_ALLOWLIST`。任一不满足均返回 `503/50300`，前端统一显示“短信功能当前不可用”；长期测试服登录仅放行 `scene=login`，其他场景不会创建 OTP 或调用供应商。
+
 请求体：
 ```json
 {
-  "phone": "13812345678",
+  "phone": "<11位手机号>",
   "scene": "register"
 }
 ```
@@ -151,11 +153,11 @@
 ```json
 {
   "username": "张三",
-  "phone": "13812345678",
+  "phone": "<11位手机号>",
   "email": "user@example.com",
   "password": "Test1234!",
-  "phone_code": "123456",
-  "email_code": "654321",
+  "phone_code": "<6位手机验证码>",
+  "email_code": "<6位邮箱验证码>",
   "invite_code": "ABC12345"
 }
 ```
@@ -211,7 +213,7 @@
 先调用公开邮箱发码端点并传 `scene=login`。登录 Body 必须严格为：
 
 ```json
-{ "email": "user@example.com", "code": "123456" }
+{ "email": "user@example.com", "code": "<6位验证码>" }
 ```
 
 只允许 `email`、`code` 两个字段；缺失、空值、类型错误或额外字段固定
@@ -238,7 +240,7 @@ MFA 状态，也不能绕过管理接口的双重认证。`POST /api/auth/login/
 ```json
 // POST /api/auth/verification-codes/phone
 {
-  "phone": "13812345678",
+  "phone": "<11位手机号>",
   "scene": "login"
 }
 ```
@@ -247,8 +249,8 @@ MFA 状态，也不能绕过管理接口的双重认证。`POST /api/auth/login/
 
 ```json
 {
-  "phone": "13812345678",
-  "code": "123456"
+  "phone": "<11位手机号>",
+  "code": "<6位验证码>"
 }
 ```
 
@@ -299,7 +301,7 @@ MFA 状态，也不能绕过管理接口的双重认证。`POST /api/auth/login/
 {
   "target": "user@example.com",
   "target_type": "email",
-  "code": "123456",
+  "code": "<6位验证码>",
   "new_password": "NewPass1234!"
 }
 ```
@@ -352,14 +354,14 @@ MFA 状态，也不能绕过管理接口的双重认证。`POST /api/auth/login/
 
 **PATCH** `/api/me/phone` *(需登录)*
 ```json
-{ "phone": "13912345678", "code": "123456" }
+{ "phone": "<新手机号>", "code": "<6位验证码>" }
 ```
 
 > 调用前须先通过 `POST /api/me/verification-codes/phone` 向新手机号发送验证码（§1.8.1）。成功换绑会把 `phone_verified` 置为 true，并清空旧号码的 `admin_phone_verified_at`；管理员必须使用新手机号重新完成手机 MFA。
 
 **PATCH** `/api/me/email` *(需登录)*
 ```json
-{ "email": "new@example.com", "code": "123456" }
+{ "email": "new@example.com", "code": "<6位验证码>" }
 ```
 
 > 调用前须先通过 `POST /api/me/verification-codes/email` 向新邮箱发送验证码（§1.8.1）。成功换绑会把 `email_verified` 置为 true，并清空旧邮箱的 `admin_email_verified_at`；管理员必须使用新邮箱重新完成邮箱 MFA。
@@ -375,7 +377,7 @@ MFA 状态，也不能绕过管理接口的双重认证。`POST /api/auth/login/
 **POST** `/api/me/verification-codes/phone` — 向新手机号发送换绑验证码
 
 ```json
-{ "phone": "13912345678" }
+{ "phone": "<新手机号>" }
 ```
 
 **POST** `/api/me/verification-codes/email` — 向新邮箱发送换绑验证码
@@ -470,12 +472,12 @@ MFA 状态，也不能绕过管理接口的双重认证。`POST /api/auth/login/
 
 **POST** `/api/admin/auth/verify-phone` *(需登录 + user:manage 权限)*
 ```json
-{ "code": "123456" }
+{ "code": "<6位验证码>" }
 ```
 
 **POST** `/api/admin/auth/verify-email` *(需登录 + user:manage 权限，需手机已认证)*
 ```json
-{ "code": "123456" }
+{ "code": "<6位验证码>" }
 ```
 
 ---
@@ -1800,12 +1802,12 @@ Wechatpay-Nonce: <随机串>
 
 **POST** `/api/admin/auth/verify-phone`
 ```json
-{ "code": "123456" }
+{ "code": "<6位验证码>" }
 ```
 
 **POST** `/api/admin/auth/verify-email`
 ```json
-{ "code": "123456" }
+{ "code": "<6位验证码>" }
 ```
 
 ---
