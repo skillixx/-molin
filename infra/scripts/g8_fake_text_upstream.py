@@ -2,6 +2,7 @@
 """G8 隔离文字上游，只返回固定低敏响应，不记录请求正文或鉴权头。"""
 
 import json
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -41,4 +42,4 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-ThreadingHTTPServer(("0.0.0.0", 8000), Handler).serve_forever()
+ThreadingHTTPServer(("0.0.0.0", int(os.getenv("G8_FAKE_PORT", "8000"))), Handler).serve_forever()

@@ -1,0 +1,12 @@
+[
+  {
+    "targets": [
+      "http://bifrost-1:8080/health",
+      "http://bifrost-2:8080/health"
+    ],
+    "labels": {
+      "environment": "production",
+      "service": "bifrost"
+    }
+  }
+]

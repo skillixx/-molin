@@ -367,8 +367,9 @@ jobs:
           AI_GATEWAY_ALERT_RELAY_IMAGE_DIGEST: alpine:3.20
           AI_GATEWAY_INTERNAL_TOKEN_FILE: /tmp/g8-internal-token
           AI_GATEWAY_ALERT_RELAY_CONFIG_FILE: /tmp/g8-alert-relay-config
+          MOLIN_PROD_ENV_FILE: /tmp/g8-prod.env
         run: |
-          touch /tmp/g8-internal-token /tmp/g8-alert-relay-config
+          touch /tmp/g8-internal-token /tmp/g8-alert-relay-config /tmp/g8-prod.env
           python infra/nginx/verify_forwarded_headers.py
           docker compose -f infra/docker-compose.prod.yml -f infra/docker-compose.ai-gateway-g8.yml config --quiet
           docker run --rm --entrypoint=/bin/promtool \

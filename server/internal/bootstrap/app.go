@@ -838,6 +838,8 @@ func NewApp() (*App, error) {
 			log.Printf("[token_gateway] 初始化失败，管理端/用户端未启用: %v", tgErr)
 		} else {
 			tokenGatewayModule.ChannelService.WithHealthInternalAllowlist(cfg.AIGatewayHealthInternalAllowlist)
+			// 总闸同时约束工作台与会话摘要复用的共享转发器，不能只保护公开 ChatHandler。
+			tokenGatewayModule.ForwardService.WithTrafficEnabled(cfg.AIGatewayTrafficEnabled)
 			if cfg.AppEnv == "production" && cfg.AIGatewayTrafficEnabled {
 				if readinessErr := tokenGatewayModule.ProductionReadiness.Validate(context.Background()); readinessErr != nil {
 					return nil, fmt.Errorf("AI 网关生产发布门禁未通过: %w", readinessErr)

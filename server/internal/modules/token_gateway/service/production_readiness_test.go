@@ -20,7 +20,7 @@ func newProductionReadinessTestService(t *testing.T, rows *sqlmock.Rows) (*Produ
 	if err != nil {
 		t.Fatal(err)
 	}
-	mock.ExpectQuery("SELECT").WillReturnRows(rows)
+	mock.ExpectQuery("(?s)LEFT JOIN ai_model_route_runtime_states.*last_health_check_at.*circuit_open_until.*p.exchange_rate<>1.*SELECT COUNT\\(\\*\\) FROM ai_price_skus.*sku.cost_unit_price/\\(1-p.min_margin_rate\\).*JSON_TABLE").WillReturnRows(rows)
 	return NewProductionReadinessService(db), mock
 }
 

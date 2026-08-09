@@ -15,6 +15,7 @@
 - 密钥仅通过受控环境变量或 Secret Manager 注入；源码、镜像层、build args、日志、PR 和证据文档均不得出现真实值。
 - 开启总闸时必须具备 `TOKEN_PROVIDER_KEY`、`API_KEY_HMAC_SECRET`、`INTERNAL_API_TOKEN`、`INTERNAL_ALLOWED_IPS`、RabbitMQ/Outbox 和安全预占配置。
 - Bifrost 驱动必须具备受控基址与不少于 32 字节的内部 Token。
+- Bifrost 节点必须从仓库外受控环境文件或 Secret Manager 注入加密密钥、上游密钥和内部 Token；内部自动重试固定为 0，节点只开放受控出站，不发布公网入站端口。
 - DB 门禁要求 5～8 个发布文字模型、两个健康渠道、逐模型有效价格/路由、唯一内容安全策略、成本未过期且毛利达标。运行链只允许对明确未发出的失败在同一路由安全重试；结果未知、超时、流中断和已收到上游响应均不得自动重试或跨上游切换。
 
 ## 3. 制品与依赖

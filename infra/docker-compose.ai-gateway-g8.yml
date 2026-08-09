@@ -14,10 +14,12 @@ services:
   bifrost-1:
     image: ${BIFROST_IMAGE_DIGEST}
     restart: unless-stopped
+    env_file: ${MOLIN_PROD_ENV_FILE:-../.env.prod}
     command: ["--config", "/etc/bifrost/config.json"]
     volumes:
       - ./bifrost/config.json:/etc/bifrost/config.json:ro
-    networks: [ai-gateway-internal]
+    # 仅节点具备受控公网出站能力；不发布宿主机端口，入站仍只来自内部负载均衡器。
+    networks: [ai-gateway-internal, external]
     read_only: true
     tmpfs: [/tmp]
     security_opt: [no-new-privileges:true]
@@ -25,10 +27,11 @@ services:
   bifrost-2:
     image: ${BIFROST_IMAGE_DIGEST}
     restart: unless-stopped
+    env_file: ${MOLIN_PROD_ENV_FILE:-../.env.prod}
     command: ["--config", "/etc/bifrost/config.json"]
     volumes:
       - ./bifrost/config.json:/etc/bifrost/config.json:ro
-    networks: [ai-gateway-internal]
+    networks: [ai-gateway-internal, external]
     read_only: true
     tmpfs: [/tmp]
     security_opt: [no-new-privileges:true]
@@ -37,7 +40,10 @@ services:
     image: nginx:1.29.1-alpine
     restart: unless-stopped
     volumes:
-      - ./bifrost/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./bifrost/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
+      - ./bifrost/start-nginx.sh:/usr/local/bin/start-bifrost-nginx.sh:ro
+    env_file: ${MOLIN_PROD_ENV_FILE:-../.env.prod}
+    command: ["/bin/sh", "/usr/local/bin/start-bifrost-nginx.sh"]
     networks: [internal, ai-gateway-internal]
     depends_on: [bifrost-1, bifrost-2]
     read_only: true

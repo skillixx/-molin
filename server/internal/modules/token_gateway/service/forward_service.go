@@ -181,6 +181,8 @@ var (
 	// 由 handler 映射为 HTTP 503 + 业务码 50301（服务暂不可用，客户端可重试），
 	// 严禁与「真余额不足」（ErrWalletInsufficient/60001）混淆——这是 D-M2-02 的核心。
 	ErrSystemBusy = errors.New("系统繁忙，请稍后重试")
+	// ErrTrafficClosed 表示生产商业流量总闸关闭，所有共享上游执行入口必须在写账本和外呼前拒绝。
+	ErrTrafficClosed = errors.New("AI 网关商业流量暂未开放")
 )
 
 // 计费模式取值（与 auth/sk 契约一致）。
@@ -222,14 +224,21 @@ type ForwardService struct {
 	groupResolver GroupResolver
 	roleResolver  RoleResolver
 
-	httpClient     *http.Client
-	driverSelector ExecutionDriverSelector
+	httpClient      *http.Client
+	driverSelector  ExecutionDriverSelector
+	trafficDisabled bool // 默认 false 保持既有测试兼容；生产 bootstrap 必须显式注入总闸。
 }
 
 // WithResolvers 注入定向可见性解析器（bootstrap 装配时调用），供转发前置闸判定模型可见性。
 func (s *ForwardService) WithResolvers(gr GroupResolver, rr RoleResolver) *ForwardService {
 	s.groupResolver = gr
 	s.roleResolver = rr
+	return s
+}
+
+// WithTrafficEnabled 将商业流量总闸下沉到唯一共享转发边界，覆盖工作台和会话摘要等内部复用入口。
+func (s *ForwardService) WithTrafficEnabled(enabled bool) *ForwardService {
+	s.trafficDisabled = !enabled
 	return s
 }
 
@@ -394,6 +403,9 @@ func (s *ForwardService) resolveMaxTokens(body map[string]interface{}) int64 {
 // 返回 error 时表示「尚未向 w 写入上游响应」，由 handler 决定 HTTP 错误码；
 // 一旦开始透传/写出上游响应（流式或非流式成功），即返回 nil（用户已拿到结果）。
 func (s *ForwardService) Forward(ctx context.Context, w http.ResponseWriter, in ForwardInput) error {
+	if s == nil || s.trafficDisabled {
+		return ErrTrafficClosed
+	}
 	// ① 模型校验：token_models 存在、active、配置了 channel_id + upstream_model。
 	tm, err := s.modelRepo.FindByCode(ctx, in.Model)
 	if err != nil {

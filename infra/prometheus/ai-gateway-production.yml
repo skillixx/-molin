@@ -30,7 +30,7 @@ scrape_configs:
     params:
       module: [http_2xx]
     file_sd_configs:
-      - files: [/etc/prometheus/targets/bifrost-nodes.json]
+      - files: [/etc/prometheus/targets/bifrost-nodes-production.json]
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
