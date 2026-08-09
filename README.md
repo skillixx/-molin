@@ -26,7 +26,7 @@ AI 网关 Phase 1：
 - G4 已完成主线合并、Migration `000060` 至 `000063`、测试环境 Bifrost 部署、百炼/OpenRouter 最低成本真实 E2E、人民币钱包对账和测试凭据回收；最终 QA/产品以 P0=0、P1=0 通过，允许进入 G5 管理后台开发。证据见 `docs/ai-gateway-g4-acceptance.md`；该结论不代表生产上线、多模态能力或真实客户流量已经开放。
 - G5 已完成 AI 网关管理工作台、Migration `000064`、测试环境部署和真实 Bifrost/Bailian 最低成本 E2E；模型发布、人民币价格版本、路由、安全/资源/预算/异常入口均已闭环。PR #321 已合并，最终 QA/产品以 P0=0、P1=0 双签通过，允许进入 G6。证据与生产前残余风险见 `docs/ai-gateway-g5-acceptance.md`。
 - G6 用户端模型市场与完整客户旅程已完成代码、测试环境真实 Bifrost 对账、真实浏览器、Migration 000066、CI、独立代码评审、独立 QA 和产品复验：覆盖发布快照目录、人民币价格、静态文档、Project/平台 SK、快速接入、权威用量账本、CSV 和账单申诉。PR #325 已满足 Ready 与合并门禁；本结论不代表生产开放，边界和证据以 `docs/ai-gateway-g6-acceptance.md` 为准。
-- G7 可靠性验收正在推进：当前工作树已补齐 AI 专属指标、Prometheus/Blackbox 告警、Grafana SLO、request_id 级只读账单核对、1000 请求@100 并发、100 路幂等、JSON/SSE 附加开销、流式断连、Fake HTTP/Redis 混沌与安全测试；最新完整本地隔离复验已通过。测试环境、PR CI、精确 HEAD 独立复审、QA、产品验收和 PR 合并未完成前不得声明 G7 完成，证据见 `docs/ai-gateway-g7-acceptance.md`。
+- G7 可靠性与零差额验收已完成：PR #326 的精确 HEAD `cec7cdcb` 通过 CI 7/7、测试环境 E2E、新→旧→新实际回滚、独立规格/代码评审、QA 和产品验收，P0/P1/P2/P3 均为 0；测试服账本↔Usage、hold、钱包流水三项差额均为 `0.00000000`，Prometheus 22 条规则、3/3 targets、Grafana 16 面板均通过。PR 已采用 merge commit 合并为 `6e1f67ad`，远端功能分支已删除。该结论仅代表测试环境 G7 验收，不代表生产部署、真实付费上游或客户灰度；证据见 `docs/ai-gateway-g7-acceptance.md`。
 
 > **第一阶段（Week 1-4：平台底座 + 应用售卖闭环）已于 2026-06-07 正式验收通过，并于 2026-06-08 完成最终收尾确认 ✅**
 > 端到端验收 16/16 核心用例、37/37 全部用例通过（通过率 100%）。

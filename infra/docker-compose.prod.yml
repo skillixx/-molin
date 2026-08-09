@@ -65,7 +65,8 @@ services:
       dockerfile: infra/Dockerfile.server
     container_name: molin-api
     restart: unless-stopped
-    env_file: ../.env.prod
+    # 生产默认读取仓库外受控环境文件；CI/隔离预演可用 MOLIN_PROD_ENV_FILE 指向临时脱敏文件。
+    env_file: ${MOLIN_PROD_ENV_FILE:-../.env.prod}
     environment:
       # 默认关闭一次性入口；其余三项只从服务器环境文件或 Secret 管理流程注入，Compose 不保存真实值。
       EMAIL_ADMIN_VERIFY_BOOTSTRAP_ENABLED: ${EMAIL_ADMIN_VERIFY_BOOTSTRAP_ENABLED:-false}

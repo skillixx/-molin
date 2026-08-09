@@ -11,6 +11,7 @@
     "test:vite-isolation": "node --test tests/vite-proxy-isolation.test.mjs",
     "test:outbound-url": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types --test tests/outbound-url.test.mjs",
     "test:g5-e2e": "playwright test tests/g5-workbench.spec.ts",
+    "test:g8-real-e2e": "playwright test --config playwright.g8-real.config.ts",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
     "type-check": "vue-tsc --noEmit",
     "lint": "eslint ."

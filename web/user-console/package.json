@@ -12,7 +12,8 @@
     "lint": "eslint .",
     "test:sms": "node --experimental-strip-types --test tests/privacy.test.ts tests/sms.test.ts",
     "test:vite-isolation": "node --test tests/vite-proxy-isolation.test.mjs",
-    "test:g6-e2e": "playwright test tests/g6-customer-journey.spec.ts"
+    "test:g6-e2e": "playwright test tests/g6-customer-journey.spec.ts",
+    "test:g8-real-e2e": "playwright test --config playwright.g8-real.config.ts"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.0",

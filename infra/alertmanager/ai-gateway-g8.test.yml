@@ -1,0 +1,22 @@
+route:
+  receiver: discard
+  group_by: [alertname, p_level]
+  group_wait: 0s
+  group_interval: 1s
+  repeat_interval: 1h
+  routes:
+    - matchers: ['p_level="P0"']
+      receiver: ai-gateway-p0-relay
+    - matchers: ['p_level="P1"']
+      receiver: ai-gateway-p1-relay
+
+receivers:
+  - name: discard
+  - name: ai-gateway-p0-relay
+    webhook_configs:
+      - url: http://alert-relay:8080/alerts/p0
+        send_resolved: true
+  - name: ai-gateway-p1-relay
+    webhook_configs:
+      - url: http://alert-relay:8080/alerts/p1
+        send_resolved: true

@@ -2,7 +2,7 @@
 
 > Token 文字模型执行层：前端继续调用既有 `/api/token/chat/completions` 或 `/v1/chat/completions`，无需感知 Native/Bifrost。公开响应不包含 Bifrost `extra_fields`、路由信息、供应商响应头或内部 Key 名称。成功响应缺少 Usage 时，后台记录为 `settlement_pending`，前端不得自行使用 `max_tokens` 估算已扣金额。
 
-> G4 前端处理：40310 显示后端稳定拒绝文案；该文案不可由策略编辑器修改。40311 提示联系管理员；42920 提示预算达到上限；42921/42922 读取 `Retry-After` 后允许倒计时重试；50320/50321 显示服务暂不可用。SSE 收到 `molin.content_policy` 后显示其 message 并以随后 `[DONE]` 正常结束，不展示已经缓冲但未通过审核的内容；该请求用户消费为 0，上游成本只供平台财务对账。
+> G4/G8 前端处理：40310 显示后端稳定拒绝文案；该文案不可由策略编辑器修改。40311 提示联系管理员；42920 提示预算达到上限；42921/42922 读取 `Retry-After` 后允许倒计时重试；50320/50321 显示服务暂不可用；50330 显示“AI 网关商业流量暂未开放”，不得自动重试。SSE 收到 `molin.content_policy` 后显示其 message 并以随后 `[DONE]` 正常结束，不展示已经缓冲但未通过审核的内容；该请求用户消费为 0，上游成本只供平台财务对账。
 
 > G0/G1 说明：`000060` 新商业账本是后端 Expand Schema，当前不改变前端请求和用量查询。G2 切换新读写前，前端不得依赖 `ai_requests`、`ai_usage_items` 或执行模型内部字段；阶段契约见 [`ai-gateway-g0-g1-contract.md`](./ai-gateway-g0-g1-contract.md)。
 
@@ -2575,7 +2575,7 @@ DELETE /api/token/projects/{id}/keys/{key_id}
 - `GET /api/admin/token/overview`：支持 `from/to/model/channel_id/status`，返回请求量、成功率、Token、人民币销售额/成本/毛利、治理拒绝和配置异常；金额和比率为十进制字符串。
 - `POST /api/admin/token/models/{id}/rollback`：从历史快照创建新的发布版本，不修改历史版本。
 - `POST /api/admin/token/prices/{id}/rollback`：从历史价格复制新草稿，前端必须提示重新审批发布。
-- `POST /api/admin/token/channels/{id}/health-check`：执行无密钥、无模型费用的 Bifrost `/health` 检测。
+- `POST /api/admin/token/channels/{id}/health-check`：执行无密钥、无模型费用的 `/health` 检测；默认只允许公网 HTTPS，拒绝内网/回环/链路本地/DNS 重绑定和重定向。测试 Bifrost 内网地址必须由运维使用精确白名单配置，前端不得提供“放开全部内网”选项。
 - 模型状态使用 `active/inactive`，路由状态使用 `active/disabled`，二者不得混用。
 - 模型文档字段为 `intro_url/docs_url/quick_start_url`，仅允许 HTTP/HTTPS 静态网页。
 - 价格金额全部按字符串接收和展示，前端不得转为浮点数后再提交。

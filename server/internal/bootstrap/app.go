@@ -530,6 +530,9 @@ func NewApp() (*App, error) {
 	if err := cfg.ValidateAIGatewayGovernanceConfig(); err != nil {
 		return nil, fmt.Errorf("AI 网关治理配置无效: %w", err)
 	}
+	if err := cfg.ValidateAIGatewayProductionConfig(); err != nil {
+		return nil, fmt.Errorf("AI 网关生产配置无效: %w", err)
+	}
 	emailBootstrapCfg, err := config.LoadEmailAdminVerifyBootstrapConfig()
 	if err != nil {
 		return nil, fmt.Errorf("管理员邮箱认证 bootstrap 配置无效: %w", err)
@@ -834,6 +837,12 @@ func NewApp() (*App, error) {
 		if tokenGatewayModule, tgErr := tokengatewaymod.New(gormDB, redisClient, cfg.TokenProviderKey, cfg.APIKeyHMACSecret, assetService, tokenReporter, tokenScopeResolver, walletHoldService, outboxPublisher, g3DefaultMaxTokens, resourceDefaults); tgErr != nil {
 			log.Printf("[token_gateway] 初始化失败，管理端/用户端未启用: %v", tgErr)
 		} else {
+			tokenGatewayModule.ChannelService.WithHealthInternalAllowlist(cfg.AIGatewayHealthInternalAllowlist)
+			if cfg.AppEnv == "production" && cfg.AIGatewayTrafficEnabled {
+				if readinessErr := tokenGatewayModule.ProductionReadiness.Validate(context.Background()); readinessErr != nil {
+					return nil, fmt.Errorf("AI 网关生产发布门禁未通过: %w", readinessErr)
+				}
+			}
 			// Token 网关成功装配后才追加 AI 指标；模块关闭时保留既有邮件/短信指标端点。
 			metricsHandler.WithAIGatewayMetrics(tokenGatewayModule.Metrics)
 			// 执行层默认继续使用原生 Go 转发器；只有显式配置 bifrost 且内部鉴权完整时才切换。
@@ -898,7 +907,7 @@ func NewApp() (*App, error) {
 				tokenAPIKeyResolver = &apiKeyResolverAdapter{svc: apiKeyService}
 			}
 			tokengatewaymod.RegisterUserRoutes(mux, tokenGatewayModule.ForwardService, tokenGatewayModule.Orchestrator, tokenGatewayModule.ProjectService, tokenGatewayModule.CatalogService,
-				tokenGatewayModule.UsageService, tokenGatewayModule.GovernanceAdmin, tokenGatewayModule.G6User, auditSvc, cfg.JWTSecret, authService, tokenAPIKeyResolver)
+				tokenGatewayModule.UsageService, tokenGatewayModule.GovernanceAdmin, tokenGatewayModule.G6User, auditSvc, cfg.JWTSecret, authService, tokenAPIKeyResolver, cfg.AIGatewayTrafficEnabled)
 			// 供 workbench 编排端点复用单轮转发（ChatOnce 含门禁/选渠道/计费）。
 			tokenForwardSvc = tokenGatewayModule.ForwardService
 		}

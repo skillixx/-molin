@@ -12,20 +12,21 @@ import (
 
 // Module 聚合 token_gateway 模块对外暴露的服务，便于 bootstrap 统一装配。
 type Module struct {
-	Metrics           *service.AIGatewayMetrics
-	ChannelService    *service.ChannelService
-	CatalogService    *service.CatalogService
-	ForwardService    *service.ForwardService
-	UsageService      *service.UsageService
-	ProjectService    *service.ProjectService
-	Orchestrator      *service.RequestOrchestratorService
-	BillingService    *service.AIBillingService
-	OutboxWorker      *service.OutboxWorker
-	SettlementWorker  *service.SettlementWorker
-	GovernanceService *service.GovernanceService
-	GovernanceAdmin   *service.GovernanceAdminService
-	G5Admin           *service.G5AdminService
-	G6User            *service.G6UserService
+	Metrics             *service.AIGatewayMetrics
+	ChannelService      *service.ChannelService
+	CatalogService      *service.CatalogService
+	ForwardService      *service.ForwardService
+	UsageService        *service.UsageService
+	ProjectService      *service.ProjectService
+	Orchestrator        *service.RequestOrchestratorService
+	BillingService      *service.AIBillingService
+	OutboxWorker        *service.OutboxWorker
+	SettlementWorker    *service.SettlementWorker
+	GovernanceService   *service.GovernanceService
+	GovernanceAdmin     *service.GovernanceAdminService
+	G5Admin             *service.G5AdminService
+	G6User              *service.G6UserService
+	ProductionReadiness *service.ProductionReadinessService
 }
 
 // New 构造 token_gateway 模块依赖。
@@ -68,19 +69,20 @@ func New(db *gorm.DB, redisClient redis.UniversalClient, tokenProviderKey, apiKe
 		WithMetrics(metrics)
 
 	module := &Module{
-		Metrics:           metrics,
-		ChannelService:    service.NewChannelService(channelRepo, cipher),
-		CatalogService:    catalogService,
-		ForwardService:    service.NewForwardService(modelRepo, channelRepo, usageRepo, cipher, assetGate, reporter, scopeResolver),
-		UsageService:      service.NewUsageService(usageRepo),
-		Orchestrator:      orchestrator,
-		BillingService:    billingService,
-		OutboxWorker:      service.NewOutboxWorker(outboxRepo, outboxPublisher),
-		SettlementWorker:  service.NewSettlementWorker(billingService),
-		GovernanceService: governanceService,
-		GovernanceAdmin:   service.NewGovernanceAdminService(governanceRepo).WithOutboxDeadRequeuer(outboxRepo),
-		G5Admin:           service.NewG5AdminService(g5AdminRepo, pricingRepo),
-		G6User:            service.NewG6UserService(g6UserRepo, catalogService).WithResourceDefaults(resourceDefaults).WithAPIKeyHMACSecret(apiKeyHMACSecret),
+		Metrics:             metrics,
+		ChannelService:      service.NewChannelService(channelRepo, cipher),
+		CatalogService:      catalogService,
+		ForwardService:      service.NewForwardService(modelRepo, channelRepo, usageRepo, cipher, assetGate, reporter, scopeResolver),
+		UsageService:        service.NewUsageService(usageRepo),
+		Orchestrator:        orchestrator,
+		BillingService:      billingService,
+		OutboxWorker:        service.NewOutboxWorker(outboxRepo, outboxPublisher),
+		SettlementWorker:    service.NewSettlementWorker(billingService),
+		GovernanceService:   governanceService,
+		GovernanceAdmin:     service.NewGovernanceAdminService(governanceRepo).WithOutboxDeadRequeuer(outboxRepo),
+		G5Admin:             service.NewG5AdminService(g5AdminRepo, pricingRepo),
+		G6User:              service.NewG6UserService(g6UserRepo, catalogService).WithResourceDefaults(resourceDefaults).WithAPIKeyHMACSecret(apiKeyHMACSecret),
+		ProductionReadiness: service.NewProductionReadinessService(db),
 	}
 	// 未配置 HMAC 密钥时不注册 Project SK 管理能力，防止生成不可安全校验的密钥。
 	if apiKeyHMACSecret != "" {

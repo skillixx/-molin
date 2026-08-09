@@ -37,14 +37,22 @@ var (
 // ChannelService 渠道 CRUD 服务，负责上游 api_key 的 AES-256-GCM 加解密。
 // 安全红线：任何返回 DTO 绝不含明文或密文 key。
 type ChannelService struct {
-	repo   *repository.ChannelRepository
-	cipher *crypto.AESGCM
-	client *http.Client
+	repo                    *repository.ChannelRepository
+	cipher                  *crypto.AESGCM
+	client                  *http.Client
+	healthInternalAllowlist []string
 }
 
 // NewChannelService 创建渠道服务实例。cipher 用于 api_key 加解密。
 func NewChannelService(repo *repository.ChannelRepository, cipher *crypto.AESGCM) *ChannelService {
 	return &ChannelService{repo: repo, cipher: cipher, client: &http.Client{Timeout: 5 * time.Second}}
+}
+
+// WithHealthInternalAllowlist 注入测试或受控内网健康入口白名单。
+// 白名单只影响健康探测，不会放宽模型转发、插件或其他外呼路径。
+func (s *ChannelService) WithHealthInternalAllowlist(items []string) *ChannelService {
+	s.healthInternalAllowlist = append([]string(nil), items...)
+	return s
 }
 
 // Create 创建渠道：校验 + 唯一性 + 加密 api_key 落库，返回脱敏 DTO。
@@ -181,7 +189,7 @@ func (s *ChannelService) CheckHealth(ctx context.Context, id uint64) (*dto.Chann
 	if err != nil {
 		return nil, err
 	}
-	status, errorClass := probeChannelHealth(ctx, s.client, channel.BaseURL)
+	status, errorClass := probeChannelHealthWithPolicy(ctx, s.client, net.DefaultResolver, channel.BaseURL, s.healthInternalAllowlist)
 	now := time.Now().UTC()
 	if err := s.repo.Update(ctx, id, map[string]interface{}{"health_status": status, "last_health_check_at": now, "last_health_error_class": nullableHealthError(errorClass)}); err != nil {
 		return nil, err
@@ -190,24 +198,67 @@ func (s *ChannelService) CheckHealth(ctx context.Context, id uint64) (*dto.Chann
 }
 
 func probeChannelHealth(ctx context.Context, client *http.Client, baseURL string) (string, string) {
+	return probeChannelHealthWithPolicy(ctx, client, net.DefaultResolver, baseURL, nil)
+}
+
+// healthDNSResolver 抽象 DNS 解析，便于覆盖域名指向私网、混合解析和重绑定场景。
+type healthDNSResolver interface {
+	LookupIPAddr(context.Context, string) ([]net.IPAddr, error)
+}
+
+func probeChannelHealthWithPolicy(ctx context.Context, client *http.Client, resolver healthDNSResolver, baseURL string, internalAllowlist []string) (string, string) {
 	parsed, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil {
 		return "down", "invalid_base_url"
 	}
-	// 明确拒绝链路本地、未指定和组播字面地址，避免健康检测访问云元数据等特殊网络目标。
-	if ip := net.ParseIP(parsed.Hostname()); ip != nil && (ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast()) {
+	allowedInternal := healthTargetAllowlisted(parsed.Hostname(), parsed.Port(), internalAllowlist)
+	if ip := net.ParseIP(parsed.Hostname()); ip != nil && blockedHealthIP(ip) && !allowedInternal {
 		return "down", "restricted_address"
+	}
+	// 公网健康探测只允许 HTTPS；测试内网 HTTP 必须通过精确白名单显式开启。
+	if parsed.Scheme != "https" && !allowedInternal {
+		return "down", "insecure_scheme"
 	}
 	parsed.Path, parsed.RawPath, parsed.RawQuery, parsed.Fragment = "/health", "", "", ""
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
 		return "down", "invalid_base_url"
 	}
-	probeClient := http.DefaultClient
-	if client != nil {
-		probeClient = client
+	if resolver == nil {
+		resolver = net.DefaultResolver
 	}
-	clientCopy := *probeClient
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	transport.DialContext = func(dialCtx context.Context, network, address string) (net.Conn, error) {
+		host, port, splitErr := net.SplitHostPort(address)
+		if splitErr != nil {
+			return nil, fmt.Errorf("健康探测目标地址无效")
+		}
+		ips, lookupErr := resolveHealthIPs(dialCtx, resolver, host)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		for _, ip := range ips {
+			// 在实际拨号前重新校验解析结果，避免校验后由默认 Transport 二次解析造成 DNS 重绑定窗口。
+			if blockedHealthIP(ip) && !allowedInternal {
+				return nil, fmt.Errorf("健康探测目标解析到受限地址")
+			}
+		}
+		dialer := &net.Dialer{Timeout: 5 * time.Second}
+		var lastErr error
+		for _, ip := range ips {
+			conn, dialErr := dialer.DialContext(dialCtx, network, net.JoinHostPort(ip.String(), port))
+			if dialErr == nil {
+				return conn, nil
+			}
+			lastErr = dialErr
+		}
+		return nil, lastErr
+	}
+	clientCopy := http.Client{Transport: transport, Timeout: 5 * time.Second}
+	if client != nil && client.Timeout > 0 {
+		clientCopy.Timeout = client.Timeout
+	}
 	// 健康入口必须由配置主机直接响应，禁止通过重定向把探测转向其他网络位置。
 	clientCopy.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	response, err := clientCopy.Do(request)
@@ -222,6 +273,42 @@ func probeChannelHealth(ctx context.Context, client *http.Client, baseURL string
 		return "down", fmt.Sprintf("http_%d", response.StatusCode)
 	}
 	return "healthy", ""
+}
+
+func resolveHealthIPs(ctx context.Context, resolver healthDNSResolver, host string) ([]net.IP, error) {
+	if ip := net.ParseIP(host); ip != nil {
+		return []net.IP{ip}, nil
+	}
+	addresses, err := resolver.LookupIPAddr(ctx, host)
+	if err != nil || len(addresses) == 0 {
+		return nil, fmt.Errorf("健康探测目标 DNS 解析失败")
+	}
+	ips := make([]net.IP, 0, len(addresses))
+	for _, address := range addresses {
+		if address.IP == nil {
+			return nil, fmt.Errorf("健康探测目标 DNS 返回空地址")
+		}
+		ips = append(ips, address.IP)
+	}
+	return ips, nil
+}
+
+func healthTargetAllowlisted(host, port string, items []string) bool {
+	host = strings.ToLower(strings.TrimSpace(strings.Trim(host, "[]")))
+	for _, raw := range items {
+		item := strings.ToLower(strings.TrimSpace(raw))
+		if item == "" {
+			continue
+		}
+		if item == host || (port != "" && (item == net.JoinHostPort(host, port) || item == host+":"+port)) {
+			return true
+		}
+	}
+	return false
+}
+
+func blockedHealthIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast()
 }
 
 func nullableHealthError(value string) interface{} {

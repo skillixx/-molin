@@ -2353,7 +2353,7 @@ Chat 请求 Body 参数：
 
 策略规则项结构为 `{code,category,keywords}`；每个可发布版本必须完整覆盖 illegal、sexual、gambling、drugs、terror、hate、self_harm 七类，规范化后的单个关键词最长 256 字符。列表统一返回 `{items,page,page_size,total}`。用户事件接口只返回当前 JWT 用户的最小化事件，申诉时仓储层再次校验 event_id 归属。资源策略 scope_type 为 user/project/api_key/model，预算 scope_type 为 project/api_key；每个非空日/月限额都必须大于 0。Outbox 重试要求 `ai_gateway:reconcile_manage`、管理员二次认证、非空原因和前置审计，只允许 dead 状态按原 event_id 重排，重复或状态冲突返回 409。
 
-G4 错误码：40310 内容违规、40311 主体暂停、42920 hard 预算、42921 RPM/TPM、42922 并发、50320 审核不可用、50321 治理不可用。42921/42922 包含 `Retry-After`、`request_id` 和公开 `limit_scope`。
+G4/G8 错误码：40310 内容违规、40311 主体暂停、42920 hard 预算、42921 RPM/TPM、42922 并发、50320 审核不可用、50321 治理不可用、50330 商业流量总闸关闭。42921/42922 包含 `Retry-After`、`request_id` 和公开 `limit_scope`。50330 只表示新文字模型调用尚未开放或已受控关闭，不泄露生产配置缺项。
 - G3 在上游调用前写不可变价格快照并创建钱包 hold。JSON 或正常结束 SSE 的可信 Usage 完整时，无论执行成功或明确失败都按四类 SKU 汇总一次金额并 settle；成功且存在正用量时才应用最低收费。只有确认未产生成本且无 Usage 时 release；Usage 缺失、不一致、结果未知或 SSE 未正常结束时，即使已经取得中间 Usage 也返回 `202/settlement_pending` 并保留 hold。Settlement Worker 对遗留 held/pending 请求按相同规则收敛，超过期限进入人工异常。正式链路不写旧 `token_usage_logs`。
 - 请求状态可通过 `GET /api/token/requests/{request_id}` 或 OpenAI 兼容入口 `GET /v1/requests/{request_id}` 查询；必须使用原 Project SK，跨用户或跨 SK 统一拒绝且不泄露请求是否存在。
 - `messages` 必须包含至少一条非空文字内容；G2 对图片、音频等多模态消息在写账本和调用上游前返回 400/40000。未实名返回 400/70001，渠道不可用返回 503/50300。
@@ -2367,6 +2367,7 @@ G3 前置或结算错误继续返回平台数字 `code`，并新增稳定字符�
 |---:|---:|---|---|
 | 503 | 50310 | `pricing_unavailable` / `price_expired` | 无有效价格或成本过期 |
 | 503 | 50311 | `margin_below_minimum` | 毛利低于发布下限 |
+| 503 | 50330 | `ai_gateway_traffic_closed` | 生产商业流量总闸关闭；不创建请求账本、不调用上游、不产生扣费 |
 | 400 | 40010 | `unquotable_request` | 显式 `max_tokens` 非法、超过模型上限、`n` 不为 1 或无法证明最大费用 |
 | 402 | 60001 | `insufficient_balance` | 钱包可用余额不足，上游未调用 |
 | 503 | 50312 | `wallet_hold_failed` | 预占事务失败且整体回滚 |
@@ -2545,7 +2546,7 @@ Body 使用 `resolution=release|settle`；`settle` 时同时提交 `prompt_token
 | POST | `/api/admin/token/models/{id}/publish` | `ai_gateway:model_manage` | body：`{"reason":"..."}` |
 | POST | `/api/admin/token/models/{id}/unpublish` | `ai_gateway:model_manage` | 下架且退役当前快照 |
 | POST | `/api/admin/token/models/{id}/rollback` | `ai_gateway:model_manage` | body：`{"target_version_no":1,"reason":"..."}`；创建新发布版本 |
-| POST | `/api/admin/token/channels/{id}/health-check` | `ai_gateway:route_manage` | 只访问渠道根 `/health`，不携带密钥且不调用模型 |
+| POST | `/api/admin/token/channels/{id}/health-check` | `ai_gateway:route_manage` | 只访问渠道根 `/health`，不携带密钥且不调用模型；默认仅允许公网 HTTPS，并在实际拨号前校验全部 DNS 结果，拒绝 loopback、link-local、RFC1918、IPv6 本地地址和重定向。测试 Bifrost 内网目标必须由 `AI_GATEWAY_HEALTH_INTERNAL_ALLOWLIST` 精确放行 |
 | GET/POST | `/api/admin/token/routes` | view / route_manage | Bifrost 路由列表与创建 |
 | PUT | `/api/admin/token/routes/{id}` | `ai_gateway:route_manage` | 全量提交路由及当前 `version_no` |
 | GET/POST | `/api/admin/token/prices` | view / price_manage | 价格版本列表与草稿创建 |

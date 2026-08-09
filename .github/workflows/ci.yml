@@ -342,6 +342,88 @@ jobs:
           G7_DOCKER_PULL_POLICY: missing
         run: bash infra/scripts/verify-ai-gateway-g7-reliability.sh
 
+  gateway-g8:
+    name: AI 网关 G8 生产就绪门禁
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: 校验生产配置、流量总闸和渠道健康安全策略
+        working-directory: server
+        run: |
+          go test ./internal/config ./internal/modules/token_gateway/service ./internal/modules/token_gateway/handler ./internal/modules/token_gateway ./internal/bootstrap
+          go vet ./internal/config ./internal/modules/token_gateway/... ./internal/bootstrap
+
+      - name: 校验生产监控、告警、Compose 和 Nginx 契约
+        env:
+          BIFROST_IMAGE_DIGEST: alpine:3.20
+          AI_GATEWAY_ALERT_RELAY_IMAGE_DIGEST: alpine:3.20
+          AI_GATEWAY_INTERNAL_TOKEN_FILE: /tmp/g8-internal-token
+          AI_GATEWAY_ALERT_RELAY_CONFIG_FILE: /tmp/g8-alert-relay-config
+        run: |
+          touch /tmp/g8-internal-token /tmp/g8-alert-relay-config
+          python infra/nginx/verify_forwarded_headers.py
+          docker compose -f infra/docker-compose.prod.yml -f infra/docker-compose.ai-gateway-g8.yml config --quiet
+          docker run --rm --entrypoint=/bin/promtool \
+            --workdir=/etc/prometheus \
+            -v "${{ github.workspace }}/infra/prometheus/ai-gateway-production.yml:/etc/prometheus/ai-gateway-production.yml:ro" \
+            -v "${{ github.workspace }}/infra/prometheus/ai-gateway-alerts.yml:/etc/prometheus/rules/ai-gateway-alerts.yml:ro" \
+            -v "${{ github.workspace }}/infra/prometheus/targets:/etc/prometheus/targets:ro" \
+            prom/prometheus:v3.12.0-distroless \
+            check config ai-gateway-production.yml
+          docker run --rm --entrypoint=/bin/amtool \
+            --workdir=/config \
+            -v "${{ github.workspace }}/infra/alertmanager:/config:ro" \
+            prom/alertmanager:v0.28.1 \
+            check-config ai-gateway-g8.yml
+          bash infra/scripts/verify-ai-gateway-g8-alert-routing.sh
+
+      - name: 执行 G8 生产形态部署与回滚演练
+        env:
+          AI_GATEWAY_G8_ISOLATED_APPROVED: YES
+        run: |
+          bash -n infra/scripts/verify-ai-gateway-g8-production-rehearsal.sh
+          bash infra/scripts/verify-ai-gateway-g8-production-rehearsal.sh
+
+      - name: 扫描 G8 差异敏感信息
+        run: python scripts/verify-sms-phase5-sensitive-data.py --repo-root . --base-ref origin/main
+
+  gateway-g8-real-e2e:
+    name: AI 网关 G8 真实后端浏览器验收
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            web/admin-console/package-lock.json
+            web/user-console/package-lock.json
+
+      - name: 安装双端依赖与浏览器
+        run: |
+          npm ci --prefix web/admin-console
+          npm ci --prefix web/user-console
+
+      - name: 安装 Chromium
+        working-directory: web/admin-console
+        run: npx playwright install --with-deps chrome
+
+      - name: 执行无 Mock 的真实后端写入与调用链路
+        env:
+          AI_GATEWAY_G8_ISOLATED_APPROVED: YES
+        run: |
+          bash -n infra/scripts/verify-ai-gateway-g8-real-backend-e2e.sh
+          bash infra/scripts/verify-ai-gateway-g8-real-backend-e2e.sh
+
   # ---- 前端 CI ----
   frontend-admin:
     name: 管理后台构建

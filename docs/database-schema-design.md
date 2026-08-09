@@ -432,6 +432,8 @@ Migration `000062_create_ai_gateway_g3_billing` 新增：
 
 G7 不新增 Migration 或第二套账务表。可观测 Collector 与 `ai-gateway-reconcile` 只在 MySQL READ ONLY、REPEATABLE READ 事务中读取既有 `ai_requests`、`ai_price_versions`、`ai_price_skus`、`ai_execution_attempts`、`ai_usage_items`、`ai_request_wallet_links`、`wallets`、`wallet_holds`、`wallet_transactions`、`ai_outbox_events`、`ai_compensation_tasks` 和 `audit_logs`。对账输出三项 DECIMAL 差额、七类聚合异常及有限条 request_id/issue_code 明细，并核对快照与不可变价格/SKU、raw↔sale 数量、逐项金额、钱包 owner 与 `0≤settled≤held`；任何未释放 hold、活跃 Outbox 或补偿积压同样失败，禁止以 G7 CLI 直接写表修账。
 
+G8 当前不新增 Migration。生产流量启动门禁只读聚合既有发布事实：5～8 个已发布文字模型、至少两个健康渠道、逐模型有效且已审批价格、健康路由、唯一生效安全策略、成本有效期和最低 15% 毛利。任一缺项只会拒绝生产流量启动，不修改模型、价格、路由、钱包或账本事实；结果未知请求禁止重试由执行链语义和回归测试保证，不以禁止全部安全重试代替。
+
 价格发布使用逻辑模型共享行锁校验审批、四 SKU 和时间区间重叠；报价读取价格与 SKU 使用同一一致性事务。已发布版本不提供原地改价接口，只能暂停或创建新版本。000062 down 保留所有财务表和事实，不执行 DROP 或数据删除。
 
 完整字段与状态契约见 [`ai-gateway-g0-g1-contract.md`](./ai-gateway-g0-g1-contract.md)。
