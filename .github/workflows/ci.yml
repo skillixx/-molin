@@ -371,7 +371,10 @@ jobs:
           BIFROST_NODE_ENV_FILE: /tmp/g8-bifrost-node.env
           BIFROST_LB_ENV_FILE: /tmp/g8-bifrost-lb.env
         run: |
-          touch /tmp/g8-internal-token /tmp/g8-alert-relay-config /tmp/g8-prod.env /tmp/g8-bifrost-node.env /tmp/g8-bifrost-lb.env
+          touch /tmp/g8-internal-token /tmp/g8-alert-relay-config /tmp/g8-prod.env
+          printf '%s\n' 'BIFROST_ENCRYPTION_KEY=ci-placeholder' 'OPENROUTER_API_KEY=ci-placeholder' 'BAILIAN_API_KEY=ci-placeholder' >/tmp/g8-bifrost-node.env
+          printf '%s\n' 'BIFROST_INTERNAL_TOKEN=ci-placeholder' >/tmp/g8-bifrost-lb.env
+          python infra/scripts/verify-ai-gateway-g8-secret-scope.py --node-env /tmp/g8-bifrost-node.env --lb-env /tmp/g8-bifrost-lb.env
           python infra/nginx/verify_forwarded_headers.py
           docker compose -f infra/docker-compose.prod.yml -f infra/docker-compose.ai-gateway-g8.yml config --format json >/tmp/g8-compose.json
           python - <<'PY'
@@ -380,12 +383,19 @@ jobs:
 
           config = json.loads(Path('/tmp/g8-compose.json').read_text())
           services = config['services']
-          assert 'ai-gateway-internal' in services['api']['networks']
+          assert 'ai-gateway-lb' in services['api']['networks']
           assert 'internal' not in services['bifrost-lb']['networks']
-          forbidden = ('MYSQL', 'JWT', 'REDIS', 'RABBIT', 'PAYMENT', 'SMS', 'MINIO')
-          for name in ('bifrost-1', 'bifrost-2', 'bifrost-lb'):
-              environment = services[name].get('environment', {})
-              assert not [key for key in environment if any(word in key for word in forbidden)], name
+          public_networks = set(services['admin-console']['networks']) | set(services['user-console']['networks'])
+          for name in ('bifrost-1', 'bifrost-2'):
+              node_networks = set(services[name]['networks'])
+              assert node_networks == {'ai-gateway-nodes', 'ai-gateway-egress'}, name
+              assert not (node_networks & public_networks), name
+              assert not (node_networks & set(services['api']['networks'])), name
+          assert set(services['bifrost-lb']['networks']) == {'ai-gateway-lb', 'ai-gateway-nodes'}
+          expected_node_keys = {'BIFROST_ENCRYPTION_KEY', 'OPENROUTER_API_KEY', 'BAILIAN_API_KEY'}
+          assert set(services['bifrost-1'].get('environment', {})) == expected_node_keys
+          assert set(services['bifrost-2'].get('environment', {})) == expected_node_keys
+          assert set(services['bifrost-lb'].get('environment', {})) == {'BIFROST_INTERNAL_TOKEN'}
           PY
           for conf in admin.conf user.conf api.conf; do
             docker run --rm --add-host api:127.0.0.1 \

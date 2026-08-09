@@ -1,8 +1,8 @@
 [
   {
     "targets": [
-      "http://bifrost-1:8080/health",
-      "http://bifrost-2:8080/health"
+      "http://bifrost-lb:8080/health/bifrost-1",
+      "http://bifrost-lb:8080/health/bifrost-2"
     ],
     "labels": {
       "environment": "production",

@@ -156,10 +156,10 @@ http {
     ssl_certificate_key /etc/nginx/tls/key.pem;
     client_max_body_size 20m;
     # 边缘保险丝独立于应用版本，旧版回滚期间仍阻断所有可触发文字上游调用的入口。
-    location = /v1/chat/completions { default_type application/json; return 503 '{"code":50330,"message":"AI 网关商业流量暂未开放"}'; }
-    location = /api/token/chat/completions { default_type application/json; return 503 '{"code":50330,"message":"AI 网关商业流量暂未开放"}'; }
-    location ~ ^/api/agents/[^/]+/chat$ { default_type application/json; return 503 '{"code":50330,"message":"AI 网关商业流量暂未开放"}'; }
-    location ~ ^/api/conversations/[^/]+/chat$ { default_type application/json; return 503 '{"code":50330,"message":"AI 网关商业流量暂未开放"}'; }
+    location = /v1/chat/completions { default_type application/json; return 503 '{"code":50330,"message":"AI 网关商业流量暂未开放","error_type":"ai_gateway_traffic_closed","request_id":"$request_id"}'; }
+    location = /api/token/chat/completions { default_type application/json; return 503 '{"code":50330,"message":"AI 网关商业流量暂未开放","error_type":"ai_gateway_traffic_closed","request_id":"$request_id"}'; }
+    location ~ ^/api/agents/[^/]+/chat$ { default_type application/json; return 503 '{"code":50330,"message":"AI 网关商业流量暂未开放","error_type":"ai_gateway_traffic_closed","request_id":"$request_id"}'; }
+    location ~ ^/api/conversations/[^/]+/chat$ { default_type application/json; return 503 '{"code":50330,"message":"AI 网关商业流量暂未开放","error_type":"ai_gateway_traffic_closed","request_id":"$request_id"}'; }
     location /v1/ { proxy_pass http://api:8080; proxy_http_version 1.1; proxy_buffering off; proxy_request_buffering off; proxy_connect_timeout 10s; proxy_send_timeout 300s; proxy_read_timeout 300s; }
     location /api/ { proxy_pass http://api:8080; proxy_http_version 1.1; proxy_buffering off; proxy_connect_timeout 10s; proxy_read_timeout 60s; }
     location = /api/internal/metrics { return 404; }
@@ -171,13 +171,24 @@ tls_address="$(docker port "${nginx_container}" 443/tcp | head -n1)"
 for _ in $(seq 1 30); do curl -kfsS "https://${tls_address}/api/health" >/dev/null 2>&1 && break; sleep 1; done
 curl -kfsS "https://${tls_address}/api/health" >/dev/null || { echo "G8_PRODUCTION_REHEARSAL=FAILED reason=tls_health"; exit 2; }
 metrics_status="$(curl -ksS -o /dev/null -w '%{http_code}' "https://${tls_address}/api/internal/metrics")"
-traffic_status="$(curl -ksS -o "${work_dir}/traffic-response.json" -w '%{http_code}' -H "Authorization: Bearer ${access_token}" -H 'Content-Type: application/json' -d '{"model":"molin/closed","messages":[{"role":"user","content":"closed"}]}' "https://${tls_address}/v1/chat/completions")"
-[[ "${metrics_status}" == "404" && "${traffic_status}" == "503" ]] && grep -q '50330' "${work_dir}/traffic-response.json" || { echo "G8_PRODUCTION_REHEARSAL=FAILED reason=fail_closed metrics=${metrics_status} traffic=${traffic_status}"; exit 2; }
+
+assert_edge_gate_closed() {
+  local stage="$1"
+  local index=0 path status response_file
+  for path in /v1/chat/completions /api/token/chat/completions /api/agents/1/chat /api/conversations/1/chat; do
+    index=$((index + 1))
+    response_file="${work_dir}/${stage}-edge-${index}.json"
+    status="$(curl -ksS -o "${response_file}" -w '%{http_code}' -H "Authorization: Bearer ${access_token}" -H 'Content-Type: application/json' -d '{}' "https://${tls_address}${path}")"
+    [[ "${status}" == "503" ]] && grep -q '50330' "${response_file}" && grep -q 'ai_gateway_traffic_closed' "${response_file}" || { echo "G8_PRODUCTION_REHEARSAL=FAILED reason=${stage}_edge_gate path=${path} status=${status}"; exit 2; }
+  done
+}
+
+[[ "${metrics_status}" == "404" ]] || { echo "G8_PRODUCTION_REHEARSAL=FAILED reason=metrics_public status=${metrics_status}"; exit 2; }
+assert_edge_gate_closed candidate
 
 # 回滚只切换应用制品，数据库和财务事实保持原位；边缘保险丝必须保护不认识应用总闸的旧版本。
 run_api "${baseline_image}" || { echo "G8_PRODUCTION_REHEARSAL=FAILED reason=rollback_baseline_not_ready"; exit 2; }
-rollback_traffic_status="$(curl -ksS -o "${work_dir}/rollback-traffic-response.json" -w '%{http_code}' -H "Authorization: Bearer ${access_token}" -H 'Content-Type: application/json' -d '{"model":"molin/closed","messages":[{"role":"user","content":"rollback-closed"}]}' "https://${tls_address}/v1/chat/completions")"
-[[ "${rollback_traffic_status}" == "503" ]] && grep -q '50330' "${work_dir}/rollback-traffic-response.json" || { echo "G8_PRODUCTION_REHEARSAL=FAILED reason=rollback_edge_gate status=${rollback_traffic_status}"; exit 2; }
+assert_edge_gate_closed rollback
 schema_after_rollback="$(mysql_exec -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${database}';")"
 [[ "${schema_after_rollback}" == "${schema_before}" ]] || { echo "G8_PRODUCTION_REHEARSAL=FAILED reason=rollback_schema_changed"; exit 2; }
 run_api "${candidate_image}" || { echo "G8_PRODUCTION_REHEARSAL=FAILED reason=candidate_restore_not_ready"; exit 2; }
@@ -186,4 +197,4 @@ assert_app_gate_closed candidate_restore
 log_config="$(docker inspect "${api_container}" --format '{{.HostConfig.LogConfig.Type}}:{{index .HostConfig.LogConfig.Config "max-size"}}:{{index .HostConfig.LogConfig.Config "max-file"}}')"
 [[ "${log_config}" == "json-file:1m:2" ]] || { echo "G8_PRODUCTION_REHEARSAL=FAILED reason=log_rotation"; exit 2; }
 
-echo "G8_PRODUCTION_REHEARSAL=PASS source_commit=$(git -C "${repo_root}" rev-parse HEAD) candidate_image_id=${candidate_image_id} baseline_image_id=${baseline_image_id} candidate_binary_sha256=${candidate_binary_sha} backup_sha256=${backup_sha} schema_tables=${schema_before} readiness_sql_mysql8=true bifrost_nodes=2 bifrost_lb_auth=true bifrost_auth_header_stripped=true bifrost_upstream=fake tls=true sse_buffering=false request_body_limit=20m log_rotation=true metrics_public_status=404 candidate_app_gate=true edge_kill_switch=true authenticated_traffic_gate_status=503 authenticated_traffic_gate_code=50330 old_version_started=true rollback_edge_gate=true candidate_started=true rollback_started=true candidate_restored=true database_preserved=true production=false paid_upstream=false"
+echo "G8_PRODUCTION_REHEARSAL=PASS source_commit=$(git -C "${repo_root}" rev-parse HEAD) candidate_image_id=${candidate_image_id} baseline_image_id=${baseline_image_id} candidate_binary_sha256=${candidate_binary_sha} backup_sha256=${backup_sha} schema_tables=${schema_before} readiness_sql_mysql8=true bifrost_nodes=2 bifrost_lb_auth=true bifrost_auth_header_stripped=true bifrost_upstream=fake tls=true sse_buffering=false request_body_limit=20m log_rotation=true metrics_public_status=404 candidate_app_gate=true edge_kill_switch_routes=4 edge_error_type=true authenticated_traffic_gate_status=503 authenticated_traffic_gate_code=50330 old_version_started=true rollback_edge_gate_routes=4 candidate_started=true rollback_started=true candidate_restored=true database_preserved=true production=false paid_upstream=false"

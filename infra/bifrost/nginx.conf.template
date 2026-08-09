@@ -29,6 +29,15 @@ http {
             proxy_pass http://bifrost_nodes;
         }
 
+        # 只经 LB 暴露逐节点健康状态，监控无需加入节点网络或获得模型调用能力。
+        location = /health/bifrost-1 {
+            proxy_pass http://bifrost-1:8080/health;
+        }
+
+        location = /health/bifrost-2 {
+            proxy_pass http://bifrost-2:8080/health;
+        }
+
         location / {
             if ($bifrost_internal_authorized = 0) {
                 return 401;

@@ -15,7 +15,7 @@
 - 密钥仅通过受控环境变量或 Secret Manager 注入；源码、镜像层、build args、日志、PR 和证据文档均不得出现真实值。
 - 开启总闸时必须具备 `TOKEN_PROVIDER_KEY`、`API_KEY_HMAC_SECRET`、`INTERNAL_API_TOKEN`、`INTERNAL_ALLOWED_IPS`、RabbitMQ/Outbox 和安全预占配置。
 - Bifrost 驱动必须具备受控基址与不少于 32 字节的内部 Token。
-- Bifrost 节点只能从专用受控文件或 Secret Manager 获得加密密钥与两个上游密钥；LB 只能获得独立内部 Token。禁止复用 API 的完整生产环境文件。API 与 LB 通过专网通信，LB 不得接入 MySQL、Redis、RabbitMQ 所在网络；内部自动重试固定为 0，节点只开放受控出站，不发布公网入站端口。
+- Bifrost 节点只能从专用受控文件或 Secret Manager 获得加密密钥与两个上游密钥；LB 只能获得独立内部 Token。禁止复用 API 的完整生产环境文件。API↔LB 与 LB↔节点使用两个互不重叠的内部专网，节点另用只供 Bifrost 的独立出站网络；API、公开前端和监控均不得加入节点网络，节点不发布公网入站端口；内部自动重试固定为 0。
 - 商业流量采用应用总闸与边缘 kill switch 双保险。边缘规则独立于应用版本并默认关闭；任何旧制品回滚前必须先关闭边缘规则并实测所有文字调用入口返回 HTTP 503 与业务码 50330。
 - DB 门禁要求 5～8 个发布文字模型、两个健康渠道、逐模型有效价格/路由、唯一内容安全策略、成本未过期且毛利达标。运行链只允许对明确未发出的失败在同一路由安全重试；结果未知、超时、流中断和已收到上游响应均不得自动重试或跨上游切换。
 

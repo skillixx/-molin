@@ -11,6 +11,7 @@
 1. 核对主机、进程、活动请求、环境文件权限、schema、表规模、备份、Redis、RabbitMQ、Bifrost、Prometheus、Alertmanager、Grafana 和日志。
 2. 保存旧 API/前端/监控配置摘要与制品，不复制环境文件正文；分别核对 API、Bifrost 节点、Bifrost LB 的最小权限 Secret 文件，禁止共用完整生产环境文件。
 3. 运行 `docker compose config --quiet`、Promtool、Nginx 配置检查和只读账务对账。
+   同时执行 `python infra/scripts/verify-ai-gateway-g8-secret-scope.py --node-env <节点专用文件> --lb-env <LB专用文件>`；脚本只读取变量名，必须精确通过 3 项节点变量与 1 项 LB 变量白名单，禁止输出密钥值。
 4. 确认 `AI_GATEWAY_TRAFFIC_ENABLED=false`，客户入口关闭。
 
 ## 3. 关闭态部署

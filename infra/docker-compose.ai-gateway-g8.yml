@@ -10,8 +10,8 @@ services:
       options:
         max-size: "50m"
         max-file: "10"
-    # API 只通过专网访问 Bifrost LB；LB 不再加入数据库、Redis 和 RabbitMQ 所在网络。
-    networks: [internal, ai-gateway-internal]
+    # API 只通过入口专网访问 Bifrost LB，无法直接解析或连接上游节点。
+    networks: [internal, ai-gateway-lb]
 
   bifrost-1:
     image: ${BIFROST_IMAGE_DIGEST}
@@ -21,7 +21,7 @@ services:
     volumes:
       - ./bifrost/config.json:/etc/bifrost/config.json:ro
     # 仅节点具备受控公网出站能力；不发布宿主机端口，入站仍只来自内部负载均衡器。
-    networks: [ai-gateway-internal, external]
+    networks: [ai-gateway-nodes, ai-gateway-egress]
     read_only: true
     tmpfs: [/tmp]
     security_opt: [no-new-privileges:true]
@@ -33,7 +33,7 @@ services:
     command: ["--config", "/etc/bifrost/config.json"]
     volumes:
       - ./bifrost/config.json:/etc/bifrost/config.json:ro
-    networks: [ai-gateway-internal, external]
+    networks: [ai-gateway-nodes, ai-gateway-egress]
     read_only: true
     tmpfs: [/tmp]
     security_opt: [no-new-privileges:true]
@@ -46,7 +46,7 @@ services:
       - ./bifrost/start-nginx.sh:/usr/local/bin/start-bifrost-nginx.sh:ro
     env_file: ${BIFROST_LB_ENV_FILE:-../.env.bifrost-lb.prod}
     command: ["/bin/sh", "/usr/local/bin/start-bifrost-nginx.sh"]
-    networks: [ai-gateway-internal]
+    networks: [ai-gateway-lb, ai-gateway-nodes]
     depends_on: [bifrost-1, bifrost-2]
     read_only: true
     tmpfs: [/var/cache/nginx, /var/run, /tmp]
@@ -83,7 +83,7 @@ services:
     command: ["--config.file=/etc/blackbox_exporter/config.yml"]
     volumes:
       - ./prometheus/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
-    networks: [ai-gateway-internal, ai-gateway-monitoring]
+    networks: [ai-gateway-lb, ai-gateway-monitoring]
     security_opt: [no-new-privileges:true]
 
   alertmanager:
@@ -129,8 +129,15 @@ volumes:
   grafana-g8-data:
 
 networks:
-  ai-gateway-internal:
+  # 仅 API、LB 与受控健康探针加入；API 无法通过该网络直连节点。
+  ai-gateway-lb:
     internal: true
+  # 仅 LB 与两个节点加入；任何业务或公开入口容器均不得加入。
+  ai-gateway-nodes:
+    internal: true
+  # 仅供 Bifrost 节点访问付费上游；不得与公开前端或其他业务容器共享。
+  ai-gateway-egress:
+    driver: bridge
   ai-gateway-monitoring:
     internal: true
 
