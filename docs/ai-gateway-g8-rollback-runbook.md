@@ -11,10 +11,10 @@
 
 ## 2. 顺序
 
-1. 固定事件 ChangeId，停止扩大范围，将 `AI_GATEWAY_TRAFFIC_ENABLED=false`。
+1. 固定事件 ChangeId，停止扩大范围；先把所有公开入口切换到受控的边缘关闭规则，确认文字、工作台 Agent 和有状态会话调用均返回 HTTP 503 与业务码 50330，再将 `AI_GATEWAY_TRAFFIC_ENABLED=false`。边缘规则独立于应用版本，禁止直接回滚到不认识应用总闸的旧制品。
 2. 保留活动请求与财务事实，等待已发送请求按可信 Usage 收敛；结果未知保持 hold 并进入审计核定。
 3. 切换到已验证旧应用/路由/配置，禁止执行 destructive down migration。
-4. 验证旧版本 health/ready、TLS/SSE、指标、Bifrost、Redis/RabbitMQ 和日志。
+4. 验证旧版本 health/ready、TLS/SSE、指标、Bifrost、Redis/RabbitMQ 和日志；再次用鉴权请求证明边缘 kill switch 仍返回 50330，未验证前不得开放任何客户流量。
 5. 运行只读对账；差额非零时继续保持流量关闭，不直接 SQL 修账。
 6. 如需恢复新版本，重新执行完整关闭态门禁，不复用失败请求的幂等键进行盲重试。
 

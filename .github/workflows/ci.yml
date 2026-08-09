@@ -368,10 +368,31 @@ jobs:
           AI_GATEWAY_INTERNAL_TOKEN_FILE: /tmp/g8-internal-token
           AI_GATEWAY_ALERT_RELAY_CONFIG_FILE: /tmp/g8-alert-relay-config
           MOLIN_PROD_ENV_FILE: /tmp/g8-prod.env
+          BIFROST_NODE_ENV_FILE: /tmp/g8-bifrost-node.env
+          BIFROST_LB_ENV_FILE: /tmp/g8-bifrost-lb.env
         run: |
-          touch /tmp/g8-internal-token /tmp/g8-alert-relay-config /tmp/g8-prod.env
+          touch /tmp/g8-internal-token /tmp/g8-alert-relay-config /tmp/g8-prod.env /tmp/g8-bifrost-node.env /tmp/g8-bifrost-lb.env
           python infra/nginx/verify_forwarded_headers.py
-          docker compose -f infra/docker-compose.prod.yml -f infra/docker-compose.ai-gateway-g8.yml config --quiet
+          docker compose -f infra/docker-compose.prod.yml -f infra/docker-compose.ai-gateway-g8.yml config --format json >/tmp/g8-compose.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          config = json.loads(Path('/tmp/g8-compose.json').read_text())
+          services = config['services']
+          assert 'ai-gateway-internal' in services['api']['networks']
+          assert 'internal' not in services['bifrost-lb']['networks']
+          forbidden = ('MYSQL', 'JWT', 'REDIS', 'RABBIT', 'PAYMENT', 'SMS', 'MINIO')
+          for name in ('bifrost-1', 'bifrost-2', 'bifrost-lb'):
+              environment = services[name].get('environment', {})
+              assert not [key for key in environment if any(word in key for word in forbidden)], name
+          PY
+          for conf in admin.conf user.conf api.conf; do
+            docker run --rm --add-host api:127.0.0.1 \
+              -v "${{ github.workspace }}/infra/nginx/${conf}:/etc/nginx/conf.d/default.conf:ro" \
+              -v "${{ github.workspace }}/infra/nginx/traffic-gate-closed:/etc/nginx/ai-gateway-traffic-gate:ro" \
+              nginx:1.29.1-alpine nginx -t
+          done
           docker run --rm --entrypoint=/bin/promtool \
             --workdir=/etc/prometheus \
             -v "${{ github.workspace }}/infra/prometheus/ai-gateway-production.yml:/etc/prometheus/ai-gateway-production.yml:ro" \

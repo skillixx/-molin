@@ -10,11 +10,13 @@ services:
       options:
         max-size: "50m"
         max-file: "10"
+    # API 只通过专网访问 Bifrost LB；LB 不再加入数据库、Redis 和 RabbitMQ 所在网络。
+    networks: [internal, ai-gateway-internal]
 
   bifrost-1:
     image: ${BIFROST_IMAGE_DIGEST}
     restart: unless-stopped
-    env_file: ${MOLIN_PROD_ENV_FILE:-../.env.prod}
+    env_file: ${BIFROST_NODE_ENV_FILE:-../.env.bifrost.prod}
     command: ["--config", "/etc/bifrost/config.json"]
     volumes:
       - ./bifrost/config.json:/etc/bifrost/config.json:ro
@@ -27,7 +29,7 @@ services:
   bifrost-2:
     image: ${BIFROST_IMAGE_DIGEST}
     restart: unless-stopped
-    env_file: ${MOLIN_PROD_ENV_FILE:-../.env.prod}
+    env_file: ${BIFROST_NODE_ENV_FILE:-../.env.bifrost.prod}
     command: ["--config", "/etc/bifrost/config.json"]
     volumes:
       - ./bifrost/config.json:/etc/bifrost/config.json:ro
@@ -42,13 +44,21 @@ services:
     volumes:
       - ./bifrost/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
       - ./bifrost/start-nginx.sh:/usr/local/bin/start-bifrost-nginx.sh:ro
-    env_file: ${MOLIN_PROD_ENV_FILE:-../.env.prod}
+    env_file: ${BIFROST_LB_ENV_FILE:-../.env.bifrost-lb.prod}
     command: ["/bin/sh", "/usr/local/bin/start-bifrost-nginx.sh"]
-    networks: [internal, ai-gateway-internal]
+    networks: [ai-gateway-internal]
     depends_on: [bifrost-1, bifrost-2]
     read_only: true
     tmpfs: [/var/cache/nginx, /var/run, /tmp]
     security_opt: [no-new-privileges:true]
+
+  admin-console:
+    volumes:
+      - ${AI_GATEWAY_TRAFFIC_GATE_DIR:-./nginx/traffic-gate-closed}:/etc/nginx/ai-gateway-traffic-gate:ro
+
+  user-console:
+    volumes:
+      - ${AI_GATEWAY_TRAFFIC_GATE_DIR:-./nginx/traffic-gate-closed}:/etc/nginx/ai-gateway-traffic-gate:ro
 
   prometheus:
     image: prom/prometheus:v3.12.0-distroless

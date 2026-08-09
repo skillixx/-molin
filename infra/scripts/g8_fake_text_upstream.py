@@ -24,6 +24,10 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/v1/chat/completions":
             self.send_error(404)
             return
+        if os.getenv("G8_REQUIRE_EMPTY_AUTHORIZATION") == "true" and self.headers.get("Authorization", ""):
+            self.send_response(400)
+            self.end_headers()
+            return
         length = int(self.headers.get("Content-Length", "0"))
         self.rfile.read(length)
         payload = {
