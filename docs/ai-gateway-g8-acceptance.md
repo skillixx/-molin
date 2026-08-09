@@ -21,11 +21,11 @@
 | 生产配置与流量总闸 | 开发自测 PASS | 生产默认关闭；配置缺项和 DB 发布事实缺项失败关闭；关闭态返回 50330 |
 | 全量 Go/前端/Promtool/敏感扫描 | 开发自测 PASS | Go 全量测试、vet、mod verify、Linux race、双端契约/type-check/lint/production build、22 条 Promtool 规则与阈值、生产抓取配置、Actionlint、脚本语法、diff check 和差异敏感扫描均通过；PR CI 仍待执行 |
 | G7 可靠性回归 | PASS | 隔离 MySQL/Redis/Fake 上游：1000@100、幂等 100、断连、Fake 上游与 Redis 故障恢复通过；三项差额、七类异常、hold、Outbox、补偿均为 0 |
-| 生产等价隔离部署/回滚 | 开发自测 PASS | 精确提交 `444c6a1531c3dd4156dd3e9784d5eb8e232583ec` 完成基线→候选→基线回滚→候选恢复；双 Fake Bifrost 节点和 LB 鉴权、TLS、SSE 禁缓冲、20m 请求体限制、日志轮转、指标 404、鉴权总闸 50330、98 表结构备份恢复、MySQL 8 门禁 SQL 和数据库保留通过；候选镜像 SHA-256 `9d5b8afd85d2e53f72eb77647aed3acb25ec5ef4c743357a69dfb93cbfae02cf`，候选二进制 SHA-256 `a2cecdc6b8074c3a384c57fcb6beb266dd8822e1f5a0257b972793af81933b5c`，仅为本地临时制品，不是发布制品 |
+| 生产等价隔离部署/回滚 | 开发自测 PASS | 精确提交 `3a7fa37579c6add3c0848b88366976412b062d38` 完成基线→候选→基线回滚→候选恢复；双 Fake Bifrost 节点和 LB 鉴权、内部鉴权头清除、最小权限专网、TLS、SSE 禁缓冲、20m 请求体限制、日志轮转、指标 404、候选应用总闸、旧版回滚边缘 kill switch、98 表结构备份恢复、MySQL 8 门禁 SQL 和数据库保留通过；候选镜像 SHA-256 `35f162921000631f4ef5dca2593add6cae56b9b89887546d9fbd4fcf35edc8ab`，候选二进制 SHA-256 `a2cecdc6b8074c3a384c57fcb6beb266dd8822e1f5a0257b972793af81933b5c`，仅为本地临时制品，不是发布制品 |
 | 真实后端浏览器 E2E | 开发自测 PASS | 无 API Mock；管理员发布、用户模型发现、Project/SK、一次 Fake 文字调用、Usage、账单、申诉及 1440/768/375 视口通过；三项差额、异常、hold、Outbox、补偿均为 0 |
 | 小额账单八位精度 | 开发自测 PASS | 真实 MySQL 发现并修复 DECIMAL 除法把 `0.00001400` 截断为四位的对账误报；改用显式八位定点乘法，Go 回归及真实后端只读对账通过 |
 | 首轮独立代码/产品评审 | 已修复，待复评 | 精确 HEAD `16abed3` 发现的生产门禁与运行规则、共享转发总闸、Bifrost 重试/编排和预演认证等 P1 已在 `444c6a1` 修复并完成开发自测；不得以首轮 QA PASS 覆盖，最终 HEAD 必须重新独立评审 |
-| 第二轮独立复评 | 修复中 | 精确 HEAD `7ef8f93` 的产品/规格复评 P0/P1=0；代码安全与 QA 发现 Bifrost 复用完整生产环境文件、旧版回滚缺少独立边缘总闸两项 P1，当前按最小权限 Secret 与边缘 kill switch 修复，必须对新 HEAD 再复评 |
+| 第二轮独立复评 | 已修复，待第三轮复评 | 精确 HEAD `7ef8f93` 的产品/规格复评 P0/P1=0；代码安全与 QA 发现的 Bifrost 完整环境文件过度授权、旧版回滚缺少独立边缘总闸两项 P1 已在 `3a7fa37` 修复并完成隔离预演，必须对最终 HEAD 再复评 |
 | 独立规格/代码安全评审 | 待执行 | P0/P1 必须为 0 |
 | QA / 产品 | 待执行 | 必须同一精确 PR HEAD |
 | PR / CI / merge commit | 待执行 | CI 全绿后转 Ready；禁止 squash |
