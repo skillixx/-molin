@@ -240,3 +240,16 @@ func TestReconciliationSQLUsesNullSafeSettlementAndCompleteHoldEvidence(t *testi
 		}
 	}
 }
+
+func TestReconciliationSQLKeepsEightDecimalPlacesForSmallBills(t *testing.T) {
+	for name, query := range map[string]string{"聚合": aiGatewayReconciliationSQL, "明细": aiGatewayReconciliationIssuesSQL} {
+		// MySQL 的 DECIMAL 除法默认仅额外保留四位，不能用除以一亿还原八位账单金额。
+		if strings.Contains(query, ") / 100000000") {
+			t.Fatalf("%s 对账 SQL 仍可能把小额账单截断为四位小数", name)
+		}
+		// 显式使用八位定点乘数，保证 0.00001400 等小额账单能够按财务精度重算。
+		if strings.Count(query, "* CAST(0.00000001 AS DECIMAL(20,8))") < 2 {
+			t.Fatalf("%s 对账 SQL 未完整固定八位小数精度", name)
+		}
+	}
+}

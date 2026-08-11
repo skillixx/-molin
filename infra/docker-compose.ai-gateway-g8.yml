@@ -1,0 +1,148 @@
+# AI 网关 G8 生产形态覆盖层。必须与 docker-compose.prod.yml 一起使用。
+# Bifrost 和告警 relay 镜像必须由发布清单注入固定 digest，禁止 latest。
+services:
+  api:
+    depends_on:
+      rabbitmq:
+        condition: service_started
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "10"
+    # API 只通过入口专网访问 Bifrost LB，无法直接解析或连接上游节点。
+    networks: [internal, ai-gateway-lb]
+
+  bifrost-1:
+    image: ${BIFROST_IMAGE_DIGEST}
+    restart: unless-stopped
+    env_file: ${BIFROST_NODE_ENV_FILE:-../.env.bifrost.prod}
+    command: ["--config", "/etc/bifrost/config.json"]
+    volumes:
+      - ./bifrost/config.json:/etc/bifrost/config.json:ro
+    # 仅节点具备受控公网出站能力；不发布宿主机端口，入站仍只来自内部负载均衡器。
+    networks: [ai-gateway-nodes, ai-gateway-egress]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+
+  bifrost-2:
+    image: ${BIFROST_IMAGE_DIGEST}
+    restart: unless-stopped
+    env_file: ${BIFROST_NODE_ENV_FILE:-../.env.bifrost.prod}
+    command: ["--config", "/etc/bifrost/config.json"]
+    volumes:
+      - ./bifrost/config.json:/etc/bifrost/config.json:ro
+    networks: [ai-gateway-nodes, ai-gateway-egress]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+
+  bifrost-lb:
+    image: nginx:1.29.1-alpine
+    restart: unless-stopped
+    volumes:
+      - ./bifrost/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
+      - ./bifrost/start-nginx.sh:/usr/local/bin/start-bifrost-nginx.sh:ro
+    env_file: ${BIFROST_LB_ENV_FILE:-../.env.bifrost-lb.prod}
+    command: ["/bin/sh", "/usr/local/bin/start-bifrost-nginx.sh"]
+    networks: [ai-gateway-lb, ai-gateway-nodes]
+    depends_on: [bifrost-1, bifrost-2]
+    read_only: true
+    tmpfs: [/var/cache/nginx, /var/run, /tmp]
+    security_opt: [no-new-privileges:true]
+
+  admin-console:
+    volumes:
+      - ${AI_GATEWAY_TRAFFIC_GATE_DIR:-./nginx/traffic-gate-closed}:/etc/nginx/ai-gateway-traffic-gate:ro
+
+  user-console:
+    volumes:
+      - ${AI_GATEWAY_TRAFFIC_GATE_DIR:-./nginx/traffic-gate-closed}:/etc/nginx/ai-gateway-traffic-gate:ro
+
+  prometheus:
+    image: prom/prometheus:v3.12.0-distroless
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.listen-address=0.0.0.0:9090
+    volumes:
+      - ./prometheus/ai-gateway-production.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/ai-gateway-alerts.yml:/etc/prometheus/rules/ai-gateway-alerts.yml:ro
+      - ./prometheus/targets:/etc/prometheus/targets:ro
+      - prometheus-g8-data:/prometheus
+    secrets: [internal_api_token]
+    networks: [internal, ai-gateway-monitoring]
+    security_opt: [no-new-privileges:true]
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.28.0
+    restart: unless-stopped
+    command: ["--config.file=/etc/blackbox_exporter/config.yml"]
+    volumes:
+      - ./prometheus/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    networks: [ai-gateway-lb, ai-gateway-monitoring]
+    security_opt: [no-new-privileges:true]
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./alertmanager/ai-gateway-g8.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-g8-data:/alertmanager
+    networks: [ai-gateway-monitoring]
+    security_opt: [no-new-privileges:true]
+
+  alert-relay:
+    image: ${AI_GATEWAY_ALERT_RELAY_IMAGE_DIGEST}
+    restart: unless-stopped
+    networks: [ai-gateway-monitoring]
+    secrets: [ai_gateway_alert_relay_config]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+
+  grafana:
+    image: grafana/grafana:13.1.3
+    restart: unless-stopped
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-g8-data:/var/lib/grafana
+    networks: [ai-gateway-monitoring]
+    security_opt: [no-new-privileges:true]
+
+volumes:
+  prometheus-g8-data:
+  alertmanager-g8-data:
+  grafana-g8-data:
+
+networks:
+  # 仅 API、LB 与受控健康探针加入；API 无法通过该网络直连节点。
+  ai-gateway-lb:
+    internal: true
+  # 仅 LB 与两个节点加入；任何业务或公开入口容器均不得加入。
+  ai-gateway-nodes:
+    internal: true
+  # 仅供 Bifrost 节点访问付费上游；不得与公开前端或其他业务容器共享。
+  ai-gateway-egress:
+    driver: bridge
+  ai-gateway-monitoring:
+    internal: true
+
+secrets:
+  internal_api_token:
+    file: ${AI_GATEWAY_INTERNAL_TOKEN_FILE}
+  ai_gateway_alert_relay_config:
+    file: ${AI_GATEWAY_ALERT_RELAY_CONFIG_FILE}

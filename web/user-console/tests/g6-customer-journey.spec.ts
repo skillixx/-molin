@@ -103,7 +103,7 @@ test('G6 模型发现到 Project SK 一次展示链路可操作', async ({ page 
   await expect(page.getByText('http://127.0.0.1:5196')).toBeVisible()
   await page.getByRole('button', { name: '复制接入模型代码' }).click()
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('molin/qwen-turbo')
-  await page.getByRole('button', { name: '创建 API Key' }).click()
+  await page.getByRole('link', { name: '创建 API Key' }).click()
   await expect(page).toHaveURL(/\/ai\/api-keys\?model=/)
   await expect(page.getByRole('heading', { name: 'Project 与 API Key' })).toBeVisible()
   await expect(page.getByText('Project 有效限制：并发 10，RPM 120，TPM 300000')).toBeVisible()

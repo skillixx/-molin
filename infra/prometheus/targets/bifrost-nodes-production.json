@@ -1,0 +1,12 @@
+[
+  {
+    "targets": [
+      "http://bifrost-lb:8080/health/bifrost-1",
+      "http://bifrost-lb:8080/health/bifrost-2"
+    ],
+    "labels": {
+      "environment": "production",
+      "service": "bifrost"
+    }
+  }
+]

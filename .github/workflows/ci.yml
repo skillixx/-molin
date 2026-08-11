@@ -342,6 +342,120 @@ jobs:
           G7_DOCKER_PULL_POLICY: missing
         run: bash infra/scripts/verify-ai-gateway-g7-reliability.sh
 
+  gateway-g8:
+    name: AI 网关 G8 生产就绪门禁
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: 校验生产配置、流量总闸和渠道健康安全策略
+        working-directory: server
+        run: |
+          go test ./internal/config ./internal/modules/token_gateway/service ./internal/modules/token_gateway/handler ./internal/modules/token_gateway ./internal/bootstrap
+          go vet ./internal/config ./internal/modules/token_gateway/... ./internal/bootstrap
+
+      - name: 校验生产监控、告警、Compose 和 Nginx 契约
+        env:
+          BIFROST_IMAGE_DIGEST: alpine:3.20
+          AI_GATEWAY_ALERT_RELAY_IMAGE_DIGEST: alpine:3.20
+          AI_GATEWAY_INTERNAL_TOKEN_FILE: /tmp/g8-internal-token
+          AI_GATEWAY_ALERT_RELAY_CONFIG_FILE: /tmp/g8-alert-relay-config
+          MOLIN_PROD_ENV_FILE: /tmp/g8-prod.env
+          BIFROST_NODE_ENV_FILE: /tmp/g8-bifrost-node.env
+          BIFROST_LB_ENV_FILE: /tmp/g8-bifrost-lb.env
+        run: |
+          touch /tmp/g8-internal-token /tmp/g8-alert-relay-config /tmp/g8-prod.env
+          printf '%s\n' 'BIFROST_ENCRYPTION_KEY=ci-placeholder' 'OPENROUTER_API_KEY=ci-placeholder' 'BAILIAN_API_KEY=ci-placeholder' >/tmp/g8-bifrost-node.env
+          printf '%s\n' 'BIFROST_INTERNAL_TOKEN=ci-placeholder' >/tmp/g8-bifrost-lb.env
+          python infra/scripts/verify-ai-gateway-g8-secret-scope.py --node-env /tmp/g8-bifrost-node.env --lb-env /tmp/g8-bifrost-lb.env
+          python infra/nginx/verify_forwarded_headers.py
+          docker compose -f infra/docker-compose.prod.yml -f infra/docker-compose.ai-gateway-g8.yml config --format json >/tmp/g8-compose.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          config = json.loads(Path('/tmp/g8-compose.json').read_text())
+          services = config['services']
+          assert 'ai-gateway-lb' in services['api']['networks']
+          assert 'internal' not in services['bifrost-lb']['networks']
+          public_networks = set(services['admin-console']['networks']) | set(services['user-console']['networks'])
+          for name in ('bifrost-1', 'bifrost-2'):
+              node_networks = set(services[name]['networks'])
+              assert node_networks == {'ai-gateway-nodes', 'ai-gateway-egress'}, name
+              assert not (node_networks & public_networks), name
+              assert not (node_networks & set(services['api']['networks'])), name
+          assert set(services['bifrost-lb']['networks']) == {'ai-gateway-lb', 'ai-gateway-nodes'}
+          expected_node_keys = {'BIFROST_ENCRYPTION_KEY', 'OPENROUTER_API_KEY', 'BAILIAN_API_KEY'}
+          assert set(services['bifrost-1'].get('environment', {})) == expected_node_keys
+          assert set(services['bifrost-2'].get('environment', {})) == expected_node_keys
+          assert set(services['bifrost-lb'].get('environment', {})) == {'BIFROST_INTERNAL_TOKEN'}
+          PY
+          for conf in admin.conf user.conf api.conf; do
+            docker run --rm --add-host api:127.0.0.1 \
+              -v "${{ github.workspace }}/infra/nginx/${conf}:/etc/nginx/conf.d/default.conf:ro" \
+              -v "${{ github.workspace }}/infra/nginx/traffic-gate-closed:/etc/nginx/ai-gateway-traffic-gate:ro" \
+              nginx:1.29.1-alpine nginx -t
+          done
+          docker run --rm --entrypoint=/bin/promtool \
+            --workdir=/etc/prometheus \
+            -v "${{ github.workspace }}/infra/prometheus/ai-gateway-production.yml:/etc/prometheus/ai-gateway-production.yml:ro" \
+            -v "${{ github.workspace }}/infra/prometheus/ai-gateway-alerts.yml:/etc/prometheus/rules/ai-gateway-alerts.yml:ro" \
+            -v "${{ github.workspace }}/infra/prometheus/targets:/etc/prometheus/targets:ro" \
+            prom/prometheus:v3.12.0-distroless \
+            check config ai-gateway-production.yml
+          docker run --rm --entrypoint=/bin/amtool \
+            --workdir=/config \
+            -v "${{ github.workspace }}/infra/alertmanager:/config:ro" \
+            prom/alertmanager:v0.28.1 \
+            check-config ai-gateway-g8.yml
+          bash infra/scripts/verify-ai-gateway-g8-alert-routing.sh
+
+      - name: 执行 G8 生产形态部署与回滚演练
+        env:
+          AI_GATEWAY_G8_ISOLATED_APPROVED: YES
+        run: |
+          bash -n infra/scripts/verify-ai-gateway-g8-production-rehearsal.sh
+          bash infra/scripts/verify-ai-gateway-g8-production-rehearsal.sh
+
+      - name: 扫描 G8 差异敏感信息
+        run: python scripts/verify-sms-phase5-sensitive-data.py --repo-root . --base-ref origin/main
+
+  gateway-g8-real-e2e:
+    name: AI 网关 G8 真实后端浏览器验收
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            web/admin-console/package-lock.json
+            web/user-console/package-lock.json
+
+      - name: 安装双端依赖与浏览器
+        run: |
+          npm ci --prefix web/admin-console
+          npm ci --prefix web/user-console
+
+      - name: 安装 Chromium
+        working-directory: web/admin-console
+        run: npx playwright install --with-deps chrome
+
+      - name: 执行无 Mock 的真实后端写入与调用链路
+        env:
+          AI_GATEWAY_G8_ISOLATED_APPROVED: YES
+        run: |
+          bash -n infra/scripts/verify-ai-gateway-g8-real-backend-e2e.sh
+          bash infra/scripts/verify-ai-gateway-g8-real-backend-e2e.sh
+
   # ---- 前端 CI ----
   frontend-admin:
     name: 管理后台构建

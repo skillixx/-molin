@@ -224,6 +224,8 @@ func writeErr(w http.ResponseWriter, err error) {
 		response.Error(w, http.StatusPaymentRequired, 60005, "套餐额度不足")
 	case errors.Is(err, tokengatewaysvc.ErrEntitlementDenied):
 		response.Error(w, http.StatusForbidden, 40003, "套餐额度归属不符")
+	case errors.Is(err, tokengatewaysvc.ErrTrafficClosed):
+		response.Error(w, http.StatusServiceUnavailable, 50330, "AI 网关商业流量暂未开放")
 	case errors.Is(err, tokengatewaysvc.ErrSystemBusy):
 		response.Error(w, http.StatusServiceUnavailable, 50301, "系统繁忙，请稍后重试")
 	case errors.Is(err, tokengatewaysvc.ErrChannelUnavailable):

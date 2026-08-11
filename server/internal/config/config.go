@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"fmt"
+	"math"
 	"net/netip"
 	"os"
 	"strconv"
@@ -89,6 +90,11 @@ type Config struct {
 	TokenExecutionDriver string
 	BifrostBaseURL       string
 	BifrostInternalToken string
+	// AIGatewayHealthInternalAllowlist 仅允许渠道健康探测访问显式登记的内网主机。
+	// 配置项支持 host 或 host:port；空值表示所有内网、回环和链路本地地址一律拒绝。
+	AIGatewayHealthInternalAllowlist []string
+	// AIGatewayTrafficEnabled 是文字模型商业流量总闸；生产默认关闭，必须由受控发布显式开启。
+	AIGatewayTrafficEnabled bool
 
 	// 平台 API Key（sk）HMAC 密钥（S2-甲5）。
 	// DB 只存 HMAC-SHA256(sk 明文, APIKeyHMACSecret)，明文只在签发时返回一次。
@@ -224,10 +230,12 @@ func Load() Config {
 
 		NotifyBodyKey: getenv("NOTIFY_BODY_KEY", ""),
 
-		TokenProviderKey:     getenv("TOKEN_PROVIDER_KEY", ""),
-		TokenExecutionDriver: strings.ToLower(strings.TrimSpace(getenv("TOKEN_EXECUTION_DRIVER", "native"))),
-		BifrostBaseURL:       getenv("BIFROST_BASE_URL", "http://127.0.0.1:18080"),
-		BifrostInternalToken: getenv("BIFROST_INTERNAL_TOKEN", ""),
+		TokenProviderKey:                 getenv("TOKEN_PROVIDER_KEY", ""),
+		TokenExecutionDriver:             strings.ToLower(strings.TrimSpace(getenv("TOKEN_EXECUTION_DRIVER", "native"))),
+		BifrostBaseURL:                   getenv("BIFROST_BASE_URL", "http://127.0.0.1:18080"),
+		BifrostInternalToken:             getenv("BIFROST_INTERNAL_TOKEN", ""),
+		AIGatewayHealthInternalAllowlist: splitCSV(getenv("AI_GATEWAY_HEALTH_INTERNAL_ALLOWLIST", "")),
+		AIGatewayTrafficEnabled:          getenvBool("AI_GATEWAY_TRAFFIC_ENABLED", appEnv != "production"),
 
 		APIKeyHMACSecret: getenv("API_KEY_HMAC_SECRET", ""),
 
@@ -283,6 +291,47 @@ func (c Config) ValidateAIGatewayGovernanceConfig() error {
 		if value <= 0 {
 			return fmt.Errorf("%s 必须大于 0", key)
 		}
+	}
+	return nil
+}
+
+// ValidateAIGatewayProductionConfig 在生产流量总闸开启时执行环境配置失败关闭校验。
+// 错误只包含配置键名和规则，不回显任何密钥或连接串内容。
+func (c Config) ValidateAIGatewayProductionConfig() error {
+	if strings.ToLower(strings.TrimSpace(c.AppEnv)) != "production" || !c.AIGatewayTrafficEnabled {
+		return nil
+	}
+	required := []struct {
+		name  string
+		value string
+	}{
+		{name: "TOKEN_PROVIDER_KEY", value: c.TokenProviderKey},
+		{name: "API_KEY_HMAC_SECRET", value: c.APIKeyHMACSecret},
+		{name: "INTERNAL_API_TOKEN", value: c.InternalAPIToken},
+		{name: "INTERNAL_ALLOWED_IPS", value: c.InternalAllowedIPs},
+		{name: "RABBITMQ_URL", value: c.RabbitMQURL},
+		{name: "AI_OUTBOX_EXCHANGE", value: c.AIOutboxExchange},
+	}
+	for _, item := range required {
+		if strings.TrimSpace(item.value) == "" {
+			return fmt.Errorf("AI_GATEWAY_TRAFFIC_ENABLED=true 时 %s 未配置", item.name)
+		}
+	}
+	if len([]byte(c.TokenProviderKey)) != 32 {
+		return fmt.Errorf("TOKEN_PROVIDER_KEY 必须为 32 字节")
+	}
+	if len([]byte(c.APIKeyHMACSecret)) < 32 || len([]byte(c.InternalAPIToken)) < 32 {
+		return fmt.Errorf("API_KEY_HMAC_SECRET 和 INTERNAL_API_TOKEN 均不得少于 32 字节")
+	}
+	if c.TokenHoldDefaultMaxTokens <= 0 {
+		return fmt.Errorf("TOKEN_HOLD_DEFAULT_MAX_TOKENS 必须大于 0")
+	}
+	holdUnitPrice, err := strconv.ParseFloat(strings.TrimSpace(c.TokenHoldUnitPrice), 64)
+	if err != nil || holdUnitPrice <= 0 || math.IsNaN(holdUnitPrice) || math.IsInf(holdUnitPrice, 0) {
+		return fmt.Errorf("TOKEN_HOLD_UNIT_PRICE 必须为大于 0 的有限数值")
+	}
+	if c.TokenExecutionDriver == "bifrost" && (strings.TrimSpace(c.BifrostBaseURL) == "" || len([]byte(c.BifrostInternalToken)) < 32) {
+		return fmt.Errorf("Bifrost 驱动缺少 BIFROST_BASE_URL 或安全 BIFROST_INTERNAL_TOKEN")
 	}
 	return nil
 }

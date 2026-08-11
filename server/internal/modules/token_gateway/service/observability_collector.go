@@ -240,14 +240,14 @@ const aiGatewayReconciliationSQL = `WITH selected_usage AS (
 				WHEN 'output_tokens' THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(usage_requests.price_snapshot_json, '$.skus.output_tokens.scale')) AS DECIMAL(30,10))
 				WHEN 'cached_tokens' THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(usage_requests.price_snapshot_json, '$.skus.cached_tokens.scale')) AS DECIMAL(30,10))
 				WHEN 'reasoning_tokens' THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(usage_requests.price_snapshot_json, '$.skus.reasoning_tokens.scale')) AS DECIMAL(30,10))
-			END, 0) * 100000000) / 100000000), 0) AS computed_base_amount,
+			END, 0) * 100000000) * CAST(0.00000001 AS DECIMAL(20,8))), 0) AS computed_base_amount,
 		SUM(CASE WHEN usage_items.meter_type <> 'output_tokens' AND NOT (usage_items.amount <=>
 			CEIL(usage_items.quantity * usage_items.unit_price /
 			NULLIF(CASE usage_items.meter_type
 				WHEN 'input_tokens' THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(usage_requests.price_snapshot_json, '$.skus.input_tokens.scale')) AS DECIMAL(30,10))
 				WHEN 'cached_tokens' THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(usage_requests.price_snapshot_json, '$.skus.cached_tokens.scale')) AS DECIMAL(30,10))
 				WHEN 'reasoning_tokens' THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(usage_requests.price_snapshot_json, '$.skus.reasoning_tokens.scale')) AS DECIMAL(30,10))
-			END, 0) * 100000000) / 100000000)
+			END, 0) * 100000000) * CAST(0.00000001 AS DECIMAL(20,8)))
 			THEN 1 ELSE 0 END) AS non_output_amount_mismatch_count
 	FROM ai_usage_items AS usage_items
 	JOIN ai_requests AS usage_requests ON usage_requests.request_id = usage_items.request_id
@@ -529,14 +529,14 @@ const aiGatewayReconciliationIssuesSQL = `WITH selected_usage AS (
 				WHEN 'output_tokens' THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(usage_requests.price_snapshot_json, '$.skus.output_tokens.scale')) AS DECIMAL(30,10))
 				WHEN 'cached_tokens' THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(usage_requests.price_snapshot_json, '$.skus.cached_tokens.scale')) AS DECIMAL(30,10))
 				WHEN 'reasoning_tokens' THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(usage_requests.price_snapshot_json, '$.skus.reasoning_tokens.scale')) AS DECIMAL(30,10))
-			END, 0) * 100000000) / 100000000), 0) AS computed_base_amount,
+			END, 0) * 100000000) * CAST(0.00000001 AS DECIMAL(20,8))), 0) AS computed_base_amount,
 		SUM(CASE WHEN usage_items.meter_type <> 'output_tokens' AND NOT (usage_items.amount <=>
 			CEIL(usage_items.quantity * usage_items.unit_price /
 			NULLIF(CASE usage_items.meter_type
 				WHEN 'input_tokens' THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(usage_requests.price_snapshot_json, '$.skus.input_tokens.scale')) AS DECIMAL(30,10))
 				WHEN 'cached_tokens' THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(usage_requests.price_snapshot_json, '$.skus.cached_tokens.scale')) AS DECIMAL(30,10))
 				WHEN 'reasoning_tokens' THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(usage_requests.price_snapshot_json, '$.skus.reasoning_tokens.scale')) AS DECIMAL(30,10))
-			END, 0) * 100000000) / 100000000)
+			END, 0) * 100000000) * CAST(0.00000001 AS DECIMAL(20,8)))
 			THEN 1 ELSE 0 END) AS non_output_amount_mismatch_count
 	FROM ai_usage_items AS usage_items
 	JOIN ai_requests AS usage_requests ON usage_requests.request_id = usage_items.request_id

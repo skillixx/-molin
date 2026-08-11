@@ -205,3 +205,17 @@ func TestChatHandlerG2FailsClosedWithoutOrchestrator(t *testing.T) {
 		t.Fatalf("编排器未装配时必须失败关闭，不能回落旧 ForwardService: status=%d", recorder.Code)
 	}
 }
+
+func TestChatHandlerTrafficClosedDoesNotCallOrchestrator(t *testing.T) {
+	handler := NewChatHandler(nil).WithTrafficEnabled(false)
+	var endpoint http.Handler = http.HandlerFunc(handler.ChatCompletions)
+	endpoint = middleware.RequireUserAuth("unused", nil, fixedAPIKeyResolver{}, endpoint)
+	endpoint = middleware.RequestID(endpoint)
+	request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewBufferString(`{"model":"molin/test","messages":[{"role":"user","content":"你好"}]}`))
+	request.Header.Set("Authorization", "Bearer sk-molin-test")
+	recorder := httptest.NewRecorder()
+	endpoint.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusServiceUnavailable || !strings.Contains(recorder.Body.String(), "ai_gateway_traffic_closed") {
+		t.Fatalf("流量总闸关闭时应返回受控 503: code=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}

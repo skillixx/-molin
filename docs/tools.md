@@ -1005,3 +1005,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 powershell -NoProfile -ExecutionPolicy Bypass -File `
   scripts/prepare-sms-phase5-canary-send-candidate.ps1 -SelfTest
 ```
+## AI 网关 G8 生产门禁工具
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 后端、运维、测试、产品、财务复核人 |
+| **涉及模块** | `token_gateway`、MySQL、Bifrost、Prometheus、Grafana、Nginx |
+| **涉及功能** | 生产流量总闸、只读发布事实门禁、SSRF 安全健康探测、隔离部署与回滚 |
+| **代码位置** | `server/internal/modules/token_gateway/service/production_readiness.go`、`channel_service.go`、`docs/ai-gateway-g8-*-runbook.md` |
+
+生产默认设置 `AI_GATEWAY_TRAFFIC_ENABLED=false`。只有受控发布明确开启时，API 才会在注册客户流量前只读核对模型、渠道、价格、路由、安全策略、毛利和重试配置；失败不会自动修复或写库。渠道健康探测的测试内网白名单使用 `AI_GATEWAY_HEALTH_INTERNAL_ALLOWLIST`，禁止配置全网段或通配符。
+
+G7 的 `infra/scripts/verify-ai-gateway-g7-reliability.sh` 与 `server/cmd/ai-gateway-reconcile` 继续作为 G8 可靠性和零差额回归工具。通过只代表指定隔离/测试目标，不代表生产或真实客户验收。
+
+`infra/scripts/verify-ai-gateway-g8-real-backend-e2e.sh` 在运行时随机创建临时 MySQL、Redis、RabbitMQ、API 和 Fake 文字上游，执行无 API Mock 的管理端与用户端浏览器旅程，并以只读对账收口。`infra/scripts/verify-ai-gateway-g8-production-rehearsal.sh` 构建 `origin/main` 基线与当前候选制品，验证 TLS 关闭态部署、结构备份恢复、旧版回滚、候选恢复、日志轮转和数据保留。两者都要求 `AI_GATEWAY_G8_ISOLATED_APPROVED=YES`，仅允许隔离环境，不连接生产、不调用付费上游。

@@ -44,6 +44,9 @@ type ChatOnceResult struct {
 // 计费：每轮都按 token 实计（input/output）；calls 仅在 CountCall=true 的那一轮计 1（整次提问计 1 次）。
 // 错误（模型不可用/门禁/余额闸/上游失败）原样返回服务层错误，由编排层决定 SSE/HTTP 映射。
 func (s *ForwardService) ChatOnce(ctx context.Context, oin ChatOnceInput) (*ChatOnceResult, error) {
+	if s == nil || s.trafficDisabled {
+		return nil, ErrTrafficClosed
+	}
 	in := ForwardInput{
 		RequestID: oin.RequestID,
 		UserID:    oin.UserID,

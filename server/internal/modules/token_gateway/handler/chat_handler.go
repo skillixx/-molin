@@ -17,8 +17,9 @@ import (
 // ChatHandler 处理 OpenAI 兼容对话转发（用户端，网页登录态）。
 // 安全约定：请求/响应中的对话内容绝不落明文日志；渠道 api_key 绝不出现在响应。
 type ChatHandler struct {
-	orchestrator service.RequestOrchestrator
-	statusReader requestStatusReader
+	orchestrator   service.RequestOrchestrator
+	statusReader   requestStatusReader
+	trafficEnabled bool
 }
 
 type requestStatusReader interface {
@@ -27,7 +28,13 @@ type requestStatusReader interface {
 
 // NewChatHandler 创建对话转发 handler。
 func NewChatHandler(_ *service.ForwardService) *ChatHandler {
-	return &ChatHandler{}
+	return &ChatHandler{trafficEnabled: true}
+}
+
+// WithTrafficEnabled 注入商业流量总闸；关闭时仍保留状态查询，但拒绝创建新的付费上游请求。
+func (h *ChatHandler) WithTrafficEnabled(enabled bool) *ChatHandler {
+	h.trafficEnabled = enabled
+	return h
 }
 
 // WithOrchestrator 为公开文字接口装配 G2 唯一编排器；旧 ForwardService 仅保留给工作台内部调用。
@@ -61,6 +68,10 @@ func (h *ChatHandler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 	if requestID == "" {
 		// 缺少中间件身份属于服务装配错误，禁止 Handler 生成第二个账本 ID 掩盖问题。
 		response.Error(w, http.StatusInternalServerError, 50000, "请求标识初始化失败")
+		return
+	}
+	if !h.trafficEnabled {
+		response.ErrorWithTypeAndRequestID(w, http.StatusServiceUnavailable, 50330, "ai_gateway_traffic_closed", "AI 网关商业流量暂未开放", requestID)
 		return
 	}
 	userID := middleware.UserIDFromContext(r.Context())

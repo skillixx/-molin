@@ -140,8 +140,12 @@ func RegisterUserRoutes(
 	jwtSecret string,
 	banChecker middleware.BanChecker,
 	apiKeyResolver middleware.APIKeyResolver,
+	trafficEnabled ...bool,
 ) {
 	chatH := handler.NewChatHandler(forwardSvc).WithOrchestrator(orchestrator)
+	if len(trafficEnabled) > 0 {
+		chatH.WithTrafficEnabled(trafficEnabled[0])
+	}
 	modelH := handler.NewModelHandler(catalogSvc)
 	if access, ok := orchestrator.(handler.ModelAccessChecker); ok {
 		modelH.WithAccess(access)
