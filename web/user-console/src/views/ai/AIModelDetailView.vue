@@ -59,8 +59,8 @@ function capabilityLabels(value: AIModelCatalogItem['capabilities']) {
           <button class="code-button" type="button" title="复制模型代码" @click="copyCode"><span>{{ model.logical_model_code }}</span><el-icon><CopyDocument /></el-icon></button>
           <p>{{ model.description || '该模型暂未填写详细介绍。' }}</p>
           <div class="header-actions">
-            <RouterLink v-slot="{ href, navigate }" custom :to="apiKeyTarget">
-              <el-button tag="a" :href="href" type="primary" :icon="Key" @click="navigate">创建 API Key</el-button>
+            <RouterLink class="el-button el-button--primary" :to="apiKeyTarget">
+              <el-icon><Key /></el-icon><span>创建 API Key</span>
             </RouterLink>
             <el-button @click="showQuickStart">查看接入方式</el-button>
             <DocumentLinkActions :intro-url="model.intro_url" :intro-status="model.intro_url_health_status" :quick-start-url="model.quick_start_url" :quick-start-status="model.quick_start_url_health_status" :docs-url="model.docs_url" :docs-status="model.docs_url_health_status" />
