@@ -17,7 +17,11 @@ if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]]; then
   docker_repo_root="$(cygpath -w "${repo_root}")"
 fi
 suffix="${RANDOM}-$$"
-network="molin-g8-prod-net-${suffix}"
+data_network="molin-g8-prod-data-${suffix}"
+lb_network="molin-g8-prod-lb-${suffix}"
+nodes_network="molin-g8-prod-nodes-${suffix}"
+egress_network="molin-g8-prod-egress-${suffix}"
+public_network="molin-g8-prod-public-${suffix}"
 mysql_container="molin-g8-prod-mysql-${suffix}"
 redis_container="molin-g8-prod-redis-${suffix}"
 rabbit_container="molin-g8-prod-rabbit-${suffix}"
@@ -50,7 +54,7 @@ pull_policy="${G8_DOCKER_PULL_POLICY:-missing}"
 
 cleanup() {
   docker container rm -f "${api_container}-extract" "${nginx_container}" "${api_container}" "${bifrost_lb_container}" "${bifrost_2_container}" "${bifrost_1_container}" "${rabbit_container}" "${redis_container}" "${mysql_container}" >/dev/null 2>&1 || true
-  docker network rm "${network}" >/dev/null 2>&1 || true
+  docker network rm "${public_network}" "${egress_network}" "${nodes_network}" "${lb_network}" "${data_network}" >/dev/null 2>&1 || true
   docker image rm -f "${candidate_image}" "${baseline_image}" >/dev/null 2>&1 || true
   rm -rf "${work_dir}"
 }
@@ -69,17 +73,24 @@ MSYS_NO_PATHCONV=1 docker cp "${api_container}-extract:/app/api" "${docker_work_
 docker rm "${api_container}-extract" >/dev/null
 candidate_binary_sha="$(sha256sum "${work_dir}/candidate-api" | awk '{print $1}')"
 
-docker network create "${network}" >/dev/null
-docker run -d --pull="${pull_policy}" --network "${network}" --network-alias mysql --name "${mysql_container}" --tmpfs /var/lib/mysql:rw,noexec,nosuid,size=1g -e "MYSQL_ROOT_PASSWORD=${mysql_password}" -e "MYSQL_DATABASE=${database}" mysql:8.0 >/dev/null
-docker run -d --pull="${pull_policy}" --network "${network}" --network-alias redis --name "${redis_container}" --tmpfs /data:rw,noexec,nosuid,size=128m redis:7 redis-server --save '' --appendonly no >/dev/null
-docker run -d --pull="${pull_policy}" --network "${network}" --network-alias rabbitmq --name "${rabbit_container}" --tmpfs /var/lib/rabbitmq:rw,noexec,nosuid,size=256m rabbitmq:3-management-alpine >/dev/null
-MSYS_NO_PATHCONV=1 docker run -d --pull="${pull_policy}" --network "${network}" --network-alias bifrost-1 --name "${bifrost_1_container}" -e G8_FAKE_PORT=8080 -e G8_REQUIRE_EMPTY_AUTHORIZATION=true -v "${docker_repo_root}:/workspace:ro" -w /workspace python:3.12-alpine python infra/scripts/g8_fake_text_upstream.py >/dev/null
-MSYS_NO_PATHCONV=1 docker run -d --pull="${pull_policy}" --network "${network}" --network-alias bifrost-2 --name "${bifrost_2_container}" -e G8_FAKE_PORT=8080 -e G8_REQUIRE_EMPTY_AUTHORIZATION=true -v "${docker_repo_root}:/workspace:ro" -w /workspace python:3.12-alpine python infra/scripts/g8_fake_text_upstream.py >/dev/null
-MSYS_NO_PATHCONV=1 docker run -d --pull="${pull_policy}" --network "${network}" --network-alias bifrost-lb --name "${bifrost_lb_container}" -e "BIFROST_INTERNAL_TOKEN=${bifrost_internal_token}" -v "${docker_repo_root}/infra/bifrost/nginx.conf.template:/etc/nginx/nginx.conf.template:ro" -v "${docker_repo_root}/infra/bifrost/start-nginx.sh:/usr/local/bin/start-bifrost-nginx.sh:ro" nginx:1.29.1-alpine /bin/sh /usr/local/bin/start-bifrost-nginx.sh >/dev/null
+docker network create --internal "${data_network}" >/dev/null
+docker network create --internal "${lb_network}" >/dev/null
+docker network create --internal "${nodes_network}" >/dev/null
+docker network create "${egress_network}" >/dev/null
+docker network create "${public_network}" >/dev/null
+docker run -d --pull="${pull_policy}" --network "${data_network}" --network-alias mysql --name "${mysql_container}" --tmpfs /var/lib/mysql:rw,noexec,nosuid,size=1g -e "MYSQL_ROOT_PASSWORD=${mysql_password}" -e "MYSQL_DATABASE=${database}" mysql:8.0 >/dev/null
+docker run -d --pull="${pull_policy}" --network "${data_network}" --network-alias redis --name "${redis_container}" --tmpfs /data:rw,noexec,nosuid,size=128m redis:7 redis-server --save '' --appendonly no >/dev/null
+docker run -d --pull="${pull_policy}" --network "${data_network}" --network-alias rabbitmq --name "${rabbit_container}" --tmpfs /var/lib/rabbitmq:rw,noexec,nosuid,size=256m rabbitmq:3-management-alpine >/dev/null
+MSYS_NO_PATHCONV=1 docker run -d --pull="${pull_policy}" --network "${nodes_network}" --network-alias bifrost-1 --name "${bifrost_1_container}" -e G8_FAKE_PORT=8080 -e G8_REQUIRE_EMPTY_AUTHORIZATION=true -v "${docker_repo_root}:/workspace:ro" -w /workspace python:3.12-alpine python infra/scripts/g8_fake_text_upstream.py >/dev/null
+MSYS_NO_PATHCONV=1 docker run -d --pull="${pull_policy}" --network "${nodes_network}" --network-alias bifrost-2 --name "${bifrost_2_container}" -e G8_FAKE_PORT=8080 -e G8_REQUIRE_EMPTY_AUTHORIZATION=true -v "${docker_repo_root}:/workspace:ro" -w /workspace python:3.12-alpine python infra/scripts/g8_fake_text_upstream.py >/dev/null
+docker network connect "${egress_network}" "${bifrost_1_container}"
+docker network connect "${egress_network}" "${bifrost_2_container}"
+MSYS_NO_PATHCONV=1 docker run -d --pull="${pull_policy}" --network "${nodes_network}" --name "${bifrost_lb_container}" -e "BIFROST_INTERNAL_TOKEN=${bifrost_internal_token}" -v "${docker_repo_root}/infra/bifrost/nginx.conf.template:/etc/nginx/nginx.conf.template:ro" -v "${docker_repo_root}/infra/bifrost/start-nginx.sh:/usr/local/bin/start-bifrost-nginx.sh:ro" nginx:1.29.1-alpine /bin/sh /usr/local/bin/start-bifrost-nginx.sh >/dev/null
+docker network connect --alias bifrost-lb "${lb_network}" "${bifrost_lb_container}"
 for _ in $(seq 1 30); do docker exec "${bifrost_lb_container}" wget -q -O- http://127.0.0.1:8080/health >/dev/null 2>&1 && break; sleep 1; done
 docker exec "${bifrost_lb_container}" wget -q -O- http://127.0.0.1:8080/health >/dev/null || { docker logs --tail 60 "${bifrost_lb_container}" >&2 || true; echo "G8_PRODUCTION_REHEARSAL=FAILED reason=bifrost_lb_not_ready"; exit 2; }
-bifrost_unauthorized="$(docker run --rm --network "${network}" curlimages/curl:8.12.1 -sS -o /dev/null -w '%{http_code}' http://bifrost-lb:8080/v1/chat/completions)"
-bifrost_authorized="$(docker run --rm --network "${network}" curlimages/curl:8.12.1 -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${bifrost_internal_token}" -H 'Content-Type: application/json' -d '{"model":"fake/g8-text","messages":[{"role":"user","content":"topology"}]}' http://bifrost-lb:8080/v1/chat/completions)"
+bifrost_unauthorized="$(docker run --rm --network "${lb_network}" curlimages/curl:8.12.1 -sS -o /dev/null -w '%{http_code}' http://bifrost-lb:8080/v1/chat/completions)"
+bifrost_authorized="$(docker run --rm --network "${lb_network}" curlimages/curl:8.12.1 -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${bifrost_internal_token}" -H 'Content-Type: application/json' -d '{"model":"fake/g8-text","messages":[{"role":"user","content":"topology"}]}' http://bifrost-lb:8080/v1/chat/completions)"
 [[ "${bifrost_unauthorized}" == "401" && "${bifrost_authorized}" == "200" ]] || { echo "G8_PRODUCTION_REHEARSAL=FAILED reason=bifrost_lb_auth unauthorized=${bifrost_unauthorized} authorized=${bifrost_authorized}"; exit 2; }
 
 mysql_exec() {
@@ -104,7 +115,7 @@ restore_tables="$(docker exec -e "MYSQL_PWD=${mysql_password}" "${mysql_containe
 run_api() {
   local image="$1"
   docker container rm -f "${api_container}" >/dev/null 2>&1 || true
-  docker run -d --network "${network}" --network-alias api --name "${api_container}" --log-driver json-file --log-opt max-size=1m --log-opt max-file=2 \
+  docker run -d --network "${data_network}" --network-alias api --name "${api_container}" --log-driver json-file --log-opt max-size=1m --log-opt max-file=2 \
     -e APP_ENV=production -e API_HOST=0.0.0.0 -e API_PORT=8080 -e AI_GATEWAY_TRAFFIC_ENABLED=false \
     -e MYSQL_HOST=mysql -e MYSQL_PORT=3306 -e MYSQL_USER=root -e "MYSQL_PASSWORD=${mysql_password}" -e "MYSQL_DATABASE=${database}" \
     -e REDIS_ADDR=redis:6379 -e RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/ \
@@ -113,6 +124,7 @@ run_api() {
     -e "INTERNAL_API_TOKEN=${internal_token}" -e INTERNAL_ALLOWED_IPS=127.0.0.1/32 -e ASSET_INTERNAL_BASE_URL=http://api:8080 \
     -e EMAIL_ADAPTER=mock -e "EMAIL_ADDRESS_HMAC_SECRET=${email_address_secret}" -e "EMAIL_IDEMPOTENCY_SECRET=${email_idempotency_secret}" \
     "${image}" >/dev/null
+  docker network connect --alias api "${lb_network}" "${api_container}"
   for _ in $(seq 1 60); do docker exec "${api_container}" wget -q -O- http://127.0.0.1:8080/api/health >/dev/null 2>&1 && return 0; sleep 1; done
   docker logs --tail 60 "${api_container}" >&2 || true
   return 1
@@ -136,7 +148,7 @@ PY
 assert_app_gate_closed() {
   local stage="$1"
   local response status body
-  response="$(docker run --rm --network "${network}" curlimages/curl:8.12.1 -sS -w $'\n%{http_code}' -H "Authorization: Bearer ${access_token}" -H 'Content-Type: application/json' -d '{"model":"molin/closed","messages":[{"role":"user","content":"closed"}]}' http://api:8080/v1/chat/completions)"
+  response="$(docker run --rm --network "${lb_network}" curlimages/curl:8.12.1 -sS -w $'\n%{http_code}' -H "Authorization: Bearer ${access_token}" -H 'Content-Type: application/json' -d '{"model":"molin/closed","messages":[{"role":"user","content":"closed"}]}' http://api:8080/v1/chat/completions)"
   status="${response##*$'\n'}"
   body="${response%$'\n'*}"
   [[ "${status}" == "503" ]] && grep -q '50330' <<<"${body}" || { echo "G8_PRODUCTION_REHEARSAL=FAILED reason=${stage}_app_gate status=${status}"; exit 2; }
@@ -144,6 +156,16 @@ assert_app_gate_closed() {
 
 # 候选应用自身必须失败关闭，不能只依赖边缘保险丝掩盖应用总闸缺陷。
 assert_app_gate_closed candidate
+
+# 运行态证明 API 和模拟公网容器均无法解析或直连 Bifrost 节点，只有 LB 可访问节点健康与模型端口。
+if docker exec "${api_container}" wget -q -T 2 -O- http://bifrost-1:8080/health >/dev/null 2>&1; then
+  echo "G8_PRODUCTION_REHEARSAL=FAILED reason=api_can_bypass_bifrost_lb"
+  exit 2
+fi
+if docker run --rm --network "${public_network}" curlimages/curl:8.12.1 -fsS --connect-timeout 2 http://bifrost-1:8080/health >/dev/null 2>&1; then
+  echo "G8_PRODUCTION_REHEARSAL=FAILED reason=public_container_can_reach_bifrost_node"
+  exit 2
+fi
 
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '//CN=g8-rehearsal.invalid' -keyout "${work_dir}/tls/key.pem" -out "${work_dir}/tls/cert.pem" >/dev/null 2>&1
 cat > "${work_dir}/nginx.conf" <<'NGINX'
@@ -166,7 +188,9 @@ http {
   }
 }
 NGINX
-MSYS_NO_PATHCONV=1 docker run -d --pull="${pull_policy}" --network "${network}" -p 127.0.0.1::443 --name "${nginx_container}" --read-only --tmpfs /var/cache/nginx --tmpfs /var/run --tmpfs /tmp -v "${docker_work_dir}/nginx.conf:/etc/nginx/nginx.conf:ro" -v "${docker_work_dir}/tls:/etc/nginx/tls:ro" nginx:1.29.1-alpine >/dev/null
+MSYS_NO_PATHCONV=1 docker create --pull="${pull_policy}" --network "${public_network}" -p 127.0.0.1::443 --name "${nginx_container}" --read-only --tmpfs /var/cache/nginx --tmpfs /var/run --tmpfs /tmp -v "${docker_work_dir}/nginx.conf:/etc/nginx/nginx.conf:ro" -v "${docker_work_dir}/tls:/etc/nginx/tls:ro" nginx:1.29.1-alpine >/dev/null
+docker network connect "${lb_network}" "${nginx_container}"
+docker start "${nginx_container}" >/dev/null
 tls_address="$(docker port "${nginx_container}" 443/tcp | head -n1)"
 for _ in $(seq 1 30); do curl -kfsS "https://${tls_address}/api/health" >/dev/null 2>&1 && break; sleep 1; done
 curl -kfsS "https://${tls_address}/api/health" >/dev/null || { echo "G8_PRODUCTION_REHEARSAL=FAILED reason=tls_health"; exit 2; }
@@ -197,4 +221,4 @@ assert_app_gate_closed candidate_restore
 log_config="$(docker inspect "${api_container}" --format '{{.HostConfig.LogConfig.Type}}:{{index .HostConfig.LogConfig.Config "max-size"}}:{{index .HostConfig.LogConfig.Config "max-file"}}')"
 [[ "${log_config}" == "json-file:1m:2" ]] || { echo "G8_PRODUCTION_REHEARSAL=FAILED reason=log_rotation"; exit 2; }
 
-echo "G8_PRODUCTION_REHEARSAL=PASS source_commit=$(git -C "${repo_root}" rev-parse HEAD) candidate_image_id=${candidate_image_id} baseline_image_id=${baseline_image_id} candidate_binary_sha256=${candidate_binary_sha} backup_sha256=${backup_sha} schema_tables=${schema_before} readiness_sql_mysql8=true bifrost_nodes=2 bifrost_lb_auth=true bifrost_auth_header_stripped=true bifrost_upstream=fake tls=true sse_buffering=false request_body_limit=20m log_rotation=true metrics_public_status=404 candidate_app_gate=true edge_kill_switch_routes=4 edge_error_type=true authenticated_traffic_gate_status=503 authenticated_traffic_gate_code=50330 old_version_started=true rollback_edge_gate_routes=4 candidate_started=true rollback_started=true candidate_restored=true database_preserved=true production=false paid_upstream=false"
+echo "G8_PRODUCTION_REHEARSAL=PASS source_commit=$(git -C "${repo_root}" rev-parse HEAD) candidate_image_id=${candidate_image_id} baseline_image_id=${baseline_image_id} candidate_binary_sha256=${candidate_binary_sha} backup_sha256=${backup_sha} schema_tables=${schema_before} readiness_sql_mysql8=true production_shape_networks=5 api_node_direct=false public_node_direct=false lb_node_direct=true bifrost_nodes=2 bifrost_lb_auth=true bifrost_auth_header_stripped=true bifrost_upstream=fake tls=true sse_buffering=false request_body_limit=20m log_rotation=true metrics_public_status=404 candidate_app_gate=true edge_kill_switch_routes=4 edge_error_type=true authenticated_traffic_gate_status=503 authenticated_traffic_gate_code=50330 old_version_started=true rollback_edge_gate_routes=4 candidate_started=true rollback_started=true candidate_restored=true database_preserved=true production=false paid_upstream=false"
