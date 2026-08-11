@@ -1,6 +1,6 @@
 # AI 网关 G8 验收记录
 
-> 当前状态：工程代码、CI 和独立验收门禁已通过，PR #327 尚待 merge commit，因此尚未记录 `G8_ENGINEERING_READY`；生产授权和四周商业观察尚未开始。
+> 当前状态：工程代码 HEAD 的 CI 和独立验收门禁已通过；PR #327 最新 HEAD 的 required checks、转 Ready 和 merge commit 仍以 GitHub 实时结果为准，合并前尚未记录 `G8_ENGINEERING_READY`；生产授权和四周商业观察尚未开始。
 
 ## 1. 基线
 
@@ -33,8 +33,8 @@
 | 第五轮独立复评 | 已修复，待最终复评 | 精确 HEAD `609d5b5` 的 QA 为 P0/P1/P2=0；产品和代码安全发现应用总闸关闭导致真实 MySQL 启动门禁未执行的 P1，以及生产用户入口请求体限制、共享 ChatOnce 错误契约两项 P2，已在 `dd0dca0` 补齐真实正负门禁、20m 生产入口和工作台/会话 50330 映射并完成隔离演练 |
 | 最终独立规格/代码安全评审 | PASS | 精确代码 HEAD `2189deda7c290f75b1b1c8892fc963e7a9b0b6c4`；代码安全与产品/规格均为 P0=0、P1=0、P2=0 |
 | 最终 QA / 产品 | PASS | 同一精确代码 HEAD；隔离真实后端 admin/user E2E 均通过，三项账务差额和 Outbox 均为 0，1440/768/375 视口通过 |
-| PR / CI | PASS | PR #327；CI run `31506128982` 为 `completed/success`，9/9 门禁通过 |
-| merge commit | 待执行 | CI 全绿后转 Ready，只允许 merge commit，禁止 squash |
+| 代码 HEAD CI | PASS | 精确代码 HEAD `2189deda7c290f75b1b1c8892fc963e7a9b0b6c4` 的 CI run `31506128982` 为 `completed/success`，9/9 门禁通过 |
+| PR 最新 HEAD CI / Ready / merge commit | 待执行 | 以 GitHub required checks 实时结果为准；全绿后转 Ready，只允许 merge commit，禁止 squash |
 
 ## 3. 商业验收
 
