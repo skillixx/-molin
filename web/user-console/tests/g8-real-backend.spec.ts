@@ -30,9 +30,17 @@ test('G8 用户通过真实后端完成模型发现、Project、SK、调用、�
   await page.goto('/ai/models')
   await expect(page.getByRole('heading', { name: '模型市场' })).toBeVisible()
   await expect(page.getByText('G8 隔离文字模型')).toBeVisible()
-  await page.getByRole('link', { name: /G8 隔离文字模型/ }).click()
+  // 路由型点击必须等待目标 URL，避免 CI 较慢时在上一次导航尚未收口前继续操作下一页按钮。
+  await Promise.all([
+    page.waitForURL(/\/ai\/models\/molin%2Fg8-text$/i),
+    page.getByRole('link', { name: /G8 隔离文字模型/ }).click(),
+  ])
   await expect(page.getByRole('heading', { name: 'G8 隔离文字模型' })).toBeVisible()
-  await page.getByRole('button', { name: '创建 API Key' }).click()
+  await Promise.all([
+    page.waitForURL((url) => url.pathname === '/ai/api-keys'),
+    page.getByRole('button', { name: '创建 API Key' }).click(),
+  ])
+  await expect(page.getByRole('heading', { name: 'Project 与 API Key' })).toBeVisible()
 
   await page.getByRole('button', { name: '创建 Project' }).first().click()
   const projectDialog = page.getByRole('dialog', { name: '创建 Project' })
