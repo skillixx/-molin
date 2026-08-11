@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, CopyDocument, Key } from '@element-plus/icons-vue'
 import { getAIModel } from '@/api/aiGateway'
@@ -15,6 +15,7 @@ const loading = ref(true)
 const model = ref<AIModelCatalogItem | null>(null)
 const error = ref('')
 const modelCode = computed(() => decodeURIComponent(String(route.params.modelCode || '')))
+const apiKeyTarget = computed(() => ({ path: '/ai/api-keys', query: { model: model.value?.logical_model_code || '' } }))
 const publicBaseURL = String(import.meta.env.VITE_AI_GATEWAY_BASE_URL || window.location.origin).replace(/\/$/, '')
 
 onMounted(loadModel)
@@ -58,7 +59,9 @@ function capabilityLabels(value: AIModelCatalogItem['capabilities']) {
           <button class="code-button" type="button" title="复制模型代码" @click="copyCode"><span>{{ model.logical_model_code }}</span><el-icon><CopyDocument /></el-icon></button>
           <p>{{ model.description || '该模型暂未填写详细介绍。' }}</p>
           <div class="header-actions">
-            <el-button type="primary" :icon="Key" @click="router.push({ path: '/ai/api-keys', query: { model: model.logical_model_code } })">创建 API Key</el-button>
+            <RouterLink v-slot="{ href, navigate }" custom :to="apiKeyTarget">
+              <el-button tag="a" :href="href" type="primary" :icon="Key" @click="navigate">创建 API Key</el-button>
+            </RouterLink>
             <el-button @click="showQuickStart">查看接入方式</el-button>
             <DocumentLinkActions :intro-url="model.intro_url" :intro-status="model.intro_url_health_status" :quick-start-url="model.quick_start_url" :quick-start-status="model.quick_start_url_health_status" :docs-url="model.docs_url" :docs-status="model.docs_url_health_status" />
           </div>

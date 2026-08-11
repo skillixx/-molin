@@ -34,7 +34,7 @@ test('G8 用户通过真实后端完成模型发现、Project、SK、调用、�
   await page.getByRole('link', { name: /G8 隔离文字模型/ }).click({ noWaitAfter: true })
   await expect(page).toHaveURL(/\/ai\/models\/molin%2Fg8-text$/i)
   await expect(page.getByRole('heading', { name: 'G8 隔离文字模型' })).toBeVisible()
-  await page.getByRole('button', { name: '创建 API Key' }).click({ noWaitAfter: true })
+  await page.getByRole('link', { name: '创建 API Key' }).click({ noWaitAfter: true })
   await expect(page).toHaveURL(/\/ai\/api-keys(?:\?.*)?$/)
   await expect(page.getByRole('heading', { name: 'Project 与 API Key' })).toBeVisible()
 
