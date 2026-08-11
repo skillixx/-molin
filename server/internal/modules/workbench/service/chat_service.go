@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -235,6 +236,10 @@ func (s *ChatService) runLoop(ctx context.Context, w http.ResponseWriter, msgs [
 			CountCall: round == 1, // 整次提问按次计 1（仅首轮）
 		})
 		if cerr != nil {
+			// 商业总闸关闭时即使请求了流式响应也尚未写出任何帧，交回 handler 统一返回 50330。
+			if errors.Is(cerr, tokengatewaysvc.ErrTrafficClosed) && !sse.started {
+				return "", cerr
+			}
 			if !sse.started && !stream {
 				return "", cerr // 未写出 → handler 映射 HTTP 错误码
 			}

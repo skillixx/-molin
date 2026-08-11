@@ -102,6 +102,27 @@ for migration in "${repo_root}"/server/migrations/*.up.sql; do mysql_exec < "${m
 # 在真实 MySQL 8 解析七类审核策略门禁，避免仅靠字符串单测遗漏 JSON_TABLE 方言错误。
 mysql_exec -e "SELECT COUNT(*) FROM ai_safety_policy_versions sp WHERE JSON_VALID(sp.rules_json) AND (SELECT COUNT(DISTINCT rules.category) FROM JSON_TABLE(sp.rules_json, '\$[*]' COLUMNS(category VARCHAR(32) PATH '\$.category')) AS rules WHERE rules.category IN ('illegal','sexual','gambling','drugs','terror','hate','self_harm'))=7;" >/dev/null
 mysql_exec -e "INSERT INTO users(id,username,email,email_verified,password_hash,real_name_status,status) VALUES(9001,'g8_rehearsal','g8-rehearsal@example.invalid',1,'disabled-login','verified','active');"
+
+# 写入五个文字模型、两个健康渠道、逐模型价格/路由和一份七类审核策略，供生产启动门禁在真实 MySQL 8 上核验。
+mysql_exec -e "INSERT INTO token_channels(id,code,name,type,base_url,api_key_encrypted,status,priority,health_status,last_health_check_at) VALUES
+  (9101,'g8-provider-a','G8 隔离渠道 A','openai_compatible','https://provider-a.example.invalid','isolated-ciphertext','active',100,'healthy',UTC_TIMESTAMP()),
+  (9102,'g8-provider-b','G8 隔离渠道 B','openai_compatible','https://provider-b.example.invalid','isolated-ciphertext','active',90,'healthy',UTC_TIMESTAMP());"
+for model_index in $(seq 1 5); do
+  model_code="g8/text-${model_index}"
+  channel_id=9101
+  [[ $((model_index % 2)) -eq 0 ]] && channel_id=9102
+  mysql_exec -e "INSERT INTO token_models(logical_model_code,display_name,modality,status,capabilities_json,context_window,release_version_no,published_at) VALUES('${model_code}','G8 隔离文字模型 ${model_index}','chat','active',JSON_OBJECT('stream',TRUE),8192,1,UTC_TIMESTAMP());
+    INSERT INTO ai_model_routes(logical_model_code,channel_id,provider_model,priority,weight,timeout_ms,max_retries,circuit_breaker_threshold,fallback_order,status,version_no,updated_by) VALUES('${model_code}',${channel_id},'fake-${model_index}',100,100,30000,0,5,0,'active',1,9001);
+    INSERT INTO ai_model_route_runtime_states(route_id,consecutive_failures,circuit_open_until) VALUES(LAST_INSERT_ID(),0,NULL);
+    INSERT INTO ai_price_versions(logical_model_code,version_no,currency,exchange_rate,status,min_margin_rate,max_input_tokens,max_output_tokens,failure_charge_policy,rounding_mode,cost_updated_at,cost_expires_at,effective_at,created_by,approved_by,approved_at,published_at) VALUES('${model_code}',1,'CNY',1,'active',0.15,8192,4096,'confirmed_usage','ceil_8',UTC_TIMESTAMP(),UTC_TIMESTAMP()+INTERVAL 30 DAY,UTC_TIMESTAMP()-INTERVAL 1 MINUTE,9001,9001,UTC_TIMESTAMP(),UTC_TIMESTAMP());
+    SET @g8_price_version_id=LAST_INSERT_ID();
+    INSERT INTO ai_price_skus(price_version_id,meter_type,variant_json,variant_hash,cost_unit_price,sale_unit_price,scale,currency) VALUES
+      (@g8_price_version_id,'input_tokens',NULL,SHA2(CONCAT('${model_code}','-input'),256),0.00000100,0.00000200,1000,'CNY'),
+      (@g8_price_version_id,'output_tokens',NULL,SHA2(CONCAT('${model_code}','-output'),256),0.00000200,0.00000400,1000,'CNY'),
+      (@g8_price_version_id,'cached_tokens',NULL,SHA2(CONCAT('${model_code}','-cached'),256),0.00000050,0.00000100,1000,'CNY'),
+      (@g8_price_version_id,'reasoning_tokens',NULL,SHA2(CONCAT('${model_code}','-reasoning'),256),0.00000200,0.00000400,1000,'CNY');"
+done
+mysql_exec -e "INSERT INTO ai_safety_policy_versions(version_no,status,refusal_message,rules_json,created_by,approved_by,effective_at) VALUES(1,'active','隔离审核拒绝',JSON_ARRAY(JSON_OBJECT('category','illegal'),JSON_OBJECT('category','sexual'),JSON_OBJECT('category','gambling'),JSON_OBJECT('category','drugs'),JSON_OBJECT('category','terror'),JSON_OBJECT('category','hate'),JSON_OBJECT('category','self_harm')),9001,9001,UTC_TIMESTAMP()-INTERVAL 1 MINUTE);"
 schema_before="$(mysql_exec -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${database}';")"
 
 # 备份只包含隔离库结构；恢复到同一临时 MySQL 的独立库，验证备份可读且恢复步骤可执行。
@@ -114,18 +135,20 @@ restore_tables="$(docker exec -e "MYSQL_PWD=${mysql_password}" "${mysql_containe
 
 run_api() {
   local image="$1"
+  local traffic_enabled="${2:-false}"
+  local max_attempts="${3:-60}"
   docker container rm -f "${api_container}" >/dev/null 2>&1 || true
   docker run -d --network "${data_network}" --network-alias api --name "${api_container}" --log-driver json-file --log-opt max-size=1m --log-opt max-file=2 \
-    -e APP_ENV=production -e API_HOST=0.0.0.0 -e API_PORT=8080 -e AI_GATEWAY_TRAFFIC_ENABLED=false \
+    -e APP_ENV=production -e API_HOST=0.0.0.0 -e API_PORT=8080 -e "AI_GATEWAY_TRAFFIC_ENABLED=${traffic_enabled}" \
     -e MYSQL_HOST=mysql -e MYSQL_PORT=3306 -e MYSQL_USER=root -e "MYSQL_PASSWORD=${mysql_password}" -e "MYSQL_DATABASE=${database}" \
     -e REDIS_ADDR=redis:6379 -e RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/ \
     -e "JWT_SECRET=${jwt_secret}" -e "REFRESH_TOKEN_SECRET=${refresh_secret}" -e "ID_CARD_HMAC_SECRET=${id_card_secret}" \
     -e "TOKEN_PROVIDER_KEY=${provider_key}" -e "API_KEY_HMAC_SECRET=${api_key_secret}" \
-    -e "INTERNAL_API_TOKEN=${internal_token}" -e INTERNAL_ALLOWED_IPS=127.0.0.1/32 -e ASSET_INTERNAL_BASE_URL=http://api:8080 \
+    -e "INTERNAL_API_TOKEN=${internal_token}" -e INTERNAL_ALLOWED_IPS=127.0.0.1/32 -e AI_OUTBOX_EXCHANGE=ai.billing -e ASSET_INTERNAL_BASE_URL=http://api:8080 \
     -e EMAIL_ADAPTER=mock -e "EMAIL_ADDRESS_HMAC_SECRET=${email_address_secret}" -e "EMAIL_IDEMPOTENCY_SECRET=${email_idempotency_secret}" \
     "${image}" >/dev/null
   docker network connect --alias api "${lb_network}" "${api_container}"
-  for _ in $(seq 1 60); do docker exec "${api_container}" wget -q -O- http://127.0.0.1:8080/api/health >/dev/null 2>&1 && return 0; sleep 1; done
+  for _ in $(seq 1 "${max_attempts}"); do docker exec "${api_container}" wget -q -O- http://127.0.0.1:8080/api/health >/dev/null 2>&1 && return 0; sleep 1; done
   docker logs --tail 60 "${api_container}" >&2 || true
   return 1
 }
@@ -210,6 +233,38 @@ assert_edge_gate_closed() {
 [[ "${metrics_status}" == "404" ]] || { echo "G8_PRODUCTION_REHEARSAL=FAILED reason=metrics_public status=${metrics_status}"; exit 2; }
 assert_edge_gate_closed candidate
 
+assert_readiness_rejected() {
+  local stage="$1"
+  if run_api "${candidate_image}" true 15; then
+    echo "G8_PRODUCTION_REHEARSAL=FAILED reason=${stage}_readiness_false_negative"
+    exit 2
+  fi
+}
+
+# 边缘保险丝保持关闭时开启候选应用总闸，真实执行 MySQL 8 发布事实门禁；有效数据必须能够启动。
+run_api "${candidate_image}" true || { echo "G8_PRODUCTION_REHEARSAL=FAILED reason=valid_readiness_rejected"; exit 2; }
+assert_edge_gate_closed readiness_valid
+
+# 四类负向数据必须逐项阻止候选启动，避免 SQL 方言通过但生产失败关闭语义未被执行。
+mysql_exec -e "ALTER TABLE ai_price_versions DROP CHECK chk_ai_price_exchange; UPDATE ai_price_versions SET exchange_rate=1.10000000 WHERE logical_model_code='g8/text-1';"
+assert_readiness_rejected invalid_exchange_rate
+mysql_exec -e "UPDATE ai_price_versions SET exchange_rate=1.00000000 WHERE logical_model_code='g8/text-1'; ALTER TABLE ai_price_versions ADD CONSTRAINT chk_ai_price_exchange CHECK (exchange_rate = 1);"
+
+mysql_exec -e "INSERT INTO ai_price_skus(price_version_id,meter_type,variant_json,variant_hash,cost_unit_price,sale_unit_price,scale,currency) SELECT id,'input_tokens',JSON_OBJECT('tier','duplicate'),SHA2('g8-duplicate-meter',256),0.00000100,0.00000200,1000,'CNY' FROM ai_price_versions WHERE logical_model_code='g8/text-1';"
+assert_readiness_rejected duplicate_meter
+mysql_exec -e "DELETE FROM ai_price_skus WHERE variant_hash=SHA2('g8-duplicate-meter',256);"
+
+mysql_exec -e "UPDATE token_channels SET last_health_check_at=UTC_TIMESTAMP()-INTERVAL 10 MINUTE WHERE id IN (9101,9102);"
+assert_readiness_rejected stale_channel_health
+mysql_exec -e "UPDATE token_channels SET last_health_check_at=UTC_TIMESTAMP() WHERE id IN (9101,9102);"
+
+mysql_exec -e "UPDATE ai_model_route_runtime_states SET circuit_open_until=UTC_TIMESTAMP()+INTERVAL 10 MINUTE;"
+assert_readiness_rejected circuit_open
+mysql_exec -e "UPDATE ai_model_route_runtime_states SET circuit_open_until=NULL;"
+
+# 负向门禁结束后恢复关闭态候选，继续验证旧版本回滚及财务事实保留。
+run_api "${candidate_image}" || { echo "G8_PRODUCTION_REHEARSAL=FAILED reason=candidate_after_readiness_not_ready"; exit 2; }
+
 # 回滚只切换应用制品，数据库和财务事实保持原位；边缘保险丝必须保护不认识应用总闸的旧版本。
 run_api "${baseline_image}" || { echo "G8_PRODUCTION_REHEARSAL=FAILED reason=rollback_baseline_not_ready"; exit 2; }
 assert_edge_gate_closed rollback
@@ -221,4 +276,4 @@ assert_app_gate_closed candidate_restore
 log_config="$(docker inspect "${api_container}" --format '{{.HostConfig.LogConfig.Type}}:{{index .HostConfig.LogConfig.Config "max-size"}}:{{index .HostConfig.LogConfig.Config "max-file"}}')"
 [[ "${log_config}" == "json-file:1m:2" ]] || { echo "G8_PRODUCTION_REHEARSAL=FAILED reason=log_rotation"; exit 2; }
 
-echo "G8_PRODUCTION_REHEARSAL=PASS source_commit=$(git -C "${repo_root}" rev-parse HEAD) candidate_image_id=${candidate_image_id} baseline_image_id=${baseline_image_id} candidate_binary_sha256=${candidate_binary_sha} backup_sha256=${backup_sha} schema_tables=${schema_before} readiness_sql_mysql8=true production_shape_networks=5 api_node_direct=false public_node_direct=false lb_node_direct=true bifrost_nodes=2 bifrost_lb_auth=true bifrost_auth_header_stripped=true bifrost_upstream=fake tls=true sse_buffering=false request_body_limit=20m log_rotation=true metrics_public_status=404 candidate_app_gate=true edge_kill_switch_routes=4 edge_error_type=true authenticated_traffic_gate_status=503 authenticated_traffic_gate_code=50330 old_version_started=true rollback_edge_gate_routes=4 candidate_started=true rollback_started=true candidate_restored=true database_preserved=true production=false paid_upstream=false"
+echo "G8_PRODUCTION_REHEARSAL=PASS source_commit=$(git -C "${repo_root}" rev-parse HEAD) candidate_image_id=${candidate_image_id} baseline_image_id=${baseline_image_id} candidate_binary_sha256=${candidate_binary_sha} backup_sha256=${backup_sha} schema_tables=${schema_before} readiness_sql_mysql8=true readiness_valid=true readiness_invalid_exchange_rate=true readiness_duplicate_meter=true readiness_stale_health=true readiness_circuit_open=true production_shape_networks=5 api_node_direct=false public_node_direct=false lb_node_direct=true bifrost_nodes=2 bifrost_lb_auth=true bifrost_auth_header_stripped=true bifrost_upstream=fake tls=true sse_buffering=false request_body_limit=20m log_rotation=true metrics_public_status=404 candidate_app_gate=true edge_kill_switch_routes=4 edge_error_type=true authenticated_traffic_gate_status=503 authenticated_traffic_gate_code=50330 old_version_started=true rollback_edge_gate_routes=4 candidate_started=true rollback_started=true candidate_restored=true database_preserved=true production=false paid_upstream=false"
