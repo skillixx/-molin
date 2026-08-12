@@ -107,6 +107,7 @@ class TestReadonlyAccessBundle(unittest.TestCase):
         self.assertIn('"GOMODCACHE": str(temporary_root / "go-module-cache")', self.source)
         self.assertIn('[go, "mod", "download"]', self.source)
         self.assertIn('if go_version != "go1.26.5"', self.source)
+        self.assertIn('"/opt/hostedtoolcache/go/1.26.5/x64/bin"', self.source)
         for name in ("GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_COUNT", "core.autocrlf", "core.eol"):
             self.assertIn(f'"{name}"', self.source)
 

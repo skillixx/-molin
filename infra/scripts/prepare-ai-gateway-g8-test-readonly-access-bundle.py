@@ -28,6 +28,7 @@ APPROVED_RECONCILE_SIZE = 13_066_129
 TRUSTED_PATH = os.pathsep.join(
     (
         "/usr/local/go/bin",
+        "/opt/hostedtoolcache/go/1.26.5/x64/bin",
         "/usr/local/bin",
         "/usr/bin",
         "/bin",
