@@ -450,32 +450,16 @@ jobs:
           python -I infra/scripts/run-ai-gateway-g8-test-readonly-access-stage.py --self-test
           bundle_dir="${RUNNER_TEMP}/g8-test-readonly-access-bundle-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           test ! -e "$bundle_dir"
-          BASH_ENV=/tmp/nonexistent-bash-env \
-            GIT_DIR=/tmp/nonexistent-git-dir \
-            GIT_CONFIG_COUNT=1 \
-            GIT_CONFIG_KEY_0=core.autocrlf \
-            GIT_CONFIG_VALUE_0=true \
-            GOPROXY=https://invalid.example \
-            TAR_OPTIONS='--checkpoint=1 --checkpoint-action=exec=echo BAD_ENV_INJECTION' \
-            python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py \
+          set +e
+          python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py \
             --change-id=CHG-G8-TEST-READONLY-ACCESS-20260812-003 \
             --source-commit=8ec878572f62ef2584c38aaadc1bca1cb802b13f \
-            --output-dir="$bundle_dir" | tee /tmp/g8-test-readonly-access-bundle.log
-          if grep -q 'BAD_ENV_INJECTION' /tmp/g8-test-readonly-access-bundle.log; then
-            exit 1
-          fi
-          grep -qx 'G8_TEST_READONLY_ACCESS_BUNDLE=PASS' /tmp/g8-test-readonly-access-bundle.log
-          grep -qx 'change_id=CHG-G8-TEST-READONLY-ACCESS-20260812-003' /tmp/g8-test-readonly-access-bundle.log
-          grep -qx 'source_commit=8ec878572f62ef2584c38aaadc1bca1cb802b13f' /tmp/g8-test-readonly-access-bundle.log
-          grep -qx 'source_tree=988bdcdc8017322264733ebe68876e4811b01412' /tmp/g8-test-readonly-access-bundle.log
-          grep -qx 'auditor_sha256=308908d2a2b9fa8679fd21d77fde68b5ce5d521ed37dac6b7726e6c323452256' /tmp/g8-test-readonly-access-bundle.log
-          grep -qx 'sudoers_sha256=1ec266c71f00d99da18b9e8cf59af91d6126811384adef62ce48750b97a0986f' /tmp/g8-test-readonly-access-bundle.log
-          grep -qx 'reconcile_sha256=37f6ee369f1ce489a3966123dfea3bd172d5386045495e069433c7f3d993f2c1' /tmp/g8-test-readonly-access-bundle.log
-          grep -qx 'reconcile_size=13066129' /tmp/g8-test-readonly-access-bundle.log
-          grep -Eq '^bundle_receipt_sha256=[0-9a-f]{64}$' /tmp/g8-test-readonly-access-bundle.log
-          (cd "$bundle_dir" && sha256sum -c SHA256SUMS)
-          grep -qx 'TARGET_DEPLOYMENT_ROOT=/home/pc/molin' "$bundle_dir/manifest.env"
-          test "$(find "$bundle_dir" -maxdepth 1 -type f -printf '%f\n' | sort | tr '\n' ' ')" = 'SHA256SUMS ai-gateway-reconcile g8-test-readonly-audit manifest.env molin-g8-test-readonly-audit.sudoers '
+            --output-dir="$bundle_dir" >/tmp/g8-test-readonly-access-consumed-replay.log 2>&1
+          status=$?
+          set -e
+          test "$status" -eq 2
+          test ! -e "$bundle_dir"
+          grep -qx 'G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request' /tmp/g8-test-readonly-access-consumed-replay.log
           python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py \
             --verify-consumed-candidate \
             --consumed-change-id=CHG-G8-TEST-READONLY-ACCESS-20260812-001 | tee /tmp/g8-test-readonly-access-consumed-001.log
@@ -500,6 +484,29 @@ jobs:
           grep -qx 'reconcile_sha256=37f6ee369f1ce489a3966123dfea3bd172d5386045495e069433c7f3d993f2c1' /tmp/g8-test-readonly-access-consumed-002.log
           grep -qx 'reconcile_size=13066129' /tmp/g8-test-readonly-access-consumed-002.log
           grep -qx 'bundle_receipt_sha256=7ae580cc06fb101fe44c9e3a4d7581116fd258ef1e2d09d99bba0bda50151a1f' /tmp/g8-test-readonly-access-consumed-002.log
+          BASH_ENV=/tmp/nonexistent-bash-env \
+            GIT_DIR=/tmp/nonexistent-git-dir \
+            GIT_CONFIG_COUNT=1 \
+            GIT_CONFIG_KEY_0=core.autocrlf \
+            GIT_CONFIG_VALUE_0=true \
+            GOPROXY=https://invalid.example \
+            TAR_OPTIONS='--checkpoint=1 --checkpoint-action=exec=echo BAD_ENV_INJECTION' \
+            python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py \
+            --verify-consumed-candidate \
+            --consumed-change-id=CHG-G8-TEST-READONLY-ACCESS-20260812-003 | tee /tmp/g8-test-readonly-access-consumed-003.log
+          if grep -q 'BAD_ENV_INJECTION' /tmp/g8-test-readonly-access-consumed-003.log; then
+            exit 1
+          fi
+          grep -qx 'G8_TEST_READONLY_ACCESS_BUNDLE_VERIFY=PASS' /tmp/g8-test-readonly-access-consumed-003.log
+          grep -qx 'change_id=CHG-G8-TEST-READONLY-ACCESS-20260812-003' /tmp/g8-test-readonly-access-consumed-003.log
+          grep -qx 'source_commit=8ec878572f62ef2584c38aaadc1bca1cb802b13f' /tmp/g8-test-readonly-access-consumed-003.log
+          grep -qx 'source_tree=988bdcdc8017322264733ebe68876e4811b01412' /tmp/g8-test-readonly-access-consumed-003.log
+          grep -qx 'auditor_sha256=308908d2a2b9fa8679fd21d77fde68b5ce5d521ed37dac6b7726e6c323452256' /tmp/g8-test-readonly-access-consumed-003.log
+          grep -qx 'sudoers_sha256=1ec266c71f00d99da18b9e8cf59af91d6126811384adef62ce48750b97a0986f' /tmp/g8-test-readonly-access-consumed-003.log
+          grep -qx 'reconcile_sha256=37f6ee369f1ce489a3966123dfea3bd172d5386045495e069433c7f3d993f2c1' /tmp/g8-test-readonly-access-consumed-003.log
+          grep -qx 'reconcile_size=13066129' /tmp/g8-test-readonly-access-consumed-003.log
+          # 003 的 Linux CI 历史回执与 Windows 本地安装候选回执不同；两者共享同一来源树、制品摘要和大小。
+          grep -qx 'bundle_receipt_sha256=7f4633357bf6883d166b0ee7d9750d7e745cf0a15d23163a547d6519e217efc1' /tmp/g8-test-readonly-access-consumed-003.log
           command -v visudo >/dev/null
           sudo visudo -cf infra/sudoers/molin-g8-test-readonly-audit
           set +e

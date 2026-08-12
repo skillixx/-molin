@@ -246,16 +246,35 @@ class TestReadonlyAccessPreflight(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     MODULE.validate_candidate(candidate)
 
-    def test_only_003_is_accepted_by_cli_contract(self) -> None:
-        source = SCRIPT_PATH.read_text(encoding="utf-8")
-        self.assertIn('CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-20260812-003"', source)
-        self.assertNotIn('CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-20260812-002"', source)
-        self.assertIn("validate_candidate(candidate_dir)", source)
-        self.assertIn("validate_known_hosts(known_hosts)", source)
-        self.assertIn("validate_identity_file(identity_file, identity_public_file, known_hosts)", source)
-        self.assertIn("validate_identity_pair(identity_file, identity_public_file)", source)
-        self.assertIn("run_remote_preflight(fixed_ssh_executable(), known_hosts, identity_file)", source)
-        self.assertIn("run_atomic_sftp_upload(fixed_sftp_executable(), known_hosts, identity_file, candidate_dir)", source)
+    def test_consumed_003_cannot_start_remote_stage(self) -> None:
+        """003 已消费，正式入口必须在任何本地候选读取或远端调用前失败。"""
+        arguments = [
+            str(SCRIPT_PATH),
+            "--change-id",
+            MODULE.CHANGE_ID,
+            "--candidate-dir",
+            "/does/not/exist",
+            "--known-hosts",
+            "/does/not/exist",
+            "--identity-file",
+            "/does/not/exist",
+            "--identity-public-file",
+            "/does/not/exist",
+        ]
+        with (
+            mock.patch.object(sys, "argv", arguments),
+            mock.patch.object(MODULE, "validate_candidate") as validate_candidate,
+            mock.patch.object(MODULE, "run_remote_preflight") as remote,
+            mock.patch.object(MODULE, "run_atomic_sftp_upload") as sftp,
+            mock.patch("builtins.print") as output,
+        ):
+            self.assertEqual(MODULE.main(), 2)
+        validate_candidate.assert_not_called()
+        remote.assert_not_called()
+        sftp.assert_not_called()
+        output.assert_called_once_with(
+            "G8_TEST_READONLY_ACCESS_STAGE=FAILED reason=change_id_consumed"
+        )
 
 
 if __name__ == "__main__":

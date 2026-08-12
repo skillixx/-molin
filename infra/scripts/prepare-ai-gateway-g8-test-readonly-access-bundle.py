@@ -19,9 +19,6 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 
-ACTIVE_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-20260812-003"
-ACTIVE_SOURCE_COMMIT = "8ec878572f62ef2584c38aaadc1bca1cb802b13f"
-ACTIVE_SOURCE_TREE = "988bdcdc8017322264733ebe68876e4811b01412"
 FROZEN_AUDITOR_SHA256 = "308908d2a2b9fa8679fd21d77fde68b5ce5d521ed37dac6b7726e6c323452256"
 FROZEN_SUDOERS_SHA256 = "1ec266c71f00d99da18b9e8cf59af91d6126811384adef62ce48750b97a0986f"
 FROZEN_RECONCILE_SHA256 = "37f6ee369f1ce489a3966123dfea3bd172d5386045495e069433c7f3d993f2c1"
@@ -49,7 +46,6 @@ class FrozenCandidate:
     target_deployment_root: str | None
 
 
-ACTIVE_CANDIDATE = FrozenCandidate(ACTIVE_CHANGE_ID, ACTIVE_SOURCE_COMMIT, ACTIVE_SOURCE_TREE, "/home/pc/molin")
 CONSUMED_CANDIDATES = {
     "CHG-G8-TEST-READONLY-ACCESS-20260812-001": FrozenCandidate(
         "CHG-G8-TEST-READONLY-ACCESS-20260812-001",
@@ -61,6 +57,12 @@ CONSUMED_CANDIDATES = {
         "CHG-G8-TEST-READONLY-ACCESS-20260812-002",
         "50b3e2f9d18b38e7d4a91ebeb4f03c413ef33c44",
         "73fb652a1f86db84991c8745f8c10e1d2a255f29",
+        "/home/pc/molin",
+    ),
+    "CHG-G8-TEST-READONLY-ACCESS-20260812-003": FrozenCandidate(
+        "CHG-G8-TEST-READONLY-ACCESS-20260812-003",
+        "8ec878572f62ef2584c38aaadc1bca1cb802b13f",
+        "988bdcdc8017322264733ebe68876e4811b01412",
         "/home/pc/molin",
     ),
 }
@@ -304,15 +306,8 @@ def main() -> int:
                 values = prepare(candidate, Path(temporary) / "bundle")
             marker = "G8_TEST_READONLY_ACCESS_BUNDLE_VERIFY=PASS"
         else:
-            if arguments.consumed_change_id:
-                raise RuntimeError("unexpected_argument")
-            if arguments.change_id != ACTIVE_CHANGE_ID or arguments.source_commit != ACTIVE_SOURCE_COMMIT:
-                raise RuntimeError("unapproved_identity")
-            if not arguments.output_dir:
-                raise RuntimeError("missing_output_directory")
-            output_dir = Path(arguments.output_dir)
-            values = prepare(ACTIVE_CANDIDATE, output_dir)
-            marker = "G8_TEST_READONLY_ACCESS_BUNDLE=PASS"
+            # 当前没有获准的活动候选。001 至 003 均已消费，普通入口一律失败关闭。
+            raise RuntimeError("no_active_candidate")
     except Exception:
         print("G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request")
         return 2
