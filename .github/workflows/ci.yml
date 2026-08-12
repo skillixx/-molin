@@ -505,7 +505,8 @@ jobs:
           grep -qx 'sudoers_sha256=1ec266c71f00d99da18b9e8cf59af91d6126811384adef62ce48750b97a0986f' /tmp/g8-test-readonly-access-consumed-003.log
           grep -qx 'reconcile_sha256=37f6ee369f1ce489a3966123dfea3bd172d5386045495e069433c7f3d993f2c1' /tmp/g8-test-readonly-access-consumed-003.log
           grep -qx 'reconcile_size=13066129' /tmp/g8-test-readonly-access-consumed-003.log
-          grep -qx 'bundle_receipt_sha256=82b18d6040bcd6be72cf170fa066ecd7cf469a53f4901365f379bec5a89c496d' /tmp/g8-test-readonly-access-consumed-003.log
+          # 003 的 Linux CI 历史回执与 Windows 本地安装候选回执不同；两者共享同一来源树、制品摘要和大小。
+          grep -qx 'bundle_receipt_sha256=7f4633357bf6883d166b0ee7d9750d7e745cf0a15d23163a547d6519e217efc1' /tmp/g8-test-readonly-access-consumed-003.log
           command -v visudo >/dev/null
           sudo visudo -cf infra/sudoers/molin-g8-test-readonly-audit
           set +e
