@@ -160,15 +160,21 @@ def parse_remote_output(stdout: bytes) -> str:
 
 
 def collect_stream(stream, result: dict[str, object]) -> None:
-    """持续排空单个管道，只保留固定上限正文并记录是否超限。"""
+    """持续排空管道，有界保留正文并累计完整长度、行数和摘要。"""
     captured = bytearray()
+    digest = hashlib.sha256()
     total = 0
+    line_breaks = 0
+    last_byte = b""
     try:
         while True:
             chunk = stream.read(8192)
             if not chunk:
                 break
+            digest.update(chunk)
             total += len(chunk)
+            line_breaks += chunk.count(b"\n")
+            last_byte = chunk[-1:]
             if len(captured) <= MAX_CAPTURE_BYTES:
                 remaining = MAX_CAPTURE_BYTES + 1 - len(captured)
                 captured.extend(chunk[:remaining])
@@ -179,6 +185,8 @@ def collect_stream(stream, result: dict[str, object]) -> None:
         {
             "captured": bytes(captured),
             "bytes": total,
+            "lines": line_breaks + (1 if total and last_byte != b"\n" else 0),
+            "sha256": "NONE" if total == 0 else digest.hexdigest(),
             "exceeded": total > MAX_CAPTURE_BYTES,
             "error": False,
         }

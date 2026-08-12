@@ -10,7 +10,7 @@
 | 目标 | `pc@8.130.9.163:10003` |
 | 诊断目标 | 仅判断固定 `/etc/machine-id` 为 `READABLE_MATCH`、`READABLE_MISMATCH` 或 `UNREADABLE` |
 | 部署根 | `/home/pc/molin`，007 不读取该目录及其内容 |
-| 诊断脚本 SHA-256 | `3e0b6f77474ff30ae733efde565c8b49a3577a7a29f6139c97e94e7048c5af7c` |
+| 诊断脚本 SHA-256 | `5858ab020ae5f1491af51582bd4079c5ff84b9da251a92d85265887c511c2e50` |
 | 冻结 004 helper SHA-256 | `599e6bbb800531d02b22cf9534636ebf8232002fafb8236d294f9d2dba2e3c89` |
 | SSH 主机 ED25519 指纹 | `SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I` |
 | 本地 ED25519 公钥指纹 | `SHA256:oQNs45Icrw5B6RCqPHOFnsub4jfRzk3evFy+wmhF8K0` |
