@@ -6,8 +6,8 @@
 |---|---|
 | ChangeId | `CHG-G8-TEST-READONLY-ACCESS-20260812-001` |
 | 目标 | `pc@8.130.9.163:10003` |
-| 结论 | `STOPPED_BEFORE_WRITE` |
-| 远端写入 | 0 |
+| 结论 | `STOPPED_BEFORE_ASSET_WRITE` |
+| 资产、配置、服务与业务数据写入 | 0 |
 | 上传 / 安装 / sudoers 修改 | 均未执行 |
 | 业务请求 / 上游请求 / 费用 | `0 / 0 / 0 CNY` |
 
@@ -19,6 +19,7 @@
 2. 使用 `BatchMode=yes`、`NumberOfPasswordPrompts=0`、`StrictHostKeyChecking=yes`、固定 `UserKnownHostsFile`、`ConnectionAttempts=1` 和有限连接超时建立一次 SSH。
 3. 首个远端命令为 `sudo -n -l`。命令返回“需要密码”并以退出码 1 结束。
 4. 后续 `whoami`、hostname、machine-id 摘要和组成员核对由 `&&` 串联，因此未执行；更没有执行 SCP、候选包生成、目录创建、`install`、`visudo`、self-test、Docker、数据库、队列或服务命令。
+5. 未执行或观察到候选资产、配置、服务、数据库、队列或业务数据写入。SSH 登录和 `sudo -n -l` 可能由系统自动写入 sshd、sudo、journald 或 audit 访问审计日志，本次未获授权读取这些日志，因此不得表述为操作系统层绝对零写入。
 
 ## 3. 停止原因与后续门禁
 
