@@ -10,8 +10,11 @@ if not sys.flags.isolated:
 
 import argparse
 import hashlib
-import importlib.util
+import os
+import stat
 import subprocess
+import threading
+import types
 from pathlib import Path
 
 
@@ -19,6 +22,16 @@ CHANGE_ID = "CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005"
 TARGET_CHANGE_ID = "CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-004"
 REMOTE_MARKER = b"G8_TEST_READONLY_TRANSPORT_REMOTE=PASS\n"
 MAX_CAPTURE_BYTES = 64 * 1024
+STAGING_HELPER_SHA256 = "599e6bbb800531d02b22cf9534636ebf8232002fafb8236d294f9d2dba2e3c89"
+STAGING_HELPER_EXPECTATIONS = {
+    "CHANGE_ID": TARGET_CHANGE_ID,
+    "CHANGE_ID_CONSUMED": True,
+    "TARGET": "pc@8.130.9.163",
+    "TARGET_HOST": "8.130.9.163",
+    "TARGET_PORT": "10003",
+    "TARGET_SSH_ED25519_FINGERPRINT": "SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I",
+    "LOCAL_IDENTITY_ED25519_FINGERPRINT": "SHA256:oQNs45Icrw5B6RCqPHOFnsub4jfRzk3evFy+wmhF8K0",
+}
 REMOTE_PROGRAM = """import sys
 
 if not sys.flags.isolated:
@@ -40,35 +53,117 @@ class SafeArgumentParser(argparse.ArgumentParser):
 
 
 def load_staging_helper():
-    """从固定同目录文件加载已审计的 SSH 身份校验辅助函数。"""
+    """校验并执行冻结的同目录辅助脚本，避免辅助实现漂移后改变 SSH 目标。"""
     helper_path = Path(__file__).with_name("run-ai-gateway-g8-test-staging-evidence.py")
-    spec = importlib.util.spec_from_file_location("g8_consumed_staging_evidence", helper_path)
-    if spec is None or spec.loader is None:
+    try:
+        path_stat = os.lstat(helper_path)
+        if not stat.S_ISREG(path_stat.st_mode):
+            raise DiagnosticError("helper_type_mismatch")
+        descriptor = os.open(helper_path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        try:
+            opened_stat = os.fstat(descriptor)
+            if (opened_stat.st_dev, opened_stat.st_ino) != (path_stat.st_dev, path_stat.st_ino):
+                raise DiagnosticError("helper_identity_mismatch")
+            with os.fdopen(descriptor, "rb", closefd=False) as stream:
+                source = stream.read()
+        finally:
+            os.close(descriptor)
+    except (OSError, DiagnosticError) as error:
+        raise DiagnosticError("helper_load_failed") from error
+    if hashlib.sha256(source).hexdigest() != STAGING_HELPER_SHA256:
+        raise DiagnosticError("helper_digest_mismatch")
+    module = types.ModuleType("g8_consumed_staging_evidence")
+    module.__file__ = str(helper_path)
+    try:
+        exec(compile(source, str(helper_path), "exec"), module.__dict__)
+    except Exception as error:
         raise DiagnosticError("helper_load_failed")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    if any(getattr(module, key, object()) != expected for key, expected in STAGING_HELPER_EXPECTATIONS.items()):
+        raise DiagnosticError("helper_contract_mismatch")
     return module
 
 
-def sha256_or_none(value: bytes) -> str:
-    """空输出使用固定枚举，非空输出只保存摘要而不暴露正文。"""
-    return "NONE" if not value else hashlib.sha256(value).hexdigest()
+def collect_stream(stream, result: dict[str, object]) -> None:
+    """持续排空单个管道，只保留固定上限正文，同时流式累计长度、行数和摘要。"""
+    digest = hashlib.sha256()
+    captured = bytearray()
+    total = 0
+    line_breaks = 0
+    last_byte = b""
+    while True:
+        chunk = stream.read(8192)
+        if not chunk:
+            break
+        digest.update(chunk)
+        total += len(chunk)
+        line_breaks += chunk.count(b"\n")
+        last_byte = chunk[-1:]
+        if len(captured) <= MAX_CAPTURE_BYTES:
+            remaining = MAX_CAPTURE_BYTES + 1 - len(captured)
+            captured.extend(chunk[:remaining])
+    result.update(
+        {
+            "captured": bytes(captured),
+            "bytes": total,
+            "lines": line_breaks + (1 if total and last_byte != b"\n" else 0),
+            "sha256": "NONE" if total == 0 else digest.hexdigest(),
+            "exceeded": total > MAX_CAPTURE_BYTES,
+        }
+    )
 
 
-def classify_result(result: subprocess.CompletedProcess[bytes]) -> dict[str, str]:
-    """把 SSH 原始结果收敛为固定分类、计数和不可逆摘要。"""
-    if result.returncode == 0:
+def run_bounded_process(command: list[str], environment: dict[str, str]) -> tuple[int, dict[str, object], dict[str, object]]:
+    """并发排空 SSH 输出并限制内存正文，防止异常远端输出耗尽本机内存。"""
+    try:
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        )
+    except OSError as error:
+        raise DiagnosticError("ssh_execution_failed") from error
+    if process.stdin is None or process.stdout is None or process.stderr is None:
+        process.kill()
+        raise DiagnosticError("ssh_pipe_failed")
+    stdout_result: dict[str, object] = {}
+    stderr_result: dict[str, object] = {}
+    stdout_thread = threading.Thread(target=collect_stream, args=(process.stdout, stdout_result), daemon=True)
+    stderr_thread = threading.Thread(target=collect_stream, args=(process.stderr, stderr_result), daemon=True)
+    stdout_thread.start()
+    stderr_thread.start()
+    try:
+        process.stdin.write(REMOTE_PROGRAM.encode("ascii"))
+        process.stdin.close()
+        returncode = process.wait(timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        process.kill()
+        process.wait()
+        raise DiagnosticError("ssh_execution_failed") from error
+    finally:
+        stdout_thread.join()
+        stderr_thread.join()
+        process.stdout.close()
+        process.stderr.close()
+    return returncode, stdout_result, stderr_result
+
+
+def classify_stream_result(
+    returncode: int, stdout_result: dict[str, object], stderr_result: dict[str, object]
+) -> dict[str, str]:
+    """把有界流式采集结果收敛为固定分类、计数和不可逆摘要。"""
+    if returncode == 0:
         exit_class = "ZERO"
-    elif result.returncode == 255:
+    elif returncode == 255:
         exit_class = "TRANSPORT_255"
-    elif 1 <= result.returncode <= 254:
+    elif 1 <= returncode <= 254:
         exit_class = "REMOTE_NONZERO"
     else:
         exit_class = "OTHER_NONZERO"
-
-    stdout_contract = "EXACT" if result.stdout == REMOTE_MARKER else "MISMATCH"
-    stderr_state = "EMPTY" if not result.stderr else "PRESENT"
-    if len(result.stdout) > MAX_CAPTURE_BYTES or len(result.stderr) > MAX_CAPTURE_BYTES:
+    stdout_contract = "EXACT" if stdout_result["captured"] == REMOTE_MARKER else "MISMATCH"
+    stderr_state = "EMPTY" if stderr_result["bytes"] == 0 else "PRESENT"
+    if stdout_result["exceeded"] or stderr_result["exceeded"]:
         diagnostic = "OUTPUT_LIMIT_EXCEEDED"
     elif exit_class != "ZERO":
         diagnostic = "EXIT_NONZERO"
@@ -81,14 +176,38 @@ def classify_result(result: subprocess.CompletedProcess[bytes]) -> dict[str, str
     return {
         "ssh_exit_class": exit_class,
         "stdout_contract": stdout_contract,
-        "stdout_bytes": str(len(result.stdout)),
-        "stdout_sha256": sha256_or_none(result.stdout),
+        "stdout_bytes": str(stdout_result["bytes"]),
+        "stdout_sha256": str(stdout_result["sha256"]),
         "stderr_state": stderr_state,
-        "stderr_lines": str(len(result.stderr.splitlines())),
-        "stderr_bytes": str(len(result.stderr)),
-        "stderr_sha256": sha256_or_none(result.stderr),
+        "stderr_lines": str(stderr_result["lines"]),
+        "stderr_bytes": str(stderr_result["bytes"]),
+        "stderr_sha256": str(stderr_result["sha256"]),
         "diagnostic": diagnostic,
     }
+
+
+def sha256_or_none(value: bytes) -> str:
+    """空输出使用固定枚举，非空输出只保存摘要而不暴露正文。"""
+    return "NONE" if not value else hashlib.sha256(value).hexdigest()
+
+
+def classify_result(result: subprocess.CompletedProcess[bytes]) -> dict[str, str]:
+    """把 SSH 原始结果收敛为固定分类、计数和不可逆摘要。"""
+    stdout_result = {
+        "captured": result.stdout[: MAX_CAPTURE_BYTES + 1],
+        "bytes": len(result.stdout),
+        "lines": len(result.stdout.splitlines()),
+        "sha256": sha256_or_none(result.stdout),
+        "exceeded": len(result.stdout) > MAX_CAPTURE_BYTES,
+    }
+    stderr_result = {
+        "captured": result.stderr[: MAX_CAPTURE_BYTES + 1],
+        "bytes": len(result.stderr),
+        "lines": len(result.stderr.splitlines()),
+        "sha256": sha256_or_none(result.stderr),
+        "exceeded": len(result.stderr) > MAX_CAPTURE_BYTES,
+    }
+    return classify_stream_result(result.returncode, stdout_result, stderr_result)
 
 
 def run_transport_diagnostic(helper, known_hosts: Path, identity_file: Path) -> dict[str, str]:
@@ -139,18 +258,8 @@ def run_transport_diagnostic(helper, known_hosts: Path, identity_file: Path) -> 
         "-I",
         "-",
     ]
-    try:
-        result = subprocess.run(
-            command,
-            input=REMOTE_PROGRAM.encode("ascii"),
-            capture_output=True,
-            timeout=30,
-            env=helper.fixed_ssh_environment(),
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        raise DiagnosticError("ssh_execution_failed") from error
-    return classify_result(result)
+    returncode, stdout_result, stderr_result = run_bounded_process(command, helper.fixed_ssh_environment())
+    return classify_stream_result(returncode, stdout_result, stderr_result)
 
 
 def main() -> int:

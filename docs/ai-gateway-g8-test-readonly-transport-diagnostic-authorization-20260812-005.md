@@ -9,14 +9,15 @@
 - 关联已消费 ChangeId：`CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-004`。
 - 诊断目的：只区分 SSH 退出分类、远端固定 stdout 是否精确匹配、stderr 是否存在及其行数/字节数/SHA-256；不得读取或推断 stderr 正文。
 - 候选脚本：`infra/scripts/run-ai-gateway-g8-test-readonly-transport-diagnostic.py`。
-- 当前候选脚本 SHA-256：`05a10f8da6242e31240771210a0472d197baba4f222783717993f04ca2d27f75`；最终授权前必须按合并后的精确文件重新计算，不一致即停止。
+- 当前候选脚本 SHA-256：`f066f737d08533b252428ec666fcbf113907b642e223947b05833626e53eac91`；最终授权前必须按合并后的精确文件重新计算，不一致即停止。
+- 复用的 004 身份校验辅助脚本 SHA-256 固定为 `599e6bbb800531d02b22cf9534636ebf8232002fafb8236d294f9d2dba2e3c89`；加载前必须核对普通文件身份与摘要，加载后必须核对 ChangeId、已消费状态、目标、端口、主机公钥及本地身份公钥指纹，任一漂移立即停止。
 
 ## 2. 精确命令摘要
 
 1. 以 `python -I` 执行一次 `--local-check`，仅核对固定 known_hosts、显式 ED25519 密钥对、ACL 和密钥对一致性，不联网。
 2. 本地检查完整 PASS 后，以相同参数移除 `--local-check`，正式调用一次；只允许固定 OpenSSH、公钥认证、严格 known_hosts、`ConnectionAttempts=1`、零重试。
 3. 远端命令固定为 `/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -`，stdin 只包含隔离解释器检查及固定 PASS 标记；不导入文件或身份数据库模块，不接受远端路径或命令参数。
-4. 本地只输出固定诊断枚举、stdout/stderr 字节数、stderr 行数和 SHA-256；禁止输出 stdout/stderr 原文。
+4. 本地并发流式排空 stdout/stderr，分别只在内存保留最多 64 KiB 加 1 字节用于超限判断，同时累计完整字节数、stderr 行数与 SHA-256；只输出固定诊断字段，禁止输出正文。
 
 ## 3. 最大上限与禁止项
 
@@ -31,7 +32,7 @@
 - `EXIT_NONZERO`：区分 `TRANSPORT_255`、`REMOTE_NONZERO` 或其他非零分类并停止。
 - `STDERR_PRESENT`：只保存存在性、行数、字节数和摘要并停止，不读取正文。
 - `STDOUT_MISMATCH`：只保存字节数和摘要并停止，不读取正文。
-- `OUTPUT_LIMIT_EXCEEDED`：任一输出超过 64 KiB 时阻断，不把超限输出解释为有效诊断。
+- `OUTPUT_LIMIT_EXCEEDED`：任一输出超过 64 KiB 时阻断；采集器继续有界排空并计算完整计数与摘要，不把超限输出保存或解释为有效诊断。
 - 本地校验失败、执行异常、超时、输出字段越界或任何非固定行为立即停止，不重试。
 
 ## 5. 回滚与后续

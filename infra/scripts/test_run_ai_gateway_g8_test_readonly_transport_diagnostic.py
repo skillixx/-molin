@@ -86,16 +86,45 @@ class TestTransportDiagnostic(unittest.TestCase):
             fixed_ssh_executable=lambda: Path("/usr/bin/ssh"),
             fixed_ssh_environment=lambda: {"PATH": "/usr/bin:/bin"},
         )
-        completed = subprocess.CompletedProcess([], 0, MODULE.REMOTE_MARKER, b"")
-        with mock.patch.object(MODULE.subprocess, "run", return_value=completed) as run:
+        stdout_result = {
+            "captured": MODULE.REMOTE_MARKER,
+            "bytes": len(MODULE.REMOTE_MARKER),
+            "lines": 1,
+            "sha256": MODULE.sha256_or_none(MODULE.REMOTE_MARKER),
+            "exceeded": False,
+        }
+        stderr_result = {"captured": b"", "bytes": 0, "lines": 0, "sha256": "NONE", "exceeded": False}
+        with mock.patch.object(MODULE, "run_bounded_process", return_value=(0, stdout_result, stderr_result)) as run:
             result = MODULE.run_transport_diagnostic(helper, Path("/fixed/known_hosts"), Path("/fixed/key"))
         self.assertEqual(run.call_count, 1)
         command = run.call_args.args[0]
         self.assertEqual(command[-6:], ["/usr/bin/env", "-i", "PATH=/usr/bin:/bin", "/usr/bin/python3", "-I", "-"])
         self.assertIn("ConnectionAttempts=1", command)
         self.assertIn("PasswordAuthentication=no", command)
-        self.assertEqual(run.call_args.kwargs["input"], MODULE.REMOTE_PROGRAM.encode("ascii"))
+        self.assertEqual(run.call_args.args[1], {"PATH": "/usr/bin:/bin"})
         self.assertEqual(result["diagnostic"], "PASS")
+
+    def test_helper_digest_and_contract_are_frozen(self) -> None:
+        """辅助脚本摘要或目标常量漂移时，必须在执行辅助代码前失败关闭。"""
+        helper = MODULE.load_staging_helper()
+        self.assertEqual(helper.TARGET, "pc@8.130.9.163")
+        self.assertEqual(helper.TARGET_PORT, "10003")
+        with mock.patch.object(MODULE, "STAGING_HELPER_SHA256", "0" * 64):
+            with self.assertRaises(MODULE.DiagnosticError):
+                MODULE.load_staging_helper()
+
+    def test_bounded_process_streams_large_output_without_retaining_body(self) -> None:
+        """异常子进程输出超过上限时，只保留固定前缀并继续流式计算完整摘要。"""
+        payload_size = MODULE.MAX_CAPTURE_BYTES * 3
+        command = [sys.executable, "-I", "-c", f"import sys;sys.stdout.buffer.write(b'X'*{payload_size})"]
+        returncode, stdout_result, stderr_result = MODULE.run_bounded_process(command, {})
+        self.assertEqual(returncode, 0)
+        self.assertEqual(stdout_result["bytes"], payload_size)
+        self.assertEqual(len(stdout_result["captured"]), MODULE.MAX_CAPTURE_BYTES + 1)
+        self.assertTrue(stdout_result["exceeded"])
+        self.assertEqual(stderr_result["bytes"], 0)
+        evidence = MODULE.classify_stream_result(returncode, stdout_result, stderr_result)
+        self.assertEqual(evidence["diagnostic"], "OUTPUT_LIMIT_EXCEEDED")
 
     def test_invalid_change_rejects_before_helper_or_network(self) -> None:
         """未知 ChangeId 必须在加载身份辅助模块和联网前失败。"""
