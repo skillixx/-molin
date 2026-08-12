@@ -5,9 +5,67 @@ on:
     branches: [main]
 
 jobs:
+  change-scope:
+    name: CI 变更范围分类
+    runs-on: ubuntu-latest
+    outputs:
+      docs_lightweight: ${{ steps.scope.outputs.docs_lightweight }}
+      backend: ${{ steps.scope.outputs.backend }}
+      phase5: ${{ steps.scope.outputs.phase5 }}
+      gateway_g3: ${{ steps.scope.outputs.gateway_g3 }}
+      gateway_g4: ${{ steps.scope.outputs.gateway_g4 }}
+      gateway_g7: ${{ steps.scope.outputs.gateway_g7 }}
+      gateway_g8: ${{ steps.scope.outputs.gateway_g8 }}
+      gateway_g8_real_e2e: ${{ steps.scope.outputs.gateway_g8_real_e2e }}
+      frontend_admin: ${{ steps.scope.outputs.frontend_admin }}
+      frontend_user: ${{ steps.scope.outputs.frontend_user }}
+      full: ${{ steps.scope.outputs.full }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 精确比较 PR 基线与头提交，不能依赖浅克隆猜测变更范围。
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: 校验并执行 CI 变更范围分类
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python -m unittest infra/scripts/test_classify_ci_change_scope.py
+          python -m py_compile infra/scripts/classify-ci-change-scope.py infra/scripts/test_classify_ci_change_scope.py
+          python infra/scripts/classify-ci-change-scope.py \
+            --base-sha="$BASE_SHA" \
+            --head-sha="$HEAD_SHA" \
+            --repo-root=. \
+            --github-output="$GITHUB_OUTPUT"
+
+  docs-lightweight:
+    name: 文档与基础质量轻量门禁
+    needs: change-scope
+    if: needs.change-scope.outputs.docs_lightweight == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: 校验差异格式
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git diff --check "$BASE_SHA...$HEAD_SHA"
+
+      - name: 扫描差异敏感信息
+        run: python scripts/verify-sms-phase5-sensitive-data.py --repo-root . --base-ref "${{ github.event.pull_request.base.sha }}"
+
   # ---- 后端 CI ----
   backend:
     name: 后端构建与测试
+    needs: change-scope
+    if: needs.change-scope.outputs.backend == 'true'
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -26,6 +84,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: 安装 Go
         uses: actions/setup-go@v5
@@ -77,11 +137,14 @@ jobs:
 
   phase5-release-safety:
     name: 阶段 5 短信发布安全门禁
+    needs: change-scope
+    if: needs.change-scope.outputs.phase5 == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           # 敏感信息门禁需要比较阶段分支与主分支的完整共同基线。
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: 安装 Node.js
@@ -267,9 +330,13 @@ jobs:
 
   gateway-g3:
     name: AI 网关 G3 财务与消息验收
+    needs: change-scope
+    if: needs.change-scope.outputs.gateway_g3 == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: 隔离验证 MySQL 8 与 RabbitMQ 恢复
         env:
@@ -279,9 +346,13 @@ jobs:
 
   gateway-g4:
     name: AI 网关 G4 安全与资源治理验收
+    needs: change-scope
+    if: needs.change-scope.outputs.gateway_g4 == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: 隔离验证 MySQL 8、Redis 7 与 RabbitMQ 恢复
         env:
@@ -291,11 +362,14 @@ jobs:
 
   gateway-g7:
     name: AI 网关 G7 可靠性与零差额验收
+    needs: change-scope
+    if: needs.change-scope.outputs.gateway_g7 == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           # G7 敏感信息扫描需要完整比较当前 PR 与 main 的共同基线。
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - uses: actions/setup-go@v5
@@ -344,10 +418,13 @@ jobs:
 
   gateway-g8:
     name: AI 网关 G8 生产就绪门禁
+    needs: change-scope
+    if: needs.change-scope.outputs.gateway_g8 == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - uses: actions/setup-go@v5
@@ -501,9 +578,13 @@ jobs:
 
   gateway-g8-real-e2e:
     name: AI 网关 G8 真实后端浏览器验收
+    needs: change-scope
+    if: needs.change-scope.outputs.gateway_g8_real_e2e == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -531,9 +612,13 @@ jobs:
   # ---- 前端 CI ----
   frontend-admin:
     name: 管理后台构建
+    needs: change-scope
+    if: needs.change-scope.outputs.frontend_admin == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -565,9 +650,13 @@ jobs:
 
   frontend-user:
     name: 用户控制台构建
+    needs: change-scope
+    if: needs.change-scope.outputs.frontend_user == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -600,3 +689,97 @@ jobs:
         run: |
           npx playwright install --with-deps chrome
           npm run test:g6-e2e
+
+  ci-required-gate:
+    name: CI 必选门禁汇总
+    needs:
+      - change-scope
+      - docs-lightweight
+      - backend
+      - phase5-release-safety
+      - gateway-g3
+      - gateway-g4
+      - gateway-g7
+      - gateway-g8
+      - gateway-g8-real-e2e
+      - frontend-admin
+      - frontend-user
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: 校验分类结果与适用门禁
+        env:
+          CHANGE_SCOPE_RESULT: ${{ needs.change-scope.result }}
+          FULL_REQUIRED: ${{ needs.change-scope.outputs.full }}
+          DOCS_REQUIRED: ${{ needs.change-scope.outputs.docs_lightweight }}
+          DOCS_RESULT: ${{ needs.docs-lightweight.result }}
+          BACKEND_REQUIRED: ${{ needs.change-scope.outputs.backend }}
+          BACKEND_RESULT: ${{ needs.backend.result }}
+          PHASE5_REQUIRED: ${{ needs.change-scope.outputs.phase5 }}
+          PHASE5_RESULT: ${{ needs.phase5-release-safety.result }}
+          G3_REQUIRED: ${{ needs.change-scope.outputs.gateway_g3 }}
+          G3_RESULT: ${{ needs.gateway-g3.result }}
+          G4_REQUIRED: ${{ needs.change-scope.outputs.gateway_g4 }}
+          G4_RESULT: ${{ needs.gateway-g4.result }}
+          G7_REQUIRED: ${{ needs.change-scope.outputs.gateway_g7 }}
+          G7_RESULT: ${{ needs.gateway-g7.result }}
+          G8_REQUIRED: ${{ needs.change-scope.outputs.gateway_g8 }}
+          G8_RESULT: ${{ needs.gateway-g8.result }}
+          G8_E2E_REQUIRED: ${{ needs.change-scope.outputs.gateway_g8_real_e2e }}
+          G8_E2E_RESULT: ${{ needs.gateway-g8-real-e2e.result }}
+          ADMIN_REQUIRED: ${{ needs.change-scope.outputs.frontend_admin }}
+          ADMIN_RESULT: ${{ needs.frontend-admin.result }}
+          USER_REQUIRED: ${{ needs.change-scope.outputs.frontend_user }}
+          USER_RESULT: ${{ needs.frontend-user.result }}
+        run: |
+          test "$CHANGE_SCOPE_RESULT" = "success"
+          for value in \
+            "$FULL_REQUIRED" "$DOCS_REQUIRED" "$BACKEND_REQUIRED" "$PHASE5_REQUIRED" \
+            "$G3_REQUIRED" "$G4_REQUIRED" "$G7_REQUIRED" "$G8_REQUIRED" \
+            "$G8_E2E_REQUIRED" "$ADMIN_REQUIRED" "$USER_REQUIRED"; do
+            case "$value" in
+              true|false) ;;
+              *) printf 'CI 分类输出不是布尔值\n'; exit 1 ;;
+            esac
+          done
+          selected_gate=false
+          for value in \
+            "$DOCS_REQUIRED" "$BACKEND_REQUIRED" "$PHASE5_REQUIRED" "$G3_REQUIRED" \
+            "$G4_REQUIRED" "$G7_REQUIRED" "$G8_REQUIRED" "$G8_E2E_REQUIRED" \
+            "$ADMIN_REQUIRED" "$USER_REQUIRED"; do
+            if [ "$value" = "true" ]; then
+              selected_gate=true
+            fi
+          done
+          test "$selected_gate" = "true"
+          if [ "$FULL_REQUIRED" = "true" ]; then
+            test "$DOCS_REQUIRED" = "true"
+            test "$BACKEND_REQUIRED" = "true"
+            test "$PHASE5_REQUIRED" = "true"
+            test "$G3_REQUIRED" = "true"
+            test "$G4_REQUIRED" = "true"
+            test "$G7_REQUIRED" = "true"
+            test "$G8_REQUIRED" = "true"
+            test "$G8_E2E_REQUIRED" = "true"
+            test "$ADMIN_REQUIRED" = "true"
+            test "$USER_REQUIRED" = "true"
+          fi
+          check_required_gate() {
+            local required="$1"
+            local result="$2"
+            local gate_name="$3"
+            if [ "$required" = "true" ] && [ "$result" != "success" ]; then
+              printf '必选 CI 门禁未成功：%s result=%s\n' "$gate_name" "$result"
+              return 1
+            fi
+          }
+          check_required_gate "$DOCS_REQUIRED" "$DOCS_RESULT" "docs-lightweight"
+          check_required_gate "$BACKEND_REQUIRED" "$BACKEND_RESULT" "backend"
+          check_required_gate "$PHASE5_REQUIRED" "$PHASE5_RESULT" "phase5-release-safety"
+          check_required_gate "$G3_REQUIRED" "$G3_RESULT" "gateway-g3"
+          check_required_gate "$G4_REQUIRED" "$G4_RESULT" "gateway-g4"
+          check_required_gate "$G7_REQUIRED" "$G7_RESULT" "gateway-g7"
+          check_required_gate "$G8_REQUIRED" "$G8_RESULT" "gateway-g8"
+          check_required_gate "$G8_E2E_REQUIRED" "$G8_E2E_RESULT" "gateway-g8-real-e2e"
+          check_required_gate "$ADMIN_REQUIRED" "$ADMIN_RESULT" "frontend-admin"
+          check_required_gate "$USER_REQUIRED" "$USER_RESULT" "frontend-user"

@@ -1063,3 +1063,19 @@ python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py `
 ```
 
 生成 PASS 只证明本地候选与冻结来源及摘要一致，不授权连接、上传、安装、修改 sudoers 或执行远端审计。003 必须再通过 `infra/scripts/run-ai-gateway-g8-test-readonly-access-stage.py` 的离线单元测试和精确 PR HEAD CI；该包装器仅在用户批准后依次执行一次固定 SSH 和一次原子 SFTP 暂存上传，任一步失败均禁止后续动作且不重试。安装清单见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260812-003.md`。
+
+## CI 变更范围分类器
+
+| 项目 | 说明 |
+|---|---|
+| **使用者** | 全体开发、测试、产品与运维人员 |
+| **涉及功能** | 根据 PR 精确 base/head 的变更路径开启适用 CI；纯文档只跑轻量门禁，高风险或未知路径完整回归 |
+| **代码位置** | `infra/scripts/classify-ci-change-scope.py`、`infra/scripts/test_classify_ci_change_scope.py`、`.github/workflows/ci.yml` |
+
+分类器默认失败关闭：`.github/`、`infra/`、账务交易、Migration、全局安全配置、根级未知文件和无法识别的路径会开启完整 CI；路径为空、绝对路径、反斜杠或路径穿越会直接失败。删除路径以及重命名/复制的源、目标路径会同时分类，禁止通过移动文件降级。每个 Job checkout 精确 PR head SHA；`skipped` 只表示该门禁经精确路径分类确认不适用，不能用于绕过已开启门禁。工作流末尾的 `CI 必选门禁汇总` 会复核完整 CI 标志、分类结果和所有适用 Job，必须作为分支保护 required check。
+
+```powershell
+# 本地验证分类规则和语法
+python -m unittest infra/scripts/test_classify_ci_change_scope.py
+python -m py_compile infra/scripts/classify-ci-change-scope.py infra/scripts/test_classify_ci_change_scope.py
+```
