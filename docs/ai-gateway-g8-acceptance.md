@@ -42,9 +42,10 @@
 
 - 已新增不含 Secret 的分阶段迁移清单示例与离线校验器，将 `test_candidate`、`production_readonly`、`production_closed_deploy`、`production_gray` 四阶段分别失败关闭；测试候选不得声明生产授权或打开流量。
 - 2026-08-12 仅对仓库声明的测试入口执行 3 个匿名 GET：用户端和管理端返回 HTTP 200，公网 API health 不可达。该结果不代表测试 API、数据库、Bifrost、监控或账务通过。
-- 当前执行环境没有测试服务器 SSH 凭据，未读取远端配置值、进程、schema、备份或监控，未上传、重启或写入测试服务器。
+- 首次匿名入口核验时，执行环境尚未取得测试服务器 SSH 连接条件，因此该次未读取远端配置值、进程、schema、备份或监控，也未上传、重启或写入测试服务器；后续单次 SSH 只读基线见本节末尾及独立报告。
 - 历史 README 中出现过测试凭据字面量，当前文件已移除，但 Git 历史仍可能保留旧值；相关测试凭据必须视为已暴露并完成轮换后，才能进入生产关闭态部署门禁。
 - 迁移操作边界和待收集证据见 `docs/ai-gateway-g8-test-to-production-handoff.md`。本节不改变 `G8_ENGINEERING_READY`，也不构成任何生产授权。
+- 2026-08-12 测试服单次只读基线确认：现有 API 进程/监听为 0，health/ready 不可达；API 二进制仍为 G7 摘要，Docker、schema、Bifrost、监控和账务因权限与工具缺失保持 UNKNOWN；历史 MySQL/RabbitMQ/MinIO 密码已不匹配，但 Redis 无密码、SSH 账号仍有密码。P0=0、P1=3，测试服 G8 验收未通过。完整证据见 `docs/ai-gateway-g8-test-server-readonly-audit-20260812.md`。
 
 ## 3. 商业验收
 

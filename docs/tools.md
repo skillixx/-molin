@@ -1035,3 +1035,15 @@ python infra/scripts/verify-ai-gateway-g8-migration-manifest.py `
 ```
 
 成功输出包含当前清单低敏 `receipt_sha256`，供下一阶段绑定；失败仅输出固定原因枚举，不回显调用方字段名或值。完整迁移规则见 `docs/ai-gateway-g8-test-to-production-handoff.md`。
+
+### G8 测试服务器只读基线脚本
+
+`infra/scripts/audit-ai-gateway-g8-test-server-readonly.sh` 通过单次 SSH 标准输入运行，仅输出主机、制品、文件权限、环境键名、容器健康、表规模、监控、备份和凭据轮换分类。脚本不含目标凭据，不执行上传、服务信号、DDL/DML、队列消费或业务请求；Docker 只读访问不可用时对应结果保持 `UNAVAILABLE`。
+
+```powershell
+# 连接前先执行本地语法、自检和只读静态门禁。
+& 'C:\Program Files\Git\bin\bash.exe' -n infra/scripts/audit-ai-gateway-g8-test-server-readonly.sh
+& 'C:\Program Files\Git\bin\bash.exe' infra/scripts/audit-ai-gateway-g8-test-server-readonly.sh --self-test
+```
+
+实际 SSH 必须绑定唯一 ChangeId、固定 known_hosts、`BatchMode=yes`、精确目标和零重试。历史凭据比较值只以内存中的 SHA-256 注入，不写入脚本、命令输出或 Git。每个 ChangeId 只允许一次连接；失败后必须生成新候选，不能重放。
