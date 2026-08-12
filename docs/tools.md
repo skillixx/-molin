@@ -1022,7 +1022,7 @@ G7 的 `infra/scripts/verify-ai-gateway-g7-reliability.sh` 与 `server/cmd/ai-ga
 
 ### G8 测试到生产迁移清单校验器
 
-`infra/scripts/verify-ai-gateway-g8-migration-manifest.py` 只读取不含 Secret 的 JSON 清单，不连网、不读环境文件、不输出主机/域名/路径/制品值。它以精确字段白名单拒绝密码或 Token 类额外字段，并分别校验 `test_candidate`、`production_readonly`、`production_closed_deploy`和 `production_gray` 四个阶段的总闸、授权、请求/费用上限、模型/上游/价格批准与备份/回滚/凭据证据。
+`infra/scripts/verify-ai-gateway-g8-migration-manifest.py` 只读取不含 Secret 的 JSON 清单，不连网、不读环境文件、不输出主机/域名/路径/制品值。它以精确字段白名单拒绝密码或 Token 类额外字段，并要求从 `test_candidate` 开始按顺序传入不可变清单链；每个生产阶段绑定前序清单、审批回执和所需的测试凭据轮换回执 SHA-256，同时校验总闸、授权、请求/费用上限、模型/上游/价格批准、备份/回滚及发布目标防漂移。
 
 ```powershell
 # 离线单元测试
@@ -1030,7 +1030,8 @@ python -m unittest infra/scripts/test_verify_ai_gateway_g8_migration_manifest.py
 
 # 实际清单必须位于已忽略目录，示例文件含 PENDING 时应失败关闭
 python infra/scripts/verify-ai-gateway-g8-migration-manifest.py `
-  --manifest infra/.g8-private/ai-gateway-g8-migration-manifest.json
+  --manifest infra/.g8-private/01-test-candidate.json `
+  --manifest infra/.g8-private/02-production-readonly.json
 ```
 
-完整迁移规则见 `docs/ai-gateway-g8-test-to-production-handoff.md`。
+成功输出包含当前清单低敏 `receipt_sha256`，供下一阶段绑定；失败仅输出固定原因枚举，不回显调用方字段名或值。完整迁移规则见 `docs/ai-gateway-g8-test-to-production-handoff.md`。

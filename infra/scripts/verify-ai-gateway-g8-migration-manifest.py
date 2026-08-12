@@ -19,6 +19,7 @@ ROOT_KEYS = {
     "scope",
     "traffic",
     "authorization",
+    "chain",
     "models",
     "evidence",
 }
@@ -51,6 +52,12 @@ SECTION_KEYS = {
         "max_requests",
         "max_cost_cny",
     },
+    "chain": {
+        "previous_stage",
+        "previous_manifest_sha256",
+        "approval_receipt_sha256",
+        "credential_rotation_receipt_sha256",
+    },
     "models": {
         "approved_model_count",
         "approved_upstream_count",
@@ -82,6 +89,12 @@ CHANGE_ID_PATTERN = re.compile(r"^CHG-G8-[A-Z0-9-]{8,64}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+ALIAS_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{2,63}$")
+DOMAIN_PATTERN = re.compile(
+    r"^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$"
+)
+DEPLOYMENT_KINDS = {"host_binary", "docker_compose", "kubernetes"}
+STAGE_ORDER = ["test_candidate", "production_readonly", "production_closed_deploy", "production_gray"]
 
 
 def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -145,6 +158,23 @@ def require_text(value: Any, field: str, allow_pending: bool = False) -> str:
     return normalized
 
 
+def require_sha_or_none(value: Any, field: str, allow_none: bool) -> str:
+    """校验低敏回执摘要；未到对应阶段时只允许显式 NONE。"""
+    if allow_none and value == "NONE":
+        return value
+    if not isinstance(value, str) or not SHA256_PATTERN.fullmatch(value):
+        raise ValueError(f"{field} 必须为 64 位 SHA-256")
+    return value
+
+
+def manifest_sha256(manifest: dict[str, Any]) -> str:
+    """以稳定 JSON 编码计算清单回执摘要，不读取或输出任何 Secret。"""
+    import hashlib
+
+    canonical = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def validate_common(manifest: dict[str, Any]) -> None:
     """校验所有阶段共享的结构、制品、范围与失败关闭约束。"""
     require_exact_keys(manifest, ROOT_KEYS, "根对象")
@@ -170,6 +200,17 @@ def validate_common(manifest: dict[str, Any]) -> None:
     allow_pending_target = stage == "test_candidate"
     for key in SECTION_KEYS["target"] - {"environment"}:
         require_text(target[key], f"target.{key}", allow_pending=allow_pending_target)
+    if not allow_pending_target:
+        if not ALIAS_PATTERN.fullmatch(target["host_alias"]):
+            raise ValueError("target.host_alias 格式不合法")
+        if target["deployment_kind"] not in DEPLOYMENT_KINDS:
+            raise ValueError("target.deployment_kind 不在允许范围")
+        if not target["deployment_root"].startswith("/"):
+            raise ValueError("target.deployment_root 必须为绝对路径")
+        if not ALIAS_PATTERN.fullmatch(target["database_alias"]):
+            raise ValueError("target.database_alias 格式不合法")
+        if not DOMAIN_PATTERN.fullmatch(target["domain"]):
+            raise ValueError("target.domain 格式不合法")
 
     release = sections["release"]
     if not isinstance(release["source_commit"], str) or not COMMIT_PATTERN.fullmatch(release["source_commit"]):
@@ -214,8 +255,40 @@ def validate_common(manifest: dict[str, Any]) -> None:
     require_nonnegative_int(models["approved_upstream_count"], "models.approved_upstream_count")
     require_bool(models["pricing_approved"], "models.pricing_approved")
     margin = require_decimal(models["minimum_margin_rate"], "models.minimum_margin_rate")
-    if margin < Decimal("0.15") or margin > Decimal("1"):
-        raise ValueError("最低毛利率必须在 0.15 到 1 之间")
+    if margin < Decimal("0.15") or margin >= Decimal("1"):
+        raise ValueError("最低毛利率必须在 0.15（含）到 1（不含）之间")
+
+    chain = sections["chain"]
+    expected_previous_stage = "none" if stage == "test_candidate" else STAGE_ORDER[STAGE_ORDER.index(stage) - 1]
+    if chain["previous_stage"] != expected_previous_stage:
+        raise ValueError("前序阶段与当前阶段不连续")
+    require_sha_or_none(
+        chain["previous_manifest_sha256"],
+        "chain.previous_manifest_sha256",
+        allow_none=stage == "test_candidate",
+    )
+    require_sha_or_none(
+        chain["approval_receipt_sha256"],
+        "chain.approval_receipt_sha256",
+        allow_none=stage == "test_candidate",
+    )
+    require_sha_or_none(
+        chain["credential_rotation_receipt_sha256"],
+        "chain.credential_rotation_receipt_sha256",
+        allow_none=stage in {"test_candidate", "production_readonly"},
+    )
+    if stage != "test_candidate" and (
+        chain["previous_manifest_sha256"] == "NONE" or chain["approval_receipt_sha256"] == "NONE"
+    ):
+        raise ValueError("生产阶段必须绑定前序清单和审批回执摘要")
+    if stage == "test_candidate" and any(value != "NONE" for key, value in chain.items() if key != "previous_stage"):
+        raise ValueError("测试候选阶段不得伪造前序、审批或轮换回执")
+    if stage == "production_readonly" and chain["credential_rotation_receipt_sha256"] != "NONE":
+        raise ValueError("生产只读阶段不得提前声明测试凭据轮换回执")
+    if stage in {"production_closed_deploy", "production_gray"} and chain[
+        "credential_rotation_receipt_sha256"
+    ] == "NONE":
+        raise ValueError("生产部署阶段必须绑定测试凭据轮换回执摘要")
 
     evidence = sections["evidence"]
     for key in SECTION_KEYS["evidence"]:
@@ -295,6 +368,31 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     validate_stage(manifest)
 
 
+def validate_chain(manifests: list[dict[str, Any]]) -> None:
+    """验证从测试候选开始的连续清单链，禁止只提交自报的生产阶段清单。"""
+    if not manifests:
+        raise ValueError("清单链不得为空")
+    expected_stages = STAGE_ORDER[: STAGE_ORDER.index(manifests[-1].get("stage")) + 1] if manifests[-1].get("stage") in STAGES else []
+    actual_stages = [manifest.get("stage") for manifest in manifests]
+    if actual_stages != expected_stages:
+        raise ValueError("必须从 test_candidate 开始按顺序提供完整清单链")
+    change_ids: set[str] = set()
+    for index, manifest in enumerate(manifests):
+        validate_manifest(manifest)
+        if manifest["change_id"] in change_ids:
+            raise ValueError("清单链 ChangeId 不得重复")
+        change_ids.add(manifest["change_id"])
+        if index == 0:
+            continue
+        previous = manifests[index - 1]
+        if manifest["chain"]["previous_manifest_sha256"] != manifest_sha256(previous):
+            raise ValueError("前序清单摘要不匹配")
+        if manifest["release"] != previous["release"]:
+            raise ValueError("同一迁移链的发布制品必须保持一致")
+        if index >= 2 and manifest["target"] != previous["target"]:
+            raise ValueError("生产目标在只读确认后不得漂移")
+
+
 def success_summary(manifest: dict[str, Any]) -> str:
     """只输出阶段和布尔聚合，避免泄漏主机、域名、路径或制品细节。"""
     production_authorized = manifest["stage"] != "test_candidate"
@@ -302,24 +400,30 @@ def success_summary(manifest: dict[str, Any]) -> str:
     return (
         f"G8_MIGRATION_MANIFEST=PASS stage={manifest['stage']} "
         f"production_authorized={str(production_authorized).lower()} "
-        f"traffic_open={str(traffic_open).lower()} secrets_read=false"
+        f"traffic_open={str(traffic_open).lower()} receipt_sha256={manifest_sha256(manifest)} secrets_read=false"
     )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="离线校验 G8 测试到生产迁移清单")
-    parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--manifest", type=Path, action="append", required=True)
     args = parser.parse_args()
     try:
-        manifest = json.loads(
-            args.manifest.read_text(encoding="utf-8"),
-            object_pairs_hook=reject_duplicate_keys,
-        )
-        validate_manifest(manifest)
-    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
-        print(f"G8_MIGRATION_MANIFEST=FAILED reason={exc}")
+        manifests = [
+            json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=reject_duplicate_keys)
+            for path in args.manifest
+        ]
+        validate_chain(manifests)
+    except (OSError, UnicodeError):
+        print("G8_MIGRATION_MANIFEST=FAILED reason=manifest_unreadable")
         return 2
-    print(success_summary(manifest))
+    except json.JSONDecodeError:
+        print("G8_MIGRATION_MANIFEST=FAILED reason=invalid_json")
+        return 2
+    except (ValueError, TypeError, KeyError, IndexError):
+        print("G8_MIGRATION_MANIFEST=FAILED reason=invalid_manifest")
+        return 2
+    print(success_summary(manifests[-1]))
     return 0
 
 

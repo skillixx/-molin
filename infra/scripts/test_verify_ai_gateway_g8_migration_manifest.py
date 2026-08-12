@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from copy import deepcopy
 from pathlib import Path
 
 
@@ -81,6 +82,12 @@ def valid_manifest(stage: str = "test_candidate") -> dict:
             "max_requests": 0,
             "max_cost_cny": "0",
         },
+        "chain": {
+            "previous_stage": "none",
+            "previous_manifest_sha256": "NONE",
+            "approval_receipt_sha256": "NONE",
+            "credential_rotation_receipt_sha256": "NONE",
+        },
         "models": {
             "approved_model_count": 0,
             "approved_upstream_count": 0,
@@ -96,6 +103,64 @@ def valid_manifest(stage: str = "test_candidate") -> dict:
             "test_credentials_rotated": False,
         },
     }
+
+
+def valid_manifest_chain(module, final_stage: str) -> list[dict]:
+    """生成摘要相连的四阶段夹具，阶段授权只表达测试数据而非真实批准。"""
+    stages = module.STAGE_ORDER[: module.STAGE_ORDER.index(final_stage) + 1]
+    manifests = [valid_manifest()]
+    for index, stage in enumerate(stages[1:], start=1):
+        previous = manifests[-1]
+        manifest = deepcopy(previous)
+        manifest["stage"] = stage
+        manifest["change_id"] = f"CHG-G8-TEST-20260812-00{index + 1}"
+        manifest["target"].update(
+            {
+                "host_alias": "molin-production",
+                "deployment_kind": "docker_compose",
+                "deployment_root": "/srv/molin",
+                "database_alias": "molin-production-mysql",
+                "domain": "api.example.invalid",
+            }
+        )
+        manifest["chain"].update(
+            {
+                "previous_stage": previous["stage"],
+                "previous_manifest_sha256": module.manifest_sha256(previous),
+                "approval_receipt_sha256": str(index) * 64,
+            }
+        )
+        if stage == "production_readonly":
+            manifest["authorization"]["production_readonly"] = True
+        elif stage == "production_closed_deploy":
+            manifest["authorization"]["production_deploy"] = True
+            manifest["chain"]["credential_rotation_receipt_sha256"] = "a" * 64
+            manifest["evidence"].update(
+                {
+                    "backup_readable": True,
+                    "credentials_separated": True,
+                    "test_credentials_rotated": True,
+                }
+            )
+        else:
+            manifest["authorization"].update(
+                {
+                    "paid_upstream": True,
+                    "customer_gray": True,
+                    "alert_notification": True,
+                    "max_requests": 1,
+                    "max_cost_cny": "1",
+                }
+            )
+            manifest["traffic"].update(
+                {"application_gate_enabled": True, "edge_gate_open": True, "real_customer_count": 1}
+            )
+            manifest["models"].update(
+                {"approved_model_count": 5, "approved_upstream_count": 2, "pricing_approved": True}
+            )
+            manifest["evidence"]["alerts_local_only"] = False
+        manifests.append(manifest)
+    return manifests
 
 
 class MigrationManifestTest(unittest.TestCase):
@@ -136,13 +201,19 @@ class MigrationManifestTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "不得声明生产授权"):
             self.module.validate_manifest(manifest)
 
+    def test_rejects_receipt_claim_in_test_candidate(self) -> None:
+        manifest = valid_manifest()
+        manifest["chain"]["approval_receipt_sha256"] = "a" * 64
+        with self.assertRaisesRegex(ValueError, "测试候选阶段不得伪造"):
+            self.module.validate_manifest(manifest)
+
     def test_production_gray_requires_approved_models_budget_and_evidence(self) -> None:
         manifest = valid_manifest("production_gray")
         manifest["target"].update(
             {
                 "host_alias": "molin-production",
                 "deployment_kind": "docker_compose",
-                "deployment_root": "molin-production-root",
+                "deployment_root": "/srv/molin",
                 "database_alias": "molin-production-mysql",
                 "domain": "api.example.invalid",
             }
@@ -154,8 +225,42 @@ class MigrationManifestTest(unittest.TestCase):
                 "test_credentials_rotated": True,
             }
         )
+        manifest["chain"].update(
+            {
+                "previous_stage": "production_closed_deploy",
+                "previous_manifest_sha256": "e" * 64,
+                "approval_receipt_sha256": "f" * 64,
+                "credential_rotation_receipt_sha256": "a" * 64,
+            }
+        )
         with self.assertRaisesRegex(ValueError, "生产灰度授权必须完整"):
             self.module.validate_manifest(manifest)
+
+    def test_accepts_complete_ordered_chain_for_each_stage(self) -> None:
+        for stage in self.module.STAGE_ORDER:
+            with self.subTest(stage=stage):
+                self.module.validate_chain(valid_manifest_chain(self.module, stage))
+
+    def test_rejects_direct_production_gray_without_predecessor_chain(self) -> None:
+        gray = valid_manifest_chain(self.module, "production_gray")[-1]
+        with self.assertRaisesRegex(ValueError, "必须从 test_candidate 开始"):
+            self.module.validate_chain([gray])
+
+    def test_rejects_predecessor_digest_mismatch(self) -> None:
+        manifests = valid_manifest_chain(self.module, "production_closed_deploy")
+        manifests[-1]["chain"]["previous_manifest_sha256"] = "f" * 64
+        with self.assertRaisesRegex(ValueError, "前序清单摘要不匹配"):
+            self.module.validate_chain(manifests)
+
+    def test_rejects_invalid_production_target_and_margin_one(self) -> None:
+        manifests = valid_manifest_chain(self.module, "production_gray")
+        manifests[-1]["target"]["domain"] = "not a domain"
+        with self.assertRaisesRegex(ValueError, "target.domain 格式不合法"):
+            self.module.validate_chain(manifests)
+        manifests = valid_manifest_chain(self.module, "production_gray")
+        manifests[-1]["models"]["minimum_margin_rate"] = "1"
+        with self.assertRaisesRegex(ValueError, "1（不含）"):
+            self.module.validate_chain(manifests)
 
     def test_cli_summary_never_contains_manifest_values(self) -> None:
         summary = self.module.success_summary(valid_manifest())
@@ -163,10 +268,10 @@ class MigrationManifestTest(unittest.TestCase):
         self.assertNotIn("molin-test", summary)
         self.assertNotIn("api.example", summary)
         self.assertNotIn(serialized, summary)
-        self.assertEqual(
+        self.assertRegex(
             summary,
-            "G8_MIGRATION_MANIFEST=PASS stage=test_candidate production_authorized=false "
-            "traffic_open=false secrets_read=false",
+            r"^G8_MIGRATION_MANIFEST=PASS stage=test_candidate production_authorized=false "
+            r"traffic_open=false receipt_sha256=[0-9a-f]{64} secrets_read=false$",
         )
 
     def test_cli_rejects_duplicate_json_key_without_traceback(self) -> None:
@@ -190,6 +295,25 @@ class MigrationManifestTest(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("G8_MIGRATION_MANIFEST=FAILED", result.stdout)
         self.assertNotIn("Traceback", result.stdout + result.stderr)
+        self.assertNotIn("schema_version", result.stdout + result.stderr)
+
+    def test_cli_failure_does_not_echo_attacker_controlled_field_name(self) -> None:
+        manifest = valid_manifest()
+        manifest["BEARER_FAKE_SENSITIVE_MARKER"] = True
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            manifest_path = Path(temporary_directory) / "manifest.json"
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT_PATH), "--manifest", str(manifest_path)],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+                check=False,
+            )
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout.strip(), "G8_MIGRATION_MANIFEST=FAILED reason=invalid_manifest")
+        self.assertNotIn("BEARER_FAKE_SENSITIVE_MARKER", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":
