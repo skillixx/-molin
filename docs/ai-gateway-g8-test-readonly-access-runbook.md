@@ -78,6 +78,10 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 未经用户对补全后的 ChangeId 独立确认，不得执行上述任何上传或安装命令。
 
+### 3.4 首次授权执行记录
+
+`CHG-G8-TEST-READONLY-ACCESS-20260812-001` 已于 2026-08-12 执行一次只读前置检查：本机固定 ED25519 指纹匹配，但首个远端命令 `sudo -n -l` 返回“需要密码”。该结果触发停止条件，未上传、安装或修改任何测试服资产，ChangeId 已消费且禁止重放。若继续必须使用新的 ChangeId 和经用户明确指定的受控 root 管理通道，见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260812.md`。
+
 ## 4. 安装后的独立只读核验
 
 安装成功也不自动授权读取运行态。必须再申请新的 `CHG-G8-TEST-READONLY-YYYYMMDD-NNN`，固定为一次 SSH、零重试，并只执行：
