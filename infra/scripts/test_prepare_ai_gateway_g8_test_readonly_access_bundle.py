@@ -103,6 +103,10 @@ class TestReadonlyAccessBundle(unittest.TestCase):
     def test_build_environment_is_fixed(self) -> None:
         for name in ("GOENV", "GOWORK", "GOTOOLCHAIN", "GOFLAGS", "GOOS", "GOARCH", "CGO_ENABLED"):
             self.assertIn(f'"{name}"', self.source)
+        self.assertIn('"GOCACHE": str(temporary_root / "go-build-cache")', self.source)
+        self.assertIn('"GOMODCACHE": str(temporary_root / "go-module-cache")', self.source)
+        self.assertIn('[go, "mod", "download"]', self.source)
+        self.assertIn('if go_version != "go1.26.5"', self.source)
         for name in ("GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_COUNT", "core.autocrlf", "core.eol"):
             self.assertIn(f'"{name}"', self.source)
 

@@ -381,7 +381,9 @@ jobs:
             --change-id=CHG-G8-TEST-READONLY-ACCESS-20260812-001 \
             --source-commit=c50f092339fcad79ca1262925480219db1755318 \
             --output-dir="$bundle_dir" | tee /tmp/g8-test-readonly-access-bundle.log
-          ! grep -q 'BAD_ENV_INJECTION' /tmp/g8-test-readonly-access-bundle.log
+          if grep -q 'BAD_ENV_INJECTION' /tmp/g8-test-readonly-access-bundle.log; then
+            exit 1
+          fi
           grep -qx 'G8_TEST_READONLY_ACCESS_BUNDLE=PASS' /tmp/g8-test-readonly-access-bundle.log
           grep -qx 'source_commit=c50f092339fcad79ca1262925480219db1755318' /tmp/g8-test-readonly-access-bundle.log
           grep -qx 'source_tree=2e9701c3f5d8ba12aebc9631b01696b189f1d313' /tmp/g8-test-readonly-access-bundle.log

@@ -153,6 +153,11 @@ def prepare(change_id: str, source_commit: str, output_dir: Path) -> dict[str, s
     try:
         with tempfile.TemporaryDirectory(prefix="molin-g8-access-") as temporary:
             temporary_root = Path(temporary)
+            build_environment = {
+                **environment,
+                "GOCACHE": str(temporary_root / "go-build-cache"),
+                "GOMODCACHE": str(temporary_root / "go-module-cache"),
+            }
             archive_path = temporary_root / "source.tar"
             with archive_path.open("wb") as archive_handle:
                 run([git, "archive", source_commit], cwd=repo_root, environment=environment, stdout=archive_handle)
@@ -165,7 +170,8 @@ def prepare(change_id: str, source_commit: str, output_dir: Path) -> dict[str, s
             server_root = source_root / "server"
             if not auditor_source.is_file() or auditor_source.is_symlink() or not sudoers_source.is_file() or sudoers_source.is_symlink():
                 raise RuntimeError("required_asset_missing")
-            run([go, "mod", "verify"], cwd=server_root, environment=environment)
+            run([go, "mod", "download"], cwd=server_root, environment=build_environment)
+            run([go, "mod", "verify"], cwd=server_root, environment=build_environment)
 
             build_one = temporary_root / "reconcile-1"
             build_two = temporary_root / "reconcile-2"
@@ -173,7 +179,7 @@ def prepare(change_id: str, source_commit: str, output_dir: Path) -> dict[str, s
                 run(
                     [go, "build", "-trimpath", "-buildvcs=false", "-o", str(destination), "./cmd/ai-gateway-reconcile"],
                     cwd=server_root,
-                    environment=environment,
+                    environment=build_environment,
                 )
             reconcile_sha = sha256(build_one)
             if reconcile_sha != sha256(build_two):
@@ -202,11 +208,13 @@ def prepare(change_id: str, source_commit: str, output_dir: Path) -> dict[str, s
             ):
                 raise RuntimeError("artifact_mismatch")
 
-            go_version = run([go, "env", "GOVERSION"], cwd=server_root, environment=environment)
+            go_version = run([go, "env", "GOVERSION"], cwd=server_root, environment=build_environment)
+            if go_version != "go1.26.5":
+                raise RuntimeError("go_version_mismatch")
             builder_host = "/".join(
                 (
-                    run([go, "env", "GOHOSTOS"], cwd=server_root, environment=environment),
-                    run([go, "env", "GOHOSTARCH"], cwd=server_root, environment=environment),
+                    run([go, "env", "GOHOSTOS"], cwd=server_root, environment=build_environment),
+                    run([go, "env", "GOHOSTARCH"], cwd=server_root, environment=build_environment),
                 )
             )
             values = {
