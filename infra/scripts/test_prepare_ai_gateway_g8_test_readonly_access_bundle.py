@@ -4,6 +4,7 @@
 import os
 import re
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -67,6 +68,25 @@ class TestReadonlyAccessBundle(unittest.TestCase):
         ):
             result = self.run_script(*arguments)
             self.assertEqual(result.returncode, 2)
+
+    def test_consumed_change_id_cannot_create_persistent_bundle(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="g8-consumed-cli-") as temporary:
+            output = Path(temporary) / "bundle"
+            result = self.run_script(
+                "--change-id=CHG-G8-TEST-READONLY-ACCESS-20260812-001",
+                "--source-commit=c50f092339fcad79ca1262925480219db1755318",
+                f"--output-dir={output}",
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertFalse(output.exists())
+            self.assertEqual(
+                result.stdout.strip(),
+                "G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request",
+            )
+
+    def test_consumed_candidate_verification_is_ephemeral(self) -> None:
+        self.assertIn('TemporaryDirectory(prefix="molin-g8-consumed-verify-")', self.source)
+        self.assertIn('print("G8_TEST_READONLY_ACCESS_BUNDLE_VERIFY=PASS")', self.source)
 
     def test_source_comes_from_exact_git_archive_and_build_is_repeated(self) -> None:
         self.assertIn('[git, "archive", source_commit]', self.source)
