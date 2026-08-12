@@ -7,6 +7,7 @@ infra/.env.local
 infra/.env.test
 infra/.env.test.backup.*
 infra/.env.test.tmp.*
+infra/.g8-private/
 molin-api
 
 # 数据库备份文件（含测试数据，禁止入库）

@@ -1019,3 +1019,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 G7 的 `infra/scripts/verify-ai-gateway-g7-reliability.sh` 与 `server/cmd/ai-gateway-reconcile` 继续作为 G8 可靠性和零差额回归工具。通过只代表指定隔离/测试目标，不代表生产或真实客户验收。
 
 `infra/scripts/verify-ai-gateway-g8-real-backend-e2e.sh` 在运行时随机创建临时 MySQL、Redis、RabbitMQ、API 和 Fake 文字上游，执行无 API Mock 的管理端与用户端浏览器旅程，并以只读对账收口。`infra/scripts/verify-ai-gateway-g8-production-rehearsal.sh` 构建 `origin/main` 基线与当前候选制品，验证 TLS 关闭态部署、结构备份恢复、旧版回滚、候选恢复、日志轮转和数据保留。两者都要求 `AI_GATEWAY_G8_ISOLATED_APPROVED=YES`，仅允许隔离环境，不连接生产、不调用付费上游。
+
+### G8 测试到生产迁移清单校验器
+
+`infra/scripts/verify-ai-gateway-g8-migration-manifest.py` 只读取不含 Secret 的 JSON 清单，不连网、不读环境文件、不输出主机/域名/路径/制品值。它以精确字段白名单拒绝密码或 Token 类额外字段，并分别校验 `test_candidate`、`production_readonly`、`production_closed_deploy`和 `production_gray` 四个阶段的总闸、授权、请求/费用上限、模型/上游/价格批准与备份/回滚/凭据证据。
+
+```powershell
+# 离线单元测试
+python -m unittest infra/scripts/test_verify_ai_gateway_g8_migration_manifest.py
+
+# 实际清单必须位于已忽略目录，示例文件含 PENDING 时应失败关闭
+python infra/scripts/verify-ai-gateway-g8-migration-manifest.py `
+  --manifest infra/.g8-private/ai-gateway-g8-migration-manifest.json
+```
+
+完整迁移规则见 `docs/ai-gateway-g8-test-to-production-handoff.md`。

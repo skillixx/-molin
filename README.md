@@ -116,23 +116,22 @@ cd web/user-console && npm install && npm run dev
 
 **SSH 连接：**
 ```bash
-ssh -p 10001 pc-w1@8.130.9.163
-# 密码：Root123!
+ssh -p "$TEST_SERVER_SSH_PORT" "$TEST_SERVER_USER@$TEST_SERVER_HOST"
 ```
+
+SSH 身份、端口、项目目录和密钥只能通过受控运维渠道获取，不得写入 README、命令行、日志或 PR。仓库中的测试服器运维约定以 `infra/CLAUDE.md` 为权威来源；实际执行前仍必须核对当前目标身份和 ED25519 指纹。
 
 **测试服务（推送 main 后自动部署，以下地址在服务器内使用）：**
 
-| 服务 | 连接地址 | 账号 | 密码 |
-|---|---|---|---|
-| MySQL | `127.0.0.1:3306` 库名 `molin_test` | `molin` | `molin_test_2024` |
-| Redis | `127.0.0.1:6379` | — | 无密码 |
-| RabbitMQ | `127.0.0.1:5672` | `molin` | `molin_test_2024` |
-| RabbitMQ 管理界面 | `http://127.0.0.1:15672` | `molin` | `molin_test_2024` |
-| MinIO | `127.0.0.1:9000` | `molin` | `molin_test_2024` |
-| MinIO 控制台 | `http://127.0.0.1:9001` | `molin` | `molin_test_2024` |
-| Go API（部署后） | `http://127.0.0.1:8080` | — | — |
+| 服务 | 服务标识 | 凭据要求 |
+|---|---|---|
+| MySQL | `TEST_MYSQL_DSN` | 受控环境变量，禁止入库 |
+| Redis | `TEST_REDIS_ADDR` / `TEST_REDIS_PASSWORD` | 测试和生产必须独立 |
+| RabbitMQ | `TEST_RABBITMQ_URL` | 受控环境变量，禁止入库 |
+| MinIO | `TEST_MINIO_ENDPOINT` 及对应 Secret | 测试和生产必须独立 |
+| Go API | 服务器本机回环健康入口 | 禁止公开内部指标 Token |
 
-> 测试环境 `.env.test` 保存在服务器 `/opt/molin/.env.test`，不入库。
+> 测试环境文件路径和权限以 `infra/CLAUDE.md` 及受控运维记录为准，不入库。历史 README 曾出现测试凭据字面量，这些凭据必须视为已暴露并由运维在测试服务器上独立轮换；仅删除当前文档不能消除 Git 历史暴露。
 
 ---
 
@@ -176,6 +175,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | [开发执行计划](docs/development-execution-plan.md) | Week 1–12 节奏 |
 | [短信阶段 5 验收报告](docs/sms-phase5-acceptance-report.md) | 灰度发布门禁、测试服运行证据、剩余授权与最终验收状态 |
 | [短信阶段 5 Canary 执行设计](docs/sms-phase5-canary-execution-design.md) | `receipt_only` 五场景计划、双号码隐藏输入候选及真实发送前置门禁 |
+| [G8 测试服到生产迁移交接](docs/ai-gateway-g8-test-to-production-handoff.md) | 测试服基线、离线迁移清单、生产授权分段和凭据轮换边界 |
 | [Auth 接口测试文档](docs/api-test-auth.md) | Auth 模块手动测试用例（Week 1） |
 | [IAM 接口测试文档](docs/api-test-iam.md) | IAM 模块手动测试用例（Week 1） |
 | [Identity 接口测试文档](docs/api-test-identity.md) | Identity 模块手动测试用例（Week 1） |

@@ -361,6 +361,18 @@ jobs:
           go test ./internal/config ./internal/modules/token_gateway/service ./internal/modules/token_gateway/handler ./internal/modules/token_gateway ./internal/bootstrap
           go vet ./internal/config ./internal/modules/token_gateway/... ./internal/bootstrap
 
+      - name: 校验 G8 测试服到生产迁移清单
+        run: |
+          python -m unittest infra/scripts/test_verify_ai_gateway_g8_migration_manifest.py
+          python -m py_compile infra/scripts/verify-ai-gateway-g8-migration-manifest.py infra/scripts/test_verify_ai_gateway_g8_migration_manifest.py
+          set +e
+          python infra/scripts/verify-ai-gateway-g8-migration-manifest.py \
+            --manifest infra/ai-gateway-g8-migration-manifest.example.json >/tmp/g8-manifest-example.log 2>&1
+          status=$?
+          set -e
+          test "$status" -eq 2
+          grep -q '^G8_MIGRATION_MANIFEST=FAILED' /tmp/g8-manifest-example.log
+
       - name: 校验生产监控、告警、Compose 和 Nginx 契约
         env:
           BIFROST_IMAGE_DIGEST: alpine:3.20

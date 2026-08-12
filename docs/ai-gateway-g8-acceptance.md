@@ -38,6 +38,14 @@
 | 代码 HEAD CI | PASS | 精确代码 HEAD `2189deda7c290f75b1b1c8892fc963e7a9b0b6c4` 的 CI run `31506128982` 为 `completed/success`，9/9 门禁通过 |
 | PR 最终 HEAD CI / Ready / merge commit | PASS | 最终 HEAD `f560345f893189e3d15feec299bbb4dafde87632` 的 CI run `31507153082` 为 `completed/success`，9/9 门禁通过；PR 转 Ready 后已按 merge commit 合并，未使用 squash，远端功能分支已删除 |
 
+### 2.1 工程就绪后的迁移准备
+
+- 已新增不含 Secret 的分阶段迁移清单示例与离线校验器，将 `test_candidate`、`production_readonly`、`production_closed_deploy`、`production_gray` 四阶段分别失败关闭；测试候选不得声明生产授权或打开流量。
+- 2026-08-12 仅对仓库声明的测试入口执行 3 个匿名 GET：用户端和管理端返回 HTTP 200，公网 API health 不可达。该结果不代表测试 API、数据库、Bifrost、监控或账务通过。
+- 当前执行环境没有测试服务器 SSH 凭据，未读取远端配置值、进程、schema、备份或监控，未上传、重启或写入测试服务器。
+- 历史 README 中出现过测试凭据字面量，当前文件已移除，但 Git 历史仍可能保留旧值；相关测试凭据必须视为已暴露并完成轮换后，才能进入生产关闭态部署门禁。
+- 迁移操作边界和待收集证据见 `docs/ai-gateway-g8-test-to-production-handoff.md`。本节不改变 `G8_ENGINEERING_READY`，也不构成任何生产授权。
+
 ## 3. 商业验收
 
 `G8_COMMERCIAL_ACCEPTED` 尚不具备：生产目标、真实上游费用、真实客户、真实资金、价格/财务批准和真实告警联系人均未获本轮独立授权；设计客户数量、真实集成、真实付费、四周成功率和毛利不得填写虚构值。
