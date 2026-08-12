@@ -1063,6 +1063,22 @@ python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py `
 
 历史复现 PASS 只证明已消费候选仍可在临时目录按冻结来源重构，不恢复授权，也不得持久化为可安装输出。003 的唯一正式 stage 调用返回 `remote_stage_failed` 后已停止并消费；由于该低敏结果不能区分 SSH 与 SFTP，远端暂存目录及部分上传状态为 `UNKNOWN`。后续必须使用新 ChangeId 先完成只读取证，不得重放 003。记录见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260812-003.md`。
 
+### G8 测试服务器 003 暂存状态只读取证器
+
+`infra/scripts/run-ai-gateway-g8-test-staging-evidence.py` 只服务于待批准的 `CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-004`。以下命令仅执行本地身份与程序自检，不连接服务器：
+
+```powershell
+python -I infra/scripts/run-ai-gateway-g8-test-staging-evidence.py --self-test
+python -I infra/scripts/run-ai-gateway-g8-test-staging-evidence.py `
+  --local-check `
+  --change-id CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-004 `
+  --known-hosts C:\Users\skillixx\.ssh\known_hosts `
+  --identity-file C:\Users\skillixx\.ssh\id_ed25519 `
+  --identity-public-file C:\Users\skillixx\.ssh\id_ed25519.pub
+```
+
+正式模式会发起一次 SSH，因此只能在精确 PR HEAD、CI、独立评审、QA、产品验收和 merge commit 全部完成，并取得用户对 004 的独立明确授权后执行。结果只允许 `ABSENT`、`PRESENT/PASS` 或固定类别的 `PRESENT/MISMATCH`；后者返回退出码 3。工具没有上传、下载、删除、sudo 或业务访问能力；执行结果也不授权清理 003 暂存目录或安装新入口。
+
 ## CI 变更范围分类器
 
 | 项目 | 说明 |
