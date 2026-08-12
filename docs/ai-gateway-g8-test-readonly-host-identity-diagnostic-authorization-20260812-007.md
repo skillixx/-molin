@@ -1,6 +1,17 @@
 # G8 测试服主机身份低敏诊断 007 授权清单
 
-> 当前状态：`PENDING_ENGINEERING_GATES_AND_USER_APPROVAL`。本文件当前不构成测试服务器连接授权；工程合并后仍须用户再次明确批准。
+> 当前状态：`PENDING_USER_APPROVAL`。仓库工程门禁已经完成，但本文件当前仍不构成测试服务器连接授权；必须等待用户再次明确批准。
+
+## 0. 工程门禁证据
+
+- 功能 HEAD：`21cc6698df1aa0b48de66213c97a4a31d074fcb5`。
+- PR：[#349](https://github.com/skillixx/-molin/pull/349)，已从 Draft 转 Ready 后按 merge commit 合并，未使用 squash。
+- CI：run `31618217697`，精确绑定功能 HEAD，12/12 SUCCESS，包含 G8 生产就绪、Linux `--network none` 007 测试和必选汇总。
+- 独立门禁：代码安全、QA、产品/规格均为 P0=0、P1=0、P2=0。
+- merge commit：`9f5c028232e03bd1d8ad99fb99211680af790625`，双父为原主干 `2cb93163b0f4b49d7313866e3b5c4b7d0a9d718b` 与功能 HEAD。
+- 远端功能分支已删除。
+
+上述事实只证明 007 仓库候选完成工程门禁，不证明测试服已再次连接或诊断已经执行。
 
 ## 1. ChangeId 与精确目标
 

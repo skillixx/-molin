@@ -132,7 +132,7 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 `CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-006` 通过 PR #345、CI 12/12 和三方独立门禁后合入主干。用户批准后，本地检查 PASS；唯一正式只读 SSH 返回 `BLOCKED / MACHINE_ID` 并零重试停止。暂存查找未执行，003 暂存继续为 `UNKNOWN`。006 已消费，禁止重放；授权与执行记录见 `docs/ai-gateway-g8-test-readonly-staging-evidence-authorization-20260812-006.md`、`docs/ai-gateway-g8-test-readonly-staging-evidence-attempt-20260812-006.md`。
 
-`CHG-G8-TEST-READONLY-HOST-IDENTITY-DIAG-20260812-007` 的候选脚本仅在内存比较固定 `/etc/machine-id`，只允许返回 `READABLE_MATCH`、`READABLE_MISMATCH` 或 `UNREADABLE`，不输出当前原文或摘要，也不读取 003 暂存目录。当前授权状态为 `PENDING_ENGINEERING_GATES_AND_USER_APPROVAL`；合并后仍必须取得用户独立明确授权才可执行，见 `docs/ai-gateway-g8-test-readonly-host-identity-diagnostic-authorization-20260812-007.md`。
+`CHG-G8-TEST-READONLY-HOST-IDENTITY-DIAG-20260812-007` 的候选脚本仅在内存比较固定 `/etc/machine-id`，只允许返回 `READABLE_MATCH`、`READABLE_MISMATCH` 或 `UNREADABLE`，不输出当前原文或摘要，也不读取 003 暂存目录。功能 HEAD `21cc6698` 已通过 CI 12/12 与独立代码安全、QA、产品/规格 P0/P1/P2=0，并由 PR #349 按 merge commit `9f5c0282` 合入主干；当前授权状态为 `PENDING_USER_APPROVAL`，仍必须取得用户独立明确授权才可执行，见 `docs/ai-gateway-g8-test-readonly-host-identity-diagnostic-authorization-20260812-007.md`。
 
 ## 4. 安装后的独立只读核验
 
