@@ -50,8 +50,7 @@ class TestTransportDiagnostic(unittest.TestCase):
     def test_remote_program_has_no_file_or_process_capability(self) -> None:
         """远端标记程序不得读取文件、启动子进程或改变状态。"""
         self.assertIn("sys.flags.isolated", MODULE.REMOTE_PROGRAM)
-        self.assertIn("pwd.getpwuid", MODULE.REMOTE_PROGRAM)
-        for forbidden in ("open(", "subprocess", "remove(", "unlink(", "rmdir(", "sudo"):
+        for forbidden in ("import os", "import pwd", "open(", "subprocess", "remove(", "unlink(", "rmdir(", "sudo"):
             self.assertNotIn(forbidden, MODULE.REMOTE_PROGRAM)
 
     def test_classification_never_returns_output_body(self) -> None:
@@ -75,6 +74,9 @@ class TestTransportDiagnostic(unittest.TestCase):
         for completed, expected in cases:
             with self.subTest(expected=expected):
                 self.assertEqual(MODULE.classify_result(completed)["diagnostic"], expected)
+
+        oversized = subprocess.CompletedProcess([], 0, b"X" * (MODULE.MAX_CAPTURE_BYTES + 1), b"")
+        self.assertEqual(MODULE.classify_result(oversized)["diagnostic"], "OUTPUT_LIMIT_EXCEEDED")
 
     def test_remote_call_is_exactly_once_with_fixed_ssh(self) -> None:
         """正式诊断只能调用一次固定 SSH，远端程序只经 stdin 传递。"""

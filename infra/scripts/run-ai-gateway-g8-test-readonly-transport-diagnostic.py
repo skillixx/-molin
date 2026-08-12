@@ -18,11 +18,10 @@ from pathlib import Path
 CHANGE_ID = "CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005"
 TARGET_CHANGE_ID = "CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-004"
 REMOTE_MARKER = b"G8_TEST_READONLY_TRANSPORT_REMOTE=PASS\n"
-REMOTE_PROGRAM = """import os
-import pwd
-import sys
+MAX_CAPTURE_BYTES = 64 * 1024
+REMOTE_PROGRAM = """import sys
 
-if not sys.flags.isolated or pwd.getpwuid(os.getuid()).pw_name != 'pc':
+if not sys.flags.isolated:
     raise SystemExit(41)
 print('G8_TEST_READONLY_TRANSPORT_REMOTE=PASS')
 """
@@ -69,7 +68,9 @@ def classify_result(result: subprocess.CompletedProcess[bytes]) -> dict[str, str
 
     stdout_contract = "EXACT" if result.stdout == REMOTE_MARKER else "MISMATCH"
     stderr_state = "EMPTY" if not result.stderr else "PRESENT"
-    if exit_class != "ZERO":
+    if len(result.stdout) > MAX_CAPTURE_BYTES or len(result.stderr) > MAX_CAPTURE_BYTES:
+        diagnostic = "OUTPUT_LIMIT_EXCEEDED"
+    elif exit_class != "ZERO":
         diagnostic = "EXIT_NONZERO"
     elif stderr_state != "EMPTY":
         diagnostic = "STDERR_PRESENT"
@@ -175,7 +176,7 @@ def main() -> int:
             return 2
         if any(
             marker in REMOTE_PROGRAM
-            for marker in ("open(", "subprocess", "remove(", "unlink(", "rmdir(", "sudo")
+            for marker in ("import os", "import pwd", "open(", "subprocess", "remove(", "unlink(", "rmdir(", "sudo")
         ) or not helper.CHANGE_ID_CONSUMED:
             print("G8_TEST_READONLY_TRANSPORT_DIAG=FAILED reason=unsafe_program")
             return 2
