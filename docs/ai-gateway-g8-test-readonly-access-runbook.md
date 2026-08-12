@@ -120,10 +120,10 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 ### 3.5 当前重新申请顺序
 
-001、002、003、004、005、006 均已消费。005 已确认固定 SSH 与远端隔离 Python 标记可用；006 在 `MACHINE_ID` 门禁阻断，二者均未读取暂存目录，仍未关闭暂存 UNKNOWN。继续必须使用新的 ChangeId，并依次完成：
+001、002、003、004、005、006 均已消费。005 已确认固定 SSH 与远端隔离 Python 标记可用；006 在 `MACHINE_ID` 门禁阻断，二者均未读取暂存目录，仍未关闭暂存 UNKNOWN。007 只用于低敏区分 machine-id 可读匹配、可读漂移或不可读，当前仍在仓库工程门禁阶段。继续必须依次完成：
 
-1. 准备新的只读主机身份诊断候选，区分 machine-id 的“可读但漂移”和“不可读”，不得输出原文或自行更新受信身份。
-2. 新候选完成测试、独立评审、QA、产品验收和精确 PR HEAD 门禁，并按 merge commit 合并后，提交绑定最终提交与脚本摘要的独立只读授权清单，等待用户批准。
+1. 完成 007 只读主机身份诊断候选的测试、独立评审、QA、产品验收和精确 PR HEAD 门禁，并按 merge commit 合并；候选不得输出 machine-id 原文/摘要或自行更新受信身份。
+2. 将 007 授权清单收敛为 `PENDING_USER_APPROVAL`，绑定最终提交与脚本摘要，等待用户另行批准一次本地检查和一次只读 SSH。
 3. 若取证确认暂存路径存在，另行提交精确清理授权；只允许删除经真实路径、属主、权限、文件白名单和摘要共同绑定的 003 暂存目录，不得把清理并入只读取证授权。
 4. 只有暂存 `UNKNOWN` 关闭后，才可使用另一个新 ChangeId 重新冻结安装候选、制品回执和授权；不得复用 001、002、003 的候选、回执或授权。
 5. 安装后的真实运行态审计仍使用另一个独立 ChangeId，后续安装授权不得顺带执行。
@@ -131,6 +131,8 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 `CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005` 已完成唯一一次本地检查和正式只读 SSH，结果为 `ZERO / EXACT / stderr EMPTY / diagnostic PASS`，证明传输链路可用但未关闭暂存 UNKNOWN；005 已消费并禁止重放。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`、`docs/ai-gateway-g8-test-readonly-transport-diagnostic-attempt-20260812-005.md`。下一次暂存只读取证必须使用新的 ChangeId，重新完成代码安全、QA、产品、精确 HEAD CI、merge commit 与用户独立授权。
 
 `CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-006` 通过 PR #345、CI 12/12 和三方独立门禁后合入主干。用户批准后，本地检查 PASS；唯一正式只读 SSH 返回 `BLOCKED / MACHINE_ID` 并零重试停止。暂存查找未执行，003 暂存继续为 `UNKNOWN`。006 已消费，禁止重放；授权与执行记录见 `docs/ai-gateway-g8-test-readonly-staging-evidence-authorization-20260812-006.md`、`docs/ai-gateway-g8-test-readonly-staging-evidence-attempt-20260812-006.md`。
+
+`CHG-G8-TEST-READONLY-HOST-IDENTITY-DIAG-20260812-007` 的候选脚本仅在内存比较固定 `/etc/machine-id`，只允许返回 `READABLE_MATCH`、`READABLE_MISMATCH` 或 `UNREADABLE`，不输出当前原文或摘要，也不读取 003 暂存目录。当前授权状态为 `PENDING_ENGINEERING_GATES_AND_USER_APPROVAL`；合并后仍必须取得用户独立明确授权才可执行，见 `docs/ai-gateway-g8-test-readonly-host-identity-diagnostic-authorization-20260812-007.md`。
 
 ## 4. 安装后的独立只读核验
 
