@@ -128,6 +128,8 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 4. 只有暂存 `UNKNOWN` 关闭后，才可使用另一个新 ChangeId 重新冻结安装候选、制品回执和授权；不得复用 001、002、003 的候选、回执或授权。
 5. 安装后的真实运行态审计仍使用另一个独立 ChangeId，后续安装授权不得顺带执行。
 
+当前候选 ChangeId 为 `CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005`，授权清单见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`。候选尚未完成工程门禁或取得用户授权，禁止连接测试服。
+
 ## 4. 安装后的独立只读核验
 
 安装成功也不自动授权读取运行态。必须再申请新的 `CHG-G8-TEST-READONLY-YYYYMMDD-NNN`，固定为一次 SSH、零重试，并只执行：

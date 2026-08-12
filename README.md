@@ -35,6 +35,7 @@ AI 网关 Phase 1：
 - `CHG-G8-TEST-READONLY-ACCESS-20260812-002` 候选仓库门禁曾通过 PR #336 和 CI 9/9；用户批准安装后，唯一一次只读 SSH 预检在 machine-id 摘要命令处因跨 shell 引号解析错误非零退出，随即停止。未执行 SCP、root 控制台、安装、sudoers 修改或 self-test；002 已消费，禁止重试或上传，详见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260812-002.md`。
 - `CHG-G8-TEST-READONLY-ACCESS-20260812-003` 的仓库工程门禁曾通过，用户随后批准执行一次只读 SSH、一次原子 SFTP、一次 root 安装和一次 sudo self-test。正式包装器只调用一次并返回 `G8_TEST_READONLY_ACCESS_STAGE=FAILED reason=remote_stage_failed`，随即零重试停止；未进入 root 控制台，未创建 live 目标，未修改 sudoers，也未执行 self-test。该低敏结果不能区分 SSH 与 SFTP 阶段，因此远端暂存目录及部分上传状态为 `UNKNOWN`。003 已消费，普通候选生成和 stage 调用现均失败关闭；继续前须使用新 ChangeId 取得只读暂存取证授权，详见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260812-003.md`。测试服运行态 P1 与 UNKNOWN 仍未关闭。
 - `CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-004` 已获批准并完成唯一一次正式调用：本地检查 PASS，正式 SSH 返回固定低敏 `remote_evidence_failed` 后零重试停止；没有形成 `ABSENT`、`PRESENT/PASS` 或 `PRESENT/MISMATCH` 证据，003 暂存状态仍为 `UNKNOWN`。004 已消费并在仓库入口失败关闭；未执行 SFTP、下载、删除、sudo、业务或上游请求。完整记录见 `docs/ai-gateway-g8-test-readonly-staging-evidence-attempt-20260812-004.md`。
+- 已开始准备 `CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005` 仓库候选，只用一次固定 SSH 和不读文件的远端 Python 标记程序，把 004 的宽泛失败收敛为退出分类、stdout 契约和 stderr 低敏计数/摘要。当前尚未完成工程门禁或取得用户授权，禁止连接测试服；详见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`。
 
 > **第一阶段（Week 1-4：平台底座 + 应用售卖闭环）已于 2026-06-07 正式验收通过，并于 2026-06-08 完成最终收尾确认 ✅**
 > 端到端验收 16/16 核心用例、37/37 全部用例通过（通过率 100%）。

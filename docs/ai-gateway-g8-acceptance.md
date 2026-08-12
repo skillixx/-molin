@@ -53,6 +53,7 @@
 - `CHG-G8-TEST-READONLY-ACCESS-20260812-002` 候选曾通过 PR #336 精确 HEAD `91c2bd9e70774319f67436c8b545bc57181f5aa8`、CI run `31573880151` 9/9 和独立三方验收。用户批准安装后，本地五文件/回执及 known_hosts 指纹通过，但唯一一次只读 SSH 在 machine-id 摘要命令处因跨 shell 引号解析错误非零退出；随即停止，未执行 SCP、root 控制台、安装、sudoers 修改或 self-test。002 已消费且禁止重试，证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260812-002.md`。
 - `CHG-G8-TEST-READONLY-ACCESS-20260812-003` 的仓库工程门禁曾通过，用户随后批准执行一次只读 SSH、一次原子 SFTP、一次 root 安装和一次 sudo self-test。正式调用前本地 `--self-test`、`--local-check` 与五文件回执均通过；包装器仅正式调用一次并返回固定低敏结果 `G8_TEST_READONLY_ACCESS_STAGE=FAILED reason=remote_stage_failed`，随即按停止条件零重试结束。未进入 root 控制台，未创建 live 安装目标，未修改 sudoers，也未执行 self-test；业务请求、上游请求和费用为 `0 / 0 / 0 CNY`。由于该结果同时覆盖 SSH 与 SFTP 失败，是否创建远端暂存目录或上传部分文件为 `UNKNOWN`，不得推定为不存在。003 已消费，普通候选生成和 stage 调用现均失败关闭；继续须使用新 ChangeId 取得只读暂存取证授权。证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260812-003.md`。测试服 P1 与 UNKNOWN 均未关闭。
 - `CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-004` 的工程门禁已合并，用户随后批准唯一一次本地检查和正式 SSH。本地检查 PASS；正式调用返回 `G8_TEST_READONLY_STAGING_EVIDENCE=FAILED reason=remote_evidence_failed`、退出码 2 后零重试停止，业务请求、上游请求和费用为 `0 / 0 / 0 CNY`。该低敏汇总不能区分 SSH 返回码、stderr 或 stdout 契约失败，也不能证明暂存存在或不存在；003 暂存状态继续为 `UNKNOWN`。004 已消费，继续诊断必须使用新 ChangeId、重新完成工程门禁并取得独立用户授权。证据见 `docs/ai-gateway-g8-test-readonly-staging-evidence-attempt-20260812-004.md`。
+- `CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005` 正在准备仓库候选，只允许一次固定 SSH 执行不读取远端文件的隔离 Python 标记程序，并把结果收敛为退出分类、stdout 契约及 stderr 低敏计数/摘要。当前未连接测试服，尚未完成独立评审、QA、产品、CI、合并或用户执行授权；不得把候选当作远端诊断已完成。
 
 ## 3. 商业验收
 
