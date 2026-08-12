@@ -120,11 +120,11 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 ### 3.5 当前重新申请顺序
 
-001、002、003、004、005、006 均已消费。005 已确认固定 SSH 与远端隔离 Python 标记可用；006 在 `MACHINE_ID` 门禁阻断，二者均未读取暂存目录，仍未关闭暂存 UNKNOWN。007 只用于低敏区分 machine-id 可读匹配、可读漂移或不可读，其仓库工程门禁已经完成，当前状态为 `PENDING_USER_APPROVAL`。继续必须依次完成：
+001、002、003、004、005、006、007 均已消费。005 已确认固定 SSH 与远端隔离 Python 标记可用；006 在 `MACHINE_ID` 门禁阻断；007 的唯一正式只读 SSH 返回 `READABLE_MISMATCH`。上述诊断均未读取暂存目录，003 暂存仍为 `UNKNOWN`。继续必须依次完成：
 
-1. 等待用户独立批准 007 的一次本地检查和一次只读 SSH；未批准前不得执行。候选不得输出 machine-id 原文/摘要或自行更新受信身份。
-2. 若 007 返回 `READABLE_MISMATCH` 或 `UNREADABLE`，立即停止，使用新的 ChangeId 完成受控来源或文件权限诊断；不得继续暂存取证。
-3. 若 007 返回 `READABLE_MATCH`，只能另行准备新的暂存只读取证候选，重新完成工程门禁并取得独立用户授权，不得重放 006。
+1. 007 的 `READABLE_MISMATCH` 已触发停止条件；禁止重试、输出当前值、更新受信摘要或继续暂存取证。
+2. 使用新的 ChangeId，通过阿里云 root 控制台、CMDB 或等价独立受控来源核验主机身份和既有批准基线；须重新完成工程门禁并取得用户独立授权。
+3. 只有独立核验闭环后，才能另行准备新的暂存只读取证候选；不得重放 006 或 007。
 4. 若后续取证确认暂存路径存在，另行提交精确清理授权；只允许删除经真实路径、属主、权限、文件白名单和摘要共同绑定的 003 暂存目录，不得把清理并入只读取证授权。
 5. 只有暂存 `UNKNOWN` 关闭后，才可使用另一个新 ChangeId 重新冻结安装候选、制品回执和授权；不得复用 001、002、003 的候选、回执或授权。安装后的真实运行态审计仍使用另一个独立 ChangeId，后续安装授权不得顺带执行。
 
@@ -132,7 +132,7 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 `CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-006` 通过 PR #345、CI 12/12 和三方独立门禁后合入主干。用户批准后，本地检查 PASS；唯一正式只读 SSH 返回 `BLOCKED / MACHINE_ID` 并零重试停止。暂存查找未执行，003 暂存继续为 `UNKNOWN`。006 已消费，禁止重放；授权与执行记录见 `docs/ai-gateway-g8-test-readonly-staging-evidence-authorization-20260812-006.md`、`docs/ai-gateway-g8-test-readonly-staging-evidence-attempt-20260812-006.md`。
 
-`CHG-G8-TEST-READONLY-HOST-IDENTITY-DIAG-20260812-007` 的候选脚本仅在内存比较固定 `/etc/machine-id`，只允许返回 `READABLE_MATCH`、`READABLE_MISMATCH` 或 `UNREADABLE`，不输出当前原文或摘要，也不读取 003 暂存目录。功能 HEAD `21cc6698` 已通过 CI 12/12 与独立代码安全、QA、产品/规格 P0/P1/P2=0，并由 PR #349 按 merge commit `9f5c0282` 合入主干；当前授权状态为 `PENDING_USER_APPROVAL`，仍必须取得用户独立明确授权才可执行，见 `docs/ai-gateway-g8-test-readonly-host-identity-diagnostic-authorization-20260812-007.md`。
+`CHG-G8-TEST-READONLY-HOST-IDENTITY-DIAG-20260812-007` 完成工程门禁后，用户批准并执行唯一一次本地检查和正式只读 SSH：本地检查 PASS，正式结果为 `BLOCKED / READABLE_MISMATCH`，随后零重试停止；不输出当前 machine-id 原文或摘要，也未读取 003 暂存目录。007 已消费，后续必须使用新 ChangeId 完成独立受控来源核验，见 `docs/ai-gateway-g8-test-readonly-host-identity-diagnostic-authorization-20260812-007.md`、`docs/ai-gateway-g8-test-readonly-host-identity-diagnostic-attempt-20260813-007.md`。
 
 ## 4. 安装后的独立只读核验
 

@@ -303,7 +303,6 @@ class TestHostIdentityDiagnostic(unittest.TestCase):
         """消费门禁必须在加载 helper、读取身份文件或联网前拒绝重放。"""
         output = io.StringIO()
         with (
-            mock.patch.object(MODULE, "CHANGE_ID_CONSUMED", True),
             mock.patch.object(MODULE, "load_staging_helper") as helper,
             mock.patch.object(MODULE, "run_once") as remote,
             mock.patch.object(sys, "argv", [str(SCRIPT_PATH)]),
