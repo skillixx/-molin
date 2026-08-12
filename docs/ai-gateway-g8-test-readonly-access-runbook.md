@@ -62,13 +62,13 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 003 历史安装清单见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260812-003.md`。该授权已经唯一一次正式包装器调用消费，固定结果为 `remote_stage_failed`；随后未进入 root 控制台、未安装 live 目标、未修改 sudoers 或执行 self-test。由于结果无法区分 SSH 与 SFTP，暂存目录及部分上传状态为 `UNKNOWN`。禁止重试、继续上传或按历史清单安装，完整记录见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260812-003.md`。
 
-### 2.4 已完成工程门禁的只读暂存取证候选（004，仍待用户授权）
+### 2.4 已消费并停止的只读暂存取证（004）
 
 `CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-004` 只用于关闭 003 暂存状态 `UNKNOWN`。`infra/scripts/run-ai-gateway-g8-test-staging-evidence.py` 先离线核对固定 known_hosts、显式 ED25519 密钥对和 OpenSSH ACL，再以最小环境、禁用密码/代理/转发/TTY 的固定 OpenSSH 发起至多一次 SSH。远端仅通过 stdin 执行 `/usr/bin/python3 -I -` 的固定只读程序，不接受远端路径参数。
 
 远端程序先核对登录用户、hostname、machine-id 摘要和部署根真实路径/属主/权限。003 暂存路径不存在时只输出 `ABSENT`；存在时只读取固定五文件的白名单、普通文件/非链接、`pc:pc`、组和其他用户不可写、大小及 SHA-256。全部匹配输出 `PRESENT/PASS`；路径、文件集、文件元数据、内容或读取状态不符时输出固定 `PRESENT/MISMATCH` 类别并以退出码 3 阻断后续动作。输出不包含文件内容、动态路径、实际属主数值、权限值、stderr 或 Secret。
 
-该候选不包含 SFTP、SCP、下载、删除、sudo、Docker、数据库、队列、服务或 HTTP 能力。读取可能由操作系统产生 sshd/journald/audit 日志，并可能按文件系统策略更新 atime；不得表述为操作系统层绝对零写入。PR #341、CI run `31597619593` 与独立安全/QA/产品门禁已通过，但当前尚未取得用户执行授权，禁止连接测试服。授权清单见 `docs/ai-gateway-g8-test-readonly-staging-evidence-authorization-20260812-004.md`。
+该候选不包含 SFTP、SCP、下载、删除、sudo、Docker、数据库、队列、服务或 HTTP 能力。用户批准后，本地检查 PASS，唯一正式调用返回 `remote_evidence_failed` 并按停止条件零重试结束；未形成远端状态证据，暂存仍为 `UNKNOWN`。004 已消费，禁止再次连接或重放。读取和 SSH 可能由操作系统产生 sshd/journald/audit 日志，并可能按文件系统策略更新 atime；不得表述为操作系统层绝对零写入。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-staging-evidence-authorization-20260812-004.md`、`docs/ai-gateway-g8-test-readonly-staging-evidence-attempt-20260812-004.md`。
 
 ## 3. 历史已停止安装变更（禁止执行）
 
@@ -120,10 +120,10 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 ### 3.5 当前重新申请顺序
 
-001、002、003 均已消费。继续必须使用新的 ChangeId，并依次完成：
+001、002、003、004 均已消费。004 唯一正式调用在 `remote_evidence_failed` 后停止，未关闭暂存 UNKNOWN。继续必须使用新的 ChangeId，并依次完成：
 
-1. 完成 004 完全只读暂存状态取证候选，只核对固定主机身份、暂存路径是否存在及文件的低敏元数据；不得下载内容、删除暂存目录、执行 sudo 或读取业务数据。
-2. 004 完成测试、独立评审、QA、产品验收和精确 PR HEAD CI，并按 merge commit 合并后，提交绑定最终提交与脚本摘要的独立只读授权清单，等待用户批准。
+1. 准备新的低敏传输诊断候选，只用一次固定 SSH 区分返回码、stderr 存在性和固定 stdout 契约，不读取暂存文件、日志或业务数据。
+2. 新候选完成测试、独立评审、QA、产品验收和精确 PR HEAD CI，并按 merge commit 合并后，提交绑定最终提交与脚本摘要的独立只读授权清单，等待用户批准。
 3. 若取证确认暂存路径存在，另行提交精确清理授权；只允许删除经真实路径、属主、权限、文件白名单和摘要共同绑定的 003 暂存目录，不得把清理并入只读取证授权。
 4. 只有暂存 `UNKNOWN` 关闭后，才可使用另一个新 ChangeId 重新冻结安装候选、制品回执和授权；不得复用 001、002、003 的候选、回执或授权。
 5. 安装后的真实运行态审计仍使用另一个独立 ChangeId，后续安装授权不得顺带执行。

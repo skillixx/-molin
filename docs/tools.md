@@ -1065,7 +1065,7 @@ python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py `
 
 ### G8 测试服务器 003 暂存状态只读取证器
 
-`infra/scripts/run-ai-gateway-g8-test-staging-evidence.py` 只服务于待批准的 `CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-004`。以下命令仅执行本地身份与程序自检，不连接服务器：
+`infra/scripts/run-ai-gateway-g8-test-staging-evidence.py` 只服务于已消费的 `CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-004`。`--self-test` 仍可离线验证程序结构；普通本地检查和正式模式均必须在读取身份文件或联网前返回 `change_id_consumed`。以下历史本地检查命令不得再次执行：
 
 ```powershell
 python -I infra/scripts/run-ai-gateway-g8-test-staging-evidence.py --self-test

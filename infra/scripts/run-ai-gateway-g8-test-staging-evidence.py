@@ -18,6 +18,8 @@ from pathlib import Path
 
 
 CHANGE_ID = "CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-004"
+# 004 已完成唯一一次正式调用并停止；任何普通入口都必须在读取本地身份材料或联网前拒绝重放。
+CHANGE_ID_CONSUMED = True
 TARGET_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-20260812-003"
 TARGET = "pc@8.130.9.163"
 TARGET_HOST = "8.130.9.163"
@@ -558,6 +560,9 @@ def main() -> int:
             return 2
         print("G8_TEST_READONLY_STAGING_EVIDENCE_SELF_TEST=PASS")
         return 0
+    if CHANGE_ID_CONSUMED:
+        print("G8_TEST_READONLY_STAGING_EVIDENCE=FAILED reason=change_id_consumed")
+        return 2
     if (
         arguments.change_id != CHANGE_ID
         or not arguments.known_hosts
