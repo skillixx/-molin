@@ -15,16 +15,20 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 
-APPROVED_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-20260812-001"
-APPROVED_SOURCE_COMMIT = "c50f092339fcad79ca1262925480219db1755318"
-APPROVED_SOURCE_TREE = "2e9701c3f5d8ba12aebc9631b01696b189f1d313"
-APPROVED_AUDITOR_SHA256 = "308908d2a2b9fa8679fd21d77fde68b5ce5d521ed37dac6b7726e6c323452256"
-APPROVED_SUDOERS_SHA256 = "1ec266c71f00d99da18b9e8cf59af91d6126811384adef62ce48750b97a0986f"
-APPROVED_RECONCILE_SHA256 = "37f6ee369f1ce489a3966123dfea3bd172d5386045495e069433c7f3d993f2c1"
-APPROVED_RECONCILE_SIZE = 13_066_129
+ACTIVE_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-20260812-002"
+ACTIVE_SOURCE_COMMIT = "50b3e2f9d18b38e7d4a91ebeb4f03c413ef33c44"
+ACTIVE_SOURCE_TREE = "73fb652a1f86db84991c8745f8c10e1d2a255f29"
+CONSUMED_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-20260812-001"
+CONSUMED_SOURCE_COMMIT = "c50f092339fcad79ca1262925480219db1755318"
+CONSUMED_SOURCE_TREE = "2e9701c3f5d8ba12aebc9631b01696b189f1d313"
+FROZEN_AUDITOR_SHA256 = "308908d2a2b9fa8679fd21d77fde68b5ce5d521ed37dac6b7726e6c323452256"
+FROZEN_SUDOERS_SHA256 = "1ec266c71f00d99da18b9e8cf59af91d6126811384adef62ce48750b97a0986f"
+FROZEN_RECONCILE_SHA256 = "37f6ee369f1ce489a3966123dfea3bd172d5386045495e069433c7f3d993f2c1"
+FROZEN_RECONCILE_SIZE = 13_066_129
 TRUSTED_PATH = os.pathsep.join(
     (
         "/usr/local/go/bin",
@@ -36,6 +40,20 @@ TRUSTED_PATH = os.pathsep.join(
         r"C:\Program Files\Go\bin",
     )
 )
+
+
+@dataclass(frozen=True)
+class FrozenCandidate:
+    """描述一次不可漂移的候选来源与制品事实。"""
+
+    change_id: str
+    source_commit: str
+    source_tree: str
+    target_deployment_root: str | None
+
+
+ACTIVE_CANDIDATE = FrozenCandidate(ACTIVE_CHANGE_ID, ACTIVE_SOURCE_COMMIT, ACTIVE_SOURCE_TREE, "/home/pc/molin")
+CONSUMED_CANDIDATE = FrozenCandidate(CONSUMED_CHANGE_ID, CONSUMED_SOURCE_COMMIT, CONSUMED_SOURCE_TREE, None)
 
 
 def sha256(path: Path) -> str:
@@ -130,10 +148,8 @@ def write_manifest(output_dir: Path, values: dict[str, str]) -> None:
     checksums.chmod(0o600)
 
 
-def prepare(change_id: str, source_commit: str, output_dir: Path) -> dict[str, str]:
+def prepare(candidate: FrozenCandidate, output_dir: Path) -> dict[str, str]:
     """生成全新候选目录；任一失败均清理本次创建的半成品。"""
-    if change_id != APPROVED_CHANGE_ID or source_commit != APPROVED_SOURCE_COMMIT:
-        raise RuntimeError("unapproved_identity")
     if not output_dir.is_absolute() or output_dir.exists():
         raise RuntimeError("invalid_output_directory")
 
@@ -145,9 +161,13 @@ def prepare(change_id: str, source_commit: str, output_dir: Path) -> dict[str, s
     declared_root = Path(run([git, "rev-parse", "--show-toplevel"], cwd=repo_root, environment=environment)).resolve()
     if declared_root != repo_root:
         raise RuntimeError("repository_mismatch")
-    resolved_commit = run([git, "rev-parse", "--verify", f"{source_commit}^{{commit}}"], cwd=repo_root, environment=environment)
-    source_tree = run([git, "show", "-s", "--format=%T", source_commit], cwd=repo_root, environment=environment)
-    if resolved_commit != source_commit or source_tree != APPROVED_SOURCE_TREE:
+    resolved_commit = run(
+        [git, "rev-parse", "--verify", f"{candidate.source_commit}^{{commit}}"],
+        cwd=repo_root,
+        environment=environment,
+    )
+    source_tree = run([git, "show", "-s", "--format=%T", candidate.source_commit], cwd=repo_root, environment=environment)
+    if resolved_commit != candidate.source_commit or source_tree != candidate.source_tree:
         raise RuntimeError("source_mismatch")
 
     output_created = False
@@ -161,7 +181,7 @@ def prepare(change_id: str, source_commit: str, output_dir: Path) -> dict[str, s
             }
             archive_path = temporary_root / "source.tar"
             with archive_path.open("wb") as archive_handle:
-                run([git, "archive", source_commit], cwd=repo_root, environment=environment, stdout=archive_handle)
+                run([git, "archive", candidate.source_commit], cwd=repo_root, environment=environment, stdout=archive_handle)
             source_root = temporary_root / "source"
             source_root.mkdir()
             safe_extract(archive_path, source_root)
@@ -202,10 +222,10 @@ def prepare(change_id: str, source_commit: str, output_dir: Path) -> dict[str, s
             sudoers_sha = sha256(sudoers_target)
             reconcile_size = reconcile_target.stat().st_size
             if (
-                auditor_sha != APPROVED_AUDITOR_SHA256
-                or sudoers_sha != APPROVED_SUDOERS_SHA256
-                or reconcile_sha != APPROVED_RECONCILE_SHA256
-                or reconcile_size != APPROVED_RECONCILE_SIZE
+                auditor_sha != FROZEN_AUDITOR_SHA256
+                or sudoers_sha != FROZEN_SUDOERS_SHA256
+                or reconcile_sha != FROZEN_RECONCILE_SHA256
+                or reconcile_size != FROZEN_RECONCILE_SIZE
             ):
                 raise RuntimeError("artifact_mismatch")
 
@@ -220,8 +240,8 @@ def prepare(change_id: str, source_commit: str, output_dir: Path) -> dict[str, s
             )
             values = {
                 "BUNDLE_FORMAT_VERSION": "1",
-                "CHANGE_ID": change_id,
-                "SOURCE_COMMIT": source_commit,
+                "CHANGE_ID": candidate.change_id,
+                "SOURCE_COMMIT": candidate.source_commit,
                 "SOURCE_TREE": source_tree,
                 "GO_VERSION": go_version,
                 "GO_BUILDER_HOST": builder_host,
@@ -239,6 +259,8 @@ def prepare(change_id: str, source_commit: str, output_dir: Path) -> dict[str, s
                 "TARGET_MACHINE_ID_SHA256": "b60555f0d8d48731b657d21b2e54559d263210688125ae56a4d662fc4d7278d4",
                 "TARGET_SSH_ED25519_FINGERPRINT": "SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I",
             }
+            if candidate.target_deployment_root:
+                values["TARGET_DEPLOYMENT_ROOT"] = candidate.target_deployment_root
             write_manifest(output_dir, values)
             values["BUNDLE_RECEIPT_SHA256"] = sha256(output_dir / "SHA256SUMS")
             output_created = False
@@ -260,21 +282,25 @@ def main() -> int:
         print("G8_TEST_READONLY_ACCESS_BUNDLE_SELF_TEST=PASS")
         return 0
     try:
-        if not arguments.verify_consumed_candidate:
-            raise RuntimeError("consumed_change_id")
-        if arguments.change_id or arguments.source_commit or arguments.output_dir:
-            raise RuntimeError("unexpected_argument")
-        # 已消费候选只允许在系统临时目录重建、校验并自动销毁，不再输出可供安装的持久目录。
-        with tempfile.TemporaryDirectory(prefix="molin-g8-consumed-verify-") as temporary:
-            values = prepare(
-                APPROVED_CHANGE_ID,
-                APPROVED_SOURCE_COMMIT,
-                Path(temporary) / "bundle",
-            )
+        if arguments.verify_consumed_candidate:
+            if arguments.change_id or arguments.source_commit or arguments.output_dir:
+                raise RuntimeError("unexpected_argument")
+            # 已消费候选只允许在系统临时目录重建、校验并自动销毁，不再输出可供安装的持久目录。
+            with tempfile.TemporaryDirectory(prefix="molin-g8-consumed-verify-") as temporary:
+                values = prepare(CONSUMED_CANDIDATE, Path(temporary) / "bundle")
+            marker = "G8_TEST_READONLY_ACCESS_BUNDLE_VERIFY=PASS"
+        else:
+            if arguments.change_id != ACTIVE_CHANGE_ID or arguments.source_commit != ACTIVE_SOURCE_COMMIT:
+                raise RuntimeError("unapproved_identity")
+            if not arguments.output_dir:
+                raise RuntimeError("missing_output_directory")
+            output_dir = Path(arguments.output_dir)
+            values = prepare(ACTIVE_CANDIDATE, output_dir)
+            marker = "G8_TEST_READONLY_ACCESS_BUNDLE=PASS"
     except Exception:
         print("G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request")
         return 2
-    print("G8_TEST_READONLY_ACCESS_BUNDLE_VERIFY=PASS")
+    print(marker)
     for key in (
         "CHANGE_ID",
         "SOURCE_COMMIT",

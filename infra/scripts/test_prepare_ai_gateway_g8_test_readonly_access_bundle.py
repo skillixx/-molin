@@ -10,6 +10,9 @@ from pathlib import Path
 
 
 SCRIPT_PATH = Path(__file__).with_name("prepare-ai-gateway-g8-test-readonly-access-bundle.py")
+ACTIVE_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-20260812-002"
+ACTIVE_SOURCE_COMMIT = "50b3e2f9d18b38e7d4a91ebeb4f03c413ef33c44"
+ACTIVE_SOURCE_TREE = "73fb652a1f86db84991c8745f8c10e1d2a255f29"
 
 
 def bash_executable() -> str:
@@ -84,17 +87,53 @@ class TestReadonlyAccessBundle(unittest.TestCase):
                 "G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request",
             )
 
+    def test_active_candidate_identity_is_frozen_for_persistent_generation(self) -> None:
+        """002 只能绑定批准的主干提交与源码树，且必须走显式持久候选路径。"""
+        self.assertIn(f'ACTIVE_CHANGE_ID = "{ACTIVE_CHANGE_ID}"', self.source)
+        self.assertIn(f'ACTIVE_SOURCE_COMMIT = "{ACTIVE_SOURCE_COMMIT}"', self.source)
+        self.assertIn(f'ACTIVE_SOURCE_TREE = "{ACTIVE_SOURCE_TREE}"', self.source)
+        self.assertIn('marker = "G8_TEST_READONLY_ACCESS_BUNDLE=PASS"', self.source)
+        self.assertIn("prepare(ACTIVE_CANDIDATE, output_dir)", self.source)
+        self.assertIn('values["TARGET_DEPLOYMENT_ROOT"] = candidate.target_deployment_root', self.source)
+        self.assertIn("CONSUMED_SOURCE_TREE, None", self.source)
+        self.assertIn("if candidate.target_deployment_root", self.source)
+
+    def test_active_candidate_rejects_source_drift_before_output(self) -> None:
+        """即使 ChangeId 正确，来源提交漂移也必须在创建候选目录前失败。"""
+        with tempfile.TemporaryDirectory(prefix="g8-active-cli-") as temporary:
+            output = Path(temporary) / "bundle"
+            result = self.run_script(
+                f"--change-id={ACTIVE_CHANGE_ID}",
+                "--source-commit=" + "0" * 40,
+                f"--output-dir={output}",
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertFalse(output.exists())
+            self.assertEqual(
+                result.stdout.strip(),
+                "G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request",
+            )
+
     def test_consumed_candidate_verification_is_ephemeral(self) -> None:
         self.assertIn('TemporaryDirectory(prefix="molin-g8-consumed-verify-")', self.source)
-        self.assertIn('print("G8_TEST_READONLY_ACCESS_BUNDLE_VERIFY=PASS")', self.source)
+        self.assertIn('marker = "G8_TEST_READONLY_ACCESS_BUNDLE_VERIFY=PASS"', self.source)
+        self.assertIn("prepare(CONSUMED_CANDIDATE", self.source)
+
+        result = self.run_script("--verify-consumed-candidate", "--output-dir=/tmp/forbidden")
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(
+            result.stdout.strip(),
+            "G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request",
+        )
 
     def test_source_comes_from_exact_git_archive_and_build_is_repeated(self) -> None:
-        self.assertIn('[git, "archive", source_commit]', self.source)
+        self.assertIn('[git, "archive", candidate.source_commit]', self.source)
         self.assertEqual(self.source.count('[go, "build", "-trimpath"'), 1)
         self.assertIn('"REPRODUCIBLE_BUILD_COUNT": "2"', self.source)
-        self.assertIn("APPROVED_SOURCE_COMMIT", self.source)
-        self.assertIn("APPROVED_SOURCE_TREE", self.source)
-        self.assertIn("APPROVED_CHANGE_ID", self.source)
+        self.assertIn("ACTIVE_SOURCE_COMMIT", self.source)
+        self.assertIn("ACTIVE_SOURCE_TREE", self.source)
+        self.assertIn("ACTIVE_CHANGE_ID", self.source)
+        self.assertIn("CONSUMED_CANDIDATE", self.source)
 
     def test_bundle_contains_only_fixed_low_sensitive_assets(self) -> None:
         for name in (
@@ -133,7 +172,7 @@ class TestReadonlyAccessBundle(unittest.TestCase):
 
     def test_caller_environment_is_removed_before_tools_run(self) -> None:
         self.assertIn("env=environment", self.source)
-        self.assertIn("if change_id != APPROVED_CHANGE_ID", self.source)
+        self.assertIn("arguments.change_id != ACTIVE_CHANGE_ID", self.source)
         self.assertIn("script_path = Path(__file__).resolve(strict=True)", self.source)
         self.assertIn("safe_extract", self.source)
 

@@ -2,7 +2,7 @@
 
 ## 1. 状态与范围
 
-本文记录测试服务器 `pc@8.130.9.163:10003` 的候选安装、核验和撤销约束。当前仅完成仓库内资产，并执行过一次已停止的前置 SSH；**尚未上传、安装或修改 sudoers**。
+本文记录测试服务器 `pc@8.130.9.163:10003` 的候选安装、核验和撤销约束。当前已完成 `002` 本地候选构建，并执行过一次已停止的 `001` 前置 SSH；**尚未上传、安装或修改 sudoers**。
 
 该入口用于补齐 MySQL、Redis、RabbitMQ、Bifrost、Prometheus、Grafana、Alertmanager、备份和只读账务证据。它不授予 `pc` Docker 组成员资格，不允许任意 `docker`、Shell、服务控制、文件写入、DDL/DML、队列消费或业务请求。
 
@@ -35,6 +35,24 @@ python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py \
 生成器不连接测试服务器，也不包含 SSH、SCP、sudo、安装、Docker 或服务控制命令；本地 Go 构建仍可能按标准模块配置读取依赖缓存或下载缺失依赖。历史 PASS 只证明当时候选包与冻结来源及摘要一致，不代表已上传、已安装或测试服运行态通过。001 已消费，未来新 ChangeId 必须重新冻结生成器身份、制品与授权，不得复用本节命令。
 
 PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并。精确功能 HEAD `c0479f607c9dbd5713c9fbbde7b3fb83ac2a3adc` 的 CI run `31566629193` 为 9/9 SUCCESS；其中候选包回执 SHA-256 为 `14b7d8cd832f0b719031fcc93adbbb2208afe76d34383e63d51c44b044772b5a`。该回执只绑定历史 CI 临时目录内的 `SHA256SUMS`，不是测试服安装回执；001 已消费，禁止据此重新生成、上传或再次申请执行。未来新 ChangeId 必须按第 3.5 节重新冻结。
+
+### 2.2 当前本地候选包（002，仅准备完成）
+
+用户已授权仅在仓库和本地构建环境准备 `CHG-G8-TEST-READONLY-ACCESS-20260812-002`，管理员通道指定为阿里云控制台 root 通道。本授权不允许连接测试服务器、上传、安装、修改 sudoers、重启服务或读取运行态数据。
+
+当前候选冻结事实：
+
+- 来源提交：`50b3e2f9d18b38e7d4a91ebeb4f03c413ef33c44`。
+- 来源树：`73fb652a1f86db84991c8745f8c10e1d2a255f29`。
+- 审计器 SHA-256：`308908d2a2b9fa8679fd21d77fde68b5ce5d521ed37dac6b7726e6c323452256`。
+- sudoers SHA-256：`1ec266c71f00d99da18b9e8cf59af91d6126811384adef62ce48750b97a0986f`。
+- 对账器 SHA-256：`37f6ee369f1ce489a3966123dfea3bd172d5386045495e069433c7f3d993f2c1`，大小 `13066129` 字节。
+- 本地 Windows/amd64 构建候选 `SHA256SUMS` 回执：`d6d07f7b4959e48f5ffe0e92ee4116cef55fe56f5318df6ae3f0d9c5350ee567`。
+- 候选只包含 `SHA256SUMS`、对账器、审计器、低敏 `manifest.env` 和 sudoers 候选五个文件。
+
+本地回执绑定当前本地候选目录；CI 在 Linux 构建机记录不同的 `GO_BUILDER_HOST`，因此 CI 的清单与 `SHA256SUMS` 回执可不同，但来源提交、来源树、三项制品摘要和对账器大小必须一致。任何安装都必须使用最终明确批准的那一份候选及其完整 `SHA256SUMS`，不得混用本地与 CI 清单。安装授权清单见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260812-002.md`，当前仍待用户独立批准。
+
+首次本地构建的清单未包含部署根目录，已移动为明确的 `superseded-without-deployment-root` 取证目录；第二次构建把新字段错误地带入历史 001 复现路径，已移动为 `superseded-shared-manifest-field`。当前候选将 `TARGET_DEPLOYMENT_ROOT=/home/pc/molin` 限定为 002 专属字段，并保持 001 历史清单语义不漂移。旧回执 `704e3f99b31865ec9849a5ebc31dc572bd103d8e9a88ef812c198998114cf5c7` 和 `4826429551a15a7e78c2836c5e755150c68ea3e5fedc7ef87f2f6656bf622b32` 均不得用于安装。
 
 ## 3. 历史已停止安装变更（禁止执行）
 
@@ -86,12 +104,13 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 ### 3.5 未来重新申请顺序
 
-`CHG-G8-TEST-READONLY-ACCESS-20260812-002` 仅为候选占位，当前未获授权，禁止连接或执行。未来继续时必须依次完成：
+`CHG-G8-TEST-READONLY-ACCESS-20260812-002` 已获得“仅准备候选”的授权，但没有获得连接、上传或安装授权。继续时必须依次完成：
 
-1. 用户为新的 ChangeId 明确受控 root 管理通道、精确目标、命令摘要、会话上限、影响、回滚和停止条件。
-2. 使用固定 known_hosts 执行一次只读 SSH，并把 `sudo -n -l` 作为首个远端命令；若仍要求密码或权限超出 Runbook，立即停止。
-3. 前置门禁通过后，另行更新并评审候选包生成器，使其绑定新的 ChangeId、源码、制品摘要与目标身份；不得复用 001 包或回执。
-4. 新候选包、上传和安装必须取得精确授权后才能执行；安装后的真实运行态审计仍使用另一个独立 ChangeId。
+1. 当前步骤只更新并评审候选包生成器，使其绑定 `002`、源码、制品摘要与目标身份；不得复用 001 包或回执。
+2. 候选构建、独立评审、QA 和精确 PR HEAD CI 全部通过后，提交独立安装授权清单。
+3. 用户明确批准安装授权清单后，才允许使用固定 known_hosts 完成一次上传，并通过阿里云控制台 root 通道执行固定安装命令。
+4. 管理员会话必须先只读核对 root 身份、hostname、machine-id 摘要、暂存目录和候选摘要；任一不符立即停止。
+5. 安装后的真实运行态审计仍使用另一个独立 ChangeId，本次安装授权不得顺带执行。
 
 ## 4. 安装后的独立只读核验
 
