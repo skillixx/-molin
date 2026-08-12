@@ -27,7 +27,7 @@
 - 本地五文件候选目录：`D:\molingproject\g8-artifacts\CHG-G8-TEST-READONLY-ACCESS-20260812-003`。
 - 本地 `SHA256SUMS` 回执：`82b18d6040bcd6be72cf170fa066ecd7cf469a53f4901365f379bec5a89c496d`。
 
-001、002 及其全部回执均已消费，不得上传。实际执行只能使用上述 003 本地候选及完整五文件白名单，不得改用 CI 临时目录或其他构建清单。
+001、002、003 及其全部回执均已消费。上述 003 冻结事实只用于历史审计，禁止上传、安装或恢复授权；不得改用本地候选、CI 临时目录或其他构建清单继续执行。
 
 ## 3. 历史已消费命令摘要（禁止执行）
 
@@ -42,15 +42,15 @@
 7. 安装后先重新核对三个 live 目标均为普通文件且非链接：审计器必须为 `root:root:0755` 且 SHA-256 精确为 `308908d2a2b9fa8679fd21d77fde68b5ce5d521ed37dac6b7726e6c323452256`；对账器必须为 `root:root:0755`、大小精确为 `13066129` 字节且 SHA-256 精确为 `37f6ee369f1ce489a3966123dfea3bd172d5386045495e069433c7f3d993f2c1`；sudoers 文件必须为 `root:root:0440` 且 SHA-256 精确为 `1ec266c71f00d99da18b9e8cf59af91d6126811384adef62ce48750b97a0986f`。全部一致后再精确执行 `visudo -cf /etc/sudoers.d/molin-g8-test-readonly-audit`、`sudo -n -l -U pc` 和 `id -nG pc`；必须仅允许固定审计器，且 `pc` 不属于 Docker 组。全部通过后可精确删除本次 root-only 临时目录；不得清理 `pc` 暂存目录，保留用于独立取证。
 8. 通过一次 `pc` 非特权会话精确执行 `sudo -n /usr/local/libexec/molin/g8-test-readonly-audit --self-test`，禁止直接执行工具绕过 sudo 规则验收，也禁止添加任何其他参数。本 ChangeId 禁止真实运行态审计。
 
-## 4. 上限与影响
+## 4. 历史授权上限与计划影响（未完成）
 
 - 最大会话：只读 SSH 预检 1 次、SFTP 暂存上传 1 次、管理员控制台 1 次、非特权 self-test 1 次；全部零重试。
 - 最大业务请求：0；最大上游请求：0；最大费用：0 CNY。
-- 影响范围：只新增两个 root-owned 只读工具和一个单命令 sudoers 文件；不修改 API、容器、服务、环境文件、数据库、Redis、RabbitMQ、Bifrost、监控或流量。
+- 计划影响范围原限定为新增两个 root-owned 只读工具和一个单命令 sudoers 文件；实际未进入 root 控制台，三个 live 目标均未由本次操作创建。API、容器、服务、环境文件、数据库、Redis、RabbitMQ、Bifrost、监控和流量均未由本次操作修改。
 
-## 5. 回滚
+## 5. 历史回滚计划（未触发）
 
-安装任一步失败，管理员只逆序删除本次日志已确认新建的 live 目标。若 sudoers 已创建，先精确删除该文件并执行 `visudo -c`；再删除本次新建的对账器和审计器。随后以 `sudo -n -l -U pc` 确认规则消失。root-only 临时目录只在其真实路径、root 所有权、0700 权限和本次 ChangeId 全部匹配时精确删除；任何预存目标不得覆盖或删除。`pc` 暂存目录保留取证，未经新的删除授权不得清理。禁止递归删除 `/usr/local/libexec/molin`、部署目录、账本、Usage、钱包、Outbox、审计、日志或备份。
+历史计划要求安装任一步失败时，管理员只逆序删除本次日志已确认新建的 live 目标。实际未进入 root 控制台，因此该 live 回滚未触发，也没有授权据此读取或清理状态为 `UNKNOWN` 的 `pc` 暂存目录。若后续只读取证确认暂存存在，必须另行取得精确清理授权。任何预存目标均不得覆盖或删除；禁止递归删除 `/usr/local/libexec/molin`、部署目录、账本、Usage、钱包、Outbox、审计、日志或备份。
 
 ## 6. 停止条件
 
