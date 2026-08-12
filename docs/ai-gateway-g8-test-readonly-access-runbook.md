@@ -20,11 +20,14 @@
 
 候选 ChangeId：`CHG-G8-TEST-READONLY-ACCESS-20260812-001`。
 
-在执行前必须将下列占位符替换为精确值并由用户单独确认：
+当前已冻结的候选制品证据如下；管理员通道仍须由用户单独指定并确认：
 
-- `<SOURCE_COMMIT>`：包含本 Runbook 的最终合并提交。
-- `<AUDITOR_SHA256>`：待安装审计脚本 SHA-256。
-- `<RECONCILE_SHA256>`：基于 `<SOURCE_COMMIT>`、Linux amd64、`CGO_ENABLED=0`、`-trimpath -buildvcs=false` 构建的对账器 SHA-256。
+- 源码合并提交：`c50f092339fcad79ca1262925480219db1755318`。
+- 源码树：`2e9701c3f5d8ba12aebc9631b01696b189f1d313`，与功能提交树一致。
+- 审计脚本 SHA-256：`308908d2a2b9fa8679fd21d77fde68b5ce5d521ed37dac6b7726e6c323452256`。
+- sudoers 文件 SHA-256：`1ec266c71f00d99da18b9e8cf59af91d6126811384adef62ce48750b97a0986f`。
+- 对账器构建：`go1.26.5 windows/amd64` 交叉构建 Linux amd64，`GOOS=linux GOARCH=amd64 CGO_ENABLED=0`，参数 `-trimpath -buildvcs=false`。
+- 对账器 SHA-256：`37f6ee369f1ce489a3966123dfea3bd172d5386045495e069433c7f3d993f2c1`，大小 `13066129` 字节；连续两次独立构建摘要一致。
 - `<ADMIN_CHANNEL>`：可执行 root 命令的受控运维通道；不得在聊天或命令参数中传递 sudo 密码。
 
 ### 3.1 精确目标
@@ -39,7 +42,7 @@
 
 ### 3.2 命令摘要
 
-1. 在本地从 `<SOURCE_COMMIT>` 构建 Linux amd64 只读对账器并计算两个资产 SHA-256。
+1. 在本地从源码提交 `c50f092339fcad79ca1262925480219db1755318` 按上述参数重新构建 Linux amd64 只读对账器，并要求三份资产 SHA-256 与冻结值精确一致。
 2. 通过单次 SCP 将两个资产和 sudoers 文件上传到 `/home/pc/molin/.g8-staging/CHG-G8-TEST-READONLY-ACCESS-20260812-001/`；不覆盖运行文件。
 3. 管理员通过 `<ADMIN_CHANNEL>` 逐项复核暂存文件 SHA-256、sudoers 内容和目标身份。
 4. 使用 `install -d -o root -g root -m 0755 /usr/local/libexec/molin` 创建固定目录。
