@@ -130,6 +130,8 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 `CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005` 已完成唯一一次本地检查和正式只读 SSH，结果为 `ZERO / EXACT / stderr EMPTY / diagnostic PASS`，证明传输链路可用但未关闭暂存 UNKNOWN；005 已消费并禁止重放。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`、`docs/ai-gateway-g8-test-readonly-transport-diagnostic-attempt-20260812-005.md`。下一次暂存只读取证必须使用新的 ChangeId，重新完成代码安全、QA、产品、精确 HEAD CI、merge commit 与用户独立授权。
 
+当前正在准备 `CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-006`。006 冻结 004 helper 摘要并原样保留其 inode、fd、最终目录项、文件集与目录时间竞态校验，只把早期拒绝拆分为 `IDENTITY`、`MACHINE_ID`、`DEPLOYMENT_ROOT_PATH`、`DEPLOYMENT_ROOT_METADATA`、`STAGING_LOOKUP`、`DEPLOYMENT_ROOT_DRIFT` 六类固定低敏枚举。授权清单见 `docs/ai-gateway-g8-test-readonly-staging-evidence-authorization-20260812-006.md`；在工程门禁与用户独立授权前禁止连接测试服。
+
 ## 4. 安装后的独立只读核验
 
 安装成功也不自动授权读取运行态。必须再申请新的 `CHG-G8-TEST-READONLY-YYYYMMDD-NNN`，固定为一次 SSH、零重试，并只执行：

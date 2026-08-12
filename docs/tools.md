@@ -1077,16 +1077,23 @@ python -I infra/scripts/run-ai-gateway-g8-test-staging-evidence.py `
   --identity-public-file C:\Users\skillixx\.ssh\id_ed25519.pub
 ```
 
-`infra/scripts/run-ai-gateway-g8-test-readonly-transport-diagnostic.py` 是 005 低敏传输诊断候选。当前只允许离线自检和单元测试，不允许使用正式参数连接服务器：
+`infra/scripts/run-ai-gateway-g8-test-readonly-transport-diagnostic.py` 是已消费的 005 低敏传输诊断。只允许继续离线自检和单元测试，普通入口会在读取身份文件或联网前返回 `change_id_consumed`：
 
 ```powershell
 python -I infra/scripts/run-ai-gateway-g8-test-readonly-transport-diagnostic.py --self-test
 python -I infra/scripts/test_run_ai_gateway_g8_test_readonly_transport_diagnostic.py
 ```
 
-正式执行必须等待 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md` 完成工程门禁并获得用户独立批准。该工具不读取远端文件，只输出退出分类、stdout 契约和 stderr 的低敏计数/摘要。
+005 唯一正式执行已经返回 `ZERO / EXACT / stderr EMPTY / diagnostic PASS`，证明固定 SSH 与远端隔离 Python 标记可用，但未读取暂存目录。执行记录见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-attempt-20260812-005.md`，禁止重放。
 
-004 的历史正式模式已经消费并禁止重放；不得再使用上述历史命令连接服务器。当前任何新的 SSH 诊断只能通过 005 在完成精确 PR HEAD、CI、独立评审、QA、产品验收、merge commit 和用户独立授权后执行。
+`infra/scripts/run-ai-gateway-g8-test-staging-evidence-v2.py` 是 006 暂存只读取证候选。它冻结 004 的竞态安全取证算法，并把前置失败收敛为六类固定门禁枚举；当前只允许以下离线命令：
+
+```powershell
+python -I infra/scripts/run-ai-gateway-g8-test-staging-evidence-v2.py --self-test
+python -I infra/scripts/test_run_ai_gateway_g8_test_staging_evidence_v2.py
+```
+
+006 必须完成精确 PR HEAD、CI、独立代码安全、QA、产品验收与 merge commit，并由用户再次独立批准后，才可执行一次本地检查和一次正式只读 SSH。授权清单见 `docs/ai-gateway-g8-test-readonly-staging-evidence-authorization-20260812-006.md`。
 
 ## CI 变更范围分类器
 
