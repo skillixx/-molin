@@ -454,6 +454,10 @@ def main() -> int:
             return 2
         print("G8_TEST_READONLY_ACCESS_STAGE_SELF_TEST=PASS")
         return 0
+    # 003 的唯一远端执行机会已消费；必须在读取候选或调用 SSH/SFTP 前拒绝重放。
+    if arguments.change_id == CHANGE_ID:
+        print("G8_TEST_READONLY_ACCESS_STAGE=FAILED reason=change_id_consumed")
+        return 2
     try:
         if (
             arguments.change_id != CHANGE_ID

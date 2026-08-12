@@ -1,6 +1,6 @@
 # AI 网关 G8 测试服只读入口安装授权清单（003）
 
-> 当前状态：`PENDING_FINAL_PR_GATE_AND_USER_APPROVAL`。功能/主干同步 HEAD `3d3e6c430c552a67678e3743b5967218dfc87567` 的 CI 与独立代码安全、QA、产品/规格增量验收已通过；最终文档 HEAD 仍须完成 required 门禁和增量复签。用户尚未再次明确批准安装，禁止连接、上传或安装。
+> 当前状态：`CONSUMED_STOPPED_REMOTE_STAGE`。用户已批准本清单，但唯一一次正式包装器调用返回 `G8_TEST_READONLY_ACCESS_STAGE=FAILED reason=remote_stage_failed` 后按停止条件结束。未进入 root 控制台、未安装 live 目标、未修改 sudoers 或执行 self-test；远端暂存目录及部分上传状态为 `UNKNOWN`。本清单全部执行命令现已作废，禁止重试、继续上传或安装；完整记录见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260812-003.md`。
 
 ## 1. ChangeId 与精确目标
 
@@ -29,7 +29,9 @@
 
 001、002 及其全部回执均已消费，不得上传。实际执行只能使用上述 003 本地候选及完整五文件白名单，不得改用 CI 临时目录或其他构建清单。
 
-## 3. 待批准命令摘要
+## 3. 历史已消费命令摘要（禁止执行）
+
+以下步骤仅用于还原已消费授权的审计事实，不得据此重试、继续上传、安装或执行 self-test。
 
 1. 本地以 `python -I` 执行 `infra/scripts/run-ai-gateway-g8-test-readonly-access-stage.py`，绑定 003、上述候选绝对目录、现有 `known_hosts`、同目录 `id_ed25519` 与 `id_ed25519.pub`。包装器必须先离线核对五文件、回执、来源、目标、主机指纹和冻结本地公钥指纹，并由固定 `ssh-keygen -y` 验证私钥可读取、ACL 被 OpenSSH 接受且密钥对一致；再以固定 OpenSSH 路径、清空代理/AskPass/调用方 PATH 的最小环境发起唯一一次 SSH。禁止隐式密钥发现、密码、键盘交互、代理、X11、本地命令和端口转发。失败、超时、任何 stderr 或额外 stdout 均停止且不重试。
 2. 远端只读脚本只通过该 SSH 会话的 stdin 交给固定 `/bin/sh -s`，不作为 SSH 命令参数参与 Windows 引号重构；脚本只执行 `id -un`、hostname、`sha256sum /etc/machine-id`、`realpath`、`stat` 和三个目标/暂存路径的存在性测试。摘要提取使用 POSIX 参数展开，不执行 `cut`、`awk`、sudo、Docker、数据库、队列或服务命令。

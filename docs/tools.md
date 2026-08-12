@@ -1052,17 +1052,16 @@ python infra/scripts/verify-ai-gateway-g8-migration-manifest.py `
 
 ### G8 测试服务器只读入口候选生成器
 
-`infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py` 不连接服务器。普通生成入口当前只接受待评审的 `003`、冻结来源提交和全新绝对输出目录；001、002 普通生成继续失败关闭。`--verify-consumed-candidate --consumed-change-id=...` 仅用于在系统临时目录分别复现历史 001/002，完成后自动销毁整个临时目录，不产生可安装输出。
+`infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py` 不连接服务器。001、002、003 均已消费，普通生成入口始终失败关闭。`--verify-consumed-candidate --consumed-change-id=...` 仅用于在系统临时目录复现指定历史候选，完成后自动销毁整个临时目录，不产生可安装输出。`infra/scripts/run-ai-gateway-g8-test-readonly-access-stage.py` 对已消费的 003 在读取候选或发起网络前固定返回 `change_id_consumed`。
 
 ```powershell
 python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py --self-test
 python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py `
-  --change-id=CHG-G8-TEST-READONLY-ACCESS-20260812-003 `
-  --source-commit=8ec878572f62ef2584c38aaadc1bca1cb802b13f `
-  --output-dir=D:\absolute\new\g8-test-readonly-access-bundle-003
+  --verify-consumed-candidate `
+  --consumed-change-id=CHG-G8-TEST-READONLY-ACCESS-20260812-003
 ```
 
-生成 PASS 只证明本地候选与冻结来源及摘要一致，不授权连接、上传、安装、修改 sudoers 或执行远端审计。003 必须再通过 `infra/scripts/run-ai-gateway-g8-test-readonly-access-stage.py` 的离线单元测试和精确 PR HEAD CI；该包装器仅在用户批准后依次执行一次固定 SSH 和一次原子 SFTP 暂存上传，任一步失败均禁止后续动作且不重试。安装清单见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260812-003.md`。
+历史复现 PASS 只证明已消费候选仍可在临时目录按冻结来源重构，不恢复授权，也不得持久化为可安装输出。003 的唯一正式 stage 调用返回 `remote_stage_failed` 后已停止并消费；由于该低敏结果不能区分 SSH 与 SFTP，远端暂存目录及部分上传状态为 `UNKNOWN`。后续必须使用新 ChangeId 先完成只读取证，不得重放 003。记录见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260812-003.md`。
 
 ## CI 变更范围分类器
 
