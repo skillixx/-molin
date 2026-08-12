@@ -1,6 +1,8 @@
 # AI 网关 G8 测试服低敏 SSH 传输诊断授权清单（005）
 
-> 当前状态：`PENDING_ENGINEERING_GATES_AND_USER_APPROVAL`。本文件只是仓库候选，不构成连接测试服的授权。必须完成代码安全、QA、产品、精确 PR HEAD CI 和 merge commit，并由用户再次明确批准后才可执行。
+> 当前状态：`PENDING_USER_APPROVAL`。仓库工程门禁已通过，但本文件仍不构成连接测试服的授权；必须由用户再次独立明确批准后才可执行。
+
+工程证据：PR #343 精确 HEAD `80d6114ad097ba4c7760b8f58221ac3d5ce0e5a8`，CI run `31603091477` 12/12 SUCCESS，独立代码安全、QA、产品/规格均为 P0/P1/P2=0，merge commit 为 `932265f3d770b5c30973fab611404d70f4273e34`。这些证据只证明仓库候选工程门禁，不证明远端诊断已经执行。
 
 ## 1. ChangeId 与目标
 
