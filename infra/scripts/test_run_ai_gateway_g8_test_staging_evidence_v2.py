@@ -28,6 +28,21 @@ MODULE = load_module()
 
 
 class TestStagingEvidenceV2(unittest.TestCase):
+    def test_consumed_change_rejects_before_identity_or_network(self) -> None:
+        """006 已消费后必须在读取身份材料或联网前失败关闭。"""
+        with (
+            mock.patch.object(sys, "argv", [str(SCRIPT_PATH)]),
+            mock.patch.object(MODULE, "load_frozen_helper") as helper,
+            mock.patch.object(MODULE, "run_once") as remote,
+            mock.patch("builtins.print") as output,
+        ):
+            self.assertEqual(MODULE.main(), 2)
+        helper.assert_not_called()
+        remote.assert_not_called()
+        output.assert_called_once_with(
+            "G8_TEST_READONLY_STAGING_EVIDENCE_V2=FAILED reason=change_id_consumed"
+        )
+
     def test_interpreter_and_self_test_are_fail_closed(self) -> None:
         """普通解释器必须拒绝，隔离解释器的派生程序必须通过自检。"""
         ordinary = subprocess.run(["python", str(SCRIPT_PATH), "--self-test"], capture_output=True, text=True, check=False)
@@ -171,6 +186,7 @@ class TestStagingEvidenceV2(unittest.TestCase):
         helper = SimpleNamespace()
         with (
             mock.patch.object(sys, "argv", arguments),
+            mock.patch.object(MODULE, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(MODULE, "load_frozen_helper", return_value=helper),
             mock.patch.object(MODULE, "build_remote_program", return_value="pass"),
             mock.patch.object(MODULE, "run_once") as remote,
@@ -190,6 +206,7 @@ class TestStagingEvidenceV2(unittest.TestCase):
         )
         with (
             mock.patch.object(sys, "argv", arguments + ["--local-check"]),
+            mock.patch.object(MODULE, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(MODULE, "load_frozen_helper", return_value=helper),
             mock.patch.object(MODULE, "build_remote_program", return_value="pass"),
             mock.patch.object(MODULE, "run_once") as remote,
@@ -211,6 +228,7 @@ class TestStagingEvidenceV2(unittest.TestCase):
         real_helper.validate_identity_pair = mock.Mock()
         with (
             mock.patch.object(sys, "argv", arguments),
+            mock.patch.object(MODULE, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(MODULE, "load_frozen_helper", return_value=real_helper),
             mock.patch.object(MODULE, "run_once", return_value=(0, stream, empty)) as remote,
             mock.patch("builtins.print") as output,

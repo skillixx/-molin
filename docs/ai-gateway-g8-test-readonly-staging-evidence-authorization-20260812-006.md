@@ -1,8 +1,8 @@
 # AI 网关 G8 测试服暂存只读取证授权清单（006）
 
-> 当前状态：`PENDING_USER_APPROVAL`。仓库工程门禁已通过，但本文件仍不构成连接测试服的授权；必须由用户再次独立明确批准后才可执行。
+> 当前状态：`CONSUMED_BLOCKED_MACHINE_ID`。用户已独立批准并完成唯一一次本地检查和正式只读 SSH；正式调用在 `MACHINE_ID` 门禁阻断后零重试停止。006 已消费，本文件全部执行命令失效，禁止重放。
 
-工程证据：PR #345 精确 HEAD `2d55021d5497528303d69cb1e01b8feaf5098cad`，CI run `31609801571` 12/12 SUCCESS，独立代码安全、QA、产品/规格均为 P0/P1/P2=0，merge commit 为 `df7d64102f7a358b6109d39d05bbbe92c00302d9`。这些证据只证明仓库候选工程门禁，不证明 006 已经执行或 003 暂存 UNKNOWN 已关闭。
+工程证据：PR #345 精确 HEAD `2d55021d5497528303d69cb1e01b8feaf5098cad`，CI run `31609801571` 12/12 SUCCESS，独立代码安全、QA、产品/规格均为 P0/P1/P2=0，merge commit 为 `df7d64102f7a358b6109d39d05bbbe92c00302d9`。执行证据见 `docs/ai-gateway-g8-test-readonly-staging-evidence-attempt-20260812-006.md`；该结果没有关闭 003 暂存 `UNKNOWN`。
 
 ## 1. ChangeId 与目标
 
