@@ -1065,7 +1065,7 @@ python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py `
 
 ### G8 测试服务器 003 暂存状态只读取证器
 
-`infra/scripts/run-ai-gateway-g8-test-staging-evidence.py` 只服务于待批准的 `CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-004`。以下命令仅执行本地身份与程序自检，不连接服务器：
+`infra/scripts/run-ai-gateway-g8-test-staging-evidence.py` 只服务于已消费的 `CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-004`。`--self-test` 仍可离线验证程序结构；普通本地检查和正式模式均必须在读取身份文件或联网前返回 `change_id_consumed`。以下历史本地检查命令不得再次执行：
 
 ```powershell
 python -I infra/scripts/run-ai-gateway-g8-test-staging-evidence.py --self-test
@@ -1077,7 +1077,16 @@ python -I infra/scripts/run-ai-gateway-g8-test-staging-evidence.py `
   --identity-public-file C:\Users\skillixx\.ssh\id_ed25519.pub
 ```
 
-正式模式会发起一次 SSH，因此只能在精确 PR HEAD、CI、独立评审、QA、产品验收和 merge commit 全部完成，并取得用户对 004 的独立明确授权后执行。结果只允许 `ABSENT`、`PRESENT/PASS` 或固定类别的 `PRESENT/MISMATCH`；后者返回退出码 3。工具没有上传、下载、删除、sudo 或业务访问能力；执行结果也不授权清理 003 暂存目录或安装新入口。
+`infra/scripts/run-ai-gateway-g8-test-readonly-transport-diagnostic.py` 是 005 低敏传输诊断候选。当前只允许离线自检和单元测试，不允许使用正式参数连接服务器：
+
+```powershell
+python -I infra/scripts/run-ai-gateway-g8-test-readonly-transport-diagnostic.py --self-test
+python -I infra/scripts/test_run_ai_gateway_g8_test_readonly_transport_diagnostic.py
+```
+
+正式执行必须等待 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md` 完成工程门禁并获得用户独立批准。该工具不读取远端文件，只输出退出分类、stdout 契约和 stderr 的低敏计数/摘要。
+
+004 的历史正式模式已经消费并禁止重放；不得再使用上述历史命令连接服务器。当前任何新的 SSH 诊断只能通过 005 在完成精确 PR HEAD、CI、独立评审、QA、产品验收、merge commit 和用户独立授权后执行。
 
 ## CI 变更范围分类器
 

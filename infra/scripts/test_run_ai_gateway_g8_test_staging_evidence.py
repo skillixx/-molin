@@ -362,6 +362,7 @@ class TestStagingEvidence(unittest.TestCase):
         ]
         with (
             mock.patch.object(sys, "argv", common + ["--local-check"]),
+            mock.patch.object(MODULE, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(MODULE, "validate_known_hosts") as known_hosts,
             mock.patch.object(MODULE, "validate_identity_file") as identity,
             mock.patch.object(MODULE, "validate_identity_pair") as pair,
@@ -377,6 +378,7 @@ class TestStagingEvidence(unittest.TestCase):
 
         with (
             mock.patch.object(sys, "argv", common),
+            mock.patch.object(MODULE, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(MODULE, "validate_known_hosts"),
             mock.patch.object(MODULE, "validate_identity_file"),
             mock.patch.object(MODULE, "validate_identity_pair"),
@@ -410,6 +412,7 @@ class TestStagingEvidence(unittest.TestCase):
         ]
         with (
             mock.patch.object(sys, "argv", arguments),
+            mock.patch.object(MODULE, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(MODULE, "validate_known_hosts") as local_read,
             mock.patch.object(MODULE, "run_remote_evidence") as remote,
             mock.patch("builtins.print") as output,
@@ -420,6 +423,34 @@ class TestStagingEvidence(unittest.TestCase):
         output.assert_called_once_with(
             "G8_TEST_READONLY_STAGING_EVIDENCE=FAILED reason=invalid_request"
         )
+
+    def test_cli_rejects_consumed_change_before_reading_files_or_network(self) -> None:
+        """004 已消费后，本地检查和正式模式都必须在读取文件或联网前失败关闭。"""
+        common = [
+            str(SCRIPT_PATH),
+            "--change-id",
+            MODULE.CHANGE_ID,
+            "--known-hosts",
+            "/does/not/exist",
+            "--identity-file",
+            "/does/not/exist",
+            "--identity-public-file",
+            "/does/not/exist",
+        ]
+        for arguments in (common, common + ["--local-check"]):
+            with (
+                self.subTest(arguments=arguments),
+                mock.patch.object(sys, "argv", arguments),
+                mock.patch.object(MODULE, "validate_known_hosts") as local_read,
+                mock.patch.object(MODULE, "run_remote_evidence") as remote,
+                mock.patch("builtins.print") as output,
+            ):
+                self.assertEqual(MODULE.main(), 2)
+            local_read.assert_not_called()
+            remote.assert_not_called()
+            output.assert_called_once_with(
+                "G8_TEST_READONLY_STAGING_EVIDENCE=FAILED reason=change_id_consumed"
+            )
 
     def test_cli_returns_distinct_nonzero_for_observed_mismatch(self) -> None:
         """已观察到的暂存不一致必须输出固定证据并以非零状态阻断后续动作。"""
@@ -439,6 +470,7 @@ class TestStagingEvidence(unittest.TestCase):
         )
         with (
             mock.patch.object(sys, "argv", arguments),
+            mock.patch.object(MODULE, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(MODULE, "validate_known_hosts"),
             mock.patch.object(MODULE, "validate_identity_file"),
             mock.patch.object(MODULE, "validate_identity_pair"),

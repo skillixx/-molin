@@ -446,10 +446,12 @@ jobs:
           python -I -m unittest discover -s infra/scripts -p test_prepare_ai_gateway_g8_test_readonly_access_bundle.py
           python -I -m unittest discover -s infra/scripts -p test_run_ai_gateway_g8_test_readonly_access_stage.py
           python -I -m unittest discover -s infra/scripts -p test_run_ai_gateway_g8_test_staging_evidence.py
-          python -I -m py_compile infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_bundle.py infra/scripts/run-ai-gateway-g8-test-readonly-access-stage.py infra/scripts/test_run_ai_gateway_g8_test_readonly_access_stage.py infra/scripts/run-ai-gateway-g8-test-staging-evidence.py infra/scripts/test_run_ai_gateway_g8_test_staging_evidence.py
+          python -I -m unittest discover -s infra/scripts -p test_run_ai_gateway_g8_test_readonly_transport_diagnostic.py
+          python -I -m py_compile infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_bundle.py infra/scripts/run-ai-gateway-g8-test-readonly-access-stage.py infra/scripts/test_run_ai_gateway_g8_test_readonly_access_stage.py infra/scripts/run-ai-gateway-g8-test-staging-evidence.py infra/scripts/test_run_ai_gateway_g8_test_staging_evidence.py infra/scripts/run-ai-gateway-g8-test-readonly-transport-diagnostic.py infra/scripts/test_run_ai_gateway_g8_test_readonly_transport_diagnostic.py
           python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py --self-test
           python -I infra/scripts/run-ai-gateway-g8-test-readonly-access-stage.py --self-test
           python -I infra/scripts/run-ai-gateway-g8-test-staging-evidence.py --self-test
+          python -I infra/scripts/run-ai-gateway-g8-test-readonly-transport-diagnostic.py --self-test
           bundle_dir="${RUNNER_TEMP}/g8-test-readonly-access-bundle-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           test ! -e "$bundle_dir"
           set +e
