@@ -2,7 +2,7 @@
 
 ## 1. 状态与范围
 
-本文记录测试服务器 `pc@8.130.9.163:10003` 的候选安装、核验和撤销约束。当前已完成 `002` 本地候选构建，并执行过一次已停止的 `001` 前置 SSH；**尚未上传、安装或修改 sudoers**。
+本文记录测试服务器 `pc@8.130.9.163:10003` 的候选安装、核验和撤销约束。001 因 sudo 权限不符停止，002 因远端预检命令解析错误停止，两者均已消费；当前只在本地准备 003 候选与单次 SSH 包装器，**尚未上传、安装或修改 sudoers**。
 
 该入口用于补齐 MySQL、Redis、RabbitMQ、Bifrost、Prometheus、Grafana、Alertmanager、备份和只读账务证据。它不授予 `pc` Docker 组成员资格，不允许任意 `docker`、Shell、服务控制、文件写入、DDL/DML、队列消费或业务请求。
 
@@ -36,9 +36,9 @@ python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py \
 
 PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并。精确功能 HEAD `c0479f607c9dbd5713c9fbbde7b3fb83ac2a3adc` 的 CI run `31566629193` 为 9/9 SUCCESS；其中候选包回执 SHA-256 为 `14b7d8cd832f0b719031fcc93adbbb2208afe76d34383e63d51c44b044772b5a`。该回执只绑定历史 CI 临时目录内的 `SHA256SUMS`，不是测试服安装回执；001 已消费，禁止据此重新生成、上传或再次申请执行。未来新 ChangeId 必须按第 3.5 节重新冻结。
 
-### 2.2 当前本地候选包（002，仅准备完成）
+### 2.2 历史本地候选包（002 已消费，禁止上传或安装）
 
-用户已授权仅在仓库和本地构建环境准备 `CHG-G8-TEST-READONLY-ACCESS-20260812-002`，管理员通道指定为阿里云控制台 root 通道。本授权不允许连接测试服务器、上传、安装、修改 sudoers、重启服务或读取运行态数据。
+用户曾授权准备并安装 `CHG-G8-TEST-READONLY-ACCESS-20260812-002`。候选、CI 和独立门禁通过后，实际执行只到唯一一次只读 SSH 预检；machine-id 摘要命令因跨 shell 引号解析错误非零退出，随即停止。没有 SCP、root 控制台、安装、sudoers 修改或 self-test。002 已消费，禁止重试、上传或安装。
 
 当前候选冻结事实：
 
@@ -50,9 +50,17 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 - 本地 Windows/amd64 构建候选 `SHA256SUMS` 回执：`d6d07f7b4959e48f5ffe0e92ee4116cef55fe56f5318df6ae3f0d9c5350ee567`。
 - 候选只包含 `SHA256SUMS`、对账器、审计器、低敏 `manifest.env` 和 sudoers 候选五个文件。
 
-本地回执绑定当前本地候选目录；CI 在 Linux 构建机记录不同的 `GO_BUILDER_HOST`，因此 CI 的清单与 `SHA256SUMS` 回执可不同，但来源提交、来源树、三项制品摘要和对账器大小必须一致。任何安装都必须使用最终明确批准的那一份候选及其完整 `SHA256SUMS`，不得混用本地与 CI 清单。安装授权清单见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260812-002.md`，当前仍待用户独立批准。
+本地回执绑定历史本地候选；CI 的 Linux 回执为 `7ae580cc06fb101fe44c9e3a4d7581116fd258ef1e2d09d99bba0bda50151a1f`。两者均只用于复现审计，不得安装。历史授权与停止证据见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260812-002.md` 和 `docs/ai-gateway-g8-test-readonly-access-attempt-20260812-002.md`。
 
-首次本地构建的清单未包含部署根目录，已移动为明确的 `superseded-without-deployment-root` 取证目录；第二次构建把新字段错误地带入历史 001 复现路径，已移动为 `superseded-shared-manifest-field`。当前候选将 `TARGET_DEPLOYMENT_ROOT=/home/pc/molin` 限定为 002 专属字段，并保持 001 历史清单语义不漂移。旧回执 `704e3f99b31865ec9849a5ebc31dc572bd103d8e9a88ef812c198998114cf5c7` 和 `4826429551a15a7e78c2836c5e755150c68ea3e5fedc7ef87f2f6656bf622b32` 均不得用于安装。
+首次本地构建的清单未包含部署根目录，已移动为明确的 `superseded-without-deployment-root` 取证目录；第二次构建把新字段错误地带入历史 001 复现路径，已移动为 `superseded-shared-manifest-field`。最终 002 候选将 `TARGET_DEPLOYMENT_ROOT=/home/pc/molin` 限定为 002 专属字段，并保持 001 历史清单语义不漂移。所有 002 回执以及旧回执 `704e3f99b31865ec9849a5ebc31dc572bd103d8e9a88ef812c198998114cf5c7`、`4826429551a15a7e78c2836c5e755150c68ea3e5fedc7ef87f2f6656bf622b32` 均不得用于安装。
+
+### 2.3 当前本地候选包（003，待工程门禁与用户批准）
+
+003 重新冻结为：来源提交 `8ec878572f62ef2584c38aaadc1bca1cb802b13f`、来源树 `988bdcdc8017322264733ebe68876e4811b01412`、本地 `SHA256SUMS` 回执 `82b18d6040bcd6be72cf170fa066ecd7cf469a53f4901365f379bec5a89c496d`；三项制品摘要和对账器大小保持第 2.2 节批准值。候选仍只有五文件，部署根固定为 `/home/pc/molin`。
+
+`infra/scripts/run-ai-gateway-g8-test-readonly-access-stage.py` 必须以 `python -I` 运行。它在联网前核对 003 候选、来源、回执、五文件、known_hosts 指纹和同目录显式 ED25519 密钥对，再通过固定系统 OpenSSH 发起恰好一次 SSH。子进程使用最小环境且不继承代理、AskPass 或调用方 PATH；SSH 禁止隐式密钥发现、密码、键盘交互、代理、X11、本地命令和端口转发。远端脚本固定 `/usr/bin` 绝对命令，只经 stdin 交给固定 `/bin/sh -s`，不作为 SSH 命令参数参与 Windows 引号重构；摘要提取使用 POSIX 参数展开，不使用 `cut`、`awk` 或嵌套引号。预检完整 PASS 后，包装器才以相同身份和最小环境调用固定 SFTP 一次；批处理首条为不带忽略前缀的 `mkdir`，目录已存在即失败，不合并或覆盖。任一步非零、超时、预检 stderr、额外 stdout、不安全部署根权限或身份漂移均固定低敏失败且绝不重试。
+
+003 安装清单见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260812-003.md`。在精确 PR HEAD 的 CI、独立代码安全、QA、产品全部通过并取得用户再次明确授权前，不得连接、上传或安装。
 
 ## 3. 历史已停止安装变更（禁止执行）
 
@@ -102,13 +110,13 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 `CHG-G8-TEST-READONLY-ACCESS-20260812-001` 已于 2026-08-12 执行一次只读前置检查：本机固定 ED25519 指纹匹配，但首个远端命令 `sudo -n -l` 返回“需要密码”。该结果触发停止条件，未上传、安装或修改任何测试服资产，ChangeId 已消费且禁止重放。若继续必须使用新的 ChangeId 和经用户明确指定的受控 root 管理通道，见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260812.md`。
 
-### 3.5 未来重新申请顺序
+### 3.5 当前重新申请顺序
 
-`CHG-G8-TEST-READONLY-ACCESS-20260812-002` 已获得“仅准备候选”的授权，但没有获得连接、上传或安装授权。继续时必须依次完成：
+001、002 均已消费。继续只能使用 `CHG-G8-TEST-READONLY-ACCESS-20260812-003`，并依次完成：
 
-1. 当前步骤只更新并评审候选包生成器，使其绑定 `002`、源码、制品摘要与目标身份；不得复用 001 包或回执。
+1. 更新并评审候选包生成器和单次 SSH 包装器，使其绑定 003、源码、制品摘要、目标身份与本地回执；不得复用 001、002 包或回执。
 2. 候选构建、独立评审、QA 和精确 PR HEAD CI 全部通过后，提交独立安装授权清单。
-3. 用户明确批准安装授权清单后，才允许使用固定 known_hosts 完成一次上传，并通过阿里云控制台 root 通道执行固定安装命令。
+3. 用户明确批准 003 安装授权清单后，才允许先通过包装器完成唯一一次只读 SSH 预检；预检完整 PASS 后才允许一次上传，并通过阿里云控制台 root 通道执行固定安装命令。
 4. 管理员会话必须先只读核对 root 身份、hostname、machine-id 摘要、暂存目录和候选摘要；任一不符立即停止。
 5. 安装后的真实运行态审计仍使用另一个独立 ChangeId，本次安装授权不得顺带执行。
 

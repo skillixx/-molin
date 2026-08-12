@@ -10,9 +10,9 @@ from pathlib import Path
 
 
 SCRIPT_PATH = Path(__file__).with_name("prepare-ai-gateway-g8-test-readonly-access-bundle.py")
-ACTIVE_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-20260812-002"
-ACTIVE_SOURCE_COMMIT = "50b3e2f9d18b38e7d4a91ebeb4f03c413ef33c44"
-ACTIVE_SOURCE_TREE = "73fb652a1f86db84991c8745f8c10e1d2a255f29"
+ACTIVE_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-20260812-003"
+ACTIVE_SOURCE_COMMIT = "8ec878572f62ef2584c38aaadc1bca1cb802b13f"
+ACTIVE_SOURCE_TREE = "988bdcdc8017322264733ebe68876e4811b01412"
 
 
 def bash_executable() -> str:
@@ -65,7 +65,7 @@ class TestReadonlyAccessBundle(unittest.TestCase):
         for arguments in (
             (),
             ("--change-id=bad", "--source-commit=" + "0" * 40, "--output-dir=/tmp/x"),
-            ("--change-id=CHG-G8-TEST-READONLY-ACCESS-20260812-002", "--source-commit=" + "0" * 40, "--output-dir=/tmp/x"),
+            ("--change-id=CHG-G8-TEST-READONLY-ACCESS-20260812-003", "--source-commit=" + "0" * 40, "--output-dir=/tmp/x"),
             ("--change-id=CHG-G8-TEST-READONLY-ACCESS-20260812-001", "--source-commit=short", "--output-dir=/tmp/x"),
             ("--change-id=CHG-G8-TEST-READONLY-ACCESS-20260812-001", "--source-commit=" + "0" * 40, "--output-dir=relative"),
         ):
@@ -73,29 +73,34 @@ class TestReadonlyAccessBundle(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
 
     def test_consumed_change_id_cannot_create_persistent_bundle(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="g8-consumed-cli-") as temporary:
-            output = Path(temporary) / "bundle"
-            result = self.run_script(
-                "--change-id=CHG-G8-TEST-READONLY-ACCESS-20260812-001",
-                "--source-commit=c50f092339fcad79ca1262925480219db1755318",
-                f"--output-dir={output}",
-            )
-            self.assertEqual(result.returncode, 2)
-            self.assertFalse(output.exists())
-            self.assertEqual(
-                result.stdout.strip(),
-                "G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request",
-            )
+        for change_id, source_commit in (
+            ("CHG-G8-TEST-READONLY-ACCESS-20260812-001", "c50f092339fcad79ca1262925480219db1755318"),
+            ("CHG-G8-TEST-READONLY-ACCESS-20260812-002", "50b3e2f9d18b38e7d4a91ebeb4f03c413ef33c44"),
+        ):
+            with self.subTest(change_id=change_id), tempfile.TemporaryDirectory(prefix="g8-consumed-cli-") as temporary:
+                output = Path(temporary) / "bundle"
+                result = self.run_script(
+                    f"--change-id={change_id}",
+                    f"--source-commit={source_commit}",
+                    f"--output-dir={output}",
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertFalse(output.exists())
+                self.assertEqual(
+                    result.stdout.strip(),
+                    "G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request",
+                )
 
     def test_active_candidate_identity_is_frozen_for_persistent_generation(self) -> None:
-        """002 只能绑定批准的主干提交与源码树，且必须走显式持久候选路径。"""
+        """003 只能绑定冻结的主干提交与源码树，且必须走显式持久候选路径。"""
         self.assertIn(f'ACTIVE_CHANGE_ID = "{ACTIVE_CHANGE_ID}"', self.source)
         self.assertIn(f'ACTIVE_SOURCE_COMMIT = "{ACTIVE_SOURCE_COMMIT}"', self.source)
         self.assertIn(f'ACTIVE_SOURCE_TREE = "{ACTIVE_SOURCE_TREE}"', self.source)
         self.assertIn('marker = "G8_TEST_READONLY_ACCESS_BUNDLE=PASS"', self.source)
         self.assertIn("prepare(ACTIVE_CANDIDATE, output_dir)", self.source)
         self.assertIn('values["TARGET_DEPLOYMENT_ROOT"] = candidate.target_deployment_root', self.source)
-        self.assertIn("CONSUMED_SOURCE_TREE, None", self.source)
+        self.assertIn('"CHG-G8-TEST-READONLY-ACCESS-20260812-001": FrozenCandidate(', self.source)
+        self.assertIn('"CHG-G8-TEST-READONLY-ACCESS-20260812-002": FrozenCandidate(', self.source)
         self.assertIn("if candidate.target_deployment_root", self.source)
 
     def test_active_candidate_rejects_source_drift_before_output(self) -> None:
@@ -117,14 +122,24 @@ class TestReadonlyAccessBundle(unittest.TestCase):
     def test_consumed_candidate_verification_is_ephemeral(self) -> None:
         self.assertIn('TemporaryDirectory(prefix="molin-g8-consumed-verify-")', self.source)
         self.assertIn('marker = "G8_TEST_READONLY_ACCESS_BUNDLE_VERIFY=PASS"', self.source)
-        self.assertIn("prepare(CONSUMED_CANDIDATE", self.source)
+        self.assertIn("candidate = CONSUMED_CANDIDATES.get(arguments.consumed_change_id)", self.source)
+        self.assertIn("values = prepare(candidate", self.source)
 
-        result = self.run_script("--verify-consumed-candidate", "--output-dir=/tmp/forbidden")
-        self.assertEqual(result.returncode, 2)
-        self.assertEqual(
-            result.stdout.strip(),
-            "G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request",
-        )
+        for arguments in (
+            ("--verify-consumed-candidate",),
+            ("--verify-consumed-candidate", "--consumed-change-id=unknown"),
+            (
+                "--verify-consumed-candidate",
+                "--consumed-change-id=CHG-G8-TEST-READONLY-ACCESS-20260812-001",
+                "--output-dir=/tmp/forbidden",
+            ),
+        ):
+            result = self.run_script(*arguments)
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(
+                result.stdout.strip(),
+                "G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request",
+            )
 
     def test_source_comes_from_exact_git_archive_and_build_is_repeated(self) -> None:
         self.assertIn('[git, "archive", candidate.source_commit]', self.source)
@@ -133,7 +148,7 @@ class TestReadonlyAccessBundle(unittest.TestCase):
         self.assertIn("ACTIVE_SOURCE_COMMIT", self.source)
         self.assertIn("ACTIVE_SOURCE_TREE", self.source)
         self.assertIn("ACTIVE_CHANGE_ID", self.source)
-        self.assertIn("CONSUMED_CANDIDATE", self.source)
+        self.assertIn("CONSUMED_CANDIDATES", self.source)
 
     def test_bundle_contains_only_fixed_low_sensitive_assets(self) -> None:
         for name in (
