@@ -1,6 +1,6 @@
 # AI 网关 G8 测试服只读入口安装授权清单（003）
 
-> 当前状态：`PENDING_FINAL_PR_GATE_AND_USER_APPROVAL`。功能/主干同步 HEAD `3d3e6c430c552a67678e3743b5967218dfc87567` 的 CI 与独立代码安全、QA、产品/规格增量验收已通过；最终文档 HEAD 仍须完成轻量门禁和增量复签。用户尚未再次明确批准安装，禁止连接、上传或安装。
+> 当前状态：`PENDING_FINAL_PR_GATE_AND_USER_APPROVAL`。功能/主干同步 HEAD `3d3e6c430c552a67678e3743b5967218dfc87567` 的 CI 与独立代码安全、QA、产品/规格增量验收已通过；最终文档 HEAD 仍须完成 required 门禁和增量复签。用户尚未再次明确批准安装，禁止连接、上传或安装。
 
 ## 1. ChangeId 与精确目标
 
