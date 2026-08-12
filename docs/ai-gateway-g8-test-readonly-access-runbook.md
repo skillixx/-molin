@@ -34,7 +34,7 @@ python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py \
 
 生成器不连接测试服务器，也不包含 SSH、SCP、sudo、安装、Docker 或服务控制命令；本地 Go 构建仍可能按标准模块配置读取依赖缓存或下载缺失依赖。历史 PASS 只证明当时候选包与冻结来源及摘要一致，不代表已上传、已安装或测试服运行态通过。001 已消费，未来新 ChangeId 必须重新冻结生成器身份、制品与授权，不得复用本节命令。
 
-PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并。精确功能 HEAD `c0479f607c9dbd5713c9fbbde7b3fb83ac2a3adc` 的 CI run `31566629193` 为 9/9 SUCCESS；其中候选包回执 SHA-256 为 `14b7d8cd832f0b719031fcc93adbbb2208afe76d34383e63d51c44b044772b5a`。该回执绑定 CI 临时目录内的 `SHA256SUMS`，不是测试服安装回执；实际上传前仍须重新生成包、逐项核对本节冻结摘要并取得第 3 节授权。
+PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并。精确功能 HEAD `c0479f607c9dbd5713c9fbbde7b3fb83ac2a3adc` 的 CI run `31566629193` 为 9/9 SUCCESS；其中候选包回执 SHA-256 为 `14b7d8cd832f0b719031fcc93adbbb2208afe76d34383e63d51c44b044772b5a`。该回执只绑定历史 CI 临时目录内的 `SHA256SUMS`，不是测试服安装回执；001 已消费，禁止据此重新生成、上传或再次申请执行。未来新 ChangeId 必须按第 3.5 节重新冻结。
 
 ## 3. 历史已停止安装变更（禁止执行）
 
