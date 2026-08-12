@@ -126,6 +126,25 @@ class TestTransportDiagnostic(unittest.TestCase):
         evidence = MODULE.classify_stream_result(returncode, stdout_result, stderr_result)
         self.assertEqual(evidence["diagnostic"], "OUTPUT_LIMIT_EXCEEDED")
 
+    def test_stream_read_error_is_collected_without_thread_traceback(self) -> None:
+        """管道读取异常只能写入内部错误标志，不能从线程打印 traceback。"""
+        result: dict[str, object] = {}
+        stream = mock.Mock()
+        stream.read.side_effect = OSError("SENSITIVE_PIPE_PATH")
+        with mock.patch.object(sys, "stderr") as stderr:
+            MODULE.collect_stream(stream, result)
+        self.assertEqual(result, {"error": True})
+        stderr.write.assert_not_called()
+
+    def test_ssh_configuration_error_is_low_sensitivity(self) -> None:
+        """固定 SSH 路径或环境解析失败时必须收敛为内部诊断异常。"""
+        helper = SimpleNamespace(
+            fixed_ssh_executable=mock.Mock(side_effect=RuntimeError("SENSITIVE_LOCAL_PATH")),
+            fixed_ssh_environment=mock.Mock(),
+        )
+        with self.assertRaisesRegex(MODULE.DiagnosticError, "ssh_configuration_failed"):
+            MODULE.run_transport_diagnostic(helper, Path("/fixed/known_hosts"), Path("/fixed/key"))
+
     def test_invalid_change_rejects_before_helper_or_network(self) -> None:
         """未知 ChangeId 必须在加载身份辅助模块和联网前失败。"""
         arguments = [str(SCRIPT_PATH), "--change-id", "INVALID", "--known-hosts", "missing", "--identity-file", "missing", "--identity-public-file", "missing"]

@@ -90,17 +90,21 @@ def collect_stream(stream, result: dict[str, object]) -> None:
     total = 0
     line_breaks = 0
     last_byte = b""
-    while True:
-        chunk = stream.read(8192)
-        if not chunk:
-            break
-        digest.update(chunk)
-        total += len(chunk)
-        line_breaks += chunk.count(b"\n")
-        last_byte = chunk[-1:]
-        if len(captured) <= MAX_CAPTURE_BYTES:
-            remaining = MAX_CAPTURE_BYTES + 1 - len(captured)
-            captured.extend(chunk[:remaining])
+    try:
+        while True:
+            chunk = stream.read(8192)
+            if not chunk:
+                break
+            digest.update(chunk)
+            total += len(chunk)
+            line_breaks += chunk.count(b"\n")
+            last_byte = chunk[-1:]
+            if len(captured) <= MAX_CAPTURE_BYTES:
+                remaining = MAX_CAPTURE_BYTES + 1 - len(captured)
+                captured.extend(chunk[:remaining])
+    except Exception:
+        result["error"] = True
+        return
     result.update(
         {
             "captured": bytes(captured),
@@ -108,6 +112,7 @@ def collect_stream(stream, result: dict[str, object]) -> None:
             "lines": line_breaks + (1 if total and last_byte != b"\n" else 0),
             "sha256": "NONE" if total == 0 else digest.hexdigest(),
             "exceeded": total > MAX_CAPTURE_BYTES,
+            "error": False,
         }
     )
 
@@ -146,6 +151,8 @@ def run_bounded_process(command: list[str], environment: dict[str, str]) -> tupl
         stderr_thread.join()
         process.stdout.close()
         process.stderr.close()
+    if stdout_result.get("error") or stderr_result.get("error"):
+        raise DiagnosticError("ssh_pipe_failed")
     return returncode, stdout_result, stderr_result
 
 
@@ -212,8 +219,13 @@ def classify_result(result: subprocess.CompletedProcess[bytes]) -> dict[str, str
 
 def run_transport_diagnostic(helper, known_hosts: Path, identity_file: Path) -> dict[str, str]:
     """使用固定 OpenSSH 参数只调用一次远端隔离 Python 标记程序。"""
+    try:
+        ssh_executable = helper.fixed_ssh_executable()
+        ssh_environment = helper.fixed_ssh_environment()
+    except Exception as error:
+        raise DiagnosticError("ssh_configuration_failed") from error
     command = [
-        str(helper.fixed_ssh_executable()),
+        str(ssh_executable),
         "-F",
         "none",
         "-o",
@@ -258,7 +270,7 @@ def run_transport_diagnostic(helper, known_hosts: Path, identity_file: Path) -> 
         "-I",
         "-",
     ]
-    returncode, stdout_result, stderr_result = run_bounded_process(command, helper.fixed_ssh_environment())
+    returncode, stdout_result, stderr_result = run_bounded_process(command, ssh_environment)
     return classify_stream_result(returncode, stdout_result, stderr_result)
 
 

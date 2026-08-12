@@ -9,7 +9,7 @@
 - 关联已消费 ChangeId：`CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-004`。
 - 诊断目的：只区分 SSH 退出分类、远端固定 stdout 是否精确匹配、stderr 是否存在及其行数/字节数/SHA-256；不得读取或推断 stderr 正文。
 - 候选脚本：`infra/scripts/run-ai-gateway-g8-test-readonly-transport-diagnostic.py`。
-- 当前候选脚本 SHA-256：`f066f737d08533b252428ec666fcbf113907b642e223947b05833626e53eac91`；最终授权前必须按合并后的精确文件重新计算，不一致即停止。
+- 当前候选脚本 SHA-256：`2174ac5836f5bcd6de829fe6bf6e75c426769ec1ecc6529d7bbfd6ac72ac8aab`；最终授权前必须按合并后的精确文件重新计算，不一致即停止。
 - 复用的 004 身份校验辅助脚本 SHA-256 固定为 `599e6bbb800531d02b22cf9534636ebf8232002fafb8236d294f9d2dba2e3c89`；加载前必须核对普通文件身份与摘要，加载后必须核对 ChangeId、已消费状态、目标、端口、主机公钥及本地身份公钥指纹，任一漂移立即停止。
 
 ## 2. 精确命令摘要
