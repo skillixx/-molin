@@ -43,3 +43,14 @@ machine_id_state=READABLE_MISMATCH
 - 必须使用新的 ChangeId，通过阿里云 root 控制台、CMDB 或等价独立受控来源核验主机身份和既有批准基线；该诊断须重新完成范围、命令、次数、影响、回滚、停止条件、工程门禁和用户独立授权。
 - 在独立核验完成前，不得更新批准摘要，不得继续暂存取证、清理、安装或运行态审计。
 - 本次结果不改变 `G8_ENGINEERING_READY`，也不构成生产部署、真实付费上游、真实通知、客户灰度、商业观察或 `G8_COMMERCIAL_ACCEPTED`。
+
+## 5. 仓库证据收口
+
+- 执行证据 HEAD：`6edbd89c3c6c1c8392262a775b2ac087caee3df7`。
+- CI：run `31650387182`，精确绑定执行证据 HEAD，12/12 SUCCESS，包含后端、双前端、G7、G8 生产就绪、无 Mock 真实后端浏览器验收和必选汇总。
+- 独立评审：代码安全、QA、产品/规格对仓库变更均为 `P0=0 / P1=0 / P2=0`；测试服运行态另保留 `P1=1`，即 `READABLE_MISMATCH`。
+- PR：[#351](https://github.com/skillixx/-molin/pull/351)，从 Draft 转 Ready 后按 merge commit 合并，未使用 squash。
+- merge commit：`492b56b9345592f1b5580e6de9fb1a1dfc540b93`，双父为原主干 `45c14645d93ad781c964d9a57f8efd43f0f1c494` 与执行证据 HEAD。
+- 远端执行证据分支已删除。
+
+上述收口只证明 007 执行事实、消费门禁和仓库证据已合并，不关闭主机身份 P1、003 暂存 `UNKNOWN` 或测试服其他运行态门禁。
