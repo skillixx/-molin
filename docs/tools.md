@@ -1050,16 +1050,14 @@ python infra/scripts/verify-ai-gateway-g8-migration-manifest.py `
 
 测试账号缺少 Docker 读取权限时，不得将账号直接加入 Docker 组。候选最小权限方案使用 root-owned 固定审计器、root-owned 对账二进制和单命令 sudoers；审计器拒绝非规范 ChangeId、非固定安装路径及错误所有权。安装、sudoers 修改和再次远端核验必须分别取得独立授权，详见 `docs/ai-gateway-g8-test-readonly-access-runbook.md`。
 
-### G8 测试服务器只读入口候选包生成器
+### G8 测试服务器只读入口历史候选验证器
 
-`infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py` 只在本地从冻结 Git 提交生成候选包，不连接服务器。生成器锁定 ChangeId、源码树、三项制品摘要和对账器大小，禁止同一审批下的来源或制品漂移。输出目录必须是当前平台尚不存在的绝对路径。生成器连续构建两次 Linux amd64 对账器并核对摘要，包内只包含固定的三个安装候选、低敏 `manifest.env` 和 `SHA256SUMS`。
+`infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py` 当前只保留已消费 001 候选的可复现验证能力，不连接服务器。普通 `--change-id/--output-dir` 调用固定失败，禁止再次生成可留存安装包；`--verify-consumed-candidate` 只在系统临时目录连续构建两次、核对冻结源码树、三项制品摘要和对账器大小，完成后自动销毁整个临时目录。
 
 ```powershell
 python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py --self-test
 python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py `
-  --change-id=CHG-G8-TEST-READONLY-ACCESS-20260812-001 `
-  --source-commit=c50f092339fcad79ca1262925480219db1755318 `
-  --output-dir=D:\molin-artifacts\g8-test-readonly-access-bundle
+  --verify-consumed-candidate
 ```
 
-候选包 PASS 不授权上传、安装、修改 sudoers 或执行远端审计；这些动作仍需分别绑定 ChangeId 和管理员受控通道。
+验证 PASS 只证明历史制品仍可复现，不产生可持久安装包，也不授权上传、安装、修改 sudoers 或执行远端审计。新的安装候选必须在新 ChangeId 获批后重新设计、评审和冻结。

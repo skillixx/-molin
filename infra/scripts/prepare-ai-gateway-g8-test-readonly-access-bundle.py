@@ -251,6 +251,7 @@ def prepare(change_id: str, source_commit: str, output_dir: Path) -> dict[str, s
 def main() -> int:
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--verify-consumed-candidate", action="store_true")
     parser.add_argument("--change-id")
     parser.add_argument("--source-commit")
     parser.add_argument("--output-dir")
@@ -259,13 +260,21 @@ def main() -> int:
         print("G8_TEST_READONLY_ACCESS_BUNDLE_SELF_TEST=PASS")
         return 0
     try:
-        if not arguments.change_id or not arguments.source_commit or not arguments.output_dir:
-            raise RuntimeError("missing_argument")
-        values = prepare(arguments.change_id, arguments.source_commit, Path(arguments.output_dir))
+        if not arguments.verify_consumed_candidate:
+            raise RuntimeError("consumed_change_id")
+        if arguments.change_id or arguments.source_commit or arguments.output_dir:
+            raise RuntimeError("unexpected_argument")
+        # 已消费候选只允许在系统临时目录重建、校验并自动销毁，不再输出可供安装的持久目录。
+        with tempfile.TemporaryDirectory(prefix="molin-g8-consumed-verify-") as temporary:
+            values = prepare(
+                APPROVED_CHANGE_ID,
+                APPROVED_SOURCE_COMMIT,
+                Path(temporary) / "bundle",
+            )
     except Exception:
         print("G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request")
         return 2
-    print("G8_TEST_READONLY_ACCESS_BUNDLE=PASS")
+    print("G8_TEST_READONLY_ACCESS_BUNDLE_VERIFY=PASS")
     for key in (
         "CHANGE_ID",
         "SOURCE_COMMIT",

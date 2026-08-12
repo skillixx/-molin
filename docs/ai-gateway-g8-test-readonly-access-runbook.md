@@ -2,7 +2,7 @@
 
 ## 1. 状态与范围
 
-本文只定义测试服务器 `pc@8.130.9.163:10003` 的候选安装、核验和撤销步骤。当前仅完成仓库内资产，**尚未上传、安装或修改 sudoers**，也未再次连接测试服务器。
+本文记录测试服务器 `pc@8.130.9.163:10003` 的候选安装、核验和撤销约束。当前仅完成仓库内资产，并执行过一次已停止的前置 SSH；**尚未上传、安装或修改 sudoers**。
 
 该入口用于补齐 MySQL、Redis、RabbitMQ、Bifrost、Prometheus、Grafana、Alertmanager、备份和只读账务证据。它不授予 `pc` Docker 组成员资格，不允许任意 `docker`、Shell、服务控制、文件写入、DDL/DML、队列消费或业务请求。
 
@@ -16,12 +16,14 @@
 
 审计器在特权模式下会验证自身真实路径和 `root:root:755`，否则以退出码 42 失败关闭。对账器只有满足同样的 root 所有权和权限才会运行；它只从环境文件读取 `MYSQL_PASSWORD`，并要求 `MYSQL_USER/MYSQL_DATABASE` 精确为 `molin`，实际连接固定到 `127.0.0.1:13306/molin`，防止用户可修改环境文件诱导特权进程向外部地址发送凭据。子进程仅接收上述固定 MySQL 配置以及 `APP_ENV=test`、`AI_GATEWAY_RECONCILE_READ_ONLY=YES`。
 
-### 2.1 本地候选包
+### 2.1 历史本地候选包（001 已消费，禁止再次生成或使用）
 
 `infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py` 可从冻结提交 `c50f092339fcad79ca1262925480219db1755318` 生成全新本地目录。生成器必须由 `python -I` 启动，并在导入可替换模块前拒绝非隔离解释器；同时锁定唯一 ChangeId、源码树、审计器、sudoers、对账器摘要和对账器大小，任一来源或制品漂移均失败关闭，不能使用同一审批替换资产。它通过 `git archive` 固定源码，使用 Go 1.26.5 以及 `GOENV=off`、`GOWORK=off`、`GOTOOLCHAIN=local`、`GOOS=linux`、`GOARCH=amd64`、`CGO_ENABLED=0` 和 `-trimpath -buildvcs=false` 连续构建两次；输出仅包含审计器、sudoers 候选、对账器、低敏清单和 `SHA256SUMS`。失败时只清理本次创建的全新输出目录。
 
+以下命令仅保留为 001 的历史设计证据，**不得再次执行**：
+
 ```bash
-# 输出目录必须是当前平台的绝对路径且不得已存在。
+# 历史命令，禁止执行；001 已消费。
 python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py \
   --change-id=CHG-G8-TEST-READONLY-ACCESS-20260812-001 \
   --source-commit=c50f092339fcad79ca1262925480219db1755318 \
@@ -30,13 +32,13 @@ python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py \
 (cd /absolute/new/g8-test-readonly-access-bundle && sha256sum -c SHA256SUMS)
 ```
 
-生成器不连接测试服务器，也不包含 SSH、SCP、sudo、安装、Docker 或服务控制命令；本地 Go 构建仍可能按标准模块配置读取依赖缓存或下载缺失依赖。生成 PASS 只证明本地候选包与冻结来源及摘要一致，不代表已上传、已安装或测试服运行态通过；上传与安装仍必须使用本 Runbook 第 3 节的独立授权。
+生成器不连接测试服务器，也不包含 SSH、SCP、sudo、安装、Docker 或服务控制命令；本地 Go 构建仍可能按标准模块配置读取依赖缓存或下载缺失依赖。历史 PASS 只证明当时候选包与冻结来源及摘要一致，不代表已上传、已安装或测试服运行态通过。001 已消费，未来新 ChangeId 必须重新冻结生成器身份、制品与授权，不得复用本节命令。
 
 PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并。精确功能 HEAD `c0479f607c9dbd5713c9fbbde7b3fb83ac2a3adc` 的 CI run `31566629193` 为 9/9 SUCCESS；其中候选包回执 SHA-256 为 `14b7d8cd832f0b719031fcc93adbbb2208afe76d34383e63d51c44b044772b5a`。该回执绑定 CI 临时目录内的 `SHA256SUMS`，不是测试服安装回执；实际上传前仍须重新生成包、逐项核对本节冻结摘要并取得第 3 节授权。
 
-## 3. 待批准安装变更
+## 3. 历史已停止安装变更（禁止执行）
 
-候选 ChangeId：`CHG-G8-TEST-READONLY-ACCESS-20260812-001`。
+已消费 ChangeId：`CHG-G8-TEST-READONLY-ACCESS-20260812-001`。本节保留原批准计划用于审计，所有命令均已作废并禁止执行。
 
 当前已冻结的候选制品证据如下；管理员通道仍须由用户单独指定并确认：
 
@@ -58,7 +60,7 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 任一身份不一致立即停止，禁止安装。
 
-### 3.2 命令摘要
+### 3.2 历史命令摘要（未执行，禁止重放）
 
 1. 在本地从源码提交 `c50f092339fcad79ca1262925480219db1755318` 按上述参数重新构建 Linux amd64 只读对账器，或使用第 2.1 节生成器生成候选包；无论采用哪种方式，均要求三份资产 SHA-256 与冻结值精确一致。
 2. 通过单次 SCP 将两个资产和 sudoers 文件上传到 `/home/pc/molin/.g8-staging/CHG-G8-TEST-READONLY-ACCESS-20260812-001/`；不覆盖运行文件。
@@ -76,11 +78,20 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 - 回滚：管理员精确删除上述三个安装目标，并执行 `visudo -c` 与 `sudo -n -l -U pc` 确认规则消失；不得删除任何账本、Usage、钱包、Outbox、审计或备份事实。
 - 停止条件：目标身份不一致、任一 SHA 不一致、暂存目录或父目录可疑、安装目标不是 root 所有、`visudo` 失败、规则出现额外命令/参数能力、self-test 失败，或发现真实密钥输出。
 
-未经用户对补全后的 ChangeId 独立确认，不得执行上述任何上传或安装命令。
+上述上传与安装命令均未执行，且不得使用 001 重放。
 
 ### 3.4 首次授权执行记录
 
 `CHG-G8-TEST-READONLY-ACCESS-20260812-001` 已于 2026-08-12 执行一次只读前置检查：本机固定 ED25519 指纹匹配，但首个远端命令 `sudo -n -l` 返回“需要密码”。该结果触发停止条件，未上传、安装或修改任何测试服资产，ChangeId 已消费且禁止重放。若继续必须使用新的 ChangeId 和经用户明确指定的受控 root 管理通道，见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260812.md`。
+
+### 3.5 未来重新申请顺序
+
+`CHG-G8-TEST-READONLY-ACCESS-20260812-002` 仅为候选占位，当前未获授权，禁止连接或执行。未来继续时必须依次完成：
+
+1. 用户为新的 ChangeId 明确受控 root 管理通道、精确目标、命令摘要、会话上限、影响、回滚和停止条件。
+2. 使用固定 known_hosts 执行一次只读 SSH，并把 `sudo -n -l` 作为首个远端命令；若仍要求密码或权限超出 Runbook，立即停止。
+3. 前置门禁通过后，另行更新并评审候选包生成器，使其绑定新的 ChangeId、源码、制品摘要与目标身份；不得复用 001 包或回执。
+4. 新候选包、上传和安装必须取得精确授权后才能执行；安装后的真实运行态审计仍使用另一个独立 ChangeId。
 
 ## 4. 安装后的独立只读核验
 
