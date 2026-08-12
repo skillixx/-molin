@@ -55,31 +55,47 @@ class TestStagingEvidenceV2(unittest.TestCase):
         for forbidden in ("import subprocess", "os.remove(", "os.unlink(", "os.rmdir(", "import shutil"):
             self.assertNotIn(forbidden, program)
 
-        restored = program.replace(
-            f"evidence_change_id = {MODULE.CHANGE_ID!r}",
-            f"evidence_change_id = {helper.CHANGE_ID!r}",
+        self.assertIn("except BaseException:\n    reject('IDENTITY')", program)
+        self.assertIn("except BaseException:\n    reject('MACHINE_ID')", program)
+        self.assertIn("except BaseException:\n        reject('DEPLOYMENT_ROOT_METADATA')", program)
+        self.assertIn("except BaseException:\n        reject('DEPLOYMENT_ROOT_DRIFT')", program)
+
+    @unittest.skipIf(sys.platform == "win32", "远端 Linux 标准库故障注入仅在 Linux 执行")
+    def test_remote_identity_and_machine_errors_return_fixed_gate(self) -> None:
+        """NSS 与 machine-id 系统调用异常必须返回固定门禁，不得打印 traceback。"""
+        helper = MODULE.load_frozen_helper()
+        program = MODULE.build_remote_program(helper)
+        identity_failure = program.replace(
+            "try:\n    account = pwd.getpwnam('pc')",
+            "pwd.getpwnam = lambda name: (_ for _ in ()).throw(OSError('secret'))\n"
+            "try:\n    account = pwd.getpwnam('pc')",
             1,
         )
-        restored = restored.replace(
-            "def reject(reason):\n"
-            "    print('EVIDENCE_CHANGE_ID=' + evidence_change_id)\n"
-            "    print('TARGET_CHANGE_ID=' + target_change_id)\n"
-            "    print('GATE_RESULT=BLOCKED')\n"
-            "    print('GATE_REASON=' + reason)\n"
-            "    raise SystemExit(0)",
-            "def reject():\n    raise SystemExit(41)",
+        result = subprocess.run([sys.executable, "-I", "-c", identity_failure], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stderr, "")
+        self.assertIn("GATE_REASON=IDENTITY", result.stdout)
+
+        machine_failure = program.replace(
+            "try:\n    account = pwd.getpwnam('pc')",
+            "class Account:\n    pw_uid = os.getuid()\n"
+            "class Group:\n    gr_gid = os.getgid()\n"
+            "class Uname:\n    nodename = target_hostname\n"
+            "pwd.getpwnam = lambda name: Account()\n"
+            "grp.getgrnam = lambda name: Group()\n"
+            "os.uname = lambda: Uname()\n"
+            "try:\n    account = pwd.getpwnam('pc')",
+            1,
+        ).replace(
+            "try:\n    current_machine_id_sha256 = digest('/etc/machine-id')",
+            "digest = lambda path: (_ for _ in ()).throw(OSError('secret'))\n"
+            "try:\n    current_machine_id_sha256 = digest('/etc/machine-id')",
             1,
         )
-        for reason in (
-            "IDENTITY",
-            "MACHINE_ID",
-            "DEPLOYMENT_ROOT_PATH",
-            "DEPLOYMENT_ROOT_METADATA",
-            "STAGING_LOOKUP",
-            "DEPLOYMENT_ROOT_DRIFT",
-        ):
-            restored = restored.replace(f"reject('{reason}')", "reject()", 1)
-        self.assertEqual(restored, helper.REMOTE_PROGRAM)
+        result = subprocess.run([sys.executable, "-I", "-c", machine_failure], capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stderr, "")
+        self.assertIn("GATE_REASON=MACHINE_ID", result.stdout)
 
     def test_parse_accepts_blocked_and_absent_evidence(self) -> None:
         """解析器只接受固定门禁阻断或原 004 已验证的证据键集合。"""
@@ -116,6 +132,38 @@ class TestStagingEvidenceV2(unittest.TestCase):
             with self.subTest(payload=payload):
                 with self.assertRaises(MODULE.EvidenceError):
                     MODULE.parse_output(helper, payload.encode())
+
+    def test_evidence_rejects_missing_or_wrong_change_id_for_all_states(self) -> None:
+        """三类证据都必须原样绑定 006 ChangeId，禁止解析器替调用方修正。"""
+        helper = MODULE.load_frozen_helper()
+        states = (
+            ("ABSENT", "NOT_APPLICABLE", "NONE"),
+            ("PRESENT", "PASS", "NONE"),
+            ("PRESENT", "MISMATCH", "FILE_CONTENT"),
+        )
+        for state, integrity, reason in states:
+            base_lines = [
+                f"EVIDENCE_CHANGE_ID={MODULE.CHANGE_ID}",
+                f"TARGET_CHANGE_ID={MODULE.TARGET_CHANGE_ID}",
+                "LOGIN_USER=pc",
+                "HOSTNAME=pc-Z790-UD-AX",
+                "MACHINE_ID_SHA256=b60555f0d8d48731b657d21b2e54559d263210688125ae56a4d662fc4d7278d4",
+                "DEPLOYMENT_ROOT_REALPATH=/home/pc/molin",
+                "DEPLOYMENT_ROOT_CHECK=PASS",
+                f"STAGING_STATE={state}",
+                f"STAGING_INTEGRITY={integrity}",
+                f"STAGING_MISMATCH_REASON={reason}",
+                "EVIDENCE_RESULT=PASS",
+            ]
+            payloads = (
+                "\n".join(base_lines[1:]) + "\n",
+                "\n".join(["EVIDENCE_CHANGE_ID=WRONG", *base_lines[1:]]) + "\n",
+                "\n".join([base_lines[0], "TARGET_CHANGE_ID=WRONG", *base_lines[2:]]) + "\n",
+            )
+            for payload in payloads:
+                with self.subTest(state=state, payload=payload):
+                    with self.assertRaises(MODULE.EvidenceError):
+                        MODULE.parse_output(helper, payload.encode())
 
     def test_invalid_change_rejects_before_identity_or_network(self) -> None:
         """未知 ChangeId 必须在身份读取和联网前拒绝。"""

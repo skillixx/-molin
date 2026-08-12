@@ -120,6 +120,81 @@ def build_remote_program(helper) -> str:
         program = program.replace("reject()", f"reject('{reason}')", 1)
     if "reject()" in program:
         raise EvidenceError("helper_reject_count_mismatch")
+
+    # 原 004 的显式门禁已经分类；这里再把门禁系统调用自身的异常收敛到同一固定枚举。
+    guarded_blocks = (
+        (
+            "account = pwd.getpwnam('pc')\n"
+            "group = grp.getgrnam('pc')\n"
+            "if os.getuid() != account.pw_uid or os.uname().nodename != target_hostname:\n"
+            "    reject('IDENTITY')",
+            "try:\n"
+            "    account = pwd.getpwnam('pc')\n"
+            "    group = grp.getgrnam('pc')\n"
+            "    current_uid = os.getuid()\n"
+            "    current_hostname = os.uname().nodename\n"
+            "except BaseException:\n"
+            "    reject('IDENTITY')\n"
+            "if current_uid != account.pw_uid or current_hostname != target_hostname:\n"
+            "    reject('IDENTITY')",
+        ),
+        (
+            "if digest('/etc/machine-id') != target_machine_id_sha256:\n"
+            "    reject('MACHINE_ID')",
+            "try:\n"
+            "    current_machine_id_sha256 = digest('/etc/machine-id')\n"
+            "except BaseException:\n"
+            "    reject('MACHINE_ID')\n"
+            "if current_machine_id_sha256 != target_machine_id_sha256:\n"
+            "    reject('MACHINE_ID')",
+        ),
+        (
+            "root_meta = os.lstat(deployment_root)\n"
+            "if os.path.realpath(deployment_root) != deployment_root:\n"
+            "    reject('DEPLOYMENT_ROOT_PATH')\n"
+            "root_descriptor = os.open(\n"
+            "    deployment_root,\n"
+            "    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,\n"
+            ")",
+            "try:\n"
+            "    root_meta = os.lstat(deployment_root)\n"
+            "    deployment_root_realpath = os.path.realpath(deployment_root)\n"
+            "    root_descriptor = os.open(\n"
+            "        deployment_root,\n"
+            "        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,\n"
+            "    )\n"
+            "except BaseException:\n"
+            "    reject('DEPLOYMENT_ROOT_PATH')\n"
+            "if deployment_root_realpath != deployment_root:\n"
+            "    os.close(root_descriptor)\n"
+            "    reject('DEPLOYMENT_ROOT_PATH')",
+        ),
+        (
+            "    pinned_root = os.fstat(root_descriptor)\n"
+            "    root_mode = stat.S_IMODE(pinned_root.st_mode)",
+            "    try:\n"
+            "        pinned_root = os.fstat(root_descriptor)\n"
+            "        root_mode = stat.S_IMODE(pinned_root.st_mode)\n"
+            "    except BaseException:\n"
+            "        reject('DEPLOYMENT_ROOT_METADATA')",
+        ),
+        (
+            "    current_root = os.lstat(deployment_root)\n"
+            "    if (\n"
+            "        os.path.realpath(deployment_root) != deployment_root",
+            "    try:\n"
+            "        current_root = os.lstat(deployment_root)\n"
+            "        current_root_realpath = os.path.realpath(deployment_root)\n"
+            "    except BaseException:\n"
+            "        reject('DEPLOYMENT_ROOT_DRIFT')\n"
+            "    if (\n"
+            "        current_root_realpath != deployment_root",
+        ),
+    )
+    for original, guarded in guarded_blocks:
+        if program.count(original) != 1:
+            raise EvidenceError("helper_guard_shape_mismatch")
+        program = program.replace(original, guarded, 1)
     compile(program, "<g8-staging-evidence-v2>", "exec")
     return program
 
@@ -147,6 +222,12 @@ def parse_output(helper, stdout: bytes) -> tuple[str, dict[str, str]]:
         ):
             raise EvidenceError("invalid_gate_result")
         return "BLOCKED", values
+    if (
+        set(values) != helper.EXPECTED_REMOTE_KEYS
+        or values.get("EVIDENCE_CHANGE_ID") != CHANGE_ID
+        or values.get("TARGET_CHANGE_ID") != TARGET_CHANGE_ID
+    ):
+        raise EvidenceError("evidence_identity_mismatch")
     original = dict(values)
     original["EVIDENCE_CHANGE_ID"] = helper.CHANGE_ID
     normalized = "\n".join(f"{key}={value}" for key, value in original.items()) + "\n"

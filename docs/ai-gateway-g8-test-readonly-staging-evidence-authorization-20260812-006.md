@@ -8,7 +8,7 @@
 - 目标：`pc@8.130.9.163:10003`。
 - 目标暂存：已消费 003 的固定路径 `/home/pc/molin/.g8-staging-CHG-G8-TEST-READONLY-ACCESS-20260812-003`。
 - 部署根：`/home/pc/molin`。
-- 006 脚本 SHA-256：`a6ef004748792bb94e5dbeae296245c14d9960b45ba558534b93f9cd2f0d96bc`。
+- 006 脚本 SHA-256：`4a4c47525cd4e2d1bd20a2fa87f959fa94a741a8ea468240cc77200bb0205cb3`。
 - 冻结 004 helper SHA-256：`599e6bbb800531d02b22cf9534636ebf8232002fafb8236d294f9d2dba2e3c89`。
 
 ## 2. 精确命令摘要
