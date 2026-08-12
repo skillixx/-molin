@@ -194,6 +194,22 @@ class TestStagingEvidence(unittest.TestCase):
             self.assertEqual(present.returncode, 0, present.stderr)
             self.assertEqual(values(present.stdout)["STAGING_INTEGRITY"], "PASS")
 
+            metadata_path = stage / "manifest.env"
+            metadata_path.chmod(0o622)
+            metadata_mismatch = subprocess.run(
+                [sys.executable, "-I", "-"],
+                input=program,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+            self.assertEqual(metadata_mismatch.returncode, 0, metadata_mismatch.stderr)
+            metadata_result = values(metadata_mismatch.stdout)
+            self.assertEqual(metadata_result["STAGING_INTEGRITY"], "MISMATCH")
+            self.assertEqual(metadata_result["STAGING_MISMATCH_REASON"], "FILE_METADATA")
+            metadata_path.chmod(0o600)
+
             # 哈希完成后替换同名目录项并保留旧文件，最终证据必须拒绝把旧 fd 内容当作当前文件。
             raced_entry_program = program.replace(
                 "actual_digest = digest_handle(handle)",

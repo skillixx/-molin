@@ -12,7 +12,7 @@
 - 部署根：`/home/pc/molin`。
 - 唯一取证目标：`/home/pc/molin/.g8-staging-CHG-G8-TEST-READONLY-ACCESS-20260812-003`。
 - 基线提交：`6e1800de2a212f37d84b76107b8150ba025b82aa`。
-- 当前候选脚本 SHA-256：`d629b8dd015b140577f5d21dba3367b4160dbcc658cf94b0834fc674fc159819`；最终授权前必须按合并后的精确文件重新计算，不一致即停止。
+- 当前候选脚本 SHA-256：`4b90221e8af3b6e2c882cac7bd97b2cee947451270eb4b36bbccfe8b336556e0`；最终授权前必须按合并后的精确文件重新计算，不一致即停止。
 
 ## 2. 允许的唯一操作
 

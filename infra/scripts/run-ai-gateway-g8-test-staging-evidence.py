@@ -160,6 +160,7 @@ try:
                         if set(names) == set(expected_files) and len(names) == len(expected_files):
                             staging_mismatch_reason = 'FILE_METADATA'
                             metadata_matches = True
+                            entries_stable = True
                             content_matches = True
                             opened_files = {{}}
                             for name in names:
@@ -171,15 +172,6 @@ try:
                                 try:
                                     metadata = os.fstat(file_descriptor)
                                     expected_sha256, expected_size = expected_files[name]
-                                    if (
-                                        not stat.S_ISREG(metadata.st_mode)
-                                        or metadata.st_uid != account.pw_uid
-                                        or metadata.st_gid != group.gr_gid
-                                        or stat.S_IMODE(metadata.st_mode) & 0o022
-                                        or metadata.st_size != expected_size
-                                    ):
-                                        metadata_matches = False
-                                        break
                                     opened_files[name] = (
                                         metadata.st_dev,
                                         metadata.st_ino,
@@ -190,8 +182,19 @@ try:
                                         metadata.st_mtime_ns,
                                         metadata.st_ctime_ns,
                                     )
-                                    with os.fdopen(file_descriptor, 'rb', closefd=False) as handle:
-                                        actual_digest = digest_handle(handle)
+                                    current_metadata_matches = not (
+                                        not stat.S_ISREG(metadata.st_mode)
+                                        or metadata.st_uid != account.pw_uid
+                                        or metadata.st_gid != group.gr_gid
+                                        or stat.S_IMODE(metadata.st_mode) & 0o022
+                                        or metadata.st_size != expected_size
+                                    )
+                                    if current_metadata_matches:
+                                        with os.fdopen(file_descriptor, 'rb', closefd=False) as handle:
+                                            actual_digest = digest_handle(handle)
+                                    else:
+                                        metadata_matches = False
+                                        actual_digest = None
                                     after_digest = os.fstat(file_descriptor)
                                     if (
                                         (
@@ -206,20 +209,18 @@ try:
                                         )
                                         != opened_files[name]
                                     ):
-                                        metadata_matches = False
-                                        break
-                                    if actual_digest != expected_sha256:
-                                            content_matches = False
+                                        entries_stable = False
+                                    if actual_digest is not None and actual_digest != expected_sha256:
+                                        content_matches = False
                                 finally:
                                     os.close(file_descriptor)
-                            stable_entries = metadata_matches
-                            if stable_entries:
+                            if entries_stable:
                                 final_names = os.listdir(stage_descriptor)
-                                stable_entries = (
+                                entries_stable = (
                                     set(final_names) == set(expected_files)
                                     and len(final_names) == len(expected_files)
                                 )
-                            if stable_entries:
+                            if entries_stable:
                                 for name in final_names:
                                     current_file = os.stat(
                                         name,
@@ -237,7 +238,7 @@ try:
                                         current_file.st_ctime_ns,
                                     )
                                     if current_identity != opened_files.get(name):
-                                        stable_entries = False
+                                        entries_stable = False
                                         break
                             final_stage = os.fstat(stage_descriptor)
                             current_stage = os.stat(
@@ -246,7 +247,7 @@ try:
                                 follow_symlinks=False,
                             )
                             if (
-                                not stable_entries
+                                not entries_stable
                                 or (
                                     final_stage.st_dev,
                                     final_stage.st_ino,
