@@ -352,7 +352,8 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: server/go.mod
+          # 冻结对账器由该精确工具链构建；GOTOOLCHAIN=local 禁止生成器静默切换版本。
+          go-version: 1.26.5
           cache-dependency-path: server/go.sum
 
       - name: 校验生产配置、流量总闸和渠道健康安全策略
@@ -365,7 +366,29 @@ jobs:
         run: |
           python -m unittest infra/scripts/test_verify_ai_gateway_g8_migration_manifest.py
           python -m unittest infra/scripts/test_audit_ai_gateway_g8_test_server_readonly.py
-          python -m py_compile infra/scripts/verify-ai-gateway-g8-migration-manifest.py infra/scripts/test_verify_ai_gateway_g8_migration_manifest.py infra/scripts/test_audit_ai_gateway_g8_test_server_readonly.py
+          python -I -m unittest discover -s infra/scripts -p test_prepare_ai_gateway_g8_test_readonly_access_bundle.py
+          python -I -m py_compile infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_bundle.py
+          python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py --self-test
+          bundle_dir="$RUNNER_TEMP/g8-test-readonly-access-bundle"
+          BASH_ENV=/tmp/nonexistent-bash-env \
+            GIT_DIR=/tmp/nonexistent-git-dir \
+            GIT_CONFIG_COUNT=1 \
+            GIT_CONFIG_KEY_0=core.autocrlf \
+            GIT_CONFIG_VALUE_0=true \
+            GOPROXY=https://invalid.example \
+            TAR_OPTIONS='--checkpoint=1 --checkpoint-action=exec=echo BAD_ENV_INJECTION' \
+            python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py \
+            --change-id=CHG-G8-TEST-READONLY-ACCESS-20260812-001 \
+            --source-commit=c50f092339fcad79ca1262925480219db1755318 \
+            --output-dir="$bundle_dir" | tee /tmp/g8-test-readonly-access-bundle.log
+          ! grep -q 'BAD_ENV_INJECTION' /tmp/g8-test-readonly-access-bundle.log
+          grep -qx 'G8_TEST_READONLY_ACCESS_BUNDLE=PASS' /tmp/g8-test-readonly-access-bundle.log
+          grep -qx 'source_commit=c50f092339fcad79ca1262925480219db1755318' /tmp/g8-test-readonly-access-bundle.log
+          grep -qx 'source_tree=2e9701c3f5d8ba12aebc9631b01696b189f1d313' /tmp/g8-test-readonly-access-bundle.log
+          grep -qx 'auditor_sha256=308908d2a2b9fa8679fd21d77fde68b5ce5d521ed37dac6b7726e6c323452256' /tmp/g8-test-readonly-access-bundle.log
+          grep -qx 'sudoers_sha256=1ec266c71f00d99da18b9e8cf59af91d6126811384adef62ce48750b97a0986f' /tmp/g8-test-readonly-access-bundle.log
+          grep -qx 'reconcile_sha256=37f6ee369f1ce489a3966123dfea3bd172d5386045495e069433c7f3d993f2c1' /tmp/g8-test-readonly-access-bundle.log
+          (cd "$bundle_dir" && sha256sum -c SHA256SUMS)
           command -v visudo >/dev/null
           sudo visudo -cf infra/sudoers/molin-g8-test-readonly-audit
           set +e

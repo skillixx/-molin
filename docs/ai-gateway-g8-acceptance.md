@@ -48,6 +48,7 @@
 - 2026-08-12 测试服单次只读基线确认：现有 API 进程/监听为 0，health/ready 不可达；API 二进制仍为 G7 摘要，Docker、schema、Bifrost、监控和账务因权限与工具缺失保持 UNKNOWN；历史 MySQL/RabbitMQ/MinIO 密码已不匹配，但 Redis 无密码、SSH 账号仍有密码。P0=0、P1=3，测试服 G8 验收未通过。完整证据见 `docs/ai-gateway-g8-test-server-readonly-audit-20260812.md`。
 - 已完成最小只读运维入口的仓库候选设计：不授予 Docker 组权限，只允许 root-owned 固定审计器和对账器，并由单命令 sudoers 约束。该入口尚未上传或安装，不能据此关闭测试服 UNKNOWN；安装与后续只读核验分别需要独立 ChangeId。见 `docs/ai-gateway-g8-test-readonly-access-runbook.md`。
 - 最小只读入口 PR `#331` 已按 merge commit 合并为 `c50f092339fcad79ca1262925480219db1755318`，精确功能 HEAD `f45be6f99c5d363caf166dba1ad2d172ad4646a8` 的 CI run `31563417231` 为 9/9 SUCCESS；独立 Standards、Spec 与 QA 均为 P0/P1/P2=0。上述事实只证明仓库资产和 CI，通过并不代表测试服已安装入口或补齐运行态证据。
+- 当前工作树新增本地候选包生成器及 CI 门禁候选：锁定已冻结提交、源码树、三项制品摘要和对账器大小，两次构建对账器并只生成低敏本地包。该项在 PR 合并和精确 HEAD CI 完成前仍为开发中；即使通过，也不代表已经上传、安装或重新核验测试服。
 
 ## 3. 商业验收
 
