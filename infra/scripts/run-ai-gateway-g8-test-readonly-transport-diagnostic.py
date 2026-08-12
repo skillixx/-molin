@@ -19,6 +19,8 @@ from pathlib import Path
 
 
 CHANGE_ID = "CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005"
+# 005 已完成唯一一次正式调用；普通入口必须在读取身份文件或联网前拒绝重放。
+CHANGE_ID_CONSUMED = True
 TARGET_CHANGE_ID = "CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-004"
 REMOTE_MARKER = b"G8_TEST_READONLY_TRANSPORT_REMOTE=PASS\n"
 MAX_CAPTURE_BYTES = 64 * 1024
@@ -303,6 +305,9 @@ def main() -> int:
             return 2
         print("G8_TEST_READONLY_TRANSPORT_DIAG_SELF_TEST=PASS")
         return 0
+    if CHANGE_ID_CONSUMED:
+        print("G8_TEST_READONLY_TRANSPORT_DIAG=FAILED reason=change_id_consumed")
+        return 2
     if (
         arguments.change_id != CHANGE_ID
         or not arguments.known_hosts

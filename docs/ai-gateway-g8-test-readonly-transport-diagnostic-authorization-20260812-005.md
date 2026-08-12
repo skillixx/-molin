@@ -1,8 +1,10 @@
 # AI 网关 G8 测试服低敏 SSH 传输诊断授权清单（005）
 
-> 当前状态：`PENDING_USER_APPROVAL`。仓库工程门禁已通过，但本文件仍不构成连接测试服的授权；必须由用户再次独立明确批准后才可执行。
+> 当前状态：`CONSUMED`。用户已独立批准并完成唯一一次本地检查和唯一一次正式只读 SSH；005 禁止重试或重放。以下命令摘要仅保留为历史审计证据，不再构成执行授权。
 
 工程证据：PR #343 精确 HEAD `80d6114ad097ba4c7760b8f58221ac3d5ce0e5a8`，CI run `31603091477` 12/12 SUCCESS，独立代码安全、QA、产品/规格均为 P0/P1/P2=0，merge commit 为 `932265f3d770b5c30973fab611404d70f4273e34`。这些证据只证明仓库候选工程门禁，不证明远端诊断已经执行。
+
+执行结果：本地检查精确 PASS；唯一正式 SSH 返回 `diagnostic=PASS`、`ssh_exit_class=ZERO`、`stdout_contract=EXACT`、`stdout_bytes=39`、`stderr_state=EMPTY`、`stderr_bytes=0`。业务请求、上游请求和费用为 `0 / 0 / 0 CNY`。该结果只证明固定 SSH 与远端隔离 Python 标记可用，不证明 003 暂存状态。
 
 ## 1. ChangeId 与目标
 
