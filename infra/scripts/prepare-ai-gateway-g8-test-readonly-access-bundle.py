@@ -19,12 +19,9 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 
-ACTIVE_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-20260812-002"
-ACTIVE_SOURCE_COMMIT = "50b3e2f9d18b38e7d4a91ebeb4f03c413ef33c44"
-ACTIVE_SOURCE_TREE = "73fb652a1f86db84991c8745f8c10e1d2a255f29"
-CONSUMED_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-20260812-001"
-CONSUMED_SOURCE_COMMIT = "c50f092339fcad79ca1262925480219db1755318"
-CONSUMED_SOURCE_TREE = "2e9701c3f5d8ba12aebc9631b01696b189f1d313"
+ACTIVE_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-20260812-003"
+ACTIVE_SOURCE_COMMIT = "8ec878572f62ef2584c38aaadc1bca1cb802b13f"
+ACTIVE_SOURCE_TREE = "988bdcdc8017322264733ebe68876e4811b01412"
 FROZEN_AUDITOR_SHA256 = "308908d2a2b9fa8679fd21d77fde68b5ce5d521ed37dac6b7726e6c323452256"
 FROZEN_SUDOERS_SHA256 = "1ec266c71f00d99da18b9e8cf59af91d6126811384adef62ce48750b97a0986f"
 FROZEN_RECONCILE_SHA256 = "37f6ee369f1ce489a3966123dfea3bd172d5386045495e069433c7f3d993f2c1"
@@ -53,7 +50,20 @@ class FrozenCandidate:
 
 
 ACTIVE_CANDIDATE = FrozenCandidate(ACTIVE_CHANGE_ID, ACTIVE_SOURCE_COMMIT, ACTIVE_SOURCE_TREE, "/home/pc/molin")
-CONSUMED_CANDIDATE = FrozenCandidate(CONSUMED_CHANGE_ID, CONSUMED_SOURCE_COMMIT, CONSUMED_SOURCE_TREE, None)
+CONSUMED_CANDIDATES = {
+    "CHG-G8-TEST-READONLY-ACCESS-20260812-001": FrozenCandidate(
+        "CHG-G8-TEST-READONLY-ACCESS-20260812-001",
+        "c50f092339fcad79ca1262925480219db1755318",
+        "2e9701c3f5d8ba12aebc9631b01696b189f1d313",
+        None,
+    ),
+    "CHG-G8-TEST-READONLY-ACCESS-20260812-002": FrozenCandidate(
+        "CHG-G8-TEST-READONLY-ACCESS-20260812-002",
+        "50b3e2f9d18b38e7d4a91ebeb4f03c413ef33c44",
+        "73fb652a1f86db84991c8745f8c10e1d2a255f29",
+        "/home/pc/molin",
+    ),
+}
 
 
 def sha256(path: Path) -> str:
@@ -274,6 +284,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--verify-consumed-candidate", action="store_true")
+    parser.add_argument("--consumed-change-id")
     parser.add_argument("--change-id")
     parser.add_argument("--source-commit")
     parser.add_argument("--output-dir")
@@ -285,11 +296,16 @@ def main() -> int:
         if arguments.verify_consumed_candidate:
             if arguments.change_id or arguments.source_commit or arguments.output_dir:
                 raise RuntimeError("unexpected_argument")
+            candidate = CONSUMED_CANDIDATES.get(arguments.consumed_change_id)
+            if candidate is None:
+                raise RuntimeError("unknown_consumed_candidate")
             # 已消费候选只允许在系统临时目录重建、校验并自动销毁，不再输出可供安装的持久目录。
             with tempfile.TemporaryDirectory(prefix="molin-g8-consumed-verify-") as temporary:
-                values = prepare(CONSUMED_CANDIDATE, Path(temporary) / "bundle")
+                values = prepare(candidate, Path(temporary) / "bundle")
             marker = "G8_TEST_READONLY_ACCESS_BUNDLE_VERIFY=PASS"
         else:
+            if arguments.consumed_change_id:
+                raise RuntimeError("unexpected_argument")
             if arguments.change_id != ACTIVE_CHANGE_ID or arguments.source_commit != ACTIVE_SOURCE_COMMIT:
                 raise RuntimeError("unapproved_identity")
             if not arguments.output_dir:

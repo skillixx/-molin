@@ -1,6 +1,6 @@
 # AI 网关 G8 测试服只读入口安装授权清单（002）
 
-> 当前状态：`PENDING_USER_APPROVAL`。本文只是下一步安装申请，不构成上传、安装或远端连接授权。
+> 当前状态：`CONSUMED_STOPPED_DURING_READONLY_PREFLIGHT`。用户曾批准本清单，但唯一 SSH 预检因远端命令解析错误非零退出；002 已消费，以下内容仅保留为历史审计证据，禁止重试、上传或安装。
 
 ## 1. ChangeId 与精确目标
 
@@ -22,7 +22,7 @@
 
 冻结来源提交为 `50b3e2f9d18b38e7d4a91ebeb4f03c413ef33c44`，来源树为 `73fb652a1f86db84991c8745f8c10e1d2a255f29`。本地候选 `SHA256SUMS` 回执为 `d6d07f7b4959e48f5ffe0e92ee4116cef55fe56f5318df6ae3f0d9c5350ee567`，清单同时绑定 `TARGET_DEPLOYMENT_ROOT=/home/pc/molin`；实际上传前必须再次核对所选候选目录的完整五文件白名单和 `SHA256SUMS`，禁止混用其他构建清单。旧回执 `704e3f99b31865ec9849a5ebc31dc572bd103d8e9a88ef812c198998114cf5c7` 与 `4826429551a15a7e78c2836c5e755150c68ea3e5fedc7ef87f2f6656bf622b32` 均属于废弃候选，禁止上传。
 
-## 3. 待批准命令摘要
+## 3. 历史批准命令摘要（已作废，禁止执行）
 
 1. 使用既有固定 `known_hosts` 完成一次完全只读 SSH 预检；只核对登录用户、hostname、machine-id 摘要、`/home/pc/molin` 真实路径/所有权/权限、同名暂存目录不存在、三个安装目标均不存在。任一不符立即停止，禁止上传。
 2. 只读预检通过后，使用单次递归 SCP 将五文件候选目录上传为全新暂存目录 `/home/pc/molin/.g8-staging-CHG-G8-TEST-READONLY-ACCESS-20260812-002/`；其父目录 `/home/pc/molin` 已存在，不得预先创建、覆盖或合并同名暂存目录。
@@ -48,4 +48,4 @@
 
 出现以下任一情况立即停止：主机身份或指纹不一致、暂存路径已存在或可疑、文件白名单/摘要不一致、安装目标已存在、目标不是 root 所有、权限不符、暂存或安装后 `visudo` 失败、sudo 规则含额外命令/参数能力、`pc` 属于 Docker 组、self-test 失败、输出真实 Secret，或需要执行清单外命令。
 
-本清单不授权真实运行态审计、服务重启、Migration、配置修改、凭据轮换、生产连接、付费上游、真实通知或客户灰度。
+实际执行只到第 1 步：本地候选和 known_hosts 门禁通过，但唯一 SSH 内的 machine-id 摘要命令因跨 shell 引号解析错误非零退出。第 2 至第 7 步均未执行，证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260812-002.md`。本清单不得用于任何后续连接、上传或安装，也不授权真实运行态审计、服务重启、Migration、配置修改、凭据轮换、生产连接、付费上游、真实通知或客户灰度。

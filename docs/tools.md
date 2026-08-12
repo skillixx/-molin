@@ -1052,14 +1052,14 @@ python infra/scripts/verify-ai-gateway-g8-migration-manifest.py `
 
 ### G8 测试服务器只读入口候选生成器
 
-`infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py` 不连接服务器。普通生成入口当前只接受已批准准备的 `002`、冻结来源提交和全新绝对输出目录；001 普通生成继续失败关闭。`--verify-consumed-candidate` 仅用于在系统临时目录复现历史 001，完成后自动销毁整个临时目录，不产生可安装输出。
+`infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py` 不连接服务器。普通生成入口当前只接受待评审的 `003`、冻结来源提交和全新绝对输出目录；001、002 普通生成继续失败关闭。`--verify-consumed-candidate --consumed-change-id=...` 仅用于在系统临时目录分别复现历史 001/002，完成后自动销毁整个临时目录，不产生可安装输出。
 
 ```powershell
 python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py --self-test
 python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py `
-  --change-id=CHG-G8-TEST-READONLY-ACCESS-20260812-002 `
-  --source-commit=50b3e2f9d18b38e7d4a91ebeb4f03c413ef33c44 `
-  --output-dir=D:\absolute\new\g8-test-readonly-access-bundle-002
+  --change-id=CHG-G8-TEST-READONLY-ACCESS-20260812-003 `
+  --source-commit=8ec878572f62ef2584c38aaadc1bca1cb802b13f `
+  --output-dir=D:\absolute\new\g8-test-readonly-access-bundle-003
 ```
 
-生成 PASS 只证明本地候选与冻结来源及摘要一致，不授权上传、安装、修改 sudoers 或执行远端审计。安装授权清单见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260812-002.md`，必须在精确 PR HEAD CI 和独立验收通过后由用户另行批准。
+生成 PASS 只证明本地候选与冻结来源及摘要一致，不授权连接、上传、安装、修改 sudoers 或执行远端审计。003 必须再通过 `infra/scripts/run-ai-gateway-g8-test-readonly-access-stage.py` 的离线单元测试和精确 PR HEAD CI；该包装器仅在用户批准后依次执行一次固定 SSH 和一次原子 SFTP 暂存上传，任一步失败均禁止后续动作且不重试。安装清单见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260812-003.md`。
