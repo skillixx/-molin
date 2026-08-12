@@ -1093,7 +1093,16 @@ python -I infra/scripts/run-ai-gateway-g8-test-staging-evidence-v2.py --self-tes
 python -I infra/scripts/test_run_ai_gateway_g8_test_staging_evidence_v2.py
 ```
 
-006 必须完成精确 PR HEAD、CI、独立代码安全、QA、产品验收与 merge commit，并由用户再次独立批准后，才可执行一次本地检查和一次正式只读 SSH。授权清单见 `docs/ai-gateway-g8-test-readonly-staging-evidence-authorization-20260812-006.md`。
+006 已完成工程门禁并在用户批准后执行唯一一次本地检查和正式只读 SSH，结果为 `BLOCKED/MACHINE_ID`；暂存查找未执行，006 已消费。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-staging-evidence-authorization-20260812-006.md`、`docs/ai-gateway-g8-test-readonly-staging-evidence-attempt-20260812-006.md`。
+
+`infra/scripts/run-ai-gateway-g8-test-host-identity-diagnostic.py` 是 007 主机身份低敏诊断候选。它只读取固定 `/etc/machine-id`，只返回 `READABLE_MATCH`、`READABLE_MISMATCH` 或 `UNREADABLE`，不输出当前原文或摘要，也不读取暂存目录。工程门禁期间只允许离线自检和单元测试：
+
+```powershell
+python -I infra/scripts/run-ai-gateway-g8-test-host-identity-diagnostic.py --self-test
+python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_host_identity_diagnostic.py -v
+```
+
+007 必须完成精确 PR HEAD、适用 CI、独立代码安全、QA、产品验收和 merge commit；合并后授权清单只能进入 `PENDING_USER_APPROVAL`，用户再次明确批准前禁止运行本地检查或连接测试服务器。授权清单见 `docs/ai-gateway-g8-test-readonly-host-identity-diagnostic-authorization-20260812-007.md`。
 
 ## CI 变更范围分类器
 
