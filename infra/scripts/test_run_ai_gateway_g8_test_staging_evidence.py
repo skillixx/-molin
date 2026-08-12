@@ -107,7 +107,10 @@ class TestStagingEvidence(unittest.TestCase):
         self.assertIn(MODULE.FROZEN_RECONCILE_SHA256, program)
         self.assertIn("os.listdir(stage_descriptor)", program)
         self.assertIn("os.O_NOFOLLOW", program)
+        self.assertIn("dir_fd=root_descriptor", program)
         self.assertIn("dir_fd=stage_descriptor", program)
+        self.assertIn("pinned_root = os.fstat(root_descriptor)", program)
+        self.assertIn("current_root = os.lstat(deployment_root)", program)
         self.assertIn("os.lstat", program)
         self.assertIn("hashlib.sha256", program)
         self.assertIn("open(path, 'rb')", program)
@@ -206,6 +209,26 @@ class TestStagingEvidence(unittest.TestCase):
             result = values(mismatch.stdout)
             self.assertEqual(result["STAGING_INTEGRITY"], "MISMATCH")
             self.assertEqual(result["STAGING_MISMATCH_REASON"], "FILE_CONTENT")
+
+            # 在部署根完成校验后替换其路径，必须由结束前的 inode 复核失败关闭。
+            replaced_root = Path(temporary) / "molin-replaced"
+            raced_program = program.replace(
+                "staging_state = 'ABSENT'",
+                "os.rename(deployment_root, "
+                + repr(str(replaced_root))
+                + ")\n    os.mkdir(deployment_root, 0o700)\n    staging_state = 'ABSENT'",
+                1,
+            )
+            raced = subprocess.run(
+                [sys.executable, "-I", "-"],
+                input=raced_program,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+            self.assertEqual(raced.returncode, 41)
+            self.assertEqual(raced.stdout, "")
 
     def test_remote_evidence_invokes_fixed_ssh_exactly_once(self) -> None:
         """正式入口只能通过固定参数发起一次 SSH，且远端程序只经 stdin 传递。"""

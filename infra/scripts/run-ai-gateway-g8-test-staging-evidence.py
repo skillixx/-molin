@@ -103,86 +103,116 @@ if digest('/etc/machine-id') != target_machine_id_sha256:
     reject()
 
 root_meta = os.lstat(deployment_root)
-root_mode = stat.S_IMODE(root_meta.st_mode)
-if (
-    os.path.realpath(deployment_root) != deployment_root
-    or not stat.S_ISDIR(root_meta.st_mode)
-    or root_meta.st_uid != account.pw_uid
-    or root_meta.st_gid != group.gr_gid
-    or root_mode & 0o700 != 0o700
-    or root_mode & 0o022
-):
+if os.path.realpath(deployment_root) != deployment_root:
     reject()
+root_descriptor = os.open(
+    deployment_root,
+    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+)
+try:
+    # 固定部署根 inode，后续所有暂存读取都相对此描述符执行，避免父路径被替换后跨目录取证。
+    pinned_root = os.fstat(root_descriptor)
+    root_mode = stat.S_IMODE(pinned_root.st_mode)
+    if (
+        (pinned_root.st_dev, pinned_root.st_ino) != (root_meta.st_dev, root_meta.st_ino)
+        or not stat.S_ISDIR(pinned_root.st_mode)
+        or pinned_root.st_uid != account.pw_uid
+        or pinned_root.st_gid != group.gr_gid
+        or root_mode & 0o700 != 0o700
+        or root_mode & 0o022
+        or os.path.dirname(staging_path) != deployment_root
+    ):
+        reject()
 
-staging_state = 'ABSENT'
-staging_integrity = 'NOT_APPLICABLE'
-staging_mismatch_reason = 'NONE'
-if os.path.lexists(staging_path):
-    staging_state = 'PRESENT'
-    staging_integrity = 'MISMATCH'
-    staging_mismatch_reason = 'PATH'
+    staging_name = os.path.basename(staging_path)
+    staging_state = 'ABSENT'
+    staging_integrity = 'NOT_APPLICABLE'
+    staging_mismatch_reason = 'NONE'
     try:
-        stage_meta = os.lstat(staging_path)
-        if (
-            os.path.realpath(staging_path) == staging_path
-            and stat.S_ISDIR(stage_meta.st_mode)
-            and stage_meta.st_uid == account.pw_uid
-            and stage_meta.st_gid == group.gr_gid
-            and stat.S_IMODE(stage_meta.st_mode) == 0o700
-        ):
-            stage_descriptor = os.open(
-                staging_path,
-                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
-            )
-            try:
-                pinned_stage = os.fstat(stage_descriptor)
-                if (pinned_stage.st_dev, pinned_stage.st_ino) != (stage_meta.st_dev, stage_meta.st_ino):
-                    staging_mismatch_reason = 'PATH'
-                else:
-                    staging_mismatch_reason = 'FILE_SET'
-                    names = os.listdir(stage_descriptor)
-                    if set(names) == set(expected_files) and len(names) == len(expected_files):
-                        staging_mismatch_reason = 'FILE_METADATA'
-                        metadata_matches = True
-                        content_matches = True
-                        for name in names:
-                            file_descriptor = os.open(
-                                name,
-                                os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
-                                dir_fd=stage_descriptor,
-                            )
-                            try:
-                                metadata = os.fstat(file_descriptor)
-                                expected_sha256, expected_size = expected_files[name]
-                                if (
-                                    not stat.S_ISREG(metadata.st_mode)
-                                    or metadata.st_uid != account.pw_uid
-                                    or metadata.st_gid != group.gr_gid
-                                    or stat.S_IMODE(metadata.st_mode) & 0o022
-                                    or metadata.st_size != expected_size
-                                ):
-                                    metadata_matches = False
-                                    break
-                                with os.fdopen(file_descriptor, 'rb', closefd=False) as handle:
-                                    if digest_handle(handle) != expected_sha256:
-                                        content_matches = False
-                            finally:
-                                os.close(file_descriptor)
-                        current_stage = os.lstat(staging_path)
-                        if (current_stage.st_dev, current_stage.st_ino) != (
-                            pinned_stage.st_dev,
-                            pinned_stage.st_ino,
-                        ):
-                            staging_mismatch_reason = 'PATH'
-                        elif metadata_matches:
-                            staging_mismatch_reason = 'FILE_CONTENT'
-                            if content_matches:
-                                staging_integrity = 'PASS'
-                                staging_mismatch_reason = 'NONE'
-            finally:
-                os.close(stage_descriptor)
+        stage_meta = os.stat(staging_name, dir_fd=root_descriptor, follow_symlinks=False)
+    except FileNotFoundError:
+        stage_meta = None
     except OSError:
-        staging_mismatch_reason = 'READ_ERROR'
+        reject()
+    if stage_meta is not None:
+        staging_state = 'PRESENT'
+        staging_integrity = 'MISMATCH'
+        staging_mismatch_reason = 'PATH'
+        try:
+            if (
+                stat.S_ISDIR(stage_meta.st_mode)
+                and stage_meta.st_uid == account.pw_uid
+                and stage_meta.st_gid == group.gr_gid
+                and stat.S_IMODE(stage_meta.st_mode) == 0o700
+            ):
+                stage_descriptor = os.open(
+                    staging_name,
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                    dir_fd=root_descriptor,
+                )
+                try:
+                    pinned_stage = os.fstat(stage_descriptor)
+                    if (pinned_stage.st_dev, pinned_stage.st_ino) != (stage_meta.st_dev, stage_meta.st_ino):
+                        staging_mismatch_reason = 'PATH'
+                    else:
+                        staging_mismatch_reason = 'FILE_SET'
+                        names = os.listdir(stage_descriptor)
+                        if set(names) == set(expected_files) and len(names) == len(expected_files):
+                            staging_mismatch_reason = 'FILE_METADATA'
+                            metadata_matches = True
+                            content_matches = True
+                            for name in names:
+                                file_descriptor = os.open(
+                                    name,
+                                    os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+                                    dir_fd=stage_descriptor,
+                                )
+                                try:
+                                    metadata = os.fstat(file_descriptor)
+                                    expected_sha256, expected_size = expected_files[name]
+                                    if (
+                                        not stat.S_ISREG(metadata.st_mode)
+                                        or metadata.st_uid != account.pw_uid
+                                        or metadata.st_gid != group.gr_gid
+                                        or stat.S_IMODE(metadata.st_mode) & 0o022
+                                        or metadata.st_size != expected_size
+                                    ):
+                                        metadata_matches = False
+                                        break
+                                    with os.fdopen(file_descriptor, 'rb', closefd=False) as handle:
+                                        if digest_handle(handle) != expected_sha256:
+                                            content_matches = False
+                                finally:
+                                    os.close(file_descriptor)
+                            current_stage = os.stat(
+                                staging_name,
+                                dir_fd=root_descriptor,
+                                follow_symlinks=False,
+                            )
+                            if (current_stage.st_dev, current_stage.st_ino) != (
+                                pinned_stage.st_dev,
+                                pinned_stage.st_ino,
+                            ):
+                                staging_mismatch_reason = 'PATH'
+                            elif metadata_matches:
+                                staging_mismatch_reason = 'FILE_CONTENT'
+                                if content_matches:
+                                    staging_integrity = 'PASS'
+                                    staging_mismatch_reason = 'NONE'
+                finally:
+                    os.close(stage_descriptor)
+        except OSError:
+            staging_mismatch_reason = 'READ_ERROR'
+
+    # 输出任何 PASS 前再次把绝对路径与固定 inode 对齐，父路径漂移必须失败关闭。
+    current_root = os.lstat(deployment_root)
+    if (
+        os.path.realpath(deployment_root) != deployment_root
+        or (current_root.st_dev, current_root.st_ino) != (pinned_root.st_dev, pinned_root.st_ino)
+    ):
+        reject()
+finally:
+    os.close(root_descriptor)
 
 print('EVIDENCE_CHANGE_ID=' + evidence_change_id)
 print('TARGET_CHANGE_ID=' + target_change_id)
