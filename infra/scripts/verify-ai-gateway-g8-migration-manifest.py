@@ -177,7 +177,11 @@ def manifest_sha256(manifest: dict[str, Any]) -> str:
 
 def require_absolute_normalized_path(value: Any, field: str) -> str:
     """只接受无控制字符、反斜杠和路径穿越片段的规范 POSIX 绝对路径。"""
-    path = require_text(value, field)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{field} 必须为非空字符串")
+    if value != value.strip():
+        raise ValueError(f"{field} 不得包含首尾空白或控制字符")
+    path = value
     if any(unicodedata.category(character) in {"Cc", "Cf"} for character in path):
         raise ValueError(f"{field} 不得包含控制或格式字符")
     if path == "/" or "\\" in path or not path.startswith("/") or "//" in path:
