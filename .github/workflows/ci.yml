@@ -366,6 +366,8 @@ jobs:
           python -m unittest infra/scripts/test_verify_ai_gateway_g8_migration_manifest.py
           python -m unittest infra/scripts/test_audit_ai_gateway_g8_test_server_readonly.py
           python -m py_compile infra/scripts/verify-ai-gateway-g8-migration-manifest.py infra/scripts/test_verify_ai_gateway_g8_migration_manifest.py infra/scripts/test_audit_ai_gateway_g8_test_server_readonly.py
+          command -v visudo >/dev/null
+          sudo visudo -cf infra/sudoers/molin-g8-test-readonly-audit
           set +e
           python infra/scripts/verify-ai-gateway-g8-migration-manifest.py \
             --manifest infra/ai-gateway-g8-migration-manifest.example.json >/tmp/g8-manifest-example.log 2>&1

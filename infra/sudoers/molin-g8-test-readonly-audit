@@ -1,0 +1,4 @@
+# 仅允许 pc 以 root 身份运行固定路径的 G8 测试服只读审计器；脚本自身拒绝非 ChangeId 参数并校验 root 所有权。
+Defaults!/usr/local/libexec/molin/g8-test-readonly-audit env_reset
+Defaults!/usr/local/libexec/molin/g8-test-readonly-audit secure_path=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+pc ALL=(root) NOPASSWD: /usr/local/libexec/molin/g8-test-readonly-audit

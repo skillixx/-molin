@@ -1038,7 +1038,7 @@ python infra/scripts/verify-ai-gateway-g8-migration-manifest.py `
 
 ### G8 测试服务器只读基线脚本
 
-`infra/scripts/audit-ai-gateway-g8-test-server-readonly.sh` 通过单次 SSH 标准输入运行，仅输出主机、制品、文件权限、环境键名、容器健康、表规模、监控、备份和凭据轮换分类。脚本不含目标凭据，不执行上传、服务信号、DDL/DML、队列消费或业务请求；Docker 只读访问不可用时对应结果保持 `UNAVAILABLE`。
+`infra/scripts/audit-ai-gateway-g8-test-server-readonly.sh` 仅输出主机、制品、文件权限、环境键名、容器健康、表规模、监控、备份和凭据轮换分类。脚本不含目标凭据，不执行服务信号、DDL/DML、队列消费或业务请求；Docker 只读访问不可用时对应结果保持 `UNAVAILABLE`。
 
 ```powershell
 # 连接前先执行本地语法、自检和只读静态门禁。
@@ -1047,3 +1047,5 @@ python infra/scripts/verify-ai-gateway-g8-migration-manifest.py `
 ```
 
 实际 SSH 必须绑定唯一 ChangeId、固定 known_hosts、`BatchMode=yes`、精确目标和零重试。历史凭据比较值只以内存中的 SHA-256 注入，不写入脚本、命令输出或 Git。每个 ChangeId 只允许一次连接；失败后必须生成新候选，不能重放。
+
+测试账号缺少 Docker 读取权限时，不得将账号直接加入 Docker 组。候选最小权限方案使用 root-owned 固定审计器、root-owned 对账二进制和单命令 sudoers；审计器拒绝非规范 ChangeId、非固定安装路径及错误所有权。安装、sudoers 修改和再次远端核验必须分别取得独立授权，详见 `docs/ai-gateway-g8-test-readonly-access-runbook.md`。
