@@ -20,6 +20,7 @@ from pathlib import Path
 
 CHANGE_ID = "CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-006"
 TARGET_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-20260812-003"
+CHANGE_ID_CONSUMED = True
 HELPER_SHA256 = "599e6bbb800531d02b22cf9534636ebf8232002fafb8236d294f9d2dba2e3c89"
 MAX_CAPTURE_BYTES = 64 * 1024
 BLOCKED_KEYS = {
@@ -335,15 +336,19 @@ def main() -> int:
     except RuntimeError:
         print("G8_TEST_READONLY_STAGING_EVIDENCE_V2=FAILED reason=invalid_request")
         return 2
-    try:
-        helper = load_frozen_helper()
-        remote_program = build_remote_program(helper)
-    except Exception:
-        print("G8_TEST_READONLY_STAGING_EVIDENCE_V2=FAILED reason=invalid_program")
-        return 2
     if arguments.self_test:
+        try:
+            helper = load_frozen_helper()
+            build_remote_program(helper)
+        except Exception:
+            print("G8_TEST_READONLY_STAGING_EVIDENCE_V2=FAILED reason=invalid_program")
+            return 2
         print("G8_TEST_READONLY_STAGING_EVIDENCE_V2_SELF_TEST=PASS")
         return 0
+    # 006 已完成唯一一次正式调用；消费门禁必须先于身份文件和网络访问，禁止重放。
+    if CHANGE_ID_CONSUMED:
+        print("G8_TEST_READONLY_STAGING_EVIDENCE_V2=FAILED reason=change_id_consumed")
+        return 2
     if (
         arguments.change_id != CHANGE_ID
         or not arguments.known_hosts
@@ -351,6 +356,12 @@ def main() -> int:
         or not arguments.identity_public_file
     ):
         print("G8_TEST_READONLY_STAGING_EVIDENCE_V2=FAILED reason=invalid_request")
+        return 2
+    try:
+        helper = load_frozen_helper()
+        remote_program = build_remote_program(helper)
+    except Exception:
+        print("G8_TEST_READONLY_STAGING_EVIDENCE_V2=FAILED reason=invalid_program")
         return 2
     known_hosts = Path(arguments.known_hosts)
     identity_file = Path(arguments.identity_file)
