@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "stage": "test_candidate",
+  "change_id": "CHG-G8-TEST-YYYYMMDD-001",
+  "source": {
+    "environment": "test",
+    "host_alias": "PENDING",
+    "deployment_kind": "PENDING",
+    "deployment_root": "PENDING",
+    "database_alias": "PENDING"
+  },
+  "target": {
+    "environment": "production",
+    "host_alias": "PENDING",
+    "deployment_kind": "PENDING",
+    "deployment_root": "PENDING",
+    "database_alias": "PENDING",
+    "domain": "PENDING"
+  },
+  "release": {
+    "source_commit": "PENDING",
+    "api_artifact_sha256": "PENDING",
+    "config_sha256": "PENDING",
+    "bifrost_image_digest": "PENDING",
+    "migration_version": 66,
+    "migration_dirty": false
+  },
+  "scope": {
+    "text_models_only": true,
+    "excluded_capabilities": [
+      "image",
+      "audio",
+      "video",
+      "multimodal_async",
+      "object_storage_lifecycle",
+      "gpu",
+      "agent",
+      "skills",
+      "public_self_service_payment"
+    ]
+  },
+  "traffic": {
+    "application_gate_enabled": false,
+    "edge_gate_open": false,
+    "real_customer_count": 0
+  },
+  "authorization": {
+    "production_readonly": false,
+    "production_deploy": false,
+    "paid_upstream": false,
+    "customer_gray": false,
+    "alert_notification": false,
+    "max_requests": 0,
+    "max_cost_cny": "0"
+  },
+  "chain": {
+    "previous_stage": "none",
+    "previous_manifest_sha256": "NONE",
+    "approval_receipt_sha256": "NONE",
+    "credential_rotation_receipt_sha256": "NONE"
+  },
+  "models": {
+    "approved_model_count": 0,
+    "approved_upstream_count": 0,
+    "pricing_approved": false,
+    "minimum_margin_rate": "0.15"
+  },
+  "evidence": {
+    "backup_readable": false,
+    "rollback_rehearsed": true,
+    "reconciliation_zero": true,
+    "alerts_local_only": true,
+    "credentials_separated": false,
+    "test_credentials_rotated": false
+  }
+}
