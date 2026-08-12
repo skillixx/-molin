@@ -16,6 +16,22 @@
 
 审计器在特权模式下会验证自身真实路径和 `root:root:755`，否则以退出码 42 失败关闭。对账器只有满足同样的 root 所有权和权限才会运行；它只从环境文件读取 `MYSQL_PASSWORD`，并要求 `MYSQL_USER/MYSQL_DATABASE` 精确为 `molin`，实际连接固定到 `127.0.0.1:13306/molin`，防止用户可修改环境文件诱导特权进程向外部地址发送凭据。子进程仅接收上述固定 MySQL 配置以及 `APP_ENV=test`、`AI_GATEWAY_RECONCILE_READ_ONLY=YES`。
 
+### 2.1 本地候选包
+
+`infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py` 可从冻结提交 `c50f092339fcad79ca1262925480219db1755318` 生成全新本地目录。生成器必须由 `python -I` 启动，并在导入可替换模块前拒绝非隔离解释器；同时锁定唯一 ChangeId、源码树、审计器、sudoers、对账器摘要和对账器大小，任一来源或制品漂移均失败关闭，不能使用同一审批替换资产。它通过 `git archive` 固定源码，使用 Go 1.26.5 以及 `GOENV=off`、`GOWORK=off`、`GOTOOLCHAIN=local`、`GOOS=linux`、`GOARCH=amd64`、`CGO_ENABLED=0` 和 `-trimpath -buildvcs=false` 连续构建两次；输出仅包含审计器、sudoers 候选、对账器、低敏清单和 `SHA256SUMS`。失败时只清理本次创建的全新输出目录。
+
+```bash
+# 输出目录必须是当前平台的绝对路径且不得已存在。
+python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py \
+  --change-id=CHG-G8-TEST-READONLY-ACCESS-20260812-001 \
+  --source-commit=c50f092339fcad79ca1262925480219db1755318 \
+  --output-dir=/absolute/new/g8-test-readonly-access-bundle
+
+(cd /absolute/new/g8-test-readonly-access-bundle && sha256sum -c SHA256SUMS)
+```
+
+生成器不连接测试服务器，也不包含 SSH、SCP、sudo、安装、Docker 或服务控制命令；本地 Go 构建仍可能按标准模块配置读取依赖缓存或下载缺失依赖。生成 PASS 只证明本地候选包与冻结来源及摘要一致，不代表已上传、已安装或测试服运行态通过；上传与安装仍必须使用本 Runbook 第 3 节的独立授权。
+
 ## 3. 待批准安装变更
 
 候选 ChangeId：`CHG-G8-TEST-READONLY-ACCESS-20260812-001`。
@@ -42,7 +58,7 @@
 
 ### 3.2 命令摘要
 
-1. 在本地从源码提交 `c50f092339fcad79ca1262925480219db1755318` 按上述参数重新构建 Linux amd64 只读对账器，并要求三份资产 SHA-256 与冻结值精确一致。
+1. 在本地从源码提交 `c50f092339fcad79ca1262925480219db1755318` 按上述参数重新构建 Linux amd64 只读对账器，或使用第 2.1 节生成器生成候选包；无论采用哪种方式，均要求三份资产 SHA-256 与冻结值精确一致。
 2. 通过单次 SCP 将两个资产和 sudoers 文件上传到 `/home/pc/molin/.g8-staging/CHG-G8-TEST-READONLY-ACCESS-20260812-001/`；不覆盖运行文件。
 3. 管理员通过 `<ADMIN_CHANNEL>` 逐项复核暂存文件 SHA-256、sudoers 内容和目标身份。
 4. 使用 `install -d -o root -g root -m 0755 /usr/local/libexec/molin` 创建固定目录。
