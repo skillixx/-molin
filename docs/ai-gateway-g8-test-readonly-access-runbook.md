@@ -120,15 +120,17 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 ### 3.5 当前重新申请顺序
 
-001、002、003、004 均已消费。004 唯一正式调用在 `remote_evidence_failed` 后停止，未关闭暂存 UNKNOWN。继续必须使用新的 ChangeId，并依次完成：
+001、002、003、004、005 均已消费。005 已确认固定 SSH 与远端隔离 Python 标记可用，但没有读取暂存目录，仍未关闭暂存 UNKNOWN。继续必须使用新的 ChangeId，并依次完成：
 
-1. 准备新的低敏传输诊断候选，只用一次固定 SSH 区分返回码、stderr 存在性和固定 stdout 契约，不读取暂存文件、日志或业务数据。
-2. 新候选完成测试、独立评审、QA、产品验收和精确 PR HEAD CI，并按 merge commit 合并后，提交绑定最终提交与脚本摘要的独立只读授权清单，等待用户批准。
+1. 准备 006 暂存只读取证候选，冻结 004 的竞态安全读取算法，并用六类固定门禁与 `ABSENT`、`PRESENT/PASS`、`PRESENT/MISMATCH` 三态关闭暂存 `UNKNOWN`。
+2. 006 完成测试、独立评审、QA、产品验收和精确 PR HEAD CI，并按 merge commit 合并后，提交绑定最终提交与脚本摘要的独立只读授权清单，等待用户批准。
 3. 若取证确认暂存路径存在，另行提交精确清理授权；只允许删除经真实路径、属主、权限、文件白名单和摘要共同绑定的 003 暂存目录，不得把清理并入只读取证授权。
 4. 只有暂存 `UNKNOWN` 关闭后，才可使用另一个新 ChangeId 重新冻结安装候选、制品回执和授权；不得复用 001、002、003 的候选、回执或授权。
 5. 安装后的真实运行态审计仍使用另一个独立 ChangeId，后续安装授权不得顺带执行。
 
-当前候选 ChangeId 为 `CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005`，授权清单见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`。候选已通过 PR #343、精确 HEAD `80d6114ad097ba4c7760b8f58221ac3d5ce0e5a8`、CI run `31603091477` 12/12、独立代码安全/QA/产品 P0/P1/P2=0，并以 merge commit `932265f3d770b5c30973fab611404d70f4273e34` 合入主干；当前仅为 `PENDING_USER_APPROVAL`，尚未再次连接测试服，禁止在用户独立明确批准前执行。
+`CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005` 已完成唯一一次本地检查和正式只读 SSH，结果为 `ZERO / EXACT / stderr EMPTY / diagnostic PASS`，证明传输链路可用但未关闭暂存 UNKNOWN；005 已消费并禁止重放。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`、`docs/ai-gateway-g8-test-readonly-transport-diagnostic-attempt-20260812-005.md`。下一次暂存只读取证必须使用新的 ChangeId，重新完成代码安全、QA、产品、精确 HEAD CI、merge commit 与用户独立授权。
+
+当前正在准备 `CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-006`。006 冻结 004 helper 摘要并原样保留其 inode、fd、最终目录项、文件集与目录时间竞态校验，只把早期拒绝拆分为 `IDENTITY`、`MACHINE_ID`、`DEPLOYMENT_ROOT_PATH`、`DEPLOYMENT_ROOT_METADATA`、`STAGING_LOOKUP`、`DEPLOYMENT_ROOT_DRIFT` 六类固定低敏枚举。授权清单见 `docs/ai-gateway-g8-test-readonly-staging-evidence-authorization-20260812-006.md`；在工程门禁与用户独立授权前禁止连接测试服。
 
 ## 4. 安装后的独立只读核验
 

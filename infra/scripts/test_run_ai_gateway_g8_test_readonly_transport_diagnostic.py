@@ -145,9 +145,9 @@ class TestTransportDiagnostic(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.DiagnosticError, "ssh_configuration_failed"):
             MODULE.run_transport_diagnostic(helper, Path("/fixed/known_hosts"), Path("/fixed/key"))
 
-    def test_invalid_change_rejects_before_helper_or_network(self) -> None:
-        """未知 ChangeId 必须在加载身份辅助模块和联网前失败。"""
-        arguments = [str(SCRIPT_PATH), "--change-id", "INVALID", "--known-hosts", "missing", "--identity-file", "missing", "--identity-public-file", "missing"]
+    def test_consumed_change_rejects_before_helper_or_network(self) -> None:
+        """已消费 ChangeId 必须在读取身份文件和联网前失败关闭。"""
+        arguments = [str(SCRIPT_PATH), "--change-id", MODULE.CHANGE_ID, "--known-hosts", "missing", "--identity-file", "missing", "--identity-public-file", "missing"]
         with (
             mock.patch.object(sys, "argv", arguments),
             mock.patch.object(MODULE, "load_staging_helper") as helper,
@@ -157,7 +157,7 @@ class TestTransportDiagnostic(unittest.TestCase):
             self.assertEqual(MODULE.main(), 2)
         helper.assert_not_called()
         remote.assert_not_called()
-        output.assert_called_once_with("G8_TEST_READONLY_TRANSPORT_DIAG=FAILED reason=invalid_request")
+        output.assert_called_once_with("G8_TEST_READONLY_TRANSPORT_DIAG=FAILED reason=change_id_consumed")
 
     def test_cli_local_check_and_formal_output(self) -> None:
         """本地检查不联网；正式模式只输出低敏固定字段。"""
@@ -169,6 +169,7 @@ class TestTransportDiagnostic(unittest.TestCase):
         )
         with (
             mock.patch.object(sys, "argv", arguments + ["--local-check"]),
+            mock.patch.object(MODULE, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(MODULE, "load_staging_helper", return_value=helper),
             mock.patch.object(MODULE, "run_transport_diagnostic") as remote,
             mock.patch("builtins.print") as output,
@@ -180,6 +181,7 @@ class TestTransportDiagnostic(unittest.TestCase):
         evidence = MODULE.classify_result(subprocess.CompletedProcess([], 0, MODULE.REMOTE_MARKER, b"notice\n"))
         with (
             mock.patch.object(sys, "argv", arguments),
+            mock.patch.object(MODULE, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(MODULE, "load_staging_helper", return_value=helper),
             mock.patch.object(MODULE, "run_transport_diagnostic", return_value=evidence) as remote,
             mock.patch("builtins.print") as output,
