@@ -2,10 +2,11 @@
 """离线校验 G8 测试到生产迁移清单，不连接服务器或读取 Secret。"""
 
 import argparse
+import hashlib
 import json
 import re
 from decimal import Decimal, InvalidOperation
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
@@ -169,10 +170,21 @@ def require_sha_or_none(value: Any, field: str, allow_none: bool) -> str:
 
 def manifest_sha256(manifest: dict[str, Any]) -> str:
     """以稳定 JSON 编码计算清单回执摘要，不读取或输出任何 Secret。"""
-    import hashlib
-
     canonical = json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def require_absolute_normalized_path(value: Any, field: str) -> str:
+    """只接受无控制字符、反斜杠和路径穿越片段的规范 POSIX 绝对路径。"""
+    path = require_text(value, field)
+    if any(ord(character) < 32 or ord(character) == 127 for character in path):
+        raise ValueError(f"{field} 不得包含控制字符")
+    if "\\" in path or not path.startswith("/") or "//" in path:
+        raise ValueError(f"{field} 必须为规范 POSIX 绝对路径")
+    parts = PurePosixPath(path).parts
+    if any(part in {".", ".."} for part in path.split("/")) or str(PurePosixPath(path)) != path:
+        raise ValueError(f"{field} 不得包含路径穿越或非规范片段")
+    return path
 
 
 def validate_common(manifest: dict[str, Any]) -> None:
@@ -205,8 +217,7 @@ def validate_common(manifest: dict[str, Any]) -> None:
             raise ValueError("target.host_alias 格式不合法")
         if target["deployment_kind"] not in DEPLOYMENT_KINDS:
             raise ValueError("target.deployment_kind 不在允许范围")
-        if not target["deployment_root"].startswith("/"):
-            raise ValueError("target.deployment_root 必须为绝对路径")
+        require_absolute_normalized_path(target["deployment_root"], "target.deployment_root")
         if not ALIAS_PATTERN.fullmatch(target["database_alias"]):
             raise ValueError("target.database_alias 格式不合法")
         if not DOMAIN_PATTERN.fullmatch(target["domain"]):
@@ -377,11 +388,17 @@ def validate_chain(manifests: list[dict[str, Any]]) -> None:
     if actual_stages != expected_stages:
         raise ValueError("必须从 test_candidate 开始按顺序提供完整清单链")
     change_ids: set[str] = set()
+    approval_receipts: set[str] = set()
     for index, manifest in enumerate(manifests):
         validate_manifest(manifest)
         if manifest["change_id"] in change_ids:
             raise ValueError("清单链 ChangeId 不得重复")
         change_ids.add(manifest["change_id"])
+        if index > 0:
+            approval_receipt = manifest["chain"]["approval_receipt_sha256"]
+            if approval_receipt in approval_receipts:
+                raise ValueError("每个生产阶段必须使用独立审批回执")
+            approval_receipts.add(approval_receipt)
         if index == 0:
             continue
         previous = manifests[index - 1]
@@ -389,6 +406,8 @@ def validate_chain(manifests: list[dict[str, Any]]) -> None:
             raise ValueError("前序清单摘要不匹配")
         if manifest["release"] != previous["release"]:
             raise ValueError("同一迁移链的发布制品必须保持一致")
+        if manifest["source"] != previous["source"]:
+            raise ValueError("同一迁移链的测试源身份必须保持一致")
         if index >= 2 and manifest["target"] != previous["target"]:
             raise ValueError("生产目标在只读确认后不得漂移")
 

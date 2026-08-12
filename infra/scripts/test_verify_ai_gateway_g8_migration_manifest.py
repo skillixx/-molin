@@ -252,6 +252,30 @@ class MigrationManifestTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "前序清单摘要不匹配"):
             self.module.validate_chain(manifests)
 
+    def test_rejects_reused_approval_receipt_across_production_stages(self) -> None:
+        manifests = valid_manifest_chain(self.module, "production_gray")
+        reused_receipt = manifests[1]["chain"]["approval_receipt_sha256"]
+        for index in (2, 3):
+            manifests[index]["chain"]["approval_receipt_sha256"] = reused_receipt
+            manifests[index]["chain"]["previous_manifest_sha256"] = self.module.manifest_sha256(
+                manifests[index - 1]
+            )
+        with self.assertRaisesRegex(ValueError, "独立审批回执"):
+            self.module.validate_chain(manifests)
+
+    def test_rejects_release_target_and_source_drift(self) -> None:
+        mutations = (
+            ("发布制品", lambda chain: chain[2]["release"].update({"migration_version": 65})),
+            ("生产目标", lambda chain: chain[2]["target"].update({"domain": "api2.example.invalid"})),
+            ("测试源身份", lambda chain: chain[2]["source"].update({"host_alias": "other-test"})),
+        )
+        for expected_error, mutate in mutations:
+            with self.subTest(expected_error=expected_error):
+                manifests = valid_manifest_chain(self.module, "production_closed_deploy")
+                mutate(manifests)
+                with self.assertRaisesRegex(ValueError, expected_error):
+                    self.module.validate_chain(manifests)
+
     def test_rejects_invalid_production_target_and_margin_one(self) -> None:
         manifests = valid_manifest_chain(self.module, "production_gray")
         manifests[-1]["target"]["domain"] = "not a domain"
@@ -261,6 +285,14 @@ class MigrationManifestTest(unittest.TestCase):
         manifests[-1]["models"]["minimum_margin_rate"] = "1"
         with self.assertRaisesRegex(ValueError, "1（不含）"):
             self.module.validate_chain(manifests)
+
+    def test_rejects_non_normalized_production_deployment_path(self) -> None:
+        for path in ("/srv/../etc", "/srv//molin", "/srv/molin\nnext", "C:\\molin"):
+            with self.subTest(path=path):
+                manifests = valid_manifest_chain(self.module, "production_readonly")
+                manifests[-1]["target"]["deployment_root"] = path
+                with self.assertRaisesRegex(ValueError, "target.deployment_root"):
+                    self.module.validate_chain(manifests)
 
     def test_cli_summary_never_contains_manifest_values(self) -> None:
         summary = self.module.success_summary(valid_manifest())
