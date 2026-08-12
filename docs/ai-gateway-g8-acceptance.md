@@ -50,6 +50,7 @@
 - 最小只读入口 PR `#331` 已按 merge commit 合并为 `c50f092339fcad79ca1262925480219db1755318`，精确功能 HEAD `f45be6f99c5d363caf166dba1ad2d172ad4646a8` 的 CI run `31563417231` 为 9/9 SUCCESS；独立 Standards、Spec 与 QA 均为 P0/P1/P2=0。上述事实只证明仓库资产和 CI，通过并不代表测试服已安装入口或补齐运行态证据。
 - 本地候选包生成器及 CI 门禁已通过 PR `#333` 合并：精确 HEAD `c0479f607c9dbd5713c9fbbde7b3fb83ac2a3adc` 锁定唯一 ChangeId、冻结提交、源码树、Go 1.26.5、三项制品摘要和对账器大小，并在隔离环境连续构建两次；CI run `31566629193` 为 9/9 SUCCESS，独立代码安全、QA 和产品/规格签署均为 P0/P1/P2=0，merge commit 为 `69439c4c9b14c67bf8a17dd8822d80ecdc784a27`，远端功能分支已删除。CI 生成的低敏 `SHA256SUMS` 回执为 `14b7d8cd832f0b719031fcc93adbbb2208afe76d34383e63d51c44b044772b5a`。上述证据不代表已经上传、安装或重新核验测试服，运行态 P1=3 和 UNKNOWN 仍未关闭。
 - 用户批准 `CHG-G8-TEST-READONLY-ACCESS-20260812-001` 后，2026-08-12 只执行了一次固定 known_hosts 与 `sudo -n -l` 前置检查。主机 ED25519 指纹匹配，但 sudo 明确要求密码，触发“权限不符合立即停止”；未执行后续身份读取、候选包生成、上传、安装或 sudoers 修改，候选资产、配置、服务、数据库、队列和业务数据写入以及业务请求、上游请求和费用均为 0。SSH/sudo 可能产生系统访问审计日志，本次未读取。该 ChangeId 已消费，继续安装须使用新的 ChangeId 和独立受控 root 管理通道。证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260812.md`。
+- 用户已批准仅准备 `CHG-G8-TEST-READONLY-ACCESS-20260812-002` 本地候选，并指定阿里云控制台 root 通道；本轮禁止连接测试服务器。候选绑定来源提交 `50b3e2f9d18b38e7d4a91ebeb4f03c413ef33c44`、来源树 `73fb652a1f86db84991c8745f8c10e1d2a255f29`、部署根目录 `/home/pc/molin`、审计器/对账器/sudoers 摘要和 Go 1.26.5 双构建，本地五文件白名单及 `SHA256SUMS` 回执 `d6d07f7b4959e48f5ffe0e92ee4116cef55fe56f5318df6ae3f0d9c5350ee567` 已通过。两份中间候选已标记废弃并禁止上传；最终实现同时保持 001 历史复现清单语义不漂移。该事实仅为本地候选证据；PR 精确 HEAD CI、独立验收和安装授权仍待完成，未上传、未安装、未修改 sudoers，测试服 P1 与 UNKNOWN 均未关闭。
 
 ## 3. 商业验收
 

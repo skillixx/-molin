@@ -1050,14 +1050,16 @@ python infra/scripts/verify-ai-gateway-g8-migration-manifest.py `
 
 测试账号缺少 Docker 读取权限时，不得将账号直接加入 Docker 组。候选最小权限方案使用 root-owned 固定审计器、root-owned 对账二进制和单命令 sudoers；审计器拒绝非规范 ChangeId、非固定安装路径及错误所有权。安装、sudoers 修改和再次远端核验必须分别取得独立授权，详见 `docs/ai-gateway-g8-test-readonly-access-runbook.md`。
 
-### G8 测试服务器只读入口历史候选验证器
+### G8 测试服务器只读入口候选生成器
 
-`infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py` 当前只保留已消费 001 候选的可复现验证能力，不连接服务器。普通 `--change-id/--output-dir` 调用固定失败，禁止再次生成可留存安装包；`--verify-consumed-candidate` 只在系统临时目录连续构建两次、核对冻结源码树、三项制品摘要和对账器大小，完成后自动销毁整个临时目录。
+`infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py` 不连接服务器。普通生成入口当前只接受已批准准备的 `002`、冻结来源提交和全新绝对输出目录；001 普通生成继续失败关闭。`--verify-consumed-candidate` 仅用于在系统临时目录复现历史 001，完成后自动销毁整个临时目录，不产生可安装输出。
 
 ```powershell
 python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py --self-test
 python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py `
-  --verify-consumed-candidate
+  --change-id=CHG-G8-TEST-READONLY-ACCESS-20260812-002 `
+  --source-commit=50b3e2f9d18b38e7d4a91ebeb4f03c413ef33c44 `
+  --output-dir=D:\absolute\new\g8-test-readonly-access-bundle-002
 ```
 
-验证 PASS 只证明历史制品仍可复现，不产生可持久安装包，也不授权上传、安装、修改 sudoers 或执行远端审计。新的安装候选必须在新 ChangeId 获批后重新设计、评审和冻结。
+生成 PASS 只证明本地候选与冻结来源及摘要一致，不授权上传、安装、修改 sudoers 或执行远端审计。安装授权清单见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260812-002.md`，必须在精确 PR HEAD CI 和独立验收通过后由用户另行批准。

@@ -30,6 +30,7 @@ AI 网关 Phase 1：
 - G8 已达到 `G8_ENGINEERING_READY`：PR #327 最终 HEAD `f560345f893189e3d15feec299bbb4dafde87632` 的 CI run `31507153082` 9/9 通过，独立代码安全、QA 和产品/规格复评均为 P0/P1/P2=0；隔离真实后端旅程无 API Mock，三项账务差额与 Outbox 积压均为 0。PR 已按 merge commit 合并为 `71fce50f8bdab5078865154bb715e598cec32e0c`，远端功能分支已删除。本里程碑只代表 G8 工程就绪；未进行生产部署、真实付费上游、客户灰度或四周商业观察，不是 `G8_COMMERCIAL_ACCEPTED`，证据见 `docs/ai-gateway-g8-acceptance.md`。
 - G8 测试服最小只读入口候选包门禁已收口：PR #333 精确 HEAD `c0479f607c9dbd5713c9fbbde7b3fb83ac2a3adc` 的 CI run `31566629193` 为 9/9 SUCCESS，独立代码安全、QA、产品/规格均为 P0/P1/P2=0，并按 merge commit 合并为 `69439c4c9b14c67bf8a17dd8822d80ecdc784a27`。该结论只证明仓库候选包可复现且失败关闭；测试服尚未上传或安装只读入口，现有 API 停止、运行态 P1=3 及 schema/Bifrost/监控/账务 UNKNOWN 仍未关闭。
 - 测试服只读入口首次安装授权已安全停止：`CHG-G8-TEST-READONLY-ACCESS-20260812-001` 的固定 known_hosts 指纹通过，但首个 `sudo -n -l` 返回需要密码；因此没有上传、安装、sudoers 修改或候选资产、配置、服务及业务数据写入，SSH/sudo 可能产生系统访问审计日志。该 ChangeId 已消费；继续需要新的 ChangeId 和独立受控 root 管理通道，详见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260812.md`。
+- `CHG-G8-TEST-READONLY-ACCESS-20260812-002` 当前仅获批准备本地候选：已绑定来源提交 `50b3e2f9`、来源树、三项制品摘要和 Go 1.26.5 双构建，本地五文件白名单与 `SHA256SUMS` 通过；尚未连接、上传或安装测试服，也未修改 sudoers。独立安装授权清单仍待候选 PR 精确 HEAD 的评审、QA、产品和 CI 全绿后由用户再次确认。
 
 > **第一阶段（Week 1-4：平台底座 + 应用售卖闭环）已于 2026-06-07 正式验收通过，并于 2026-06-08 完成最终收尾确认 ✅**
 > 端到端验收 16/16 核心用例、37/37 全部用例通过（通过率 100%）。
