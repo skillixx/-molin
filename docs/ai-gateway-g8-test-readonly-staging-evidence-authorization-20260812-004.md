@@ -1,6 +1,17 @@
 # AI 网关 G8 测试服 003 暂存状态只读取证授权清单（004）
 
-> 当前状态：`PENDING_ENGINEERING_GATES_AND_USER_APPROVAL`。本文件只是待评审候选，不构成连接测试服的授权。最终执行前必须补齐精确 PR HEAD、merge commit、CI run、独立代码安全/QA/产品结论和最终脚本 SHA-256，并由用户再次明确批准。
+> 当前状态：`PENDING_USER_APPROVAL`。仓库工程门禁已经完成，但本文件仍不构成连接测试服的授权；必须由用户再次明确批准后，才能执行一次只读 SSH。
+
+## 0. 工程门禁证据
+
+- PR：[#341](https://github.com/skillixx/-molin/pull/341)，最终 HEAD `1ec35a66e1833082da5b3b406610d8d6c6c46f67`。
+- merge commit：`7e27e88b1c4b63630a0be346e41226c449d033e4`，使用 merge commit 合并，远端功能分支已删除。
+- CI：run `31597619593`，`completed/success`，12/12 门禁成功，必选门禁汇总成功。
+- 独立代码与安全评审：P0=0、P1=0、P2=0。
+- 独立 QA：P0=0、P1=0、P2=0；Linux 004 测试 10/10，通过部署根替换、文件目录项替换和静态权限异常门禁。
+- 独立产品/规格验收：P0=0、P1=0、P2=0。
+- 合并后脚本 SHA-256：`4b90221e8af3b6e2c882cac7bd97b2cee947451270eb4b36bbccfe8b336556e0`。
+- 上述证据只证明 004 取证入口工程就绪；尚未连接测试服，也不授权生产、真实上游、通知、客户灰度或商业观察。
 
 ## 1. ChangeId 与精确目标
 

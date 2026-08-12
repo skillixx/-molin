@@ -62,13 +62,13 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 003 历史安装清单见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260812-003.md`。该授权已经唯一一次正式包装器调用消费，固定结果为 `remote_stage_failed`；随后未进入 root 控制台、未安装 live 目标、未修改 sudoers 或执行 self-test。由于结果无法区分 SSH 与 SFTP，暂存目录及部分上传状态为 `UNKNOWN`。禁止重试、继续上传或按历史清单安装，完整记录见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260812-003.md`。
 
-### 2.4 待门禁的只读暂存取证候选（004，禁止提前执行）
+### 2.4 已完成工程门禁的只读暂存取证候选（004，仍待用户授权）
 
 `CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-004` 只用于关闭 003 暂存状态 `UNKNOWN`。`infra/scripts/run-ai-gateway-g8-test-staging-evidence.py` 先离线核对固定 known_hosts、显式 ED25519 密钥对和 OpenSSH ACL，再以最小环境、禁用密码/代理/转发/TTY 的固定 OpenSSH 发起至多一次 SSH。远端仅通过 stdin 执行 `/usr/bin/python3 -I -` 的固定只读程序，不接受远端路径参数。
 
 远端程序先核对登录用户、hostname、machine-id 摘要和部署根真实路径/属主/权限。003 暂存路径不存在时只输出 `ABSENT`；存在时只读取固定五文件的白名单、普通文件/非链接、`pc:pc`、组和其他用户不可写、大小及 SHA-256。全部匹配输出 `PRESENT/PASS`；路径、文件集、文件元数据、内容或读取状态不符时输出固定 `PRESENT/MISMATCH` 类别并以退出码 3 阻断后续动作。输出不包含文件内容、动态路径、实际属主数值、权限值、stderr 或 Secret。
 
-该候选不包含 SFTP、SCP、下载、删除、sudo、Docker、数据库、队列、服务或 HTTP 能力。读取可能由操作系统产生 sshd/journald/audit 日志，并可能按文件系统策略更新 atime；不得表述为操作系统层绝对零写入。当前尚未取得用户执行授权，禁止连接测试服。授权清单见 `docs/ai-gateway-g8-test-readonly-staging-evidence-authorization-20260812-004.md`。
+该候选不包含 SFTP、SCP、下载、删除、sudo、Docker、数据库、队列、服务或 HTTP 能力。读取可能由操作系统产生 sshd/journald/audit 日志，并可能按文件系统策略更新 atime；不得表述为操作系统层绝对零写入。PR #341、CI run `31597619593` 与独立安全/QA/产品门禁已通过，但当前尚未取得用户执行授权，禁止连接测试服。授权清单见 `docs/ai-gateway-g8-test-readonly-staging-evidence-authorization-20260812-004.md`。
 
 ## 3. 历史已停止安装变更（禁止执行）
 
