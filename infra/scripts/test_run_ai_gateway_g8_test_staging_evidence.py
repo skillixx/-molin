@@ -194,6 +194,32 @@ class TestStagingEvidence(unittest.TestCase):
             self.assertEqual(present.returncode, 0, present.stderr)
             self.assertEqual(values(present.stdout)["STAGING_INTEGRITY"], "PASS")
 
+            # 哈希完成后替换同名目录项并保留旧文件，最终证据必须拒绝把旧 fd 内容当作当前文件。
+            raced_entry_program = program.replace(
+                "actual_digest = digest_handle(handle)",
+                "actual_digest = digest_handle(handle)\n"
+                "                                        if name == 'manifest.env':\n"
+                "                                            os.rename(os.path.join(staging_path, name), os.path.join(staging_path, name + '.old'))\n"
+                "                                            with open(os.path.join(staging_path, name), 'wb') as replacement:\n"
+                "                                                replacement.write(b'X' * expected_size)",
+                1,
+            )
+            raced_entry = subprocess.run(
+                [sys.executable, "-I", "-"],
+                input=raced_entry_program,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+            self.assertEqual(raced_entry.returncode, 0, raced_entry.stderr)
+            raced_entry_result = values(raced_entry.stdout)
+            self.assertEqual(raced_entry_result["STAGING_INTEGRITY"], "MISMATCH")
+            self.assertEqual(raced_entry_result["STAGING_MISMATCH_REASON"], "PATH")
+
+            (stage / "manifest.env").unlink()
+            (stage / "manifest.env.old").rename(stage / "manifest.env")
+
             changed = bytearray(fixtures["manifest.env"])
             changed[0] ^= 1
             (stage / "manifest.env").write_bytes(changed)

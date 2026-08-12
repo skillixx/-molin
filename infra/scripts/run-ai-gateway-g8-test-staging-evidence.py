@@ -161,6 +161,7 @@ try:
                             staging_mismatch_reason = 'FILE_METADATA'
                             metadata_matches = True
                             content_matches = True
+                            opened_files = {{}}
                             for name in names:
                                 file_descriptor = os.open(
                                     name,
@@ -179,19 +180,87 @@ try:
                                     ):
                                         metadata_matches = False
                                         break
+                                    opened_files[name] = (
+                                        metadata.st_dev,
+                                        metadata.st_ino,
+                                        metadata.st_mode,
+                                        metadata.st_uid,
+                                        metadata.st_gid,
+                                        metadata.st_size,
+                                        metadata.st_mtime_ns,
+                                        metadata.st_ctime_ns,
+                                    )
                                     with os.fdopen(file_descriptor, 'rb', closefd=False) as handle:
-                                        if digest_handle(handle) != expected_sha256:
+                                        actual_digest = digest_handle(handle)
+                                    after_digest = os.fstat(file_descriptor)
+                                    if (
+                                        (
+                                            after_digest.st_dev,
+                                            after_digest.st_ino,
+                                            after_digest.st_mode,
+                                            after_digest.st_uid,
+                                            after_digest.st_gid,
+                                            after_digest.st_size,
+                                            after_digest.st_mtime_ns,
+                                            after_digest.st_ctime_ns,
+                                        )
+                                        != opened_files[name]
+                                    ):
+                                        metadata_matches = False
+                                        break
+                                    if actual_digest != expected_sha256:
                                             content_matches = False
                                 finally:
                                     os.close(file_descriptor)
+                            stable_entries = metadata_matches
+                            if stable_entries:
+                                final_names = os.listdir(stage_descriptor)
+                                stable_entries = (
+                                    set(final_names) == set(expected_files)
+                                    and len(final_names) == len(expected_files)
+                                )
+                            if stable_entries:
+                                for name in final_names:
+                                    current_file = os.stat(
+                                        name,
+                                        dir_fd=stage_descriptor,
+                                        follow_symlinks=False,
+                                    )
+                                    current_identity = (
+                                        current_file.st_dev,
+                                        current_file.st_ino,
+                                        current_file.st_mode,
+                                        current_file.st_uid,
+                                        current_file.st_gid,
+                                        current_file.st_size,
+                                        current_file.st_mtime_ns,
+                                        current_file.st_ctime_ns,
+                                    )
+                                    if current_identity != opened_files.get(name):
+                                        stable_entries = False
+                                        break
+                            final_stage = os.fstat(stage_descriptor)
                             current_stage = os.stat(
                                 staging_name,
                                 dir_fd=root_descriptor,
                                 follow_symlinks=False,
                             )
-                            if (current_stage.st_dev, current_stage.st_ino) != (
-                                pinned_stage.st_dev,
-                                pinned_stage.st_ino,
+                            if (
+                                not stable_entries
+                                or (
+                                    final_stage.st_dev,
+                                    final_stage.st_ino,
+                                    final_stage.st_mtime_ns,
+                                    final_stage.st_ctime_ns,
+                                )
+                                != (
+                                    pinned_stage.st_dev,
+                                    pinned_stage.st_ino,
+                                    pinned_stage.st_mtime_ns,
+                                    pinned_stage.st_ctime_ns,
+                                )
+                                or (current_stage.st_dev, current_stage.st_ino)
+                                != (pinned_stage.st_dev, pinned_stage.st_ino)
                             ):
                                 staging_mismatch_reason = 'PATH'
                             elif metadata_matches:
