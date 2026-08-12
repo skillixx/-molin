@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import re
+import unicodedata
 from decimal import Decimal, InvalidOperation
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -177,10 +178,12 @@ def manifest_sha256(manifest: dict[str, Any]) -> str:
 def require_absolute_normalized_path(value: Any, field: str) -> str:
     """只接受无控制字符、反斜杠和路径穿越片段的规范 POSIX 绝对路径。"""
     path = require_text(value, field)
-    if any(ord(character) < 32 or ord(character) == 127 for character in path):
-        raise ValueError(f"{field} 不得包含控制字符")
-    if "\\" in path or not path.startswith("/") or "//" in path:
+    if any(unicodedata.category(character) in {"Cc", "Cf"} for character in path):
+        raise ValueError(f"{field} 不得包含控制或格式字符")
+    if path == "/" or "\\" in path or not path.startswith("/") or "//" in path:
         raise ValueError(f"{field} 必须为规范 POSIX 绝对路径")
+    if not re.fullmatch(r"/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*", path):
+        raise ValueError(f"{field} 只能包含 ASCII 安全路径段")
     parts = PurePosixPath(path).parts
     if any(part in {".", ".."} for part in path.split("/")) or str(PurePosixPath(path)) != path:
         raise ValueError(f"{field} 不得包含路径穿越或非规范片段")

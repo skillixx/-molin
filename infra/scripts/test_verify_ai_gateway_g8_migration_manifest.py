@@ -287,7 +287,16 @@ class MigrationManifestTest(unittest.TestCase):
             self.module.validate_chain(manifests)
 
     def test_rejects_non_normalized_production_deployment_path(self) -> None:
-        for path in ("/srv/../etc", "/srv//molin", "/srv/molin\nnext", "C:\\molin"):
+        for path in (
+            "/",
+            "/srv/../etc",
+            "/srv//molin",
+            "/srv/molin\nnext",
+            "/srv/\u202emolin",
+            "/srv/\u0085molin",
+            "/服务/molin",
+            "C:\\molin",
+        ):
             with self.subTest(path=path):
                 manifests = valid_manifest_chain(self.module, "production_readonly")
                 manifests[-1]["target"]["deployment_root"] = path
