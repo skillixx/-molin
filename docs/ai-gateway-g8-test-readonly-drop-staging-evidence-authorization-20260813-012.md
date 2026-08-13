@@ -1,6 +1,6 @@
 # G8 Drop 暂存只读取证 012 授权清单
 
-> 状态：`PENDING_ENGINEERING_GATES_AND_USER_APPROVAL`。本清单只冻结未来一次只读取证候选；当前禁止执行 `--local-check`、SSH 或任何测试服连接。工程测试、CI、评审、PR 和合并均不构成远端执行授权。
+> 状态：`PENDING_USER_APPROVAL`。PR #369 最终 HEAD `6823a6be77c77290732a417935c85af4d213f708` 已通过 CI run `31697655486` 12/12、独立代码安全/QA/产品规格 P0/P1/P2=0，并按 merge commit `247c637c2b5bce82377ce1ad1431b4b520187068` 合入主干。本清单只冻结未来一次只读取证候选；用户再次明确批准前，仍禁止执行 `--local-check`、SSH 或任何测试服连接。工程测试、CI、评审、PR 和合并均不构成远端执行授权。
 
 ## 1. ChangeId、目标与上限
 
@@ -42,7 +42,7 @@ Drop 地址只代表传输端点。012 不读取或验证 hostname、`/etc/machi
 
 ## 4. 待后续独立批准的精确命令
 
-当前以下命令全部禁止执行。只有本 PR 合并、同一精确 HEAD 的 CI 与三方评审全部通过，并由用户再次明确批准 012 后，才可在仓库根目录依次各执行一次：
+当前以下命令仍全部禁止执行。仓库工程门禁与合并已经完成；只有用户再次明确批准 012 后，才可在仓库根目录依次各执行一次：
 
 ```powershell
 python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-012.py --local-check --known-hosts "C:\Users\skillixx\.ssh\known_hosts" --identity-file "C:\Users\skillixx\.ssh\id_ed25519" --identity-public-file "C:\Users\skillixx\.ssh\id_ed25519.pub"
