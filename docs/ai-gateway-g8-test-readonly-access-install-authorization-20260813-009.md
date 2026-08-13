@@ -1,6 +1,6 @@
 # AI 网关 G8 测试服只读入口安装授权清单（009）
 
-> 当前状态：`PENDING_ENGINEERING_GATES_AND_USER_APPROVAL`。本清单仅冻结 Drop 场景安装候选、命令摘要、影响、回滚和停止条件；仓库离线包装器 `--self-test` 仅用于工程门禁且已获本轮仓库准备授权，尚未授权执行 `--local-check`、SSH、SFTP、root 安装或安装后的远端 sudo auditor self-test，也未连接测试服务。
+> 当前状态：`PENDING_USER_APPROVAL`。PR #358 精确 HEAD `2efb809ba090c9af780d8c6be2f75ee707b92d6b` 已通过 CI run `31665135810` 12/12 和独立代码安全、QA、产品/规格 P0/P1/P2=0，并按 merge commit `1f0c2d11dc705be9496eb18c73688d21ee0e8ab5` 合入主干。仓库离线包装器 `--self-test` 只证明工程门禁；尚未授权执行 `--local-check`、SSH、SFTP、root 安装或安装后的远端 sudo auditor self-test，也未连接测试服务。
 
 ## 1. ChangeId 与目标
 
@@ -29,7 +29,7 @@
 
 ## 3. 待再次批准的精确执行顺序
 
-以下步骤当前全部禁止执行。只有本清单完成同一精确 HEAD 的独立代码安全、QA、产品/规格、适用 CI、PR 合并及合并后摘要复核，并由用户再次明确批准 009 后，方可依次执行：
+以下步骤当前全部禁止执行。仓库工程门禁和 PR 合并已经完成，但不构成远端授权；只有用户再次明确批准 009 后，方可严格依次执行：
 
 1. 本地以 `python -I infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop.py --local-check` 绑定本 ChangeId、上述候选绝对路径、现有 `known_hosts` 及同目录 `id_ed25519`/`id_ed25519.pub`；只做五文件、回执、Drop manifest、known_hosts、客户端公钥指纹和密钥对核验，不联网。
 2. 本地检查完整 PASS 后，去掉 `--local-check`，同一包装器只允许一次 SSH 预检。固定 OpenSSH、`ConnectionAttempts=1`、显式密钥、禁止密码/键盘交互/代理/X11/端口转发/本地命令；远端只允许读取登录用户、登录组、部署根真实路径与元数据，并检查本次暂存及三个 live 目标均不存在。任何非零、超时、stderr、输出超限、键集合或返回契约不符立即停止且零重试。

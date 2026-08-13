@@ -135,7 +135,7 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 后续确认该地址由 Drop 服务映射，底层物理主机身份不属于固定 SSH 入口契约。007 的 `READABLE_MISMATCH` 只作为历史事实保留，不再登记为当前测试服运行态 P1，也不得据此自动更新任一摘要。008 使用 ChangeId `CHG-G8-TEST-READONLY-STAGING-EVIDENCE-DROP-20260813-008`，只验证固定 known_hosts/客户端密钥、登录用户 `pc`、部署根和 003 五文件；禁止读取 hostname、machine-id、实例元数据或 CMDB。008 已完成唯一一次本地检查和唯一一次只读 SSH，结果为 `ABSENT / NOT_APPLICABLE / NONE`、stderr 为空、零重试、业务请求/上游请求/费用为 `0 / 0 / 0 CNY`；003 暂存 `UNKNOWN` 已关闭为 `ABSENT`，008 已消费。授权清单与执行记录见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-authorization-20260813-008.md`、`docs/ai-gateway-g8-test-readonly-drop-staging-evidence-attempt-20260813-008.md`。
 
-当前新候选为 `CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009`：生成器冻结 Drop manifest、五文件摘要和本地回执，新的 `run-ai-gateway-g8-test-readonly-access-stage-drop.py` 只在完整本地门禁后允许一次 SSH 预检与一次原子 SFTP 暂存，不读取物理 hostname/machine-id。009 仍处于 `PENDING_ENGINEERING_GATES_AND_USER_APPROVAL`；仓库离线包装器 `--self-test` 仅用于工程门禁，未获用户再次独立批准前禁止 local-check、SSH、SFTP、root 安装或安装后的远端 sudo auditor self-test。精确安装顺序、回滚和停止条件见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260813-009.md`。
+当前新候选为 `CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009`：生成器冻结 Drop manifest、五文件摘要和本地回执，`run-ai-gateway-g8-test-readonly-access-stage-drop.py` 只在完整本地门禁后允许一次 SSH 预检与一次原子 SFTP 暂存，不读取物理 hostname/machine-id。PR #358 精确 HEAD `2efb809ba090c9af780d8c6be2f75ee707b92d6b` 已通过 CI run `31665135810` 12/12、独立代码安全/QA/产品规格零缺陷，并按 merge commit `1f0c2d11dc705be9496eb18c73688d21ee0e8ab5` 合入主干。009 现处于 `PENDING_USER_APPROVAL`；仓库离线包装器 `--self-test` 只证明工程门禁，未获用户再次独立批准前禁止 local-check、SSH、SFTP、root 安装或安装后的远端 sudo auditor self-test。精确安装顺序、回滚和停止条件见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260813-009.md`。
 
 ## 4. 安装后的独立只读核验
 
