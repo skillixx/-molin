@@ -1104,6 +1104,8 @@ python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_ho
 
 007 必须完成精确 PR HEAD、适用 CI、独立代码安全、QA、产品验收和 merge commit；合并后授权清单只能进入 `PENDING_USER_APPROVAL`，用户再次明确批准前禁止运行本地检查或连接测试服务器。授权清单见 `docs/ai-gateway-g8-test-readonly-host-identity-diagnostic-authorization-20260812-007.md`。
 
+`infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence.py` 是 Drop 映射入口专用的 008 暂存只读取证包装器。它不读取物理 hostname 或 machine-id，只复用已消费 004 helper 的固定 OpenSSH、known_hosts 和客户端密钥校验，并以目录描述符锚定部署根与 003 暂存五文件。离线自检命令为 `python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence.py --self-test`；正式 `--local-check` 和 SSH 必须在工程合并后另获用户独立授权，当前禁止运行。
+
 ## CI 变更范围分类器
 
 | 项目 | 说明 |

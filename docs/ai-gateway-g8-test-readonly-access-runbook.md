@@ -134,6 +134,8 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 `CHG-G8-TEST-READONLY-HOST-IDENTITY-DIAG-20260812-007` 完成工程门禁后，用户批准并执行唯一一次本地检查和正式只读 SSH：本地检查 PASS，正式结果为 `BLOCKED / READABLE_MISMATCH`，随后零重试停止；不输出当前 machine-id 原文或摘要，也未读取 003 暂存目录。007 已消费，后续必须使用新 ChangeId 完成独立受控来源核验，见 `docs/ai-gateway-g8-test-readonly-host-identity-diagnostic-authorization-20260812-007.md`、`docs/ai-gateway-g8-test-readonly-host-identity-diagnostic-attempt-20260813-007.md`。
 
+后续确认该地址由 Drop 服务映射，底层物理主机身份不属于固定 SSH 入口契约。007 的 `READABLE_MISMATCH` 只作为历史事实保留，不再登记为当前测试服运行态 P1，也不得据此自动更新任一摘要。008 使用新 ChangeId `CHG-G8-TEST-READONLY-STAGING-EVIDENCE-DROP-20260813-008`，只验证固定 known_hosts/客户端密钥、登录用户 `pc`、部署根和 003 五文件；禁止读取 hostname、machine-id、实例元数据或 CMDB。008 当前仍为仓库候选，未连接测试服务且不得运行 `--local-check`；授权清单见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-authorization-20260813-008.md`。
+
 ## 4. 安装后的独立只读核验
 
 安装成功也不自动授权读取运行态。必须再申请新的 `CHG-G8-TEST-READONLY-YYYYMMDD-NNN`，固定为一次 SSH、零重试，并只执行：

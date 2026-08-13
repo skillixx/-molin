@@ -530,6 +530,17 @@ jobs:
           test "$status" -eq 2
           grep -q '^G8_MIGRATION_MANIFEST=FAILED' /tmp/g8-manifest-example.log
 
+      - name: 验证 G8 Drop 暂存取证 008
+        run: |
+          python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence.py -v
+          python -I -m py_compile infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence.py infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence.py
+          python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence.py --self-test
+          docker run --rm --network none \
+            -v "${{ github.workspace }}:/repo:ro" \
+            -w /repo \
+            python:3.13-alpine \
+            python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence.py -v
+
       - name: 校验生产监控、告警、Compose 和 Nginx 契约
         env:
           BIFROST_IMAGE_DIGEST: alpine:3.20
