@@ -1,6 +1,6 @@
 # AI 网关 G8 测试服只读入口安装授权清单（010）
 
-> 当前状态：`PENDING_USER_APPROVAL`。精确 HEAD 的测试、CI、独立安全评审、QA、产品/规格验收和 merge commit 已完成；本清单仍只冻结未来可能执行的测试服最小只读入口安装步骤。用户再次明确批准前禁止运行 `--local-check`、SSH、SFTP、root 安装或远端 sudo self-test；仓库工程门禁和合并不构成测试服执行授权。
+> 当前状态：`CONSUMED_STAGED_ROOT_NOT_RUN`。010 的一次本地检查、一次只读 SSH 与一次原子 SFTP 已执行，暂存已创建；root 安装启动器在本地参数构造阶段停止，未建立 root 连接、未发送安装脚本、未创建 live 目标或执行 sudo self-test。010 及本清单全部命令均已消费并作废，禁止重试、继续安装或改用 `pc` 直接绕过 root-owned/sudoers 契约。事实见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-010.md`。
 
 ## 1. ChangeId 与目标
 
@@ -32,16 +32,17 @@
 - 对账器大小：`13066129` 字节。
 - Windows 本地候选：`D:\molingproject\g8-artifacts\CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010`。
 - Windows `SHA256SUMS` 回执：`3ff8cf3ad7237f866f83305d00ab73f766381b7f3247abee915efee629e41fb0`。
-- Linux CI 临时复现回执：`b3fac1a1530124da9dc604c32d11bd665de3daa5d6799aebb33c38a3d2f174f4`；仅用于跨平台复现，不替代未来实际执行所绑定的 Windows 候选回执。
+- Linux CI 临时复现回执：`b3fac1a1530124da9dc604c32d11bd665de3daa5d6799aebb33c38a3d2f174f4`；仅用于跨平台复现，不替代本次实际执行所绑定的 Windows 候选回执。
 - 010 直连包装器 SHA-256：`185c0ccda420d3bbe97e95c3218a03642372e05525d2663258287ebd981360b8`。
+- 010 消费后包装器 SHA-256：`4fb920e32574c640685ddd9bed919485473dc54873d157a409c1adf987b3ab6a`；该摘要只绑定防重放入口，不替代执行时摘要。
 - 冻结 009 helper SHA-256：`4be88638f2a4a271ebbf23751bd3f7238ea5f78f1f18fcb6889c9e071b953f30`。
 - 候选必须恰含五个文件；manifest 必须声明 `TARGET_TRANSPORT=DROP_SSH_DIRECT`、`PHYSICAL_HOST_IDENTITY=NOT_APPLICABLE`，不得出现 hostname 或 machine-id 字段。
 
 合并后必须从 merge commit 重新计算包装器与 helper 摘要并精确一致；任一漂移须新 ChangeId。
 
-## 3. 待用户再次批准的精确顺序
+## 3. 已消费的历史执行顺序
 
-以下命令当前全部禁止执行，只作为独立安装授权的冻结摘要。
+以下命令已经消费并全部禁止再次执行，只作为历史授权与取证摘要。
 
 ### 3.1 一次本地检查
 
@@ -53,7 +54,7 @@ python -I infra\scripts\run-ai-gateway-g8-test-readonly-access-stage-drop-direct
 
 ### 3.2 一次只读 SSH 与一次原子 SFTP
 
-本地检查完整通过后，未来授权只能将同一命令移除 `--local-check` 并执行一次。包装器内部固定：
+本地检查完整通过后，当时的授权仅允许将同一命令移除 `--local-check` 并执行一次。包装器内部固定：
 
 - 一次 SSH 预检，`ConnectionAttempts=1`，零重试；
 - 明确 `IdentityFile`、`UserKnownHostsFile`、`IdentitiesOnly=yes`、`-F none`；

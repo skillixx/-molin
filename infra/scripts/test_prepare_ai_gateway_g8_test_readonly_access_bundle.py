@@ -17,9 +17,9 @@ CONSUMED_SOURCE_TREE = "988bdcdc8017322264733ebe68876e4811b01412"
 CONSUMED_DROP_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009"
 CONSUMED_DROP_SOURCE_COMMIT = "7f3325e2d6801567fea34a2049a2f3ada114e348"
 CONSUMED_DROP_SOURCE_TREE = "4563feb59850dca87789adfb5eea820f78b1a209"
-ACTIVE_DIRECT_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010"
-ACTIVE_DIRECT_SOURCE_COMMIT = "75b1fc4ddb7138495547cec03fa948648de337d7"
-ACTIVE_DIRECT_SOURCE_TREE = "53ba990318bc1a036b442d88ff8133d776a453dc"
+CONSUMED_DIRECT_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010"
+CONSUMED_DIRECT_SOURCE_COMMIT = "75b1fc4ddb7138495547cec03fa948648de337d7"
+CONSUMED_DIRECT_SOURCE_TREE = "53ba990318bc1a036b442d88ff8133d776a453dc"
 
 
 def bash_executable() -> str:
@@ -85,6 +85,7 @@ class TestReadonlyAccessBundle(unittest.TestCase):
             ("CHG-G8-TEST-READONLY-ACCESS-20260812-002", "50b3e2f9d18b38e7d4a91ebeb4f03c413ef33c44"),
             (CONSUMED_CHANGE_ID, CONSUMED_SOURCE_COMMIT),
             (CONSUMED_DROP_CHANGE_ID, CONSUMED_DROP_SOURCE_COMMIT),
+            (CONSUMED_DIRECT_CHANGE_ID, CONSUMED_DIRECT_SOURCE_COMMIT),
         ):
             with self.subTest(change_id=change_id), tempfile.TemporaryDirectory(prefix="g8-consumed-cli-") as temporary:
                 output = Path(temporary) / "bundle"
@@ -100,14 +101,13 @@ class TestReadonlyAccessBundle(unittest.TestCase):
                     "G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request",
                 )
 
-    def test_009_is_consumed_and_010_is_the_only_active_candidate(self) -> None:
-        """009 只能临时复现，010 必须成为唯一可持久生成的直连候选。"""
-        self.assertIn("ACTIVE_CANDIDATE = FrozenCandidate(", self.source)
-        self.assertIn(f'    "{ACTIVE_DIRECT_CHANGE_ID}",', self.source)
-        self.assertIn(f'    "{ACTIVE_DIRECT_SOURCE_COMMIT}",', self.source)
-        self.assertIn(f'    "{ACTIVE_DIRECT_SOURCE_TREE}",', self.source)
-        self.assertIn('    "/home/pc/molin",', self.source)
-        self.assertIn('    "DROP_SSH_DIRECT",', self.source)
+    def test_009_and_010_are_consumed_without_active_candidate(self) -> None:
+        """009 与 010 都只能临时复现，生成器不得保留活动候选。"""
+        self.assertIn("ACTIVE_CANDIDATE = None", self.source)
+        self.assertIn(f'"{CONSUMED_DIRECT_CHANGE_ID}": FrozenCandidate(', self.source)
+        self.assertIn(f'        "{CONSUMED_DIRECT_SOURCE_COMMIT}",', self.source)
+        self.assertIn(f'        "{CONSUMED_DIRECT_SOURCE_TREE}",', self.source)
+        self.assertIn('        "DROP_SSH_DIRECT",', self.source)
         self.assertIn(f'"{CONSUMED_DROP_CHANGE_ID}": FrozenCandidate(', self.source)
         self.assertIn(f'        "{CONSUMED_DROP_SOURCE_COMMIT}",', self.source)
         self.assertIn(f'        "{CONSUMED_DROP_SOURCE_TREE}",', self.source)
@@ -121,8 +121,8 @@ class TestReadonlyAccessBundle(unittest.TestCase):
         self.assertIn('candidate.target_transport in {"DROP_SSH", "DROP_SSH_DIRECT"}', self.source)
         self.assertIn('values["PHYSICAL_HOST_IDENTITY"] = "NOT_APPLICABLE"', self.source)
 
-    def test_ci_builds_and_freezes_010_without_remote_execution(self) -> None:
-        """CI 必须真实生成 010 五文件并锁定 Linux 回执，但不得调用直连正式入口。"""
+    def test_ci_rejects_010_replay_and_verifies_it_ephemerally(self) -> None:
+        """CI 必须拒绝 010 持久重放，仅在临时目录复现冻结回执。"""
         workflow = CI_PATH.read_text(encoding="utf-8")
         self.assertIn("--change-id=CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010", workflow)
         self.assertIn("--source-commit=75b1fc4ddb7138495547cec03fa948648de337d7", workflow)
@@ -131,6 +131,8 @@ class TestReadonlyAccessBundle(unittest.TestCase):
             workflow,
         )
         self.assertIn("target_transport=DROP_SSH_DIRECT", workflow)
+        self.assertIn("--consumed-change-id=CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010", workflow)
+        self.assertIn("g8_010_replay_status=$?", workflow)
         self.assertNotIn("run-ai-gateway-g8-test-readonly-access-stage-drop-direct.py --change-id", workflow)
         self.assertIn('"CHG-G8-TEST-READONLY-ACCESS-20260812-001": FrozenCandidate(', self.source)
         self.assertIn('"CHG-G8-TEST-READONLY-ACCESS-20260812-002": FrozenCandidate(', self.source)
@@ -156,20 +158,24 @@ class TestReadonlyAccessBundle(unittest.TestCase):
         self.assertNotIn("G8_TEST_READONLY_ACCESS_BUNDLE=PASS' /tmp/g8-test-readonly-access-009.log", workflow)
 
     def test_no_active_candidate_can_create_persistent_output(self) -> None:
-        """即使输入009的精确历史来源，也不得再创建持久候选目录。"""
-        with tempfile.TemporaryDirectory(prefix="g8-active-cli-") as temporary:
-            output = Path(temporary) / "bundle"
-            result = self.run_script(
-                f"--change-id={CONSUMED_DROP_CHANGE_ID}",
-                f"--source-commit={CONSUMED_DROP_SOURCE_COMMIT}",
-                f"--output-dir={output}",
-            )
-            self.assertEqual(result.returncode, 2)
-            self.assertFalse(output.exists())
-            self.assertEqual(
-                result.stdout.strip(),
-                "G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request",
-            )
+        """即使输入 009 或 010 的精确历史来源，也不得创建持久候选目录。"""
+        for change_id, source_commit in (
+            (CONSUMED_DROP_CHANGE_ID, CONSUMED_DROP_SOURCE_COMMIT),
+            (CONSUMED_DIRECT_CHANGE_ID, CONSUMED_DIRECT_SOURCE_COMMIT),
+        ):
+            with self.subTest(change_id=change_id), tempfile.TemporaryDirectory(prefix="g8-active-cli-") as temporary:
+                output = Path(temporary) / "bundle"
+                result = self.run_script(
+                    f"--change-id={change_id}",
+                    f"--source-commit={source_commit}",
+                    f"--output-dir={output}",
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertFalse(output.exists())
+                self.assertEqual(
+                    result.stdout.strip(),
+                    "G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request",
+                )
 
     def test_consumed_candidate_verification_is_ephemeral(self) -> None:
         self.assertIn('TemporaryDirectory(prefix="molin-g8-consumed-verify-")', self.source)
@@ -185,6 +191,8 @@ class TestReadonlyAccessBundle(unittest.TestCase):
             "7f4633357bf6883d166b0ee7d9750d7e745cf0a15d23163a547d6519e217efc1",
             "840bdbed48edab6d70d351fa232b7426903bf3f3098f682e2884f513b9cd0efd",
             "5bb49ad531410c8a719008bcd860d143eb9c51d23858a14737d678d5a60fc893",
+            "3ff8cf3ad7237f866f83305d00ab73f766381b7f3247abee915efee629e41fb0",
+            "b3fac1a1530124da9dc604c32d11bd665de3daa5d6799aebb33c38a3d2f174f4",
         ):
             self.assertIn(receipt, self.source)
         self.assertIn('raise RuntimeError("consumed_receipt_mismatch")', self.source)
