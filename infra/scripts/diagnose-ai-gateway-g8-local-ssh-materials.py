@@ -313,8 +313,8 @@ def diagnose_materials(known_hosts: Path, identity_file: Path, identity_public_k
         approved_host_line="",
     )
     # 语义校验只使用调用方明确提供的原始绝对路径；前后证据复核负责发现持久漂移。
-    approved_line = find_approved_host_key(known_hosts_path, ssh_keygen_path)
-    validate_identity_pair(identity_path, public_evidence.data, ssh_keygen_path)
+    approved_line = find_approved_host_key(known_hosts, ssh_keygen_path)
+    validate_identity_pair(identity_file, public_evidence.data, ssh_keygen_path)
     evidence = MaterialsEvidence(
         ssh_keygen=ssh_keygen,
         known_hosts=known_hosts_evidence,

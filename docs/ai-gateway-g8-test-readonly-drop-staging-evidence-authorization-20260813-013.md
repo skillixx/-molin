@@ -19,10 +19,10 @@
 ## 3. 冻结脚本
 
 - 无 ChangeId 本地诊断器：`infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py`
-  - SHA-256：`3dedf2d941a962624b8cb1c2517a830198d57ee9070947f541bca5599f5a1bc1`
-  - 大小：`14620`
+  - SHA-256：`aa1bb957e9b950eed263424a0b1e104695f68cad076e33b74fe5b70e54b320ed`
+  - 大小：`14615`
 - 一次性 013 包装器：`infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py`
-  - SHA-256：`41b915e525e32723e48a6f569b9d8712c4dd3bb94cc49b9b47bc7e5a6f06e3cf`
+  - SHA-256：`02c48a4aca2387e0baa0c179f9a1ea99c8a981adcdd22551b0010fd7b6fb1dfe`
   - 大小：`22272`
 
 最终合并后必须从 merge commit 原始 Git 对象重新计算并更新以上摘要和大小；HEAD 或脚本任一漂移即使本清单失效。

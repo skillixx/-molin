@@ -133,6 +133,25 @@ class LocalMaterialsDiagnosticTests(unittest.TestCase):
                     Path("C:/fixed/ssh-keygen.exe"),
                 )
 
+    def test_diagnose_materials_success_path_uses_original_absolute_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            tool = root / "ssh-keygen"
+            known_hosts = root / "known_hosts"
+            identity = root / "id_ed25519"
+            public_key = root / "id_ed25519.pub"
+            tool.write_bytes(b"tool")
+            known_hosts.write_bytes(b"host")
+            identity.write_bytes(b"private")
+            public_key.write_bytes(b"ssh-ed25519 AAAApublic\n")
+            with mock.patch.object(self.module, "fixed_ssh_keygen_path", return_value=tool):
+                with mock.patch.object(self.module, "find_approved_host_key", return_value="approved") as find_host:
+                    with mock.patch.object(self.module, "validate_identity_pair") as validate_pair:
+                        evidence = self.module.diagnose_materials(known_hosts, identity, public_key)
+        self.assertEqual(evidence.approved_host_line, "approved")
+        find_host.assert_called_once_with(known_hosts, tool)
+        validate_pair.assert_called_once_with(identity, b"ssh-ed25519 AAAApublic\n", tool)
+
     def test_local_tool_timeout_kills_and_reaps_process(self):
         process = mock.Mock()
         process.stdin = io.BytesIO()
