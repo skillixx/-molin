@@ -2,7 +2,7 @@
 
 ## 1. 状态与范围
 
-本文记录测试服务器 `pc@8.130.9.163:10003` 的候选安装、核验和撤销约束。001 因 sudo 权限不符停止，002 因远端预检命令解析错误停止，003 因远端阶段固定返回 `remote_stage_failed` 停止，三者均已消费。003 未进入 root 控制台、未安装 live 目标或修改 sudoers；但低敏结果不能区分 SSH 与 SFTP，远端暂存目录及部分上传状态为 `UNKNOWN`。
+本文记录测试服务器 `pc@8.130.9.163:10003` 的候选安装、核验和撤销约束。001 因 sudo 权限不符停止，002 因远端预检命令解析错误停止，003 因远端阶段固定返回 `remote_stage_failed` 停止，三者均已消费。003 未进入 root 控制台、未安装 live 目标或修改 sudoers；其低敏结果当时不能区分 SSH 与 SFTP，后续 008 已把固定暂存目录状态收敛为 `ABSENT`。
 
 该入口用于补齐 MySQL、Redis、RabbitMQ、Bifrost、Prometheus、Grafana、Alertmanager、备份和只读账务证据。它不授予 `pc` Docker 组成员资格，不允许任意 `docker`、Shell、服务控制、文件写入、DDL/DML、队列消费或业务请求。
 
@@ -120,13 +120,12 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 ### 3.5 当前重新申请顺序
 
-001、002、003、004、005、006、007 均已消费。005 已确认固定 SSH 与远端隔离 Python 标记可用；006 在 `MACHINE_ID` 门禁阻断；007 的唯一正式只读 SSH 返回 `READABLE_MISMATCH`。上述诊断均未读取暂存目录，003 暂存仍为 `UNKNOWN`。后续已确认该入口由 Drop 服务映射，旧的物理主机身份核验顺序不再适用；当前必须依次完成：
+001、002、003、004、005、006、007、008 均已消费。008 的唯一正式只读 SSH 已返回 `ABSENT / NOT_APPLICABLE / NONE`，把固定 003 暂存状态从 `UNKNOWN` 收敛为 `ABSENT`。Drop 映射下旧的物理主机身份核验顺序不再适用；当前必须依次完成：
 
-1. 008 已完成工程门禁并处于 `PENDING_USER_APPROVAL`；未取得用户对 008 的独立明确批准前，不得执行本地检查或 SSH。
-2. 获批后只允许按 008 清单执行一次本地检查和一次只读 SSH，零重试；结果必须收敛为 `ABSENT/NOT_APPLICABLE/NONE`、`PRESENT/PASS/NONE` 或 `PRESENT/MISMATCH/固定原因` 三态之一。
-3. 若结果为 `PRESENT/MISMATCH` 或任何门禁失败，立即停止；后续诊断必须使用新 ChangeId、重新完成工程门禁并取得用户独立授权。
-4. 若结果确认暂存路径存在且完整匹配，另行提交精确清理授权；只允许删除经真实路径、属主、权限、文件白名单和摘要共同绑定的 003 暂存目录，不得把清理并入只读取证授权。
-5. 只有暂存 `UNKNOWN` 关闭后，才可使用另一个新 ChangeId 重新冻结安装候选、制品回执和授权；不得复用 001、002、003 的候选、回执或授权。安装后的真实运行态审计仍使用另一个独立 ChangeId，后续安装授权不得顺带执行。
+1. 008 已按独立用户授权完成一次本地检查和一次只读 SSH，零重试；结果为 `ABSENT/NOT_APPLICABLE/NONE`，全部历史命令作废并禁止重放。
+2. 固定 003 暂存目录不存在，因此未执行也无需执行清理；不得为“确认结果”再次连接或扩大读取范围。
+3. 若继续准备安装，必须使用新 ChangeId 重新冻结安装候选、制品回执和授权，不得复用 001、002、003 或 008 的候选、回执和授权。
+4. 安装后的真实运行态审计仍使用另一个独立 ChangeId，后续安装授权不得顺带执行；API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因暂存目录不存在而自动关闭。
 
 `CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005` 已完成唯一一次本地检查和正式只读 SSH，结果为 `ZERO / EXACT / stderr EMPTY / diagnostic PASS`，证明传输链路可用但未关闭暂存 UNKNOWN；005 已消费并禁止重放。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`、`docs/ai-gateway-g8-test-readonly-transport-diagnostic-attempt-20260812-005.md`。下一次暂存只读取证必须使用新的 ChangeId，重新完成代码安全、QA、产品、精确 HEAD CI、merge commit 与用户独立授权。
 
@@ -134,7 +133,7 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 `CHG-G8-TEST-READONLY-HOST-IDENTITY-DIAG-20260812-007` 完成工程门禁后，用户批准并执行唯一一次本地检查和正式只读 SSH：本地检查 PASS，正式结果为 `BLOCKED / READABLE_MISMATCH`，随后零重试停止；不输出当前 machine-id 原文或摘要，也未读取 003 暂存目录。007 已消费；按 007 执行时的停止条件，后续原本要求使用新 ChangeId 完成独立受控来源核验。此要求属于 Drop 映射确认前的历史规则，不再是 008 的前置门禁；现行顺序以本节清单和下段为准。历史授权与执行记录见 `docs/ai-gateway-g8-test-readonly-host-identity-diagnostic-authorization-20260812-007.md`、`docs/ai-gateway-g8-test-readonly-host-identity-diagnostic-attempt-20260813-007.md`。
 
-后续确认该地址由 Drop 服务映射，底层物理主机身份不属于固定 SSH 入口契约。007 的 `READABLE_MISMATCH` 只作为历史事实保留，不再登记为当前测试服运行态 P1，也不得据此自动更新任一摘要。008 使用新 ChangeId `CHG-G8-TEST-READONLY-STAGING-EVIDENCE-DROP-20260813-008`，只验证固定 known_hosts/客户端密钥、登录用户 `pc`、部署根和 003 五文件；禁止读取 hostname、machine-id、实例元数据或 CMDB。008 已在 PR #353 完成 12/12 CI、三方零缺陷验收并以 merge commit `670b39dd316a53af7c7baa639c9822b1a65994aa` 合并，当前为 `PENDING_USER_APPROVAL`；尚未连接测试服务，用户再次独立批准前不得运行 `--local-check`。授权清单见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-authorization-20260813-008.md`。
+后续确认该地址由 Drop 服务映射，底层物理主机身份不属于固定 SSH 入口契约。007 的 `READABLE_MISMATCH` 只作为历史事实保留，不再登记为当前测试服运行态 P1，也不得据此自动更新任一摘要。008 使用 ChangeId `CHG-G8-TEST-READONLY-STAGING-EVIDENCE-DROP-20260813-008`，只验证固定 known_hosts/客户端密钥、登录用户 `pc`、部署根和 003 五文件；禁止读取 hostname、machine-id、实例元数据或 CMDB。008 已完成唯一一次本地检查和唯一一次只读 SSH，结果为 `ABSENT / NOT_APPLICABLE / NONE`、stderr 为空、零重试、业务请求/上游请求/费用为 `0 / 0 / 0 CNY`；003 暂存 `UNKNOWN` 已关闭为 `ABSENT`，008 已消费。授权清单与执行记录见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-authorization-20260813-008.md`、`docs/ai-gateway-g8-test-readonly-drop-staging-evidence-attempt-20260813-008.md`。
 
 ## 4. 安装后的独立只读核验
 

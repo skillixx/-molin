@@ -48,6 +48,9 @@ class TestDropStagingEvidenceContract(unittest.TestCase):
             "run-ai-gateway-g8-test-drop-staging-evidence.py --self-test",
             workflow,
         )
+        self.assertIn("g8_drop_self_test_status=$?", workflow)
+        self.assertIn('test "$g8_drop_self_test_status" -eq 2', workflow)
+        self.assertIn("reason=change_id_consumed", workflow)
 
     @staticmethod
     def valid_absent_output(module) -> str:
@@ -128,6 +131,7 @@ class TestDropStagingEvidenceContract(unittest.TestCase):
             "id_ed25519.pub",
         ]
         with (
+            mock.patch.object(module, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(sys, "argv", arguments),
             mock.patch.object(module, "load_frozen_helper", return_value=helper),
             mock.patch.object(module, "run_once") as run_once,
@@ -267,7 +271,6 @@ class TestDropStagingEvidenceContract(unittest.TestCase):
         """已消费 ChangeId 必须在读取 helper、身份材料或联网前拒绝。"""
         module = load_module()
         with (
-            mock.patch.object(module, "CHANGE_ID_CONSUMED", True),
             mock.patch.object(module, "load_frozen_helper") as helper,
             mock.patch.object(module, "run_once") as run_once,
             mock.patch.object(sys, "argv", [str(SCRIPT_PATH)]),
@@ -276,6 +279,20 @@ class TestDropStagingEvidenceContract(unittest.TestCase):
             self.assertEqual(module.main(), 2)
         helper.assert_not_called()
         run_once.assert_not_called()
+        output.assert_called_once_with(
+            "G8_TEST_READONLY_DROP_STAGING_EVIDENCE=FAILED reason=change_id_consumed"
+        )
+
+    def test_consumed_change_rejects_self_test_before_loading_helper(self) -> None:
+        """消费后的离线自检同样作废，不能再读取冻结 helper。"""
+        module = load_module()
+        with (
+            mock.patch.object(module, "load_frozen_helper") as helper,
+            mock.patch.object(sys, "argv", [str(SCRIPT_PATH), "--self-test"]),
+            mock.patch("builtins.print") as output,
+        ):
+            self.assertEqual(module.main(), 2)
+        helper.assert_not_called()
         output.assert_called_once_with(
             "G8_TEST_READONLY_DROP_STAGING_EVIDENCE=FAILED reason=change_id_consumed"
         )
@@ -305,6 +322,7 @@ class TestDropStagingEvidenceContract(unittest.TestCase):
             "STAGING_MISMATCH_REASON": "FILE_CONTENT",
         }
         with (
+            mock.patch.object(module, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(sys, "argv", arguments),
             mock.patch.object(module, "load_frozen_helper", return_value=helper),
             mock.patch.object(module, "run_once", return_value=mismatch),
