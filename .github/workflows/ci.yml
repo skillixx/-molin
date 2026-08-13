@@ -534,7 +534,12 @@ jobs:
         run: |
           python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence.py -v
           python -I -m py_compile infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence.py infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence.py
-          python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence.py --self-test
+          set +e
+          python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence.py --self-test >/tmp/g8-drop-self-test.log 2>&1
+          g8_drop_self_test_status=$?
+          set -e
+          test "$g8_drop_self_test_status" -eq 2
+          grep -qx 'G8_TEST_READONLY_DROP_STAGING_EVIDENCE=FAILED reason=change_id_consumed' /tmp/g8-drop-self-test.log
           docker run --rm --network none \
             -v "${{ github.workspace }}:/repo:ro" \
             -w /repo \

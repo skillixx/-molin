@@ -48,6 +48,9 @@ class TestDropStagingEvidenceContract(unittest.TestCase):
             "run-ai-gateway-g8-test-drop-staging-evidence.py --self-test",
             workflow,
         )
+        self.assertIn("g8_drop_self_test_status=$?", workflow)
+        self.assertIn('test "$g8_drop_self_test_status" -eq 2', workflow)
+        self.assertIn("reason=change_id_consumed", workflow)
 
     @staticmethod
     def valid_absent_output(module) -> str:
