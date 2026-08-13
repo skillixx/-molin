@@ -3,12 +3,26 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+
+concurrency:
+  group: ci-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   change-scope:
     name: CI 变更范围分类
     runs-on: ubuntu-latest
     outputs:
+      pr_mode: ${{ steps.scope.outputs.pr_mode }}
+      draft_docs: ${{ steps.scope.outputs.draft_docs }}
+      draft_python: ${{ steps.scope.outputs.draft_python }}
+      draft_backend: ${{ steps.scope.outputs.draft_backend }}
+      draft_frontend_admin: ${{ steps.scope.outputs.draft_frontend_admin }}
+      draft_frontend_user: ${{ steps.scope.outputs.draft_frontend_user }}
+      python_tests_json: ${{ steps.targets.outputs.python_tests_json }}
+      python_compile_json: ${{ steps.targets.outputs.python_compile_json }}
+      go_packages_json: ${{ steps.targets.outputs.go_packages_json }}
       docs_lightweight: ${{ steps.scope.outputs.docs_lightweight }}
       backend: ${{ steps.scope.outputs.backend }}
       phase5: ${{ steps.scope.outputs.phase5 }}
@@ -32,19 +46,263 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_MODE: ${{ github.event.pull_request.draft && 'draft' || 'ready' }}
         run: |
-          python -m unittest infra/scripts/test_classify_ci_change_scope.py
-          python -m py_compile infra/scripts/classify-ci-change-scope.py infra/scripts/test_classify_ci_change_scope.py
+          python -I -W error::ResourceWarning infra/scripts/test_classify_ci_change_scope.py -v
+          python -I -W error::ResourceWarning infra/scripts/test_select_ci_draft_tests.py -v
+          python -I -W error::ResourceWarning infra/scripts/test_run_ci_draft_targets.py -v
+          python -I -W error::ResourceWarning infra/scripts/test_ci_draft_ready_workflow_contract.py -v
+          python -m py_compile \
+            infra/scripts/classify-ci-change-scope.py \
+            infra/scripts/select-ci-draft-tests.py \
+            infra/scripts/run-ci-draft-targets.py \
+            infra/scripts/test_classify_ci_change_scope.py \
+            infra/scripts/test_select_ci_draft_tests.py \
+            infra/scripts/test_run_ci_draft_targets.py \
+            infra/scripts/test_ci_draft_ready_workflow_contract.py
           python infra/scripts/classify-ci-change-scope.py \
+            --base-sha="$BASE_SHA" \
+            --head-sha="$HEAD_SHA" \
+            --repo-root=. \
+            --pr-mode="$PR_MODE" \
+            --github-output="$GITHUB_OUTPUT"
+
+      - name: 安装 Go 以选择 Draft package
+        if: github.event.pull_request.draft == true && steps.scope.outputs.draft_backend == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: 选择 Draft 定向测试目标
+        id: targets
+        if: github.event.pull_request.draft == true
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python infra/scripts/select-ci-draft-tests.py \
             --base-sha="$BASE_SHA" \
             --head-sha="$HEAD_SHA" \
             --repo-root=. \
             --github-output="$GITHUB_OUTPUT"
 
+  draft-quality:
+    name: Draft 基础质量门禁
+    needs: change-scope
+    if: github.event.pull_request.draft == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: 校验差异格式
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git diff --check "$BASE_SHA...$HEAD_SHA"
+
+      - name: 扫描差异敏感信息
+        run: python scripts/verify-sms-phase5-sensitive-data.py --repo-root . --base-ref "${{ github.event.pull_request.base.sha }}"
+
+      - name: 验证分类与选择器基础契约
+        run: |
+          python -I -W error::ResourceWarning infra/scripts/test_classify_ci_change_scope.py -v
+          python -m py_compile \
+            infra/scripts/classify-ci-change-scope.py \
+            infra/scripts/select-ci-draft-tests.py \
+            infra/scripts/run-ci-draft-targets.py
+
+      - name: 安装 Go 以校验工作流
+        if: needs.change-scope.outputs.draft_python == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache: false
+
+      - name: 校验 GitHub Actions 工作流
+        if: needs.change-scope.outputs.draft_python == 'true'
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/*.yml
+
+  draft-python:
+    name: Draft Python 定向门禁
+    needs: change-scope
+    if: github.event.pull_request.draft == true && needs.change-scope.outputs.draft_python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: 运行选中的 Python 测试
+        env:
+          TARGETS_JSON: ${{ needs.change-scope.outputs.python_tests_json }}
+        run: python infra/scripts/run-ci-draft-targets.py --kind=python-tests --targets-json="$TARGETS_JSON" --repo-root=.
+
+      - name: 编译选中的 Python 文件
+        if: needs.change-scope.outputs.python_compile_json != '[]'
+        env:
+          TARGETS_JSON: ${{ needs.change-scope.outputs.python_compile_json }}
+        run: python infra/scripts/run-ci-draft-targets.py --kind=python-compile --targets-json="$TARGETS_JSON" --repo-root=.
+
+  draft-backend:
+    name: Draft 后端定向门禁
+    needs: change-scope
+    if: github.event.pull_request.draft == true && needs.change-scope.outputs.draft_backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: 校验模块依赖
+        working-directory: server
+        run: go mod verify
+
+      - name: 运行选中的 Go package
+        env:
+          TARGETS_JSON: ${{ needs.change-scope.outputs.go_packages_json }}
+        run: python infra/scripts/run-ci-draft-targets.py --kind=go --targets-json="$TARGETS_JSON" --repo-root=.
+
+  draft-frontend-admin:
+    name: Draft 管理后台定向门禁
+    needs: change-scope
+    if: github.event.pull_request.draft == true && needs.change-scope.outputs.draft_frontend_admin == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/admin-console/package-lock.json
+
+      - name: 安装依赖
+        working-directory: web/admin-console
+        run: npm ci
+
+      - name: 运行管理后台契约测试
+        working-directory: web/admin-console
+        run: |
+          npm run test:sms-management
+          npm run test:admin-verification
+          npm run test:email-management
+          npm run test:vite-isolation
+          npm run test:outbound-url
+
+      - name: TypeScript 类型检查
+        working-directory: web/admin-console
+        run: npm run type-check
+
+  draft-frontend-user:
+    name: Draft 用户控制台定向门禁
+    needs: change-scope
+    if: github.event.pull_request.draft == true && needs.change-scope.outputs.draft_frontend_user == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/user-console/package-lock.json
+
+      - name: 安装依赖
+        working-directory: web/user-console
+        run: npm ci
+
+      - name: 运行用户控制台契约测试
+        working-directory: web/user-console
+        run: |
+          npm run test:sms
+          npm run test:email-otp
+          npm run test:vite-isolation
+
+      - name: TypeScript 类型检查
+        working-directory: web/user-console
+        run: npm run type-check
+
+  ci-draft-gate:
+    name: CI Draft 快速门禁汇总
+    needs:
+      - change-scope
+      - draft-quality
+      - draft-python
+      - draft-backend
+      - draft-frontend-admin
+      - draft-frontend-user
+    if: always() && github.event.pull_request.draft == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: 校验 Draft 分类与定向门禁
+        env:
+          CHANGE_SCOPE_RESULT: ${{ needs.change-scope.result }}
+          PR_MODE: ${{ needs.change-scope.outputs.pr_mode }}
+          QUALITY_RESULT: ${{ needs.draft-quality.result }}
+          DRAFT_DOCS_REQUIRED: ${{ needs.change-scope.outputs.draft_docs }}
+          PYTHON_REQUIRED: ${{ needs.change-scope.outputs.draft_python }}
+          PYTHON_RESULT: ${{ needs.draft-python.result }}
+          BACKEND_REQUIRED: ${{ needs.change-scope.outputs.draft_backend }}
+          BACKEND_RESULT: ${{ needs.draft-backend.result }}
+          ADMIN_REQUIRED: ${{ needs.change-scope.outputs.draft_frontend_admin }}
+          ADMIN_RESULT: ${{ needs.draft-frontend-admin.result }}
+          USER_REQUIRED: ${{ needs.change-scope.outputs.draft_frontend_user }}
+          USER_RESULT: ${{ needs.draft-frontend-user.result }}
+        run: |
+          test "$CHANGE_SCOPE_RESULT" = "success"
+          test "$PR_MODE" = "draft"
+          test "$QUALITY_RESULT" = "success"
+          for value in "$DRAFT_DOCS_REQUIRED" "$PYTHON_REQUIRED" "$BACKEND_REQUIRED" "$ADMIN_REQUIRED" "$USER_REQUIRED"; do
+            case "$value" in
+              true|false) ;;
+              *) printf 'Draft CI 分类输出不是布尔值\n'; exit 1 ;;
+            esac
+          done
+          selected_gate=false
+          for value in "$DRAFT_DOCS_REQUIRED" "$PYTHON_REQUIRED" "$BACKEND_REQUIRED" "$ADMIN_REQUIRED" "$USER_REQUIRED"; do
+            if [ "$value" = "true" ]; then
+              selected_gate=true
+            fi
+          done
+          test "$selected_gate" = "true"
+          check_required_gate() {
+            local required="$1"
+            local result="$2"
+            local gate_name="$3"
+            if [ "$required" = "true" ] && [ "$result" != "success" ]; then
+              printf 'Draft 定向门禁未成功：%s result=%s\n' "$gate_name" "$result"
+              return 1
+            fi
+            if [ "$required" = "false" ] && [ "$result" != "skipped" ]; then
+              printf '未选 Draft 门禁状态异常：%s result=%s\n' "$gate_name" "$result"
+              return 1
+            fi
+          }
+          check_required_gate "$PYTHON_REQUIRED" "$PYTHON_RESULT" "draft-python"
+          check_required_gate "$BACKEND_REQUIRED" "$BACKEND_RESULT" "draft-backend"
+          check_required_gate "$ADMIN_REQUIRED" "$ADMIN_RESULT" "draft-frontend-admin"
+          check_required_gate "$USER_REQUIRED" "$USER_RESULT" "draft-frontend-user"
+          printf 'Draft 快速门禁通过；该结果不能替代 Ready 完整门禁。\n'
+
   docs-lightweight:
     name: 文档与基础质量轻量门禁
     needs: change-scope
-    if: needs.change-scope.outputs.docs_lightweight == 'true'
+    if: github.event.pull_request.draft == false && needs.change-scope.outputs.docs_lightweight == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -65,7 +323,7 @@ jobs:
   backend:
     name: 后端构建与测试
     needs: change-scope
-    if: needs.change-scope.outputs.backend == 'true'
+    if: github.event.pull_request.draft == false && needs.change-scope.outputs.backend == 'true'
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -138,7 +396,7 @@ jobs:
   phase5-release-safety:
     name: 阶段 5 短信发布安全门禁
     needs: change-scope
-    if: needs.change-scope.outputs.phase5 == 'true'
+    if: github.event.pull_request.draft == false && needs.change-scope.outputs.phase5 == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -331,7 +589,7 @@ jobs:
   gateway-g3:
     name: AI 网关 G3 财务与消息验收
     needs: change-scope
-    if: needs.change-scope.outputs.gateway_g3 == 'true'
+    if: github.event.pull_request.draft == false && needs.change-scope.outputs.gateway_g3 == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -347,7 +605,7 @@ jobs:
   gateway-g4:
     name: AI 网关 G4 安全与资源治理验收
     needs: change-scope
-    if: needs.change-scope.outputs.gateway_g4 == 'true'
+    if: github.event.pull_request.draft == false && needs.change-scope.outputs.gateway_g4 == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -363,7 +621,7 @@ jobs:
   gateway-g7:
     name: AI 网关 G7 可靠性与零差额验收
     needs: change-scope
-    if: needs.change-scope.outputs.gateway_g7 == 'true'
+    if: github.event.pull_request.draft == false && needs.change-scope.outputs.gateway_g7 == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -419,7 +677,7 @@ jobs:
   gateway-g8:
     name: AI 网关 G8 生产就绪门禁
     needs: change-scope
-    if: needs.change-scope.outputs.gateway_g8 == 'true'
+    if: github.event.pull_request.draft == false && needs.change-scope.outputs.gateway_g8 == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -763,7 +1021,7 @@ jobs:
   gateway-g8-real-e2e:
     name: AI 网关 G8 真实后端浏览器验收
     needs: change-scope
-    if: needs.change-scope.outputs.gateway_g8_real_e2e == 'true'
+    if: github.event.pull_request.draft == false && needs.change-scope.outputs.gateway_g8_real_e2e == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -797,7 +1055,7 @@ jobs:
   frontend-admin:
     name: 管理后台构建
     needs: change-scope
-    if: needs.change-scope.outputs.frontend_admin == 'true'
+    if: github.event.pull_request.draft == false && needs.change-scope.outputs.frontend_admin == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -835,7 +1093,7 @@ jobs:
   frontend-user:
     name: 用户控制台构建
     needs: change-scope
-    if: needs.change-scope.outputs.frontend_user == 'true'
+    if: github.event.pull_request.draft == false && needs.change-scope.outputs.frontend_user == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -888,7 +1146,7 @@ jobs:
       - gateway-g8-real-e2e
       - frontend-admin
       - frontend-user
-    if: always()
+    if: always() && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - name: 校验分类结果与适用门禁

@@ -26,6 +26,16 @@ OUTPUT_NAMES = (
     "full",
 )
 
+PR_MODES = ("draft", "ready")
+
+DRAFT_OUTPUT_NAMES = (
+    "draft_docs",
+    "draft_python",
+    "draft_backend",
+    "draft_frontend_admin",
+    "draft_frontend_user",
+)
+
 GATEWAY_OUTPUTS = (
     "gateway_g3",
     "gateway_g4",
@@ -45,6 +55,20 @@ def empty_result() -> dict[str, bool]:
     """创建所有门禁默认关闭的结果，后续只按明确规则开启。"""
 
     return {name: False for name in OUTPUT_NAMES}
+
+
+def empty_draft_result() -> dict[str, bool]:
+    """创建 Draft 定向门禁的默认关闭结果，避免新增路径被隐式放行。"""
+
+    return {name: False for name in DRAFT_OUTPUT_NAMES}
+
+
+def enable_all_draft(result: dict[str, bool]) -> dict[str, bool]:
+    """未知或跨域路径启用全部 Draft 定向门禁，以失败关闭代替猜测。"""
+
+    for name in DRAFT_OUTPUT_NAMES:
+        result[name] = True
+    return result
 
 
 def enable_full(result: dict[str, bool]) -> dict[str, bool]:
@@ -264,6 +288,41 @@ def classify_paths(paths: Iterable[str]) -> dict[str, bool]:
     return result
 
 
+def classify_draft_paths(paths: Iterable[str]) -> dict[str, bool]:
+    """按精确变更路径选择 Draft 快速门禁，Ready 分类仍由 classify_paths 独立负责。"""
+
+    normalized = normalize_paths(paths)
+    result = empty_draft_result()
+    if is_pure_documentation(normalized):
+        result["draft_docs"] = True
+        return result
+
+    for path in normalized:
+        if path == "README.md" or (path.startswith("docs/") and path.endswith(".md")):
+            continue
+        if path.startswith((".github/", "infra/scripts/", "scripts/", "tests/")):
+            result["draft_python"] = True
+            continue
+        if path.startswith("server/"):
+            result["draft_backend"] = True
+            continue
+        if path.startswith("web/shared/"):
+            result["draft_frontend_admin"] = True
+            result["draft_frontend_user"] = True
+            continue
+        if path.startswith("web/admin-console/"):
+            result["draft_frontend_admin"] = True
+            continue
+        if path.startswith("web/user-console/"):
+            result["draft_frontend_user"] = True
+            continue
+        return enable_all_draft(result)
+
+    if not any(result.values()):
+        return enable_all_draft(result)
+    return result
+
+
 def validate_sha(value: str, label: str) -> str:
     """只允许完整 Git 对象摘要进入固定参数的 diff 调用。"""
 
@@ -323,10 +382,22 @@ def changed_paths(repo_root: Path, base_sha: str, head_sha: str) -> list[str]:
     return parse_name_status(completed.stdout)
 
 
-def write_github_outputs(output_path: Path, result: dict[str, bool]) -> None:
+def write_github_outputs(
+    output_path: Path,
+    result: dict[str, bool],
+    pr_mode: str,
+    draft_result: dict[str, bool],
+) -> None:
     """以 GitHub Actions 规定格式输出低敏布尔门禁，不输出仓库内容。"""
 
+    if pr_mode not in PR_MODES:
+        raise ClassificationError("PR 模式只能是 draft 或 ready")
     with output_path.open("a", encoding="utf-8", newline="\n") as output_file:
+        output_file.write(f"pr_mode={pr_mode}\n")
+        for name in DRAFT_OUTPUT_NAMES:
+            output_file.write(
+                f"{name}={'true' if draft_result[name] else 'false'}\n"
+            )
         for name in OUTPUT_NAMES:
             output_file.write(f"{name}={'true' if result[name] else 'false'}\n")
 
@@ -337,11 +408,18 @@ def main() -> int:
     parser.add_argument("--head-sha", required=True)
     parser.add_argument("--repo-root", type=Path, default=Path.cwd())
     parser.add_argument("--github-output", type=Path, required=True)
+    parser.add_argument("--pr-mode", choices=PR_MODES, required=True)
     args = parser.parse_args()
     try:
         paths = changed_paths(args.repo_root.resolve(), args.base_sha, args.head_sha)
         result = classify_paths(paths)
-        write_github_outputs(args.github_output, result)
+        draft_result = classify_draft_paths(paths)
+        write_github_outputs(
+            args.github_output,
+            result,
+            args.pr_mode,
+            draft_result,
+        )
     except (ClassificationError, OSError) as error:
         print(f"CI_CHANGE_SCOPE=FAILED reason={type(error).__name__}", file=sys.stderr)
         return 2

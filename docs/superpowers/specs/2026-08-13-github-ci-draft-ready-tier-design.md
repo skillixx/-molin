@@ -1,6 +1,6 @@
 # GitHub CI Draft/Ready 分级门禁设计
 
-> 状态：`DESIGN_APPROVED_PENDING_WRITTEN_SPEC_REVIEW`。本设计只优化仓库 CI、测试与文档，不安装 self-hosted runner，不连接测试服，也不改变生产、真实付费、通知或客户灰度授权边界。
+> 状态：`IMPLEMENTED_LOCAL_GATES_PENDING_DRAFT_PR`。实施计划见 `docs/superpowers/plans/2026-08-13-github-ci-draft-ready-tier.md`。本设计只优化仓库 CI、测试与文档，不安装 self-hosted runner，不连接测试服，也不改变生产、真实付费、通知或客户灰度授权边界。
 
 ## 1. 背景与当前证据
 

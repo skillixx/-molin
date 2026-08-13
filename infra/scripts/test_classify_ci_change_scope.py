@@ -31,6 +31,96 @@ class ClassifyCIChangeScopeTest(unittest.TestCase):
         enabled = {name for name, value in result.items() if value}
         self.assertEqual(set(expected), enabled)
 
+    def assert_draft_enabled(self, paths, *expected):
+        """断言 Draft 只启用与变更直接相关的定向门禁。"""
+
+        result = self.classifier.classify_draft_paths(paths)
+        enabled = {name for name, value in result.items() if value}
+        self.assertEqual(set(expected), enabled)
+
+    def test_draft_pure_docs_only_selects_docs(self):
+        self.assert_draft_enabled(
+            ["README.md", "docs/ci-guide.md"],
+            "draft_docs",
+        )
+
+    def test_draft_python_and_workflow_paths_select_python(self):
+        for path in (
+            "infra/scripts/check.py",
+            "scripts/check.py",
+            "tests/test_contract.py",
+            ".github/workflows/ci.yml",
+        ):
+            with self.subTest(path=path):
+                self.assert_draft_enabled([path], "draft_python")
+
+    def test_draft_backend_selects_backend(self):
+        self.assert_draft_enabled(
+            ["server/internal/modules/content/service/article.go"],
+            "draft_backend",
+        )
+
+    def test_draft_shared_frontend_selects_both_consoles(self):
+        self.assert_draft_enabled(
+            ["web/shared/src/http/client.ts"],
+            "draft_frontend_admin",
+            "draft_frontend_user",
+        )
+
+    def test_draft_unknown_path_fails_closed_to_all_targeted_gates(self):
+        result = self.classifier.classify_draft_paths(["new-build-system.toml"])
+        self.assertTrue(all(result.values()))
+
+    def test_ready_outputs_remain_unchanged_when_draft_contract_is_added(self):
+        result = self.classifier.classify_paths(
+            ["server/internal/modules/content/service/article.go"]
+        )
+        enabled = {name for name, value in result.items() if value}
+        self.assertEqual({"backend"}, enabled)
+
+    def test_github_output_contains_mode_draft_and_ready_contracts(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "github-output.txt"
+            ready_result = self.classifier.classify_paths(["docs/ci-guide.md"])
+            draft_result = self.classifier.classify_draft_paths(["docs/ci-guide.md"])
+
+            self.classifier.write_github_outputs(
+                output_path,
+                ready_result,
+                "draft",
+                draft_result,
+            )
+
+            values = dict(
+                line.split("=", 1)
+                for line in output_path.read_text(encoding="utf-8").splitlines()
+            )
+            self.assertEqual("draft", values["pr_mode"])
+            self.assertEqual("true", values["draft_docs"])
+            self.assertEqual("false", values["draft_backend"])
+            self.assertEqual("true", values["docs_lightweight"])
+
+    def test_cli_rejects_unknown_pr_mode(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            completed = subprocess.run(
+                [
+                    "python",
+                    str(SCRIPT_PATH),
+                    "--base-sha",
+                    "0" * 40,
+                    "--head-sha",
+                    "1" * 40,
+                    "--github-output",
+                    str(Path(temp_dir) / "github-output.txt"),
+                    "--pr-mode",
+                    "invalid",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(2, completed.returncode)
+
     def test_pure_docs_only_runs_lightweight_gate(self):
         self.assert_enabled(
             ["README.md", "docs/ai-gateway-g8-development.md"],
