@@ -2,9 +2,9 @@
 
 ## 1. 当前状态
 
-`PENDING_ENGINEERING_GATES_AND_USER_APPROVAL`
+`PENDING_USER_APPROVAL`
 
-本清单仅冻结未来可能执行的候选。当前未授权运行真实本地材料诊断、013 正式入口、SSH 或任何测试服连接。Draft PR、CI、评审或合并均不自动构成执行授权。
+工程候选最终 HEAD `1b542dc656b09ace80bcdd370fac360ba19b4091` 经 CI run `31719189481` 12/12 SUCCESS 及独立代码安全、QA、产品/规格 P0/P1/P2=0 后，由 PR #374 按 merge commit `d0349353342bc37a912b1942d743e0c45c75ea80` 合入主干。工程门禁与合并不构成执行授权；当前仍未授权运行真实本地材料诊断、013 正式入口、SSH 或任何测试服连接。
 
 ## 2. 固定目标
 
@@ -25,7 +25,7 @@
   - SHA-256：`02c48a4aca2387e0baa0c179f9a1ea99c8a981adcdd22551b0010fd7b6fb1dfe`
   - 大小：`22272`
 
-最终合并后必须从 merge commit 原始 Git 对象重新计算并更新以上摘要和大小；HEAD 或脚本任一漂移即使本清单失效。
+已从 merge commit `d0349353342bc37a912b1942d743e0c45c75ea80` 的原始 Git 对象复核：上述摘要和大小与最终工程 HEAD 一致。后续脚本任一漂移即使本清单失效并须重新完成工程门禁与用户授权。
 
 ## 4. 固定五文件
 
