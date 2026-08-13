@@ -226,31 +226,49 @@ def collect_stream(stream: BinaryIO, limit: int) -> StreamCapture:
 def freeze_file(path: Path) -> FileEvidence:
     """读取同一普通非链接文件并确认读取期间没有发生身份漂移。"""
 
-    resolved = path.absolute()
+    if not path.is_absolute():
+        raise EvidenceError("absolute_path_required")
+    resolved = path
+    descriptor = -1
     try:
         before = resolved.lstat()
         if not stat.S_ISREG(before.st_mode) or resolved.is_symlink():
             raise EvidenceError("local_input_type_mismatch")
         if getattr(before, "st_file_attributes", 0) & 0x400:
             raise EvidenceError("local_input_reparse_point")
+        descriptor = os.open(
+            resolved,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0),
+        )
+        pinned_before = os.fstat(descriptor)
         digest = hashlib.sha256()
-        with resolved.open("rb") as stream:
-            while chunk := stream.read(8192):
-                digest.update(chunk)
+        while True:
+            chunk = os.read(descriptor, 8192)
+            if not chunk:
+                break
+            digest.update(chunk)
+        pinned_after = os.fstat(descriptor)
         after = resolved.lstat()
     except EvidenceError:
         raise
     except (OSError, ValueError) as error:
         raise EvidenceError("local_input_unavailable") from error
-    identity_before = (
-        before.st_dev, before.st_ino, before.st_mode, before.st_size,
-        before.st_mtime_ns, before.st_ctime_ns,
-    )
-    identity_after = (
-        after.st_dev, after.st_ino, after.st_mode, after.st_size,
-        after.st_mtime_ns, after.st_ctime_ns,
-    )
-    if identity_before != identity_after:
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    common_identities = {
+        (
+            value.st_dev, value.st_ino, value.st_mode, value.st_size,
+            value.st_mtime_ns,
+        )
+        for value in (before, pinned_before, pinned_after, after)
+    }
+    if (
+        len(common_identities) != 1
+        or before.st_ctime_ns != after.st_ctime_ns
+        or pinned_before.st_ctime_ns != pinned_after.st_ctime_ns
+        or not stat.S_ISREG(pinned_before.st_mode)
+    ):
         raise EvidenceError("local_input_drift")
     return FileEvidence(
         path=resolved,
@@ -555,13 +573,18 @@ def main() -> int:
         if arguments.change_id != CHANGE_ID:
             raise EvidenceError("invalid_request")
         values = run_once(inputs)
+        result = "MISMATCH" if values["STAGING_INTEGRITY"] == "MISMATCH" else "PASS"
+        print(f"G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012={result}")
+        print(f"change_id={CHANGE_ID}")
+        print(f"target_change_id={TARGET_CHANGE_ID}")
+        print(f"staging_state={values['STAGING_STATE']}")
+        print(f"staging_integrity={values['STAGING_INTEGRITY']}")
+        print(f"staging_mismatch_reason={values['STAGING_MISMATCH_REASON']}")
         if values["STAGING_INTEGRITY"] == "MISMATCH":
-            print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012=MISMATCH")
             return 3
-        print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012=PASS")
         return 0
-    except EvidenceError as error:
-        print(f"G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012=FAILED reason={error}")
+    except EvidenceError:
+        print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012=FAILED reason=evidence_unavailable")
         return 2
 
 
@@ -699,6 +722,19 @@ try:
                             opened_files = {}
                             captured = {}
                             for name in names:
+                                entry = os.stat(name, dir_fd=stage_fd, follow_symlinks=False)
+                                expected_sha256, expected_size, expected_mode = expected_files[name]
+                                opened_files[name] = metadata_identity(entry)
+                                valid_entry = (
+                                    stat.S_ISREG(entry.st_mode)
+                                    and entry.st_uid == uid
+                                    and entry.st_gid == gid
+                                    and stat.S_IMODE(entry.st_mode) == expected_mode
+                                    and entry.st_size == expected_size
+                                )
+                                if not valid_entry:
+                                    metadata_matches = False
+                                    continue
                                 file_fd = os.open(
                                     name,
                                     os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
@@ -706,9 +742,9 @@ try:
                                 )
                                 try:
                                     before = os.fstat(file_fd)
-                                    expected_sha256, expected_size, expected_mode = expected_files[name]
-                                    opened_files[name] = metadata_identity(before)
                                     valid_metadata = (
+                                        metadata_identity(before) == metadata_identity(entry)
+                                        and
                                         stat.S_ISREG(before.st_mode)
                                         and before.st_uid == uid
                                         and before.st_gid == gid

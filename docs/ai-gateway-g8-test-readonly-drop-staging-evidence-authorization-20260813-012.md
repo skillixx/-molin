@@ -17,14 +17,16 @@ Drop 地址只代表传输端点。012 不读取或验证 hostname、`/etc/machi
 ## 2. 冻结信任与程序
 
 - 012 包装器：`infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-012.py`
-- 包装器 SHA-256：`b768932826d5d64780200e9b71719a5b0d547f8129d2f675bbad37b0f506847a`
-- 包装器大小：`32979` bytes
+- 包装器 SHA-256：`e417089d107f9fb92c4e7236b7b0c9bec63df66438b820812624b83b68563a9f`
+- 包装器大小：`34630` bytes
 - 服务端 ED25519 指纹：`SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I`
 - 客户端 ED25519 指纹：`SHA256:oQNs45Icrw5B6RCqPHOFnsub4jfRzk3evFy+wmhF8K0`
 - Windows 工具：`C:\Windows\System32\OpenSSH\ssh.exe`、`C:\Windows\System32\OpenSSH\ssh-keygen.exe`
 - 身份材料：`C:\Users\skillixx\.ssh\known_hosts`、`C:\Users\skillixx\.ssh\id_ed25519`、`C:\Users\skillixx\.ssh\id_ed25519.pub`
 
 包装器在语义校验前冻结上述普通非链接文件的路径、dev/inode、mode、大小、mtime/ctime 和 SHA-256；固定端点的明文/哈希 known_hosts 命中合计必须恰好一条批准的 ED25519 密钥，客户端公钥指纹与公私钥对必须精确匹配。SSH 前后均复核全部材料；私钥不得复制或修改权限。
+
+精确 PR HEAD 不写入自身提交内，避免形成无法满足的 Git 自引用。最终功能 HEAD 必须在 Draft PR #369 的正文或固定评论中记录，并由 CI、三方评审及合并授权共同精确绑定；若 HEAD 漂移，原记录和签署立即失效。当前分支固定基线为 `972a23572c9e09d9adc7038494ac1996b5cec33d`。
 
 ## 3. 冻结五文件、manifest 与回执
 

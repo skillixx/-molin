@@ -205,7 +205,7 @@ staging_mismatch_reason=NONE|PATH|FILE_SET|FILE_METADATA|FILE_CONTENT|MANIFEST|R
 - `docs/ai-gateway-g8-test-readonly-access-runbook.md`。
 - 新的 012 执行授权清单。
 
-012 授权清单必须冻结 ChangeId、精确 PR HEAD、脚本摘要、Drop 端点、known_hosts 与客户端指纹、目标暂存、五文件摘要/大小/权限、manifest、回执、精确命令、最大次数、`0 / 0 / 0 CNY`、影响、回滚和停止条件。初始状态只能是 `PENDING_ENGINEERING_GATES_AND_USER_APPROVAL`。
+012 授权清单必须冻结 ChangeId、脚本摘要、Drop 端点、known_hosts 与客户端指纹、目标暂存、五文件摘要/大小/权限、manifest、回执、精确命令、最大次数、`0 / 0 / 0 CNY`、影响、回滚和停止条件。精确 PR HEAD 不能写入自身提交形成 Git 自引用，必须在最终提交产生后写入 Draft PR 正文或固定评论，并由 CI、三方签署和合并授权共同绑定；HEAD 漂移即失效。初始状态只能是 `PENDING_ENGINEERING_GATES_AND_USER_APPROVAL`。
 
 只有精确 PR HEAD 的适用 CI、独立代码安全评审、QA、产品/规格验收均达到 P0/P1=0，并以 merge commit 合并后，文档状态才可收敛为 `PENDING_USER_APPROVAL`。用户再次明确批准前，不得运行 012 `--local-check` 或连接测试服。
 

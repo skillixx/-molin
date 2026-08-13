@@ -436,7 +436,7 @@ Run 单测，Expected: FAIL，因为 CI 尚未包含 012。
 $scriptSha = (Get-FileHash -Algorithm SHA256 infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-012.py).Hash.ToLowerInvariant()
 ```
 
-授权清单冻结精确 ChangeId、目标、端点/客户端指纹、部署根、暂存路径、五文件摘要/大小/权限、完整 manifest、回执、脚本 SHA、一次 local-check、一次 SSH、零重试、0/0/0 CNY、系统日志/atime 影响、无应用层回滚及全部停止条件。当前状态只能为 `PENDING_ENGINEERING_GATES_AND_USER_APPROVAL`，并明确所有命令当前禁止执行。
+授权清单冻结精确 ChangeId、目标、端点/客户端指纹、部署根、暂存路径、五文件摘要/大小/权限、完整 manifest、回执、脚本 SHA、一次 local-check、一次 SSH、零重试、0/0/0 CNY、系统日志/atime 影响、无应用层回滚及全部停止条件。精确最终 PR HEAD 在提交产生后写入 Draft PR 正文或固定评论，避免仓内文档自引用；HEAD 漂移时必须重签。当前状态只能为 `PENDING_ENGINEERING_GATES_AND_USER_APPROVAL`，并明确所有命令当前禁止执行。
 
 - [ ] **Step 4: 同步 README、G8 验收、Runbook、测试计划和工具文档**
 

@@ -206,6 +206,37 @@ class TestDropStagingEvidence012Contract(unittest.TestCase):
             with self.assertRaises(module.EvidenceError):
                 module.assert_file_unchanged(evidence)
 
+    def test_freeze_file_rejects_relative_paths(self):
+        """相对身份材料路径被静默解析时，本测试必须失败。"""
+
+        module = load_module()
+
+        with self.assertRaises(module.EvidenceError):
+            module.freeze_file(Path("relative-known-hosts"))
+
+    def test_freeze_file_rejects_lstat_open_replacement_race(self):
+        """lstat 与 open 之间替换同名文件仍通过冻结时，本测试必须失败。"""
+
+        module = load_module()
+        with tempfile.TemporaryDirectory(prefix="g8-012-open-race-") as directory:
+            path = Path(directory) / "identity"
+            old = Path(directory) / "identity.old"
+            path.write_bytes(b"approved\n")
+            real_open = module.os.open
+            replaced = False
+
+            def replace_then_open(target, flags, *args, **kwargs):
+                nonlocal replaced
+                if not replaced and Path(target) == path:
+                    replaced = True
+                    path.replace(old)
+                    path.write_bytes(b"malicious\n")
+                return real_open(target, flags, *args, **kwargs)
+
+            with mock.patch.object(module.os, "open", side_effect=replace_then_open):
+                with self.assertRaises(module.EvidenceError):
+                    module.freeze_file(path)
+
     def test_known_hosts_requires_one_approved_endpoint_key(self):
         """固定端点出现额外明文或哈希密钥仍通过时，本测试必须失败。"""
 
@@ -465,14 +496,33 @@ class TestDropStagingEvidence012Contract(unittest.TestCase):
         """主入口状态码或首行契约漂移时，本测试必须失败。"""
 
         module = load_module()
+        base_arguments = ["--change-id", module.CHANGE_ID, "--known-hosts", "C:/kh", "--identity-file", "C:/id", "--identity-public-file", "C:/id.pub"]
         cases = (
             (["--self-test"], None, 0, "G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012_SELF_TEST=PASS\n"),
-            (["--change-id", module.CHANGE_ID, "--known-hosts", "kh", "--identity-file", "id", "--identity-public-file", "id.pub"], "PASS", 0, "G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012=PASS\n"),
-            (["--change-id", module.CHANGE_ID, "--known-hosts", "kh", "--identity-file", "id", "--identity-public-file", "id.pub"], "MISMATCH", 3, "G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012=MISMATCH\n"),
+            (base_arguments, ("ABSENT", "NOT_APPLICABLE", "NONE"), 0, "PASS"),
+            (base_arguments, ("PRESENT", "PASS", "NONE"), 0, "PASS"),
+            (base_arguments, ("PRESENT", "MISMATCH", "FILE_CONTENT"), 3, "MISMATCH"),
         )
-        for arguments, integrity, expected_code, expected_stdout in cases:
-            values = {"STAGING_INTEGRITY": integrity} if integrity else None
-            with self.subTest(integrity=integrity):
+        for arguments, state, expected_code, headline in cases:
+            values = None
+            expected_stdout = "G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012_SELF_TEST=PASS\n"
+            if state is not None:
+                staging_state, integrity, reason = state
+                values = {
+                    "STAGING_STATE": staging_state,
+                    "STAGING_INTEGRITY": integrity,
+                    "STAGING_MISMATCH_REASON": reason,
+                }
+                expected_stdout = "\n".join((
+                    f"G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012={headline}",
+                    f"change_id={module.CHANGE_ID}",
+                    f"target_change_id={module.TARGET_CHANGE_ID}",
+                    f"staging_state={staging_state}",
+                    f"staging_integrity={integrity}",
+                    f"staging_mismatch_reason={reason}",
+                    "",
+                ))
+            with self.subTest(state=state):
                 with (
                     mock.patch.object(module, "freeze_local_inputs", return_value=object()),
                     mock.patch.object(module, "run_once", return_value=values),
@@ -484,6 +534,32 @@ class TestDropStagingEvidence012Contract(unittest.TestCase):
             self.assertEqual(code, expected_code)
             self.assertEqual(stdout.getvalue(), expected_stdout)
             self.assertEqual(stderr.getvalue(), "")
+
+    def test_main_collapses_internal_errors_to_evidence_unavailable(self):
+        """正式失败回显内部分类或本地信息时，本测试必须失败。"""
+
+        module = load_module()
+        arguments = [
+            "--change-id", module.CHANGE_ID,
+            "--known-hosts", "C:/known_hosts",
+            "--identity-file", "C:/id_ed25519",
+            "--identity-public-file", "C:/id_ed25519.pub",
+        ]
+        with (
+            mock.patch.object(module, "freeze_local_inputs", return_value=object()),
+            mock.patch.object(module, "run_once", side_effect=module.EvidenceError("DO_NOT_ECHO_INTERNAL")),
+            mock.patch.object(sys, "argv", [str(SCRIPT_PATH), *arguments]),
+            mock.patch("sys.stdout", new_callable=io.StringIO) as stdout,
+            mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
+        ):
+            code = module.main()
+
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            stdout.getvalue(),
+            "G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012=FAILED reason=evidence_unavailable\n",
+        )
+        self.assertEqual(stderr.getvalue(), "")
 
     def test_ci_runs_012_on_windows_and_linux_without_network(self):
         """CI 遗漏 012、断网 Linux 动态测试或离线自检时，本测试必须失败。"""
@@ -676,16 +752,16 @@ class TestDropStagingEvidence012Posix(unittest.TestCase):
             path.unlink()
             path.symlink_to(self.stage / "SHA256SUMS")
 
-        mutations = {
-            "FILE_SET": lambda: (self.stage / "extra").write_bytes(b"extra"),
-            "FILE_METADATA": lambda: (self.stage / "manifest.env").chmod(0o622),
-            "FILE_CONTENT": change_artifact,
-            "MANIFEST": change_manifest,
-            "RECEIPT": change_receipt,
-            "READ_ERROR": replace_manifest_with_symlink,
-        }
-        for expected_reason, mutate in mutations.items():
-            with self.subTest(expected_reason=expected_reason):
+        mutations = (
+            ("file_set", "FILE_SET", lambda: (self.stage / "extra").write_bytes(b"extra")),
+            ("file_mode", "FILE_METADATA", lambda: (self.stage / "manifest.env").chmod(0o622)),
+            ("file_content", "FILE_CONTENT", change_artifact),
+            ("manifest", "MANIFEST", change_manifest),
+            ("receipt", "RECEIPT", change_receipt),
+            ("file_symlink", "FILE_METADATA", replace_manifest_with_symlink),
+        )
+        for case_name, expected_reason, mutate in mutations:
+            with self.subTest(case_name=case_name, expected_reason=expected_reason):
                 self.reset_valid_stage()
                 mutate()
                 values = self.run_remote()
@@ -756,6 +832,31 @@ class TestDropStagingEvidence012Posix(unittest.TestCase):
                     )
                     self.assertEqual(values["STAGING_INTEGRITY"], "MISMATCH")
                     self.assertEqual(values["STAGING_MISMATCH_REASON"], expected_reason)
+
+    def test_remote_program_classifies_system_read_failure(self):
+        """真实系统读取异常未归入 READ_ERROR 时，本测试必须失败。"""
+
+        self.create_valid_stage()
+        program = self.build_remote()
+        needle = "                                file_fd = os.open(\n"
+        self.assertIn(needle, program)
+        program = program.replace(
+            needle,
+            "                                raise OSError('injected read failure')\n"
+            "                                file_fd = os.open(\n",
+            1,
+        )
+
+        completed = self.execute_program(program)
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stderr, "")
+        values = self.module.parse_remote_output(
+            completed.stdout,
+            expected_deployment_root=str(self.root),
+        )
+        self.assertEqual(values["STAGING_INTEGRITY"], "MISMATCH")
+        self.assertEqual(values["STAGING_MISMATCH_REASON"], "READ_ERROR")
 
 
 if __name__ == "__main__":
