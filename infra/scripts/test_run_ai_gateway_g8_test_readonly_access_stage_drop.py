@@ -30,6 +30,29 @@ class TestReadonlyAccessStageDrop(unittest.TestCase):
     def setUp(self) -> None:
         self.module = load_module()
 
+    def test_consumed_change_rejects_every_entry_before_local_or_network_reads(self) -> None:
+        """009 正式额度消费后，普通、本地检查和自检入口都必须在读取材料前拒绝。"""
+        self.assertTrue(self.module.CHANGE_ID_CONSUMED)
+        for extra_arguments in ((), ("--local-check",), ("--self-test",)):
+            arguments = [str(SCRIPT_PATH), *extra_arguments]
+            with (
+                self.subTest(arguments=extra_arguments),
+                mock.patch.object(sys, "argv", arguments),
+                mock.patch.object(self.module, "validate_local_inputs") as validate,
+                mock.patch.object(self.module, "create_frozen_local_snapshot") as snapshot,
+                mock.patch.object(self.module, "run_remote_preflight") as remote,
+                mock.patch.object(self.module, "run_atomic_sftp_upload") as sftp,
+                mock.patch("builtins.print") as output,
+            ):
+                self.assertEqual(self.module.main(), 2)
+                output.assert_called_once_with(
+                    "G8_TEST_READONLY_ACCESS_STAGE_DROP=FAILED reason=change_id_consumed"
+                )
+            validate.assert_not_called()
+            snapshot.assert_not_called()
+            remote.assert_not_called()
+            sftp.assert_not_called()
+
     def test_candidate_is_bound_to_drop_without_physical_identity(self) -> None:
         self.assertEqual(
             self.module.CHANGE_ID,
@@ -119,6 +142,7 @@ class TestReadonlyAccessStageDrop(unittest.TestCase):
         ]
         with (
             mock.patch.object(sys, "argv", arguments),
+            mock.patch.object(self.module, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(self.module, "validate_local_inputs"),
             mock.patch.object(self.module, "run_remote_preflight") as remote,
             mock.patch.object(self.module, "run_atomic_sftp_upload") as sftp,
@@ -165,6 +189,7 @@ class TestReadonlyAccessStageDrop(unittest.TestCase):
         arguments = [str(SCRIPT_PATH), "--change-id=wrong"]
         with (
             mock.patch.object(sys, "argv", arguments),
+            mock.patch.object(self.module, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(self.module, "validate_local_inputs") as validate,
             mock.patch.object(self.module, "run_remote_preflight") as remote,
             mock.patch("builtins.print"),
@@ -186,6 +211,7 @@ class TestReadonlyAccessStageDrop(unittest.TestCase):
         values = {"DEPLOYMENT_ROOT_META": "pc:pc:700:directory"}
         with (
             mock.patch.object(sys, "argv", arguments),
+            mock.patch.object(self.module, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(self.module, "validate_local_inputs") as validate,
             mock.patch.object(
                 self.module,
@@ -218,6 +244,7 @@ class TestReadonlyAccessStageDrop(unittest.TestCase):
         values = {"DEPLOYMENT_ROOT_META": "pc:pc:700:directory"}
         with (
             mock.patch.object(sys, "argv", arguments),
+            mock.patch.object(self.module, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(self.module, "validate_local_inputs"),
             mock.patch.object(
                 self.module,
@@ -253,6 +280,7 @@ class TestReadonlyAccessStageDrop(unittest.TestCase):
         values = {"DEPLOYMENT_ROOT_META": "pc:pc:700:directory"}
         with (
             mock.patch.object(sys, "argv", arguments),
+            mock.patch.object(self.module, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(
                 self.module,
                 "validate_local_inputs",

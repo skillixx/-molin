@@ -10,12 +10,13 @@ from pathlib import Path
 
 
 SCRIPT_PATH = Path(__file__).with_name("prepare-ai-gateway-g8-test-readonly-access-bundle.py")
+CI_PATH = SCRIPT_PATH.parents[2] / ".github" / "workflows" / "ci.yml"
 CONSUMED_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-20260812-003"
 CONSUMED_SOURCE_COMMIT = "8ec878572f62ef2584c38aaadc1bca1cb802b13f"
 CONSUMED_SOURCE_TREE = "988bdcdc8017322264733ebe68876e4811b01412"
-ACTIVE_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009"
-ACTIVE_SOURCE_COMMIT = "7f3325e2d6801567fea34a2049a2f3ada114e348"
-ACTIVE_SOURCE_TREE = "4563feb59850dca87789adfb5eea820f78b1a209"
+CONSUMED_DROP_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009"
+CONSUMED_DROP_SOURCE_COMMIT = "7f3325e2d6801567fea34a2049a2f3ada114e348"
+CONSUMED_DROP_SOURCE_TREE = "4563feb59850dca87789adfb5eea820f78b1a209"
 
 
 def bash_executable() -> str:
@@ -80,6 +81,7 @@ class TestReadonlyAccessBundle(unittest.TestCase):
             ("CHG-G8-TEST-READONLY-ACCESS-20260812-001", "c50f092339fcad79ca1262925480219db1755318"),
             ("CHG-G8-TEST-READONLY-ACCESS-20260812-002", "50b3e2f9d18b38e7d4a91ebeb4f03c413ef33c44"),
             (CONSUMED_CHANGE_ID, CONSUMED_SOURCE_COMMIT),
+            (CONSUMED_DROP_CHANGE_ID, CONSUMED_DROP_SOURCE_COMMIT),
         ):
             with self.subTest(change_id=change_id), tempfile.TemporaryDirectory(prefix="g8-consumed-cli-") as temporary:
                 output = Path(temporary) / "bundle"
@@ -95,13 +97,13 @@ class TestReadonlyAccessBundle(unittest.TestCase):
                     "G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request",
                 )
 
-    def test_009_is_the_only_active_drop_candidate(self) -> None:
-        """009 必须是唯一活动候选，历史 001 至 003 只能临时复现。"""
-        self.assertIn("ACTIVE_CANDIDATE = FrozenCandidate(", self.source)
-        self.assertIn(f'    "{ACTIVE_CHANGE_ID}",', self.source)
-        self.assertIn(f'    "{ACTIVE_SOURCE_COMMIT}",', self.source)
-        self.assertIn(f'    "{ACTIVE_SOURCE_TREE}",', self.source)
-        self.assertIn('    "DROP_SSH",', self.source)
+    def test_009_is_consumed_and_there_is_no_active_candidate(self) -> None:
+        """009 正式额度消费后只能临时复现，生成器不得保留活动候选。"""
+        self.assertIn("ACTIVE_CANDIDATE = None", self.source)
+        self.assertIn(f'"{CONSUMED_DROP_CHANGE_ID}": FrozenCandidate(', self.source)
+        self.assertIn(f'        "{CONSUMED_DROP_SOURCE_COMMIT}",', self.source)
+        self.assertIn(f'        "{CONSUMED_DROP_SOURCE_TREE}",', self.source)
+        self.assertIn('        "DROP_SSH",', self.source)
         self.assertIn(f'"{CONSUMED_CHANGE_ID}": FrozenCandidate(', self.source)
         self.assertIn(f'        "{CONSUMED_SOURCE_COMMIT}",', self.source)
         self.assertIn(f'        "{CONSUMED_SOURCE_TREE}",', self.source)
@@ -109,13 +111,32 @@ class TestReadonlyAccessBundle(unittest.TestCase):
         self.assertIn('"CHG-G8-TEST-READONLY-ACCESS-20260812-002": FrozenCandidate(', self.source)
         self.assertIn("if candidate.target_deployment_root", self.source)
 
-    def test_active_candidate_rejects_source_drift_before_output(self) -> None:
-        """即使 ChangeId 正确，来源提交漂移也必须在创建候选目录前失败。"""
+    def test_ci_verifies_009_only_as_consumed_candidate(self) -> None:
+        """CI 必须拒绝009持久生成，并只在临时目录复现冻结回执。"""
+        workflow = CI_PATH.read_text(encoding="utf-8")
+        self.assertIn("g8_stage_drop_status=$?", workflow)
+        self.assertIn('test "$g8_stage_drop_status" -eq 2', workflow)
+        self.assertIn(
+            "G8_TEST_READONLY_ACCESS_STAGE_DROP=FAILED reason=change_id_consumed",
+            workflow,
+        )
+        self.assertIn(
+            "--consumed-change-id=CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009",
+            workflow,
+        )
+        self.assertIn(
+            "bundle_receipt_sha256=5bb49ad531410c8a719008bcd860d143eb9c51d23858a14737d678d5a60fc893",
+            workflow,
+        )
+        self.assertNotIn("G8_TEST_READONLY_ACCESS_BUNDLE=PASS' /tmp/g8-test-readonly-access-009.log", workflow)
+
+    def test_no_active_candidate_can_create_persistent_output(self) -> None:
+        """即使输入009的精确历史来源，也不得再创建持久候选目录。"""
         with tempfile.TemporaryDirectory(prefix="g8-active-cli-") as temporary:
             output = Path(temporary) / "bundle"
             result = self.run_script(
-                f"--change-id={ACTIVE_CHANGE_ID}",
-                "--source-commit=" + "0" * 40,
+                f"--change-id={CONSUMED_DROP_CHANGE_ID}",
+                f"--source-commit={CONSUMED_DROP_SOURCE_COMMIT}",
                 f"--output-dir={output}",
             )
             self.assertEqual(result.returncode, 2)
@@ -124,43 +145,6 @@ class TestReadonlyAccessBundle(unittest.TestCase):
                 result.stdout.strip(),
                 "G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request",
             )
-
-    def test_active_drop_candidate_builds_without_physical_identity(self) -> None:
-        """009 真实双构建必须只声明 Drop 端点，不写物理主机身份。"""
-        with tempfile.TemporaryDirectory(prefix="g8-active-drop-") as temporary:
-            output = Path(temporary) / "bundle"
-            result = self.run_script(
-                f"--change-id={ACTIVE_CHANGE_ID}",
-                f"--source-commit={ACTIVE_SOURCE_COMMIT}",
-                f"--output-dir={output}",
-            )
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertEqual(
-                {entry.name for entry in output.iterdir()},
-                {
-                    "SHA256SUMS",
-                    "ai-gateway-reconcile",
-                    "g8-test-readonly-audit",
-                    "manifest.env",
-                    "molin-g8-test-readonly-audit.sudoers",
-                },
-            )
-            manifest = (output / "manifest.env").read_text(encoding="utf-8")
-            self.assertIn(f"CHANGE_ID={ACTIVE_CHANGE_ID}\n", manifest)
-            self.assertIn(f"SOURCE_COMMIT={ACTIVE_SOURCE_COMMIT}\n", manifest)
-            self.assertIn(f"SOURCE_TREE={ACTIVE_SOURCE_TREE}\n", manifest)
-            self.assertIn("TARGET_TRANSPORT=DROP_SSH\n", manifest)
-            self.assertIn("PHYSICAL_HOST_IDENTITY=NOT_APPLICABLE\n", manifest)
-            self.assertNotIn("TARGET_HOSTNAME=", manifest)
-            self.assertNotIn("TARGET_MACHINE_ID_SHA256=", manifest)
-            if os.name == "nt":
-                # 正式本地候选由 Windows 构建，回执包含固定 GO_BUILDER_HOST，因此只在同平台锁定。
-                self.assertIn(
-                    "bundle_receipt_sha256=840bdbed48edab6d70d351fa232b7426903bf3f3098f682e2884f513b9cd0efd",
-                    result.stdout,
-                )
-            else:
-                self.assertRegex(result.stdout, r"bundle_receipt_sha256=[0-9a-f]{64}\n")
 
     def test_consumed_candidate_verification_is_ephemeral(self) -> None:
         self.assertIn('TemporaryDirectory(prefix="molin-g8-consumed-verify-")', self.source)
@@ -174,6 +158,8 @@ class TestReadonlyAccessBundle(unittest.TestCase):
             "14b7d8cd832f0b719031fcc93adbbb2208afe76d34383e63d51c44b044772b5a",
             "7ae580cc06fb101fe44c9e3a4d7581116fd258ef1e2d09d99bba0bda50151a1f",
             "7f4633357bf6883d166b0ee7d9750d7e745cf0a15d23163a547d6519e217efc1",
+            "840bdbed48edab6d70d351fa232b7426903bf3f3098f682e2884f513b9cd0efd",
+            "5bb49ad531410c8a719008bcd860d143eb9c51d23858a14737d678d5a60fc893",
         ):
             self.assertIn(receipt, self.source)
         self.assertIn('raise RuntimeError("consumed_receipt_mismatch")', self.source)
