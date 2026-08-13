@@ -244,7 +244,8 @@ try:
         or not stat.S_ISDIR(pinned_root.st_mode)
         or pinned_root.st_uid != uid
         or pinned_root.st_gid != gid
-        or root_mode != 0o700
+        or root_mode & 0o700 != 0o700
+        or root_mode & 0o022
         or os.path.dirname(staging_path) != deployment_root
     ):
         raise SystemExit(41)

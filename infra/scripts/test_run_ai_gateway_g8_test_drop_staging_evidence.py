@@ -351,6 +351,12 @@ class TestDropStagingEvidencePosix(unittest.TestCase):
             ("PRESENT", "PASS", "NONE"),
         )
 
+    def test_deployment_root_accepts_read_only_group_and_other_bits(self) -> None:
+        """部署根可保留 0755 的读取/遍历位，但绝不能允许组或其他写入。"""
+        self.root.chmod(0o755)
+        result = self.run_remote()
+        self.assertEqual(result["STAGING_STATE"], "ABSENT")
+
     def test_remote_program_classifies_static_mismatches(self) -> None:
         mutations = {
             "FILE_SET": lambda: (self.stage / "extra").write_bytes(b"extra"),
