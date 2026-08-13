@@ -1,6 +1,6 @@
 # G8 Drop 暂存只读取证 012 授权清单
 
-> 状态：`CONSUMED_LOCAL_CHECK_EVIDENCE_UNAVAILABLE`。用户批准后唯一一次 `--local-check` 返回固定低敏 `evidence_unavailable`、退出码 2、stderr 为空，随后按停止条件零重试结束；未启动 SSH，未连接测试服。012 ChangeId、授权和以下历史命令均已消费并作废，禁止重放。完整记录见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-attempt-20260813-012.md`。
+> 状态：`CONSUMED_LOCAL_CHECK_EVIDENCE_UNAVAILABLE`。用户批准后唯一一次 `--local-check` 返回固定低敏 `evidence_unavailable`、退出码 2、stderr 为空，随后按停止条件零重试结束；未启动 SSH，未连接测试服。012 ChangeId、授权和以下历史命令均已消费并作废，禁止重放。消费证据 HEAD `3fb4117433b656e5b95ecd7c607002a470441e06` 经 CI run `31700050048` 12/12 SUCCESS 与独立三方 P0/P1/P2=0 后，由 PR #371 按 merge commit `80cac83310d97c87e02f80b61e385428e7ed7471` 合入主干，远端功能分支已删除。完整记录见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-attempt-20260813-012.md`。
 
 ## 1. ChangeId、目标与上限
 
