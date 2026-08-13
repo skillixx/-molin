@@ -120,12 +120,12 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 ### 3.5 当前重新申请顺序
 
-001、002、003、004、005、006、007、008 均已消费。008 的唯一正式只读 SSH 已返回 `ABSENT / NOT_APPLICABLE / NONE`，把固定 003 暂存状态从 `UNKNOWN` 收敛为 `ABSENT`。Drop 映射下旧的物理主机身份核验顺序不再适用；当前必须依次完成：
+001 至 011 均已消费。008 曾把固定 003 暂存状态收敛为 `ABSENT`；后续 010 暂存成功但 root 安装未开始，011 的唯一正式暂存包装器调用又以低敏 `invalid_request` 停止，当前 011 暂存状态为 `UNKNOWN`。Drop 映射下旧的物理主机身份核验顺序不再适用；当前必须依次完成：
 
-1. 008 已按独立用户授权完成一次本地检查和一次只读 SSH，零重试；结果为 `ABSENT/NOT_APPLICABLE/NONE`，全部历史命令作废并禁止重放。
-2. 固定 003 暂存目录不存在，因此未执行也无需执行清理；不得为“确认结果”再次连接或扩大读取范围。
-3. 若继续准备安装，必须使用新 ChangeId 重新冻结安装候选、制品回执和授权，不得复用 001、002、003 或 008 的候选、回执和授权。
-4. 安装后的真实运行态审计仍使用另一个独立 ChangeId，后续安装授权不得顺带执行；API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因暂存目录不存在而自动关闭。
+1. 禁止重放 011 或通过新的本地诊断推断远端状态；包装器、命令生成器和候选生成器必须保持消费态。
+2. 若需确认或清理 011 暂存，必须使用新 ChangeId 设计只读证据候选，重新完成代码安全、QA、产品、精确 HEAD CI、merge commit 与用户独立授权。
+3. 只读取证关闭 `UNKNOWN` 后，清理与重新安装仍分别使用新的 ChangeId、冻结候选和独立授权；不得复用 009、010 或 011 的候选、回执、命令或授权。
+4. 安装后的真实运行态审计继续使用另一个独立 ChangeId，不得随清理或安装顺带执行；API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因暂存证据自动关闭。
 
 `CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005` 已完成唯一一次本地检查和正式只读 SSH，结果为 `ZERO / EXACT / stderr EMPTY / diagnostic PASS`，证明传输链路可用但未关闭暂存 UNKNOWN；005 已消费并禁止重放。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`、`docs/ai-gateway-g8-test-readonly-transport-diagnostic-attempt-20260812-005.md`。下一次暂存只读取证必须使用新的 ChangeId，重新完成代码安全、QA、产品、精确 HEAD CI、merge commit 与用户独立授权。
 
@@ -139,7 +139,7 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 `CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010` 已消费。用户授权后一次本地检查、一次只读 SSH 与一次原子 SFTP 均 PASS，五文件暂存成功；唯一 root 安装编排在本地参数构造阶段停止，未建立 root 连接、未发送安装脚本、未创建 root-only/live/sudoers 目标，也未执行 visudo、sudo 范围、Docker 组或固定 self-test。零重试，业务/上游/费用为 `0 / 0 / 0 CNY`。状态为 `CONSUMED_STAGED_ROOT_NOT_RUN`，禁止重放；直接改用 `pc` 不满足 root-owned 和 sudoers 契约，未执行。暂存清理、root 安装或新的 `pc` 非特权方案均须新 ChangeId、重新工程门禁和独立用户授权。证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-010.md`。
 
-`CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011` 采用已批准的方案 A：独立包装器未来只执行一次 SFTP；随后在唯一交互 SSH 会话内先完成非特权预检，再由操作者仅通过 TTY 执行一次 `sudo -k -v`，认证后只运行冻结的 `sudo -n` root 安装器和固定 self-test。密码不得进入参数、stdin、脚本、环境变量、日志或文档。PR #365 最终 HEAD `30cf58083088628c0ad8ac321cca3078f39b5341` 已通过 CI run `31685942115` 12/12 和独立三方 P0/P1/P2=0，并按 merge commit `018f7344a5a52ccc6c23b478555a7ddc02f5ba63` 合入主干；合并后的包装器、命令生成器与安装器摘要均未漂移。当前未连接测试服，状态为 `PENDING_USER_APPROVAL`；工程合并不授权执行，权威清单见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260813-011.md`。
+`CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011` 已消费。用户批准后唯一一次 local-check 为 PASS；唯一正式暂存包装器调用以 `invalid_request`、退出码 2、stderr 为空停止并零重试。低敏失败无法区分 SFTP 是否启动、远端独占建目录是否成功或五文件是否部分上传，因此 011 暂存保持 `UNKNOWN`。后续交互 SSH、sudo 认证、root 安装、`visudo`、sudo 范围、Docker 组和 self-test 均未执行；没有 live 目标需要回滚。禁止重放 011；取证或清理必须使用新 ChangeId、重新完成工程门禁并取得独立授权。证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-011.md`。
 
 ## 4. 安装后的独立只读核验
 
