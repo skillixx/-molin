@@ -139,7 +139,7 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 `CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010` 已消费。用户授权后一次本地检查、一次只读 SSH 与一次原子 SFTP 均 PASS，五文件暂存成功；唯一 root 安装编排在本地参数构造阶段停止，未建立 root 连接、未发送安装脚本、未创建 root-only/live/sudoers 目标，也未执行 visudo、sudo 范围、Docker 组或固定 self-test。零重试，业务/上游/费用为 `0 / 0 / 0 CNY`。状态为 `CONSUMED_STAGED_ROOT_NOT_RUN`，禁止重放；直接改用 `pc` 不满足 root-owned 和 sudoers 契约，未执行。暂存清理、root 安装或新的 `pc` 非特权方案均须新 ChangeId、重新工程门禁和独立用户授权。证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-010.md`。
 
-`CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011` 已消费。用户批准后唯一一次 local-check 为 PASS；唯一正式暂存包装器调用以 `invalid_request`、退出码 2、stderr 为空停止并零重试。低敏失败无法区分 SFTP 是否启动、远端独占建目录是否成功或五文件是否部分上传，因此 011 暂存保持 `UNKNOWN`。后续交互 SSH、sudo 认证、root 安装、`visudo`、sudo 范围、Docker 组和 self-test 均未执行；没有 live 目标需要回滚。禁止重放 011；取证或清理必须使用新 ChangeId、重新完成工程门禁并取得独立授权。证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-011.md`。
+`CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011` 已消费。用户批准后唯一一次 local-check 为 PASS；唯一正式暂存包装器调用以 `invalid_request`、退出码 2、stderr 为空停止并零重试。低敏失败无法区分 SFTP 是否启动、远端独占建目录是否成功或五文件是否部分上传，因此 011 暂存保持 `UNKNOWN`。后续交互 SSH、sudo 认证、root 安装、`visudo`、sudo 范围、Docker 组和 self-test 均未执行；没有 live 目标需要回滚。消费证据 HEAD `03d53a4dfb22510808b1723d04b69172fce07450` 经 CI run `31689994630` 12/12 和独立三方 P0/P1/P2=0 后，由 PR #367 按 merge commit `eba0116ad5e790a4d29e32bc68d3151d9d22dc06` 合入主干，远端功能分支已删除。禁止重放 011；取证或清理必须使用新 ChangeId、重新完成工程门禁并取得独立授权。证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-011.md`。
 
 ## 4. 安装后的独立只读核验
 
