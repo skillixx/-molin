@@ -89,7 +89,13 @@ EXPECTED_CONSUMED_RECEIPTS = {
     },
 }
 
-ACTIVE_CANDIDATE = None
+ACTIVE_CANDIDATE = FrozenCandidate(
+    "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010",
+    "75b1fc4ddb7138495547cec03fa948648de337d7",
+    "53ba990318bc1a036b442d88ff8133d776a453dc",
+    "/home/pc/molin",
+    "DROP_SSH_DIRECT",
+)
 
 
 def sha256(path: Path) -> str:
@@ -291,7 +297,7 @@ def prepare(candidate: FrozenCandidate, output_dir: Path) -> dict[str, str]:
                 "RECONCILE_SIZE": str(reconcile_size),
                 "REPRODUCIBLE_BUILD_COUNT": "2",
             }
-            if candidate.target_transport == "DROP_SSH":
+            if candidate.target_transport in {"DROP_SSH", "DROP_SSH_DIRECT"}:
                 # Drop 映射只绑定已批准的 SSH 端点，不把物理主机身份误作固定入口契约。
                 values["TARGET_SSH"] = "pc@8.130.9.163:10003"
                 values["TARGET_SSH_ED25519_FINGERPRINT"] = "SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I"
