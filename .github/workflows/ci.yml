@@ -487,7 +487,7 @@ jobs:
           docker run --rm --network none \
             -v "${{ github.workspace }}:/workspace:ro" \
             -w /workspace \
-            python:3.13-alpine \
+            python:3.13-slim \
             python -I -W error::ResourceWarning infra/scripts/test_g8_test_readonly_access_install_011.py -v
           docker run --rm --network none \
             -v "${{ github.workspace }}:/workspace:ro" \

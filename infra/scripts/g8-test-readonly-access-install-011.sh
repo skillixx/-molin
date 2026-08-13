@@ -80,14 +80,20 @@ check_file() {
 check_candidate() {
     directory=$1
     allow_installer=${2:-0}
+    expected_owner=$3
     if [ "$allow_installer" -eq 1 ]; then
-        actual=$(/usr/bin/find "$directory" -mindepth 1 -maxdepth 1 -type f ! -name 'g8-test-readonly-access-install-011.sh' -printf '%f\n' | /usr/bin/sort | /usr/bin/tr '\n' ' ')
+        actual=$(/usr/bin/find "$directory" -mindepth 1 -maxdepth 1 ! -name 'g8-test-readonly-access-install-011.sh' -printf '%f\n' | /usr/bin/sort | /usr/bin/tr '\n' ' ')
         check_file "$directory/g8-test-readonly-access-install-011.sh" || return 1
     else
-        actual=$(/usr/bin/find "$directory" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | /usr/bin/sort | /usr/bin/tr '\n' ' ')
+        actual=$(/usr/bin/find "$directory" -mindepth 1 -maxdepth 1 -printf '%f\n' | /usr/bin/sort | /usr/bin/tr '\n' ' ')
     fi
     [ "$actual" = 'SHA256SUMS ai-gateway-reconcile g8-test-readonly-audit manifest.env molin-g8-test-readonly-audit.sudoers ' ] || return 1
-    for name in $EXPECTED_FILES; do check_file "$directory/$name" || return 1; done
+    for entry in SHA256SUMS:600 ai-gateway-reconcile:700 g8-test-readonly-audit:700 manifest.env:600 molin-g8-test-readonly-audit.sudoers:600; do
+        name=${entry%%:*}
+        mode=${entry##*:}
+        check_file "$directory/$name" || return 1
+        [ "$(/usr/bin/stat -c '%U:%G:%a' -- "$directory/$name")" = "$expected_owner:$mode" ] || return 1
+    done
     [ "$(/usr/bin/sha256sum "$directory/SHA256SUMS" | /usr/bin/cut -d' ' -f1)" = "$EXPECTED_RECEIPT" ] || return 1
     (cd "$directory" && /usr/bin/sha256sum -c SHA256SUMS >/dev/null 2>&1) || return 1
     [ "$(/usr/bin/sha256sum "$directory/g8-test-readonly-audit" | /usr/bin/cut -d' ' -f1)" = "$AUDITOR_SHA" ] || return 1
@@ -101,7 +107,7 @@ check_candidate() {
 
 check_secure_directory "$STAGING" 'pc:pc' '700'
 check_secure_directory "$ROOT_COPY" 'root:root' '700'
-check_candidate "$STAGING"
+check_candidate "$STAGING" 0 'pc:pc'
 
 # root-only 副本使用 no-clobber，防止调用前后被低权限路径替换。
 for name in $EXPECTED_FILES; do
@@ -114,9 +120,12 @@ for name in $EXPECTED_FILES; do
     exec 3>&-
     set +o noclobber
     /usr/bin/chown root:root "$target"
-    /usr/bin/chmod 0600 "$target"
+    case "$name" in
+        ai-gateway-reconcile|g8-test-readonly-audit) /usr/bin/chmod 0700 "$target" ;;
+        *) /usr/bin/chmod 0600 "$target" ;;
+    esac
 done
-check_candidate "$ROOT_COPY" 1
+check_candidate "$ROOT_COPY" 1 'root:root'
 /usr/sbin/visudo -cf "$ROOT_COPY/molin-g8-test-readonly-audit.sudoers" >/dev/null
 
 for parent in /usr /usr/local /usr/local/libexec /etc /etc/sudoers.d; do

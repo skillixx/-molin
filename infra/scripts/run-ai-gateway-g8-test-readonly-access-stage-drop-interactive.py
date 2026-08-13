@@ -79,13 +79,46 @@ def create_candidate_snapshot(direct, candidate_dir: Path, snapshot_root: Path) 
 
 def run_single_sftp(direct, helper, known_hosts: Path, identity_file: Path, snapshot: Path) -> None:
     """唯一远端能力是一次固定 SFTP；本函数没有登录命令或提权能力。"""
-    direct.run_atomic_sftp_upload(
-        helper,
-        helper.fixed_tool("sftp"),
-        known_hosts,
-        identity_file,
-        snapshot,
-    )
+    batch = "\n".join(
+        (
+            f"mkdir {STAGING_PATH}",
+            f"chmod 700 {STAGING_PATH}",
+            *(f"put {name} {STAGING_PATH}/{name}" for name in sorted(direct.EXPECTED_FILES)),
+            f"chmod 600 {STAGING_PATH}/SHA256SUMS",
+            f"chmod 700 {STAGING_PATH}/ai-gateway-reconcile",
+            f"chmod 700 {STAGING_PATH}/g8-test-readonly-audit",
+            f"chmod 600 {STAGING_PATH}/manifest.env",
+            f"chmod 600 {STAGING_PATH}/molin-g8-test-readonly-audit.sudoers",
+            "quit",
+        )
+    ) + "\n"
+    command = [
+        str(helper.fixed_tool("sftp")),
+        "-q",
+        "-b",
+        "-",
+        *helper.ssh_options(known_hosts, identity_file),
+        "-P",
+        direct.TARGET_PORT,
+        direct.TARGET,
+    ]
+    try:
+        returncode, stdout_result, stderr_result = helper.run_bounded_process(
+            command,
+            helper.fixed_ssh_environment(),
+            input_data=batch.encode("ascii"),
+            timeout=30,
+            cwd=snapshot,
+        )
+    except Exception as error:
+        raise StageError("sftp_upload_failed") from error
+    if (
+        returncode != 0
+        or stderr_result["bytes"] != 0
+        or stdout_result["exceeded"]
+        or stderr_result["exceeded"]
+    ):
+        raise StageError("sftp_upload_failed")
 
 
 def execute(

@@ -41,7 +41,7 @@ class TestG8ReadonlyAccessStageDropInteractive(unittest.TestCase):
         self.assertIn("15617634b0d291f12cc5776eb80ec29e26369af1959ab4a596fcd5c836c3361f", self.source)
 
     def test_production_path_has_one_sftp_and_no_ssh_or_sudo_call(self) -> None:
-        self.assertEqual(self.source.count("run_atomic_sftp_upload("), 1)
+        self.assertEqual(self.source.count("helper.run_bounded_process("), 1)
         self.assertEqual(self.source.count('fixed_tool("sftp")'), 1)
         self.assertNotIn('fixed_tool("ssh")', self.source)
         self.assertNotIn("run_remote_preflight(", self.source)
@@ -50,6 +50,14 @@ class TestG8ReadonlyAccessStageDropInteractive(unittest.TestCase):
     def test_010_staging_is_not_referenced(self) -> None:
         self.assertNotIn(".g8-staging-CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010", self.source)
         self.assertIn(".g8-staging-CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011", self.source)
+        for command in (
+            "chmod 600 {STAGING_PATH}/SHA256SUMS",
+            "chmod 700 {STAGING_PATH}/ai-gateway-reconcile",
+            "chmod 700 {STAGING_PATH}/g8-test-readonly-audit",
+            "chmod 600 {STAGING_PATH}/manifest.env",
+            "chmod 600 {STAGING_PATH}/molin-g8-test-readonly-audit.sudoers",
+        ):
+            self.assertIn(command, self.source)
 
     def test_formal_mode_revalidates_inputs_around_single_sftp(self) -> None:
         module = load_module()

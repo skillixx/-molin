@@ -45,6 +45,11 @@ class TestG8ReadonlyAccessInstall011(unittest.TestCase):
         ):
             self.assertIn(value, self.source)
         self.assertIn("EXPECTED_FILES='SHA256SUMS ai-gateway-reconcile g8-test-readonly-audit manifest.env molin-g8-test-readonly-audit.sudoers'", self.source)
+        self.assertIn("-mindepth 1 -maxdepth 1 -printf '%f\\n'", self.source)
+        self.assertIn("check_candidate \"$STAGING\" 0 'pc:pc'", self.source)
+        self.assertIn("check_candidate \"$ROOT_COPY\" 1 'root:root'", self.source)
+        self.assertIn("SHA256SUMS:600", self.source)
+        self.assertIn("ai-gateway-reconcile:700", self.source)
 
     def test_root_only_visudo_and_live_gates_are_exact(self) -> None:
         self.assertIn('/usr/sbin/visudo -cf "$ROOT_COPY/molin-g8-test-readonly-audit.sudoers"', self.source)
