@@ -34,6 +34,11 @@ TRUSTED_PATH = os.pathsep.join(
         r"C:\Program Files\Go\bin",
     )
 )
+DROP_TRANSPORTS = {
+    "DROP_SSH",
+    "DROP_SSH_DIRECT",
+    "DROP_SSH_INTERACTIVE_SUDO",
+}
 
 
 @dataclass(frozen=True)
@@ -98,7 +103,13 @@ EXPECTED_CONSUMED_RECEIPTS = {
     },
 }
 
-ACTIVE_CANDIDATE = None
+ACTIVE_CANDIDATE = FrozenCandidate(
+    "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011",
+    "099c38ed62ccd62c3c5a3b6811f1369d7f0d3084",
+    "c2d1252a05d031d842549345128fa7a1ffe53dc8",
+    "/home/pc/molin",
+    "DROP_SSH_INTERACTIVE_SUDO",
+)
 
 
 def sha256(path: Path) -> str:
@@ -300,7 +311,7 @@ def prepare(candidate: FrozenCandidate, output_dir: Path) -> dict[str, str]:
                 "RECONCILE_SIZE": str(reconcile_size),
                 "REPRODUCIBLE_BUILD_COUNT": "2",
             }
-            if candidate.target_transport in {"DROP_SSH", "DROP_SSH_DIRECT"}:
+            if candidate.target_transport in DROP_TRANSPORTS:
                 # Drop 映射只绑定已批准的 SSH 端点，不把物理主机身份误作固定入口契约。
                 values["TARGET_SSH"] = "pc@8.130.9.163:10003"
                 values["TARGET_SSH_ED25519_FINGERPRINT"] = "SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I"

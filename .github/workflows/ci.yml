@@ -446,6 +446,9 @@ jobs:
           python -I -m unittest discover -s infra/scripts -p test_prepare_ai_gateway_g8_test_readonly_access_bundle.py
           python -I -m unittest discover -s infra/scripts -p test_run_ai_gateway_g8_test_readonly_access_stage.py
           python -I -W error::ResourceWarning -m unittest discover -s infra/scripts -p test_run_ai_gateway_g8_test_readonly_access_stage_drop_direct.py
+          python -I -W error::ResourceWarning -m unittest discover -s infra/scripts -p test_g8_test_readonly_access_install_011.py
+          python -I -W error::ResourceWarning -m unittest discover -s infra/scripts -p test_prepare_ai_gateway_g8_test_readonly_access_011_command.py
+          python -I -W error::ResourceWarning -m unittest discover -s infra/scripts -p test_run_ai_gateway_g8_test_readonly_access_stage_drop_interactive.py
           python -I -m unittest discover -s infra/scripts -p test_run_ai_gateway_g8_test_staging_evidence.py
           python -I -m unittest discover -s infra/scripts -p test_run_ai_gateway_g8_test_readonly_transport_diagnostic.py
           python -I -m unittest discover -s infra/scripts -p test_run_ai_gateway_g8_test_staging_evidence_v2.py
@@ -455,7 +458,9 @@ jobs:
             -w /workspace \
             python:3.13-alpine \
             python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_host_identity_diagnostic.py -v
-          python -I -m py_compile infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_bundle.py infra/scripts/run-ai-gateway-g8-test-readonly-access-stage.py infra/scripts/test_run_ai_gateway_g8_test_readonly_access_stage.py infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop.py infra/scripts/test_run_ai_gateway_g8_test_readonly_access_stage_drop.py infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop-direct.py infra/scripts/test_run_ai_gateway_g8_test_readonly_access_stage_drop_direct.py infra/scripts/run-ai-gateway-g8-test-staging-evidence.py infra/scripts/test_run_ai_gateway_g8_test_staging_evidence.py infra/scripts/run-ai-gateway-g8-test-readonly-transport-diagnostic.py infra/scripts/test_run_ai_gateway_g8_test_readonly_transport_diagnostic.py infra/scripts/run-ai-gateway-g8-test-staging-evidence-v2.py infra/scripts/test_run_ai_gateway_g8_test_staging_evidence_v2.py infra/scripts/run-ai-gateway-g8-test-host-identity-diagnostic.py infra/scripts/test_run_ai_gateway_g8_test_host_identity_diagnostic.py
+          python -I -m py_compile infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_bundle.py infra/scripts/run-ai-gateway-g8-test-readonly-access-stage.py infra/scripts/test_run_ai_gateway_g8_test_readonly_access_stage.py infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop.py infra/scripts/test_run_ai_gateway_g8_test_readonly_access_stage_drop.py infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop-direct.py infra/scripts/test_run_ai_gateway_g8_test_readonly_access_stage_drop_direct.py infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop-interactive.py infra/scripts/test_run_ai_gateway_g8_test_readonly_access_stage_drop_interactive.py infra/scripts/prepare-ai-gateway-g8-test-readonly-access-011-command.py infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_011_command.py infra/scripts/test_g8_test_readonly_access_install_011.py infra/scripts/run-ai-gateway-g8-test-staging-evidence.py infra/scripts/test_run_ai_gateway_g8_test_staging_evidence.py infra/scripts/run-ai-gateway-g8-test-readonly-transport-diagnostic.py infra/scripts/test_run_ai_gateway_g8_test_readonly_transport_diagnostic.py infra/scripts/run-ai-gateway-g8-test-staging-evidence-v2.py infra/scripts/test_run_ai_gateway_g8_test_staging_evidence_v2.py infra/scripts/run-ai-gateway-g8-test-host-identity-diagnostic.py infra/scripts/test_run_ai_gateway_g8_test_host_identity_diagnostic.py
+          bash -n infra/scripts/g8-test-readonly-access-install-011.sh
+          python -I infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop-interactive.py --self-test
           python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py --self-test
           python -I infra/scripts/run-ai-gateway-g8-test-readonly-access-stage.py --self-test
           python -I infra/scripts/run-ai-gateway-g8-test-staging-evidence.py --self-test
@@ -479,6 +484,16 @@ jobs:
             -w /workspace \
             python:3.13-alpine \
             python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_readonly_access_stage_drop_direct.py -v
+          docker run --rm --network none \
+            -v "${{ github.workspace }}:/workspace:ro" \
+            -w /workspace \
+            python:3.13-slim \
+            python -I -W error::ResourceWarning infra/scripts/test_g8_test_readonly_access_install_011.py -v
+          docker run --rm --network none \
+            -v "${{ github.workspace }}:/workspace:ro" \
+            -w /workspace \
+            python:3.13-alpine \
+            python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_readonly_access_stage_drop_interactive.py -v
           set +e
           python -I infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop.py --self-test >/tmp/g8-test-readonly-access-stage-drop-consumed.log 2>&1
           g8_stage_drop_status=$?
@@ -535,6 +550,34 @@ jobs:
           grep -qx 'reconcile_size=13066129' /tmp/g8-test-readonly-access-consumed-010.log
           grep -qx 'bundle_receipt_sha256=b3fac1a1530124da9dc604c32d11bd665de3daa5d6799aebb33c38a3d2f174f4' /tmp/g8-test-readonly-access-consumed-010.log
           grep -qx 'target_transport=DROP_SSH_DIRECT' /tmp/g8-test-readonly-access-consumed-010.log
+          interactive_bundle_dir="${RUNNER_TEMP}/g8-test-readonly-access-011-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          test ! -e "$interactive_bundle_dir"
+          python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py \
+            --change-id=CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011 \
+            --source-commit=099c38ed62ccd62c3c5a3b6811f1369d7f0d3084 \
+            --output-dir="$interactive_bundle_dir" | tee /tmp/g8-test-readonly-access-011.log
+          test "$(find "$interactive_bundle_dir" -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 5
+          grep -qx 'G8_TEST_READONLY_ACCESS_BUNDLE=PASS' /tmp/g8-test-readonly-access-011.log
+          grep -qx 'change_id=CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011' /tmp/g8-test-readonly-access-011.log
+          grep -qx 'source_commit=099c38ed62ccd62c3c5a3b6811f1369d7f0d3084' /tmp/g8-test-readonly-access-011.log
+          grep -qx 'source_tree=c2d1252a05d031d842549345128fa7a1ffe53dc8' /tmp/g8-test-readonly-access-011.log
+          grep -qx 'auditor_sha256=308908d2a2b9fa8679fd21d77fde68b5ce5d521ed37dac6b7726e6c323452256' /tmp/g8-test-readonly-access-011.log
+          grep -qx 'sudoers_sha256=1ec266c71f00d99da18b9e8cf59af91d6126811384adef62ce48750b97a0986f' /tmp/g8-test-readonly-access-011.log
+          grep -qx 'reconcile_sha256=37f6ee369f1ce489a3966123dfea3bd172d5386045495e069433c7f3d993f2c1' /tmp/g8-test-readonly-access-011.log
+          grep -qx 'reconcile_size=13066129' /tmp/g8-test-readonly-access-011.log
+          grep -qx 'bundle_receipt_sha256=8bb8efcd789c87af28b8495a9841b95934e50d145e8d40a5eed70cd32565b963' /tmp/g8-test-readonly-access-011.log
+          grep -qx 'target_transport=DROP_SSH_INTERACTIVE_SUDO' /tmp/g8-test-readonly-access-011.log
+          grep -qx 'TARGET_TRANSPORT=DROP_SSH_INTERACTIVE_SUDO' "$interactive_bundle_dir/manifest.env"
+          grep -qx 'PHYSICAL_HOST_IDENTITY=NOT_APPLICABLE' "$interactive_bundle_dir/manifest.env"
+          command_output="${RUNNER_TEMP}/g8-test-readonly-access-011-command.txt"
+          python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-011-command.py \
+            --change-id=CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011 \
+            --output-file="$command_output" | tee /tmp/g8-test-readonly-access-011-command.log
+          grep -qx 'G8_TEST_READONLY_ACCESS_011_COMMAND=PASS' /tmp/g8-test-readonly-access-011-command.log
+          test "$(grep -c 'sudo -k -v' "$command_output")" -eq 1
+          if grep -Eq 'sudo -S|SUDO_ASKPASS|SSH_ASKPASS|PASSWORD=|TOKEN=' "$command_output"; then
+            exit 1
+          fi
           bundle_dir="${RUNNER_TEMP}/g8-test-readonly-access-consumed-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           test ! -e "$bundle_dir"
           set +e
