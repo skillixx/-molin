@@ -13,6 +13,9 @@ SCRIPT_PATH = Path(__file__).with_name("prepare-ai-gateway-g8-test-readonly-acce
 CONSUMED_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-20260812-003"
 CONSUMED_SOURCE_COMMIT = "8ec878572f62ef2584c38aaadc1bca1cb802b13f"
 CONSUMED_SOURCE_TREE = "988bdcdc8017322264733ebe68876e4811b01412"
+ACTIVE_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009"
+ACTIVE_SOURCE_COMMIT = "7f3325e2d6801567fea34a2049a2f3ada114e348"
+ACTIVE_SOURCE_TREE = "4563feb59850dca87789adfb5eea820f78b1a209"
 
 
 def bash_executable() -> str:
@@ -92,9 +95,13 @@ class TestReadonlyAccessBundle(unittest.TestCase):
                     "G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request",
                 )
 
-    def test_003_is_frozen_as_consumed_candidate_only(self) -> None:
-        """003 已消费，只允许在系统临时目录复现，禁止再生成持久候选。"""
-        self.assertNotIn("ACTIVE_CANDIDATE", self.source)
+    def test_009_is_the_only_active_drop_candidate(self) -> None:
+        """009 必须是唯一活动候选，历史 001 至 003 只能临时复现。"""
+        self.assertIn("ACTIVE_CANDIDATE = FrozenCandidate(", self.source)
+        self.assertIn(f'    "{ACTIVE_CHANGE_ID}",', self.source)
+        self.assertIn(f'    "{ACTIVE_SOURCE_COMMIT}",', self.source)
+        self.assertIn(f'    "{ACTIVE_SOURCE_TREE}",', self.source)
+        self.assertIn('    "DROP_SSH",', self.source)
         self.assertIn(f'"{CONSUMED_CHANGE_ID}": FrozenCandidate(', self.source)
         self.assertIn(f'        "{CONSUMED_SOURCE_COMMIT}",', self.source)
         self.assertIn(f'        "{CONSUMED_SOURCE_TREE}",', self.source)
@@ -107,7 +114,7 @@ class TestReadonlyAccessBundle(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="g8-active-cli-") as temporary:
             output = Path(temporary) / "bundle"
             result = self.run_script(
-                f"--change-id={CONSUMED_CHANGE_ID}",
+                f"--change-id={ACTIVE_CHANGE_ID}",
                 "--source-commit=" + "0" * 40,
                 f"--output-dir={output}",
             )
@@ -118,11 +125,58 @@ class TestReadonlyAccessBundle(unittest.TestCase):
                 "G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request",
             )
 
+    def test_active_drop_candidate_builds_without_physical_identity(self) -> None:
+        """009 真实双构建必须只声明 Drop 端点，不写物理主机身份。"""
+        with tempfile.TemporaryDirectory(prefix="g8-active-drop-") as temporary:
+            output = Path(temporary) / "bundle"
+            result = self.run_script(
+                f"--change-id={ACTIVE_CHANGE_ID}",
+                f"--source-commit={ACTIVE_SOURCE_COMMIT}",
+                f"--output-dir={output}",
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(
+                {entry.name for entry in output.iterdir()},
+                {
+                    "SHA256SUMS",
+                    "ai-gateway-reconcile",
+                    "g8-test-readonly-audit",
+                    "manifest.env",
+                    "molin-g8-test-readonly-audit.sudoers",
+                },
+            )
+            manifest = (output / "manifest.env").read_text(encoding="utf-8")
+            self.assertIn(f"CHANGE_ID={ACTIVE_CHANGE_ID}\n", manifest)
+            self.assertIn(f"SOURCE_COMMIT={ACTIVE_SOURCE_COMMIT}\n", manifest)
+            self.assertIn(f"SOURCE_TREE={ACTIVE_SOURCE_TREE}\n", manifest)
+            self.assertIn("TARGET_TRANSPORT=DROP_SSH\n", manifest)
+            self.assertIn("PHYSICAL_HOST_IDENTITY=NOT_APPLICABLE\n", manifest)
+            self.assertNotIn("TARGET_HOSTNAME=", manifest)
+            self.assertNotIn("TARGET_MACHINE_ID_SHA256=", manifest)
+            if os.name == "nt":
+                # 正式本地候选由 Windows 构建，回执包含固定 GO_BUILDER_HOST，因此只在同平台锁定。
+                self.assertIn(
+                    "bundle_receipt_sha256=840bdbed48edab6d70d351fa232b7426903bf3f3098f682e2884f513b9cd0efd",
+                    result.stdout,
+                )
+            else:
+                self.assertRegex(result.stdout, r"bundle_receipt_sha256=[0-9a-f]{64}\n")
+
     def test_consumed_candidate_verification_is_ephemeral(self) -> None:
         self.assertIn('TemporaryDirectory(prefix="molin-g8-consumed-verify-")', self.source)
         self.assertIn('marker = "G8_TEST_READONLY_ACCESS_BUNDLE_VERIFY=PASS"', self.source)
         self.assertIn("candidate = CONSUMED_CANDIDATES.get(arguments.consumed_change_id)", self.source)
         self.assertIn("values = prepare(candidate", self.source)
+        for receipt in (
+            "2fb6a964cf017997fa07d1df557cc41979b873597445f2543b497744b4fa70c9",
+            "d6d07f7b4959e48f5ffe0e92ee4116cef55fe56f5318df6ae3f0d9c5350ee567",
+            "82b18d6040bcd6be72cf170fa066ecd7cf469a53f4901365f379bec5a89c496d",
+            "14b7d8cd832f0b719031fcc93adbbb2208afe76d34383e63d51c44b044772b5a",
+            "7ae580cc06fb101fe44c9e3a4d7581116fd258ef1e2d09d99bba0bda50151a1f",
+            "7f4633357bf6883d166b0ee7d9750d7e745cf0a15d23163a547d6519e217efc1",
+        ):
+            self.assertIn(receipt, self.source)
+        self.assertIn('raise RuntimeError("consumed_receipt_mismatch")', self.source)
 
         for arguments in (
             ("--verify-consumed-candidate",),
@@ -158,8 +212,8 @@ class TestReadonlyAccessBundle(unittest.TestCase):
         self.assertNotRegex(self.source, r"\b(?:scp|sudo|install|systemctl|docker)\b")
         self.assertNotIn(".env.test", self.source)
         self.assertNotIn("MYSQL_PASSWORD", self.source)
-        self.assertIn('"TARGET_MACHINE_ID_SHA256":', self.source)
-        self.assertIn('"TARGET_SSH_ED25519_FINGERPRINT":', self.source)
+        self.assertIn('values["TARGET_MACHINE_ID_SHA256"]', self.source)
+        self.assertIn('values["TARGET_SSH_ED25519_FINGERPRINT"]', self.source)
 
     def test_output_must_be_absolute_and_new(self) -> None:
         self.assertIn("not output_dir.is_absolute() or output_dir.exists()", self.source)
@@ -183,7 +237,7 @@ class TestReadonlyAccessBundle(unittest.TestCase):
 
     def test_caller_environment_is_removed_before_tools_run(self) -> None:
         self.assertIn("env=environment", self.source)
-        self.assertNotIn("arguments.change_id != ACTIVE_CHANGE_ID", self.source)
+        self.assertIn("arguments.change_id != ACTIVE_CANDIDATE.change_id", self.source)
         self.assertIn("script_path = Path(__file__).resolve(strict=True)", self.source)
         self.assertIn("safe_extract", self.source)
 
