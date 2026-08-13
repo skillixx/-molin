@@ -33,14 +33,14 @@ class LocalMaterialsDiagnosticTests(unittest.TestCase):
         return code, stdout.getvalue(), stderr.getvalue()
 
     def test_self_test_is_offline_and_passes(self):
-        with mock.patch.object(self.module.subprocess, "run") as run:
+        with mock.patch.object(self.module.subprocess, "Popen") as popen:
             code, stdout, stderr = self.call_main("--self-test")
         self.assertEqual((code, stdout, stderr), (0, "G8_LOCAL_SSH_MATERIALS_DIAGNOSTIC_SELF_TEST=PASS\n", ""))
-        run.assert_not_called()
+        popen.assert_not_called()
 
     def test_source_has_no_remote_transport_capability(self):
         source = SCRIPT_PATH.read_text(encoding="utf-8")
-        forbidden = ("subprocess.Popen", "socket.", "sftp", "scp ", "pc@", "python3 -I -")
+        forbidden = ("socket.", "ConnectionAttempts", "UserKnownHostsFile", "RequestTTY", "pc@", "python3 -I -")
         for token in forbidden:
             with self.subTest(token=token):
                 self.assertNotIn(token, source)

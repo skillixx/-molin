@@ -11,6 +11,7 @@ from pathlib import Path
 import stat
 import subprocess
 import sys
+import threading
 from typing import Sequence
 
 
@@ -74,6 +75,17 @@ def _metadata_identity(metadata):
     )
 
 
+def _entry_fd_identity(metadata):
+    """Windows 的目录项与文件描述符 ctime 语义不同，跨边界只比较共同稳定字段。"""
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        stat.S_IFMT(metadata.st_mode),
+        metadata.st_size,
+        metadata.st_mtime_ns,
+    )
+
+
 def _is_reparse(metadata) -> bool:
     attributes = getattr(metadata, "st_file_attributes", 0)
     flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
@@ -94,7 +106,7 @@ def freeze_file(path: Path) -> FileEvidence:
         descriptor = os.open(path, flags)
         try:
             before_fd = os.fstat(descriptor)
-            if _metadata_identity(before_entry) != _metadata_identity(before_fd):
+            if _entry_fd_identity(before_entry) != _entry_fd_identity(before_fd):
                 raise DiagnosticError("materials_drift")
             digest = hashlib.sha256()
             chunks = []
@@ -114,7 +126,9 @@ def freeze_file(path: Path) -> FileEvidence:
         raise DiagnosticError("materials_unavailable") from exc
     if _metadata_identity(before_fd) != _metadata_identity(after_fd):
         raise DiagnosticError("materials_drift")
-    if _metadata_identity(before_fd) != _metadata_identity(after_entry):
+    if _metadata_identity(before_entry) != _metadata_identity(after_entry):
+        raise DiagnosticError("materials_drift")
+    if _entry_fd_identity(before_fd) != _entry_fd_identity(after_entry):
         raise DiagnosticError("materials_drift")
     return FileEvidence(
         path=path,
@@ -154,21 +168,56 @@ def _minimal_environment():
 
 def run_ssh_keygen(executable: Path, arguments: Sequence[str], input_data: bytes | None = None) -> CommandResult:
     """仅调用本地密钥检查工具，任何正文异常都由上层低敏收敛。"""
+    captures = {}
+
+    def collect(name, stream):
+        kept = bytearray()
+        total = 0
+        try:
+            while True:
+                chunk = stream.read(8192)
+                if not chunk:
+                    break
+                total += len(chunk)
+                remaining = MAX_TOOL_OUTPUT + 1 - len(kept)
+                if remaining > 0:
+                    kept.extend(chunk[:remaining])
+            captures[name] = (bytes(kept), total, False)
+        except Exception:
+            captures[name] = (bytes(kept), total, True)
+
     try:
-        completed = subprocess.run(
+        process = subprocess.Popen(
             [str(executable), *arguments],
-            input=input_data,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=10,
-            check=False,
+            stdin=subprocess.PIPE if input_data is not None else subprocess.DEVNULL,
             env=_minimal_environment(),
         )
-    except (OSError, subprocess.SubprocessError) as exc:
+        if input_data is not None:
+            process.stdin.write(input_data)
+            process.stdin.close()
+        threads = (
+            threading.Thread(target=collect, args=("stdout", process.stdout)),
+            threading.Thread(target=collect, args=("stderr", process.stderr)),
+        )
+        for thread in threads:
+            thread.start()
+        returncode = process.wait(timeout=10)
+        for thread in threads:
+            thread.join()
+    except (OSError, subprocess.SubprocessError, TimeoutError) as exc:
+        if "process" in locals() and process.poll() is None:
+            process.kill()
+            process.wait()
         raise DiagnosticError("tool_unavailable") from exc
-    if len(completed.stdout) > MAX_TOOL_OUTPUT or len(completed.stderr) > MAX_TOOL_OUTPUT:
+    stdout = captures.get("stdout")
+    stderr = captures.get("stderr")
+    if not stdout or not stderr or stdout[2] or stderr[2]:
         raise DiagnosticError("tool_unavailable")
-    return CommandResult(completed.returncode, completed.stdout, completed.stderr)
+    if stdout[1] > MAX_TOOL_OUTPUT or stderr[1] > MAX_TOOL_OUTPUT:
+        raise DiagnosticError("tool_unavailable")
+    return CommandResult(returncode, stdout[0], stderr[0])
 
 
 def _require_clean_command(result: CommandResult, reason: str) -> bytes:
