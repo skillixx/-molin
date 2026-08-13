@@ -20,6 +20,9 @@ CONSUMED_DROP_SOURCE_TREE = "4563feb59850dca87789adfb5eea820f78b1a209"
 CONSUMED_DIRECT_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010"
 CONSUMED_DIRECT_SOURCE_COMMIT = "75b1fc4ddb7138495547cec03fa948648de337d7"
 CONSUMED_DIRECT_SOURCE_TREE = "53ba990318bc1a036b442d88ff8133d776a453dc"
+ACTIVE_INTERACTIVE_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011"
+ACTIVE_INTERACTIVE_SOURCE_COMMIT = "099c38ed62ccd62c3c5a3b6811f1369d7f0d3084"
+ACTIVE_INTERACTIVE_SOURCE_TREE = "c2d1252a05d031d842549345128fa7a1ffe53dc8"
 
 
 def bash_executable() -> str:
@@ -101,9 +104,14 @@ class TestReadonlyAccessBundle(unittest.TestCase):
                     "G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request",
                 )
 
-    def test_009_and_010_are_consumed_without_active_candidate(self) -> None:
-        """009 与 010 都只能临时复现，生成器不得保留活动候选。"""
-        self.assertIn("ACTIVE_CANDIDATE = None", self.source)
+    def test_009_and_010_are_consumed_and_011_is_the_only_active_candidate(self) -> None:
+        """历史候选只能临时复现，011 必须成为唯一活动候选。"""
+        self.assertIn("ACTIVE_CANDIDATE = FrozenCandidate(", self.source)
+        self.assertIn(f'    "{ACTIVE_INTERACTIVE_CHANGE_ID}",', self.source)
+        self.assertIn(f'    "{ACTIVE_INTERACTIVE_SOURCE_COMMIT}",', self.source)
+        self.assertIn(f'    "{ACTIVE_INTERACTIVE_SOURCE_TREE}",', self.source)
+        self.assertIn('    "/home/pc/molin",', self.source)
+        self.assertIn('    "DROP_SSH_INTERACTIVE_SUDO",', self.source)
         self.assertIn(f'"{CONSUMED_DIRECT_CHANGE_ID}": FrozenCandidate(', self.source)
         self.assertIn(f'        "{CONSUMED_DIRECT_SOURCE_COMMIT}",', self.source)
         self.assertIn(f'        "{CONSUMED_DIRECT_SOURCE_TREE}",', self.source)
@@ -116,9 +124,10 @@ class TestReadonlyAccessBundle(unittest.TestCase):
         self.assertIn(f'        "{CONSUMED_SOURCE_COMMIT}",', self.source)
         self.assertIn(f'        "{CONSUMED_SOURCE_TREE}",', self.source)
 
-    def test_010_manifest_uses_drop_direct_contract(self) -> None:
-        """010 清单必须显式区分直连传输，且不得恢复物理主机身份门禁。"""
-        self.assertIn('candidate.target_transport in {"DROP_SSH", "DROP_SSH_DIRECT"}', self.source)
+    def test_drop_manifests_share_the_not_applicable_physical_identity_contract(self) -> None:
+        """Drop 清单必须区分传输方式，但都不得恢复物理主机身份门禁。"""
+        self.assertIn('"DROP_SSH_INTERACTIVE_SUDO",', self.source)
+        self.assertIn('candidate.target_transport in DROP_TRANSPORTS', self.source)
         self.assertIn('values["PHYSICAL_HOST_IDENTITY"] = "NOT_APPLICABLE"', self.source)
 
     def test_ci_rejects_010_replay_and_verifies_it_ephemerally(self) -> None:
