@@ -15,6 +15,11 @@ AUDITOR_SHA='308908d2a2b9fa8679fd21d77fde68b5ce5d521ed37dac6b7726e6c323452256'
 SUDOERS_SHA='1ec266c71f00d99da18b9e8cf59af91d6126811384adef62ce48750b97a0986f'
 RECONCILE_SHA='37f6ee369f1ce489a3966123dfea3bd172d5386045495e069433c7f3d993f2c1'
 RECONCILE_SIZE='13066129'
+AUDITOR_TARGET='/usr/local/libexec/molin/g8-test-readonly-audit'
+RECONCILE_TARGET='/usr/local/libexec/molin/ai-gateway-reconcile'
+SUDOERS_TARGET='/etc/sudoers.d/molin-g8-test-readonly-audit'
+TOOLS_PARENT='/usr/local/libexec/molin'
+VISUDO_BIN='/usr/sbin/visudo'
 
 created_auditor=0
 created_reconcile=0
@@ -31,17 +36,17 @@ rollback() {
     rc=$?
     if [ "$install_complete" -eq 0 ]; then
         if [ "$created_sudoers" -eq 1 ]; then
-            /usr/bin/rm -f -- /etc/sudoers.d/molin-g8-test-readonly-audit
-            /usr/sbin/visudo -cf /etc/sudoers >/dev/null 2>&1 || :
+            /usr/bin/rm -f -- "$SUDOERS_TARGET"
+            "$VISUDO_BIN" -cf /etc/sudoers >/dev/null 2>&1 || :
         fi
         if [ "$created_reconcile" -eq 1 ]; then
-            /usr/bin/rm -f -- /usr/local/libexec/molin/ai-gateway-reconcile
+            /usr/bin/rm -f -- "$RECONCILE_TARGET"
         fi
         if [ "$created_auditor" -eq 1 ]; then
-            /usr/bin/rm -f -- /usr/local/libexec/molin/g8-test-readonly-audit
+            /usr/bin/rm -f -- "$AUDITOR_TARGET"
         fi
-        if [ "$created_parent" -eq 1 ] && [ -d /usr/local/libexec/molin ]; then
-            /usr/bin/rmdir -- /usr/local/libexec/molin 2>/dev/null || :
+        if [ "$created_parent" -eq 1 ] && [ -d "$TOOLS_PARENT" ]; then
+            /usr/bin/rmdir -- "$TOOLS_PARENT" 2>/dev/null || :
         fi
     fi
     if [ "$rc" -ne 0 ]; then
@@ -180,12 +185,9 @@ for target in /usr/local/libexec/molin/g8-test-readonly-audit /usr/local/libexec
     [ ! -e "$target" ] && [ ! -L "$target" ]
 done
 
-install_live_file "$ROOT_COPY/g8-test-readonly-audit" \
-    /usr/local/libexec/molin/g8-test-readonly-audit 0755 created_auditor
-install_live_file "$ROOT_COPY/ai-gateway-reconcile" \
-    /usr/local/libexec/molin/ai-gateway-reconcile 0755 created_reconcile
-install_live_file "$ROOT_COPY/molin-g8-test-readonly-audit.sudoers" \
-    /etc/sudoers.d/molin-g8-test-readonly-audit 0440 created_sudoers
+install_live_file "$ROOT_COPY/g8-test-readonly-audit" "$AUDITOR_TARGET" 0755 created_auditor
+install_live_file "$ROOT_COPY/ai-gateway-reconcile" "$RECONCILE_TARGET" 0755 created_reconcile
+install_live_file "$ROOT_COPY/molin-g8-test-readonly-audit.sudoers" "$SUDOERS_TARGET" 0440 created_sudoers
 
 [ "$(/usr/bin/stat -c '%U:%G:%a' /usr/local/libexec/molin/g8-test-readonly-audit)" = 'root:root:755' ]
 [ "$(/usr/bin/stat -c '%U:%G:%a' /usr/local/libexec/molin/ai-gateway-reconcile)" = 'root:root:755' ]

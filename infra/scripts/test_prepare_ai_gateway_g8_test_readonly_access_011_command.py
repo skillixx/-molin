@@ -60,7 +60,11 @@ class TestPrepareG8ReadonlyAccess011Command(unittest.TestCase):
         self.assertIn("StrictHostKeyChecking=yes", command)
         self.assertIn(r'C:\Windows\System32\OpenSSH\ssh-keygen.exe', command)
         self.assertIn("SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I", command)
+        self.assertIn("[8.130.9.163]:10003 ssh-ed25519", command)
+        self.assertIn("$targetEntries.Count -ne 1", command)
+        self.assertIn("SHA256:oQNs45Icrw5B6RCqPHOFnsub4jfRzk3evFy+wmhF8K0", command)
         self.assertIn("identity_pair_mismatch", command)
+        self.assertIn("identity_material_drift", command)
         self.assertNotIn("$env:SystemRoot", command)
         self.assertNotIn("$env:USERPROFILE", command)
         self.assertNotIn("\nsudo -k -v", command)
@@ -93,6 +97,7 @@ class TestPrepareG8ReadonlyAccess011Command(unittest.TestCase):
             "SHA256SUMS ai-gateway-reconcile g8-test-readonly-audit manifest.env molin-g8-test-readonly-audit.sudoers",
             "/usr/bin/sha256sum -c SHA256SUMS",
             "/usr /usr/local /usr/local/libexec /etc /etc/sudoers.d",
+            "/usr/local/libexec/molin",
             "PREFLIGHT_011=PASS",
         ):
             self.assertIn(frozen, preflight)

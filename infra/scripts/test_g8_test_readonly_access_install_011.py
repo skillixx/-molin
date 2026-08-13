@@ -94,15 +94,75 @@ class TestG8ReadonlyAccessInstall011(unittest.TestCase):
 
     @unittest.skipIf(os.name == "nt", "sudoers 优先回滚语义由 Linux 断网门禁执行。")
     def test_rollback_orders_sudoers_before_tools_and_revalidates_visudo(self) -> None:
-        """回滚必须先撤销本次 sudoers，再校验主配置，最后处理工具。"""
-        rollback = self.source.split("rollback() {", 1)[1].split("}\ntrap rollback EXIT", 1)[0]
-        sudoers = rollback.index("created_sudoers")
-        visudo = rollback.index("visudo -cf /etc/sudoers")
-        reconcile = rollback.index("created_reconcile")
-        auditor = rollback.index("created_auditor")
-        self.assertLess(sudoers, visudo)
-        self.assertLess(visudo, reconcile)
-        self.assertLess(reconcile, auditor)
+        """动态执行全局回滚，证明跨目标逆序删除、visudo 复核及本次父目录清理。"""
+        with tempfile.TemporaryDirectory(prefix="g8-011-global-rollback-") as temporary:
+            root = Path(temporary)
+            parent = root / "molin"
+            parent.mkdir()
+            auditor = parent / "auditor"
+            reconcile = parent / "reconcile"
+            sudoers = root / "sudoers"
+            for target in (auditor, reconcile, sudoers):
+                target.write_text("created", encoding="ascii")
+            visudo_log = root / "visudo.log"
+            fake_visudo = root / "visudo"
+            fake_visudo.write_text(
+                "#!/bin/sh\n/usr/bin/printf '%s\\n' visudo > \"$VISUDO_LOG\"\n",
+                encoding="utf-8",
+            )
+            fake_visudo.chmod(0o700)
+            functions = self.source.split('main "$@"', 1)[0]
+            harness = root / "harness.sh"
+            harness.write_text(
+                functions
+                + "\ninstall_complete=0\ncreated_auditor=1\ncreated_reconcile=1\ncreated_sudoers=1\ncreated_parent=1\n"
+                + 'AUDITOR_TARGET="$1"\nRECONCILE_TARGET="$2"\nSUDOERS_TARGET="$3"\nTOOLS_PARENT="$4"\n'
+                + 'VISUDO_BIN="$5"\nexport VISUDO_LOG="$6"\nfalse\n',
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                ["/bin/bash", str(harness), str(auditor), str(reconcile), str(sudoers), str(parent),
+                 str(fake_visudo), str(visudo_log)],
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(auditor.exists())
+            self.assertFalse(reconcile.exists())
+            self.assertFalse(sudoers.exists())
+            self.assertFalse(parent.exists())
+            self.assertEqual(visudo_log.read_text(encoding="ascii").strip(), "visudo")
+
+    @unittest.skipIf(os.name == "nt", "跨目标部分安装失败由 Linux 断网门禁执行。")
+    def test_second_live_failure_rolls_back_first_created_target(self) -> None:
+        """第一个 live 成功后第二个失败，必须由同一 EXIT trap 撤销第一个目标。"""
+        with tempfile.TemporaryDirectory(prefix="g8-011-partial-rollback-") as temporary:
+            root = Path(temporary)
+            parent = root / "molin"
+            parent.mkdir()
+            source = root / "source"
+            source.write_text("auditor", encoding="ascii")
+            auditor = parent / "auditor"
+            reconcile = parent / "reconcile"
+            missing = root / "missing"
+            functions = self.source.split('main "$@"', 1)[0]
+            harness = root / "harness.sh"
+            harness.write_text(
+                functions
+                + '\nAUDITOR_TARGET="$1"\nRECONCILE_TARGET="$2"\nTOOLS_PARENT="$3"\n'
+                + 'install_live_file "$4" "$AUDITOR_TARGET" 0600 created_auditor\n'
+                + 'install_live_file "$5" "$RECONCILE_TARGET" 0600 created_reconcile\n',
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                ["/bin/bash", str(harness), str(auditor), str(reconcile), str(parent), str(source), str(missing)],
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(auditor.exists())
+            self.assertFalse(reconcile.exists())
+            self.assertTrue(parent.is_dir())
 
     @unittest.skipIf(os.name == "nt", "sudo 精确范围解析由 Linux 断网门禁执行。")
     def test_sudo_scope_accepts_only_one_frozen_nopasswd_command(self) -> None:
@@ -138,9 +198,9 @@ class TestG8ReadonlyAccessInstall011(unittest.TestCase):
         self.assertGreaterEqual(self.source.count("set -o noclobber"), 2)
         self.assertGreaterEqual(self.source.count('exec 3> "$target"'), 2)
         self.assertEqual(self.source.count("install_live_file \"$ROOT_COPY/"), 3)
-        self.assertIn("0755 created_auditor", self.source)
-        self.assertIn("0755 created_reconcile", self.source)
-        self.assertIn("0440 created_sudoers", self.source)
+        self.assertIn('"$AUDITOR_TARGET" 0755 created_auditor', self.source)
+        self.assertIn('"$RECONCILE_TARGET" 0755 created_reconcile', self.source)
+        self.assertIn('"$SUDOERS_TARGET" 0440 created_sudoers', self.source)
         self.assertIn("rollback()", self.source)
         self.assertIn('if [ "$created_sudoers" -eq 1 ]; then', self.source)
 

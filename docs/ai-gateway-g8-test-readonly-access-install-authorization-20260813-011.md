@@ -21,10 +21,10 @@
 - 审计器：`308908d2a2b9fa8679fd21d77fde68b5ce5d521ed37dac6b7726e6c323452256`。
 - sudoers：`1ec266c71f00d99da18b9e8cf59af91d6126811384adef62ce48750b97a0986f`。
 - 对账器：`37f6ee369f1ce489a3966123dfea3bd172d5386045495e069433c7f3d993f2c1`，大小 `13066129` 字节。
-- root 安装器：`675eb16e96db9c14dffdbec2dc80f28e1483cbdb7c4b683568ebb85cf7bf1aa0`，大小 `8964` 字节。
-- 人工命令资产：`8a2165d29acabc183cf969d8da4422f549d05cac1390d549ea568f602060c0cb`，大小 `17890` 字节。
+- root 安装器：`28e49509d34f6cc76e56310f2a6a24d713f85430542733caf62c38d743fe5c20`，大小 `9022` 字节。
+- 人工命令资产：`D:\molingproject\g8-artifacts\CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011-interactive-command-v2.txt`，SHA-256 `d054e67bae8db85af480f1736c9a6d7d5bbebab1e73b9bfcf3713a167081e8e7`，大小 `19812` 字节；旧的 `...-011-interactive-command.txt` 已冻结为历史资产，禁止执行。
 - 暂存包装器：当前候选 SHA `6faa85b19cbac0dcd4099185168fef577317278cfa48ea65cc3a7efffe64ea85`；合并后必须重新计算并同步，漂移即停止。
-- 命令生成器：当前候选 SHA `e63cd2bf67e226dc3601c80a40d095edccb9f6e22ad2e6301a7bd61ef4e37fdd`；合并后必须重新计算并同步，漂移即停止。
+- 命令生成器：当前候选 SHA `0ec335400a4acebd8da1997551bc57c34bd250be756296344e3fd14b91c6e0b8`；合并后必须重新计算并同步，漂移即停止。
 - 冻结 010 helper：`4fb920e32574c640685ddd9bed919485473dc54873d157a409c1adf987b3ab6a`。
 
 ## 2. 未来需再次批准的唯一执行顺序

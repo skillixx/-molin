@@ -19,8 +19,8 @@ CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011"
 CHANGE_ID_CONSUMED = False
 ROOT_COPY = "/root/molin-g8-install-CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011"
 INSTALLER_NAME = "g8-test-readonly-access-install-011.sh"
-EXPECTED_INSTALLER_SHA256 = "675eb16e96db9c14dffdbec2dc80f28e1483cbdb7c4b683568ebb85cf7bf1aa0"
-EXPECTED_INSTALLER_SIZE = 8964
+EXPECTED_INSTALLER_SHA256 = "28e49509d34f6cc76e56310f2a6a24d713f85430542733caf62c38d743fe5c20"
+EXPECTED_INSTALLER_SIZE = 9022
 
 
 def sha256_bytes(content: bytes) -> str:
@@ -44,16 +44,40 @@ foreach ($path in @($ssh, $sshKeygen, $knownHosts, $identity, $identityPublic)) 
   if (-not $item.PSIsContainer -and -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {{ continue }}
   throw 'identity_material_invalid'
 }}
-$hostEvidence = & $sshKeygen -lf $knownHosts 2>$null
-if ($LASTEXITCODE -ne 0 -or -not (($hostEvidence -join "`n").Contains('SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I'))) {{
+$targetEntries = @(Get-Content -LiteralPath $knownHosts -Encoding ascii -ErrorAction Stop | Where-Object {{
+  $_.StartsWith('[8.130.9.163]:10003 ssh-ed25519 ')
+}})
+if ($targetEntries.Count -ne 1) {{ throw 'known_hosts_mismatch' }}
+$targetParts = ($targetEntries[0] -split '\\s+')
+if ($targetParts.Count -ne 3) {{ throw 'known_hosts_mismatch' }}
+$sha = [Security.Cryptography.SHA256]::Create()
+try {{
+  $targetFingerprint = 'SHA256:' + [Convert]::ToBase64String($sha.ComputeHash([Convert]::FromBase64String($targetParts[2]))).TrimEnd('=')
+}} finally {{ $sha.Dispose() }}
+if ($targetFingerprint -ne 'SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I') {{
   throw 'known_hosts_mismatch'
 }}
 $derivedPublic = (& $sshKeygen -y -f $identity 2>$null)
 if ($LASTEXITCODE -ne 0) {{ throw 'identity_pair_mismatch' }}
 $declaredParts = ((Get-Content -LiteralPath $identityPublic -Raw -ErrorAction Stop).Trim() -split '\\s+')
 $derivedParts = (($derivedPublic.Trim()) -split '\\s+')
-if ($declaredParts.Count -lt 2 -or $derivedParts.Count -lt 2 -or $declaredParts[0] -ne $derivedParts[0] -or $declaredParts[1] -ne $derivedParts[1]) {{
+if ($declaredParts.Count -lt 2 -or $derivedParts.Count -lt 2 -or $declaredParts[0] -ne 'ssh-ed25519' -or $declaredParts[0] -ne $derivedParts[0] -or $declaredParts[1] -ne $derivedParts[1]) {{
   throw 'identity_pair_mismatch'
+}}
+$sha = [Security.Cryptography.SHA256]::Create()
+try {{
+  $clientFingerprint = 'SHA256:' + [Convert]::ToBase64String($sha.ComputeHash([Convert]::FromBase64String($declaredParts[1]))).TrimEnd('=')
+}} finally {{ $sha.Dispose() }}
+if ($clientFingerprint -ne 'SHA256:oQNs45Icrw5B6RCqPHOFnsub4jfRzk3evFy+wmhF8K0') {{ throw 'identity_pair_mismatch' }}
+$materialEvidence = @{{}}
+foreach ($path in @($ssh, $sshKeygen, $knownHosts, $identity, $identityPublic)) {{
+  $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
+  $materialEvidence[$path] = "$($item.Length):$($item.LastWriteTimeUtc.Ticks):$((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash)"
+}}
+foreach ($path in $materialEvidence.Keys) {{
+  $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
+  $current = "$($item.Length):$($item.LastWriteTimeUtc.Ticks):$((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash)"
+  if ($current -ne $materialEvidence[$path]) {{ throw 'identity_material_drift' }}
 }}
 & \"C:\\Windows\\System32\\OpenSSH\\ssh.exe\" `
   -F none -tt -p 10003 `
@@ -105,6 +129,11 @@ for parent in /usr /usr/local /usr/local/libexec /etc /etc/sudoers.d; do
   /usr/bin/test \"$(/usr/bin/stat -c '%U:%G' -- \"$parent\")\" = root:root
   mode=$((8#$(/usr/bin/stat -c '%a' -- \"$parent\"))); /usr/bin/test $((mode & 0022)) -eq 0
 done
+if /usr/bin/test -e /usr/local/libexec/molin || /usr/bin/test -L /usr/local/libexec/molin; then
+  /usr/bin/test -d /usr/local/libexec/molin; /usr/bin/test ! -L /usr/local/libexec/molin
+  /usr/bin/test "$(/usr/bin/stat -c '%U:%G' -- /usr/local/libexec/molin)" = root:root
+  mode=$((8#$(/usr/bin/stat -c '%a' -- /usr/local/libexec/molin))); /usr/bin/test $((mode & 0022)) -eq 0
+fi
 for target in /usr/local/libexec/molin/g8-test-readonly-audit /usr/local/libexec/molin/ai-gateway-reconcile /etc/sudoers.d/molin-g8-test-readonly-audit; do
   /usr/bin/test ! -e \"$target\"; /usr/bin/test ! -L \"$target\"
 done
