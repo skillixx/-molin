@@ -20,6 +20,7 @@ from unittest import mock
 SCRIPT_PATH = Path(__file__).with_name(
     "run-ai-gateway-g8-test-drop-staging-evidence-012.py"
 )
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def load_module():
@@ -476,6 +477,22 @@ class TestDropStagingEvidence012Contract(unittest.TestCase):
             self.assertEqual(code, expected_code)
             self.assertEqual(stdout.getvalue(), expected_stdout)
             self.assertEqual(stderr.getvalue(), "")
+
+    def test_ci_runs_012_on_windows_and_linux_without_network(self):
+        """CI 遗漏 012、断网 Linux 动态测试或离线自检时，本测试必须失败。"""
+
+        workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "test_run_ai_gateway_g8_test_drop_staging_evidence_012.py",
+            workflow,
+        )
+        self.assertIn(
+            "run-ai-gateway-g8-test-drop-staging-evidence-012.py --self-test",
+            workflow,
+        )
+        self.assertIn("python:3.13-alpine", workflow)
+        self.assertIn("--network none", workflow)
 
 
 @unittest.skipUnless(os.name == "posix", "目录描述符动态取证只在 Linux CI 执行")
