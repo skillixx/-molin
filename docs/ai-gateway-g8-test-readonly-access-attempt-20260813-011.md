@@ -39,3 +39,11 @@
 - 若继续只读入口安装，必须先以新 ChangeId 对 011 暂存的存在性和完整性做只读取证；不得复用 011 候选、回执、授权或命令。
 - 只有暂存状态经独立门禁关闭后，才允许另行设计清理或新安装候选；任何清理、上传、安装、sudo 或 self-test 均需要新的明确授权。
 - 本次结果不授权业务 HTTP、数据库/队列访问、服务重启、生产连接、真实付费调用、真实通知或客户灰度。`G8_ENGINEERING_READY` 保持，`G8_COMMERCIAL_ACCEPTED` 继续未完成。
+
+## 5. 仓库合并证据
+
+- 防重放与执行证据精确 HEAD 为 `03d53a4dfb22510808b1723d04b69172fce07450`，固定基线为 `380af658998e21ead0b2b076a3b2a38b4f785280`。
+- CI run `31689994630` 精确绑定该 HEAD，状态为 `completed / success`，12/12 作业全部 SUCCESS，包含 G8 生产就绪、真实后端浏览器和必选门禁汇总。
+- 独立代码安全、QA、产品/规格均在该精确 HEAD 给出 `P0=0 / P1=0 / P2=0`。
+- PR #367 已使用 merge commit `eba0116ad5e790a4d29e32bc68d3151d9d22dc06` 合入主干；双亲依次为固定基线和精确功能 HEAD，merge tree 与功能 HEAD tree 均为 `8430d1869dc60aaa6332fdc1c40ed3c3e167e445`，未使用 squash 且无内容漂移。
+- 远端功能分支 `feature/backend-d-ai-gateway-g8-readonly-access-011-attempt-evidence` 已删除。本节只收口仓库工程证据，不授权再次连接测试服、确认或清理暂存、安装或生产操作。
