@@ -1112,6 +1112,15 @@ python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_ho
 
 `infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop-interactive.py` 是已消费的 011 暂存包装器。唯一一次 local-check 为 PASS；唯一正式暂存包装器调用以 `invalid_request`、退出码 2、stderr 为空停止，远端暂存状态保持 `UNKNOWN`，没有继续交互 SSH、sudo、root 安装或 self-test。包装器、命令生成器和候选生成器现均在读取材料或联网前拒绝 011；诊断或清理须使用新 ChangeId 和独立授权。执行记录见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-011.md`。
 
+`infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-012.py` 是尚未执行的 012 Drop 暂存只读取证候选。它独立冻结系统 OpenSSH、固定端点 known_hosts、客户端 ED25519 密钥对和 011 五文件契约；正式模式只允许一个 SSH 子进程，远端程序无写改删、SFTP、sudo、Docker、数据库或 HTTP 能力。工程阶段仅允许以下离线命令，禁止 `--local-check` 和正式参数：
+
+```powershell
+python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_012.py -v
+python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-012.py --self-test
+```
+
+Linux 动态竞态测试必须在 `python:3.13-alpine --network none` 中运行。授权清单见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-authorization-20260813-012.md`。
+
 ## CI 变更范围分类器
 
 | 项目 | 说明 |
