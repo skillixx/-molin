@@ -28,35 +28,47 @@ def sha256_bytes(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+def build_known_hosts_guard() -> str:
+    """使用 OpenSSH 自身枚举明文与哈希端点条目，并只接受唯一批准密钥。"""
+    return r'''$foundHostMatches = @(& $sshKeygen -F '[8.130.9.163]:10003' -f $knownHosts 2>$null | Where-Object {
+  $_ -and -not $_.StartsWith('#')
+})
+if ($LASTEXITCODE -ne 0) { throw 'known_hosts_mismatch' }
+$foundHostEntries = @($foundHostMatches | Where-Object { ($_ -split '\s+')[1] -eq 'ssh-ed25519' })
+if ($foundHostEntries.Count -ne 1) { throw 'known_hosts_mismatch' }
+$targetParts = ($foundHostEntries[0] -split '\s+')
+if ($targetParts.Count -ne 3) { throw 'known_hosts_mismatch' }
+$sha = [Security.Cryptography.SHA256]::Create()
+try {
+  $targetFingerprint = 'SHA256:' + [Convert]::ToBase64String($sha.ComputeHash([Convert]::FromBase64String($targetParts[2]))).TrimEnd('=')
+} finally { $sha.Dispose() }
+if ($targetFingerprint -ne 'SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I') {
+  throw 'known_hosts_mismatch'
+}'''
+
+
 def build_command(installer: bytes) -> str:
     """生成不包含密码或凭据正文的本地 SSH 命令与远端固定命令块。"""
     encoded = base64.b64encode(installer).decode("ascii")
     digest = sha256_bytes(installer)
     size = len(installer)
+    known_hosts_guard = build_known_hosts_guard()
     return f"""# 第一步：在 PowerShell 中先校验固定身份材料，再建立唯一交互 SSH 会话。
 $ssh = 'C:\\Windows\\System32\\OpenSSH\\ssh.exe'
 $sshKeygen = 'C:\\Windows\\System32\\OpenSSH\\ssh-keygen.exe'
 $knownHosts = 'C:\\Users\\skillixx\\.ssh\\known_hosts'
 $identity = 'C:\\Users\\skillixx\\.ssh\\id_ed25519'
 $identityPublic = 'C:\\Users\\skillixx\\.ssh\\id_ed25519.pub'
-foreach ($path in @($ssh, $sshKeygen, $knownHosts, $identity, $identityPublic)) {{
+function Get-FrozenMaterialEvidence([string]$path) {{
   $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
-  if (-not $item.PSIsContainer -and -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {{ continue }}
-  throw 'identity_material_invalid'
+  if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {{ throw 'identity_material_invalid' }}
+  return "$($item.Length):$($item.CreationTimeUtc.Ticks):$($item.LastWriteTimeUtc.Ticks):$((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash)"
 }}
-$targetEntries = @(Get-Content -LiteralPath $knownHosts -Encoding ascii -ErrorAction Stop | Where-Object {{
-  $_.StartsWith('[8.130.9.163]:10003 ssh-ed25519 ')
-}})
-if ($targetEntries.Count -ne 1) {{ throw 'known_hosts_mismatch' }}
-$targetParts = ($targetEntries[0] -split '\\s+')
-if ($targetParts.Count -ne 3) {{ throw 'known_hosts_mismatch' }}
-$sha = [Security.Cryptography.SHA256]::Create()
-try {{
-  $targetFingerprint = 'SHA256:' + [Convert]::ToBase64String($sha.ComputeHash([Convert]::FromBase64String($targetParts[2]))).TrimEnd('=')
-}} finally {{ $sha.Dispose() }}
-if ($targetFingerprint -ne 'SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I') {{
-  throw 'known_hosts_mismatch'
+$materialEvidence = @{{}}
+foreach ($path in @($ssh, $sshKeygen, $knownHosts, $identity, $identityPublic)) {{
+  $materialEvidence[$path] = Get-FrozenMaterialEvidence $path
 }}
+{known_hosts_guard}
 $derivedPublic = (& $sshKeygen -y -f $identity 2>$null)
 if ($LASTEXITCODE -ne 0) {{ throw 'identity_pair_mismatch' }}
 $declaredParts = ((Get-Content -LiteralPath $identityPublic -Raw -ErrorAction Stop).Trim() -split '\\s+')
@@ -69,25 +81,23 @@ try {{
   $clientFingerprint = 'SHA256:' + [Convert]::ToBase64String($sha.ComputeHash([Convert]::FromBase64String($declaredParts[1]))).TrimEnd('=')
 }} finally {{ $sha.Dispose() }}
 if ($clientFingerprint -ne 'SHA256:oQNs45Icrw5B6RCqPHOFnsub4jfRzk3evFy+wmhF8K0') {{ throw 'identity_pair_mismatch' }}
-$materialEvidence = @{{}}
-foreach ($path in @($ssh, $sshKeygen, $knownHosts, $identity, $identityPublic)) {{
-  $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
-  $materialEvidence[$path] = "$($item.Length):$($item.LastWriteTimeUtc.Ticks):$((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash)"
-}}
 foreach ($path in $materialEvidence.Keys) {{
-  $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
-  $current = "$($item.Length):$($item.LastWriteTimeUtc.Ticks):$((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash)"
+  $current = Get-FrozenMaterialEvidence $path
   if ($current -ne $materialEvidence[$path]) {{ throw 'identity_material_drift' }}
 }}
-& \"C:\\Windows\\System32\\OpenSSH\\ssh.exe\" `
+$frozenKnownHosts = [IO.Path]::GetTempFileName()
+try {{
+  [IO.File]::WriteAllText($frozenKnownHosts, "[8.130.9.163]:10003 ssh-ed25519 $($targetParts[2])`n", [Text.Encoding]::ASCII)
+  & \"C:\\Windows\\System32\\OpenSSH\\ssh.exe\" `
   -F none -tt -p 10003 `
   -o BatchMode=no -o IdentitiesOnly=yes -o ConnectionAttempts=1 `
   -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no `
-  -o StrictHostKeyChecking=yes `
+  -o StrictHostKeyChecking=yes -o HostKeyAlgorithms=ssh-ed25519 `
   -o ForwardAgent=no -o ClearAllForwardings=yes -o RequestTTY=force `
-  -o UserKnownHostsFile=\"C:\\Users\\skillixx\\.ssh\\known_hosts\" `
+  -o UserKnownHostsFile=\"$frozenKnownHosts\" `
   -i \"C:\\Users\\skillixx\\.ssh\\id_ed25519\" `
   pc@8.130.9.163
+}} finally {{ Remove-Item -LiteralPath $frozenKnownHosts -Force -ErrorAction SilentlyContinue }}
 
 # 第二步：进入 pc 会话后，完整粘贴以下命令块；sudo 密码只能响应终端提示人工输入。
 set -eu

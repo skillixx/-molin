@@ -2,6 +2,8 @@
 """验证 011 人工交互安装命令只携带冻结脚本且不处理密码。"""
 
 import base64
+import importlib.util
+import os
 import subprocess
 import tempfile
 import unittest
@@ -55,22 +57,72 @@ class TestPrepareG8ReadonlyAccess011Command(unittest.TestCase):
             self.run_script(f"--change-id={CHANGE_ID}", f"--output-file={output}")
             command = output.read_text(encoding="utf-8")
         self.assertIn(r'& "C:\Windows\System32\OpenSSH\ssh.exe"', command)
-        self.assertIn(r'UserKnownHostsFile="C:\Users\skillixx\.ssh\known_hosts"', command)
+        self.assertIn(r"$knownHosts = 'C:\Users\skillixx\.ssh\known_hosts'", command)
+        self.assertIn(r'UserKnownHostsFile="$frozenKnownHosts"', command)
         self.assertIn(r'-i "C:\Users\skillixx\.ssh\id_ed25519"', command)
         self.assertIn("StrictHostKeyChecking=yes", command)
         self.assertIn(r'C:\Windows\System32\OpenSSH\ssh-keygen.exe', command)
         self.assertIn("SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I", command)
-        self.assertIn("[8.130.9.163]:10003 ssh-ed25519", command)
-        self.assertIn("$targetEntries.Count -ne 1", command)
+        self.assertIn("'[8.130.9.163]:10003'", command)
+        self.assertIn("$foundHostEntries.Count -ne 1", command)
+        self.assertIn("-F '[8.130.9.163]:10003' -f $knownHosts", command)
         self.assertIn("SHA256:oQNs45Icrw5B6RCqPHOFnsub4jfRzk3evFy+wmhF8K0", command)
         self.assertIn("identity_pair_mismatch", command)
         self.assertIn("identity_material_drift", command)
+        self.assertIn("HostKeyAlgorithms=ssh-ed25519", command)
+        self.assertIn("Get-FrozenMaterialEvidence", command)
         self.assertNotIn("$env:SystemRoot", command)
         self.assertNotIn("$env:USERPROFILE", command)
         self.assertNotIn("\nsudo -k -v", command)
         self.assertNotIn("\nsudo -n ", command)
         self.assertEqual(command.count("/usr/bin/sudo -k -v"), 1)
         self.assertEqual(command.count("/usr/bin/sudo -n /bin/bash -ceu"), 1)
+
+    @unittest.skipUnless(os.name == "nt", "OpenSSH 哈希端点动态负例在 Windows 本地门禁执行。")
+    def test_hashed_duplicate_host_entry_is_rejected(self) -> None:
+        """批准明文 key 与同端点哈希额外 key 并存时必须失败关闭。"""
+        specification = importlib.util.spec_from_file_location("g8_command_011", SCRIPT_PATH)
+        module = importlib.util.module_from_spec(specification)
+        specification.loader.exec_module(module)
+        ssh_keygen = Path(r"C:\Windows\System32\OpenSSH\ssh-keygen.exe")
+        approved = (
+            "[8.130.9.163]:10003 ssh-ed25519 "
+            "AAAAC3NzaC1lZDI1NTE5AAAAILjrNWLT1yfzSX/qXOEx1xWQpmujjCtBkGa/XHrv7GBo\n"
+        )
+        with tempfile.TemporaryDirectory(prefix="g8-011-known-hosts-") as temporary:
+            root = Path(temporary)
+            evil_key = root / "evil"
+            subprocess.run(
+                [str(ssh_keygen), "-q", "-t", "ed25519", "-N", "", "-f", str(evil_key)],
+                capture_output=True,
+                check=True,
+            )
+            evil_blob = evil_key.with_suffix(".pub").read_text(encoding="ascii").split()[1]
+            evil_hosts = root / "evil_known_hosts"
+            evil_hosts.write_text(f"[8.130.9.163]:10003 ssh-ed25519 {evil_blob}\n", encoding="ascii")
+            subprocess.run(
+                [str(ssh_keygen), "-H", "-f", str(evil_hosts)], capture_output=True, check=True,
+            )
+            hashed_evil = evil_hosts.read_text(encoding="ascii")
+            known_hosts = root / "known_hosts"
+            guard = module.build_known_hosts_guard()
+
+            def validate(content: str) -> subprocess.CompletedProcess[str]:
+                known_hosts.write_text(content, encoding="ascii")
+                script = (
+                    f"$sshKeygen='{ssh_keygen}';$knownHosts='{known_hosts}';"
+                    + guard
+                )
+                return subprocess.run(
+                    ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    check=False,
+                )
+
+            self.assertEqual(validate(approved).returncode, 0)
+            self.assertNotEqual(validate(approved + hashed_evil).returncode, 0)
 
     def test_installer_bytes_are_stable_and_frozen_before_embedding(self) -> None:
         """命令生成器不得把未冻结或读取期间漂移的安装器嵌入命令。"""
