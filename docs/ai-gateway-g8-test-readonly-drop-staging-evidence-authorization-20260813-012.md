@@ -1,6 +1,6 @@
 # G8 Drop 暂存只读取证 012 授权清单
 
-> 状态：`PENDING_USER_APPROVAL`。PR #369 最终 HEAD `6823a6be77c77290732a417935c85af4d213f708` 已通过 CI run `31697655486` 12/12、独立代码安全/QA/产品规格 P0/P1/P2=0，并按 merge commit `247c637c2b5bce82377ce1ad1431b4b520187068` 合入主干。本清单只冻结未来一次只读取证候选；用户再次明确批准前，仍禁止执行 `--local-check`、SSH 或任何测试服连接。工程测试、CI、评审、PR 和合并均不构成远端执行授权。
+> 状态：`CONSUMED_LOCAL_CHECK_EVIDENCE_UNAVAILABLE`。用户批准后唯一一次 `--local-check` 返回固定低敏 `evidence_unavailable`、退出码 2、stderr 为空，随后按停止条件零重试结束；未启动 SSH，未连接测试服。012 ChangeId、授权和以下历史命令均已消费并作废，禁止重放。完整记录见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-attempt-20260813-012.md`。
 
 ## 1. ChangeId、目标与上限
 
@@ -42,7 +42,7 @@ Drop 地址只代表传输端点。012 不读取或验证 hostname、`/etc/machi
 
 ## 4. 待后续独立批准的精确命令
 
-当前以下命令仍全部禁止执行。仓库工程门禁与合并已经完成；只有用户再次明确批准 012 后，才可在仓库根目录依次各执行一次：
+以下命令是本次已消费授权的冻结历史记录，现已全部作废。不得再次执行，也不得用本地副本、临时目录或其他参数恢复 012 授权：
 
 ```powershell
 python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-012.py --local-check --known-hosts "C:\Users\skillixx\.ssh\known_hosts" --identity-file "C:\Users\skillixx\.ssh\id_ed25519" --identity-public-file "C:\Users\skillixx\.ssh\id_ed25519.pub"
@@ -63,4 +63,4 @@ python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-012.py --ch
 
 ## 6. 阶段边界
 
-001 至 011 均已消费；011 暂存继续为 `UNKNOWN`，012 当前尚未执行。任何 012 结果都不自动授权确认之外的诊断、清理、安装或运行态审计，也不关闭 API、schema、数据库、Bifrost、监控、备份和账务门禁。`G8_ENGINEERING_READY` 保持；生产部署、真实付费调用、客户灰度和四周商业观察未执行，`G8_COMMERCIAL_ACCEPTED` 未完成。
+001 至 012 均已消费。012 唯一 local-check 未通过且未启动 SSH，没有形成远端三态证据，011 暂存继续为 `UNKNOWN`。任何继续取证、清理、安装或运行态审计都必须使用新 ChangeId、重新完成工程门禁并取得独立用户授权；API、schema、数据库、Bifrost、监控、备份和账务门禁未关闭。`G8_ENGINEERING_READY` 保持；生产部署、真实付费调用、客户灰度和四周商业观察未执行，`G8_COMMERCIAL_ACCEPTED` 未完成。

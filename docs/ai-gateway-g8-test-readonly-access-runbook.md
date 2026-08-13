@@ -120,13 +120,13 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 ### 3.5 当前重新申请顺序
 
-001 至 011 均已消费。008 曾把固定 003 暂存状态收敛为 `ABSENT`；后续 010 暂存成功但 root 安装未开始，011 的唯一正式暂存包装器调用又以低敏 `invalid_request` 停止，当前 011 暂存状态为 `UNKNOWN`。012 已完成设计、实现、独立三方评审、精确 HEAD CI 和 merge commit，当前为 `PENDING_USER_APPROVAL`；用户独立批准前仍禁止 local-check 和测试服连接。Drop 映射下旧的物理主机身份核验顺序不再适用；当前必须依次完成：
+001 至 012 均已消费。008 曾把固定 003 暂存状态收敛为 `ABSENT`；后续 010 暂存成功但 root 安装未开始，011 的唯一正式暂存包装器调用又以低敏 `invalid_request` 停止，当前 011 暂存状态为 `UNKNOWN`。012 获批后唯一 local-check 返回固定低敏 `evidence_unavailable`、退出码 2、stderr 为空，随即零重试停止；SSH 未启动，仍没有形成远端三态证据。Drop 映射下旧的物理主机身份核验顺序不再适用；当前必须依次完成：
 
 1. 禁止重放 011 或通过新的本地诊断推断远端状态；包装器、命令生成器和候选生成器必须保持消费态。
-2. 012 的代码安全、QA、产品、精确 HEAD CI 和 merge commit 已由 PR #369 完成；这些仓库证据不构成执行授权。
-3. 仅在用户再次独立批准 012 后，才允许一次 local-check 和一次只读 SSH、零重试；三态或任一失败均立即停止。
-4. 只读取证关闭 `UNKNOWN` 后，清理与重新安装仍分别使用新的 ChangeId、冻结候选和独立授权；不得复用 009、010 或 011 的候选、回执、命令或授权。
-5. 安装后的真实运行态审计继续使用另一个独立 ChangeId，不得随清理或安装顺带执行；API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因暂存证据自动关闭。
+2. 禁止重放 012；它的 ChangeId、授权及历史命令均已消费，消费入口必须在参数解析、材料读取和联网前固定拒绝。
+3. 如需继续确认 011 暂存，必须设计新的只读取证 ChangeId，重新完成 TDD、独立评审、精确 HEAD CI、合并和用户授权。
+4. 清理与重新安装仍分别使用新的 ChangeId、冻结候选和独立授权；不得复用 009、010、011 或 012 的候选、回执、命令或授权。
+5. 安装后的真实运行态审计继续使用另一个独立 ChangeId，不得随取证、清理或安装顺带执行；API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因本地失败自动关闭。
 
 `CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005` 已完成唯一一次本地检查和正式只读 SSH，结果为 `ZERO / EXACT / stderr EMPTY / diagnostic PASS`，证明传输链路可用但未关闭暂存 UNKNOWN；005 已消费并禁止重放。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`、`docs/ai-gateway-g8-test-readonly-transport-diagnostic-attempt-20260812-005.md`。下一次暂存只读取证必须使用新的 ChangeId，重新完成代码安全、QA、产品、精确 HEAD CI、merge commit 与用户独立授权。
 
