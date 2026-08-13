@@ -212,6 +212,36 @@ class TestDropStagingEvidenceContract(unittest.TestCase):
                 with self.assertRaises(module.EvidenceError):
                     module.load_frozen_helper(contract)
 
+    @unittest.skipUnless(os.name == "posix", "helper 目录项竞态只在 Linux CI 执行")
+    def test_helper_path_replacement_after_open_fails_closed(self) -> None:
+        """读取中的 helper 即使摘要相同，目录项 inode 漂移也必须拒绝。"""
+        module = load_module()
+        helper = SCRIPT_PATH.with_name("run-ai-gateway-g8-test-staging-evidence.py")
+        with tempfile.TemporaryDirectory(prefix="g8-drop-helper-race-") as temporary:
+            candidate = Path(temporary) / "helper.py"
+            source = helper.read_bytes()
+            candidate.write_bytes(source)
+            original_open = module.os.open
+
+            def replace_after_open(path, flags, *args, **kwargs):
+                descriptor = original_open(path, flags, *args, **kwargs)
+                if Path(path) == candidate:
+                    old = candidate.with_suffix(".old")
+                    candidate.rename(old)
+                    candidate.write_bytes(source)
+                return descriptor
+
+            with (
+                mock.patch.object(module.os, "open", side_effect=replace_after_open),
+                mock.patch.object(
+                    module,
+                    "FROZEN_HELPER_SHA256",
+                    hashlib.sha256(source).hexdigest(),
+                ),
+                self.assertRaises(module.EvidenceError),
+            ):
+                module.load_frozen_helper(candidate)
+
     def test_stream_capture_is_bounded_and_low_sensitive_on_read_error(self) -> None:
         """管道采集必须有界，并把读取异常收敛为内部标志。"""
         module = load_module()

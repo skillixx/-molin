@@ -149,6 +149,9 @@ def load_frozen_helper(path: Path | None = None):
                 raise EvidenceError("helper_drift")
         finally:
             os.close(descriptor)
+        current = os.lstat(helper_path)
+        if (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino):
+            raise EvidenceError("helper_path_drift")
     except (OSError, EvidenceError) as error:
         raise EvidenceError("helper_load_failed") from error
     if hashlib.sha256(source).hexdigest() != FROZEN_HELPER_SHA256:
@@ -578,7 +581,7 @@ def main() -> int:
         helper.validate_identity_file(identity_file, identity_public_file, known_hosts)
         helper.validate_identity_pair(identity_file, identity_public_file)
     except Exception:
-        print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE=FAILED reason=local_validation_failed")
+        print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE=FAILED reason=evidence_unavailable")
         return 2
     if arguments.local_check:
         print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE_LOCAL_CHECK=PASS")
@@ -586,7 +589,7 @@ def main() -> int:
     try:
         values = run_once(helper, known_hosts, identity_file)
     except Exception:
-        print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE=FAILED reason=remote_evidence_failed")
+        print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE=FAILED reason=evidence_unavailable")
         return 2
     print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE=PASS")
     print(f"staging_state={values['STAGING_STATE']}")
