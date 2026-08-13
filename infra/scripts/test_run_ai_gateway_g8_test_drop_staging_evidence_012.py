@@ -387,7 +387,10 @@ class TestDropStagingEvidence012Contract(unittest.TestCase):
                 path.write_bytes(content)
                 paths[name] = path
 
-            def runner(command, **_kwargs):
+            tool_environments = []
+
+            def runner(command, **kwargs):
+                tool_environments.append(kwargs.get("env"))
                 if "-F" in command:
                     return subprocess.CompletedProcess(command, 0, endpoint_line + "\n", "")
                 if "-y" in command:
@@ -402,6 +405,10 @@ class TestDropStagingEvidence012Contract(unittest.TestCase):
                 expected_identity_fingerprint=expected_fingerprint,
             )
             self.assertEqual(inputs.approved_known_hosts_line, endpoint_line)
+            self.assertTrue(tool_environments)
+            self.assertTrue(all(environment is not None for environment in tool_environments))
+            self.assertTrue(all("SSH_AUTH_SOCK" not in environment for environment in tool_environments))
+            self.assertTrue(all("SSH_ASKPASS" not in environment for environment in tool_environments))
 
             def mismatch_runner(command, **kwargs):
                 completed = runner(command, **kwargs)

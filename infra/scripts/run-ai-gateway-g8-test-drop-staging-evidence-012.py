@@ -285,6 +285,14 @@ def ssh_fingerprint(public_key_line: str) -> str:
     return "SHA256:" + digest
 
 
+def fixed_local_environment() -> dict[str, str]:
+    """为本地 OpenSSH 工具提供最小环境，拒绝 Agent、AskPass 和 PATH 注入。"""
+
+    if os.name == "nt":
+        return {"SystemRoot": "C:\\Windows"}
+    return {"PATH": "/usr/bin:/bin", "LANG": "C"}
+
+
 def validate_known_hosts(
     known_hosts: Path,
     ssh_keygen: Path,
@@ -303,6 +311,7 @@ def validate_known_hosts(
             encoding="utf-8",
             timeout=10,
             check=False,
+            env=fixed_local_environment(),
         )
     except Exception as error:
         raise EvidenceError("known_hosts_unavailable") from error
@@ -371,6 +380,7 @@ def freeze_local_inputs(
             encoding="utf-8",
             timeout=10,
             check=False,
+            env=fixed_local_environment(),
         )
     except Exception as error:
         raise EvidenceError("identity_pair_unavailable") from error
@@ -435,11 +445,7 @@ def run_once(inputs: LocalInputs) -> dict[str, str]:
             f"{TARGET_LOGIN}@{TARGET_HOST}",
             "/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -",
         ]
-        environment = (
-            {"SystemRoot": "C:\\Windows"}
-            if os.name == "nt"
-            else {"PATH": "/usr/bin:/bin", "LANG": "C"}
-        )
+        environment = fixed_local_environment()
         try:
             process = subprocess.Popen(
                 command,

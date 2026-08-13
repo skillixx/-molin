@@ -17,8 +17,8 @@ Drop 地址只代表传输端点。012 不读取或验证 hostname、`/etc/machi
 ## 2. 冻结信任与程序
 
 - 012 包装器：`infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-012.py`
-- 包装器 SHA-256：`2706d0a143e4fb6352d104b25b215eda9933dc21a566935ce13bd0fc98e756ad`
-- 包装器大小：`32740` bytes
+- 包装器 SHA-256：`b768932826d5d64780200e9b71719a5b0d547f8129d2f675bbad37b0f506847a`
+- 包装器大小：`32979` bytes
 - 服务端 ED25519 指纹：`SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I`
 - 客户端 ED25519 指纹：`SHA256:oQNs45Icrw5B6RCqPHOFnsub4jfRzk3evFy+wmhF8K0`
 - Windows 工具：`C:\Windows\System32\OpenSSH\ssh.exe`、`C:\Windows\System32\OpenSSH\ssh-keygen.exe`
