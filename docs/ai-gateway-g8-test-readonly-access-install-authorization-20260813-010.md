@@ -1,6 +1,6 @@
 # AI 网关 G8 测试服只读入口安装授权清单（010）
 
-> 当前状态：`PENDING_ENGINEERING_GATES_AND_USER_APPROVAL`。本清单只冻结未来可能执行的测试服最小只读入口安装步骤；当前仓库授权不允许运行 `--local-check`、SSH、SFTP、root 安装或远端 sudo self-test。只有精确 HEAD 的测试、CI、独立安全评审、QA、产品/规格验收和 merge commit 全部完成后，状态才可收敛为 `PENDING_USER_APPROVAL`，并仍须用户再次明确批准。
+> 当前状态：`PENDING_USER_APPROVAL`。精确 HEAD 的测试、CI、独立安全评审、QA、产品/规格验收和 merge commit 已完成；本清单仍只冻结未来可能执行的测试服最小只读入口安装步骤。用户再次明确批准前禁止运行 `--local-check`、SSH、SFTP、root 安装或远端 sudo self-test；仓库工程门禁和合并不构成测试服执行授权。
 
 ## 1. ChangeId 与目标
 
@@ -16,6 +16,9 @@
 010 使用现有 ED25519 密钥免密码认证（即免密钥口令交互，但仍显式绑定密钥文件）。包装器必须显式使用原始 `C:\Users\skillixx\.ssh\id_ed25519`、`id_ed25519.pub` 和 `known_hosts`，不复制、不 chmod、不修改私钥或其 NTFS ACL；禁用 Agent、AskPass、密码和键盘交互。
 
 ## 2. 冻结候选与证据
+
+- 工程证据：PR #362 最终 HEAD `b47e94780a2ac884a7d2dccb0d1f80abb8b137cd`，CI run `31673893162` 为 12/12 SUCCESS，独立代码安全、QA、产品/规格均为 P0/P1/P2=0；随后按 merge commit `a890cdff2793a141f7b377aa74d0996d57e13cbd` 合入主干。
+- 合并后复核：merge commit 的源码树与 PR 最终 HEAD 完全一致；010 直连包装器和冻结 009 helper 的 SHA-256 仍分别为 `185c0ccda420d3bbe97e95c3218a03642372e05525d2663258287ebd981360b8`、`4be88638f2a4a271ebbf23751bd3f7238ea5f78f1f18fcb6889c9e071b953f30`。
 
 | 文件 | 最终目标 | SHA-256 | 最终属主 / 权限 |
 |---|---|---|---|
