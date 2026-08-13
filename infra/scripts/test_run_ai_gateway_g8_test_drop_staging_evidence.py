@@ -128,6 +128,7 @@ class TestDropStagingEvidenceContract(unittest.TestCase):
             "id_ed25519.pub",
         ]
         with (
+            mock.patch.object(module, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(sys, "argv", arguments),
             mock.patch.object(module, "load_frozen_helper", return_value=helper),
             mock.patch.object(module, "run_once") as run_once,
@@ -267,7 +268,6 @@ class TestDropStagingEvidenceContract(unittest.TestCase):
         """已消费 ChangeId 必须在读取 helper、身份材料或联网前拒绝。"""
         module = load_module()
         with (
-            mock.patch.object(module, "CHANGE_ID_CONSUMED", True),
             mock.patch.object(module, "load_frozen_helper") as helper,
             mock.patch.object(module, "run_once") as run_once,
             mock.patch.object(sys, "argv", [str(SCRIPT_PATH)]),
@@ -305,6 +305,7 @@ class TestDropStagingEvidenceContract(unittest.TestCase):
             "STAGING_MISMATCH_REASON": "FILE_CONTENT",
         }
         with (
+            mock.patch.object(module, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(sys, "argv", arguments),
             mock.patch.object(module, "load_frozen_helper", return_value=helper),
             mock.patch.object(module, "run_once", return_value=mismatch),
