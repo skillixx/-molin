@@ -1110,6 +1110,8 @@ python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_ho
 
 `infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop-direct.py` 是已消费的 010 Drop 直连包装器。一次本地检查、一次只读 SSH 和一次原子 SFTP 已完成，五文件暂存成功；root 安装未建立连接，live/sudoers/visudo/sudo self-test 均未执行。包装器所有入口现必须在读取 helper、候选、身份材料或网络前固定返回 `change_id_consumed`。010 禁止重放；暂存清理、root 安装或新的 `pc` 非特权方案必须使用新 ChangeId。历史证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-010.md`。
 
+`infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop-interactive.py` 只为 011 提供离线候选门禁和未来独立授权的一次原子 SFTP，不启动 SSH 或 sudo。`g8-test-readonly-access-install-011.sh` 是固定无参数 root 安装器；`prepare-ai-gateway-g8-test-readonly-access-011-command.py` 只生成供人工复制的单会话命令。工程阶段只能运行单元测试、离线 self-test 和命令生成，不得运行正式暂存或生成命令内容。
+
 ## CI 变更范围分类器
 
 | 项目 | 说明 |
