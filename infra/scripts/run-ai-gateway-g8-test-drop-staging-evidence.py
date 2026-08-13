@@ -559,6 +559,9 @@ def main() -> int:
     except EvidenceError:
         print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE=FAILED reason=invalid_request")
         return 2
+    if CHANGE_ID_CONSUMED:
+        print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE=FAILED reason=change_id_consumed")
+        return 2
     if arguments.self_test:
         try:
             load_frozen_helper()
@@ -568,9 +571,6 @@ def main() -> int:
             return 2
         print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE_SELF_TEST=PASS")
         return 0
-    if CHANGE_ID_CONSUMED:
-        print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE=FAILED reason=change_id_consumed")
-        return 2
     if (
         arguments.change_id != CHANGE_ID
         or not arguments.known_hosts

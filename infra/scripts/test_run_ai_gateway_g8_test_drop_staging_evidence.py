@@ -280,6 +280,20 @@ class TestDropStagingEvidenceContract(unittest.TestCase):
             "G8_TEST_READONLY_DROP_STAGING_EVIDENCE=FAILED reason=change_id_consumed"
         )
 
+    def test_consumed_change_rejects_self_test_before_loading_helper(self) -> None:
+        """消费后的离线自检同样作废，不能再读取冻结 helper。"""
+        module = load_module()
+        with (
+            mock.patch.object(module, "load_frozen_helper") as helper,
+            mock.patch.object(sys, "argv", [str(SCRIPT_PATH), "--self-test"]),
+            mock.patch("builtins.print") as output,
+        ):
+            self.assertEqual(module.main(), 2)
+        helper.assert_not_called()
+        output.assert_called_once_with(
+            "G8_TEST_READONLY_DROP_STAGING_EVIDENCE=FAILED reason=change_id_consumed"
+        )
+
     def test_main_returns_three_for_present_mismatch(self) -> None:
         """完整但不匹配的暂存证据必须用专用退出码 3 阻断后续动作。"""
         module = load_module()

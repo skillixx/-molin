@@ -9,7 +9,7 @@
 - 执行基线：`02ca66343c6e858db10a6c6c85b5e94ba159cff7`
 - 执行时 008 包装器 SHA-256：`57b63037306b8c5ba564132986d6ddf5dfc659a22d10118fbd3470ec15146365`
 - 冻结 004 helper SHA-256：`599e6bbb800531d02b22cf9534636ebf8232002fafb8236d294f9d2dba2e3c89`
-- 消费后 008 包装器 SHA-256：`e5bcdbbd720445aede46de1b8e433401985594158ef286fe3cb31585681523d5`
+- 消费后 008 包装器 SHA-256：`1498fdaa5c0117e3ed231aa611a126b685dc9d27f8ef271f431c4b683e25aaac`
 - 业务请求、上游请求、费用：`0 / 0 / 0 CNY`
 
 用户授权一次本地检查和一次只读 SSH，零重试；禁止上传、下载、删除、sudo、数据库/队列/日志/监控/备份读取、业务 HTTP 和生产连接。
@@ -44,7 +44,7 @@ business_requests=0 upstream_requests=0 cost_cny=0
 
 ## 4. 停止与后续边界
 
-结果满足 `ABSENT / NOT_APPLICABLE / NONE` 后立即停止，未执行清理，也不需要为该固定路径执行清理。008 已消费，仓库入口必须在 helper、身份材料读取和联网前固定返回 `change_id_consumed`，禁止重放。
+结果满足 `ABSENT / NOT_APPLICABLE / NONE` 后立即停止，未执行清理，也不需要为该固定路径执行清理。008 已消费，仓库普通入口和 `--self-test` 均必须在 helper、身份材料读取和联网前固定返回 `change_id_consumed`，禁止重放。
 
 该结果不证明测试服 API、MySQL、Redis、RabbitMQ、Bifrost、监控、备份、账务对账或只读审计入口已经恢复。若继续准备安装，只能使用新的 ChangeId 重新冻结安装候选、制品回执、影响、回滚和停止条件，并在工程门禁完成后另行等待用户授权。
 
