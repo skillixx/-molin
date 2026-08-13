@@ -49,3 +49,13 @@ business_requests=0 upstream_requests=0 cost_cny=0
 该结果不证明测试服 API、MySQL、Redis、RabbitMQ、Bifrost、监控、备份、账务对账或只读审计入口已经恢复。若继续准备安装，只能使用新的 ChangeId 重新冻结安装候选、制品回执、影响、回滚和停止条件，并在工程门禁完成后另行等待用户授权。
 
 `G8_ENGINEERING_READY` 保持；生产部署、真实付费调用、真实通知、客户灰度和四周商业观察仍未执行，`G8_COMMERCIAL_ACCEPTED` 继续保持未完成。
+
+## 5. 仓库收口证据
+
+- 最终执行证据 HEAD：`f0d726ad5d347dd1f35f2ebec2e118f0093e958f`
+- CI run：`31661245959`，12/12 SUCCESS，包含 G8 生产就绪、Linux 无网络 19/19、真实后端浏览器验收与必选汇总。
+- 独立评审：代码安全/Standards、QA、产品/规格均为 P0=0、P1=0、P2=0。
+- PR：`#356`，按 merge commit 合并。
+- merge commit：`6b2a1fa438dbad2e7d0a15b33d4c8c0d8ff8b7be`。
+
+上述仓库证据只证明 008 执行事实、消费门禁和文档已合入主干，不扩大任何测试服、生产或商业授权。
