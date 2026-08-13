@@ -937,12 +937,13 @@ git log --oneline -10                            # 查看最近 10 条提交记�
 | **涉及功能** | PR 合并前自动运行后端测试、前端构建、代码检查，防止破坏性代码合并 |
 | **代码位置** | `.github/workflows/ci.yml` |
 
-**作用：** CI/CD 自动化流水线，每次 PR 自动触发 3 个并行检查 Job。
+**作用：** CI/CD 自动化流水线按 PR 状态和精确变更范围分级执行。`opened`、`synchronize`、`reopened`、`ready_for_review`、`converted_to_draft` 都会触发；同一 PR 的新运行会自动取消旧运行。
 
-**3 个并行 Job：**
-- `backend-test`（后端 A/B/C）：go vet + go test -race + go build
-- `frontend-admin-build`（前端 A）：type-check + lint + build
-- `frontend-user-build`（前端 B）：type-check + lint + build
+**两层门禁：**
+- Draft：统一轻量质量门禁，加 Python、Go、管理后台、用户控制台定向测试；不运行 Docker、race、完整构建或浏览器 E2E，汇总名为 `CI Draft 快速门禁汇总`。
+- Ready：保留并重新运行当前全部适用后端、短信发布安全、G3/G4/G7/G8、真实后端浏览器及双前端重型门禁，汇总名为 `CI 必选门禁汇总`。
+
+Draft PASS 只表示快速反馈通过，不能替代 Ready 精确 HEAD 的完整合并证据。
 
 **查看运行结果：** GitHub 仓库 → Actions 标签页
 
@@ -1126,13 +1127,17 @@ Linux 动态竞态测试必须在 `python:3.13-alpine --network none` 中运行�
 | 项目 | 说明 |
 |---|---|
 | **使用者** | 全体开发、测试、产品与运维人员 |
-| **涉及功能** | 根据 PR 精确 base/head 的变更路径开启适用 CI；纯文档只跑轻量门禁，高风险或未知路径完整回归 |
-| **代码位置** | `infra/scripts/classify-ci-change-scope.py`、`infra/scripts/test_classify_ci_change_scope.py`、`.github/workflows/ci.yml` |
+| **涉及功能** | 根据 PR 精确 base/head 与 Draft/Ready 状态开启适用 CI；Draft 跑轻量和定向门禁，Ready 跑全部适用重型回归 |
+| **代码位置** | `infra/scripts/classify-ci-change-scope.py`、`infra/scripts/select-ci-draft-tests.py`、`infra/scripts/run-ci-draft-targets.py`、对应测试、`.github/workflows/ci.yml` |
 
-分类器默认失败关闭：`.github/`、`infra/`、账务交易、Migration、全局安全配置、根级未知文件和无法识别的路径会开启完整 CI；路径为空、绝对路径、反斜杠或路径穿越会直接失败。删除路径以及重命名/复制的源、目标路径会同时分类，禁止通过移动文件降级。每个 Job checkout 精确 PR head SHA；`skipped` 只表示该门禁经精确路径分类确认不适用，不能用于绕过已开启门禁。工作流末尾的 `CI 必选门禁汇总` 会复核完整 CI 标志、分类结果和所有适用 Job，必须作为分支保护 required check。
+分类器默认失败关闭：`.github/`、`infra/`、账务交易、Migration、全局安全配置、根级未知文件和无法识别的路径在 Ready 开启完整 CI；Draft 的未知路径开启全部定向门禁。路径为空、绝对路径、反斜杠、路径穿越、shell 元字符、目标选择为空或非法 JSON 会直接失败。删除路径以及重命名/复制的源、目标路径会同时分类，禁止通过移动文件降级。定向执行器只接受经过二次验证的仓库相对路径或 Go package，并始终使用参数数组启动子进程。
+
+每个 Job checkout 精确 PR head SHA；`skipped` 只表示该门禁经分类确认不适用，不能用于绕过已开启门禁。Draft 由 `CI Draft 快速门禁汇总` 收口，Ready 由 `CI 必选门禁汇总` 复核完整标志、分类结果和所有适用 Job。当前仓库没有 classic branch protection/ruleset，因此后者只是工作流检查名称，尚未被 GitHub 平台强制为 required check；设置 required 需要后续单独授权。
 
 ```powershell
-# 本地验证分类规则和语法
-python -m unittest infra/scripts/test_classify_ci_change_scope.py
-python -m py_compile infra/scripts/classify-ci-change-scope.py infra/scripts/test_classify_ci_change_scope.py
+# 本地验证分类、选择、执行和工作流契约
+python -I -W error::ResourceWarning infra/scripts/test_classify_ci_change_scope.py -v
+python -I -W error::ResourceWarning infra/scripts/test_select_ci_draft_tests.py -v
+python -I -W error::ResourceWarning infra/scripts/test_run_ci_draft_targets.py -v
+python -I -W error::ResourceWarning infra/scripts/test_ci_draft_ready_workflow_contract.py -v
 ```

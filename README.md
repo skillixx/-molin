@@ -4,7 +4,7 @@ Molin 云管理平台基于 Vue3 + Go + MySQL，支持商品售卖、计费、�
 
 **技术栈：** Go 1.25（后端 API）+ Node.js 24 / Vue 3 / TypeScript（前端）+ MySQL 8 + Redis 7 + RabbitMQ + MinIO
 
-**CI 策略：** PR 先按精确变更路径执行失败关闭分类。纯文档仅运行轻量质量门禁，前端、后端按受影响模块运行；`.github`、`infra`、未知路径以及发布、安全、账务和 G8 核心变更始终执行完整回归。详细规则见 `docs/git-workflow.md` §8.2c。
+**CI 策略：** PR 先按精确变更路径执行失败关闭分类。同一 PR 的旧运行会被新事件自动取消；Draft 只运行统一轻量质量检查和受影响模块的定向测试，转为 Ready 后才重新运行全部适用重型门禁并生成 `CI 必选门禁汇总`。现有测试没有删除，Draft PASS 不能替代 Ready 完整证据。详细规则见 `docs/git-workflow.md` §8.2c。
 
 **已上线模块：**
 
