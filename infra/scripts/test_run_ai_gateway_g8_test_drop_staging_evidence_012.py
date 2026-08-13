@@ -269,6 +269,7 @@ class TestDropStagingEvidence012Contract(unittest.TestCase):
             "--identity-public-file", "id_ed25519.pub",
         ]
         with (
+            mock.patch.object(module, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(module, "freeze_local_inputs", return_value=object()),
             mock.patch.object(module, "run_once") as run_once,
             mock.patch.object(sys, "argv", [str(SCRIPT_PATH), *arguments]),
@@ -460,6 +461,7 @@ class TestDropStagingEvidence012Contract(unittest.TestCase):
         """消费态任一 argv 到达解析器、材料或网络时，本测试必须失败。"""
 
         module = load_module()
+        self.assertTrue(module.CHANGE_ID_CONSUMED)
         invocations = (
             [],
             ["--help"],
@@ -472,7 +474,6 @@ class TestDropStagingEvidence012Contract(unittest.TestCase):
         for arguments in invocations:
             with self.subTest(arguments=arguments):
                 with (
-                    mock.patch.object(module, "CHANGE_ID_CONSUMED", True),
                     mock.patch.object(module, "build_argument_parser") as parser,
                     mock.patch.object(module, "freeze_local_inputs") as freeze,
                     mock.patch.object(module, "run_once") as run_once,
@@ -524,6 +525,7 @@ class TestDropStagingEvidence012Contract(unittest.TestCase):
                 ))
             with self.subTest(state=state):
                 with (
+                    mock.patch.object(module, "CHANGE_ID_CONSUMED", False),
                     mock.patch.object(module, "freeze_local_inputs", return_value=object()),
                     mock.patch.object(module, "run_once", return_value=values),
                     mock.patch.object(sys, "argv", [str(SCRIPT_PATH), *arguments]),
@@ -546,6 +548,7 @@ class TestDropStagingEvidence012Contract(unittest.TestCase):
             "--identity-public-file", "C:/id_ed25519.pub",
         ]
         with (
+            mock.patch.object(module, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(module, "freeze_local_inputs", return_value=object()),
             mock.patch.object(module, "run_once", side_effect=module.EvidenceError("DO_NOT_ECHO_INTERNAL")),
             mock.patch.object(sys, "argv", [str(SCRIPT_PATH), *arguments]),
@@ -572,6 +575,12 @@ class TestDropStagingEvidence012Contract(unittest.TestCase):
         )
         self.assertIn(
             "run-ai-gateway-g8-test-drop-staging-evidence-012.py --self-test",
+            workflow,
+        )
+        self.assertIn("g8_drop_012_self_test_status", workflow)
+        self.assertIn('test "$g8_drop_012_self_test_status" -eq 2', workflow)
+        self.assertIn(
+            "G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012=FAILED reason=change_id_consumed",
             workflow,
         )
         self.assertIn("python:3.13-alpine", workflow)
