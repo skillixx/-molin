@@ -32,7 +32,7 @@
 - 对账器大小：`13066129` 字节。
 - Windows 本地候选：`D:\molingproject\g8-artifacts\CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010`。
 - Windows `SHA256SUMS` 回执：`3ff8cf3ad7237f866f83305d00ab73f766381b7f3247abee915efee629e41fb0`。
-- Linux CI 临时复现回执：`b3fac1a1530124da9dc604c32d11bd665de3daa5d6799aebb33c38a3d2f174f4`；仅用于跨平台复现，不替代未来实际执行所绑定的 Windows 候选回执。
+- Linux CI 临时复现回执：`b3fac1a1530124da9dc604c32d11bd665de3daa5d6799aebb33c38a3d2f174f4`；仅用于跨平台复现，不替代本次实际执行所绑定的 Windows 候选回执。
 - 010 直连包装器 SHA-256：`185c0ccda420d3bbe97e95c3218a03642372e05525d2663258287ebd981360b8`。
 - 010 消费后包装器 SHA-256：`4fb920e32574c640685ddd9bed919485473dc54873d157a409c1adf987b3ab6a`；该摘要只绑定防重放入口，不替代执行时摘要。
 - 冻结 009 helper SHA-256：`4be88638f2a4a271ebbf23751bd3f7238ea5f78f1f18fcb6889c9e071b953f30`。
@@ -54,7 +54,7 @@ python -I infra\scripts\run-ai-gateway-g8-test-readonly-access-stage-drop-direct
 
 ### 3.2 一次只读 SSH 与一次原子 SFTP
 
-本地检查完整通过后，未来授权只能将同一命令移除 `--local-check` 并执行一次。包装器内部固定：
+本地检查完整通过后，当时的授权仅允许将同一命令移除 `--local-check` 并执行一次。包装器内部固定：
 
 - 一次 SSH 预检，`ConnectionAttempts=1`，零重试；
 - 明确 `IdentityFile`、`UserKnownHostsFile`、`IdentitiesOnly=yes`、`-F none`；
