@@ -15,7 +15,20 @@ INSTALLER_PATH = Path(__file__).with_name("g8-test-readonly-access-install-011.s
 CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011"
 
 
+def load_module():
+    """从固定路径加载命令构造器，仅测试离线纯函数。"""
+    specification = importlib.util.spec_from_file_location("g8_command_011", SCRIPT_PATH)
+    module = importlib.util.module_from_spec(specification)
+    assert specification and specification.loader
+    specification.loader.exec_module(module)
+    return module
+
+
 class TestPrepareG8ReadonlyAccess011Command(unittest.TestCase):
+    def setUp(self) -> None:
+        self.module = load_module()
+        self.command = self.module.build_command(INSTALLER_PATH.read_bytes())
+
     def run_script(self, *arguments: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             ["python", "-I", str(SCRIPT_PATH), *arguments],
@@ -25,21 +38,19 @@ class TestPrepareG8ReadonlyAccess011Command(unittest.TestCase):
             check=False,
         )
 
-    def test_generates_new_absolute_output_only(self) -> None:
+    def test_consumed_command_cannot_generate_output(self) -> None:
         with tempfile.TemporaryDirectory(prefix="g8-011-command-") as temporary:
             output = Path(temporary) / "command.txt"
             result = self.run_script(f"--change-id={CHANGE_ID}", f"--output-file={output}")
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(result.stdout.splitlines()[0], "G8_TEST_READONLY_ACCESS_011_COMMAND=PASS")
-            self.assertTrue(output.is_file())
-            replay = self.run_script(f"--change-id={CHANGE_ID}", f"--output-file={output}")
-            self.assertEqual(replay.returncode, 2)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertEqual(
+                result.stdout.strip(),
+                "G8_TEST_READONLY_ACCESS_011_COMMAND=FAILED reason=change_id_consumed",
+            )
+            self.assertFalse(output.exists())
 
     def test_command_has_one_interactive_authentication_and_only_noninteractive_followups(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="g8-011-command-") as temporary:
-            output = Path(temporary) / "command.txt"
-            self.run_script(f"--change-id={CHANGE_ID}", f"--output-file={output}")
-            command = output.read_text(encoding="utf-8")
+        command = self.command
         self.assertEqual(command.count("sudo -k -v"), 1)
         self.assertEqual(command.count("sudo -n /bin/bash -ceu"), 1)
         self.assertEqual(command.count("sudo -n /usr/local/libexec/molin/g8-test-readonly-audit --self-test"), 1)
@@ -52,10 +63,7 @@ class TestPrepareG8ReadonlyAccess011Command(unittest.TestCase):
 
     def test_password_input_path_uses_only_frozen_executables_and_identity_materials(self) -> None:
         """sudo 密码输入前不得信任可变环境路径、主机密钥策略或远端 PATH。"""
-        with tempfile.TemporaryDirectory(prefix="g8-011-command-") as temporary:
-            output = Path(temporary) / "command.txt"
-            self.run_script(f"--change-id={CHANGE_ID}", f"--output-file={output}")
-            command = output.read_text(encoding="utf-8")
+        command = self.command
         self.assertIn(r'& "C:\Windows\System32\OpenSSH\ssh.exe"', command)
         self.assertIn(r"$knownHosts = 'C:\Users\skillixx\.ssh\known_hosts'", command)
         self.assertIn(r'UserKnownHostsFile="$frozenKnownHosts"', command)
@@ -81,9 +89,7 @@ class TestPrepareG8ReadonlyAccess011Command(unittest.TestCase):
     @unittest.skipUnless(os.name == "nt", "OpenSSH 哈希端点动态负例在 Windows 本地门禁执行。")
     def test_hashed_duplicate_host_entry_is_rejected(self) -> None:
         """批准明文 key 与同端点哈希额外 key 并存时必须失败关闭。"""
-        specification = importlib.util.spec_from_file_location("g8_command_011", SCRIPT_PATH)
-        module = importlib.util.module_from_spec(specification)
-        specification.loader.exec_module(module)
+        module = self.module
         ssh_keygen = Path(r"C:\Windows\System32\OpenSSH\ssh-keygen.exe")
         approved = (
             "[8.130.9.163]:10003 ssh-ed25519 "
@@ -135,10 +141,7 @@ class TestPrepareG8ReadonlyAccess011Command(unittest.TestCase):
 
     def test_nonprivileged_preflight_freezes_staging_files_and_parent_chain_before_sudo(self) -> None:
         """进入密码提示前必须完成暂存、五文件、摘要和父链的完整只读门禁。"""
-        with tempfile.TemporaryDirectory(prefix="g8-011-command-") as temporary:
-            output = Path(temporary) / "command.txt"
-            self.run_script(f"--change-id={CHANGE_ID}", f"--output-file={output}")
-            command = output.read_text(encoding="utf-8")
+        command = self.command
         preflight = command[: command.index("/usr/bin/sudo -k -v")]
         for frozen in (
             "15617634b0d291f12cc5776eb80ec29e26369af1959ab4a596fcd5c836c3361f",
@@ -157,11 +160,11 @@ class TestPrepareG8ReadonlyAccess011Command(unittest.TestCase):
     def test_consumed_gate_precedes_installer_read(self) -> None:
         """未来消费011后，命令生成入口必须在读取安装器前固定拒绝。"""
         source = SCRIPT_PATH.read_text(encoding="utf-8")
-        self.assertIn("CHANGE_ID_CONSUMED = False", source)
+        self.assertIn("CHANGE_ID_CONSUMED = True", source)
         self.assertLess(source.index("if CHANGE_ID_CONSUMED:"), source.index("installer_path.read_bytes()"))
         with tempfile.TemporaryDirectory(prefix="g8-011-consumed-command-") as temporary:
             script = Path(temporary) / SCRIPT_PATH.name
-            script.write_text(source.replace("CHANGE_ID_CONSUMED = False", "CHANGE_ID_CONSUMED = True"), encoding="utf-8")
+            script.write_text(source, encoding="utf-8")
             output = Path(temporary) / "command.txt"
             result = subprocess.run(
                 ["python", "-I", str(script), f"--change-id={CHANGE_ID}", f"--output-file={output}"],
@@ -178,23 +181,25 @@ class TestPrepareG8ReadonlyAccess011Command(unittest.TestCase):
         self.assertFalse(output.exists())
 
     def test_embedded_installer_is_exact_and_secrets_are_absent(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="g8-011-command-") as temporary:
-            output = Path(temporary) / "command.txt"
-            self.run_script(f"--change-id={CHANGE_ID}", f"--output-file={output}")
-            command = output.read_text(encoding="utf-8")
+        command = self.command
         encoded = command.split("G8_011_INSTALL_B64'\n", 1)[1].split("\nG8_011_INSTALL_B64", 1)[0]
         self.assertEqual(base64.b64decode(encoded), INSTALLER_PATH.read_bytes())
         for forbidden in ("sudo -S", "SUDO_ASKPASS", "SSH_ASKPASS", "PASSWORD=", "TOKEN=", "PRIVATE KEY"):
             self.assertNotIn(forbidden, command)
 
     def test_invalid_request_fails_closed(self) -> None:
-        for arguments in ((), ("--change-id=bad", "--output-file=relative")):
+        for arguments in (
+            (),
+            ("--help",),
+            ("--change-id=bad", "--output-file=relative"),
+            ("--unknown=DO_NOT_ECHO_SECRET_SENTINEL",),
+            ("--change-id", "DO_NOT_ECHO_SECRET_SENTINEL", "--output-file"),
+        ):
             result = self.run_script(*arguments)
             self.assertEqual(result.returncode, 2)
-            self.assertEqual(
-                result.stdout.strip(),
-                "G8_TEST_READONLY_ACCESS_011_COMMAND=FAILED reason=invalid_request",
-            )
+            self.assertEqual(result.stdout.strip(), "G8_TEST_READONLY_ACCESS_011_COMMAND=FAILED reason=change_id_consumed")
+            self.assertEqual(result.stderr, "")
+            self.assertNotIn("DO_NOT_ECHO_SECRET_SENTINEL", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

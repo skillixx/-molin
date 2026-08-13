@@ -27,16 +27,32 @@ class TestG8ReadonlyAccessStageDropInteractive(unittest.TestCase):
         self.source = SCRIPT_PATH.read_text(encoding="utf-8")
         self.module = load_module()
 
-    def test_self_test_and_fixed_contract(self) -> None:
-        result = subprocess.run(
-            ["python", "-I", str(SCRIPT_PATH), "--self-test"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=False,
+    def test_consumed_change_rejects_every_entry_before_material_or_network_access(self) -> None:
+        """消费后 self-test、本地检查和正式入口都必须先固定拒绝。"""
+        requests = (
+            ("--self-test",),
+            (
+                "--local-check", f"--change-id={CHANGE_ID}",
+                "--candidate-dir=C:\\missing-candidate", "--known-hosts=C:\\missing-known-hosts",
+                "--identity-file=C:\\missing-identity", "--identity-public-file=C:\\missing-public",
+            ),
+            (
+                f"--change-id={CHANGE_ID}",
+                "--candidate-dir=C:\\missing-candidate", "--known-hosts=C:\\missing-known-hosts",
+                "--identity-file=C:\\missing-identity", "--identity-public-file=C:\\missing-public",
+            ),
         )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.strip(), "G8_TEST_READONLY_ACCESS_STAGE_DROP_INTERACTIVE_SELF_TEST=PASS")
+        for arguments in requests:
+            with self.subTest(arguments=arguments):
+                result = subprocess.run(
+                    ["python", "-I", str(SCRIPT_PATH), *arguments],
+                    capture_output=True, text=True, encoding="utf-8", check=False,
+                )
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertEqual(
+                    result.stdout.strip(),
+                    "G8_TEST_READONLY_ACCESS_STAGE_DROP_INTERACTIVE=FAILED reason=change_id_consumed",
+                )
 
     def test_sftp_rejects_any_stdout_even_when_bounded(self) -> None:
         """批处理 SFTP 的任何 stdout 都属于输出契约漂移。"""
