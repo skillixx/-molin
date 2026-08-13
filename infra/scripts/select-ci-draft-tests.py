@@ -75,8 +75,8 @@ def existing_files(repo_root: Path, paths: Iterable[str]) -> list[str]:
     return sorted(set(result))
 
 
-def discover_tests(repo_root: Path, directory: str) -> list[str]:
-    """递归查找固定目录内的 Python 测试，空集合视为无法安全选择。"""
+def find_tests(repo_root: Path, directory: str) -> list[str]:
+    """递归列出固定目录内真实存在的 Python 测试。"""
 
     validate_repository_path(directory)
     root = repo_root / directory
@@ -85,9 +85,27 @@ def discover_tests(repo_root: Path, directory: str) -> list[str]:
         for path in root.rglob("test_*.py")
         if path.is_file()
     ] if root.is_dir() else []
+    return sorted(set(tests))
+
+
+def discover_tests(repo_root: Path, directory: str) -> list[str]:
+    """查找指定范围测试，空集合视为无法安全选择。"""
+
+    tests = find_tests(repo_root, directory)
     if not tests:
         raise SelectionError(f"{directory} 没有可执行的 Python 测试")
-    return sorted(set(tests))
+    return tests
+
+
+def discover_all_tests(repo_root: Path) -> list[str]:
+    """汇总全部固定 Python 测试目录，仅在总集合为空时失败关闭。"""
+
+    tests: set[str] = set()
+    for directory in ("infra/scripts", "scripts", "tests"):
+        tests.update(find_tests(repo_root, directory))
+    if not tests:
+        raise SelectionError("仓库没有可执行的 Python 测试")
+    return sorted(tests)
 
 
 def select_python_targets(
@@ -96,11 +114,13 @@ def select_python_targets(
     """选择非空 Python 测试集和需要语法编译的变更文件。"""
 
     normalized = normalize_paths(paths)
+    classifier = load_classifier()
     tests: set[str] = set()
     compile_targets: set[str] = set()
     needs_infra_fallback = False
     needs_scripts_fallback = False
     needs_tests_fallback = False
+    needs_all_python_fallback = False
 
     for relative_path in normalized:
         path = PurePosixPath(relative_path)
@@ -108,22 +128,26 @@ def select_python_targets(
             tests.update(existing_files(repo_root, CI_CONTRACT_TESTS))
             compile_targets.update(existing_files(repo_root, CI_COMPILE_TARGETS))
             continue
-        if relative_path.startswith("infra/scripts/") and path.suffix == ".py":
-            if (repo_root / relative_path).is_file():
-                compile_targets.add(relative_path)
-            if path.name.startswith("test_"):
+        if relative_path.startswith("infra/scripts/"):
+            if path.suffix == ".py":
                 if (repo_root / relative_path).is_file():
-                    tests.add(relative_path)
+                    compile_targets.add(relative_path)
+                if path.name.startswith("test_"):
+                    if (repo_root / relative_path).is_file():
+                        tests.add(relative_path)
+                    else:
+                        needs_infra_fallback = True
+                    continue
+                expected_test = (
+                    path.parent
+                    / f"test_{path.stem.replace('-', '_')}.py"
+                ).as_posix()
+                if (repo_root / expected_test).is_file():
+                    tests.add(expected_test)
                 else:
                     needs_infra_fallback = True
-                continue
-            expected_test = (
-                path.parent
-                / f"test_{path.stem.replace('-', '_')}.py"
-            ).as_posix()
-            if (repo_root / expected_test).is_file():
-                tests.add(expected_test)
             else:
+                # 非 Python 运维资产仍可能改变 Python 包装器契约，回退到完整 infra 测试。
                 needs_infra_fallback = True
             continue
         if relative_path.startswith("scripts/"):
@@ -145,13 +169,29 @@ def select_python_targets(
                 tests.add(relative_path)
             else:
                 needs_tests_fallback = True
+            continue
+        individual_scope = classifier.classify_draft_paths([relative_path])
+        if individual_scope["draft_python"]:
+            # 未知根路径由分类器选中全部 Draft 门禁，Python 侧必须执行全部测试。
+            needs_all_python_fallback = True
 
-    if needs_infra_fallback:
-        tests.update(discover_tests(repo_root, "infra/scripts"))
-    if needs_scripts_fallback:
-        tests.update(discover_tests(repo_root, "scripts"))
-    if needs_tests_fallback:
-        tests.update(discover_tests(repo_root, "tests"))
+    if needs_all_python_fallback:
+        fallback_tests = discover_all_tests(repo_root)
+        tests.update(fallback_tests)
+        compile_targets.update(fallback_tests)
+    else:
+        if needs_infra_fallback:
+            fallback_tests = discover_tests(repo_root, "infra/scripts")
+            tests.update(fallback_tests)
+            compile_targets.update(fallback_tests)
+        if needs_scripts_fallback:
+            fallback_tests = discover_tests(repo_root, "scripts")
+            tests.update(fallback_tests)
+            compile_targets.update(fallback_tests)
+        if needs_tests_fallback:
+            fallback_tests = discover_tests(repo_root, "tests")
+            tests.update(fallback_tests)
+            compile_targets.update(fallback_tests)
     if not tests:
         raise SelectionError("Draft Python 变更没有映射到任何测试")
     return sorted(tests), sorted(compile_targets)
@@ -161,9 +201,13 @@ def select_go_packages(paths: Iterable[str], repo_root: Path) -> list[str]:
     """把 server 变更映射到最小 Go package；共享运行时变更回退到全量。"""
 
     normalized = normalize_paths(paths)
+    classifier = load_classifier()
     packages: set[str] = set()
     for relative_path in normalized:
         if not relative_path.startswith("server/"):
+            if classifier.classify_draft_paths([relative_path])["draft_backend"]:
+                # 未知根路径由分类器选中后端门禁，Go 侧必须回退到全量 package。
+                return ["./..."]
             continue
         if relative_path in {"server/go.mod", "server/go.sum"} or relative_path.startswith(
             GO_FULL_PREFIXES
@@ -228,20 +272,17 @@ def load_classifier():
 def write_outputs(output_path: Path, paths: list[str], repo_root: Path) -> None:
     """根据已分类范围输出 Draft 执行器消费的低敏 JSON 目标。"""
 
-    python_paths = [
-        path
-        for path in paths
-        if path.startswith((".github/", "infra/scripts/", "scripts/", "tests/"))
-    ]
-    server_paths = [path for path in paths if path.startswith("server/")]
+    normalized = normalize_paths(paths)
+    classifier = load_classifier()
+    draft_scope = classifier.classify_draft_paths(normalized)
     python_tests: list[str] = []
     python_compile: list[str] = []
     go_packages: list[str] = []
-    if python_paths:
-        python_tests, python_compile = select_python_targets(python_paths, repo_root)
-    if server_paths:
+    if draft_scope["draft_python"]:
+        python_tests, python_compile = select_python_targets(normalized, repo_root)
+    if draft_scope["draft_backend"]:
         go_packages = validate_go_packages_with_go_list(
-            select_go_packages(server_paths, repo_root),
+            select_go_packages(normalized, repo_root),
             repo_root,
         )
     with output_path.open("a", encoding="utf-8", newline="\n") as output_file:

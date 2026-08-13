@@ -59,6 +59,86 @@ class SelectCIDraftTestsTest(unittest.TestCase):
                 tests,
             )
 
+    def test_infra_non_python_change_falls_back_to_all_infra_python_tests(self):
+        """非 Python 运维脚本也必须获得非空的 Draft Python 回归集。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self.make_file(root, "infra/scripts/install-entry.sh")
+            self.make_file(root, "infra/scripts/test_alpha.py")
+            self.make_file(root, "infra/scripts/test_beta.py")
+            output_path = root / "github-output.txt"
+
+            classifier = self.selector.load_classifier()
+            scope = classifier.classify_draft_paths(
+                ["infra/scripts/install-entry.sh"]
+            )
+            self.assertTrue(scope["draft_python"])
+
+            self.selector.write_outputs(
+                output_path,
+                ["infra/scripts/install-entry.sh"],
+                root,
+            )
+            outputs = dict(
+                line.split("=", 1)
+                for line in output_path.read_text(encoding="utf-8").splitlines()
+            )
+            expected = [
+                "infra/scripts/test_alpha.py",
+                "infra/scripts/test_beta.py",
+            ]
+            self.assertEqual(expected, json.loads(outputs["python_tests_json"]))
+            self.assertEqual(expected, json.loads(outputs["python_compile_json"]))
+
+    def test_unknown_root_change_falls_back_to_all_draft_targets(self):
+        """未知根路径必须落实分类器的全定向失败关闭结果。"""
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            self.make_file(root, "unknown-root.cfg")
+            self.make_file(root, "scripts/helper.sh")
+            self.make_file(root, "infra/scripts/test_infra.py")
+            self.make_file(root, "tests/test_suite.py")
+            (root / "server").mkdir()
+            output_path = root / "github-output.txt"
+
+            classifier = self.selector.load_classifier()
+            scope = classifier.classify_draft_paths(["unknown-root.cfg"])
+            self.assertEqual(
+                {
+                    "draft_docs": True,
+                    "draft_python": True,
+                    "draft_backend": True,
+                    "draft_frontend_admin": True,
+                    "draft_frontend_user": True,
+                },
+                scope,
+            )
+
+            self.selector.write_outputs(
+                output_path,
+                ["unknown-root.cfg", "scripts/helper.sh"],
+                root,
+            )
+            outputs = dict(
+                line.split("=", 1)
+                for line in output_path.read_text(encoding="utf-8").splitlines()
+            )
+            expected_python = [
+                "infra/scripts/test_infra.py",
+                "tests/test_suite.py",
+            ]
+            self.assertEqual(
+                expected_python,
+                json.loads(outputs["python_tests_json"]),
+            )
+            self.assertEqual(
+                expected_python,
+                json.loads(outputs["python_compile_json"]),
+            )
+            self.assertEqual(["./..."], json.loads(outputs["go_packages_json"]))
+
     def test_test_file_selects_itself(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
