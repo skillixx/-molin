@@ -44,6 +44,7 @@ class FrozenCandidate:
     source_commit: str
     source_tree: str
     target_deployment_root: str | None
+    target_transport: str | None = None
 
 
 CONSUMED_CANDIDATES = {
@@ -66,6 +67,26 @@ CONSUMED_CANDIDATES = {
         "/home/pc/molin",
     ),
 }
+EXPECTED_CONSUMED_RECEIPTS = {
+    "win32": {
+        "CHG-G8-TEST-READONLY-ACCESS-20260812-001": "2fb6a964cf017997fa07d1df557cc41979b873597445f2543b497744b4fa70c9",
+        "CHG-G8-TEST-READONLY-ACCESS-20260812-002": "d6d07f7b4959e48f5ffe0e92ee4116cef55fe56f5318df6ae3f0d9c5350ee567",
+        "CHG-G8-TEST-READONLY-ACCESS-20260812-003": "82b18d6040bcd6be72cf170fa066ecd7cf469a53f4901365f379bec5a89c496d",
+    },
+    "linux": {
+        "CHG-G8-TEST-READONLY-ACCESS-20260812-001": "14b7d8cd832f0b719031fcc93adbbb2208afe76d34383e63d51c44b044772b5a",
+        "CHG-G8-TEST-READONLY-ACCESS-20260812-002": "7ae580cc06fb101fe44c9e3a4d7581116fd258ef1e2d09d99bba0bda50151a1f",
+        "CHG-G8-TEST-READONLY-ACCESS-20260812-003": "7f4633357bf6883d166b0ee7d9750d7e745cf0a15d23163a547d6519e217efc1",
+    },
+}
+
+ACTIVE_CANDIDATE = FrozenCandidate(
+    "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009",
+    "7f3325e2d6801567fea34a2049a2f3ada114e348",
+    "4563feb59850dca87789adfb5eea820f78b1a209",
+    "/home/pc/molin",
+    "DROP_SSH",
+)
 
 
 def sha256(path: Path) -> str:
@@ -266,11 +287,19 @@ def prepare(candidate: FrozenCandidate, output_dir: Path) -> dict[str, str]:
                 "RECONCILE_SHA256": reconcile_sha,
                 "RECONCILE_SIZE": str(reconcile_size),
                 "REPRODUCIBLE_BUILD_COUNT": "2",
-                "TARGET_SSH": "pc@8.130.9.163:10003",
-                "TARGET_HOSTNAME": "pc-Z790-UD-AX",
-                "TARGET_MACHINE_ID_SHA256": "b60555f0d8d48731b657d21b2e54559d263210688125ae56a4d662fc4d7278d4",
-                "TARGET_SSH_ED25519_FINGERPRINT": "SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I",
             }
+            if candidate.target_transport == "DROP_SSH":
+                # Drop 映射只绑定已批准的 SSH 端点，不把物理主机身份误作固定入口契约。
+                values["TARGET_SSH"] = "pc@8.130.9.163:10003"
+                values["TARGET_SSH_ED25519_FINGERPRINT"] = "SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I"
+                values["TARGET_TRANSPORT"] = candidate.target_transport
+                values["PHYSICAL_HOST_IDENTITY"] = "NOT_APPLICABLE"
+            else:
+                # 已消费的 001 至 003 必须维持原始清单字段，确保历史回执可重复核验。
+                values["TARGET_SSH"] = "pc@8.130.9.163:10003"
+                values["TARGET_HOSTNAME"] = "pc-Z790-UD-AX"
+                values["TARGET_MACHINE_ID_SHA256"] = "b60555f0d8d48731b657d21b2e54559d263210688125ae56a4d662fc4d7278d4"
+                values["TARGET_SSH_ED25519_FINGERPRINT"] = "SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I"
             if candidate.target_deployment_root:
                 values["TARGET_DEPLOYMENT_ROOT"] = candidate.target_deployment_root
             write_manifest(output_dir, values)
@@ -304,10 +333,24 @@ def main() -> int:
             # 已消费候选只允许在系统临时目录重建、校验并自动销毁，不再输出可供安装的持久目录。
             with tempfile.TemporaryDirectory(prefix="molin-g8-consumed-verify-") as temporary:
                 values = prepare(candidate, Path(temporary) / "bundle")
+            platform_receipts = EXPECTED_CONSUMED_RECEIPTS.get(sys.platform)
+            if (
+                platform_receipts is None
+                or values["BUNDLE_RECEIPT_SHA256"] != platform_receipts.get(candidate.change_id)
+            ):
+                raise RuntimeError("consumed_receipt_mismatch")
             marker = "G8_TEST_READONLY_ACCESS_BUNDLE_VERIFY=PASS"
         else:
-            # 当前没有获准的活动候选。001 至 003 均已消费，普通入口一律失败关闭。
-            raise RuntimeError("no_active_candidate")
+            if arguments.consumed_change_id:
+                raise RuntimeError("unexpected_argument")
+            if (
+                arguments.change_id != ACTIVE_CANDIDATE.change_id
+                or arguments.source_commit != ACTIVE_CANDIDATE.source_commit
+                or not arguments.output_dir
+            ):
+                raise RuntimeError("active_candidate_mismatch")
+            values = prepare(ACTIVE_CANDIDATE, Path(arguments.output_dir))
+            marker = "G8_TEST_READONLY_ACCESS_BUNDLE=PASS"
     except Exception:
         print("G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request")
         return 2
@@ -321,8 +364,10 @@ def main() -> int:
         "RECONCILE_SHA256",
         "RECONCILE_SIZE",
         "BUNDLE_RECEIPT_SHA256",
+        "TARGET_TRANSPORT",
     ):
-        print(f"{key.lower()}={values[key]}")
+        if key in values:
+            print(f"{key.lower()}={values[key]}")
     return 0
 
 

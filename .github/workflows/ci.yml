@@ -454,14 +454,38 @@ jobs:
             -w /workspace \
             python:3.13-alpine \
             python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_host_identity_diagnostic.py -v
-          python -I -m py_compile infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_bundle.py infra/scripts/run-ai-gateway-g8-test-readonly-access-stage.py infra/scripts/test_run_ai_gateway_g8_test_readonly_access_stage.py infra/scripts/run-ai-gateway-g8-test-staging-evidence.py infra/scripts/test_run_ai_gateway_g8_test_staging_evidence.py infra/scripts/run-ai-gateway-g8-test-readonly-transport-diagnostic.py infra/scripts/test_run_ai_gateway_g8_test_readonly_transport_diagnostic.py infra/scripts/run-ai-gateway-g8-test-staging-evidence-v2.py infra/scripts/test_run_ai_gateway_g8_test_staging_evidence_v2.py infra/scripts/run-ai-gateway-g8-test-host-identity-diagnostic.py infra/scripts/test_run_ai_gateway_g8_test_host_identity_diagnostic.py
+          python -I -m py_compile infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_bundle.py infra/scripts/run-ai-gateway-g8-test-readonly-access-stage.py infra/scripts/test_run_ai_gateway_g8_test_readonly_access_stage.py infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop.py infra/scripts/test_run_ai_gateway_g8_test_readonly_access_stage_drop.py infra/scripts/run-ai-gateway-g8-test-staging-evidence.py infra/scripts/test_run_ai_gateway_g8_test_staging_evidence.py infra/scripts/run-ai-gateway-g8-test-readonly-transport-diagnostic.py infra/scripts/test_run_ai_gateway_g8_test_readonly_transport_diagnostic.py infra/scripts/run-ai-gateway-g8-test-staging-evidence-v2.py infra/scripts/test_run_ai_gateway_g8_test_staging_evidence_v2.py infra/scripts/run-ai-gateway-g8-test-host-identity-diagnostic.py infra/scripts/test_run_ai_gateway_g8_test_host_identity_diagnostic.py
           python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py --self-test
           python -I infra/scripts/run-ai-gateway-g8-test-readonly-access-stage.py --self-test
           python -I infra/scripts/run-ai-gateway-g8-test-staging-evidence.py --self-test
           python -I infra/scripts/run-ai-gateway-g8-test-readonly-transport-diagnostic.py --self-test
           python -I infra/scripts/run-ai-gateway-g8-test-staging-evidence-v2.py --self-test
           python -I infra/scripts/run-ai-gateway-g8-test-host-identity-diagnostic.py --self-test
+          python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_readonly_access_stage_drop.py -v
+          docker run --rm --network none \
+            -v "${{ github.workspace }}:/workspace:ro" \
+            -w /workspace \
+            python:3.13-alpine \
+            python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_readonly_access_stage_drop.py -v
+          python -I infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop.py --self-test
           bundle_dir="${RUNNER_TEMP}/g8-test-readonly-access-bundle-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          test ! -e "$bundle_dir"
+          python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py \
+            --change-id=CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009 \
+            --source-commit=7f3325e2d6801567fea34a2049a2f3ada114e348 \
+            --output-dir="$bundle_dir" | tee /tmp/g8-test-readonly-access-009.log
+          grep -qx 'G8_TEST_READONLY_ACCESS_BUNDLE=PASS' /tmp/g8-test-readonly-access-009.log
+          grep -qx 'change_id=CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009' /tmp/g8-test-readonly-access-009.log
+          grep -qx 'source_commit=7f3325e2d6801567fea34a2049a2f3ada114e348' /tmp/g8-test-readonly-access-009.log
+          grep -qx 'source_tree=4563feb59850dca87789adfb5eea820f78b1a209' /tmp/g8-test-readonly-access-009.log
+          grep -qx 'target_transport=DROP_SSH' /tmp/g8-test-readonly-access-009.log
+          test "$(find "$bundle_dir" -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 5
+          grep -qx 'TARGET_TRANSPORT=DROP_SSH' "$bundle_dir/manifest.env"
+          grep -qx 'PHYSICAL_HOST_IDENTITY=NOT_APPLICABLE' "$bundle_dir/manifest.env"
+          if grep -Eq '^TARGET_(HOSTNAME|MACHINE_ID_SHA256)=' "$bundle_dir/manifest.env"; then
+            exit 1
+          fi
+          bundle_dir="${RUNNER_TEMP}/g8-test-readonly-access-consumed-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           test ! -e "$bundle_dir"
           set +e
           python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py \

@@ -1106,6 +1106,8 @@ python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_ho
 
 `infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence.py` 是 Drop 映射入口专用的 008 暂存只读取证包装器。它不读取物理 hostname 或 machine-id，只复用已消费 004 helper 的固定 OpenSSH、known_hosts 和客户端密钥校验，并以目录描述符锚定部署根与 003 暂存五文件。离线自检命令为 `python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence.py --self-test`；正式 `--local-check` 和 SSH 必须在工程合并后另获用户独立授权，当前禁止运行。
 
+`infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop.py` 是 009 Drop 安装候选的预检与暂存包装器。它先离线核对五文件回执、Drop manifest、known_hosts、显式客户端密钥和密钥对；只有另获用户独立授权后，才允许一次只读 SSH 预检与一次独占 SFTP 暂存，零重试。离线工程自检可运行 `python -I infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop.py --self-test`；`--local-check`、SSH 和 SFTP 当前均未授权。
+
 ## CI 变更范围分类器
 
 | 项目 | 说明 |
