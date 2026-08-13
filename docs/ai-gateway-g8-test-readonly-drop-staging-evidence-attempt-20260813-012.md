@@ -48,3 +48,15 @@
 - 本次执行记录：P0=0、P1=1、P2=0；P1 为 012 本地门禁未通过且 011 暂存继续 `UNKNOWN`，不是生产事故，也不代表远端异常。
 - 既有 API、schema、数据库、Bifrost、监控、备份和账务门禁不因本次本地失败而关闭。
 - `G8_ENGINEERING_READY` 保持；生产部署、真实付费调用、通知、客户灰度和四周商业观察均未执行，`G8_COMMERCIAL_ACCEPTED` 未完成。
+
+## 6. 工程证据收口
+
+- 执行证据 HEAD：`3fb4117433b656e5b95ecd7c607002a470441e06`
+- CI run：`31700050048`，12/12 SUCCESS，必选门禁汇总 SUCCESS
+- 独立代码安全、QA、产品/规格：仓库 P0/P1/P2=`0/0/0`
+- PR：`#371`
+- merge commit：`80cac83310d97c87e02f80b61e385428e7ed7471`
+- 合并方式：merge commit；双亲为主干基线 `cdf8d1b5896758e07fe27ffe424c12bc5e358336` 与执行证据 HEAD，merge tree 与执行证据 tree 一致
+- 远端功能分支：已删除
+
+上述仓库证据不改变本记录的运行态结论：012 local-check 未通过、SSH 未启动、011 暂存仍为 `UNKNOWN`，继续取证必须使用新 ChangeId 和独立授权。
