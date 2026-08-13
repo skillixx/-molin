@@ -120,12 +120,12 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 ### 3.5 当前重新申请顺序
 
-001、002、003、004、005、006、007 均已消费。005 已确认固定 SSH 与远端隔离 Python 标记可用；006 在 `MACHINE_ID` 门禁阻断；007 的唯一正式只读 SSH 返回 `READABLE_MISMATCH`。上述诊断均未读取暂存目录，003 暂存仍为 `UNKNOWN`。继续必须依次完成：
+001、002、003、004、005、006、007 均已消费。005 已确认固定 SSH 与远端隔离 Python 标记可用；006 在 `MACHINE_ID` 门禁阻断；007 的唯一正式只读 SSH 返回 `READABLE_MISMATCH`。上述诊断均未读取暂存目录，003 暂存仍为 `UNKNOWN`。后续已确认该入口由 Drop 服务映射，旧的物理主机身份核验顺序不再适用；当前必须依次完成：
 
-1. 007 的 `READABLE_MISMATCH` 已触发停止条件；禁止重试、输出当前值、更新受信摘要或继续暂存取证。
-2. 使用新的 ChangeId，通过阿里云 root 控制台、CMDB 或等价独立受控来源核验主机身份和既有批准基线；须重新完成工程门禁并取得用户独立授权。
-3. 只有独立核验闭环后，才能另行准备新的暂存只读取证候选；不得重放 006 或 007。
-4. 若后续取证确认暂存路径存在，另行提交精确清理授权；只允许删除经真实路径、属主、权限、文件白名单和摘要共同绑定的 003 暂存目录，不得把清理并入只读取证授权。
+1. 008 已完成工程门禁并处于 `PENDING_USER_APPROVAL`；未取得用户对 008 的独立明确批准前，不得执行本地检查或 SSH。
+2. 获批后只允许按 008 清单执行一次本地检查和一次只读 SSH，零重试；结果必须收敛为 `ABSENT/NOT_APPLICABLE/NONE`、`PRESENT/PASS/NONE` 或 `PRESENT/MISMATCH/固定原因` 三态之一。
+3. 若结果为 `PRESENT/MISMATCH` 或任何门禁失败，立即停止；后续诊断必须使用新 ChangeId、重新完成工程门禁并取得用户独立授权。
+4. 若结果确认暂存路径存在且完整匹配，另行提交精确清理授权；只允许删除经真实路径、属主、权限、文件白名单和摘要共同绑定的 003 暂存目录，不得把清理并入只读取证授权。
 5. 只有暂存 `UNKNOWN` 关闭后，才可使用另一个新 ChangeId 重新冻结安装候选、制品回执和授权；不得复用 001、002、003 的候选、回执或授权。安装后的真实运行态审计仍使用另一个独立 ChangeId，后续安装授权不得顺带执行。
 
 `CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005` 已完成唯一一次本地检查和正式只读 SSH，结果为 `ZERO / EXACT / stderr EMPTY / diagnostic PASS`，证明传输链路可用但未关闭暂存 UNKNOWN；005 已消费并禁止重放。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`、`docs/ai-gateway-g8-test-readonly-transport-diagnostic-attempt-20260812-005.md`。下一次暂存只读取证必须使用新的 ChangeId，重新完成代码安全、QA、产品、精确 HEAD CI、merge commit 与用户独立授权。
