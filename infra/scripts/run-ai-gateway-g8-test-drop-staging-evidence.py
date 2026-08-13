@@ -183,24 +183,9 @@ def build_remote_program(
     expected_files: dict[str, tuple[str, int]] | None = None,
     _test_uid: int | None = None,
     _test_gid: int | None = None,
-    _test_hook: str = "",
 ) -> str:
-    """生成目录描述符锚定的远端只读程序；测试钩子只接受固定故障枚举。"""
+    """生成目录描述符锚定且不含任何写改删能力的远端只读程序。"""
     files = FROZEN_FILES if expected_files is None else expected_files
-    hook_before_open = ""
-    hook_after_hash = ""
-    if _test_hook == "remove_manifest_before_open":
-        hook_before_open = """
-if name == 'manifest.env':
-    os.unlink(name, dir_fd=stage_fd)
-"""
-    elif _test_hook == "pause_after_manifest_hash":
-        hook_after_hash = """
-if name == 'manifest.env':
-    __import__('time').sleep(0.5)
-"""
-    elif _test_hook:
-        raise EvidenceError("invalid_test_hook")
 
     identity_setup = (
         "account = pwd.getpwnam('pc')\nuid = account.pw_uid\n"
@@ -289,7 +274,6 @@ try:
                             content_matches = True
                             opened_files = {}
                             for name in names:
-                                __HOOK_BEFORE_OPEN__
                                 file_fd = os.open(
                                     name,
                                     os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
@@ -317,7 +301,6 @@ try:
                                     else:
                                         metadata_matches = False
                                         actual_digest = None
-                                    __HOOK_AFTER_HASH__
                                     if metadata_identity(os.fstat(file_fd)) != opened_files[name]:
                                         entries_stable = False
                                     if actual_digest is not None and actual_digest != expected_sha256:
@@ -375,21 +358,12 @@ print('STAGING_INTEGRITY=' + staging_integrity)
 print('STAGING_MISMATCH_REASON=' + staging_mismatch_reason)
 print('EVIDENCE_RESULT=PASS')
 '''
-    program = textwrap.dedent(template).replace("__CHANGE_ID__", repr(CHANGE_ID)).replace(
+    return textwrap.dedent(template).replace("__CHANGE_ID__", repr(CHANGE_ID)).replace(
         "__TARGET_CHANGE_ID__", repr(TARGET_CHANGE_ID)
     ).replace("__DEPLOYMENT_ROOT__", repr(deployment_root)).replace(
         "__STAGING_PATH__", repr(staging_path)
     ).replace("__EXPECTED_FILES__", repr(files)).replace(
         "__IDENTITY_SETUP__", identity_setup
-    )
-    before_code = textwrap.dedent(hook_before_open).strip()
-    after_code = textwrap.dedent(hook_after_hash).strip()
-    return program.replace(
-        "                                __HOOK_BEFORE_OPEN__",
-        textwrap.indent(before_code, "                                ") if before_code else "",
-    ).replace(
-        "                                    __HOOK_AFTER_HASH__",
-        textwrap.indent(after_code, "                                    ") if after_code else "",
     )
 
 

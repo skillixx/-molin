@@ -313,14 +313,13 @@ class TestDropStagingEvidencePosix(unittest.TestCase):
             path.write_bytes(content)
             path.chmod(0o600)
 
-    def run_remote(self, test_hook: str = "") -> dict[str, str]:
+    def run_remote(self) -> dict[str, str]:
         program = self.module.build_remote_program(
             deployment_root=str(self.root),
             staging_path=str(self.stage),
             expected_files=self.expected,
             _test_uid=os.getuid(),
             _test_gid=os.getgid(),
-            _test_hook=test_hook,
         )
         completed = subprocess.run(
             [sys.executable, "-I", "-c", program],
@@ -385,19 +384,30 @@ class TestDropStagingEvidencePosix(unittest.TestCase):
         self.stage.unlink()
         alternate_stage.rmdir()
         self.create_valid_stage()
-        read_result = self.run_remote("remove_manifest_before_open")
+        manifest = self.stage / "manifest.env"
+        manifest.unlink()
+        manifest.symlink_to(self.stage / "SHA256SUMS")
+        read_result = self.run_remote()
         self.assertEqual(read_result["STAGING_MISMATCH_REASON"], "READ_ERROR")
 
     def test_remote_program_detects_file_entry_replacement_race(self) -> None:
         """哈希后的同名目录项替换必须归类为 PATH，不能沿旧文件描述符误报 PASS。"""
         self.create_valid_stage()
+        large_content = b"m" * (64 * 1024 * 1024)
+        manifest = self.stage / "manifest.env"
+        manifest.write_bytes(large_content)
+        manifest.chmod(0o600)
+        os.utime(manifest, (1, 1))
+        self.expected["manifest.env"] = (
+            hashlib.sha256(large_content).hexdigest(),
+            len(large_content),
+        )
         program = self.module.build_remote_program(
             deployment_root=str(self.root),
             staging_path=str(self.stage),
             expected_files=self.expected,
             _test_uid=os.getuid(),
             _test_gid=os.getgid(),
-            _test_hook="pause_after_manifest_hash",
         )
         process = subprocess.Popen(
             [sys.executable, "-I", "-c", program],
@@ -407,8 +417,11 @@ class TestDropStagingEvidencePosix(unittest.TestCase):
             encoding="utf-8",
         )
         try:
-            time.sleep(0.2)
-            manifest = self.stage / "manifest.env"
+            deadline = time.monotonic() + 5
+            while manifest.stat().st_atime_ns == 1_000_000_000:
+                if time.monotonic() >= deadline:
+                    self.fail("远端程序未在时限内开始读取 manifest")
+                time.sleep(0.005)
             old_manifest = self.stage / "manifest.env.old"
             manifest.rename(old_manifest)
             manifest.write_bytes(b"x" * len(self.contents["manifest.env"]))
