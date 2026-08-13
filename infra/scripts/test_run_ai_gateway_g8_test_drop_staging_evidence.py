@@ -217,6 +217,55 @@ class TestDropStagingEvidenceContract(unittest.TestCase):
         self.assertTrue(failed.error)
         self.assertEqual(failed.data, b"")
 
+    def test_consumed_change_rejects_before_helper_identity_or_network(self) -> None:
+        """已消费 ChangeId 必须在读取 helper、身份材料或联网前拒绝。"""
+        module = load_module()
+        with (
+            mock.patch.object(module, "CHANGE_ID_CONSUMED", True),
+            mock.patch.object(module, "load_frozen_helper") as helper,
+            mock.patch.object(module, "run_once") as run_once,
+            mock.patch.object(sys, "argv", [str(SCRIPT_PATH)]),
+            mock.patch("builtins.print") as output,
+        ):
+            self.assertEqual(module.main(), 2)
+        helper.assert_not_called()
+        run_once.assert_not_called()
+        output.assert_called_once_with(
+            "G8_TEST_READONLY_DROP_STAGING_EVIDENCE=FAILED reason=change_id_consumed"
+        )
+
+    def test_main_returns_three_for_present_mismatch(self) -> None:
+        """完整但不匹配的暂存证据必须用专用退出码 3 阻断后续动作。"""
+        module = load_module()
+        helper = types.SimpleNamespace(
+            validate_known_hosts=mock.Mock(),
+            validate_identity_file=mock.Mock(),
+            validate_identity_pair=mock.Mock(),
+        )
+        arguments = [
+            str(SCRIPT_PATH),
+            "--change-id",
+            module.CHANGE_ID,
+            "--known-hosts",
+            "known_hosts",
+            "--identity-file",
+            "id_ed25519",
+            "--identity-public-file",
+            "id_ed25519.pub",
+        ]
+        mismatch = {
+            "STAGING_STATE": "PRESENT",
+            "STAGING_INTEGRITY": "MISMATCH",
+            "STAGING_MISMATCH_REASON": "FILE_CONTENT",
+        }
+        with (
+            mock.patch.object(sys, "argv", arguments),
+            mock.patch.object(module, "load_frozen_helper", return_value=helper),
+            mock.patch.object(module, "run_once", return_value=mismatch),
+            mock.patch("builtins.print"),
+        ):
+            self.assertEqual(module.main(), 3)
+
 
 @unittest.skipUnless(os.name == "posix", "目录描述符动态取证只在 Linux CI 执行")
 class TestDropStagingEvidencePosix(unittest.TestCase):

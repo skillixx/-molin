@@ -618,6 +618,8 @@ def main() -> int:
     print(f"staging_integrity={values['STAGING_INTEGRITY']}")
     print(f"staging_mismatch_reason={values['STAGING_MISMATCH_REASON']}")
     print("business_requests=0 upstream_requests=0 cost_cny=0")
+    if values["STAGING_INTEGRITY"] == "MISMATCH":
+        return 3
     return 0
 
 
