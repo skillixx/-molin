@@ -308,9 +308,13 @@ class TestDropStagingEvidenceContract(unittest.TestCase):
             mock.patch.object(sys, "argv", arguments),
             mock.patch.object(module, "load_frozen_helper", return_value=helper),
             mock.patch.object(module, "run_once", return_value=mismatch),
-            mock.patch("builtins.print"),
+            mock.patch("builtins.print") as output,
         ):
             self.assertEqual(module.main(), 3)
+        self.assertEqual(
+            output.call_args_list[0],
+            mock.call("G8_TEST_READONLY_DROP_STAGING_EVIDENCE=MISMATCH"),
+        )
 
 
 @unittest.skipUnless(os.name == "posix", "目录描述符动态取证只在 Linux CI 执行")
@@ -469,6 +473,89 @@ class TestDropStagingEvidencePosix(unittest.TestCase):
         )
         self.assertEqual(result["STAGING_INTEGRITY"], "MISMATCH")
         self.assertEqual(result["STAGING_MISMATCH_REASON"], "PATH")
+
+    def test_remote_program_detects_stage_metadata_drift(self) -> None:
+        """暂存目录在检查与打开之间发生权限漂移时必须阻断，不能沿用旧元数据误报通过。"""
+        self.create_valid_stage()
+        program = self.module.build_remote_program(
+            deployment_root=str(self.root),
+            staging_path=str(self.stage),
+            expected_files=self.expected,
+            _test_uid=os.getuid(),
+            _test_gid=os.getgid(),
+        )
+        open_stage = """                stage_fd = os.open(
+                    stage_name,"""
+        self.assertIn(open_stage, program)
+        program = program.replace(
+            open_stage,
+            """                os.chmod(staging_path, 0o777)
+                stage_fd = os.open(
+                    stage_name,""",
+            1,
+        )
+        completed = subprocess.run(
+            [sys.executable, "-I", "-c", program],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=10,
+            check=False,
+        )
+        try:
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stderr, "")
+            result = self.module.parse_remote_output(
+                completed.stdout,
+                expected_deployment_root=str(self.root),
+            )
+        finally:
+            self.stage.chmod(0o700)
+        self.assertEqual(result["STAGING_INTEGRITY"], "MISMATCH")
+        self.assertEqual(result["STAGING_MISMATCH_REASON"], "PATH")
+
+    def test_remote_program_rejects_deployment_root_metadata_drift(self) -> None:
+        """部署根在哈希期间发生权限漂移时必须无证据退出，不能继续输出根检查通过。"""
+        self.create_valid_stage()
+        large_content = b"m" * (64 * 1024 * 1024)
+        manifest = self.stage / "manifest.env"
+        manifest.write_bytes(large_content)
+        manifest.chmod(0o600)
+        os.utime(manifest, (1, 1))
+        self.expected["manifest.env"] = (
+            hashlib.sha256(large_content).hexdigest(),
+            len(large_content),
+        )
+        program = self.module.build_remote_program(
+            deployment_root=str(self.root),
+            staging_path=str(self.stage),
+            expected_files=self.expected,
+            _test_uid=os.getuid(),
+            _test_gid=os.getgid(),
+        )
+        process = subprocess.Popen(
+            [sys.executable, "-I", "-c", program],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+        )
+        try:
+            deadline = time.monotonic() + 5
+            while manifest.stat().st_atime_ns == 1_000_000_000:
+                if time.monotonic() >= deadline:
+                    self.fail("远端程序未在时限内开始读取 manifest")
+                time.sleep(0.005)
+            self.root.chmod(0o777)
+            stdout, stderr = process.communicate(timeout=10)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate()
+            self.root.chmod(0o700)
+        self.assertEqual(process.returncode, 41, stderr)
+        self.assertEqual(stdout, "")
+        self.assertEqual(stderr, "")
 
 
 if __name__ == "__main__":

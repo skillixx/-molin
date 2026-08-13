@@ -228,7 +228,7 @@ try:
     pinned_root = os.fstat(root_fd)
     root_mode = stat.S_IMODE(pinned_root.st_mode)
     if (
-        (pinned_root.st_dev, pinned_root.st_ino) != (root_meta.st_dev, root_meta.st_ino)
+        metadata_identity(pinned_root) != metadata_identity(root_meta)
         or not stat.S_ISDIR(pinned_root.st_mode)
         or pinned_root.st_uid != uid
         or pinned_root.st_gid != gid
@@ -267,7 +267,14 @@ try:
                 )
                 try:
                     pinned_stage = os.fstat(stage_fd)
-                    if (pinned_stage.st_dev, pinned_stage.st_ino) == (stage_meta.st_dev, stage_meta.st_ino):
+                    pinned_stage_mode = stat.S_IMODE(pinned_stage.st_mode)
+                    if (
+                        metadata_identity(pinned_stage) == metadata_identity(stage_meta)
+                        and stat.S_ISDIR(pinned_stage.st_mode)
+                        and pinned_stage.st_uid == uid
+                        and pinned_stage.st_gid == gid
+                        and pinned_stage_mode == 0o700
+                    ):
                         names = os.listdir(stage_fd)
                         if set(names) != set(expected_files) or len(names) != len(expected_files):
                             staging_mismatch_reason = 'FILE_SET'
@@ -324,10 +331,8 @@ try:
                             current_stage = os.stat(stage_name, dir_fd=root_fd, follow_symlinks=False)
                             if (
                                 not entries_stable
-                                or (final_stage.st_dev, final_stage.st_ino, final_stage.st_mtime_ns, final_stage.st_ctime_ns)
-                                != (pinned_stage.st_dev, pinned_stage.st_ino, pinned_stage.st_mtime_ns, pinned_stage.st_ctime_ns)
-                                or (current_stage.st_dev, current_stage.st_ino)
-                                != (pinned_stage.st_dev, pinned_stage.st_ino)
+                                or metadata_identity(final_stage) != metadata_identity(pinned_stage)
+                                or metadata_identity(current_stage) != metadata_identity(pinned_stage)
                             ):
                                 staging_mismatch_reason = 'PATH'
                             elif not metadata_matches:
@@ -342,10 +347,12 @@ try:
         except OSError:
             staging_mismatch_reason = 'READ_ERROR'
 
+    final_root = os.fstat(root_fd)
     current_root = os.lstat(deployment_root)
     if (
         os.path.realpath(deployment_root) != deployment_root
-        or (current_root.st_dev, current_root.st_ino) != (pinned_root.st_dev, pinned_root.st_ino)
+        or metadata_identity(final_root) != metadata_identity(pinned_root)
+        or metadata_identity(current_root) != metadata_identity(pinned_root)
     ):
         raise SystemExit(41)
 finally:
@@ -591,7 +598,8 @@ def main() -> int:
     except Exception:
         print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE=FAILED reason=evidence_unavailable")
         return 2
-    print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE=PASS")
+    result = "MISMATCH" if values["STAGING_INTEGRITY"] == "MISMATCH" else "PASS"
+    print(f"G8_TEST_READONLY_DROP_STAGING_EVIDENCE={result}")
     print(f"staging_state={values['STAGING_STATE']}")
     print(f"staging_integrity={values['STAGING_INTEGRITY']}")
     print(f"staging_mismatch_reason={values['STAGING_MISMATCH_REASON']}")

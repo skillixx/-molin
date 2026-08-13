@@ -17,7 +17,7 @@ Drop 地址只代表固定传输端点，不代表底层物理主机身份。008
 ## 2. 冻结资产
 
 - 008 包装器：`infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence.py`
-- 008 包装器 SHA-256：`a2a9f7cbb0ca306c1ff67f08d911f609a805dce44509b4dbfcab26d881a70cb6`
+- 008 包装器 SHA-256：`57b63037306b8c5ba564132986d6ddf5dfc659a22d10118fbd3470ec15146365`
 - 冻结 004 helper SHA-256：`599e6bbb800531d02b22cf9534636ebf8232002fafb8236d294f9d2dba2e3c89`
 - 远端只接受登录用户 `pc`、部署根真实路径与 `pc:pc` 元数据；部署根必须具备属主 `0700` 必需位且组/其他不可写，暂存目录必须精确 `0700`。随后只检查固定暂存 basename 和固定五文件摘要/大小。
 
