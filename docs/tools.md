@@ -1108,7 +1108,7 @@ python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_ho
 
 `infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop.py` 是已消费的 009 Drop 安装候选预检与暂存包装器。唯一一次本地检查 PASS；唯一正式调用在 Windows 冻结私钥副本的 NTFS ACL 门禁处失败，并在 SSH/SFTP 前停止。包装器所有入口现必须固定返回 `change_id_consumed`；禁止再次运行 `--self-test`、`--local-check` 或正式路径。009 当时的严格 ACL 修复方向已被用户随后批准的 010 直连方案替代，历史证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-009.md`。
 
-`infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop-direct.py` 是 010 Drop 直连候选包装器。它显式使用现有 ED25519 私钥、同目录公钥和固定 known_hosts，不复制或修改私钥 ACL；本地只为五文件候选建立随机临时快照。当前仅允许离线 `--self-test` 和仓库测试，`--local-check`、SSH/SFTP 与安装必须等待独立用户授权。设计和冻结证据见 `docs/superpowers/specs/2026-08-13-g8-readonly-access-010-direct-design.md` 与 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260813-010.md`。
+`infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop-direct.py` 是已消费的 010 Drop 直连包装器。一次本地检查、一次只读 SSH 和一次原子 SFTP 已完成，五文件暂存成功；root 安装未建立连接，live/sudoers/visudo/sudo self-test 均未执行。包装器所有入口现必须在读取 helper、候选、身份材料或网络前固定返回 `change_id_consumed`。010 禁止重放；暂存清理、root 安装或新的 `pc` 非特权方案必须使用新 ChangeId。历史证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-010.md`。
 
 ## CI 变更范围分类器
 

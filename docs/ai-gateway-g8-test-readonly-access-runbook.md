@@ -137,7 +137,7 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 `CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009` 已消费。用户批准后唯一一次本地检查 PASS；唯一正式调用在创建 Windows 冻结私钥副本时以 `invalid_request`、退出码 2 停止。离线最小复现确认临时副本仅经 `chmod 0600`，没有收紧 NTFS ACL，固定 `ssh-keygen -y` 因权限诊断退出 255；代码顺序证明该失败发生在 SSH/SFTP 调用之前。没有连接测试服务、创建远端暂存、上传文件、进入 root 管理通道、安装 live 目标或执行 sudo self-test，业务请求/上游请求/费用为 `0 / 0 / 0 CNY`。009 禁止重放。消费证据 HEAD `bab8f89a317f9bcb7ca1fd1f534f3fa6a9545f49` 经 CI run `31667550392` 12/12 SUCCESS 及独立三方零缺陷后，由 PR #360 按 merge commit `c9402d94129da4042e3fb1bb978d63018af4a439` 合入主干；远端功能分支已删除。009 当时的私钥冻结修复要求已由后续用户批准的 010 直连方案替代。证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-009.md`。
 
-`CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010` 采用直连方案：SSH/SFTP 显式引用现有免密码 ED25519 私钥与固定 known_hosts，不复制、不 chmod、不修改私钥 ACL；候选五文件仍复制到随机本地临时目录供 SFTP 使用。010 的仓库工程门禁已完成：PR #362 精确 HEAD `b47e94780a2ac884a7d2dccb0d1f80abb8b137cd` 经 CI run `31673893162` 12/12 SUCCESS 及独立代码安全、QA、产品/规格 P0/P1/P2=0 后，以 merge commit `a890cdff2793a141f7b377aa74d0996d57e13cbd` 合入主干。安装清单状态现为 `PENDING_USER_APPROVAL`；用户再次明确批准前禁止运行 010 `--local-check`、SSH、SFTP、root 安装和 sudo self-test，工程合并本身不构成测试服连接或安装授权。
+`CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010` 已消费。用户授权后一次本地检查、一次只读 SSH 与一次原子 SFTP 均 PASS，五文件暂存成功；唯一 root 安装编排在本地参数构造阶段停止，未建立 root 连接、未发送安装脚本、未创建 root-only/live/sudoers 目标，也未执行 visudo、sudo 范围、Docker 组或固定 self-test。零重试，业务/上游/费用为 `0 / 0 / 0 CNY`。状态为 `CONSUMED_STAGED_ROOT_NOT_RUN`，禁止重放；直接改用 `pc` 不满足 root-owned 和 sudoers 契约，未执行。暂存清理、root 安装或新的 `pc` 非特权方案均须新 ChangeId、重新工程门禁和独立用户授权。证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-010.md`。
 
 ## 4. 安装后的独立只读核验
 

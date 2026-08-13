@@ -36,7 +36,7 @@ class TestReadonlyAccessStageDropDirect(unittest.TestCase):
             self.module.CHANGE_ID,
             "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010",
         )
-        self.assertFalse(self.module.CHANGE_ID_CONSUMED)
+        self.assertTrue(self.module.CHANGE_ID_CONSUMED)
         self.assertEqual(self.module.SOURCE_COMMIT, "75b1fc4ddb7138495547cec03fa948648de337d7")
         self.assertEqual(self.module.SOURCE_TREE, "53ba990318bc1a036b442d88ff8133d776a453dc")
         self.assertEqual(self.module.TARGET_TRANSPORT, "DROP_SSH_DIRECT")
@@ -74,6 +74,7 @@ class TestReadonlyAccessStageDropDirect(unittest.TestCase):
         ]
         with (
             mock.patch.object(sys, "argv", arguments),
+            mock.patch.object(self.module, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(self.module, "load_frozen_helper") as load_helper,
             mock.patch.object(self.module, "validate_local_inputs"),
             mock.patch.object(self.module, "run_remote_preflight") as remote,
@@ -194,6 +195,7 @@ class TestReadonlyAccessStageDropDirect(unittest.TestCase):
         trust_evidence = mock.Mock()
         with (
             mock.patch.object(sys, "argv", arguments),
+            mock.patch.object(self.module, "CHANGE_ID_CONSUMED", False),
             mock.patch.object(self.module, "load_frozen_helper", return_value=helper),
             mock.patch.object(self.module, "validate_local_inputs", return_value=trust_evidence),
             mock.patch.object(self.module, "validate_candidate"),
@@ -282,6 +284,7 @@ class TestReadonlyAccessStageDropDirect(unittest.TestCase):
             ]
             with (
                 mock.patch.object(sys, "argv", arguments),
+                mock.patch.object(self.module, "CHANGE_ID_CONSUMED", False),
                 mock.patch.object(self.module, "load_frozen_helper", return_value=helper),
                 mock.patch.object(self.module, "validate_candidate"),
                 mock.patch.object(self.module, "run_remote_preflight") as remote,
@@ -322,6 +325,7 @@ class TestReadonlyAccessStageDropDirect(unittest.TestCase):
             ]
             with (
                 mock.patch.object(sys, "argv", arguments),
+                mock.patch.object(self.module, "CHANGE_ID_CONSUMED", False),
                 mock.patch.object(self.module, "load_frozen_helper", return_value=helper),
                 mock.patch.object(self.module, "validate_candidate"),
                 mock.patch.object(
@@ -341,14 +345,13 @@ class TestReadonlyAccessStageDropDirect(unittest.TestCase):
             remote.assert_called_once()
             sftp.assert_not_called()
 
-    def test_consumed_gate_will_cover_all_entry_modes(self) -> None:
-        """未来消费 010 后，普通、本地检查和自检都必须在读取材料前拒绝。"""
+    def test_consumed_gate_covers_all_entry_modes(self) -> None:
+        """010 消费后，普通、本地检查和自检都必须在读取材料前拒绝。"""
         arguments_by_mode = ((), ("--local-check",), ("--self-test",))
         for extra in arguments_by_mode:
             with (
                 self.subTest(extra=extra),
                 mock.patch.object(sys, "argv", [str(SCRIPT_PATH), *extra]),
-                mock.patch.object(self.module, "CHANGE_ID_CONSUMED", True),
                 mock.patch.object(self.module, "load_frozen_helper") as helper,
                 mock.patch("builtins.print") as output,
             ):
@@ -380,9 +383,9 @@ class TestReadonlyAccessStageDropDirect(unittest.TestCase):
             validate.assert_called_once_with(result)
 
     def test_authorization_freezes_direct_wrapper_and_all_execution_boundaries(self) -> None:
-        """授权清单必须冻结包装器并保持待工程门禁、待用户批准状态。"""
+        """授权清单必须冻结执行时包装器并明确 010 已消费。"""
         content = AUTHORIZATION_PATH.read_text(encoding="utf-8")
-        self.assertIn("`PENDING_ENGINEERING_GATES_AND_USER_APPROVAL`", content)
+        self.assertIn("`CONSUMED_STAGED_ROOT_NOT_RUN`", content)
         self.assertIn(
             "`185c0ccda420d3bbe97e95c3218a03642372e05525d2663258287ebd981360b8`",
             content,
