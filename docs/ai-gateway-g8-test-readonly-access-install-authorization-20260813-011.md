@@ -1,6 +1,6 @@
 # G8 测试服只读入口 011 交互 sudo 安装授权清单
 
-> 状态：`PENDING_ENGINEERING_GATES_AND_USER_APPROVAL`。本清单只冻结候选与未来执行边界；当前未授权、未执行 `--local-check`、SFTP、交互 SSH、sudo 认证、root 安装或远端 self-test。
+> 状态：`PENDING_USER_APPROVAL`。PR #365 最终 HEAD `30cf58083088628c0ad8ac321cca3078f39b5341` 已通过 CI run `31685942115` 12/12 和独立代码安全、QA、产品/规格 P0/P1/P2=0，并按 merge commit `018f7344a5a52ccc6c23b478555a7ddc02f5ba63` 合入主干。本清单只冻结候选与未来执行边界；工程合并不构成测试服授权，当前未执行 `--local-check`、SFTP、交互 SSH、sudo 认证、root 安装或远端 self-test。
 
 ## 1. 精确目标与冻结资产
 
@@ -23,8 +23,8 @@
 - 对账器：`37f6ee369f1ce489a3966123dfea3bd172d5386045495e069433c7f3d993f2c1`，大小 `13066129` 字节。
 - root 安装器：`28e49509d34f6cc76e56310f2a6a24d713f85430542733caf62c38d743fe5c20`，大小 `9022` 字节。
 - 人工命令资产：`D:\molingproject\g8-artifacts\CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011-interactive-command-v4.txt`，SHA-256 `52d59585ba7e160a455dc932616f3babf60fc0d8e42e269d9731ce71bb8339af`，大小 `20061` 字节；旧的 `...-011-interactive-command.txt`、`...-command-v2.txt` 与 `...-command-v3.txt` 均冻结为历史资产，禁止执行。
-- 暂存包装器：当前候选 SHA `6faa85b19cbac0dcd4099185168fef577317278cfa48ea65cc3a7efffe64ea85`；合并后必须重新计算并同步，漂移即停止。
-- 命令生成器：当前候选 SHA `37d3184721438b33e670edca8460058db96ec46e80e8b37e5f691c52e4422d2f`；合并后必须重新计算并同步，漂移即停止。
+- 暂存包装器：合并后 SHA `6faa85b19cbac0dcd4099185168fef577317278cfa48ea65cc3a7efffe64ea85`，大小 `7732` 字节；与 PR 最终候选一致。
+- 命令生成器：合并后 SHA `37d3184721438b33e670edca8460058db96ec46e80e8b37e5f691c52e4422d2f`，大小 `11610` 字节；与 PR 最终候选一致。
 - 冻结 010 helper：`4fb920e32574c640685ddd9bed919485473dc54873d157a409c1adf987b3ab6a`。
 
 ## 2. 未来需再次批准的唯一执行顺序

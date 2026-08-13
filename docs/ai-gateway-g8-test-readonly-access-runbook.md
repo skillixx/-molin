@@ -139,7 +139,7 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 `CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010` 已消费。用户授权后一次本地检查、一次只读 SSH 与一次原子 SFTP 均 PASS，五文件暂存成功；唯一 root 安装编排在本地参数构造阶段停止，未建立 root 连接、未发送安装脚本、未创建 root-only/live/sudoers 目标，也未执行 visudo、sudo 范围、Docker 组或固定 self-test。零重试，业务/上游/费用为 `0 / 0 / 0 CNY`。状态为 `CONSUMED_STAGED_ROOT_NOT_RUN`，禁止重放；直接改用 `pc` 不满足 root-owned 和 sudoers 契约，未执行。暂存清理、root 安装或新的 `pc` 非特权方案均须新 ChangeId、重新工程门禁和独立用户授权。证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-010.md`。
 
-`CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011` 采用已批准的方案 A：独立包装器未来只执行一次 SFTP；随后在唯一交互 SSH 会话内先完成非特权预检，再由操作者仅通过 TTY 执行一次 `sudo -k -v`，认证后只运行冻结的 `sudo -n` root 安装器和固定 self-test。密码不得进入参数、stdin、脚本、环境变量、日志或文档。当前仅完成仓库候选实现，未连接测试服，状态为 `PENDING_ENGINEERING_GATES_AND_USER_APPROVAL`；权威清单见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260813-011.md`。
+`CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011` 采用已批准的方案 A：独立包装器未来只执行一次 SFTP；随后在唯一交互 SSH 会话内先完成非特权预检，再由操作者仅通过 TTY 执行一次 `sudo -k -v`，认证后只运行冻结的 `sudo -n` root 安装器和固定 self-test。密码不得进入参数、stdin、脚本、环境变量、日志或文档。PR #365 最终 HEAD `30cf58083088628c0ad8ac321cca3078f39b5341` 已通过 CI run `31685942115` 12/12 和独立三方 P0/P1/P2=0，并按 merge commit `018f7344a5a52ccc6c23b478555a7ddc02f5ba63` 合入主干；合并后的包装器、命令生成器与安装器摘要均未漂移。当前未连接测试服，状态为 `PENDING_USER_APPROVAL`；工程合并不授权执行，权威清单见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260813-011.md`。
 
 ## 4. 安装后的独立只读核验
 
