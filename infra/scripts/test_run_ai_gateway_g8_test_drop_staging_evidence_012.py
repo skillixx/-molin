@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import importlib.util
+import base64
 import hashlib
+import io
 import os
 import shutil
 import subprocess
@@ -12,6 +14,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPT_PATH = Path(__file__).with_name(
@@ -156,6 +159,323 @@ class TestDropStagingEvidence012Contract(unittest.TestCase):
             with self.subTest(stdout=stdout[-96:]):
                 with self.assertRaises(module.EvidenceError):
                     module.parse_remote_output(stdout)
+
+    def test_stream_capture_is_bounded_but_counts_the_complete_stream(self):
+        """错误地把输出全部保存在内存或只统计截断片段时，本测试必须失败。"""
+
+        module = load_module()
+        payload = (b"first\n" * 40_000) + b"tail"
+
+        try:
+            capture = module.collect_stream(io.BytesIO(payload), 64 * 1024)
+        except AttributeError as error:
+            self.fail(f"尚未实现有界流采集接口：{error}")
+
+        self.assertEqual(len(capture.data), 64 * 1024 + 1)
+        self.assertEqual(capture.byte_count, len(payload))
+        self.assertEqual(capture.line_count, payload.count(b"\n") + 1)
+        self.assertEqual(capture.sha256, hashlib.sha256(payload).hexdigest())
+        self.assertTrue(capture.exceeded)
+        self.assertFalse(capture.error)
+
+    def test_stream_capture_converts_read_errors_to_internal_flag(self):
+        """读取异常若向 stderr 泄漏 traceback 或继续当作成功，本测试必须失败。"""
+
+        module = load_module()
+
+        class BrokenStream:
+            def read(self, _size):
+                raise OSError("DO_NOT_ECHO_LOCAL_PATH")
+
+        capture = module.collect_stream(BrokenStream(), 64 * 1024)
+
+        self.assertTrue(capture.error)
+        self.assertEqual(capture.data, b"")
+
+    def test_file_evidence_detects_local_material_drift(self):
+        """身份材料冻结后被替换却仍放行时，本测试必须失败。"""
+
+        module = load_module()
+        with tempfile.TemporaryDirectory(prefix="g8-012-evidence-") as directory:
+            path = Path(directory) / "known_hosts"
+            path.write_bytes(b"approved\n")
+            evidence = module.freeze_file(path)
+            path.write_bytes(b"replaced\n")
+
+            with self.assertRaises(module.EvidenceError):
+                module.assert_file_unchanged(evidence)
+
+    def test_known_hosts_requires_one_approved_endpoint_key(self):
+        """固定端点出现额外明文或哈希密钥仍通过时，本测试必须失败。"""
+
+        module = load_module()
+        approved = "[8.130.9.163]:10003 ssh-ed25519 AAAAAPPROVED"
+        malicious = "|1|hash|value ssh-ed25519 AAAAMALICIOUS"
+
+        def fake_runner(command, **_kwargs):
+            if "-F" in command:
+                return subprocess.CompletedProcess(command, 0, approved + "\n" + malicious + "\n", "")
+            raise AssertionError(f"未预期的工具调用：{command}")
+
+        with self.assertRaises(module.EvidenceError):
+            module.validate_known_hosts(
+                Path("known_hosts"),
+                Path("ssh-keygen"),
+                expected_fingerprint="SHA256:approved",
+                tool_runner=fake_runner,
+                fingerprint_reader=lambda _line: "SHA256:approved",
+            )
+
+    def test_local_check_never_starts_ssh(self):
+        """离线检查触发 SSH 或输出不稳定时，本测试必须失败。"""
+
+        module = load_module()
+        arguments = [
+            "--local-check",
+            "--known-hosts", "known_hosts",
+            "--identity-file", "id_ed25519",
+            "--identity-public-file", "id_ed25519.pub",
+        ]
+        with (
+            mock.patch.object(module, "freeze_local_inputs", return_value=object()),
+            mock.patch.object(module, "run_once") as run_once,
+            mock.patch.object(sys, "argv", [str(SCRIPT_PATH), *arguments]),
+            mock.patch("sys.stdout", new_callable=io.StringIO) as stdout,
+            mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
+        ):
+            code = module.main()
+
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            stdout.getvalue(),
+            "G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012_LOCAL_CHECK=PASS\n",
+        )
+        self.assertEqual(stderr.getvalue(), "")
+        run_once.assert_not_called()
+
+    def make_local_inputs(self, module, directory: Path):
+        """建立只供假进程测试使用的本地冻结材料。"""
+
+        paths = {}
+        for name in ("ssh", "ssh-keygen", "known_hosts", "id_ed25519", "id_ed25519.pub"):
+            path = directory / name
+            path.write_bytes((name + "\n").encode("ascii"))
+            paths[name] = module.freeze_file(path)
+        return module.LocalInputs(
+            ssh=paths["ssh"],
+            ssh_keygen=paths["ssh-keygen"],
+            known_hosts=paths["known_hosts"],
+            identity_file=paths["id_ed25519"],
+            identity_public_file=paths["id_ed25519.pub"],
+            approved_known_hosts_line=(
+                "[8.130.9.163]:10003 ssh-ed25519 "
+                "AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            ),
+        )
+
+    @staticmethod
+    def valid_remote_stdout(module) -> bytes:
+        """生成严格九键 ABSENT 成功输出。"""
+
+        return ("\n".join((
+            f"EVIDENCE_CHANGE_ID={module.CHANGE_ID}",
+            f"TARGET_CHANGE_ID={module.TARGET_CHANGE_ID}",
+            "LOGIN_USER=pc",
+            "DEPLOYMENT_ROOT_REALPATH=/home/pc/molin",
+            "DEPLOYMENT_ROOT_CHECK=PASS",
+            "STAGING_STATE=ABSENT",
+            "STAGING_INTEGRITY=NOT_APPLICABLE",
+            "STAGING_MISMATCH_REASON=NONE",
+            "EVIDENCE_RESULT=PASS",
+        )) + "\n").encode("ascii")
+
+    def fake_process(self, stdout: bytes, stderr: bytes = b"", returncode: int = 0):
+        """构造支持 stdin、双输出流和 wait 的无网络假进程。"""
+
+        class RecordingInput(io.BytesIO):
+            def close(self):
+                self.was_closed = True
+
+        class FakeProcess:
+            def __init__(self):
+                self.stdin = RecordingInput()
+                self.stdout = io.BytesIO(stdout)
+                self.stderr = io.BytesIO(stderr)
+                self.returncode = returncode
+                self.killed = False
+
+            def wait(self, timeout=None):
+                self.timeout = timeout
+                return self.returncode
+
+            def kill(self):
+                self.killed = True
+
+        return FakeProcess()
+
+    def test_run_once_uses_one_fixed_ssh_and_parses_evidence(self):
+        """增加第二进程、放宽SSH参数或不解析输出时，本测试必须失败。"""
+
+        module = load_module()
+        with tempfile.TemporaryDirectory(prefix="g8-012-run-") as directory:
+            inputs = self.make_local_inputs(module, Path(directory))
+            process = self.fake_process(self.valid_remote_stdout(module))
+            with mock.patch.object(module.subprocess, "Popen", return_value=process) as popen:
+                values = module.run_once(inputs)
+
+        popen.assert_called_once()
+        command = popen.call_args.args[0]
+        self.assertEqual(command[0], str(inputs.ssh.path))
+        self.assertIn("ConnectionAttempts=1", command)
+        self.assertIn("StrictHostKeyChecking=yes", command)
+        self.assertIn("HostKeyAlgorithms=ssh-ed25519", command)
+        self.assertEqual(
+            command[-1],
+            "/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -",
+        )
+        self.assertEqual(values["STAGING_STATE"], "ABSENT")
+        self.assertTrue(process.stdin.was_closed)
+
+    def test_run_once_rejects_post_ssh_material_drift(self):
+        """SSH结束后材料被替换却仍形成证据时，本测试必须失败。"""
+
+        module = load_module()
+        with tempfile.TemporaryDirectory(prefix="g8-012-drift-") as directory:
+            inputs = self.make_local_inputs(module, Path(directory))
+
+            def mutate_then_start(*_args, **_kwargs):
+                inputs.known_hosts.path.write_bytes(b"replaced\n")
+                return self.fake_process(self.valid_remote_stdout(module))
+
+            with mock.patch.object(module.subprocess, "Popen", side_effect=mutate_then_start):
+                with self.assertRaises(module.EvidenceError):
+                    module.run_once(inputs)
+
+    def test_run_once_rejects_stderr_and_nonzero_without_echo(self):
+        """远端异常正文、非零状态或超限输出被接受时，本测试必须失败。"""
+
+        module = load_module()
+        with tempfile.TemporaryDirectory(prefix="g8-012-failure-") as directory:
+            inputs = self.make_local_inputs(module, Path(directory))
+            process = self.fake_process(b"", b"DO_NOT_ECHO_REMOTE_SECRET\n", 23)
+            with mock.patch.object(module.subprocess, "Popen", return_value=process):
+                with self.assertRaises(module.EvidenceError) as raised:
+                    module.run_once(inputs)
+
+        self.assertNotIn("DO_NOT_ECHO", str(raised.exception))
+
+    def test_freeze_local_inputs_validates_key_pair_and_rejects_mismatch(self):
+        """客户端公私钥不一致仍能通过本地门禁时，本测试必须失败。"""
+
+        module = load_module()
+        key_blob = base64.b64encode(b"approved-client-key").decode("ascii")
+        public_line = f"ssh-ed25519 {key_blob} local-test"
+        endpoint_line = f"{module.TARGET_HOST_ALIAS} ssh-ed25519 {key_blob}"
+        expected_fingerprint = module.ssh_fingerprint(public_line)
+        with tempfile.TemporaryDirectory(prefix="g8-012-identity-") as directory:
+            root = Path(directory)
+            paths = {}
+            for name, content in {
+                "ssh": b"ssh\n",
+                "ssh-keygen": b"ssh-keygen\n",
+                "known_hosts": (endpoint_line + "\n").encode("ascii"),
+                "id_ed25519": b"private\n",
+                "id_ed25519.pub": (public_line + "\n").encode("ascii"),
+            }.items():
+                path = root / name
+                path.write_bytes(content)
+                paths[name] = path
+
+            def runner(command, **_kwargs):
+                if "-F" in command:
+                    return subprocess.CompletedProcess(command, 0, endpoint_line + "\n", "")
+                if "-y" in command:
+                    return subprocess.CompletedProcess(command, 0, " ".join(public_line.split()[:2]) + "\n", "")
+                raise AssertionError(command)
+
+            inputs = module.freeze_local_inputs(
+                paths["known_hosts"], paths["id_ed25519"], paths["id_ed25519.pub"],
+                ssh_path=paths["ssh"], ssh_keygen_path=paths["ssh-keygen"],
+                tool_runner=runner,
+                expected_host_fingerprint=expected_fingerprint,
+                expected_identity_fingerprint=expected_fingerprint,
+            )
+            self.assertEqual(inputs.approved_known_hosts_line, endpoint_line)
+
+            def mismatch_runner(command, **kwargs):
+                completed = runner(command, **kwargs)
+                if "-y" in command:
+                    completed.stdout = "ssh-ed25519 AAAAWRONG\n"
+                return completed
+
+            with self.assertRaises(module.EvidenceError):
+                module.freeze_local_inputs(
+                    paths["known_hosts"], paths["id_ed25519"], paths["id_ed25519.pub"],
+                    ssh_path=paths["ssh"], ssh_keygen_path=paths["ssh-keygen"],
+                    tool_runner=mismatch_runner,
+                    expected_host_fingerprint=expected_fingerprint,
+                    expected_identity_fingerprint=expected_fingerprint,
+                )
+
+    def test_consumed_gate_rejects_every_cli_before_material_or_network(self):
+        """消费态任一 argv 到达解析器、材料或网络时，本测试必须失败。"""
+
+        module = load_module()
+        invocations = (
+            [],
+            ["--help"],
+            ["--unknown", "DO_NOT_ECHO_SECRET_SENTINEL"],
+            ["--known-hosts"],
+            ["--self-test"],
+            ["--local-check"],
+            ["--change-id", module.CHANGE_ID],
+        )
+        for arguments in invocations:
+            with self.subTest(arguments=arguments):
+                with (
+                    mock.patch.object(module, "CHANGE_ID_CONSUMED", True),
+                    mock.patch.object(module, "build_argument_parser") as parser,
+                    mock.patch.object(module, "freeze_local_inputs") as freeze,
+                    mock.patch.object(module, "run_once") as run_once,
+                    mock.patch.object(sys, "argv", [str(SCRIPT_PATH), *arguments]),
+                    mock.patch("sys.stdout", new_callable=io.StringIO) as stdout,
+                    mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
+                ):
+                    code = module.main()
+            self.assertEqual(code, 2)
+            self.assertEqual(
+                stdout.getvalue(),
+                "G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012=FAILED reason=change_id_consumed\n",
+            )
+            self.assertEqual(stderr.getvalue(), "")
+            self.assertNotIn("DO_NOT_ECHO", stdout.getvalue())
+            parser.assert_not_called()
+            freeze.assert_not_called()
+            run_once.assert_not_called()
+
+    def test_main_reports_exact_pass_mismatch_and_self_test(self):
+        """主入口状态码或首行契约漂移时，本测试必须失败。"""
+
+        module = load_module()
+        cases = (
+            (["--self-test"], None, 0, "G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012_SELF_TEST=PASS\n"),
+            (["--change-id", module.CHANGE_ID, "--known-hosts", "kh", "--identity-file", "id", "--identity-public-file", "id.pub"], "PASS", 0, "G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012=PASS\n"),
+            (["--change-id", module.CHANGE_ID, "--known-hosts", "kh", "--identity-file", "id", "--identity-public-file", "id.pub"], "MISMATCH", 3, "G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012=MISMATCH\n"),
+        )
+        for arguments, integrity, expected_code, expected_stdout in cases:
+            values = {"STAGING_INTEGRITY": integrity} if integrity else None
+            with self.subTest(integrity=integrity):
+                with (
+                    mock.patch.object(module, "freeze_local_inputs", return_value=object()),
+                    mock.patch.object(module, "run_once", return_value=values),
+                    mock.patch.object(sys, "argv", [str(SCRIPT_PATH), *arguments]),
+                    mock.patch("sys.stdout", new_callable=io.StringIO) as stdout,
+                    mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
+                ):
+                    code = module.main()
+            self.assertEqual(code, expected_code)
+            self.assertEqual(stdout.getvalue(), expected_stdout)
+            self.assertEqual(stderr.getvalue(), "")
 
 
 @unittest.skipUnless(os.name == "posix", "目录描述符动态取证只在 Linux CI 执行")

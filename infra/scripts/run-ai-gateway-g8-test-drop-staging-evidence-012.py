@@ -14,8 +14,19 @@ if not sys.flags.isolated:
     raise SystemExit(2)
 
 
+import argparse
+import base64
+import hashlib
+import os
 import re
+import stat
+import subprocess
+import tempfile
 import textwrap
+import threading
+from dataclasses import dataclass
+from pathlib import Path
+from typing import BinaryIO
 
 
 CHANGE_ID = "CHG-G8-TEST-READONLY-STAGING-EVIDENCE-DROP-20260813-012"
@@ -112,10 +123,440 @@ FROZEN_MANIFEST = {
     "PHYSICAL_HOST_IDENTITY": "NOT_APPLICABLE",
     "TARGET_DEPLOYMENT_ROOT": TARGET_DEPLOYMENT_ROOT,
 }
+TARGET_HOST = "8.130.9.163"
+TARGET_PORT = 10003
+TARGET_LOGIN = "pc"
+TARGET_HOST_ALIAS = f"[{TARGET_HOST}]:{TARGET_PORT}"
+TARGET_HOST_FINGERPRINT = "SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I"
+LOCAL_IDENTITY_FINGERPRINT = "SHA256:oQNs45Icrw5B6RCqPHOFnsub4jfRzk3evFy+wmhF8K0"
+STREAM_LIMIT = 64 * 1024
+FIXED_SSH = Path("C:/Windows/System32/OpenSSH/ssh.exe") if os.name == "nt" else Path("/usr/bin/ssh")
+FIXED_SSH_KEYGEN = Path("C:/Windows/System32/OpenSSH/ssh-keygen.exe") if os.name == "nt" else Path("/usr/bin/ssh-keygen")
 
 
 class EvidenceError(RuntimeError):
     """表示没有形成完整、低敏且可验证的 012 证据。"""
+
+
+class SafeArgumentParser(argparse.ArgumentParser):
+    """把参数错误折叠为固定异常，禁止回显调用方输入。"""
+
+    def error(self, _message: str) -> None:
+        raise EvidenceError("invalid_request")
+
+
+@dataclass(frozen=True)
+class FileEvidence:
+    """冻结本地普通文件的身份、元数据和完整摘要。"""
+
+    path: Path
+    device: int
+    inode: int
+    mode: int
+    size: int
+    mtime_ns: int
+    ctime_ns: int
+    sha256: str
+
+
+@dataclass(frozen=True)
+class LocalInputs:
+    """保存正式调用前已验证的系统工具和客户端身份材料。"""
+
+    ssh: FileEvidence
+    ssh_keygen: FileEvidence
+    known_hosts: FileEvidence
+    identity_file: FileEvidence
+    identity_public_file: FileEvidence
+    approved_known_hosts_line: str
+
+
+@dataclass(frozen=True)
+class StreamCapture:
+    """保存有界正文和完整流的低敏统计，不保存超限正文。"""
+
+    data: bytes
+    byte_count: int
+    line_count: int
+    sha256: str
+    exceeded: bool
+    error: bool
+
+
+def collect_stream(stream: BinaryIO, limit: int) -> StreamCapture:
+    """持续排空一个二进制流，只保留上限加一字节并统计完整摘要。"""
+
+    retained = bytearray()
+    digest = hashlib.sha256()
+    byte_count = 0
+    newline_count = 0
+    last_byte: int | None = None
+    error = False
+    try:
+        while True:
+            chunk = stream.read(8192)
+            if not chunk:
+                break
+            if not isinstance(chunk, bytes):
+                raise TypeError("binary_stream_required")
+            byte_count += len(chunk)
+            newline_count += chunk.count(b"\n")
+            last_byte = chunk[-1]
+            digest.update(chunk)
+            remaining = limit + 1 - len(retained)
+            if remaining > 0:
+                retained.extend(chunk[:remaining])
+    except Exception:
+        # 采集线程不得向 stderr 打印 traceback；调用方只看到固定低敏失败。
+        error = True
+
+    line_count = newline_count
+    if byte_count and last_byte != ord("\n"):
+        line_count += 1
+    return StreamCapture(
+        data=bytes(retained),
+        byte_count=byte_count,
+        line_count=line_count,
+        sha256=digest.hexdigest(),
+        exceeded=byte_count > limit,
+        error=error,
+    )
+
+
+def freeze_file(path: Path) -> FileEvidence:
+    """读取同一普通非链接文件并确认读取期间没有发生身份漂移。"""
+
+    resolved = path.absolute()
+    try:
+        before = resolved.lstat()
+        if not stat.S_ISREG(before.st_mode) or resolved.is_symlink():
+            raise EvidenceError("local_input_type_mismatch")
+        if getattr(before, "st_file_attributes", 0) & 0x400:
+            raise EvidenceError("local_input_reparse_point")
+        digest = hashlib.sha256()
+        with resolved.open("rb") as stream:
+            while chunk := stream.read(8192):
+                digest.update(chunk)
+        after = resolved.lstat()
+    except EvidenceError:
+        raise
+    except (OSError, ValueError) as error:
+        raise EvidenceError("local_input_unavailable") from error
+    identity_before = (
+        before.st_dev, before.st_ino, before.st_mode, before.st_size,
+        before.st_mtime_ns, before.st_ctime_ns,
+    )
+    identity_after = (
+        after.st_dev, after.st_ino, after.st_mode, after.st_size,
+        after.st_mtime_ns, after.st_ctime_ns,
+    )
+    if identity_before != identity_after:
+        raise EvidenceError("local_input_drift")
+    return FileEvidence(
+        path=resolved,
+        device=before.st_dev,
+        inode=before.st_ino,
+        mode=before.st_mode,
+        size=before.st_size,
+        mtime_ns=before.st_mtime_ns,
+        ctime_ns=before.st_ctime_ns,
+        sha256=digest.hexdigest(),
+    )
+
+
+def assert_file_unchanged(evidence: FileEvidence) -> None:
+    """重新冻结路径并精确比较全部身份、元数据和摘要。"""
+
+    if freeze_file(evidence.path) != evidence:
+        raise EvidenceError("local_input_drift")
+
+
+def ssh_fingerprint(public_key_line: str) -> str:
+    """直接从 OpenSSH 公钥数据计算 SHA-256 指纹，避免信任文本输出格式。"""
+
+    fields = public_key_line.strip().split()
+    if len(fields) < 2 or fields[0] != "ssh-ed25519":
+        raise EvidenceError("identity_algorithm_mismatch")
+    try:
+        raw = base64.b64decode(fields[1], validate=True)
+    except (ValueError, TypeError) as error:
+        raise EvidenceError("identity_key_invalid") from error
+    digest = base64.b64encode(hashlib.sha256(raw).digest()).decode("ascii").rstrip("=")
+    return "SHA256:" + digest
+
+
+def validate_known_hosts(
+    known_hosts: Path,
+    ssh_keygen: Path,
+    *,
+    expected_fingerprint: str = TARGET_HOST_FINGERPRINT,
+    tool_runner=subprocess.run,
+    fingerprint_reader=ssh_fingerprint,
+) -> str:
+    """枚举明文和哈希端点条目，只接受唯一批准的 ED25519 密钥。"""
+
+    try:
+        completed = tool_runner(
+            [str(ssh_keygen), "-F", TARGET_HOST_ALIAS, "-f", str(known_hosts)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=10,
+            check=False,
+        )
+    except Exception as error:
+        raise EvidenceError("known_hosts_unavailable") from error
+    if completed.returncode != 0 or completed.stderr:
+        raise EvidenceError("known_hosts_lookup_failed")
+    entries = [line for line in completed.stdout.splitlines() if line and not line.startswith("#")]
+    if len(entries) != 1:
+        raise EvidenceError("known_hosts_entry_count_mismatch")
+    fields = entries[0].split()
+    if len(fields) < 3 or fields[1] != "ssh-ed25519":
+        raise EvidenceError("known_hosts_algorithm_mismatch")
+    approved_line = " ".join(fields[:3])
+    if fingerprint_reader(" ".join(fields[1:3])) != expected_fingerprint:
+        raise EvidenceError("known_hosts_fingerprint_mismatch")
+    return approved_line
+
+
+def _read_ascii_line(path: Path) -> str:
+    """读取单行 ASCII 公钥，拒绝多行和非 ASCII 内容。"""
+
+    try:
+        text = path.read_text(encoding="ascii")
+    except (OSError, UnicodeError) as error:
+        raise EvidenceError("identity_public_key_unavailable") from error
+    lines = text.splitlines()
+    if len(lines) != 1:
+        raise EvidenceError("identity_public_key_invalid")
+    return lines[0]
+
+
+def freeze_local_inputs(
+    known_hosts: Path,
+    identity_file: Path,
+    identity_public_file: Path,
+    *,
+    ssh_path: Path = FIXED_SSH,
+    ssh_keygen_path: Path = FIXED_SSH_KEYGEN,
+    tool_runner=subprocess.run,
+    expected_host_fingerprint: str = TARGET_HOST_FINGERPRINT,
+    expected_identity_fingerprint: str = LOCAL_IDENTITY_FINGERPRINT,
+) -> LocalInputs:
+    """先冻结全部材料，再验证端点和密钥对语义，避免校验到使用的窗口。"""
+
+    evidence = LocalInputs(
+        ssh=freeze_file(ssh_path),
+        ssh_keygen=freeze_file(ssh_keygen_path),
+        known_hosts=freeze_file(known_hosts),
+        identity_file=freeze_file(identity_file),
+        identity_public_file=freeze_file(identity_public_file),
+        approved_known_hosts_line="",
+    )
+    approved_line = validate_known_hosts(
+        evidence.known_hosts.path,
+        evidence.ssh_keygen.path,
+        expected_fingerprint=expected_host_fingerprint,
+        tool_runner=tool_runner,
+    )
+    public_line = _read_ascii_line(evidence.identity_public_file.path)
+    if ssh_fingerprint(public_line) != expected_identity_fingerprint:
+        raise EvidenceError("identity_fingerprint_mismatch")
+    try:
+        derived = tool_runner(
+            [str(evidence.ssh_keygen.path), "-y", "-f", str(evidence.identity_file.path)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=10,
+            check=False,
+        )
+    except Exception as error:
+        raise EvidenceError("identity_pair_unavailable") from error
+    if derived.returncode != 0 or derived.stderr or derived.stdout.strip() != " ".join(public_line.split()[:2]):
+        raise EvidenceError("identity_pair_mismatch")
+    for item in (
+        evidence.ssh, evidence.ssh_keygen, evidence.known_hosts,
+        evidence.identity_file, evidence.identity_public_file,
+    ):
+        assert_file_unchanged(item)
+    return LocalInputs(
+        ssh=evidence.ssh,
+        ssh_keygen=evidence.ssh_keygen,
+        known_hosts=evidence.known_hosts,
+        identity_file=evidence.identity_file,
+        identity_public_file=evidence.identity_public_file,
+        approved_known_hosts_line=approved_line,
+    )
+
+
+def _assert_local_inputs_unchanged(inputs: LocalInputs) -> None:
+    """在唯一 SSH 的前后复核所有系统工具和身份材料。"""
+
+    for item in (
+        inputs.ssh, inputs.ssh_keygen, inputs.known_hosts,
+        inputs.identity_file, inputs.identity_public_file,
+    ):
+        assert_file_unchanged(item)
+
+
+def run_once(inputs: LocalInputs) -> dict[str, str]:
+    """使用固定参数执行唯一一次 OpenSSH，并低敏验证完整九键证据。"""
+
+    _assert_local_inputs_unchanged(inputs)
+    with tempfile.TemporaryDirectory(prefix="g8-drop-012-known-hosts-") as directory:
+        approved_known_hosts = Path(directory) / "known_hosts"
+        try:
+            with approved_known_hosts.open("xb") as stream:
+                stream.write((inputs.approved_known_hosts_line + "\n").encode("ascii"))
+            approved_known_hosts.chmod(0o600)
+        except (OSError, UnicodeError) as error:
+            raise EvidenceError("approved_known_hosts_unavailable") from error
+        approved_evidence = freeze_file(approved_known_hosts)
+        command = [
+            str(inputs.ssh.path),
+            "-F", "none",
+            "-p", str(TARGET_PORT),
+            "-o", "BatchMode=yes",
+            "-o", "IdentitiesOnly=yes",
+            "-o", "ConnectionAttempts=1",
+            "-o", "StrictHostKeyChecking=yes",
+            "-o", "HostKeyAlgorithms=ssh-ed25519",
+            "-o", "PasswordAuthentication=no",
+            "-o", "KbdInteractiveAuthentication=no",
+            "-o", "ForwardAgent=no",
+            "-o", "ForwardX11=no",
+            "-o", "ClearAllForwardings=yes",
+            "-o", "PermitLocalCommand=no",
+            "-o", "RequestTTY=no",
+            "-o", f"UserKnownHostsFile={approved_known_hosts}",
+            "-i", str(inputs.identity_file.path),
+            f"{TARGET_LOGIN}@{TARGET_HOST}",
+            "/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -",
+        ]
+        environment = (
+            {"SystemRoot": "C:\\Windows"}
+            if os.name == "nt"
+            else {"PATH": "/usr/bin:/bin", "LANG": "C"}
+        )
+        try:
+            process = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=environment,
+            )
+            if process.stdin is None or process.stdout is None or process.stderr is None:
+                raise EvidenceError("ssh_pipe_unavailable")
+            try:
+                process.stdin.write(build_remote_program().encode("utf-8"))
+                process.stdin.close()
+            except (OSError, ValueError) as error:
+                process.kill()
+                process.wait(timeout=5)
+                raise EvidenceError("ssh_input_failed") from error
+            captures: dict[str, StreamCapture] = {}
+
+            def drain(name: str, stream: BinaryIO) -> None:
+                captures[name] = collect_stream(stream, STREAM_LIMIT)
+
+            stdout_thread = threading.Thread(
+                target=drain, args=("stdout", process.stdout), daemon=True,
+            )
+            stderr_thread = threading.Thread(
+                target=drain, args=("stderr", process.stderr), daemon=True,
+            )
+            stdout_thread.start()
+            stderr_thread.start()
+            try:
+                returncode = process.wait(timeout=30)
+            except subprocess.TimeoutExpired as error:
+                process.kill()
+                process.wait(timeout=5)
+                raise EvidenceError("ssh_timeout") from error
+            stdout_thread.join()
+            stderr_thread.join()
+        except EvidenceError:
+            raise
+        except Exception as error:
+            raise EvidenceError("ssh_unavailable") from error
+
+        _assert_local_inputs_unchanged(inputs)
+        assert_file_unchanged(approved_evidence)
+        stdout_capture = captures.get("stdout")
+        stderr_capture = captures.get("stderr")
+        if stdout_capture is None or stderr_capture is None:
+            raise EvidenceError("ssh_stream_missing")
+        if stdout_capture.error or stderr_capture.error:
+            raise EvidenceError("ssh_stream_failed")
+        if stdout_capture.exceeded or stderr_capture.exceeded:
+            raise EvidenceError("ssh_output_limit_exceeded")
+        if returncode != 0:
+            raise EvidenceError("ssh_exit_nonzero")
+        if stderr_capture.byte_count != 0:
+            raise EvidenceError("ssh_stderr_present")
+        try:
+            stdout = stdout_capture.data.decode("ascii")
+        except UnicodeDecodeError as error:
+            raise EvidenceError("ssh_stdout_non_ascii") from error
+        return parse_remote_output(stdout)
+
+
+def build_argument_parser() -> SafeArgumentParser:
+    """构造不回显参数内容的固定命令行解析器。"""
+
+    parser = SafeArgumentParser(add_help=False)
+    parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--local-check", action="store_true")
+    parser.add_argument("--change-id")
+    parser.add_argument("--known-hosts", type=Path)
+    parser.add_argument("--identity-file", type=Path)
+    parser.add_argument("--identity-public-file", type=Path)
+    return parser
+
+
+def main() -> int:
+    """执行离线自检、本地检查或未来获批后的唯一正式取证。"""
+
+    if CHANGE_ID_CONSUMED:
+        print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012=FAILED reason=change_id_consumed")
+        return 2
+    try:
+        arguments = build_argument_parser().parse_args()
+        if arguments.self_test:
+            if any((
+                arguments.local_check, arguments.change_id, arguments.known_hosts,
+                arguments.identity_file, arguments.identity_public_file,
+            )):
+                raise EvidenceError("invalid_request")
+            compile(build_remote_program(), "<g8-drop-staging-evidence-012>", "exec")
+            print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012_SELF_TEST=PASS")
+            return 0
+        if arguments.known_hosts is None or arguments.identity_file is None or arguments.identity_public_file is None:
+            raise EvidenceError("invalid_request")
+        inputs = freeze_local_inputs(
+            arguments.known_hosts,
+            arguments.identity_file,
+            arguments.identity_public_file,
+        )
+        if arguments.local_check:
+            if arguments.change_id is not None:
+                raise EvidenceError("invalid_request")
+            print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012_LOCAL_CHECK=PASS")
+            return 0
+        if arguments.change_id != CHANGE_ID:
+            raise EvidenceError("invalid_request")
+        values = run_once(inputs)
+        if values["STAGING_INTEGRITY"] == "MISMATCH":
+            print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012=MISMATCH")
+            return 3
+        print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012=PASS")
+        return 0
+    except EvidenceError as error:
+        print(f"G8_TEST_READONLY_DROP_STAGING_EVIDENCE_012=FAILED reason={error}")
+        return 2
 
 
 def build_remote_program(
@@ -415,3 +856,7 @@ def parse_remote_output(
     if state not in VALID_STATES:
         raise EvidenceError("invalid_staging_state")
     return values
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
