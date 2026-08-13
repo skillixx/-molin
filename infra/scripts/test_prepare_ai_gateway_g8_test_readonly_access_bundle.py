@@ -17,6 +17,9 @@ CONSUMED_SOURCE_TREE = "988bdcdc8017322264733ebe68876e4811b01412"
 CONSUMED_DROP_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009"
 CONSUMED_DROP_SOURCE_COMMIT = "7f3325e2d6801567fea34a2049a2f3ada114e348"
 CONSUMED_DROP_SOURCE_TREE = "4563feb59850dca87789adfb5eea820f78b1a209"
+ACTIVE_DIRECT_CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010"
+ACTIVE_DIRECT_SOURCE_COMMIT = "75b1fc4ddb7138495547cec03fa948648de337d7"
+ACTIVE_DIRECT_SOURCE_TREE = "53ba990318bc1a036b442d88ff8133d776a453dc"
 
 
 def bash_executable() -> str:
@@ -97,9 +100,14 @@ class TestReadonlyAccessBundle(unittest.TestCase):
                     "G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request",
                 )
 
-    def test_009_is_consumed_and_there_is_no_active_candidate(self) -> None:
-        """009 正式额度消费后只能临时复现，生成器不得保留活动候选。"""
-        self.assertIn("ACTIVE_CANDIDATE = None", self.source)
+    def test_009_is_consumed_and_010_is_the_only_active_candidate(self) -> None:
+        """009 只能临时复现，010 必须成为唯一可持久生成的直连候选。"""
+        self.assertIn("ACTIVE_CANDIDATE = FrozenCandidate(", self.source)
+        self.assertIn(f'    "{ACTIVE_DIRECT_CHANGE_ID}",', self.source)
+        self.assertIn(f'    "{ACTIVE_DIRECT_SOURCE_COMMIT}",', self.source)
+        self.assertIn(f'    "{ACTIVE_DIRECT_SOURCE_TREE}",', self.source)
+        self.assertIn('    "/home/pc/molin",', self.source)
+        self.assertIn('    "DROP_SSH_DIRECT",', self.source)
         self.assertIn(f'"{CONSUMED_DROP_CHANGE_ID}": FrozenCandidate(', self.source)
         self.assertIn(f'        "{CONSUMED_DROP_SOURCE_COMMIT}",', self.source)
         self.assertIn(f'        "{CONSUMED_DROP_SOURCE_TREE}",', self.source)
@@ -107,6 +115,23 @@ class TestReadonlyAccessBundle(unittest.TestCase):
         self.assertIn(f'"{CONSUMED_CHANGE_ID}": FrozenCandidate(', self.source)
         self.assertIn(f'        "{CONSUMED_SOURCE_COMMIT}",', self.source)
         self.assertIn(f'        "{CONSUMED_SOURCE_TREE}",', self.source)
+
+    def test_010_manifest_uses_drop_direct_contract(self) -> None:
+        """010 清单必须显式区分直连传输，且不得恢复物理主机身份门禁。"""
+        self.assertIn('candidate.target_transport in {"DROP_SSH", "DROP_SSH_DIRECT"}', self.source)
+        self.assertIn('values["PHYSICAL_HOST_IDENTITY"] = "NOT_APPLICABLE"', self.source)
+
+    def test_ci_builds_and_freezes_010_without_remote_execution(self) -> None:
+        """CI 必须真实生成 010 五文件并锁定 Linux 回执，但不得调用直连正式入口。"""
+        workflow = CI_PATH.read_text(encoding="utf-8")
+        self.assertIn("--change-id=CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010", workflow)
+        self.assertIn("--source-commit=75b1fc4ddb7138495547cec03fa948648de337d7", workflow)
+        self.assertIn(
+            "bundle_receipt_sha256=b3fac1a1530124da9dc604c32d11bd665de3daa5d6799aebb33c38a3d2f174f4",
+            workflow,
+        )
+        self.assertIn("target_transport=DROP_SSH_DIRECT", workflow)
+        self.assertNotIn("run-ai-gateway-g8-test-readonly-access-stage-drop-direct.py --change-id", workflow)
         self.assertIn('"CHG-G8-TEST-READONLY-ACCESS-20260812-001": FrozenCandidate(', self.source)
         self.assertIn('"CHG-G8-TEST-READONLY-ACCESS-20260812-002": FrozenCandidate(', self.source)
         self.assertIn("if candidate.target_deployment_root", self.source)
