@@ -136,6 +136,39 @@ class StagingEvidence013Tests(unittest.TestCase):
             with self.assertRaises(self.module.EvidenceError):
                 self.module.run_once(helper, materials, Path("C:/fixed/ssh.exe"))
 
+    def test_timeout_kills_reaps_and_joins_process(self):
+        process = mock.Mock()
+        process.stdin = io.BytesIO()
+        process.stdout = io.BytesIO(b"")
+        process.stderr = io.BytesIO(b"")
+        process.wait.side_effect = (subprocess.TimeoutExpired("ssh", 30), 0)
+        process.poll.return_value = None
+        materials = mock.Mock()
+        materials.approved_host_line = "[8.130.9.163]:10003 ssh-ed25519 AAAAapproved"
+        materials.identity_file.path = Path("C:/fixed/id_ed25519")
+        helper = mock.Mock(unsafe=True)
+        with mock.patch.object(self.module.subprocess, "Popen", return_value=process):
+            with self.assertRaises(self.module.EvidenceError):
+                self.module.run_once(helper, materials, Path("C:/fixed/ssh.exe"))
+        process.kill.assert_called_once_with()
+        self.assertEqual(process.wait.call_count, 2)
+
+    def test_nonzero_and_exact_output_boundary_fail_closed(self):
+        for returncode, size in ((1, 10), (0, self.module.MAX_STREAM_BYTES + 1)):
+            with self.subTest(returncode=returncode, size=size):
+                process = mock.Mock()
+                process.stdin = io.BytesIO()
+                process.stdout = io.BytesIO(b"x" * size)
+                process.stderr = io.BytesIO(b"")
+                process.wait.return_value = returncode
+                materials = mock.Mock()
+                materials.approved_host_line = "[8.130.9.163]:10003 ssh-ed25519 AAAAapproved"
+                materials.identity_file.path = Path("C:/fixed/id_ed25519")
+                helper = mock.Mock(unsafe=True)
+                with mock.patch.object(self.module.subprocess, "Popen", return_value=process):
+                    with self.assertRaises(self.module.EvidenceError):
+                        self.module.run_once(helper, materials, Path("C:/fixed/ssh.exe"))
+
     def test_consumed_gate_precedes_parser_helper_and_network(self):
         self.module.CHANGE_ID_CONSUMED = True
         sentinel = "DO_NOT_ECHO_SECRET_SENTINEL"
@@ -219,6 +252,40 @@ class StagingEvidence013Tests(unittest.TestCase):
         self.assertEqual(completed.stderr, b"")
         self.assertIn(b"STAGING_INTEGRITY=MISMATCH\n", completed.stdout)
         self.assertIn(b"STAGING_MISMATCH_REASON=FILE_SET\n", completed.stdout)
+
+    @unittest.skipIf(os.name == "nt", "POSIX 链接动态语义由 Linux 断网门禁执行。")
+    def test_remote_program_classifies_stage_and_file_symlinks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            root.chmod(0o700)
+            stage, expected, manifest = self.build_posix_fixture(root)
+            stage_real = root / "stage-real"
+            stage.rename(stage_real)
+            stage.symlink_to(stage_real, target_is_directory=True)
+            program = self.module.build_remote_program(
+                _test_root=str(root), _test_files=expected, _test_manifest=manifest,
+                _test_uid=os.getuid(), _test_gid=os.getgid(),
+            )
+            stage_result = subprocess.run([sys.executable, "-I", "-c", program], capture_output=True, check=False)
+            stage.unlink()
+            stage_real.rename(stage)
+            manifest_path = stage / "manifest.env"
+            manifest_real = root / "manifest.real"
+            manifest_path.rename(manifest_real)
+            manifest_path.symlink_to(manifest_real)
+            file_result = subprocess.run([sys.executable, "-I", "-c", program], capture_output=True, check=False)
+        self.assertIn(b"STAGING_MISMATCH_REASON=PATH\n", stage_result.stdout)
+        self.assertIn(b"STAGING_MISMATCH_REASON=FILE_METADATA\n", file_result.stdout)
+
+    def test_helper_contract_rejects_fingerprint_drift(self):
+        helper_path = SCRIPT_PATH.with_name(self.module.LOCAL_DIAGNOSTIC_NAME)
+        data = helper_path.read_bytes().replace(
+            b"SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I",
+            b"SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        )
+        with mock.patch.object(self.module, "_freeze_helper_file", return_value=data):
+            with self.assertRaises(self.module.EvidenceError):
+                self.module.load_local_diagnostic()
 
 
 if __name__ == "__main__":

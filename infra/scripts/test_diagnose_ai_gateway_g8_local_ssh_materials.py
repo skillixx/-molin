@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from unittest import mock
+import subprocess
 
 
 SCRIPT_PATH = Path(__file__).with_name("diagnose-ai-gateway-g8-local-ssh-materials.py")
@@ -131,6 +132,48 @@ class LocalMaterialsDiagnosticTests(unittest.TestCase):
                     b"ssh-ed25519 AAAAdeclared comment\n",
                     Path("C:/fixed/ssh-keygen.exe"),
                 )
+
+    def test_local_tool_timeout_kills_and_reaps_process(self):
+        process = mock.Mock()
+        process.stdin = io.BytesIO()
+        process.stdout = io.BytesIO(b"")
+        process.stderr = io.BytesIO(b"")
+        process.wait.side_effect = (subprocess.TimeoutExpired("ssh-keygen", 10), 0)
+        process.poll.return_value = None
+        with mock.patch.object(self.module.subprocess, "Popen", return_value=process):
+            with self.assertRaises(self.module.DiagnosticError):
+                self.module.run_ssh_keygen(Path("C:/fixed/ssh-keygen.exe"), ("-F", "target"))
+        process.kill.assert_called_once_with()
+        self.assertEqual(process.wait.call_count, 2)
+
+    def test_snapshot_keeps_original_private_inode_during_path_replace_restore(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            known_hosts = root / "known_hosts"
+            identity = root / "id_ed25519"
+            public_key = root / "id_ed25519.pub"
+            known_hosts.write_bytes(b"host")
+            identity.write_bytes(b"original-private")
+            public_key.write_bytes(b"public")
+            evidence = self.module.MaterialsEvidence(
+                ssh_keygen=self.module.freeze_file(identity),
+                known_hosts=self.module.freeze_file(known_hosts),
+                identity_file=self.module.freeze_file(identity),
+                identity_public_key=self.module.freeze_file(public_key),
+                approved_host_line="[8.130.9.163]:10003 ssh-ed25519 AAAAapproved",
+            )
+            original_inode = evidence.identity_file.inode
+            with self.module.material_snapshot(evidence, approved_only=True) as snapshot:
+                backup = root / "id_ed25519.original"
+                os.replace(identity, backup)
+                identity.write_bytes(b"temporary-attacker-key")
+                self.assertEqual(snapshot.identity_file.inode, original_inode)
+                self.assertEqual(snapshot.identity_file.data, b"original-private")
+                identity.unlink()
+                os.replace(backup, identity)
+            # 即使攻击者恢复原目录项，快照仍消费原 inode，最终元数据门禁也必须记录漂移。
+            with self.assertRaises(self.module.DiagnosticError):
+                self.module.assert_materials_unchanged(evidence)
 
 
 if __name__ == "__main__":

@@ -19,11 +19,11 @@
 ## 3. 冻结脚本
 
 - 无 ChangeId 本地诊断器：`infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py`
-  - SHA-256：`06f0f883f7fe225e88691a64a8c407a77b6600d72bc18682b7ceea146978e997`
-  - 大小：`13667`
+  - SHA-256：`4a53931e3ec7d579cd97d95e9ff6f15e54a036c42fbb1e85564252f403ca665d`
+  - 大小：`16500`
 - 一次性 013 包装器：`infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py`
-  - SHA-256：`224ee5f022636a6052752e623b0c40ff48c5c0648c5d788714d222ea4badacca`
-  - 大小：`20707`
+  - SHA-256：`e7d742be3b5b84cc0120d52453a5b8b6ea265df717bb238f3d79de387a10e5fb`
+  - 大小：`22400`
 
 最终合并后必须从 merge commit 原始 Git 对象重新计算并更新以上摘要和大小；HEAD 或脚本任一漂移即使本清单失效。
 
@@ -46,7 +46,27 @@
 3. 013 最多发起一次固定只读 SSH，`ConnectionAttempts=1`，重试为 0。
 4. 无论结果为 `ABSENT`、`PRESENT/PASS`、`PRESENT/MISMATCH` 或 `evidence_unavailable`，记录低敏证据后立即停止并消费 013。
 
-本清单不冻结或授权任何当前可执行命令。最终命令只允许在合并后证据收口 PR 中生成，并须显式引用系统 OpenSSH、原始 known_hosts/私钥/公钥绝对路径和精确 013 ChangeId。
+未来执行命令固定如下。以下命令当前全部禁止执行；只有合并后摘要复核、工程门禁和用户再次明确授权均满足时才可使用：
+
+```powershell
+$g8UserProfile = [Environment]::GetFolderPath('UserProfile')
+$g8KnownHosts = [IO.Path]::GetFullPath((Join-Path $g8UserProfile '.ssh\known_hosts'))
+$g8Identity = [IO.Path]::GetFullPath((Join-Path $g8UserProfile '.ssh\id_ed25519'))
+$g8IdentityPublic = [IO.Path]::GetFullPath((Join-Path $g8UserProfile '.ssh\id_ed25519.pub'))
+
+python -I infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py `
+  --known-hosts $g8KnownHosts `
+  --identity-file $g8Identity `
+  --identity-public-key $g8IdentityPublic
+
+python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py `
+  --change-id CHG-G8-TEST-READONLY-STAGING-EVIDENCE-DROP-20260813-013 `
+  --known-hosts $g8KnownHosts `
+  --identity-file $g8Identity `
+  --identity-public-key $g8IdentityPublic
+```
+
+不得增加参数、改用其他身份文件、改变执行顺序、把两条命令放入重试循环，或在本地诊断非 PASS 时执行第二条命令。
 
 ## 6. 次数、费用与影响
 

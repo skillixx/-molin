@@ -25,7 +25,7 @@ TARGET_USER = "pc"
 TARGET_DEPLOYMENT_ROOT = "/home/pc/molin"
 TARGET_STAGE_NAME = ".g8-staging-" + TARGET_CHANGE_ID
 LOCAL_DIAGNOSTIC_NAME = "diagnose-ai-gateway-g8-local-ssh-materials.py"
-LOCAL_DIAGNOSTIC_SHA256 = "06f0f883f7fe225e88691a64a8c407a77b6600d72bc18682b7ceea146978e997"
+LOCAL_DIAGNOSTIC_SHA256 = "4a53931e3ec7d579cd97d95e9ff6f15e54a036c42fbb1e85564252f403ca665d"
 MAX_STREAM_BYTES = 64 * 1024
 
 EXPECTED_FILES = {
@@ -351,7 +351,8 @@ def _freeze_helper_file(path: Path):
         raise EvidenceError("helper_unavailable")
     try:
         before = os.lstat(path)
-        if not stat.S_ISREG(before.st_mode):
+        reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+        if not stat.S_ISREG(before.st_mode) or getattr(before, "st_file_attributes", 0) & reparse_flag:
             raise EvidenceError("helper_unavailable")
         flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
         fd = os.open(path, flags)
@@ -397,10 +398,17 @@ def load_local_diagnostic():
     except Exception as exc:
         raise EvidenceError("helper_unavailable") from exc
     namespace = module.__dict__
-    required = ("diagnose_materials", "assert_materials_unchanged", "TARGET_HOST", "TARGET_HOST_FINGERPRINT")
+    required = (
+        "diagnose_materials", "assert_materials_unchanged", "material_snapshot",
+        "TARGET_HOST", "TARGET_HOST_FINGERPRINT", "LOCAL_IDENTITY_FINGERPRINT",
+    )
     if not all(name in namespace for name in required):
         raise EvidenceError("helper_unavailable")
     if namespace["TARGET_HOST"] != "[8.130.9.163]:10003":
+        raise EvidenceError("helper_unavailable")
+    if namespace["TARGET_HOST_FINGERPRINT"] != "SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I":
+        raise EvidenceError("helper_unavailable")
+    if namespace["LOCAL_IDENTITY_FINGERPRINT"] != "SHA256:oQNs45Icrw5B6RCqPHOFnsub4jfRzk3evFy+wmhF8K0":
         raise EvidenceError("helper_unavailable")
     return type("FrozenLocalDiagnostic", (), namespace)
 
@@ -444,6 +452,8 @@ def run_once(helper, materials, ssh_path: Path) -> EvidenceResult:
             f"{TARGET_USER}@{TARGET_HOST}",
             "/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/python3 -I -",
         ]
+        process = None
+        threads = ()
         try:
             process = subprocess.Popen(
                 command,
@@ -465,10 +475,29 @@ def run_once(helper, materials, ssh_path: Path) -> EvidenceResult:
             )
             for thread in threads:
                 thread.start()
-            returncode = process.wait(timeout=30)
+            try:
+                returncode = process.wait(timeout=30)
+            except subprocess.TimeoutExpired as exc:
+                # 超时后必须终止并回收唯一 SSH，不能让后台进程或排空线程继续存活。
+                process.kill()
+                process.wait(timeout=5)
+                for thread in threads:
+                    thread.join(timeout=5)
+                raise EvidenceError("ssh_unavailable") from exc
             for thread in threads:
-                thread.join()
+                thread.join(timeout=5)
+            if any(thread.is_alive() for thread in threads):
+                process.kill()
+                process.wait(timeout=5)
+                raise EvidenceError("ssh_unavailable")
+        except EvidenceError:
+            raise
         except Exception as exc:
+            if process is not None and process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+            for thread in threads:
+                thread.join(timeout=5)
             raise EvidenceError("ssh_unavailable") from exc
         helper.assert_materials_unchanged(materials)
         stdout = captures.get("stdout")
@@ -513,7 +542,10 @@ def main() -> int:
             raise EvidenceError("invalid_request")
         helper = load_local_diagnostic()
         materials = helper.diagnose_materials(*paths)
-        result = run_once(helper, materials, fixed_ssh_path())
+        # SSH 只消费受控快照路径；原身份目录项即使临时替换再恢复，也不会改变子进程实际读取的 inode。
+        with helper.material_snapshot(materials, approved_only=True) as snapshot:
+            result = run_once(helper, snapshot, fixed_ssh_path())
+        helper.assert_materials_unchanged(materials)
         code, text = render_result(result)
         print(text, end="")
         return code
