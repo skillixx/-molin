@@ -19,11 +19,11 @@
 ## 3. 冻结脚本
 
 - 无 ChangeId 本地诊断器：`infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py`
-  - SHA-256：`4a53931e3ec7d579cd97d95e9ff6f15e54a036c42fbb1e85564252f403ca665d`
-  - 大小：`16500`
+  - SHA-256：`3dedf2d941a962624b8cb1c2517a830198d57ee9070947f541bca5599f5a1bc1`
+  - 大小：`14620`
 - 一次性 013 包装器：`infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py`
-  - SHA-256：`e7d742be3b5b84cc0120d52453a5b8b6ea265df717bb238f3d79de387a10e5fb`
-  - 大小：`22400`
+  - SHA-256：`41b915e525e32723e48a6f569b9d8712c4dd3bb94cc49b9b47bc7e5a6f06e3cf`
+  - 大小：`22272`
 
 最终合并后必须从 merge commit 原始 Git 对象重新计算并更新以上摘要和大小；HEAD 或脚本任一漂移即使本清单失效。
 
@@ -54,10 +54,14 @@ $g8KnownHosts = [IO.Path]::GetFullPath((Join-Path $g8UserProfile '.ssh\known_hos
 $g8Identity = [IO.Path]::GetFullPath((Join-Path $g8UserProfile '.ssh\id_ed25519'))
 $g8IdentityPublic = [IO.Path]::GetFullPath((Join-Path $g8UserProfile '.ssh\id_ed25519.pub'))
 
-python -I infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py `
+$g8DiagnosticOutput = @(& python -I infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py `
   --known-hosts $g8KnownHosts `
   --identity-file $g8Identity `
-  --identity-public-key $g8IdentityPublic
+  --identity-public-key $g8IdentityPublic 2>&1)
+$g8DiagnosticExit = $LASTEXITCODE
+if ($g8DiagnosticExit -ne 0 -or $g8DiagnosticOutput.Count -ne 1 -or [string]$g8DiagnosticOutput[0] -cne 'G8_LOCAL_SSH_MATERIALS_DIAGNOSTIC=PASS') {
+  throw 'G8_LOCAL_SSH_MATERIALS_DIAGNOSTIC_GATE=FAILED'
+}
 
 python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py `
   --change-id CHG-G8-TEST-READONLY-STAGING-EVIDENCE-DROP-20260813-013 `

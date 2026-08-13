@@ -25,7 +25,7 @@ TARGET_USER = "pc"
 TARGET_DEPLOYMENT_ROOT = "/home/pc/molin"
 TARGET_STAGE_NAME = ".g8-staging-" + TARGET_CHANGE_ID
 LOCAL_DIAGNOSTIC_NAME = "diagnose-ai-gateway-g8-local-ssh-materials.py"
-LOCAL_DIAGNOSTIC_SHA256 = "4a53931e3ec7d579cd97d95e9ff6f15e54a036c42fbb1e85564252f403ca665d"
+LOCAL_DIAGNOSTIC_SHA256 = "3dedf2d941a962624b8cb1c2517a830198d57ee9070947f541bca5599f5a1bc1"
 MAX_STREAM_BYTES = 64 * 1024
 
 EXPECTED_FILES = {
@@ -399,7 +399,7 @@ def load_local_diagnostic():
         raise EvidenceError("helper_unavailable") from exc
     namespace = module.__dict__
     required = (
-        "diagnose_materials", "assert_materials_unchanged", "material_snapshot",
+        "diagnose_materials", "assert_materials_unchanged",
         "TARGET_HOST", "TARGET_HOST_FINGERPRINT", "LOCAL_IDENTITY_FINGERPRINT",
     )
     if not all(name in namespace for name in required):
@@ -542,9 +542,8 @@ def main() -> int:
             raise EvidenceError("invalid_request")
         helper = load_local_diagnostic()
         materials = helper.diagnose_materials(*paths)
-        # SSH 只消费受控快照路径；原身份目录项即使临时替换再恢复，也不会改变子进程实际读取的 inode。
-        with helper.material_snapshot(materials, approved_only=True) as snapshot:
-            result = run_once(helper, snapshot, fixed_ssh_path())
+        # 正式 SSH 使用批准的原始私钥路径；派生 known_hosts 仅包含已批准的单一公钥条目。
+        result = run_once(helper, materials, fixed_ssh_path())
         helper.assert_materials_unchanged(materials)
         code, text = render_result(result)
         print(text, end="")

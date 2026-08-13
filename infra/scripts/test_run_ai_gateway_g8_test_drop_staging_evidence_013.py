@@ -102,6 +102,20 @@ class StagingEvidence013Tests(unittest.TestCase):
         self.assertEqual(capture.sha256, hashlib.sha256(payload).hexdigest())
         self.assertTrue(capture.exceeded)
 
+    def test_stream_exact_limit_is_allowed_and_read_error_is_low_sensitive(self):
+        exact = b"x" * self.module.MAX_STREAM_BYTES
+        capture = self.module.collect_stream(io.BytesIO(exact), self.module.MAX_STREAM_BYTES)
+        self.assertFalse(capture.exceeded)
+        self.assertEqual(capture.byte_count, len(exact))
+
+        class BrokenStream:
+            def read(self, _size):
+                raise OSError("injected-sensitive-detail")
+
+        broken = self.module.collect_stream(BrokenStream(), self.module.MAX_STREAM_BYTES)
+        self.assertTrue(broken.error)
+        self.assertEqual(broken.data, b"")
+
     def test_run_once_uses_one_process_and_fixed_options(self):
         process = mock.Mock()
         process.stdin = io.BytesIO()
@@ -169,6 +183,21 @@ class StagingEvidence013Tests(unittest.TestCase):
                     with self.assertRaises(self.module.EvidenceError):
                         self.module.run_once(helper, materials, Path("C:/fixed/ssh.exe"))
 
+    def test_post_ssh_material_drift_fails_closed(self):
+        process = mock.Mock()
+        process.stdin = io.BytesIO()
+        process.stdout = io.BytesIO(self.remote_output())
+        process.stderr = io.BytesIO(b"")
+        process.wait.return_value = 0
+        materials = mock.Mock()
+        materials.approved_host_line = "[8.130.9.163]:10003 ssh-ed25519 AAAAapproved"
+        materials.identity_file.path = Path("C:/fixed/id_ed25519")
+        helper = mock.Mock(unsafe=True)
+        helper.assert_materials_unchanged.side_effect = RuntimeError("drift")
+        with mock.patch.object(self.module.subprocess, "Popen", return_value=process):
+            with self.assertRaises(RuntimeError):
+                self.module.run_once(helper, materials, Path("C:/fixed/ssh.exe"))
+
     def test_consumed_gate_precedes_parser_helper_and_network(self):
         self.module.CHANGE_ID_CONSUMED = True
         sentinel = "DO_NOT_ECHO_SECRET_SENTINEL"
@@ -219,6 +248,103 @@ class StagingEvidence013Tests(unittest.TestCase):
             path = stage / name
             expected[name] = (hashlib.sha256(path.read_bytes()).hexdigest(), path.stat().st_size, stat.S_IMODE(path.stat().st_mode))
         return stage, expected, manifest
+
+    def refresh_posix_fixture(self, stage: Path):
+        payload_names = (
+            "ai-gateway-reconcile",
+            "g8-test-readonly-audit",
+            "manifest.env",
+            "molin-g8-test-readonly-audit.sudoers",
+        )
+        receipt = "".join(
+            f"{hashlib.sha256((stage / name).read_bytes()).hexdigest()}  {name}\n"
+            for name in sorted(payload_names)
+        ).encode("ascii")
+        (stage / "SHA256SUMS").write_bytes(receipt)
+        (stage / "SHA256SUMS").chmod(0o600)
+        expected = {}
+        for name in ("SHA256SUMS", *payload_names):
+            path = stage / name
+            expected[name] = (
+                hashlib.sha256(path.read_bytes()).hexdigest(),
+                path.stat().st_size,
+                stat.S_IMODE(path.stat().st_mode),
+            )
+        return expected
+
+    def run_remote_program(self, root: Path, expected, manifest, *, transform=None):
+        program = self.module.build_remote_program(
+            _test_root=str(root), _test_files=expected, _test_manifest=manifest,
+            _test_uid=os.getuid(), _test_gid=os.getgid(),
+        )
+        if transform is not None:
+            program = transform(program)
+        return subprocess.run([sys.executable, "-I", "-c", program], capture_output=True, check=False)
+
+    def assert_remote_reason(self, completed, reason):
+        self.assertEqual(completed.returncode, 0)
+        self.assertEqual(completed.stderr, b"")
+        self.assertIn(b"STAGING_STATE=PRESENT\n", completed.stdout)
+        self.assertIn(b"STAGING_INTEGRITY=MISMATCH\n", completed.stdout)
+        self.assertIn(f"STAGING_MISMATCH_REASON={reason}\n".encode("ascii"), completed.stdout)
+
+    @unittest.skipIf(os.name == "nt", "POSIX fd/uid/gid 动态语义由 Linux 断网门禁执行。")
+    def test_remote_program_reports_absent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            root.chmod(0o700)
+            completed = self.run_remote_program(root, {}, {})
+        self.assertEqual(completed.returncode, 0)
+        self.assertEqual(completed.stderr, b"")
+        self.assertIn(b"STAGING_STATE=ABSENT\n", completed.stdout)
+
+    @unittest.skipIf(os.name == "nt", "POSIX mismatch 动态矩阵由 Linux 断网门禁执行。")
+    def test_remote_program_all_mismatch_reasons_are_dynamic(self):
+        scenarios = ("FILE_METADATA", "FILE_CONTENT", "MANIFEST", "RECEIPT", "READ_ERROR")
+        for reason in scenarios:
+            with self.subTest(reason=reason), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                root.chmod(0o700)
+                stage, expected, manifest = self.build_posix_fixture(root)
+                transform = None
+                if reason == "FILE_METADATA":
+                    (stage / "manifest.env").chmod(0o644)
+                elif reason == "FILE_CONTENT":
+                    path = stage / "ai-gateway-reconcile"
+                    path.write_bytes(b"RECONCILE")
+                elif reason == "MANIFEST":
+                    (stage / "manifest.env").write_text("CHANGE_ID=WRONG\nTEST_ONLY=1\n", encoding="ascii")
+                    expected = self.refresh_posix_fixture(stage)
+                elif reason == "RECEIPT":
+                    receipt_path = stage / "SHA256SUMS"
+                    receipt_path.write_text("malformed receipt\n", encoding="ascii")
+                    expected["SHA256SUMS"] = (
+                        hashlib.sha256(receipt_path.read_bytes()).hexdigest(),
+                        receipt_path.stat().st_size,
+                        stat.S_IMODE(receipt_path.stat().st_mode),
+                    )
+                else:
+                    transform = lambda program: program.replace(
+                        "block = os.read(fd, 65536)",
+                        "raise OSError('injected')",
+                        1,
+                    )
+                completed = self.run_remote_program(root, expected, manifest, transform=transform)
+                self.assert_remote_reason(completed, reason)
+
+    @unittest.skipIf(os.name == "nt", "POSIX 目录项竞态由 Linux 断网门禁执行。")
+    def test_remote_program_detects_stage_metadata_race(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            root.chmod(0o700)
+            _, expected, manifest = self.build_posix_fixture(root)
+
+            def inject_race(program):
+                marker = "stage_fd = os.open(STAGE, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=root_fd)"
+                return program.replace(marker, "os.chmod(STAGE, 0o777, dir_fd=root_fd)\n        " + marker, 1)
+
+            completed = self.run_remote_program(root, expected, manifest, transform=inject_race)
+        self.assert_remote_reason(completed, "PATH")
 
     @unittest.skipIf(os.name == "nt", "POSIX fd/uid/gid 动态语义由 Linux 断网门禁执行。")
     def test_remote_program_reports_present_pass_for_complete_fixture(self):
@@ -286,6 +412,63 @@ class StagingEvidence013Tests(unittest.TestCase):
         with mock.patch.object(self.module, "_freeze_helper_file", return_value=data):
             with self.assertRaises(self.module.EvidenceError):
                 self.module.load_local_diagnostic()
+
+    def test_helper_type_sha_inode_and_reparse_drift_fail_closed(self):
+        helper_path = SCRIPT_PATH.with_name(self.module.LOCAL_DIAGNOSTIC_NAME)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaises(self.module.EvidenceError):
+                self.module._freeze_helper_file(root)
+
+            wrong = root / "wrong-helper.py"
+            wrong.write_text("print('wrong')\n", encoding="utf-8")
+            with self.assertRaises(self.module.EvidenceError):
+                self.module._freeze_helper_file(wrong)
+
+        original_fstat = self.module.os.fstat
+        calls = 0
+
+        def drift_after_read(fd):
+            nonlocal calls
+            value = original_fstat(fd)
+            calls += 1
+            if calls == 2:
+                return mock.Mock(
+                    st_dev=value.st_dev,
+                    st_ino=value.st_ino + 1,
+                    st_mode=value.st_mode,
+                    st_size=value.st_size,
+                    st_mtime_ns=value.st_mtime_ns,
+                    st_ctime_ns=value.st_ctime_ns,
+                )
+            return value
+
+        with mock.patch.object(self.module.os, "fstat", side_effect=drift_after_read):
+            with self.assertRaises(self.module.EvidenceError):
+                self.module._freeze_helper_file(helper_path)
+
+        original_lstat = self.module.os.lstat
+
+        def reparse(path):
+            value = original_lstat(path)
+            return mock.Mock(
+                st_mode=value.st_mode,
+                st_file_attributes=getattr(self.module.stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400),
+            )
+
+        with mock.patch.object(self.module.os, "lstat", side_effect=reparse):
+            with self.assertRaises(self.module.EvidenceError):
+                self.module._freeze_helper_file(helper_path)
+
+    def test_authorization_command_stops_before_ssh_when_diagnostic_fails(self):
+        authorization = SCRIPT_PATH.parents[2] / "docs" / "ai-gateway-g8-test-readonly-drop-staging-evidence-authorization-20260813-013.md"
+        text = authorization.read_text(encoding="utf-8")
+        gate = text.index("$g8DiagnosticExit = $LASTEXITCODE")
+        exact_pass = text.index("G8_LOCAL_SSH_MATERIALS_DIAGNOSTIC=PASS")
+        formal = text.index("run-ai-gateway-g8-test-drop-staging-evidence-013.py", gate)
+        self.assertLess(gate, formal)
+        self.assertLess(exact_pass, formal)
+        self.assertIn("throw 'G8_LOCAL_SSH_MATERIALS_DIAGNOSTIC_GATE=FAILED'", text[gate:formal])
 
 
 if __name__ == "__main__":

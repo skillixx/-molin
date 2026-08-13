@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
 from dataclasses import dataclass
 import hashlib
 import os
@@ -12,7 +11,6 @@ from pathlib import Path
 import stat
 import subprocess
 import sys
-import tempfile
 import threading
 from typing import Sequence
 
@@ -314,10 +312,9 @@ def diagnose_materials(known_hosts: Path, identity_file: Path, identity_public_k
         identity_public_key=public_evidence,
         approved_host_line="",
     )
-    # 子进程只读取受控临时目录中的冻结材料；私钥使用同 inode 硬链接，既不复制字节也不改变 ACL。
-    with material_snapshot(evidence, approved_only=False) as snapshot:
-        approved_line = find_approved_host_key(snapshot.known_hosts.path, ssh_keygen_path)
-        validate_identity_pair(snapshot.identity_file.path, snapshot.identity_public_key.data, ssh_keygen_path)
+    # 语义校验只使用调用方明确提供的原始绝对路径；前后证据复核负责发现持久漂移。
+    approved_line = find_approved_host_key(known_hosts_path, ssh_keygen_path)
+    validate_identity_pair(identity_path, public_evidence.data, ssh_keygen_path)
     evidence = MaterialsEvidence(
         ssh_keygen=ssh_keygen,
         known_hosts=known_hosts_evidence,
@@ -327,46 +324,6 @@ def diagnose_materials(known_hosts: Path, identity_file: Path, identity_public_k
     )
     assert_materials_unchanged(evidence)
     return evidence
-
-
-@contextmanager
-def material_snapshot(evidence: MaterialsEvidence, *, approved_only: bool):
-    """构造仅当前进程可知的冻结路径，阻断原目录项替换后恢复影响子进程。"""
-    with tempfile.TemporaryDirectory(prefix="g8-local-materials-") as directory:
-        root = Path(directory)
-        known_hosts_path = root / "known_hosts"
-        public_key_path = root / "id_ed25519.pub"
-        identity_path = root / "id_ed25519"
-        known_hosts_data = (
-            (evidence.approved_host_line + "\n").encode("ascii")
-            if approved_only else evidence.known_hosts.data
-        )
-        known_hosts_path.write_bytes(known_hosts_data)
-        public_key_path.write_bytes(evidence.identity_public_key.data)
-        try:
-            os.link(evidence.identity_file.path, identity_path)
-        except OSError as exc:
-            raise DiagnosticError("identity_unavailable") from exc
-        snapshot_identity = freeze_file(identity_path)
-        if (
-            snapshot_identity.device,
-            snapshot_identity.inode,
-            snapshot_identity.size,
-            snapshot_identity.sha256,
-        ) != (
-            evidence.identity_file.device,
-            evidence.identity_file.inode,
-            evidence.identity_file.size,
-            evidence.identity_file.sha256,
-        ):
-            raise DiagnosticError("materials_drift")
-        yield MaterialsEvidence(
-            ssh_keygen=evidence.ssh_keygen,
-            known_hosts=freeze_file(known_hosts_path),
-            identity_file=snapshot_identity,
-            identity_public_key=freeze_file(public_key_path),
-            approved_host_line=evidence.approved_host_line,
-        )
 
 
 def assert_materials_unchanged(evidence: MaterialsEvidence) -> None:

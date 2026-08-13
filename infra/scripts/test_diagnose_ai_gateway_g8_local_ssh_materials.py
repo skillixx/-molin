@@ -146,34 +146,38 @@ class LocalMaterialsDiagnosticTests(unittest.TestCase):
         process.kill.assert_called_once_with()
         self.assertEqual(process.wait.call_count, 2)
 
-    def test_snapshot_keeps_original_private_inode_during_path_replace_restore(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            known_hosts = root / "known_hosts"
-            identity = root / "id_ed25519"
-            public_key = root / "id_ed25519.pub"
-            known_hosts.write_bytes(b"host")
-            identity.write_bytes(b"original-private")
-            public_key.write_bytes(b"public")
-            evidence = self.module.MaterialsEvidence(
-                ssh_keygen=self.module.freeze_file(identity),
-                known_hosts=self.module.freeze_file(known_hosts),
-                identity_file=self.module.freeze_file(identity),
-                identity_public_key=self.module.freeze_file(public_key),
-                approved_host_line="[8.130.9.163]:10003 ssh-ed25519 AAAAapproved",
-            )
-            original_inode = evidence.identity_file.inode
-            with self.module.material_snapshot(evidence, approved_only=True) as snapshot:
-                backup = root / "id_ed25519.original"
-                os.replace(identity, backup)
-                identity.write_bytes(b"temporary-attacker-key")
-                self.assertEqual(snapshot.identity_file.inode, original_inode)
-                self.assertEqual(snapshot.identity_file.data, b"original-private")
-                identity.unlink()
-                os.replace(backup, identity)
-            # 即使攻击者恢复原目录项，快照仍消费原 inode，最终元数据门禁也必须记录漂移。
-            with self.assertRaises(self.module.DiagnosticError):
-                self.module.assert_materials_unchanged(evidence)
+    def test_local_tool_nonzero_stderr_limit_and_read_error_fail_closed(self):
+        class BrokenStream:
+            def read(self, _size):
+                raise OSError("injected")
+
+        cases = (
+            (1, io.BytesIO(b""), io.BytesIO(b"")),
+            (0, io.BytesIO(b"ok"), io.BytesIO(b"unexpected")),
+            (0, io.BytesIO(b"x" * (self.module.MAX_TOOL_OUTPUT + 1)), io.BytesIO(b"")),
+            (0, BrokenStream(), io.BytesIO(b"")),
+        )
+        for returncode, stdout, stderr in cases:
+            with self.subTest(returncode=returncode, stream=type(stdout).__name__):
+                process = mock.Mock()
+                process.stdout = stdout
+                process.stderr = stderr
+                process.wait.return_value = returncode
+                result = None
+                with mock.patch.object(self.module.subprocess, "Popen", return_value=process):
+                    try:
+                        result = self.module.run_ssh_keygen(Path("C:/fixed/ssh-keygen.exe"), ("-F", "target"))
+                    except self.module.DiagnosticError:
+                        pass
+                if result is not None:
+                    with self.assertRaises(self.module.DiagnosticError):
+                        self.module._require_clean_command(result, "tool_unavailable")
+
+    def test_diagnostic_does_not_create_identity_material_snapshots(self):
+        source = Path(self.module.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("material_snapshot", source)
+        self.assertNotIn("TemporaryDirectory", source)
+        self.assertNotIn("os.link", source)
 
 
 if __name__ == "__main__":
