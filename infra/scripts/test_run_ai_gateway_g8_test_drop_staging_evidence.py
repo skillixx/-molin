@@ -17,6 +17,7 @@ from unittest import mock
 SCRIPT_PATH = Path(__file__).with_name(
     "run-ai-gateway-g8-test-drop-staging-evidence.py"
 )
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def load_module():
@@ -33,6 +34,21 @@ def load_module():
 
 
 class TestDropStagingEvidenceContract(unittest.TestCase):
+    def test_ci_runs_windows_and_linux_no_network_gates(self) -> None:
+        """分级 CI 必须同时运行本机门禁和 Linux 无网络动态取证。"""
+        workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "test_run_ai_gateway_g8_test_drop_staging_evidence.py", workflow
+        )
+        self.assertIn("python:3.13-alpine", workflow)
+        self.assertIn("--network none", workflow)
+        self.assertIn(
+            "run-ai-gateway-g8-test-drop-staging-evidence.py --self-test",
+            workflow,
+        )
+
     @staticmethod
     def valid_absent_output(module) -> str:
         """生成严格九键的暂存不存在结果，供负例逐项变异。"""
