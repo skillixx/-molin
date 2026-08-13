@@ -8,8 +8,10 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPT_PATH = Path(__file__).with_name(
@@ -88,6 +90,132 @@ class TestDropStagingEvidenceContract(unittest.TestCase):
             with self.subTest(tail=invalid[-80:]):
                 with self.assertRaises(module.EvidenceError):
                     module.parse_remote_output(invalid)
+
+    def test_local_check_validates_inputs_without_starting_ssh(self) -> None:
+        """本地检查只验证冻结输入，不得启动 SSH。"""
+        module = load_module()
+        helper = types.SimpleNamespace(
+            validate_known_hosts=mock.Mock(),
+            validate_identity_file=mock.Mock(),
+            validate_identity_pair=mock.Mock(),
+        )
+        arguments = [
+            str(SCRIPT_PATH),
+            "--local-check",
+            "--change-id",
+            module.CHANGE_ID,
+            "--known-hosts",
+            "known_hosts",
+            "--identity-file",
+            "id_ed25519",
+            "--identity-public-file",
+            "id_ed25519.pub",
+        ]
+        with (
+            mock.patch.object(sys, "argv", arguments),
+            mock.patch.object(module, "load_frozen_helper", return_value=helper),
+            mock.patch.object(module, "run_once") as run_once,
+            mock.patch("builtins.print") as output,
+        ):
+            self.assertEqual(module.main(), 0)
+        run_once.assert_not_called()
+        output.assert_called_once_with(
+            "G8_TEST_READONLY_DROP_STAGING_EVIDENCE_LOCAL_CHECK=PASS"
+        )
+
+    def test_run_once_uses_one_locked_down_ssh_process(self) -> None:
+        """正式包装器只能创建一次固定参数的 OpenSSH 子进程。"""
+        module = load_module()
+
+        class FakeProcess:
+            def __init__(self) -> None:
+                import io
+
+                self.stdin = io.BytesIO()
+                self.stdout = io.BytesIO()
+                self.stderr = io.BytesIO()
+                self.returncode = 0
+
+            def wait(self, timeout=None):
+                return self.returncode
+
+            def kill(self):
+                self.returncode = -9
+
+        fake_process = FakeProcess()
+        fake_process.valid_output = self.valid_absent_output(module)
+        fake_process.stdout = __import__("io").BytesIO(
+            (fake_process.valid_output + "\n").encode("ascii")
+        )
+        helper = types.SimpleNamespace(
+            TARGET_PORT="10003",
+            TARGET="pc@8.130.9.163",
+            fixed_ssh_executable=lambda: Path("/usr/bin/ssh"),
+            fixed_ssh_environment=lambda: {"PATH": "/usr/bin:/bin"},
+        )
+        with mock.patch.object(
+            module.subprocess, "Popen", return_value=fake_process
+        ) as popen:
+            result = module.run_once(
+                helper,
+                Path("known_hosts"),
+                Path("id_ed25519"),
+            )
+        self.assertEqual(popen.call_count, 1)
+        command = popen.call_args.args[0]
+        self.assertIn("ConnectionAttempts=1", command)
+        self.assertIn("StrictHostKeyChecking=yes", command)
+        self.assertIn("PasswordAuthentication=no", command)
+        self.assertIn("ClearAllForwardings=yes", command)
+        self.assertEqual(result["STAGING_STATE"], "ABSENT")
+
+    def test_helper_type_digest_and_contract_drift_fail_closed(self) -> None:
+        """冻结 helper 的类型、摘要和传输端点契约任一漂移都必须拒绝。"""
+        module = load_module()
+        helper = SCRIPT_PATH.with_name("run-ai-gateway-g8-test-staging-evidence.py")
+        with tempfile.TemporaryDirectory(prefix="g8-drop-helper-") as temporary:
+            root = Path(temporary)
+            symlink = root / "helper-link.py"
+            symlink.symlink_to(helper)
+            with self.assertRaises(module.EvidenceError):
+                module.load_frozen_helper(symlink)
+
+            changed = root / "helper-changed.py"
+            changed.write_bytes(helper.read_bytes() + b"\n")
+            with self.assertRaises(module.EvidenceError):
+                module.load_frozen_helper(changed)
+
+            contract = root / "helper-contract.py"
+            source = helper.read_bytes().replace(b'TARGET_PORT = "10003"', b'TARGET_PORT = "22"   ')
+            contract.write_bytes(source)
+            with mock.patch.object(
+                module,
+                "FROZEN_HELPER_SHA256",
+                hashlib.sha256(source).hexdigest(),
+            ):
+                with self.assertRaises(module.EvidenceError):
+                    module.load_frozen_helper(contract)
+
+    def test_stream_capture_is_bounded_and_low_sensitive_on_read_error(self) -> None:
+        """管道采集必须有界，并把读取异常收敛为内部标志。"""
+        module = load_module()
+        import io
+
+        exact = module.collect_stream(io.BytesIO(b"a" * module.MAX_CAPTURE_BYTES))
+        exceeded = module.collect_stream(
+            io.BytesIO(b"b" * (module.MAX_CAPTURE_BYTES + 1))
+        )
+        self.assertFalse(exact.exceeded)
+        self.assertTrue(exceeded.exceeded)
+        self.assertEqual(len(exceeded.data), module.MAX_CAPTURE_BYTES + 1)
+
+        class BrokenStream:
+            def read(self, size):
+                raise OSError("不得回显的本地路径")
+
+        failed = module.collect_stream(BrokenStream())
+        self.assertTrue(failed.error)
+        self.assertEqual(failed.data, b"")
 
 
 @unittest.skipUnless(os.name == "posix", "目录描述符动态取证只在 Linux CI 执行")

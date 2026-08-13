@@ -11,8 +11,17 @@ if not sys.flags.isolated:
     )
     raise SystemExit(2)
 
+import argparse
+import hashlib
+import os
 import re
+import stat
+import subprocess
 import textwrap
+import threading
+import types
+from dataclasses import dataclass
+from pathlib import Path
 
 
 CHANGE_ID = "CHG-G8-TEST-READONLY-STAGING-EVIDENCE-DROP-20260813-008"
@@ -62,6 +71,109 @@ EXPECTED_REMOTE_KEYS = frozenset(
 
 class EvidenceError(RuntimeError):
     """表示远端输出未形成完整、低敏且可验证的暂存证据。"""
+
+
+class SafeArgumentParser(argparse.ArgumentParser):
+    """拒绝 argparse 回显调用方传入的路径和参数。"""
+
+    def error(self, message: str) -> None:
+        """所有参数错误都收敛为固定低敏异常。"""
+        raise EvidenceError("invalid_arguments")
+
+
+FROZEN_HELPER_SHA256 = (
+    "599e6bbb800531d02b22cf9534636ebf8232002fafb8236d294f9d2dba2e3c89"
+)
+MAX_CAPTURE_BYTES = 64 * 1024
+
+
+@dataclass(frozen=True)
+class StreamCapture:
+    """保存有界正文和完整流的低敏聚合信息。"""
+
+    data: bytes
+    byte_count: int
+    line_count: int
+    sha256: str
+    exceeded: bool
+    error: bool
+
+
+def collect_stream(stream, limit: int = MAX_CAPTURE_BYTES) -> StreamCapture:
+    """有界排空一个管道，同时累计完整字节数、行数和摘要。"""
+    kept = bytearray()
+    digest = hashlib.sha256()
+    byte_count = 0
+    line_count = 0
+    failed = False
+    try:
+        while True:
+            block = stream.read(8192)
+            if not block:
+                break
+            byte_count += len(block)
+            line_count += block.count(b"\n")
+            digest.update(block)
+            if len(kept) < limit + 1:
+                kept.extend(block[: limit + 1 - len(kept)])
+    except Exception:
+        failed = True
+    return StreamCapture(
+        data=bytes(kept),
+        byte_count=byte_count,
+        line_count=line_count,
+        sha256="NONE" if byte_count == 0 else digest.hexdigest(),
+        exceeded=byte_count > limit,
+        error=failed,
+    )
+
+
+def load_frozen_helper(path: Path | None = None):
+    """按普通文件、inode、摘要和 Drop 传输契约冻结已消费的 004 helper。"""
+    helper_path = path or Path(__file__).with_name(
+        "run-ai-gateway-g8-test-staging-evidence.py"
+    )
+    try:
+        before = os.lstat(helper_path)
+        if not stat.S_ISREG(before.st_mode):
+            raise EvidenceError("helper_type_mismatch")
+        descriptor = os.open(helper_path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+        try:
+            opened = os.fstat(descriptor)
+            if (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
+                raise EvidenceError("helper_identity_mismatch")
+            with os.fdopen(descriptor, "rb", closefd=False) as stream:
+                source = stream.read()
+            after = os.fstat(descriptor)
+            if (after.st_dev, after.st_ino) != (opened.st_dev, opened.st_ino):
+                raise EvidenceError("helper_drift")
+        finally:
+            os.close(descriptor)
+    except (OSError, EvidenceError) as error:
+        raise EvidenceError("helper_load_failed") from error
+    if hashlib.sha256(source).hexdigest() != FROZEN_HELPER_SHA256:
+        raise EvidenceError("helper_digest_mismatch")
+    module = types.ModuleType("g8_drop_frozen_helper")
+    module.__file__ = str(helper_path)
+    try:
+        exec(compile(source, str(helper_path), "exec"), module.__dict__)
+    except Exception as error:
+        raise EvidenceError("helper_load_failed") from error
+    expected = {
+        "CHANGE_ID_CONSUMED": True,
+        "TARGET": "pc@8.130.9.163",
+        "TARGET_HOST": "8.130.9.163",
+        "TARGET_PORT": "10003",
+        "TARGET_SSH_ED25519_FINGERPRINT": (
+            "SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I"
+        ),
+        "LOCAL_IDENTITY_ED25519_FINGERPRINT": (
+            "SHA256:oQNs45Icrw5B6RCqPHOFnsub4jfRzk3evFy+wmhF8K0"
+        ),
+    }
+    if any(getattr(module, key, object()) != value for key, value in expected.items()):
+        raise EvidenceError("helper_contract_mismatch")
+    return module
 
 
 def build_remote_program(
@@ -333,3 +445,181 @@ def parse_remote_output(
     if state not in valid_states:
         raise EvidenceError("invalid_staging_state")
     return values
+
+
+def run_once(
+    helper,
+    known_hosts: Path,
+    identity_file: Path,
+) -> dict[str, str]:
+    """使用固定 OpenSSH 参数执行唯一一次 Drop 暂存只读取证。"""
+    try:
+        ssh_executable = helper.fixed_ssh_executable()
+        environment = helper.fixed_ssh_environment()
+    except Exception as error:
+        raise EvidenceError("ssh_configuration_failed") from error
+    command = [
+        str(ssh_executable),
+        "-F",
+        "none",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "NumberOfPasswordPrompts=0",
+        "-o",
+        "ConnectionAttempts=1",
+        "-o",
+        "StrictHostKeyChecking=yes",
+        "-o",
+        f"UserKnownHostsFile={known_hosts}",
+        "-o",
+        "IdentitiesOnly=yes",
+        "-o",
+        f"IdentityFile={identity_file}",
+        "-o",
+        "PreferredAuthentications=publickey",
+        "-o",
+        "PasswordAuthentication=no",
+        "-o",
+        "KbdInteractiveAuthentication=no",
+        "-o",
+        "ClearAllForwardings=yes",
+        "-o",
+        "ForwardAgent=no",
+        "-o",
+        "ForwardX11=no",
+        "-o",
+        "PermitLocalCommand=no",
+        "-o",
+        "RequestTTY=no",
+        "-o",
+        "ConnectTimeout=10",
+        "-p",
+        helper.TARGET_PORT,
+        helper.TARGET,
+        "/usr/bin/env",
+        "-i",
+        "PATH=/usr/bin:/bin",
+        "/usr/bin/python3",
+        "-I",
+        "-",
+    ]
+    try:
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+        )
+    except OSError as error:
+        raise EvidenceError("ssh_execution_failed") from error
+    if process.stdin is None or process.stdout is None or process.stderr is None:
+        process.kill()
+        raise EvidenceError("ssh_pipe_failed")
+
+    captures: dict[str, StreamCapture] = {}
+
+    def capture(name: str, stream) -> None:
+        captures[name] = collect_stream(stream)
+
+    threads = (
+        threading.Thread(target=capture, args=("stdout", process.stdout), daemon=True),
+        threading.Thread(target=capture, args=("stderr", process.stderr), daemon=True),
+    )
+    for thread in threads:
+        thread.start()
+    try:
+        process.stdin.write(build_remote_program().encode("utf-8"))
+        process.stdin.close()
+        returncode = process.wait(timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        process.kill()
+        process.wait()
+        raise EvidenceError("ssh_execution_failed") from error
+    finally:
+        for thread in threads:
+            thread.join()
+        process.stdout.close()
+        process.stderr.close()
+    stdout = captures.get("stdout")
+    stderr = captures.get("stderr")
+    if stdout is None or stderr is None or stdout.error or stderr.error:
+        raise EvidenceError("ssh_pipe_failed")
+    if (
+        returncode != 0
+        or stderr.byte_count != 0
+        or stdout.exceeded
+        or stderr.exceeded
+    ):
+        raise EvidenceError("remote_evidence_failed")
+    try:
+        text = stdout.data.decode("ascii", errors="strict")
+    except UnicodeError as error:
+        raise EvidenceError("invalid_remote_encoding") from error
+    return parse_remote_output(text)
+
+
+def main() -> int:
+    """先执行离线门禁，再按独立授权至多发起一次只读 SSH。"""
+    parser = SafeArgumentParser(add_help=False)
+    parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--local-check", action="store_true")
+    parser.add_argument("--change-id")
+    parser.add_argument("--known-hosts")
+    parser.add_argument("--identity-file")
+    parser.add_argument("--identity-public-file")
+    try:
+        arguments = parser.parse_args()
+    except EvidenceError:
+        print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE=FAILED reason=invalid_request")
+        return 2
+    if arguments.self_test:
+        try:
+            load_frozen_helper()
+            compile(build_remote_program(), "<g8-drop-staging-evidence>", "exec")
+        except Exception:
+            print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE=FAILED reason=invalid_program")
+            return 2
+        print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE_SELF_TEST=PASS")
+        return 0
+    if CHANGE_ID_CONSUMED:
+        print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE=FAILED reason=change_id_consumed")
+        return 2
+    if (
+        arguments.change_id != CHANGE_ID
+        or not arguments.known_hosts
+        or not arguments.identity_file
+        or not arguments.identity_public_file
+    ):
+        print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE=FAILED reason=invalid_request")
+        return 2
+    try:
+        helper = load_frozen_helper()
+        known_hosts = Path(arguments.known_hosts)
+        identity_file = Path(arguments.identity_file)
+        identity_public_file = Path(arguments.identity_public_file)
+        helper.validate_known_hosts(known_hosts)
+        helper.validate_identity_file(identity_file, identity_public_file, known_hosts)
+        helper.validate_identity_pair(identity_file, identity_public_file)
+    except Exception:
+        print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE=FAILED reason=local_validation_failed")
+        return 2
+    if arguments.local_check:
+        print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE_LOCAL_CHECK=PASS")
+        return 0
+    try:
+        values = run_once(helper, known_hosts, identity_file)
+    except Exception:
+        print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE=FAILED reason=remote_evidence_failed")
+        return 2
+    print("G8_TEST_READONLY_DROP_STAGING_EVIDENCE=PASS")
+    print(f"staging_state={values['STAGING_STATE']}")
+    print(f"staging_integrity={values['STAGING_INTEGRITY']}")
+    print(f"staging_mismatch_reason={values['STAGING_MISMATCH_REASON']}")
+    print("business_requests=0 upstream_requests=0 cost_cny=0")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
