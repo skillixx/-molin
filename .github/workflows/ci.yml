@@ -467,24 +467,37 @@ jobs:
             -w /workspace \
             python:3.13-alpine \
             python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_readonly_access_stage_drop.py -v
-          python -I infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop.py --self-test
+          set +e
+          python -I infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop.py --self-test >/tmp/g8-test-readonly-access-stage-drop-consumed.log 2>&1
+          g8_stage_drop_status=$?
+          set -e
+          test "$g8_stage_drop_status" -eq 2
+          grep -qx 'G8_TEST_READONLY_ACCESS_STAGE_DROP=FAILED reason=change_id_consumed' /tmp/g8-test-readonly-access-stage-drop-consumed.log
           bundle_dir="${RUNNER_TEMP}/g8-test-readonly-access-bundle-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           test ! -e "$bundle_dir"
+          set +e
           python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py \
             --change-id=CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009 \
             --source-commit=7f3325e2d6801567fea34a2049a2f3ada114e348 \
-            --output-dir="$bundle_dir" | tee /tmp/g8-test-readonly-access-009.log
-          grep -qx 'G8_TEST_READONLY_ACCESS_BUNDLE=PASS' /tmp/g8-test-readonly-access-009.log
-          grep -qx 'change_id=CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009' /tmp/g8-test-readonly-access-009.log
-          grep -qx 'source_commit=7f3325e2d6801567fea34a2049a2f3ada114e348' /tmp/g8-test-readonly-access-009.log
-          grep -qx 'source_tree=4563feb59850dca87789adfb5eea820f78b1a209' /tmp/g8-test-readonly-access-009.log
-          grep -qx 'target_transport=DROP_SSH' /tmp/g8-test-readonly-access-009.log
-          test "$(find "$bundle_dir" -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 5
-          grep -qx 'TARGET_TRANSPORT=DROP_SSH' "$bundle_dir/manifest.env"
-          grep -qx 'PHYSICAL_HOST_IDENTITY=NOT_APPLICABLE' "$bundle_dir/manifest.env"
-          if grep -Eq '^TARGET_(HOSTNAME|MACHINE_ID_SHA256)=' "$bundle_dir/manifest.env"; then
-            exit 1
-          fi
+            --output-dir="$bundle_dir" >/tmp/g8-test-readonly-access-009-replay.log 2>&1
+          g8_009_replay_status=$?
+          set -e
+          test "$g8_009_replay_status" -eq 2
+          test ! -e "$bundle_dir"
+          grep -qx 'G8_TEST_READONLY_ACCESS_BUNDLE=FAILED reason=invalid_request' /tmp/g8-test-readonly-access-009-replay.log
+          python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-bundle.py \
+            --verify-consumed-candidate \
+            --consumed-change-id=CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009 | tee /tmp/g8-test-readonly-access-consumed-009.log
+          grep -qx 'G8_TEST_READONLY_ACCESS_BUNDLE_VERIFY=PASS' /tmp/g8-test-readonly-access-consumed-009.log
+          grep -qx 'change_id=CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009' /tmp/g8-test-readonly-access-consumed-009.log
+          grep -qx 'source_commit=7f3325e2d6801567fea34a2049a2f3ada114e348' /tmp/g8-test-readonly-access-consumed-009.log
+          grep -qx 'source_tree=4563feb59850dca87789adfb5eea820f78b1a209' /tmp/g8-test-readonly-access-consumed-009.log
+          grep -qx 'auditor_sha256=308908d2a2b9fa8679fd21d77fde68b5ce5d521ed37dac6b7726e6c323452256' /tmp/g8-test-readonly-access-consumed-009.log
+          grep -qx 'sudoers_sha256=1ec266c71f00d99da18b9e8cf59af91d6126811384adef62ce48750b97a0986f' /tmp/g8-test-readonly-access-consumed-009.log
+          grep -qx 'reconcile_sha256=37f6ee369f1ce489a3966123dfea3bd172d5386045495e069433c7f3d993f2c1' /tmp/g8-test-readonly-access-consumed-009.log
+          grep -qx 'reconcile_size=13066129' /tmp/g8-test-readonly-access-consumed-009.log
+          grep -qx 'bundle_receipt_sha256=5bb49ad531410c8a719008bcd860d143eb9c51d23858a14737d678d5a60fc893' /tmp/g8-test-readonly-access-consumed-009.log
+          grep -qx 'target_transport=DROP_SSH' /tmp/g8-test-readonly-access-consumed-009.log
           bundle_dir="${RUNNER_TEMP}/g8-test-readonly-access-consumed-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           test ! -e "$bundle_dir"
           set +e

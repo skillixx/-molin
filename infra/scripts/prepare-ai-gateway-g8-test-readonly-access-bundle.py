@@ -66,27 +66,30 @@ CONSUMED_CANDIDATES = {
         "988bdcdc8017322264733ebe68876e4811b01412",
         "/home/pc/molin",
     ),
+    "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009": FrozenCandidate(
+        "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009",
+        "7f3325e2d6801567fea34a2049a2f3ada114e348",
+        "4563feb59850dca87789adfb5eea820f78b1a209",
+        "/home/pc/molin",
+        "DROP_SSH",
+    ),
 }
 EXPECTED_CONSUMED_RECEIPTS = {
     "win32": {
         "CHG-G8-TEST-READONLY-ACCESS-20260812-001": "2fb6a964cf017997fa07d1df557cc41979b873597445f2543b497744b4fa70c9",
         "CHG-G8-TEST-READONLY-ACCESS-20260812-002": "d6d07f7b4959e48f5ffe0e92ee4116cef55fe56f5318df6ae3f0d9c5350ee567",
         "CHG-G8-TEST-READONLY-ACCESS-20260812-003": "82b18d6040bcd6be72cf170fa066ecd7cf469a53f4901365f379bec5a89c496d",
+        "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009": "840bdbed48edab6d70d351fa232b7426903bf3f3098f682e2884f513b9cd0efd",
     },
     "linux": {
         "CHG-G8-TEST-READONLY-ACCESS-20260812-001": "14b7d8cd832f0b719031fcc93adbbb2208afe76d34383e63d51c44b044772b5a",
         "CHG-G8-TEST-READONLY-ACCESS-20260812-002": "7ae580cc06fb101fe44c9e3a4d7581116fd258ef1e2d09d99bba0bda50151a1f",
         "CHG-G8-TEST-READONLY-ACCESS-20260812-003": "7f4633357bf6883d166b0ee7d9750d7e745cf0a15d23163a547d6519e217efc1",
+        "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009": "5bb49ad531410c8a719008bcd860d143eb9c51d23858a14737d678d5a60fc893",
     },
 }
 
-ACTIVE_CANDIDATE = FrozenCandidate(
-    "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009",
-    "7f3325e2d6801567fea34a2049a2f3ada114e348",
-    "4563feb59850dca87789adfb5eea820f78b1a209",
-    "/home/pc/molin",
-    "DROP_SSH",
-)
+ACTIVE_CANDIDATE = None
 
 
 def sha256(path: Path) -> str:
@@ -344,7 +347,8 @@ def main() -> int:
             if arguments.consumed_change_id:
                 raise RuntimeError("unexpected_argument")
             if (
-                arguments.change_id != ACTIVE_CANDIDATE.change_id
+                ACTIVE_CANDIDATE is None
+                or arguments.change_id != ACTIVE_CANDIDATE.change_id
                 or arguments.source_commit != ACTIVE_CANDIDATE.source_commit
                 or not arguments.output_dir
             ):
