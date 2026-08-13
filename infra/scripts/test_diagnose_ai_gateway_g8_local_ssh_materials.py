@@ -1,0 +1,203 @@
+import contextlib
+import importlib.util
+import io
+import os
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+from unittest import mock
+import subprocess
+
+
+SCRIPT_PATH = Path(__file__).with_name("diagnose-ai-gateway-g8-local-ssh-materials.py")
+
+
+def load_module():
+    spec = importlib.util.spec_from_file_location("g8_local_ssh_materials", SCRIPT_PATH)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class LocalMaterialsDiagnosticTests(unittest.TestCase):
+    def setUp(self):
+        self.module = load_module()
+
+    def call_main(self, *arguments):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with mock.patch.object(sys, "argv", [str(SCRIPT_PATH), *arguments]):
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = self.module.main()
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    def test_self_test_is_offline_and_passes(self):
+        with mock.patch.object(self.module.subprocess, "Popen") as popen:
+            code, stdout, stderr = self.call_main("--self-test")
+        self.assertEqual((code, stdout, stderr), (0, "G8_LOCAL_SSH_MATERIALS_DIAGNOSTIC_SELF_TEST=PASS\n", ""))
+        popen.assert_not_called()
+
+    def test_source_has_no_remote_transport_capability(self):
+        source = SCRIPT_PATH.read_text(encoding="utf-8")
+        forbidden = ("socket.", "ConnectionAttempts", "UserKnownHostsFile", "RequestTTY", "pc@", "python3 -I -")
+        for token in forbidden:
+            with self.subTest(token=token):
+                self.assertNotIn(token, source)
+
+    def test_invalid_request_is_low_sensitive(self):
+        sentinel = "DO_NOT_ECHO_SECRET_SENTINEL"
+        code, stdout, stderr = self.call_main("--unknown", sentinel)
+        self.assertEqual(code, 2)
+        self.assertEqual(stdout, "G8_LOCAL_SSH_MATERIALS_DIAGNOSTIC=FAILED reason=invalid_request\n")
+        self.assertEqual(stderr, "")
+        self.assertNotIn(sentinel, stdout + stderr)
+
+    def test_relative_paths_are_rejected(self):
+        code, stdout, stderr = self.call_main(
+            "--known-hosts", "relative-known-hosts",
+            "--identity-file", "relative-key",
+            "--identity-public-key", "relative-key.pub",
+        )
+        self.assertEqual(code, 2)
+        self.assertEqual(stdout, "G8_LOCAL_SSH_MATERIALS_DIAGNOSTIC=FAILED reason=invalid_request\n")
+        self.assertEqual(stderr, "")
+
+    def test_freeze_file_rejects_symlink(self):
+        if os.name == "nt":
+            self.skipTest("Windows 创建符号链接通常需要额外权限。")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "target"
+            link = root / "link"
+            target.write_bytes(b"approved")
+            link.symlink_to(target)
+            with self.assertRaises(self.module.DiagnosticError):
+                self.module.freeze_file(link)
+
+    def test_freeze_file_reads_same_descriptor_and_detects_entry_replacement(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "material"
+            path.write_bytes(b"approved")
+            original_fstat = self.module.os.fstat
+            calls = 0
+
+            def replace_after_read(fd):
+                nonlocal calls
+                result = original_fstat(fd)
+                calls += 1
+                if calls == 2:
+                    replacement = path.with_suffix(".replacement")
+                    replacement.write_bytes(b"replaced")
+                    os.replace(replacement, path)
+                return result
+
+            with mock.patch.object(self.module.os, "fstat", side_effect=replace_after_read):
+                with self.assertRaises(self.module.DiagnosticError):
+                    self.module.freeze_file(path)
+
+    def test_known_hosts_allows_other_algorithms_but_returns_only_approved_ed25519(self):
+        approved = "[8.130.9.163]:10003 ssh-ed25519 AAAAapproved"
+        lookup = "\n".join((approved, "[8.130.9.163]:10003 ssh-rsa AAAArsa")) + "\n"
+        responses = [
+            self.module.CommandResult(0, lookup.encode("ascii"), b""),
+            self.module.CommandResult(0, b"256 SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I host (ED25519)\n", b""),
+        ]
+        with mock.patch.object(self.module, "run_ssh_keygen", side_effect=responses):
+            line = self.module.find_approved_host_key(Path("C:/fixed/known_hosts"), Path("C:/fixed/ssh-keygen.exe"))
+        self.assertEqual(line, approved)
+
+    def test_known_hosts_rejects_duplicate_ed25519(self):
+        lookup = "\n".join((
+            "[8.130.9.163]:10003 ssh-ed25519 AAAAapproved",
+            "|1|hash|value ssh-ed25519 AAAAevil",
+        )) + "\n"
+        with mock.patch.object(
+            self.module,
+            "run_ssh_keygen",
+            return_value=self.module.CommandResult(0, lookup.encode("ascii"), b""),
+        ):
+            with self.assertRaises(self.module.DiagnosticError):
+                self.module.find_approved_host_key(Path("C:/fixed/known_hosts"), Path("C:/fixed/ssh-keygen.exe"))
+
+    def test_identity_pair_mismatch_is_rejected(self):
+        responses = [
+            self.module.CommandResult(0, b"ssh-ed25519 AAAAderived\n", b""),
+        ]
+        with mock.patch.object(self.module, "run_ssh_keygen", side_effect=responses):
+            with self.assertRaises(self.module.DiagnosticError):
+                self.module.validate_identity_pair(
+                    Path("C:/fixed/key"),
+                    b"ssh-ed25519 AAAAdeclared comment\n",
+                    Path("C:/fixed/ssh-keygen.exe"),
+                )
+
+    def test_diagnose_materials_success_path_uses_original_absolute_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            tool = root / "ssh-keygen"
+            known_hosts = root / "known_hosts"
+            identity = root / "id_ed25519"
+            public_key = root / "id_ed25519.pub"
+            tool.write_bytes(b"tool")
+            known_hosts.write_bytes(b"host")
+            identity.write_bytes(b"private")
+            public_key.write_bytes(b"ssh-ed25519 AAAApublic\n")
+            with mock.patch.object(self.module, "fixed_ssh_keygen_path", return_value=tool):
+                with mock.patch.object(self.module, "find_approved_host_key", return_value="approved") as find_host:
+                    with mock.patch.object(self.module, "validate_identity_pair") as validate_pair:
+                        evidence = self.module.diagnose_materials(known_hosts, identity, public_key)
+        self.assertEqual(evidence.approved_host_line, "approved")
+        find_host.assert_called_once_with(known_hosts, tool)
+        validate_pair.assert_called_once_with(identity, b"ssh-ed25519 AAAApublic\n", tool)
+
+    def test_local_tool_timeout_kills_and_reaps_process(self):
+        process = mock.Mock()
+        process.stdin = io.BytesIO()
+        process.stdout = io.BytesIO(b"")
+        process.stderr = io.BytesIO(b"")
+        process.wait.side_effect = (subprocess.TimeoutExpired("ssh-keygen", 10), 0)
+        process.poll.return_value = None
+        with mock.patch.object(self.module.subprocess, "Popen", return_value=process):
+            with self.assertRaises(self.module.DiagnosticError):
+                self.module.run_ssh_keygen(Path("C:/fixed/ssh-keygen.exe"), ("-F", "target"))
+        process.kill.assert_called_once_with()
+        self.assertEqual(process.wait.call_count, 2)
+
+    def test_local_tool_nonzero_stderr_limit_and_read_error_fail_closed(self):
+        class BrokenStream:
+            def read(self, _size):
+                raise OSError("injected")
+
+        cases = (
+            (1, io.BytesIO(b""), io.BytesIO(b"")),
+            (0, io.BytesIO(b"ok"), io.BytesIO(b"unexpected")),
+            (0, io.BytesIO(b"x" * (self.module.MAX_TOOL_OUTPUT + 1)), io.BytesIO(b"")),
+            (0, BrokenStream(), io.BytesIO(b"")),
+        )
+        for returncode, stdout, stderr in cases:
+            with self.subTest(returncode=returncode, stream=type(stdout).__name__):
+                process = mock.Mock()
+                process.stdout = stdout
+                process.stderr = stderr
+                process.wait.return_value = returncode
+                result = None
+                with mock.patch.object(self.module.subprocess, "Popen", return_value=process):
+                    try:
+                        result = self.module.run_ssh_keygen(Path("C:/fixed/ssh-keygen.exe"), ("-F", "target"))
+                    except self.module.DiagnosticError:
+                        pass
+                if result is not None:
+                    with self.assertRaises(self.module.DiagnosticError):
+                        self.module._require_clean_command(result, "tool_unavailable")
+
+    def test_diagnostic_does_not_create_identity_material_snapshots(self):
+        source = Path(self.module.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("material_snapshot", source)
+        self.assertNotIn("TemporaryDirectory", source)
+        self.assertNotIn("os.link", source)
+
+
+if __name__ == "__main__":
+    unittest.main()
