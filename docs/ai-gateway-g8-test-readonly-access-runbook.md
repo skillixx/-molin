@@ -120,13 +120,14 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 ### 3.5 当前重新申请顺序
 
-001 至 012 均已消费。008 曾把固定 003 暂存状态收敛为 `ABSENT`；后续 010 暂存成功但 root 安装未开始，011 的唯一正式暂存包装器调用又以低敏 `invalid_request` 停止，当前 011 暂存状态为 `UNKNOWN`。012 获批后唯一 local-check 返回固定低敏 `evidence_unavailable`、退出码 2、stderr 为空，随即零重试停止；SSH 未启动，仍没有形成远端三态证据。消费证据已由 PR #371 以 merge commit `80cac83310d97c87e02f80b61e385428e7ed7471` 合入，远端功能分支已删除。Drop 映射下旧的物理主机身份核验顺序不再适用；当前必须依次完成：
+001 至 012 均已消费。008 曾把固定 003 暂存状态收敛为 `ABSENT`；后续 010 暂存成功但 root 安装未开始，011 的唯一正式暂存包装器调用又以低敏 `invalid_request` 停止，当前 011 暂存状态为 `UNKNOWN`。012 获批后唯一 local-check 返回固定低敏 `evidence_unavailable`、退出码 2、stderr 为空，随即零重试停止；SSH 未启动，仍没有形成远端三态证据。消费证据已由 PR #371 以 merge commit `80cac83310d97c87e02f80b61e385428e7ed7471` 合入，远端功能分支已删除。013 改为“无 ChangeId 本地诊断 + 一次性远端取证”双组件，当前仅为未执行仓库候选。Drop 映射下旧的物理主机身份核验顺序不再适用；当前必须依次完成：
 
 1. 禁止重放 011 或通过新的本地诊断推断远端状态；包装器、命令生成器和候选生成器必须保持消费态。
 2. 禁止重放 012；它的 ChangeId、授权及历史命令均已消费，消费入口必须在参数解析、材料读取和联网前固定拒绝。
-3. 如需继续确认 011 暂存，必须设计新的只读取证 ChangeId，重新完成 TDD、独立评审、精确 HEAD CI、合并和用户授权。
-4. 清理与重新安装仍分别使用新的 ChangeId、冻结候选和独立授权；不得复用 009、010、011 或 012 的候选、回执、命令或授权。
-5. 安装后的真实运行态审计继续使用另一个独立 ChangeId，不得随取证、清理或安装顺带执行；API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因本地失败自动关闭。
+3. 可重复执行无 ChangeId 本地身份材料诊断；该诊断器没有 SSH/SFTP 或远端访问能力，本地失败不消耗 013。
+4. 只有本地诊断 PASS 后，才可另行申请一次性 013 只读 SSH 授权；013 不提供 `--local-check`，工程合并不构成执行授权。
+5. 清理、审计入口安装、测试候选部署与运行态审计分别使用新的 ChangeId、冻结候选和独立授权；不得复用 009、010、011、012 或历史候选。
+6. API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因本地诊断或暂存三态自动关闭。
 
 `CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005` 已完成唯一一次本地检查和正式只读 SSH，结果为 `ZERO / EXACT / stderr EMPTY / diagnostic PASS`，证明传输链路可用但未关闭暂存 UNKNOWN；005 已消费并禁止重放。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`、`docs/ai-gateway-g8-test-readonly-transport-diagnostic-attempt-20260812-005.md`。下一次暂存只读取证必须使用新的 ChangeId，重新完成代码安全、QA、产品、精确 HEAD CI、merge commit 与用户独立授权。
 
