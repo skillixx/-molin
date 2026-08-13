@@ -21,21 +21,21 @@
 - 审计器：`308908d2a2b9fa8679fd21d77fde68b5ce5d521ed37dac6b7726e6c323452256`。
 - sudoers：`1ec266c71f00d99da18b9e8cf59af91d6126811384adef62ce48750b97a0986f`。
 - 对账器：`37f6ee369f1ce489a3966123dfea3bd172d5386045495e069433c7f3d993f2c1`，大小 `13066129` 字节。
-- root 安装器：`0cfa83a25ab0624ca7f5a475ce718c2cd338d985531cd9e42674cacfe2032b3f`，大小 `7990` 字节。
-- 人工命令资产：`a636cea3d0d78631968ff747c208288ff88cf656fa847e6e1e7f5c37271fe415`，大小 `12521` 字节。
-- 暂存包装器：当前候选 SHA `ef9d712af26af98688c23b5db28fdcc5452d6272ef1f118ca8d60beeb59c181c`；合并后必须重新计算并同步，漂移即停止。
-- 命令生成器：当前候选 SHA `603f415ffff874a6c465a8f6777b73c9cc0afb18cda67242cb0fc0ea73acb3f1`；合并后必须重新计算并同步，漂移即停止。
+- root 安装器：`675eb16e96db9c14dffdbec2dc80f28e1483cbdb7c4b683568ebb85cf7bf1aa0`，大小 `8964` 字节。
+- 人工命令资产：`8a2165d29acabc183cf969d8da4422f549d05cac1390d549ea568f602060c0cb`，大小 `17890` 字节。
+- 暂存包装器：当前候选 SHA `6faa85b19cbac0dcd4099185168fef577317278cfa48ea65cc3a7efffe64ea85`；合并后必须重新计算并同步，漂移即停止。
+- 命令生成器：当前候选 SHA `e63cd2bf67e226dc3601c80a40d095edccb9f6e22ad2e6301a7bd61ef4e37fdd`；合并后必须重新计算并同步，漂移即停止。
 - 冻结 010 helper：`4fb920e32574c640685ddd9bed919485473dc54873d157a409c1adf987b3ab6a`。
 
 ## 2. 未来需再次批准的唯一执行顺序
 
 1. 执行一次 011 包装器 `--local-check`；只核验五文件、manifest、回执、known_hosts、密钥对和本地稳定性，不联网。
 2. 完整通过后执行同一包装器正式模式一次；只启动一次 SFTP，独占创建 011 暂存并上传五文件，零重试，不启动 SSH 或 sudo。
-3. 操作者使用命令资产中的固定 OpenSSH 参数打开一次带 TTY 的交互 SSH，会话内先执行固定非特权预检。
-4. 预检通过后只执行一次 `sudo -k -v`；密码仅由 sudo 从当前 TTY 读取，不得复制、记录、回传或写入任何参数、stdin、脚本、环境变量、日志、文档、提交或 PR。
-5. 认证成功后粘贴完整冻结命令；它只以 `sudo -n /bin/bash -ceu` 在新建 root-only 目录 no-clobber 写入、复核并执行 root 安装器。
+3. 操作者使用命令资产中的固定绝对 OpenSSH、known_hosts、ED25519 路径和严格主机密钥参数打开一次带 TTY 的交互 SSH；会话内先以绝对系统工具完成暂存五文件、摘要、大小、父链和 live 不存在的固定非特权预检。
+4. 预检通过后只执行一次 `/usr/bin/sudo -k -v`；密码仅由固定绝对路径的 sudo 从当前 TTY 读取，不得复制、记录、回传或写入任何参数、stdin、脚本、环境变量、日志、文档、提交或 PR。
+5. 认证成功后粘贴完整冻结命令；它只以 `/usr/bin/sudo -n /bin/bash -ceu` 在新建 root-only 目录 no-clobber 写入、复核并执行 root 安装器。
 6. 安装器从 011 暂存重新验证并 no-clobber 复制五文件到 root-only，再检查父链和 live 目标不存在，独占安装两个工具与一个 sudoers 文件。
-7. 安装后精确验证 owner/mode/SHA/size、candidate/live 两次 `visudo`、`sudo -n -l -U pc` 的固定命令范围以及 `pc` 不属于 Docker 组。
+7. 安装后精确验证 owner/mode/SHA/size、candidate/live 两次 `visudo`；在内存中解析 `sudo -n -l -U pc`，只允许一条固定审计器 `NOPASSWD` 命令并拒绝 `SETENV`、通配符、Shell、Docker 或其他免密命令，同时确认 `pc` 不属于 Docker 组。
 8. 全部通过后，在同一 `pc` 会话仅执行一次 `sudo -n /usr/local/libexec/molin/g8-test-readonly-audit --self-test`，随后退出。
 
 ## 3. 影响、回滚和停止条件

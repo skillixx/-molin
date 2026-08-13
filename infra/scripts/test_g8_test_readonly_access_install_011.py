@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """验证 011 root 安装器的固定输入、no-clobber 与回滚边界。"""
 
+import base64
 import os
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -57,14 +59,88 @@ class TestG8ReadonlyAccessInstall011(unittest.TestCase):
         self.assertIn("/usr/bin/sudo -n -l -U pc", self.source)
         self.assertIn("/usr/bin/id -nG pc", self.source)
         self.assertIn('grep -Eq "(^|[[:space:]])docker([[:space:]]|$)"', self.source)
+        self.assertIn("validate_sudo_scope", self.source)
+        self.assertIn("NOPASSWD: /usr/local/libexec/molin/g8-test-readonly-audit", self.source)
+        self.assertNotIn("/usr/bin/sudo -n -l -U pc >/dev/null", self.source)
+
+    @unittest.skipIf(os.name == "nt", "真实 no-clobber 语义由 Linux 断网门禁执行。")
+    def test_live_transaction_preserves_existing_target_and_rolls_back_partial_creation(self) -> None:
+        """执行生产事务函数，证明预存保护和部分失败回滚。"""
+        with tempfile.TemporaryDirectory(prefix="g8-011-install-") as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            target = root / "target"
+            source.write_text("new", encoding="ascii")
+            target.write_text("old", encoding="ascii")
+            harness = root / "harness.sh"
+            functions = self.source.split('main "$@"', 1)[0]
+            harness.write_text(
+                functions + "\nsource_file=$1\ntarget_file=$2\n"
+                + 'install_live_file "$source_file" "$target_file" 0600 created_test\n',
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                ["/bin/bash", str(harness), str(source), str(target)], capture_output=True, check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(target.read_text(encoding="ascii"), "old")
+            target.unlink()
+            source.unlink()
+            result = subprocess.run(
+                ["/bin/bash", str(harness), str(source), str(target)], capture_output=True, check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(target.exists())
+
+    @unittest.skipIf(os.name == "nt", "sudoers 优先回滚语义由 Linux 断网门禁执行。")
+    def test_rollback_orders_sudoers_before_tools_and_revalidates_visudo(self) -> None:
+        """回滚必须先撤销本次 sudoers，再校验主配置，最后处理工具。"""
+        rollback = self.source.split("rollback() {", 1)[1].split("}\ntrap rollback EXIT", 1)[0]
+        sudoers = rollback.index("created_sudoers")
+        visudo = rollback.index("visudo -cf /etc/sudoers")
+        reconcile = rollback.index("created_reconcile")
+        auditor = rollback.index("created_auditor")
+        self.assertLess(sudoers, visudo)
+        self.assertLess(visudo, reconcile)
+        self.assertLess(reconcile, auditor)
+
+    @unittest.skipIf(os.name == "nt", "sudo 精确范围解析由 Linux 断网门禁执行。")
+    def test_sudo_scope_accepts_only_one_frozen_nopasswd_command(self) -> None:
+        """真实执行生产解析函数，额外 NOPASSWD、SETENV、通配符或 Shell 必须被拒绝。"""
+        function = self.source.split("validate_sudo_scope() {", 1)[1].split("}\n\nmain()", 1)[0]
+        with tempfile.TemporaryDirectory(prefix="g8-011-sudo-scope-") as temporary:
+            root = Path(temporary)
+            fake_sudo = root / "sudo"
+            harness = root / "harness.sh"
+            harness.write_text(
+                "#!/bin/bash\nset -euo pipefail\nvalidate_sudo_scope() {"
+                + function.replace("/usr/bin/sudo", str(fake_sudo))
+                + "}\nvalidate_sudo_scope\n",
+                encoding="utf-8",
+            )
+            allowed = "User pc may run the following commands:\n    (root) NOPASSWD: /usr/local/libexec/molin/g8-test-readonly-audit\n"
+            rejected = (
+                allowed
+                + "    (root) NOPASSWD: /bin/bash\n"
+            )
+            for output, expected in ((allowed, 0), (rejected, 1), (allowed + "    SETENV: ALL\n", 1)):
+                fake_sudo.write_text(
+                    "#!/bin/sh\n/usr/bin/printf '%s' '"
+                    + base64.b64encode(output.encode("ascii")).decode("ascii")
+                    + "' | /usr/bin/base64 -d\n",
+                    encoding="utf-8",
+                )
+                fake_sudo.chmod(0o700)
+                result = subprocess.run(["/bin/bash", str(harness)], capture_output=True, check=False)
+                self.assertEqual(result.returncode == 0, expected == 0, output)
 
     def test_live_creation_uses_same_descriptor_and_registered_rollback(self) -> None:
-        self.assertGreaterEqual(self.source.count("set -o noclobber"), 3)
-        self.assertGreaterEqual(self.source.count('exec 3> "$target"'), 3)
-        self.assertGreaterEqual(self.source.count('/usr/bin/cat "$source" >&3'), 3)
-        self.assertIn("created_auditor=1", self.source)
-        self.assertIn("created_reconcile=1", self.source)
-        self.assertIn("created_sudoers=1", self.source)
+        self.assertGreaterEqual(self.source.count("set -o noclobber"), 2)
+        self.assertGreaterEqual(self.source.count('exec 3> "$target"'), 2)
+        self.assertEqual(self.source.count("install_live_file \"$ROOT_COPY/"), 3)
+        self.assertIn("0755 created_auditor", self.source)
+        self.assertIn("0755 created_reconcile", self.source)
+        self.assertIn("0440 created_sudoers", self.source)
         self.assertIn("rollback()", self.source)
         self.assertIn('if [ "$created_sudoers" -eq 1 ]; then', self.source)
 

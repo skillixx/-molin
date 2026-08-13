@@ -114,6 +114,7 @@ def run_single_sftp(direct, helper, known_hosts: Path, identity_file: Path, snap
         raise StageError("sftp_upload_failed") from error
     if (
         returncode != 0
+        or stdout_result["bytes"] != 0
         or stderr_result["bytes"] != 0
         or stdout_result["exceeded"]
         or stderr_result["exceeded"]

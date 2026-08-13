@@ -25,6 +25,7 @@ def load_module():
 class TestG8ReadonlyAccessStageDropInteractive(unittest.TestCase):
     def setUp(self) -> None:
         self.source = SCRIPT_PATH.read_text(encoding="utf-8")
+        self.module = load_module()
 
     def test_self_test_and_fixed_contract(self) -> None:
         result = subprocess.run(
@@ -36,6 +37,29 @@ class TestG8ReadonlyAccessStageDropInteractive(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "G8_TEST_READONLY_ACCESS_STAGE_DROP_INTERACTIVE_SELF_TEST=PASS")
+
+    def test_sftp_rejects_any_stdout_even_when_bounded(self) -> None:
+        """批处理 SFTP 的任何 stdout 都属于输出契约漂移。"""
+        direct = mock.Mock()
+        direct.EXPECTED_FILES = {
+            "SHA256SUMS", "ai-gateway-reconcile", "g8-test-readonly-audit",
+            "manifest.env", "molin-g8-test-readonly-audit.sudoers",
+        }
+        direct.TARGET_PORT = "10003"
+        direct.TARGET = "pc@8.130.9.163"
+        helper = mock.Mock()
+        helper.fixed_tool.return_value = Path("/usr/bin/sftp")
+        helper.ssh_options.return_value = []
+        helper.fixed_ssh_environment.return_value = {}
+        helper.run_bounded_process.return_value = (
+            0, {"bytes": 1, "exceeded": False}, {"bytes": 0, "exceeded": False},
+        )
+        with tempfile.TemporaryDirectory(prefix="g8-011-sftp-") as temporary:
+            with self.assertRaises(self.module.StageError):
+                self.module.run_single_sftp(
+                    direct, helper, Path(temporary) / "known_hosts",
+                    Path(temporary) / "id_ed25519", Path(temporary),
+                )
         self.assertIn(CHANGE_ID, self.source)
         self.assertIn("DROP_SSH_INTERACTIVE_SUDO", self.source)
         self.assertIn("15617634b0d291f12cc5776eb80ec29e26369af1959ab4a596fcd5c836c3361f", self.source)

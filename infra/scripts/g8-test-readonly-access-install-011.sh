@@ -32,7 +32,7 @@ rollback() {
     if [ "$install_complete" -eq 0 ]; then
         if [ "$created_sudoers" -eq 1 ]; then
             /usr/bin/rm -f -- /etc/sudoers.d/molin-g8-test-readonly-audit
-            /usr/sbin/visudo -cf /etc/sudoers >/dev/null 2>&1 || true
+            /usr/sbin/visudo -cf /etc/sudoers >/dev/null 2>&1 || :
         fi
         if [ "$created_reconcile" -eq 1 ]; then
             /usr/bin/rm -f -- /usr/local/libexec/molin/ai-gateway-reconcile
@@ -41,19 +41,15 @@ rollback() {
             /usr/bin/rm -f -- /usr/local/libexec/molin/g8-test-readonly-audit
         fi
         if [ "$created_parent" -eq 1 ] && [ -d /usr/local/libexec/molin ]; then
-            /usr/bin/rmdir -- /usr/local/libexec/molin 2>/dev/null || true
+            /usr/bin/rmdir -- /usr/local/libexec/molin 2>/dev/null || :
         fi
     fi
     if [ "$rc" -ne 0 ]; then
-        fail || true
+        fail || :
     fi
     exit "$rc"
 }
 trap rollback EXIT
-
-if [ "$#" -ne 0 ] || [ "$(/usr/bin/id -u)" -ne 0 ]; then
-    exit 2
-fi
 
 check_secure_directory() {
     directory=$1
@@ -105,6 +101,46 @@ check_candidate() {
     /usr/bin/grep -qx 'PHYSICAL_HOST_IDENTITY=NOT_APPLICABLE' "$directory/manifest.env"
 }
 
+install_live_file() {
+    source=$1
+    target=$2
+    target_mode=$3
+    created_variable=$4
+    [ ! -e "$target" ] && [ ! -L "$target" ] || return 1
+    set -o noclobber
+    if ! exec 3> "$target"; then
+        set +o noclobber
+        return 1
+    fi
+    set +o noclobber
+    builtin printf -v "$created_variable" '%s' 1
+    if ! /usr/bin/cat "$source" >&3 || ! exec 3>&- \
+        || ! /usr/bin/chown root:root "$target" || ! /usr/bin/chmod "$target_mode" "$target"; then
+        exec 3>&- 2>/dev/null || :
+        /usr/bin/rm -f -- "$target"
+        builtin printf -v "$created_variable" '%s' 0
+        return 1
+    fi
+}
+
+validate_sudo_scope() {
+    # 仅在内存中检查 sudo 列表；任何额外 NOPASSWD、SETENV、通配符、Shell 或 Docker 能力均失败关闭。
+    scope=$(LC_ALL=C /usr/bin/sudo -n -l -U pc 2>/dev/null) || return 1
+    /usr/bin/printf '%s\n' "$scope" | /usr/bin/grep -q 'SETENV' && return 1
+    nopasswd=$(/usr/bin/printf '%s\n' "$scope" | /usr/bin/grep 'NOPASSWD:' || :)
+    [ "$(/usr/bin/printf '%s\n' "$nopasswd" | /usr/bin/grep -c .)" -eq 1 ] || return 1
+    /usr/bin/printf '%s\n' "$nopasswd" \
+        | /usr/bin/grep -Eq '^[[:space:]]*\(root\) NOPASSWD: /usr/local/libexec/molin/g8-test-readonly-audit[[:space:]]*$' \
+        || return 1
+    /usr/bin/printf '%s\n' "$nopasswd" | /usr/bin/grep -Eq '[*]|/bin/(ba)?sh|docker' && return 1
+    return 0
+}
+
+main() {
+if [ "$#" -ne 0 ] || [ "$(/usr/bin/id -u)" -ne 0 ]; then
+    exit 2
+fi
+
 check_secure_directory "$STAGING" 'pc:pc' '700'
 check_secure_directory "$ROOT_COPY" 'root:root' '700'
 check_candidate "$STAGING" 0 'pc:pc'
@@ -144,38 +180,12 @@ for target in /usr/local/libexec/molin/g8-test-readonly-audit /usr/local/libexec
     [ ! -e "$target" ] && [ ! -L "$target" ]
 done
 
-target=/usr/local/libexec/molin/g8-test-readonly-audit
-source="$ROOT_COPY/g8-test-readonly-audit"
-set -o noclobber
-exec 3> "$target"
-created_auditor=1
-/usr/bin/cat "$source" >&3
-exec 3>&-
-set +o noclobber
-/usr/bin/chown root:root "$target"
-/usr/bin/chmod 0755 "$target"
-
-target=/usr/local/libexec/molin/ai-gateway-reconcile
-source="$ROOT_COPY/ai-gateway-reconcile"
-set -o noclobber
-exec 3> "$target"
-created_reconcile=1
-/usr/bin/cat "$source" >&3
-exec 3>&-
-set +o noclobber
-/usr/bin/chown root:root "$target"
-/usr/bin/chmod 0755 "$target"
-
-target=/etc/sudoers.d/molin-g8-test-readonly-audit
-source="$ROOT_COPY/molin-g8-test-readonly-audit.sudoers"
-set -o noclobber
-exec 3> "$target"
-created_sudoers=1
-/usr/bin/cat "$source" >&3
-exec 3>&-
-set +o noclobber
-/usr/bin/chown root:root "$target"
-/usr/bin/chmod 0440 "$target"
+install_live_file "$ROOT_COPY/g8-test-readonly-audit" \
+    /usr/local/libexec/molin/g8-test-readonly-audit 0755 created_auditor
+install_live_file "$ROOT_COPY/ai-gateway-reconcile" \
+    /usr/local/libexec/molin/ai-gateway-reconcile 0755 created_reconcile
+install_live_file "$ROOT_COPY/molin-g8-test-readonly-audit.sudoers" \
+    /etc/sudoers.d/molin-g8-test-readonly-audit 0440 created_sudoers
 
 [ "$(/usr/bin/stat -c '%U:%G:%a' /usr/local/libexec/molin/g8-test-readonly-audit)" = 'root:root:755' ]
 [ "$(/usr/bin/stat -c '%U:%G:%a' /usr/local/libexec/molin/ai-gateway-reconcile)" = 'root:root:755' ]
@@ -185,11 +195,14 @@ set +o noclobber
 [ "$(/usr/bin/stat -c '%s' /usr/local/libexec/molin/ai-gateway-reconcile)" = "$RECONCILE_SIZE" ]
 [ "$(/usr/bin/sha256sum /etc/sudoers.d/molin-g8-test-readonly-audit | /usr/bin/cut -d' ' -f1)" = "$SUDOERS_SHA" ]
 /usr/sbin/visudo -cf /etc/sudoers.d/molin-g8-test-readonly-audit >/dev/null
-/usr/bin/sudo -n -l -U pc >/dev/null
-if /usr/bin/id -nG pc | grep -Eq "(^|[[:space:]])docker([[:space:]]|$)"; then
+validate_sudo_scope
+if /usr/bin/id -nG pc | /usr/bin/grep -Eq "(^|[[:space:]])docker([[:space:]]|$)"; then
     exit 1
 fi
 
 install_complete=1
 trap - EXIT
 /usr/bin/printf '%s\n' 'G8_TEST_READONLY_ACCESS_INSTALL_011=PASS'
+}
+
+main "$@"
