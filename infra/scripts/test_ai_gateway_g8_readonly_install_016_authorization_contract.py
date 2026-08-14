@@ -32,11 +32,15 @@ class TestG8ReadonlyInstall016AuthorizationContract(unittest.TestCase):
         self.document = DOC_PATH.read_text(encoding="utf-8")
         self.generator = load_generator()
 
-    def test_state_is_pending_and_remote_execution_is_disabled(self) -> None:
-        self.assertIn("`PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`", self.document)
+    def test_state_waits_for_user_approval_and_remote_execution_is_disabled(self) -> None:
+        self.assertIn("`PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`", self.document)
         self.assertFalse(self.generator.CHANGE_ID_CONSUMED)
         self.assertFalse(self.generator.REMOTE_EXECUTION_AUTHORIZED)
-        self.assertIn("当前禁止运行生成命令中的 SSH、交互 sudo 或安装段", self.document)
+        self.assertIn("当前仍禁止运行生成命令中的 SSH、交互 sudo 或安装段", self.document)
+        self.assertIn("PR：`#381`", self.document)
+        self.assertIn("2f407cbf3a9c5fea987eeb2f82ebb41630db9e35", self.document)
+        self.assertIn("合并后 Git blob", self.document)
+        self.assertIn("016 仍未消费", self.document)
 
     def test_frozen_file_sizes_and_hashes_match_document(self) -> None:
         expected = {
