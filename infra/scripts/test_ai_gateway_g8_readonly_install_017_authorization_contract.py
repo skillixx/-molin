@@ -32,12 +32,15 @@ class TestG8ReadonlyInstall017AuthorizationContract(unittest.TestCase):
         self.document = DOC_PATH.read_text(encoding="utf-8")
         self.generator = load_generator()
 
-    def test_state_waits_for_engineering_review_and_remote_execution_is_disabled(self) -> None:
-        self.assertIn("`PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`", self.document)
+    def test_state_waits_for_user_approval_and_remote_execution_is_disabled(self) -> None:
+        self.assertIn("`PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`", self.document)
         self.assertFalse(self.generator.CHANGE_ID_CONSUMED)
         self.assertFalse(self.generator.REMOTE_EXECUTION_AUTHORIZED)
         self.assertIn("当前仍禁止运行生成命令中的 SSH、交互 sudo 或安装段", self.document)
-        self.assertIn("工程候选正在进行 PR、精确 HEAD CI 与独立复评", self.document)
+        self.assertIn("PR #384、精确 HEAD CI、独立代码安全/QA/产品复评", self.document)
+        self.assertIn("31791430839", self.document)
+        self.assertIn("e2a7e4f89c4115b3e32dc27292b0bc11d7d09a57", self.document)
+        self.assertIn("ee947fd61919215500ef516488d56e01ad2ea72d", self.document)
         self.assertIn("纯 .NET 流式 SHA-256", self.document)
         command = self.generator.build_command(self.generator.read_frozen_installer())
         self.assertNotIn("Get-FileHash", command)
@@ -45,6 +48,13 @@ class TestG8ReadonlyInstall017AuthorizationContract(unittest.TestCase):
         self.assertIn("LogLevel=QUIET", command)
         self.assertIn("G8_TEST_READONLY_ACCESS_017_LOCAL_GATE=FAILED reason=local_gate_failed", command)
         self.assertIn("017 仍未消费", self.document)
+        for blob in (
+            "429b73bb7b5487d6539e1c604ef9410b34c3b0c1",
+            "74a5c63d18c001154a36c1c22003bab433855c36",
+            "4122ce7915acd71e917326f9237be16c8d07fd69",
+            "ed9711c9ac7cdf5d8bb3e87a8a428ce8fe31d14f",
+        ):
+            self.assertIn(blob, self.document)
 
     def test_frozen_file_sizes_and_hashes_match_document(self) -> None:
         expected = {
