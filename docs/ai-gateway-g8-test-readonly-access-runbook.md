@@ -70,9 +70,9 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 该候选不包含 SFTP、SCP、下载、删除、sudo、Docker、数据库、队列、服务或 HTTP 能力。用户批准后，本地检查 PASS，唯一正式调用返回 `remote_evidence_failed` 并按停止条件零重试结束；未形成远端状态证据，暂存仍为 `UNKNOWN`。004 已消费，禁止再次连接或重放。读取和 SSH 可能由操作系统产生 sshd/journald/audit 日志，并可能按文件系统策略更新 atime；不得表述为操作系统层绝对零写入。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-staging-evidence-authorization-20260812-004.md`、`docs/ai-gateway-g8-test-readonly-staging-evidence-attempt-20260812-004.md`。
 
-## 3. 016 当前安装候选与历史停止记录
+## 3. 017 当前安装候选与历史停止记录
 
-015 已在唯一获批本地段中出现 PowerShell 正则错误并消费；该错误默认非终止，身份材料读取、SSH 与远端影响保持 `UNKNOWN`。016 使用新 ChangeId `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-016`，仍只以 014 已证明 `PRESENT / PASS / NONE` 的 011 暂存为输入。候选在密码提示前重新核对目录、五文件、摘要、manifest、父目录和 live 目标不存在；随后只允许一次人工 `sudo -k -v`，以 no-clobber 事务创建两个 root-owned 工具和一条精确 sudoers，并执行 `visudo`、sudo 范围、Docker 非成员和审计器 self-test。PR #381 已合入 main，合并后冻结摘要复核一致；当前为 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`，禁止 SSH、sudo 和安装，直至用户对 016 作出新的独立精确授权。完整冻结清单见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260814-016.md`。
+015 已在唯一获批本地段中出现 PowerShell 正则错误并消费；下游影响保持 `UNKNOWN`。016 经 PR #381 合入 main 并完成合并后冻结摘要复核，用户随后独立批准唯一执行；人工第一段在交互 PowerShell 解析 `Get-FileHash` 时以终止错误停止，错误位于唯一 SSH 调用之前，SSH、sudo、安装和远端影响均为 0，016 已消费并墓碑化。017 使用新 ChangeId `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-017`，仍只以 014 已证明 `PRESENT / PASS / NONE` 的 011 暂存为输入，并以纯 .NET 流式 SHA-256 消除模块自动加载依赖。远端预检、一次人工 `sudo -k -v`、no-clobber 事务、`visudo`、sudo 范围、Docker 非成员和审计器 self-test 边界保持不变。当前为 `PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`，禁止 SSH、sudo 和安装。完整证据见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-016.md` 与 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260814-017.md`。
 
 ### 3.1 历史已停止安装变更（禁止执行）
 
@@ -129,11 +129,12 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 1. 011、012、013、014 的包装器、命令生成器、历史命令和授权均保持消费态，禁止重放。
 2. 011 暂存存在性和完整性已关闭，无需再次诊断；不得把该结论外推为 live 入口或运行态可用。
 3. 015 已在独立用户授权后的唯一人工本地段中出现 PowerShell 路径正则错误；由于该错误默认非终止，身份材料读取、SSH、sudo、root-only 副本和 live 安装均保持 `UNKNOWN`，重试 0，015 已消费并墓碑化。
-4. 016 必须重新完成本地离线门禁、精确 HEAD CI、独立代码安全/QA/产品复评、PR 合并和合并后原始 Git blob 摘要复核。
-5. 只有上述工程门禁全部通过后，才能申请用户对 016 ChangeId 的独立执行授权；015 的历史批准、工程合并或命令生成均不构成 SSH、sudo 或安装授权。
-6. 016 无论成功或失败均立即消费，结果先归档并把入口墓碑化；清理 root-only 副本需要新 ChangeId。
-7. 安装后的真实运行态审计必须使用新的 ChangeId；测试候选部署、Fake 旅程、零差额对账和实际回滚继续分开授权。
-8. API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因本地测试、安装候选或暂存三态自动关闭。
+4. 016 在独立用户授权后的唯一人工第一段因 `Get-FileHash` 模块解析错误终止；控制流没有到达 SSH，远端影响为 0。016 已消费并墓碑化。
+5. 017 必须重新完成本地离线门禁、精确 HEAD CI、独立代码安全/QA/产品复评、PR 合并和合并后原始 Git blob 摘要复核。
+6. 只有上述工程门禁全部通过后，才能申请用户对 017 ChangeId 的独立执行授权；016 的历史批准、工程合并或命令生成均不构成 SSH、sudo 或安装授权。
+7. 017 首次 SSH、sudo、安装器或 post-check 无论成功或失败均立即消费，结果先归档并把入口墓碑化；清理 root-only 副本需要新 ChangeId。
+8. 安装后的真实运行态审计必须使用新的 ChangeId；测试候选部署、Fake 旅程、零差额对账和实际回滚继续分开授权。
+9. API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因本地测试、安装候选或暂存三态自动关闭。
 
 `CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005` 已完成唯一一次本地检查和正式只读 SSH，结果为 `ZERO / EXACT / stderr EMPTY / diagnostic PASS`；005 已消费并禁止重放。该历史结果当时只证明传输链路可用，暂存 UNKNOWN 后续已由 014 收敛为 `PRESENT / PASS / NONE`。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`、`docs/ai-gateway-g8-test-readonly-transport-diagnostic-attempt-20260812-005.md`。
 
@@ -147,11 +148,13 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 `CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010` 已消费。用户授权后一次本地检查、一次只读 SSH 与一次原子 SFTP 均 PASS，五文件暂存成功；唯一 root 安装编排在本地参数构造阶段停止，未建立 root 连接、未发送安装脚本、未创建 root-only/live/sudoers 目标，也未执行 visudo、sudo 范围、Docker 组或固定 self-test。零重试，业务/上游/费用为 `0 / 0 / 0 CNY`。状态为 `CONSUMED_STAGED_ROOT_NOT_RUN`，禁止重放；直接改用 `pc` 不满足 root-owned 和 sudoers 契约，未执行。暂存清理、root 安装或新的 `pc` 非特权方案均须新 ChangeId、重新工程门禁和独立用户授权。证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-010.md`。
 
-`CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011` 已消费。用户批准后唯一一次 local-check 为 PASS；唯一正式暂存包装器调用以 `invalid_request`、退出码 2、stderr 为空停止并零重试。当时低敏失败无法区分 SFTP 是否启动、远端独占建目录是否成功或五文件是否部分上传；后续 014 已通过独立只读取证把该暂存收敛为 `PRESENT / PASS / NONE`。011 的交互 SSH、sudo 认证、root 安装、`visudo`、sudo 范围、Docker 组和 self-test 从未执行；没有 live 目标需要回滚。011 禁止重放；015 曾只把已证明完整的 011 暂存作为冻结输入，现已消费，016 继续使用同一只读来源但采用新的独立 ChangeId。历史证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-011.md`，当前暂存证据见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-attempt-20260814-014.md`。
+`CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011` 已消费。用户批准后唯一一次 local-check 为 PASS；唯一正式暂存包装器调用以 `invalid_request`、退出码 2、stderr 为空停止并零重试。当时低敏失败无法区分 SFTP 是否启动、远端独占建目录是否成功或五文件是否部分上传；后续 014 已通过独立只读取证把该暂存收敛为 `PRESENT / PASS / NONE`。011 的交互 SSH、sudo 认证、root 安装、`visudo`、sudo 范围、Docker 组和 self-test 从未执行；没有 live 目标需要回滚。011 禁止重放；015 与 016 都只把已证明完整的 011 暂存作为冻结输入且现已消费，017 继续使用同一只读来源但采用新的独立 ChangeId。历史证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-011.md`，当前暂存证据见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-attempt-20260814-014.md`。
 
 `CHG-G8-TEST-READONLY-STAGING-EVIDENCE-DROP-20260814-014` 已完成唯一一次本地诊断和唯一一次只读 SSH，结果为 `PRESENT / PASS / NONE`、退出码 0、重试 0；014 已消费并墓碑化。该结果只关闭 011 暂存存在性与完整性，不授权清理、安装或运行态审计。结果归档见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-attempt-20260814-014.md`。
 
 `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-015` 已消费。其工程候选由 PR #380 合入 main 后获得独立用户授权；唯一人工本地段在可信 Windows 路径正则处报告末尾反斜杠非法，但该错误默认非终止，身份材料读取、SSH、sudo、安装和 root-only/live/sudoers 状态均不能由错误顺序证明，保持 `UNKNOWN`；四项成功标志均未形成。事后单独打印的 `$LASTEXITCODE=0` 可能来自此前任一原生程序，不能证明成功或 SSH 为 0。015 禁止重放，修复版必须使用 016 新 ChangeId。证据见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-015.md`。
+
+`CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-016` 已消费。用户独立批准后，唯一人工第一段在交互 PowerShell 的 `Get-FileHash` 处返回 `CommandNotFoundException`；`$ErrorActionPreference='Stop'` 使控制流在唯一 SSH 调用之前终止，SSH、sudo、安装、业务请求、上游请求和费用均为 0。016 禁止重放；017 以纯 .NET 流式 SHA-256 替代模块 cmdlet，并须重新完成工程门禁和独立授权。证据见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-016.md`。
 
 ## 4. 安装后的独立只读核验
 
