@@ -37,7 +37,7 @@
 |---|---:|---|
 | `infra/scripts/g8-test-readonly-access-install-017.sh` | 10977 | `4deb5a26c27e83a2afe766dd815e4b611b5bc0c3c19eed9afb1bfe0e1d0b1188` |
 | `infra/scripts/prepare-ai-gateway-g8-test-readonly-access-017-command.py` | 16696 | `b9b552a71118560e5a2d18789ac9a1bc3c312fd80666b50d318cc08994fac669` |
-| `infra/scripts/test_g8_test_readonly_access_install_017.py` | 18234 | `24b12102942ffb6128b44360b375ac827dda8a41ba003fab61fd619025c2e00c` |
+| `infra/scripts/test_g8_test_readonly_access_install_017.py` | 18254 | `90ed63db0d0caacd38ecc3f292ea393aeae9575cc9aa8be586da5eaa722dbc34` |
 | `infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_017_command.py` | 21493 | `7b8cd85bdb5917dea6fdb0b86e0f055bb98946e09028ddd87c0bd456c906eb7d` |
 | 生成器输出的冻结双段命令 | 25862 | `6acc63972cb779eea18df49dcaec271c7d50223000d96f2a1c1d57364d4cc98e` |
 

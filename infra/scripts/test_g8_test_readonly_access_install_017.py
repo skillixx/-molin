@@ -111,8 +111,8 @@ class TestG8ReadonlyAccessInstall017(unittest.TestCase):
 
     @unittest.skipIf(os.name == "nt", "异步终止回滚由 Linux 断网门禁执行。")
     def test_async_termination_after_target_creation_removes_live_file(self) -> None:
-        """目标独占创建后收到 TERM 或 INT 时，EXIT trap 必须删除半成品。"""
-        for signal_name, expected_code in (("TERM", 143), ("INT", 130)):
+        """目标独占创建后收到 HUP、TERM 或 INT 时，EXIT trap 必须删除半成品。"""
+        for signal_name, expected_code in (("HUP", 129), ("TERM", 143), ("INT", 130)):
             with self.subTest(signal=signal_name), tempfile.TemporaryDirectory(
                 prefix=f"g8-017-{signal_name.lower()}-rollback-"
             ) as temporary:

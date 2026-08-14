@@ -51,8 +51,8 @@ class TestG8ReadonlyInstall017AuthorizationContract(unittest.TestCase):
             INSTALLER_PATH: (10977, "4deb5a26c27e83a2afe766dd815e4b611b5bc0c3c19eed9afb1bfe0e1d0b1188"),
             GENERATOR_PATH: (16696, "b9b552a71118560e5a2d18789ac9a1bc3c312fd80666b50d318cc08994fac669"),
             REPO_ROOT / "infra/scripts/test_g8_test_readonly_access_install_017.py": (
-                18234,
-                "24b12102942ffb6128b44360b375ac827dda8a41ba003fab61fd619025c2e00c",
+                18254,
+                "90ed63db0d0caacd38ecc3f292ea393aeae9575cc9aa8be586da5eaa722dbc34",
             ),
             REPO_ROOT / "infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_017_command.py": (
                 21493,
