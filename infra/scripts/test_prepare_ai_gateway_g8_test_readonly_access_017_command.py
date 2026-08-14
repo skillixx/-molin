@@ -104,6 +104,69 @@ class TestPrepareG8ReadonlyAccess017Command(unittest.TestCase):
         self.assertIn("ClearAllForwardings=yes", command)
         self.assertEqual(command.count("pc@8.130.9.163"), 1)
 
+    @unittest.skipUnless(os.name == "nt", "加密私钥无提示拒绝只在原生 Windows 门禁执行。")
+    def test_encrypted_identity_is_rejected_without_extra_passphrase_prompt(self) -> None:
+        """私钥配对检查必须显式使用空口令，拒绝在 sudo 前出现第二类凭据提示。"""
+        invocation = "$derivedPublic = (& $sshKeygen -y -P '' -f $identity 2>$null)"
+        self.assertIn(invocation, self.command)
+        ssh_keygen = Path(r"C:\Windows\System32\OpenSSH\ssh-keygen.exe")
+        self.assertTrue(ssh_keygen.is_file())
+        with tempfile.TemporaryDirectory(prefix="g8-017-encrypted-identity-") as temporary:
+            identity = Path(temporary) / "id_ed25519"
+            generated = subprocess.run(
+                [
+                    str(ssh_keygen),
+                    "-q",
+                    "-t",
+                    "ed25519",
+                    "-N",
+                    "temporary-test-passphrase",
+                    "-f",
+                    str(identity),
+                ],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(generated.returncode, 0, generated.stderr)
+            rejected = subprocess.run(
+                [str(ssh_keygen), "-y", "-P", "", "-f", str(identity)],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                timeout=5,
+                check=False,
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+
+    @unittest.skipUnless(os.name == "nt", "低敏失败输出回归只在原生 Windows 门禁执行。")
+    def test_local_material_failure_does_not_disclose_absolute_path(self) -> None:
+        """本地身份材料门禁失败时只输出固定原因，不回显绝对路径或异常正文。"""
+        local_gate = self.command.split("# 第二步", 1)[0]
+        fake_identity = str(Path(tempfile.gettempdir()).resolve() / "g8-017-sensitive-identity" / "id_ed25519")
+        probe = local_gate.replace(
+            "$identity = Join-Path $profileRoot '.ssh\\id_ed25519'",
+            "$identity = '" + fake_identity.replace("'", "''") + "'",
+            1,
+        )
+        result = subprocess.run(
+            [
+                r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "$source=[Console]::In.ReadToEnd(); & ([scriptblock]::Create($source))",
+            ],
+            input=probe,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stderr, "")
+        self.assertEqual(result.stdout.strip(), "G8_TEST_READONLY_ACCESS_017_LOCAL_GATE=FAILED reason=local_gate_failed")
+        self.assertNotIn(fake_identity, result.stdout + result.stderr)
+
     @unittest.skipUnless(os.name == "nt", "Windows API 环境漂移测试只在原生 Windows 门禁执行。")
     def test_trusted_windows_path_prefix_ignores_forged_environment(self) -> None:
         """执行生成命令的真实路径前缀，证明伪造环境不会改变三个系统 API 结果。"""

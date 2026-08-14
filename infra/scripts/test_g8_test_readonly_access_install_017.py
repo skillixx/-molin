@@ -109,6 +109,39 @@ class TestG8ReadonlyAccessInstall017(unittest.TestCase):
         )
         self.assertLess(self.source.index("validate_auditor_entry\n"), self.source.index("install_complete=1"))
 
+    @unittest.skipIf(os.name == "nt", "异步终止回滚由 Linux 断网门禁执行。")
+    def test_async_termination_after_target_creation_removes_live_file(self) -> None:
+        """目标独占创建后立即终止时，EXIT trap 仍必须识别所有权并删除半成品。"""
+        with tempfile.TemporaryDirectory(prefix="g8-017-signal-rollback-") as temporary:
+            root = Path(temporary)
+            parent = root / "molin"
+            parent.mkdir()
+            source = root / "source"
+            source.write_text("auditor", encoding="ascii")
+            target = parent / "auditor"
+            functions = self.source.split("main() {", 1)[0]
+            # 在独占创建完成、复制尚未开始的精确窗口注入 TERM，复现 SSH 断开场景。
+            injected = functions.replace(
+                "    set +o noclobber\n    if ! /usr/bin/cat",
+                "    set +o noclobber\n    kill -TERM $$\n    if ! /usr/bin/cat",
+                1,
+            )
+            self.assertNotEqual(injected, functions)
+            harness = root / "harness.sh"
+            harness.write_text(
+                injected
+                + '\nAUDITOR_TARGET="$1"\nTOOLS_PARENT="$2"\n'
+                + 'install_live_file "$3" "$AUDITOR_TARGET" 0600 created_auditor\n',
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                ["/bin/bash", str(harness), str(target), str(parent), str(source)],
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(target.exists())
+
     @unittest.skipIf(os.name == "nt", "真实 no-clobber 语义由 Linux 断网门禁执行。")
     def test_copy_no_clobber_preserves_existing_target(self) -> None:
         """执行生产复制函数，证明既有目标不会被覆盖。"""

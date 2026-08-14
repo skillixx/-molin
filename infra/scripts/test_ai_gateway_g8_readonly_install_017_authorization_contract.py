@@ -39,20 +39,23 @@ class TestG8ReadonlyInstall017AuthorizationContract(unittest.TestCase):
         self.assertIn("当前仍禁止运行生成命令中的 SSH、交互 sudo 或安装段", self.document)
         self.assertIn("工程候选正在进行 PR、精确 HEAD CI 与独立复评", self.document)
         self.assertIn("纯 .NET 流式 SHA-256", self.document)
-        self.assertNotIn("Get-FileHash", self.generator.build_command(self.generator.read_frozen_installer()))
+        command = self.generator.build_command(self.generator.read_frozen_installer())
+        self.assertNotIn("Get-FileHash", command)
+        self.assertIn("$sshKeygen -y -P '' -f $identity", command)
+        self.assertIn("G8_TEST_READONLY_ACCESS_017_LOCAL_GATE=FAILED reason=local_gate_failed", command)
         self.assertIn("017 仍未消费", self.document)
 
     def test_frozen_file_sizes_and_hashes_match_document(self) -> None:
         expected = {
-            INSTALLER_PATH: (9465, "9e5123ca798f8198b8e55fe7ba155b781e4f657b745df0fb401e3b309e348976"),
-            GENERATOR_PATH: (16230, "be8d271ae3a103284453b83057e4091e1c12842b4f3c174601041a78b9924717"),
+            INSTALLER_PATH: (9794, "5b6f5c58bb69e06dcd5985b0eac54deb12169a685210f1a975fd36e7fb19857f"),
+            GENERATOR_PATH: (16695, "133fdc8fa0211eacf2bee681f9f2fa1798eb403dd8830345ae8c251e7f072bc8"),
             REPO_ROOT / "infra/scripts/test_g8_test_readonly_access_install_017.py": (
-                14481,
-                "04f21997d43f0b714023a9a7dca8957d9765e49e374066d0cf6376b8f7398fc3",
+                16132,
+                "c08bdbd319b12c5e5de79555d4a52fbb8d833ea85d8013f08b780bec8d4e674b",
             ),
             REPO_ROOT / "infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_017_command.py": (
-                18413,
-                "ec07679bcde8bb84c3bf5352f58253cade1f331bb16893eb3e222b2dd12eed62",
+                21392,
+                "6f144f518b40ad861a402e37cf0286cfb6dffd5ccc7edad5f960f102c8d78298",
             ),
         }
         for path, (size, sha256) in expected.items():
@@ -63,9 +66,9 @@ class TestG8ReadonlyInstall017AuthorizationContract(unittest.TestCase):
     def test_generated_command_hash_matches_document(self) -> None:
         installer = self.generator.read_frozen_installer()
         command = self.generator.build_command(installer).encode("utf-8")
-        self.assertEqual(len(command), 23384)
-        self.assertEqual(hashlib.sha256(command).hexdigest(), "b45c3001c88539a3b84fbdf99f85b5ea8c4db889e5e21bf9b015cdac5bc23f83")
-        self.assertIn("| 23384 | `b45c3001c88539a3b84fbdf99f85b5ea8c4db889e5e21bf9b015cdac5bc23f83` |", self.document)
+        self.assertEqual(len(command), 24285)
+        self.assertEqual(hashlib.sha256(command).hexdigest(), "b66ad424b69282d644a89701488fc74c3922663d9e220d421e087d64f4f142f3")
+        self.assertIn("| 24285 | `b66ad424b69282d644a89701488fc74c3922663d9e220d421e087d64f4f142f3` |", self.document)
 
     def test_scope_and_stop_conditions_are_explicit(self) -> None:
         for required in (

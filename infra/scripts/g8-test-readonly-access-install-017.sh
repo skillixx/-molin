@@ -120,17 +120,25 @@ copy_no_clobber() {
     source=$1
     target=$2
     target_mode=$3
+    created_variable=${4-}
     [ ! -e "$target" ] && [ ! -L "$target" ] || return 1
     set -o noclobber
     if ! exec 3> "$target"; then
         set +o noclobber
         return 1
     fi
+    # 独占创建即代表本事务取得目标所有权；先登记再复制，确保 HUP/TERM 窗口也会回滚。
+    if [ -n "$created_variable" ]; then
+        builtin printf -v "$created_variable" '%s' 1
+    fi
     set +o noclobber
     if ! /usr/bin/cat "$source" >&3 || ! exec 3>&- \
         || ! /usr/bin/chown root:root "$target" || ! /usr/bin/chmod "$target_mode" "$target"; then
         exec 3>&- 2>/dev/null || :
         /usr/bin/rm -f -- "$target"
+        if [ -n "$created_variable" ]; then
+            builtin printf -v "$created_variable" '%s' 0
+        fi
         return 1
     fi
 }
@@ -140,8 +148,7 @@ install_live_file() {
     target=$2
     target_mode=$3
     created_variable=$4
-    copy_no_clobber "$source" "$target" "$target_mode" || return 1
-    builtin printf -v "$created_variable" '%s' 1
+    copy_no_clobber "$source" "$target" "$target_mode" "$created_variable" || return 1
 }
 
 validate_sudo_scope() {

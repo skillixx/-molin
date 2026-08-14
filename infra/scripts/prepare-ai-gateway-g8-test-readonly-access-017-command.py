@@ -22,8 +22,8 @@ CHANGE_ID_CONSUMED = False
 REMOTE_EXECUTION_AUTHORIZED = False
 ROOT_COPY = "/root/molin-g8-install-CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-017"
 INSTALLER_NAME = "g8-test-readonly-access-install-017.sh"
-EXPECTED_INSTALLER_SHA256 = "9e5123ca798f8198b8e55fe7ba155b781e4f657b745df0fb401e3b309e348976"
-EXPECTED_INSTALLER_SIZE = 9465
+EXPECTED_INSTALLER_SHA256 = "5b6f5c58bb69e06dcd5985b0eac54deb12169a685210f1a975fd36e7fb19857f"
+EXPECTED_INSTALLER_SIZE = 9794
 
 
 class SafeArgumentParser(argparse.ArgumentParser):
@@ -98,6 +98,7 @@ def build_command(installer: bytes) -> str:
 # 第一步：在 PowerShell 中从 Windows API 获取可信系统目录，校验固定身份材料并建立唯一 SSH 会话。
 $g8PreviousErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = 'Stop'
+$g8LocalGatePassed = $false
 try {{
 $windowsRoot = [Environment]::GetFolderPath([Environment+SpecialFolder]::Windows)
 $programData = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonApplicationData)
@@ -144,7 +145,8 @@ try {{
     $materialEvidence[$path] = Get-FrozenMaterialEvidence $path
   }}
   {known_hosts_guard}
-  $derivedPublic = (& $sshKeygen -y -f $identity 2>$null)
+  # 显式传入空口令并抑制标准错误；加密私钥必须快速失败，禁止在 sudo 前出现额外凭据提示。
+  $derivedPublic = (& $sshKeygen -y -P '' -f $identity 2>$null)
   if ($LASTEXITCODE -ne 0) {{ throw 'identity_pair_mismatch' }}
   $declaredParts = ((Get-Content -LiteralPath $identityPublic -Raw -ErrorAction Stop).Trim() -split '\\s+')
   $derivedParts = (($derivedPublic.Trim()) -split '\\s+')
@@ -174,13 +176,18 @@ try {{
       pc@8.130.9.163
     if ($LASTEXITCODE -ne 0) {{ throw 'ssh_session_failed' }}
   }} finally {{ Remove-Item -LiteralPath $frozenKnownHosts -Force -ErrorAction SilentlyContinue }}
+  $g8LocalGatePassed = $true
 }} finally {{
   if ($null -eq $previousSystemRoot) {{ Remove-Item Env:SystemRoot -ErrorAction SilentlyContinue }} else {{ $env:SystemRoot = $previousSystemRoot }}
   if ($null -eq $previousProgramData) {{ Remove-Item Env:ProgramData -ErrorAction SilentlyContinue }} else {{ $env:ProgramData = $previousProgramData }}
 }}
+}} catch {{
+  # 所有本地材料异常统一收敛为固定低敏结果，不回显路径、调用位置或原始异常正文。
+  [Console]::Out.WriteLine('G8_TEST_READONLY_ACCESS_017_LOCAL_GATE=FAILED reason=local_gate_failed')
 }} finally {{
   $ErrorActionPreference = $g8PreviousErrorActionPreference
 }}
+if (-not $g8LocalGatePassed) {{ exit 2 }}
 
 # 第二步：仅在上述 SSH 会话内完整粘贴本段；外层 here-doc 先完整收集脚本，再由非交互 Bash 失败关闭执行。
 /bin/bash -s <<'G8_017_REMOTE'
