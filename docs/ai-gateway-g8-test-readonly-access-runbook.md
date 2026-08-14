@@ -120,14 +120,15 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 ### 3.5 当前重新申请顺序
 
-001 至 012 均已消费。008 曾把固定 003 暂存状态收敛为 `ABSENT`；后续 010 暂存成功但 root 安装未开始，011 的唯一正式暂存包装器调用又以低敏 `invalid_request` 停止，当前 011 暂存状态为 `UNKNOWN`。012 获批后唯一 local-check 返回固定低敏 `evidence_unavailable`、退出码 2、stderr 为空，随即零重试停止；SSH 未启动，仍没有形成远端三态证据。消费证据已由 PR #371 以 merge commit `80cac83310d97c87e02f80b61e385428e7ed7471` 合入，远端功能分支已删除。013 改为“无 ChangeId 本地诊断 + 一次性远端取证”双组件，其工程候选最终 HEAD `1b542dc656b09ace80bcdd370fac360ba19b4091` 经 CI run `31719189481` 12/12 SUCCESS 和三方零缺陷评审后，由 PR #374 按 merge commit `d0349353342bc37a912b1942d743e0c45c75ea80` 合入主干；当前状态为 `PENDING_USER_APPROVAL`，仍未执行真实本地诊断或 013 SSH。Drop 映射下旧的物理主机身份核验顺序不再适用；当前必须依次完成：
+001 至 012 均已消费。008 曾把固定 003 暂存状态收敛为 `ABSENT`；后续 010 暂存成功但 root 安装未开始，011 的唯一正式暂存包装器调用又以低敏 `invalid_request` 停止，当前 011 暂存状态为 `UNKNOWN`。012 获批后唯一 local-check 返回固定低敏 `evidence_unavailable`、退出码 2、stderr 为空，随即零重试停止；SSH 未启动，仍没有形成远端三态证据。消费证据已由 PR #371 以 merge commit `80cac83310d97c87e02f80b61e385428e7ed7471` 合入，远端功能分支已删除。013 改为“无 ChangeId 本地诊断 + 一次性远端取证”双组件，其工程候选最终 HEAD `1b542dc656b09ace80bcdd370fac360ba19b4091` 经 CI run `31719189481` 12/12 SUCCESS 和三方零缺陷评审后，由 PR #374 按 merge commit `d0349353342bc37a912b1942d743e0c45c75ea80` 合入主干。2026-08-14 首次真实本地诊断暴露 Windows 最小环境遗漏 `PROGRAMDATA`，修复候选复测 PASS；由于诊断脚本摘要变化，旧 013 清单已失效且从未获得远端执行授权。Drop 映射下旧的物理主机身份核验顺序不再适用；当前必须依次完成：
 
 1. 禁止重放 011 或通过新的本地诊断推断远端状态；包装器、命令生成器和候选生成器必须保持消费态。
 2. 禁止重放 012；它的 ChangeId、授权及历史命令均已消费，消费入口必须在参数解析、材料读取和联网前固定拒绝。
 3. 可重复执行无 ChangeId 本地身份材料诊断；该诊断器没有 SSH/SFTP 或远端访问能力，本地失败不消耗 013。
-4. 只有本地诊断 PASS 后，才可另行申请一次性 013 只读 SSH 授权；013 不提供 `--local-check`，工程合并不构成执行授权。
-5. 清理、审计入口安装、测试候选部署与运行态审计分别使用新的 ChangeId、冻结候选和独立授权；不得复用 009、010、011、012 或历史候选。
-6. API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因本地诊断或暂存三态自动关闭。
+4. 将 Windows 可信系统目录修复完成精确 HEAD CI、独立代码安全/QA/产品评审并合入主线；旧 013 入口保持墓碑状态，旧清单不得继续使用。
+5. 以新的 014 ChangeId、诊断器和包装器精确摘要冻结独立授权清单。只有本地诊断 PASS 后，才可另行申请一次性只读 SSH 授权；工程合并不构成执行授权。
+6. 清理、审计入口安装、测试候选部署与运行态审计分别使用新的 ChangeId、冻结候选和独立授权；不得复用 009、010、011、012、013 或历史候选，也不得把 014 的只读授权扩展到后续动作。
+7. API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因本地诊断或暂存三态自动关闭。
 
 `CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005` 已完成唯一一次本地检查和正式只读 SSH，结果为 `ZERO / EXACT / stderr EMPTY / diagnostic PASS`，证明传输链路可用但未关闭暂存 UNKNOWN；005 已消费并禁止重放。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`、`docs/ai-gateway-g8-test-readonly-transport-diagnostic-attempt-20260812-005.md`。下一次暂存只读取证必须使用新的 ChangeId，重新完成代码安全、QA、产品、精确 HEAD CI、merge commit 与用户独立授权。
 

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 from dataclasses import dataclass
 import hashlib
 import os
@@ -143,12 +144,31 @@ def freeze_file(path: Path) -> FileEvidence:
     )
 
 
+def windows_system_paths() -> tuple[Path, Path]:
+    """从 Windows 系统 API 读取可信系统目录，拒绝调用方环境变量覆盖。"""
+    windows_buffer = ctypes.create_unicode_buffer(32768)
+    common_data_buffer = ctypes.create_unicode_buffer(32768)
+    try:
+        windows_length = ctypes.windll.kernel32.GetWindowsDirectoryW(windows_buffer, len(windows_buffer))
+        common_data_result = ctypes.windll.shell32.SHGetFolderPathW(None, 0x23, None, 0, common_data_buffer)
+    except (AttributeError, OSError) as exc:
+        raise DiagnosticError("tool_unavailable") from exc
+    if windows_length <= 0 or windows_length >= len(windows_buffer) or common_data_result != 0:
+        raise DiagnosticError("tool_unavailable")
+    system_root = Path(windows_buffer.value)
+    program_data = Path(common_data_buffer.value)
+    for path in (system_root, program_data):
+        value = str(path)
+        # 系统目录必须是本地盘绝对路径，UNC 或相对路径可能触发非预期网络访问。
+        if not path.is_absolute() or value.startswith(("\\\\", "//")):
+            raise DiagnosticError("tool_unavailable")
+    return system_root, program_data
+
+
 def fixed_ssh_keygen_path() -> Path:
     """只选择操作系统固定位置，避免继承调用方 PATH。"""
     if os.name == "nt":
-        system_root = os.environ.get("SystemRoot")
-        if not system_root:
-            raise DiagnosticError("tool_unavailable")
+        system_root, _ = windows_system_paths()
         path = Path(system_root) / "System32" / "OpenSSH" / "ssh-keygen.exe"
     else:
         path = Path("/usr/bin/ssh-keygen")
@@ -159,10 +179,9 @@ def fixed_ssh_keygen_path() -> Path:
 
 def _minimal_environment():
     if os.name == "nt":
-        system_root = os.environ.get("SystemRoot")
-        if not system_root:
-            raise DiagnosticError("tool_unavailable")
-        return {"SystemRoot": system_root}
+        system_root, program_data = windows_system_paths()
+        # Windows OpenSSH 会读取系统 ProgramData 目录；仅保留这两个系统路径，避免继承用户代理或其他环境变量。
+        return {"SystemRoot": str(system_root), "PROGRAMDATA": str(program_data)}
     return {"PATH": "/usr/bin:/bin", "LANG": "C"}
 
 

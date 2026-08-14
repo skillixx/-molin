@@ -1,6 +1,6 @@
 # AI 网关 G8 验收记录
 
-> 当前状态：`G8_ENGINEERING_READY` 已达成；生产授权、客户灰度和四周商业观察尚未开始，因此尚未达到 `G8_COMMERCIAL_ACCEPTED`。
+> 当前状态：`G8_ENGINEERING_READY` 已达成，`G8_SOFTWARE_CLOSED_LOOP` 尚未达成。当前优先补齐测试服运行态与端到端软件闭环；商业观察移至后续独立确认，不阻塞当前软件实现任务。
 
 ## 1. 基线
 
@@ -61,13 +61,29 @@
 - 010 Drop 直连方案在用户授权后完成一次本地检查、一次只读 SSH 和一次原子 SFTP，五文件暂存成功；唯一 root 安装编排在本地参数构造阶段停止，未建立 root 连接、未发送安装脚本、未创建 root-only/live/sudoers 目标，也未执行 visudo、sudo 范围、Docker 组或固定 self-test。零重试且业务/上游/费用为 `0 / 0 / 0 CNY`。010 已收敛为 `CONSUMED_STAGED_ROOT_NOT_RUN` 并禁止重放；`pc` 不能替代 root-owned 与 sudoers 契约，未执行降级安装。该结果不关闭 API、schema、Bifrost、监控、备份或账务 UNKNOWN，见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-010.md`。
 - 011 交互 sudo 方案的仓库工程门禁与合并已完成：PR #365 最终 HEAD `30cf58083088628c0ad8ac321cca3078f39b5341` 的 CI run `31685942115` 为 12/12 SUCCESS，独立代码安全、QA、产品/规格均为 P0/P1/P2=0，并按 merge commit `018f7344a5a52ccc6c23b478555a7ddc02f5ba63` 合入主干。用户批准后唯一一次 local-check 为 PASS；唯一正式暂存包装器调用以 `invalid_request`、退出码 2、stderr 为空停止，零重试。该低敏失败不能证明 SFTP 是否启动或远端五文件是否部分上传，011 暂存保持 `UNKNOWN`；交互 SSH、sudo 认证、root 安装、`visudo`、sudo 范围、Docker 组和 self-test 均未执行，业务请求/上游请求/费用为 `0 / 0 / 0 CNY`。011 已消费；消费证据 HEAD `03d53a4dfb22510808b1723d04b69172fce07450` 经 CI run `31689994630` 12/12 SUCCESS 及独立代码安全、QA、产品/规格 P0/P1/P2=0 后，由 PR #367 按 merge commit `eba0116ad5e790a4d29e32bc68d3151d9d22dc06` 合入主干并删除远端功能分支。后续取证、清理或安装必须使用新 ChangeId 并重新获得独立授权；见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-011.md`。
 - 012 Drop 暂存只读取证完成工程门禁后获得独立执行授权。唯一 local-check 返回固定低敏 `evidence_unavailable`、退出码 2、stderr 为空，随即零重试停止；唯一 SSH 额度未使用，未连接测试服，也没有形成 `ABSENT`、`PRESENT/PASS` 或 `PRESENT/MISMATCH` 证据，011 暂存继续为 `UNKNOWN`。012 已消费，所有入口在参数解析、身份材料读取和联网前固定拒绝；消费证据 HEAD `3fb4117433b656e5b95ecd7c607002a470441e06` 经 CI run `31700050048` 12/12 SUCCESS 及独立代码安全、QA、产品/规格 P0/P1/P2=0 后，由 PR #371 按 merge commit `80cac83310d97c87e02f80b61e385428e7ed7471` 合入主干，远端功能分支已删除。继续取证须使用新 ChangeId。该结果不关闭 API、schema、数据库、Bifrost、监控、备份或账务事实，也不授权清理、安装或运行态审计，完整记录见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-attempt-20260813-012.md`。
-- 013 把可重复本地诊断与一次性远端授权完全拆分。本地诊断器无 ChangeId，不含 SSH/SFTP 或远端命令；013 不再提供 `--local-check`，未来只有独立用户授权后的单次只读 SSH。工程候选最终 HEAD `1b542dc656b09ace80bcdd370fac360ba19b4091` 经 CI run `31719189481` 12/12 SUCCESS 及独立代码安全、QA、产品/规格 P0/P1/P2=0 后，由 PR #374 按 merge commit `d0349353342bc37a912b1942d743e0c45c75ea80` 合入主干，当前状态为 `PENDING_USER_APPROVAL`。尚未读取真实身份材料、未连接测试服，011 暂存继续为 `UNKNOWN`；后续清理、审计入口安装、测试候选部署和运行态审计仍须分别使用新的 ChangeId 与独立授权，不改变测试服 P1=3、其他 UNKNOWN 或商业验收状态。
+- 013 原方案把本地诊断与远端授权拆分，但 2026-08-14 首次获批的无 ChangeId 本地诊断得到 `FAILED / known_hosts_unavailable`。低敏分解随后证明目标端点唯一 ED25519 记录及批准指纹均匹配，根因是 Windows 最小子进程环境遗漏系统 OpenSSH 所需的 `PROGRAMDATA`，不需要修改 `known_hosts`。诊断全程未联网、未连接测试服、未上传或修改远端。
+- 修复候选改为从 Windows 系统 API 获取可信 `SystemRoot` 与公共数据目录，拒绝调用方伪造的相对或 UNC 环境路径；真实本地材料诊断复测 PASS。旧 013 授权清单失效且入口已墓碑化，任何调用都在解析、材料和联网前返回 `change_id_consumed`。新的 014 处于 `PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`，必须先完成精确 HEAD CI、独立评审和主线合并，再经用户单独授权；当前仍不得执行远端 SSH。
 
-## 3. 商业验收
+## 3. 软件闭环验收
 
-`G8_COMMERCIAL_ACCEPTED` 尚不具备：生产目标、真实上游费用、真实客户、真实资金、价格/财务批准和真实告警联系人均未获本轮独立授权；设计客户数量、真实集成、真实付费、四周成功率和毛利不得填写虚构值。
+`G8_SOFTWARE_CLOSED_LOOP` 必须同时满足：
 
-## 4. 完成判定
+- 测试候选以双总闸关闭方式部署，API `health/ready`、MySQL、Redis、RabbitMQ、Bifrost、Prometheus、Grafana、Alertmanager 和备份状态均有当前低敏证据，不得保留影响闭环判断的 `UNKNOWN`。
+- 管理员完成模型、价格、路由和安全策略发布；用户完成模型发现、Project/SK 创建、文字调用、Usage、账单查询与申诉，整个真实后端浏览器旅程不得使用 API Mock。
+- 请求账本、Usage、价格快照、hold、结算/释放、钱包流水、Outbox 和补偿均可按 `request_id` 追踪；三项正常账务差额严格为 `0.00000000`，无重复扣费、负余额或未释放 hold。
+- 覆盖成功、幂等重试、并发、断连、上游故障、Redis/RabbitMQ 故障及恢复、内容审核拒绝、预算/权限拒绝和异常结算；所有失败都有明确反馈和可恢复动作。
+- 候选先以双总闸关闭部署；调用阶段只允许使用独立 ChangeId 在受控测试网络临时开闸，固定 Fake/零费用上游、测试用户和测试钱包，请求上限 20、费用上限 0 CNY。完成旅程与对账后必须重新关闭两道总闸，并验证所有文字入口返回 503/50330、无新账本、无上游调用和无扣费。
+- 完成候选→基线→候选实际回滚，账本和财务事实不删除、不覆盖；回滚后健康、调用和对账重新通过。
+- 双端通过 1440/768/375 视口验收，所有按钮有加载、成功、失败或禁用反馈；全量自动化、CI、独立代码安全复评、测试工程师验收和产品经理确认通过，P0=0、P1=0。
 
-- 工程门禁已全部通过并完成合并：当前结论为“G8 工程就绪，商业观察未完成”。
-- 只有另获逐项生产授权并满足四周商业指标，才可报告 `G8_COMMERCIAL_ACCEPTED`。
+达到以上条件后，可报告 `G8_SOFTWARE_CLOSED_LOOP` 并结束当前软件实现任务；这不代表生产上线、真实客户开放或商业成功。
+
+## 4. 后续商业确认
+
+`G8_COMMERCIAL_ACCEPTED` 尚不具备：生产目标、真实上游费用、真实客户、真实资金、价格/财务批准和真实告警联系人均未获本轮独立授权。商业观察周期、客户数量、真实集成、真实付费、成功率和毛利由后续生产灰度任务独立确认，不得填写虚构值，也不得反向阻塞 `G8_SOFTWARE_CLOSED_LOOP`。
+
+## 5. 完成判定
+
+- `G8_ENGINEERING_READY`：已完成。
+- `G8_SOFTWARE_CLOSED_LOOP`：当前软件任务的完成状态；只有第 3 节全部通过才可报告完成。
+- `G8_COMMERCIAL_ACCEPTED`：后续商业任务的完成状态；需另获逐项生产授权并满足届时批准的商业观察指标，不影响当前软件任务结项。

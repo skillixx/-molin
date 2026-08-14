@@ -1,0 +1,7 @@
+# G8 安全包装器按原始字节冻结摘要，跨平台检出必须保持 LF，禁止 Windows 自动转换为 CRLF。
+infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py text eol=lf
+infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py text eol=lf
+infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-014.py text eol=lf
+infra/scripts/test_diagnose_ai_gateway_g8_local_ssh_materials.py text eol=lf
+infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_013.py text eol=lf
+infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_014.py text eol=lf

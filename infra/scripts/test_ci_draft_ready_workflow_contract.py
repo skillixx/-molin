@@ -80,6 +80,7 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
             "gateway-g4",
             "gateway-g7",
             "gateway-g8",
+            "gateway-g8-windows",
             "gateway-g8-real-e2e",
             "frontend-admin",
             "frontend-user",
@@ -129,12 +130,24 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
             "gateway-g4",
             "gateway-g7",
             "gateway-g8",
+            "gateway-g8-windows",
             "gateway-g8-real-e2e",
             "frontend-admin",
             "frontend-user",
         ):
             self.assertIn(job_id, block)
         self.assertNotIn("ci-draft-gate", block)
+
+    def test_g8_windows_job_covers_trusted_paths_and_consumed_entry(self):
+        """原生 Windows 门禁必须覆盖可信系统路径和旧 ChangeId 失败关闭。"""
+
+        block = self.job_block("gateway-g8-windows")
+        self.assertIn("runs-on: windows-latest", block)
+        self.assertIn("test_diagnose_ai_gateway_g8_local_ssh_materials.py", block)
+        self.assertIn("test_run_ai_gateway_g8_test_drop_staging_evidence_013.py", block)
+        self.assertIn("test_run_ai_gateway_g8_test_drop_staging_evidence_014.py", block)
+        self.assertIn("reason=change_id_consumed", block)
+        self.assertIn("needs.change-scope.outputs.gateway_g8 == 'true'", block)
 
     def test_ready_heavy_command_sentinels_are_not_removed(self):
         for sentinel in (
