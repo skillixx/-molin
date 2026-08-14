@@ -1076,6 +1076,8 @@ jobs:
       - name: 验证 Windows 可信系统目录与失效入口失败关闭
         shell: pwsh
         run: |
+          # 013/014 墓碑以退出码 2 表示预期消费状态，必须交给下方精确断言处理，不能由 PowerShell 提前提升为异常。
+          $PSNativeCommandUseErrorActionPreference = $false
           python -I -W error::ResourceWarning infra/scripts/test_diagnose_ai_gateway_g8_local_ssh_materials.py -v
           python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_013.py -v
           python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_014.py -v

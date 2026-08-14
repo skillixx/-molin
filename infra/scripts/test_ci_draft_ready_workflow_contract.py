@@ -146,6 +146,7 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
         self.assertIn("test_diagnose_ai_gateway_g8_local_ssh_materials.py", block)
         self.assertIn("test_run_ai_gateway_g8_test_drop_staging_evidence_013.py", block)
         self.assertIn("test_run_ai_gateway_g8_test_drop_staging_evidence_014.py", block)
+        self.assertIn("$PSNativeCommandUseErrorActionPreference = $false", block)
         self.assertIn("reason=change_id_consumed", block)
         self.assertIn("G8_TEST_READONLY_DROP_STAGING_EVIDENCE_014=FAILED reason=change_id_consumed", block)
         self.assertIn("needs.change-scope.outputs.gateway_g8 == 'true'", block)
