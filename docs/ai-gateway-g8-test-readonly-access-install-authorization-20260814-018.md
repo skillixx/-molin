@@ -2,9 +2,9 @@
 
 ## 1. 当前状态
 
-`PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`
+`CONSUMED_HOST_WINDOW_CLOSED_NO_OUTPUT_SSH_REACHABILITY_UNKNOWN`
 
-018 是独立工程候选，ChangeId 为 `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-018`。本清单只冻结代码、测试、命令摘要和允许影响；不授权 SSH、sudo、安装器、post-check、运行态审计或任何测试服操作。生成器固定声明 `CHANGE_ID_CONSUMED=False`、`REMOTE_EXECUTION_AUTHORIZED=False`。
+018 当时是独立工程候选，ChangeId 为 `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-018`。用户后来作出一次独立精确授权；唯一人工本地段窗口直接关闭且没有可见输出。SSH 启动与连接只能记为 `UNKNOWN / 最多 1`，远端固定段、sudo、安装器、post-check、业务、上游和费用均为 0。018 已失败关闭消费，当前生成器和安装器均为固定 `change_id_consumed` 墓碑。
 
 017 已按 `CONSUMED_LOCAL_GATE_FAILED_SSH_REACHABILITY_UNKNOWN` 永久消费并墓碑化，禁止恢复、重试、重放或复用历史命令。018 不继承 017 的任何授权。
 
@@ -49,4 +49,4 @@
 
 从合并后的 main 原始 Git blob 独立复核第 3 节四个文件，大小、SHA-256、Git blob 与表中冻结值逐项一致，CRLF 计数均为 0。以合并后安装器和生成器原始 blob 在隔离 Python 中纯内存重建命令，结果仍为 `26932` 字节、SHA-256 `7cf503dd0a32a43fa716680b0287838a5d0b8d7a2bb31b15c39195698da09500`；`Get-FileHash` 计数为 0，固定 SSH 目标与 `SSH_ATTEMPTED` 标志各 1 次。命令未写盘、未执行。
 
-该证据只证明 018 工程候选已进入主干并完成冻结复核。018 仍为 `CHANGE_ID_CONSUMED=False`、`REMOTE_EXECUTION_AUTHORIZED=False`，测试服最小只读入口仍未确认安装；本归档不授权 SSH、sudo、安装器、post-check 或任何运行态动作，`G8_SOFTWARE_CLOSED_LOOP` 仍未完成。
+该证据只证明 018 当时的工程候选已进入主干并完成冻结复核。后续唯一人工执行的精确结果与墓碑摘要见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260815-018.md`。测试服最小只读入口仍未确认安装；018 禁止重试或重放，继续工程只能使用新的独立 ChangeId，`G8_SOFTWARE_CLOSED_LOOP` 仍未完成。

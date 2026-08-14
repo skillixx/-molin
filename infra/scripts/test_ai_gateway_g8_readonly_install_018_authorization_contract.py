@@ -1,85 +1,84 @@
 #!/usr/bin/env python3
-"""校验 018 工程候选的授权边界、低敏诊断和冻结摘要。"""
+"""校验 018 失败关闭记录、历史冻结证据与两个墓碑入口保持一致。"""
 
+import ast
 import hashlib
-import importlib.util
+import os
+import subprocess
 import unittest
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AUTH_PATH = REPO_ROOT / "docs/ai-gateway-g8-test-readonly-access-install-authorization-20260814-018.md"
+ATTEMPT_PATH = REPO_ROOT / "docs/ai-gateway-g8-test-readonly-access-install-attempt-20260815-018.md"
 GENERATOR_PATH = REPO_ROOT / "infra/scripts/prepare-ai-gateway-g8-test-readonly-access-018-command.py"
 INSTALLER_PATH = REPO_ROOT / "infra/scripts/g8-test-readonly-access-install-018.sh"
-CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-018"
+HISTORICAL_MERGE = "ef9f65f851cc657eaa6fba7df866ba3c4c7a0912"
 
 
-def load_generator():
-    """以隔离解释器加载生成器，只调用不联网的纯内存构造函数。"""
-    specification = importlib.util.spec_from_file_location("g8_auth_018", GENERATOR_PATH)
-    module = importlib.util.module_from_spec(specification)
-    assert specification and specification.loader
-    specification.loader.exec_module(module)
-    return module
-
-
-class TestG8ReadonlyInstall018AuthorizationContract(unittest.TestCase):
-    def test_state_and_change_id_are_new_and_remote_disabled(self) -> None:
-        """018 必须是未消费的新候选，但远端执行仍未获授权。"""
-        document = AUTH_PATH.read_text(encoding="utf-8")
-        module = load_generator()
-        self.assertIn("PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED", document)
-        self.assertIn(CHANGE_ID, document)
-        self.assertIn("017 已按", document)
-        self.assertIn("永久消费并墓碑化", document)
-        self.assertFalse(module.CHANGE_ID_CONSUMED)
-        self.assertFalse(module.REMOTE_EXECUTION_AUTHORIZED)
-        self.assertEqual(module.CHANGE_ID, CHANGE_ID)
-
-    def test_low_sensitive_diagnostic_contract_is_complete(self) -> None:
-        """清单与命令必须同时冻结六类原因和两个 SSH 边界标志。"""
-        document = AUTH_PATH.read_text(encoding="utf-8")
-        command = load_generator().build_command(INSTALLER_PATH.read_bytes())
-        for reason in (
-            "trusted_windows_path_failed",
-            "material_evidence_failed",
-            "known_hosts_failed",
-            "identity_pair_failed",
-            "material_drift_failed",
-            "ssh_session_failed",
+class TestG8ReadonlyInstall018ConsumedContract(unittest.TestCase):
+    def test_documents_record_window_close_and_zero_install(self) -> None:
+        """记录必须区分未知 SSH 到达边界与确定未观察到的远端安装影响。"""
+        combined = AUTH_PATH.read_text(encoding="utf-8") + ATTEMPT_PATH.read_text(encoding="utf-8")
+        for required in (
+            "CONSUMED_HOST_WINDOW_CLOSED_NO_OUTPUT_SSH_REACHABILITY_UNKNOWN",
+            "窗口直接关闭且没有可见输出",
+            "SSH 启动与连接：`UNKNOWN / 最多 1`",
+            "远端固定段、sudo、安装器与 post-check：`0 / 0 / 0 / 0`",
+            "018 按失败关闭规则消费并禁止重放",
+            "业务请求、上游请求、费用：`0 / 0 / 0 CNY`",
         ):
-            self.assertIn(reason, document)
-            self.assertIn(reason, command)
-        self.assertEqual(command.count("G8_TEST_READONLY_ACCESS_018_PRE_SSH_GATE=PASS"), 1)
-        self.assertEqual(command.count("G8_TEST_READONLY_ACCESS_018_SSH_ATTEMPTED=YES"), 1)
-        self.assertEqual(command.count("pc@"), 1)
-        self.assertNotIn("Get-FileHash", command)
+            self.assertIn(required, combined)
 
-    def test_four_files_match_frozen_size_hash_blob_and_lf(self) -> None:
-        """四个工程文件必须逐字节匹配授权清单，且禁止 CRLF 漂移。"""
-        document = AUTH_PATH.read_text(encoding="utf-8")
+    def test_generator_is_import_free_tombstone(self) -> None:
+        """生成入口不得保留参数解析、文件读取或联网依赖。"""
+        source = GENERATOR_PATH.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        self.assertFalse(any(isinstance(node, (ast.Import, ast.ImportFrom)) for node in ast.walk(tree)))
+        for forbidden in ("argparse", "subprocess", "socket", "Path(", "ssh.exe", "ssh-keygen"):
+            self.assertNotIn(forbidden, source)
+
+    def test_both_entrypoints_return_exact_consumed_status(self) -> None:
+        """任何历史参数只能得到固定低敏消费状态。"""
+        generator = subprocess.run(
+            ["python", "-I", str(GENERATOR_PATH), "--change-id=historical"],
+            cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", check=False,
+        )
+        self.assertEqual((generator.returncode, generator.stdout, generator.stderr), (2, "G8_TEST_READONLY_ACCESS_018_COMMAND=FAILED reason=change_id_consumed\n", ""))
+        bash = Path(r"C:\Program Files\Git\bin\bash.exe")
+        executable = str(bash) if bash.exists() else "bash"
+        installer = subprocess.run([executable, str(INSTALLER_PATH), "historical"], cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8", check=False)
+        self.assertEqual((installer.returncode, installer.stdout, installer.stderr), (2, "G8_TEST_READONLY_ACCESS_INSTALL_018=FAILED reason=change_id_consumed\n", ""))
+
+    def test_consumed_tombstones_match_attempt_record(self) -> None:
+        """当前四个墓碑文件必须与执行记录的大小、摘要和 blob 完全一致。"""
+        document = ATTEMPT_PATH.read_text(encoding="utf-8")
         expected = {
-            INSTALLER_PATH: (10977, "3232f3265da00d0a8f531798c32917bc77efd4725c30b4c9a99022d91484de85", "635002eac75a1300cb69df57cfa1006288092cae"),
-            GENERATOR_PATH: (19006, "dc5037b22555c500e152985edf231da4e44931ec4470bb645dd254a9d6e44db9", "4530158756d75712f5e01f36d209660df853e622"),
-            REPO_ROOT / "infra/scripts/test_g8_test_readonly_access_install_018.py": (18254, "a7575710f402aa26b4f6a37fc9bc499c6dd0f982b34ef7dd42f3e4207d1f95d6", "e6688b0e1fff300cd9b94ecd41f267b78ee9f237"),
-            REPO_ROOT / "infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_018_command.py": (33386, "2519059d48b7dd0a9273476cb033d23d3aaa546b8991dccccef90f7c6baa5fb0", "fc202a28cce7484086a96966da6e4f00b15582c8"),
+            INSTALLER_PATH: (182, "dd0e3f1a563772be2c6961d15fb8c1622a9c2f09e0a392e59e8ee1cf31038dd5", "7261b9a6e6fbbaed12bec9fe9eeb43dd338a95f7"),
+            GENERATOR_PATH: (416, "6a3b304057b0e569d4dc07ad95607c5042bc6df00a55448eb42b77fe31c34fe5", "945cc9614024dd8a138a59c57e5ca1998827abe6"),
+            REPO_ROOT / "infra/scripts/test_g8_test_readonly_access_install_018.py": (1195, "4ff08707407db6a11dd8844d5ba2207f46983d26e0bee0b4a5253ed170d14221", "67b8c8cc94e273a14dded15eb4c7325077a0e276"),
+            REPO_ROOT / "infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_018_command.py": (1409, "296066323cc9f5355fcfd71cd8b0da3e0ff9df6044a8ec92093f1b9cc1416cfc", "2c27001ae9424744b16eaa4a773ec0ecc05ae016"),
         }
-        for path, (size, sha256, blob) in expected.items():
+        for path, (size, digest, blob) in expected.items():
             content = path.read_bytes()
-            actual_blob = hashlib.sha1(b"blob " + str(len(content)).encode("ascii") + b"\0" + content).hexdigest()
-            self.assertEqual(len(content), size, path)
-            self.assertEqual(hashlib.sha256(content).hexdigest(), sha256, path)
-            self.assertEqual(actual_blob, blob, path)
-            self.assertEqual(content.count(b"\r\n"), 0, path)
-            self.assertIn(f"| {size} | `{sha256}` | `{blob}` / CRLF=0 |", document)
+            self.assertEqual((len(content), hashlib.sha256(content).hexdigest()), (size, digest), path)
+            self.assertEqual(hashlib.sha1(b"blob " + str(size).encode("ascii") + b"\0" + content).hexdigest(), blob, path)
+            self.assertIn(f"| {size} | `{digest}` | `{blob}` |", document)
 
-    def test_in_memory_command_matches_frozen_summary(self) -> None:
-        """双段命令只在内存重建并核对摘要，不写出或执行。"""
-        document = AUTH_PATH.read_text(encoding="utf-8")
-        command = load_generator().build_command(INSTALLER_PATH.read_bytes()).encode("utf-8")
-        self.assertEqual(len(command), 26932)
-        self.assertEqual(hashlib.sha256(command).hexdigest(), "7cf503dd0a32a43fa716680b0287838a5d0b8d7a2bb31b15c39195698da09500")
-        self.assertIn("| 26932 | `7cf503dd0a32a43fa716680b0287838a5d0b8d7a2bb31b15c39195698da09500` | 不写盘 |", document)
+    def test_historical_merge_blobs_still_match_018_freeze(self) -> None:
+        """墓碑化后仍从工程合并对象复核四个历史候选摘要。"""
+        if os.name != "nt" and (REPO_ROOT / ".git").is_file():
+            self.skipTest("linked worktree 的外部 Git 对象库未挂载")
+        expected = {
+            "infra/scripts/g8-test-readonly-access-install-018.sh": (10977, "3232f3265da00d0a8f531798c32917bc77efd4725c30b4c9a99022d91484de85"),
+            "infra/scripts/prepare-ai-gateway-g8-test-readonly-access-018-command.py": (19006, "dc5037b22555c500e152985edf231da4e44931ec4470bb645dd254a9d6e44db9"),
+            "infra/scripts/test_g8_test_readonly_access_install_018.py": (18254, "a7575710f402aa26b4f6a37fc9bc499c6dd0f982b34ef7dd42f3e4207d1f95d6"),
+            "infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_018_command.py": (33386, "2519059d48b7dd0a9273476cb033d23d3aaa546b8991dccccef90f7c6baa5fb0"),
+        }
+        for path, (size, digest) in expected.items():
+            content = subprocess.run(["git", "show", f"{HISTORICAL_MERGE}:{path}"], cwd=REPO_ROOT, capture_output=True, check=True).stdout
+            self.assertEqual((len(content), hashlib.sha256(content).hexdigest()), (size, digest), path)
 
 
 if __name__ == "__main__":
