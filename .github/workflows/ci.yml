@@ -993,28 +993,36 @@ jobs:
             python:3.13-alpine \
             python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_014.py -v
 
-      - name: 验证 G8 015 最小只读入口安装候选离线门禁
+      - name: 验证 G8 015 消费墓碑与 016 最小只读入口候选离线门禁
         run: |
           bash -n infra/scripts/g8-test-readonly-access-install-015.sh
+          bash -n infra/scripts/g8-test-readonly-access-install-016.sh
           python -I -W error::ResourceWarning infra/scripts/test_g8_test_readonly_access_install_015.py -v
           python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_015_command.py -v
           python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_install_015_authorization_contract.py -v
+          python -I -W error::ResourceWarning infra/scripts/test_g8_test_readonly_access_install_016.py -v
+          python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_016_command.py -v
+          python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_install_016_authorization_contract.py -v
           python -I -m py_compile \
             infra/scripts/prepare-ai-gateway-g8-test-readonly-access-015-command.py \
             infra/scripts/test_g8_test_readonly_access_install_015.py \
             infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_015_command.py \
-            infra/scripts/test_ai_gateway_g8_readonly_install_015_authorization_contract.py
-          python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-015-command.py --self-test
+            infra/scripts/test_ai_gateway_g8_readonly_install_015_authorization_contract.py \
+            infra/scripts/prepare-ai-gateway-g8-test-readonly-access-016-command.py \
+            infra/scripts/test_g8_test_readonly_access_install_016.py \
+            infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_016_command.py \
+            infra/scripts/test_ai_gateway_g8_readonly_install_016_authorization_contract.py
+          python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-016-command.py --self-test
           docker run --rm --network none \
             -v "${{ github.workspace }}:/repo:ro" \
             -w /repo \
             python:3.13-bookworm \
-            python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_015_command.py -v
+            bash -ceu "python -I -W error::ResourceWarning infra/scripts/test_g8_test_readonly_access_install_016.py -v; python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_016_command.py -v"
           docker run --rm --network none \
             -v "${{ github.workspace }}:/repo:ro" \
             -w /repo \
             python:3.13-alpine \
-            python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_install_015_authorization_contract.py -v
+            python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_install_016_authorization_contract.py -v
 
       - name: 校验生产监控、告警、Compose 和 Nginx 契约
         env:
@@ -1111,12 +1119,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw '015 命令生成器单测失败' }
           python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_install_015_authorization_contract.py -v
           if ($LASTEXITCODE -ne 0) { throw '015 授权清单契约测试失败' }
-          python -I -m py_compile infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-014.py infra/scripts/prepare-ai-gateway-g8-test-readonly-access-015-command.py infra/scripts/test_ai_gateway_g8_readonly_install_015_authorization_contract.py
+          python -I -W error::ResourceWarning infra/scripts/test_g8_test_readonly_access_install_016.py -v
+          if ($LASTEXITCODE -ne 0) { throw '016 安装器单测失败' }
+          python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_016_command.py -v
+          if ($LASTEXITCODE -ne 0) { throw '016 命令生成器单测失败' }
+          python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_install_016_authorization_contract.py -v
+          if ($LASTEXITCODE -ne 0) { throw '016 授权清单契约测试失败' }
+          python -I -m py_compile infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-014.py infra/scripts/prepare-ai-gateway-g8-test-readonly-access-015-command.py infra/scripts/test_ai_gateway_g8_readonly_install_015_authorization_contract.py infra/scripts/prepare-ai-gateway-g8-test-readonly-access-016-command.py infra/scripts/test_ai_gateway_g8_readonly_install_016_authorization_contract.py
           if ($LASTEXITCODE -ne 0) { throw 'Windows G8 Python 编译检查失败' }
           python -I infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py --self-test
           if ($LASTEXITCODE -ne 0) { throw 'Windows 本地材料诊断自检失败' }
-          python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-015-command.py --self-test
-          if ($LASTEXITCODE -ne 0) { throw '015 命令生成器自检失败' }
+          python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-016-command.py --self-test
+          if ($LASTEXITCODE -ne 0) { throw '016 命令生成器自检失败' }
           # 仅在调用预期退出 2 的 013 墓碑时暂时关闭原生命令异常提升，前置门禁继续使用 runner 默认失败关闭。
           $g8PreviousNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
           try {
@@ -1141,7 +1155,19 @@ jobs:
           if ($g8Consumed014Exit -ne 2 -or [string]$g8Consumed014Output -cne 'G8_TEST_READONLY_DROP_STAGING_EVIDENCE_014=FAILED reason=change_id_consumed') {
             throw '014 已消费入口未在 Windows 门禁中失败关闭'
           }
-          # 两个预期消费命令都会留下退出码 2；精确断言通过后显式结束，避免 Actions 包装器误判步骤失败。
+          # 015 使用第三个独立局部作用域，禁止历史参数重新生成可执行命令。
+          $g8PreviousNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+          try {
+            $PSNativeCommandUseErrorActionPreference = $false
+            $g8Consumed015Output = & python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-015-command.py --change-id=historical --output-file=forbidden 2>&1
+            $g8Consumed015Exit = $LASTEXITCODE
+          } finally {
+            $PSNativeCommandUseErrorActionPreference = $g8PreviousNativeErrorPreference
+          }
+          if ($g8Consumed015Exit -ne 2 -or [string]$g8Consumed015Output -cne 'G8_TEST_READONLY_ACCESS_015_COMMAND=FAILED reason=change_id_consumed') {
+            throw '015 已消费入口未在 Windows 门禁中失败关闭'
+          }
+          # 三个预期消费命令都会留下退出码 2；精确断言通过后显式结束，避免 Actions 包装器误判步骤失败。
           exit 0
 
   gateway-g8-real-e2e:
