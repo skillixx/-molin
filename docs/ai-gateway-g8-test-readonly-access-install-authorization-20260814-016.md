@@ -2,9 +2,9 @@
 
 ## 1. 当前状态
 
-`PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`
+`CONSUMED_LOCAL_MODULE_ERROR_REMOTE_NOT_REACHED`
 
-本清单仅冻结 016 工程候选，不是测试服执行授权。精确 HEAD CI、独立代码安全/QA/产品复评、PR 合并和合并后 Git blob 摘要复核均已通过；当前仍禁止运行生成命令中的 SSH、交互 sudo 或安装段。只有用户再次明确批准本 ChangeId 后，才能执行一次。
+本清单现作为 016 历史消费记录。精确 HEAD CI、独立代码安全/QA/产品复评、PR 合并和合并后 Git blob 摘要复核均已通过；用户随后明确批准 016。唯一人工第一段在 PowerShell 交互宿主加载 Codex runtime PSReadLine 时出现发布者信任提示，用户选择“始终运行”后该模块仍加载失败；冻结函数第一次调用 `Get-FileHash` 随即以 `POWERSHELL_GET_FILE_HASH_UNAVAILABLE` 终止。`$ErrorActionPreference='Stop'` 保证控制流没有到达后续 `ssh.exe`，SSH、sudo 和安装均为 0。016 已消费并禁止重放。
 
 工程门禁与合并后归档回执：
 
@@ -13,7 +13,7 @@
 - 独立代码安全、QA 复评：同一最终 HEAD 均为 P0/P1/P2/P3=0；产品/规格复评为 P0/P1=0、P2=1、P3=0，并允许合并。P2 是仓库不携带真实冻结 011 五文件，CI 不能独立重建真实制品完整安装主链路的已披露非阻断残差。
 - 主线 merge commit：`2f407cbf3a9c5fea987eeb2f82ebb41630db9e35`；父提交依次为旧 main `102e833b1975d56100faf4d8e4add0150a3edc39` 与工程 HEAD `04abab350afc3163a66dd5faee86005e7c2b02c3`。远端 016 功能分支已删除。
 - 合并后从本地 `origin/main` 原始 Git blob 复核 4 个冻结文件：大小、SHA-256、Git blob 与第 3 节冻结值全部一致，CRLF 计数均为 0；纯内存重建双段命令仍为 `22967 / 0173d043baa4d60a96659a77a8387f8d1de1a8fc9b77928f0abdf9d2793008fb`，未写出或执行命令资产。
-- 本次归档复核未连接测试服，SSH、sudo、安装、业务请求、上游请求和费用均为 `0 / 0 / 0 / 0 / 0 / 0 CNY`。016 仍未消费；任何远端执行必须重新取得用户对本 ChangeId 的独立精确授权。
+- 合并后归档复核未连接测试服。后续唯一获批人工第一段同样没有触达测试服：SSH、sudo、安装、业务请求、上游请求和费用均为 `0 / 0 / 0 / 0 / 0 / 0 CNY`。016 已消费并禁止重放；017 仅为新的工程候选，不继承 016 执行授权。
 
 前置证据：014 已在 main merge commit `97ee6037cafa90577be619fc67e78866c4d75efe` 中完成结果归档。其唯一只读 SSH 证明固定 011 暂存为 `PRESENT / PASS / NONE`，五文件、manifest 与回执完整；014 已消费并墓碑化。015 后续获得独立授权，但唯一人工本地段出现 PowerShell 正则末尾转义错误；该错误默认非终止，身份材料读取、SSH、sudo、安装和远端影响均保持 `UNKNOWN`，015 已消费并墓碑化。两项历史证据都不授权 016，也不证明 live 入口或任何运行态可用。
 
@@ -58,9 +58,9 @@
 
 本地工程验证另以工作区外只读挂载的冻结 011 五文件，在 `--network none` 一次性 Linux 容器中完整执行安装器主流程：成功路径的三项 live owner/mode/摘要与审计器 self-test 均通过；注入额外 `/bin/bash` NOPASSWD 后，失败路径先撤销 sudoers，再撤销两个工具和本次空父目录，同时保留 011 暂存与 root-only 016 副本。该容器证据不连接测试服，也不替代精确 HEAD CI 或远端授权。
 
-## 4. 唯一允许的远端影响
+## 4. 历史批准范围（未触达）
 
-获得独立批准后，016 最多允许：
+016 曾获独立批准，最多允许以下影响；本次实际执行在本地模块门禁终止，以下远端影响均未触达：
 
 1. 建立 1 个固定 SSH 交互会话，连接重试 0；SSH 密码认证、键盘交互认证、代理、端口转发和本地命令均禁用。
 2. 完成一次非特权只读预检；只有固定输出 `G8_TEST_READONLY_ACCESS_PREFLIGHT_016=PASS` 后，才允许人工响应一次 `sudo -k -v` 的终端密码提示。密码不得出现在聊天、命令、环境变量、文件、日志或生成物中。
@@ -86,6 +86,6 @@ sudoers 只能新增一条精确的 root `NOPASSWD` 命令：`/usr/local/libexec
 
 ## 6. 后续边界
 
-016 成功只证明最小只读入口安装及 self-test 通过，不证明 API、schema、MySQL、Redis、RabbitMQ、Bifrost、Prometheus、Grafana、Alertmanager、备份或账务运行态通过。
+016 未进入 SSH、sudo 或安装，不能证明最小只读入口安装及 self-test，更不证明 API、schema、MySQL、Redis、RabbitMQ、Bifrost、Prometheus、Grafana、Alertmanager、备份或账务运行态通过。
 
-安装结果必须先归档、墓碑化 016 并完成独立工程门禁。随后运行态审计必须使用新的 ChangeId 和独立用户授权；测试候选部署、临时 Fake 业务旅程、对账和回滚也分别使用新的 ChangeId。生产、真实付费上游、真实客户流量、真实通知及商业观察不属于 016。
+016 失败结果必须先归档并墓碑化。017 修复候选必须重新完成本地测试、精确 HEAD CI、独立代码安全/QA/产品复评、PR 合并和合并后冻结摘要复核，再单独申请用户授权。随后运行态审计必须使用新的 ChangeId 和独立用户授权；测试候选部署、临时 Fake 业务旅程、对账和回滚也分别使用新的 ChangeId。生产、真实付费上游、真实客户流量、真实通知及商业观察不属于 016 或 017。

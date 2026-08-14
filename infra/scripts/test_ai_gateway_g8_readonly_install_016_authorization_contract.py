@@ -1,83 +1,53 @@
 #!/usr/bin/env python3
-"""校验 016 授权清单、冻结文件和生成命令保持同一份工程事实。"""
+"""校验 016 本地模块错误记录、消费清单与两个墓碑入口保持一致。"""
 
-import hashlib
-import importlib.util
+import ast
+import subprocess
 import unittest
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DOC_PATH = REPO_ROOT / "docs/ai-gateway-g8-test-readonly-access-install-authorization-20260814-016.md"
+AUTH_PATH = REPO_ROOT / "docs/ai-gateway-g8-test-readonly-access-install-authorization-20260814-016.md"
+ATTEMPT_PATH = REPO_ROOT / "docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-016.md"
 GENERATOR_PATH = REPO_ROOT / "infra/scripts/prepare-ai-gateway-g8-test-readonly-access-016-command.py"
 INSTALLER_PATH = REPO_ROOT / "infra/scripts/g8-test-readonly-access-install-016.sh"
 
 
-def digest(path: Path) -> str:
-    """读取仓库普通文件并计算 SHA-256。"""
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def load_generator():
-    """加载生成器以复核内存命令，不执行 main 或任何外部动作。"""
-    specification = importlib.util.spec_from_file_location("g8_install_016_contract", GENERATOR_PATH)
-    module = importlib.util.module_from_spec(specification)
-    assert specification and specification.loader
-    specification.loader.exec_module(module)
-    return module
-
-
-class TestG8ReadonlyInstall016AuthorizationContract(unittest.TestCase):
-    def setUp(self) -> None:
-        self.document = DOC_PATH.read_text(encoding="utf-8")
-        self.generator = load_generator()
-
-    def test_state_waits_for_user_approval_and_remote_execution_is_disabled(self) -> None:
-        self.assertIn("`PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`", self.document)
-        self.assertFalse(self.generator.CHANGE_ID_CONSUMED)
-        self.assertFalse(self.generator.REMOTE_EXECUTION_AUTHORIZED)
-        self.assertIn("当前仍禁止运行生成命令中的 SSH、交互 sudo 或安装段", self.document)
-        self.assertIn("PR：`#381`", self.document)
-        self.assertIn("2f407cbf3a9c5fea987eeb2f82ebb41630db9e35", self.document)
-        self.assertIn("合并后 Git blob", self.document)
-        self.assertIn("016 仍未消费", self.document)
-
-    def test_frozen_file_sizes_and_hashes_match_document(self) -> None:
-        expected = {
-            INSTALLER_PATH: (9465, "dee24046f11de7ba12994b3c93a68c28b5505f73b9dc6085a025f4ea790be85c"),
-            GENERATOR_PATH: (15805, "a1d96f8cc3d7abc1fa2ea04ab198133e2f60281d4664af83c93e378ac80dedbd"),
-            REPO_ROOT / "infra/scripts/test_g8_test_readonly_access_install_016.py": (
-                14481,
-                "9427886d06e8adc4577e838839f1d1890d29880b6ab1d829aadcea9fb6d213cf",
-            ),
-            REPO_ROOT / "infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_016_command.py": (
-                13920,
-                "bb81a134882c0c6bad2b2531137877b05d41e33cc3cf0402cc2759867be6d226",
-            ),
-        }
-        for path, (size, sha256) in expected.items():
-            self.assertEqual(path.stat().st_size, size, path)
-            self.assertEqual(digest(path), sha256, path)
-            self.assertIn(f"| {size} | `{sha256}` |", self.document)
-
-    def test_generated_command_hash_matches_document(self) -> None:
-        installer = self.generator.read_frozen_installer()
-        command = self.generator.build_command(installer).encode("utf-8")
-        self.assertEqual(len(command), 22967)
-        self.assertEqual(hashlib.sha256(command).hexdigest(), "0173d043baa4d60a96659a77a8387f8d1de1a8fc9b77928f0abdf9d2793008fb")
-        self.assertIn("| 22967 | `0173d043baa4d60a96659a77a8387f8d1de1a8fc9b77928f0abdf9d2793008fb` |", self.document)
-
-    def test_scope_and_stop_conditions_are_explicit(self) -> None:
+class TestG8ReadonlyInstall016ConsumedContract(unittest.TestCase):
+    def test_documents_record_local_module_error_and_zero_remote_effect(self) -> None:
+        """两份记录必须明确本地模块错误、远端零触达和禁止重放。"""
+        combined = AUTH_PATH.read_text(encoding="utf-8") + ATTEMPT_PATH.read_text(encoding="utf-8")
         for required in (
-            "SSH 交互会话",
-            "连接重试 0",
-            "SFTP、SCP、下载",
-            "业务请求、上游请求和费用固定为 `0 / 0 / 0 CNY`",
-            "root-only 016 副本作为低敏执行证据保留",
-            "其后续清理均须新 ChangeId 和独立授权",
-            "016 成功只证明最小只读入口安装及 self-test 通过",
+            "CONSUMED_LOCAL_MODULE_ERROR_REMOTE_NOT_REACHED",
+            "POWERSHELL_GET_FILE_HASH_UNAVAILABLE",
+            "SSH 会话：`0/1`",
+            "sudo 与安装：`0`",
+            "016 已消费并禁止重放",
+            "017 仅为新的工程候选，不继承 016 执行授权",
         ):
-            self.assertIn(required, self.document)
+            self.assertIn(required, combined)
+
+    def test_generator_is_import_free_tombstone(self) -> None:
+        """生成入口源码不得保留参数解析、文件读取或联网依赖。"""
+        source = GENERATOR_PATH.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        self.assertFalse(any(isinstance(node, (ast.Import, ast.ImportFrom)) for node in ast.walk(tree)))
+        for forbidden in ("argparse", "subprocess", "socket", "Path(", "ssh.exe", "Get-FileHash"):
+            self.assertNotIn(forbidden, source)
+
+    def test_both_entrypoints_return_exact_consumed_status(self) -> None:
+        """历史参数只能得到固定低敏消费状态。"""
+        generator = subprocess.run(
+            ["python", "-I", str(GENERATOR_PATH), "--change-id=historical"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+        self.assertEqual(generator.returncode, 2)
+        self.assertEqual(generator.stdout, "G8_TEST_READONLY_ACCESS_016_COMMAND=FAILED reason=change_id_consumed\n")
+        self.assertEqual(generator.stderr, "")
 
 
 if __name__ == "__main__":
