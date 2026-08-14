@@ -1112,6 +1112,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          # 017 消费契约必须从历史工程 merge 原始 blob 复核冻结摘要，禁止浅克隆丢失证据对象。
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:

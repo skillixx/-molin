@@ -155,6 +155,7 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
         self.assertIn("test_g8_test_readonly_access_install_017.py", block)
         self.assertIn("test_prepare_ai_gateway_g8_test_readonly_access_017_command.py", block)
         self.assertIn("test_ai_gateway_g8_readonly_install_017_authorization_contract.py", block)
+        self.assertIn("fetch-depth: 0", block)
         self.assertEqual(block.count("$PSNativeCommandUseErrorActionPreference = $false"), 5)
         self.assertGreater(
             block.index("$PSNativeCommandUseErrorActionPreference = $false"),
