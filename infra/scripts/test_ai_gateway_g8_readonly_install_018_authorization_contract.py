@@ -28,8 +28,16 @@ class TestG8ReadonlyInstall018ConsumedContract(unittest.TestCase):
             "远端固定段、sudo、安装器与 post-check：`0 / 0 / 0 / 0`",
             "018 按失败关闭规则消费并禁止重放",
             "业务请求、上游请求、费用：`0 / 0 / 0 CNY`",
+            "018 不得再次授权、重试或重放",
+            "本段历史上限不构成 019 或任何后续 ChangeId 的授权",
         ):
             self.assertIn(required, combined)
+        for stale_authorization in (
+            "才可对 018 作出新的独立精确授权",
+            "即使将来获得独立安装授权",
+            "等待新的独立远端安装授权",
+        ):
+            self.assertNotIn(stale_authorization, AUTH_PATH.read_text(encoding="utf-8"))
 
     def test_generator_is_import_free_tombstone(self) -> None:
         """生成入口不得保留参数解析、文件读取或联网依赖。"""
