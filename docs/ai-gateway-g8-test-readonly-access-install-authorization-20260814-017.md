@@ -2,9 +2,18 @@
 
 ## 1. 当前状态
 
-`PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`
+`PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`
 
-本清单仅冻结 017 工程候选，不是测试服执行授权。工程候选正在进行 PR、精确 HEAD CI 与独立复评；在主线合并和合并后原始 Git blob 摘要复核全部通过前，当前仍禁止运行生成命令中的 SSH、交互 sudo 或安装段。只有全部工程门禁关闭，并再次取得用户对 017 的独立精确授权后，才能执行一次。
+本清单仅冻结 017 工程候选，不是测试服执行授权。PR #384、精确 HEAD CI、独立代码安全/QA/产品复评、主线 merge commit 与合并后原始 Git blob 摘要复核均已通过；当前仍禁止运行生成命令中的 SSH、交互 sudo 或安装段。只有再次取得用户对 017 的独立精确授权后，才能执行一次。
+
+工程门禁与合并后归档回执：
+
+- PR：`#384`，最终工程 HEAD：`ee947fd61919215500ef516488d56e01ad2ea72d`。
+- CI：run `31791430839` completed/success；全部适用门禁成功，Draft 门禁按设计跳过。
+- 独立代码安全、QA、产品/规格复评均绑定同一最终 HEAD，P0/P1/P2/P3=`0/0/0/0`，允许合并。
+- 主线 merge commit：`e2a7e4f89c4115b3e32dc27292b0bc11d7d09a57`；父提交依次为旧 main `8cdffdfe2bf62a5ff8454e227d6724e893b1c0cb` 与工程 HEAD `ee947fd61919215500ef516488d56e01ad2ea72d`。远端功能分支已删除。
+- 合并后从 `origin/main` 原始 Git blob 复核 4 个冻结文件：大小、SHA-256、Git blob 与第 3 节冻结值全部一致，CRLF 计数均为 0；纯内存重建双段命令仍为 `25862 / 6acc63972cb779eea18df49dcaec271c7d50223000d96f2a1c1d57364d4cc98e`，未写出或执行命令资产。
+- 本次工程集成与归档复核未连接测试服：SSH、sudo、安装、业务请求、上游请求和费用均为 `0 / 0 / 0 / 0 / 0 / 0 CNY`。017 尚未安装、尚未消费；本回执不构成远端执行授权。
 
 016 已在用户批准后的唯一人工第一段中失败关闭：交互 PowerShell 无法解析 `Get-FileHash`，终止错误发生在唯一 SSH 调用之前，SSH、sudo、安装、业务请求、上游请求和费用均为 `0 / 0 / 0 / 0 / 0 / 0 CNY`。016 已消费并禁止重放；017 仅为新的工程候选，不继承 016 执行授权。
 
@@ -40,6 +49,8 @@
 | `infra/scripts/test_g8_test_readonly_access_install_017.py` | 18254 | `90ed63db0d0caacd38ecc3f292ea393aeae9575cc9aa8be586da5eaa722dbc34` |
 | `infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_017_command.py` | 21493 | `7b8cd85bdb5917dea6fdb0b86e0f055bb98946e09028ddd87c0bd456c906eb7d` |
 | 生成器输出的冻结双段命令 | 25862 | `6acc63972cb779eea18df49dcaec271c7d50223000d96f2a1c1d57364d4cc98e` |
+
+上述大小与摘要已经由最终 HEAD、CI、独立复评和合并后原始 Git blob 再次核对。合并后 Git blob 分别为安装器 `429b73bb7b5487d6539e1c604ef9410b34c3b0c1`、生成器 `74a5c63d18c001154a36c1c22003bab433855c36`、安装器测试 `4122ce7915acd71e917326f9237be16c8d07fd69`、生成器测试 `ed9711c9ac7cdf5d8bb3e87a8a428ce8fe31d14f`；任一后续漂移都会使本候选失效，不得执行旧生成物。
 
 017 相对 016 的基础修复是把冻结材料摘要从模块自动加载的 `Get-FileHash` 改为 Windows PowerShell 5.1 可用的纯 .NET 流式 SHA-256；嵌套 `try/finally` 保证哈希对象创建失败或释放失败时，文件流仍由外层 `finally` 关闭。生成命令在禁用模块自动加载并卸载 `Microsoft.PowerShell.Utility` 后仍能对固定字节得到标准摘要，并以故障注入覆盖哈希对象创建和释放失败。
 

@@ -72,7 +72,7 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 ## 3. 017 当前安装候选与历史停止记录
 
-015 已在唯一获批本地段中出现 PowerShell 正则错误并消费；下游影响保持 `UNKNOWN`。016 经 PR #381 合入 main 并完成合并后冻结摘要复核，用户随后独立批准唯一执行；人工第一段在交互 PowerShell 解析 `Get-FileHash` 时以终止错误停止，错误位于唯一 SSH 调用之前，SSH、sudo、安装和远端影响均为 0，016 已消费并墓碑化。017 使用新 ChangeId `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-017`，仍只以 014 已证明 `PRESENT / PASS / NONE` 的 011 暂存为输入，并以纯 .NET 流式 SHA-256 消除模块自动加载依赖。远端预检、一次人工 `sudo -k -v`、no-clobber 事务、`visudo`、sudo 范围、Docker 非成员和审计器 self-test 边界保持不变。当前为 `PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`，禁止 SSH、sudo 和安装。完整证据见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-016.md` 与 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260814-017.md`。
+015 已在唯一获批本地段中出现 PowerShell 正则错误并消费；下游影响保持 `UNKNOWN`。016 经 PR #381 合入 main 并完成合并后冻结摘要复核，用户随后独立批准唯一执行；人工第一段在交互 PowerShell 解析 `Get-FileHash` 时以终止错误停止，错误位于唯一 SSH 调用之前，SSH、sudo、安装和远端影响均为 0，016 已消费并墓碑化。017 使用新 ChangeId `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-017`，仍只以 014 已证明 `PRESENT / PASS / NONE` 的 011 暂存为输入，并以纯 .NET 流式 SHA-256 消除模块自动加载依赖，同时关闭加密私钥提示、低敏输出和 HUP/TERM/INT 回滚边界。PR #384 最终 HEAD `ee947fd61919215500ef516488d56e01ad2ea72d` 通过 CI run `31791430839` 与三方零缺陷复评，按 merge commit `e2a7e4f89c4115b3e32dc27292b0bc11d7d09a57` 合入 main，合并后原始 Git blob 与冻结命令复核一致。当前为 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`，017 尚未安装、尚未消费，禁止 SSH、sudo 和安装。完整证据见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-016.md` 与 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260814-017.md`。
 
 ### 3.1 历史已停止安装变更（禁止执行）
 
@@ -130,8 +130,8 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 2. 011 暂存存在性和完整性已关闭，无需再次诊断；不得把该结论外推为 live 入口或运行态可用。
 3. 015 已在独立用户授权后的唯一人工本地段中出现 PowerShell 路径正则错误；由于该错误默认非终止，身份材料读取、SSH、sudo、root-only 副本和 live 安装均保持 `UNKNOWN`，重试 0，015 已消费并墓碑化。
 4. 016 在独立用户授权后的唯一人工第一段因 `Get-FileHash` 模块解析错误终止；控制流没有到达 SSH，远端影响为 0。016 已消费并墓碑化。
-5. 017 必须重新完成本地离线门禁、精确 HEAD CI、独立代码安全/QA/产品复评、PR 合并和合并后原始 Git blob 摘要复核。
-6. 只有上述工程门禁全部通过后，才能申请用户对 017 ChangeId 的独立执行授权；016 的历史批准、工程合并或命令生成均不构成 SSH、sudo 或安装授权。
+5. 017 已完成本地离线门禁、精确 HEAD CI、独立代码安全/QA/产品复评、PR 合并和合并后原始 Git blob 摘要复核；这些工程证据均未连接测试服。
+6. 当前只可申请用户对 017 ChangeId 的独立精确执行授权；016 的历史批准、工程合并或命令生成均不构成 SSH、sudo 或安装授权。
 7. 017 首次 SSH、sudo、安装器或 post-check 无论成功或失败均立即消费，结果先归档并把入口墓碑化；清理 root-only 副本需要新 ChangeId。
 8. 安装后的真实运行态审计必须使用新的 ChangeId；测试候选部署、Fake 旅程、零差额对账和实际回滚继续分开授权。
 9. API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因本地测试、安装候选或暂存三态自动关闭。
