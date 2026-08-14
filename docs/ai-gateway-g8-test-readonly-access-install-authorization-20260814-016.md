@@ -2,9 +2,18 @@
 
 ## 1. 当前状态
 
-`PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`
+`PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`
 
-本清单仅冻结 016 工程候选，不是测试服执行授权。当前禁止运行生成命令中的 SSH、交互 sudo 或安装段；只有精确 HEAD CI、独立代码安全/QA/产品复评、PR 合并、合并后 Git blob 摘要复核全部通过，并由用户再次明确批准本 ChangeId 后，才能执行一次。
+本清单仅冻结 016 工程候选，不是测试服执行授权。精确 HEAD CI、独立代码安全/QA/产品复评、PR 合并和合并后 Git blob 摘要复核均已通过；当前仍禁止运行生成命令中的 SSH、交互 sudo 或安装段。只有用户再次明确批准本 ChangeId 后，才能执行一次。
+
+工程门禁与合并后归档回执：
+
+- PR：`#381`，最终工程 HEAD：`04abab350afc3163a66dd5faee86005e7c2b02c3`。
+- CI：run `31776890876` completed/success；13 个适用门禁成功，6 个 Draft 门禁按设计跳过。
+- 独立代码安全、QA 复评：同一最终 HEAD 均为 P0/P1/P2/P3=0；产品/规格复评为 P0/P1=0、P2=1、P3=0，并允许合并。P2 是仓库不携带真实冻结 011 五文件，CI 不能独立重建真实制品完整安装主链路的已披露非阻断残差。
+- 主线 merge commit：`2f407cbf3a9c5fea987eeb2f82ebb41630db9e35`；父提交依次为旧 main `102e833b1975d56100faf4d8e4add0150a3edc39` 与工程 HEAD `04abab350afc3163a66dd5faee86005e7c2b02c3`。远端 016 功能分支已删除。
+- 合并后从本地 `origin/main` 原始 Git blob 复核 4 个冻结文件：大小、SHA-256、Git blob 与第 3 节冻结值全部一致，CRLF 计数均为 0；纯内存重建双段命令仍为 `22967 / 0173d043baa4d60a96659a77a8387f8d1de1a8fc9b77928f0abdf9d2793008fb`，未写出或执行命令资产。
+- 本次归档复核未连接测试服，SSH、sudo、安装、业务请求、上游请求和费用均为 `0 / 0 / 0 / 0 / 0 / 0 CNY`。016 仍未消费；任何远端执行必须重新取得用户对本 ChangeId 的独立精确授权。
 
 前置证据：014 已在 main merge commit `97ee6037cafa90577be619fc67e78866c4d75efe` 中完成结果归档。其唯一只读 SSH 证明固定 011 暂存为 `PRESENT / PASS / NONE`，五文件、manifest 与回执完整；014 已消费并墓碑化。015 后续获得独立授权，但唯一人工本地段出现 PowerShell 正则末尾转义错误；该错误默认非终止，身份材料读取、SSH、sudo、安装和远端影响均保持 `UNKNOWN`，015 已消费并墓碑化。两项历史证据都不授权 016，也不证明 live 入口或任何运行态可用。
 
@@ -41,7 +50,7 @@
 | `infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_016_command.py` | 13920 | `bb81a134882c0c6bad2b2531137877b05d41e33cc3cf0402cc2759867be6d226` |
 | 生成器输出的冻结双段命令 | 22967 | `0173d043baa4d60a96659a77a8387f8d1de1a8fc9b77928f0abdf9d2793008fb` |
 
-上述大小与摘要必须在最终提交后重新计算并更新，随后由 CI、独立复评和合并后原始 Git blob 再次核对。任一漂移使本候选失效，不得执行旧生成物。
+上述大小与摘要已经由最终 HEAD、CI、独立复评和合并后原始 Git blob 再次核对。合并后 Git blob 分别为安装器 `72b586db41502a241556604d02fb4d5cc3196586`、生成器 `41ca43a3c17a049c0505b959dd1c232f6e431702`、安装器测试 `d08b3963c62614bfae1d248545c64c42eb32478f`、生成器测试 `673f0982b0f51f7e2f9c400b96095dad0b5eb851`；任一后续漂移都会使本候选失效，不得执行旧生成物。
 
 生成器只在本地写入调用方指定的全新绝对路径，不读取 SSH 身份材料、不联网、不调用子进程。`--self-test` 只读取冻结安装器并在内存构造命令，不创建输出文件。生成命令文件不等于获得远端授权。
 

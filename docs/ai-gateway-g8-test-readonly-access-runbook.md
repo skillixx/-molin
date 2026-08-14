@@ -72,7 +72,7 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 ## 3. 016 当前安装候选与历史停止记录
 
-015 已在唯一获批本地段中出现 PowerShell 正则错误并消费；该错误默认非终止，身份材料读取、SSH 与远端影响保持 `UNKNOWN`。016 使用新 ChangeId `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-016`，仍只以 014 已证明 `PRESENT / PASS / NONE` 的 011 暂存为输入。候选在密码提示前重新核对目录、五文件、摘要、manifest、父目录和 live 目标不存在；随后只允许一次人工 `sudo -k -v`，以 no-clobber 事务创建两个 root-owned 工具和一条精确 sudoers，并执行 `visudo`、sudo 范围、Docker 非成员和审计器 self-test。当前为 `PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`，禁止 SSH、sudo 和安装；完整冻结清单见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260814-016.md`。
+015 已在唯一获批本地段中出现 PowerShell 正则错误并消费；该错误默认非终止，身份材料读取、SSH 与远端影响保持 `UNKNOWN`。016 使用新 ChangeId `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-016`，仍只以 014 已证明 `PRESENT / PASS / NONE` 的 011 暂存为输入。候选在密码提示前重新核对目录、五文件、摘要、manifest、父目录和 live 目标不存在；随后只允许一次人工 `sudo -k -v`，以 no-clobber 事务创建两个 root-owned 工具和一条精确 sudoers，并执行 `visudo`、sudo 范围、Docker 非成员和审计器 self-test。PR #381 已合入 main，合并后冻结摘要复核一致；当前为 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`，禁止 SSH、sudo 和安装，直至用户对 016 作出新的独立精确授权。完整冻结清单见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260814-016.md`。
 
 ### 3.1 历史已停止安装变更（禁止执行）
 
