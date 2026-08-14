@@ -77,7 +77,12 @@ class TestG8ReadonlyInstall018ConsumedContract(unittest.TestCase):
             "infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_018_command.py": (33386, "2519059d48b7dd0a9273476cb033d23d3aaa546b8991dccccef90f7c6baa5fb0"),
         }
         for path, (size, digest) in expected.items():
-            content = subprocess.run(["git", "show", f"{HISTORICAL_MERGE}:{path}"], cwd=REPO_ROOT, capture_output=True, check=True).stdout
+            content = subprocess.run(
+                ["git", "-c", f"safe.directory={REPO_ROOT}", "show", f"{HISTORICAL_MERGE}:{path}"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                check=True,
+            ).stdout
             self.assertEqual((len(content), hashlib.sha256(content).hexdigest()), (size, digest), path)
 
 
