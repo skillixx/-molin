@@ -13,6 +13,9 @@ AUTH_PATH = REPO_ROOT / "docs/ai-gateway-g8-test-readonly-access-install-authori
 GENERATOR_PATH = REPO_ROOT / "infra/scripts/prepare-ai-gateway-g8-test-readonly-access-019-command.py"
 INSTALLER_PATH = REPO_ROOT / "infra/scripts/g8-test-readonly-access-install-019.sh"
 CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-019"
+ENGINEERING_HEAD = "a62a3a4d271055aa563b147319a0eceab30f4821"
+MERGE_COMMIT = "70485d893fd86db00be4dbb9e324f9d4322d55b0"
+BASE_PARENT = "04ffc663f85c03efb995b35d06ac2b3a96b1e053"
 
 
 def load_generator():
@@ -29,12 +32,23 @@ class TestG8ReadonlyInstall019AuthorizationContract(unittest.TestCase):
         """019 必须是未消费的新候选，且明确不继承 018 授权。"""
         document = AUTH_PATH.read_text(encoding="utf-8")
         module = load_generator()
-        self.assertIn("PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED", document)
+        self.assertIn("PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED", document)
         self.assertIn("018 已按", document)
         self.assertIn("失败关闭、消费并墓碑化", document)
         self.assertEqual(module.CHANGE_ID, CHANGE_ID)
         self.assertFalse(module.CHANGE_ID_CONSUMED)
         self.assertFalse(module.REMOTE_EXECUTION_AUTHORIZED)
+
+    def test_postmerge_archive_keeps_remote_execution_disabled(self) -> None:
+        """合并证据必须精确归档，且不得把工程完成外推为远端授权。"""
+        document = AUTH_PATH.read_text(encoding="utf-8")
+        self.assertIn("PR：`#390`", document)
+        self.assertIn("`31829691838`", document)
+        self.assertIn(f"merge commit：`{MERGE_COMMIT}`", document)
+        self.assertIn(f"`{BASE_PARENT}`、`{ENGINEERING_HEAD}`", document)
+        self.assertIn("远端工程分支 `feature/backend-d-ai-gateway-g8-install-019-single-session` 已删除", document)
+        self.assertIn("不构成 SSH、sudo、安装或测试服操作授权", document)
+        self.assertIn("`G8_SOFTWARE_CLOSED_LOOP` 已完成", document)
 
     def test_single_tty_session_and_persistent_parent_are_frozen(self) -> None:
         """唯一 SSH 必须携带远端脚本，TTY 留给 sudo，父 PowerShell 不退出。"""
