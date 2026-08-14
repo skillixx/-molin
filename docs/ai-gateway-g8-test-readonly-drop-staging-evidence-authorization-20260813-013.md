@@ -2,9 +2,9 @@
 
 ## 1. 当前状态
 
-`PENDING_USER_APPROVAL`
+`INVALIDATED_BY_DIAGNOSTIC_FIX / REMOTE_NOT_AUTHORIZED`
 
-工程候选最终 HEAD `1b542dc656b09ace80bcdd370fac360ba19b4091` 经 CI run `31719189481` 12/12 SUCCESS 及独立代码安全、QA、产品/规格 P0/P1/P2=0 后，由 PR #374 按 merge commit `d0349353342bc37a912b1942d743e0c45c75ea80` 合入主干。工程门禁与合并不构成执行授权；当前仍未授权运行真实本地材料诊断、013 正式入口、SSH 或任何测试服连接。
+工程候选最终 HEAD `1b542dc656b09ace80bcdd370fac360ba19b4091` 经 CI run `31719189481` 12/12 SUCCESS 及独立代码安全、QA、产品/规格 P0/P1/P2=0 后，由 PR #374 按 merge commit `d0349353342bc37a912b1942d743e0c45c75ea80` 合入主干。工程门禁与合并不构成执行授权。2026-08-14 用户仅批准运行无 ChangeId 本地诊断，首次结果为 `FAILED / known_hosts_unavailable`；该步骤未联网且不消耗 013。随后定位到 Windows 最小环境遗漏 `PROGRAMDATA` 的工程缺陷，修复候选复测本地诊断为 PASS，但修复改变了冻结脚本摘要，因此本清单按第 3 节规则失效。当前未授权 013 正式入口、SSH 或任何测试服连接；不得在本清单上替换摘要或执行远端动作。
 
 ## 2. 固定目标
 
@@ -39,53 +39,9 @@
 
 `SHA256SUMS` 自身摘要是 011 Windows 候选回执；内容必须精确列出另外四文件。`manifest.env` 必须与设计文档冻结的完整键值集合完全一致。
 
-## 5. 未来执行顺序
+## 5. 历史关闭结论
 
-1. 操作者先独立运行无 ChangeId 本地诊断器；失败可以在修复本地材料后重复运行，不消耗 013。
-2. 只有本地诊断 PASS、合并后摘要复核、独立工程门禁和用户再次明确批准全部满足后，才可执行一次 013 正式入口。
-3. 013 最多发起一次固定只读 SSH，`ConnectionAttempts=1`，重试为 0。
-4. 无论结果为 `ABSENT`、`PRESENT/PASS`、`PRESENT/MISMATCH` 或 `evidence_unavailable`，记录低敏证据后立即停止并消费 013。
-
-未来执行命令固定如下。以下命令当前全部禁止执行；只有合并后摘要复核、工程门禁和用户再次明确授权均满足时才可使用：
-
-```powershell
-$g8UserProfile = [Environment]::GetFolderPath('UserProfile')
-$g8KnownHosts = [IO.Path]::GetFullPath((Join-Path $g8UserProfile '.ssh\known_hosts'))
-$g8Identity = [IO.Path]::GetFullPath((Join-Path $g8UserProfile '.ssh\id_ed25519'))
-$g8IdentityPublic = [IO.Path]::GetFullPath((Join-Path $g8UserProfile '.ssh\id_ed25519.pub'))
-
-$g8DiagnosticOutput = @(& python -I infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py `
-  --known-hosts $g8KnownHosts `
-  --identity-file $g8Identity `
-  --identity-public-key $g8IdentityPublic 2>&1)
-$g8DiagnosticExit = $LASTEXITCODE
-if ($g8DiagnosticExit -ne 0 -or $g8DiagnosticOutput.Count -ne 1 -or [string]$g8DiagnosticOutput[0] -cne 'G8_LOCAL_SSH_MATERIALS_DIAGNOSTIC=PASS') {
-  throw 'G8_LOCAL_SSH_MATERIALS_DIAGNOSTIC_GATE=FAILED'
-}
-
-python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py `
-  --change-id CHG-G8-TEST-READONLY-STAGING-EVIDENCE-DROP-20260813-013 `
-  --known-hosts $g8KnownHosts `
-  --identity-file $g8Identity `
-  --identity-public-key $g8IdentityPublic
-```
-
-不得增加参数、改用其他身份文件、改变执行顺序、把两条命令放入重试循环，或在本地诊断非 PASS 时执行第二条命令。
-
-## 6. 次数、费用与影响
-
-- 本地诊断：可重复，不联网，不消耗 ChangeId。
-- 013 正式 SSH：最多 1 次；SSH 重试：0。
-- SFTP/SCP/上传/下载：0。
-- 业务请求：0；上游请求：0；费用上限：0 CNY。
-- 应用层远端写入：0；但 sshd/journald/audit 日志及文件系统 atime 可能由操作系统产生。
-
-## 7. 停止条件
-
-任一本地工具、身份材料、端点、登录用户、路径、父链、属主、权限、摘要、文件集合、manifest、回执、stderr、输出上限、超时、返回码、键集合或输出契约不符，立即停止且不重试。不得输出密码、私钥、Token、环境变量值、实际指纹、当前文件摘要、远端 stderr 或异常正文。
-
-## 8. 回滚与后续边界
-
-013 没有应用层远端写能力，因此没有应用层回滚目标。它不得自动清理、安装、部署或继续运行态审计。任何后续动作必须使用新的 ChangeId、独立设计、工程门禁和用户授权。
-
-本清单不代表生产部署，不授权真实付费调用、通知、客户灰度或商业观察；`G8_ENGINEERING_READY` 保持，`G8_COMMERCIAL_ACCEPTED` 未完成。
+- 013 从未获得远端 SSH 授权，也未执行远端动作。
+- 013 可执行入口已墓碑化，任何参数都在解析、材料读取和联网前固定返回 `change_id_consumed`。
+- 本文件不再包含可复制执行命令；新候选使用 014 ChangeId 和独立授权清单。
+- 本清单不代表生产部署，不授权真实付费调用、通知、客户灰度或商业观察。

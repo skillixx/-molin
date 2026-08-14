@@ -952,17 +952,26 @@ jobs:
             python:3.13-alpine \
             python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_012.py -v
 
-      - name: 验证 G8 本地诊断与 Drop 暂存取证 013
+      - name: 验证 G8 本地诊断、已关闭 013 与 Drop 暂存取证 014
         run: |
           python -I -W error::ResourceWarning infra/scripts/test_diagnose_ai_gateway_g8_local_ssh_materials.py -v
           python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_013.py -v
+          python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_014.py -v
           python -I -m py_compile \
             infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py \
             infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py \
+            infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-014.py \
             infra/scripts/test_diagnose_ai_gateway_g8_local_ssh_materials.py \
-            infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_013.py
+            infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_013.py \
+            infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_014.py
           python -I infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py --self-test
-          python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py --self-test
+          set +e
+          python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py --self-test >/tmp/g8-drop-013-self-test.log 2>&1
+          g8_drop_013_self_test_status=$?
+          set -e
+          test "$g8_drop_013_self_test_status" -eq 2
+          grep -qx 'G8_TEST_READONLY_DROP_STAGING_EVIDENCE_013=FAILED reason=change_id_consumed' /tmp/g8-drop-013-self-test.log
+          python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-014.py --self-test
           docker run --rm --network none \
             -v "${{ github.workspace }}:/repo:ro" \
             -w /repo \
@@ -973,6 +982,11 @@ jobs:
             -w /repo \
             python:3.13-alpine \
             python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_013.py -v
+          docker run --rm --network none \
+            -v "${{ github.workspace }}:/repo:ro" \
+            -w /repo \
+            python:3.13-alpine \
+            python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_014.py -v
 
       - name: 校验生产监控、告警、Compose 和 Nginx 契约
         env:
@@ -1039,6 +1053,34 @@ jobs:
 
       - name: 扫描 G8 差异敏感信息
         run: python scripts/verify-sms-phase5-sensitive-data.py --repo-root . --base-ref origin/main
+
+  gateway-g8-windows:
+    name: AI 网关 G8 Windows 本地诊断门禁
+    needs: change-scope
+    if: github.event.pull_request.draft == false && needs.change-scope.outputs.gateway_g8 == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: 验证 Windows 可信系统目录与失效入口失败关闭
+        shell: pwsh
+        run: |
+          python -I -W error::ResourceWarning infra/scripts/test_diagnose_ai_gateway_g8_local_ssh_materials.py -v
+          python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_013.py -v
+          python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_014.py -v
+          python -I -m py_compile infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-014.py
+          python -I infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py --self-test
+          $g8ConsumedOutput = & python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py --self-test 2>&1
+          if ($LASTEXITCODE -ne 2 -or [string]$g8ConsumedOutput -cne 'G8_TEST_READONLY_DROP_STAGING_EVIDENCE_013=FAILED reason=change_id_consumed') {
+            throw '013 失效入口未在 Windows 门禁中失败关闭'
+          }
+          python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-014.py --self-test
 
   gateway-g8-real-e2e:
     name: AI 网关 G8 真实后端浏览器验收
@@ -1165,6 +1207,7 @@ jobs:
       - gateway-g4
       - gateway-g7
       - gateway-g8
+      - gateway-g8-windows
       - gateway-g8-real-e2e
       - frontend-admin
       - frontend-user
@@ -1189,6 +1232,7 @@ jobs:
           G7_RESULT: ${{ needs.gateway-g7.result }}
           G8_REQUIRED: ${{ needs.change-scope.outputs.gateway_g8 }}
           G8_RESULT: ${{ needs.gateway-g8.result }}
+          G8_WINDOWS_RESULT: ${{ needs.gateway-g8-windows.result }}
           G8_E2E_REQUIRED: ${{ needs.change-scope.outputs.gateway_g8_real_e2e }}
           G8_E2E_RESULT: ${{ needs.gateway-g8-real-e2e.result }}
           ADMIN_REQUIRED: ${{ needs.change-scope.outputs.frontend_admin }}
@@ -1244,6 +1288,7 @@ jobs:
           check_required_gate "$G4_REQUIRED" "$G4_RESULT" "gateway-g4"
           check_required_gate "$G7_REQUIRED" "$G7_RESULT" "gateway-g7"
           check_required_gate "$G8_REQUIRED" "$G8_RESULT" "gateway-g8"
+          check_required_gate "$G8_REQUIRED" "$G8_WINDOWS_RESULT" "gateway-g8-windows"
           check_required_gate "$G8_E2E_REQUIRED" "$G8_E2E_RESULT" "gateway-g8-real-e2e"
           check_required_gate "$ADMIN_REQUIRED" "$ADMIN_RESULT" "frontend-admin"
           check_required_gate "$USER_REQUIRED" "$USER_RESULT" "frontend-user"

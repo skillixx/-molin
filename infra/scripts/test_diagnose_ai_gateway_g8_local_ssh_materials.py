@@ -39,6 +39,91 @@ class LocalMaterialsDiagnosticTests(unittest.TestCase):
         self.assertEqual((code, stdout, stderr), (0, "G8_LOCAL_SSH_MATERIALS_DIAGNOSTIC_SELF_TEST=PASS\n", ""))
         popen.assert_not_called()
 
+    def test_windows_minimal_environment_keeps_programdata_for_system_ssh_keygen(self):
+        """Windows OpenSSH 读取系统数据目录，最小环境必须显式保留该路径。"""
+        with mock.patch.object(self.module.os, "name", "nt"):
+            with mock.patch.object(
+                self.module,
+                "windows_system_paths",
+                return_value=(Path("C:/Windows"), Path("C:/ProgramData")),
+            ):
+                environment = self.module._minimal_environment()
+        self.assertEqual(
+            environment,
+            {"SystemRoot": r"C:\Windows", "PROGRAMDATA": r"C:\ProgramData"},
+        )
+
+    def test_windows_minimal_environment_ignores_forged_caller_paths(self):
+        """调用方伪造 UNC 或相对环境变量时，诊断器仍只使用系统 API 返回值。"""
+        forged = {"SystemRoot": "relative", "PROGRAMDATA": "\\\\host\\share", "SECRET": "forbidden"}
+        with mock.patch.object(self.module.os, "name", "nt"):
+            with mock.patch.dict(self.module.os.environ, forged, clear=True):
+                with mock.patch.object(
+                    self.module,
+                    "windows_system_paths",
+                    return_value=(Path("C:/Windows"), Path("C:/ProgramData")),
+                ):
+                    environment = self.module._minimal_environment()
+        self.assertEqual(
+            environment,
+            {"SystemRoot": r"C:\Windows", "PROGRAMDATA": r"C:\ProgramData"},
+        )
+
+    def test_windows_minimal_environment_does_not_require_caller_variables(self):
+        """调用方环境变量全部缺失时，仍以系统 API 的可信结果构造最小环境。"""
+        with mock.patch.object(self.module.os, "name", "nt"):
+            with mock.patch.dict(self.module.os.environ, {}, clear=True):
+                with mock.patch.object(
+                    self.module,
+                    "windows_system_paths",
+                    return_value=(Path("C:/Windows"), Path("C:/ProgramData")),
+                ):
+                    environment = self.module._minimal_environment()
+        self.assertEqual(
+            environment,
+            {"SystemRoot": r"C:\Windows", "PROGRAMDATA": r"C:\ProgramData"},
+        )
+
+    @unittest.skipUnless(os.name == "nt", "Windows 系统路径语义由原生 Windows 门禁执行。")
+    def test_windows_system_api_returns_local_absolute_paths(self):
+        """原生 Windows 门禁直接确认系统 API 返回本地绝对目录。"""
+        system_root, program_data = self.module.windows_system_paths()
+        for path in (system_root, program_data):
+            self.assertTrue(path.is_absolute())
+            self.assertFalse(str(path).startswith("\\\\"))
+
+    @unittest.skipUnless(os.name == "nt", "Windows 系统路径语义由原生 Windows 门禁执行。")
+    def test_windows_system_api_unc_path_is_rejected(self):
+        """即使系统 API 异常返回 UNC，也必须拒绝潜在网络路径。"""
+
+        def get_windows_directory(buffer, _size):
+            buffer.value = r"C:\Windows"
+            return len(buffer.value)
+
+        def get_common_data(_window, _folder, _token, _flags, buffer):
+            buffer.value = r"\\host\share"
+            return 0
+
+        fake_windll = mock.Mock()
+        fake_windll.kernel32.GetWindowsDirectoryW.side_effect = get_windows_directory
+        fake_windll.shell32.SHGetFolderPathW.side_effect = get_common_data
+        with mock.patch.object(self.module.ctypes, "windll", fake_windll):
+            with self.assertRaises(self.module.DiagnosticError):
+                self.module.windows_system_paths()
+
+    def test_windows_system_path_failure_stops_before_popen(self):
+        """可信系统目录不可用时必须在启动本地工具前失败关闭。"""
+        with mock.patch.object(self.module.os, "name", "nt"):
+            with mock.patch.object(
+                self.module,
+                "windows_system_paths",
+                side_effect=self.module.DiagnosticError("tool_unavailable"),
+            ):
+                with mock.patch.object(self.module.subprocess, "Popen") as popen:
+                    with self.assertRaises(self.module.DiagnosticError):
+                        self.module.run_ssh_keygen(Path("C:/fixed/ssh-keygen.exe"), ("-F", "target"))
+        popen.assert_not_called()
+
     def test_source_has_no_remote_transport_capability(self):
         source = SCRIPT_PATH.read_text(encoding="utf-8")
         forbidden = ("socket.", "ConnectionAttempts", "UserKnownHostsFile", "RequestTTY", "pc@", "python3 -I -")

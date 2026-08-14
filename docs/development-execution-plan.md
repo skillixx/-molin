@@ -331,7 +331,7 @@
 - Agent 模板管理、用户 Agent 创建和定制订单（agent）。
 - Skills 管理、版本、购买、安装、Agent 绑定（skill）。
 
-AI 网关 Phase 1 的商业文字链路按 G0-G6 独立门禁完成；G7 作为生产开放前的可靠性扩展门禁，补齐低基数指标、Prometheus/Blackbox 告警、Grafana SLO、request_id 级只读财务核对、1000 请求@100 并发、100 路幂等、JSON/SSE 附加开销、流式断连、Fake HTTP/Redis 混沌和安全验收。G7 不推进数据库版本，不包含生产部署、真实客户灰度或图片/视频模型；这些属于需另行授权的 G8，最终状态以 `docs/ai-gateway-g7-acceptance.md` 为准。
+AI 网关 Phase 1 的文字链路按 G0-G6 独立门禁完成；G7 作为可靠性扩展门禁，补齐低基数指标、Prometheus/Blackbox 告警、Grafana SLO、request_id 级只读财务核对、1000 请求@100 并发、100 路幂等、JSON/SSE 附加开销、流式断连、Fake HTTP/Redis 混沌和安全验收。G8 分为三个状态：`G8_ENGINEERING_READY` 证明工程资产完成；`G8_SOFTWARE_CLOSED_LOOP` 要求测试候选完成管理员发布、用户接入与调用、计量扣费、账单申诉、零差额对账、故障恢复和候选→基线→候选实际回滚，并由 QA 与产品以 P0/P1=0 签收；`G8_COMMERCIAL_ACCEPTED` 为后续生产灰度和商业确认。当前软件任务以 `G8_SOFTWARE_CLOSED_LOOP` 为终态，商业观察周期不作为阻塞条件。生产部署、真实付费上游、真实客户流量、真实通知和图片/视频模型仍需另行授权或立项，最终口径以 `docs/ai-gateway-g8-acceptance.md` 和 `docs/ai-gateway-g8-software-closure.md` 为准。
 
 ### Week 10–12：GPU 服务器出售（第三阶段）
 

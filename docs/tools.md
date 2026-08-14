@@ -1122,18 +1122,19 @@ python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-012.py --se
 
 Linux 动态竞态测试必须在 `python:3.13-alpine --network none` 中运行。授权清单见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-authorization-20260813-012.md`。
 
-`infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py` 是无 ChangeId、可重复的本地身份材料诊断器。它只调用本地 `ssh-keygen`，不包含 SSH、SFTP、SCP、socket 或远端命令能力；不得输出路径、指纹、摘要或密钥正文。仓库验证只允许 `--self-test` 和临时伪造材料测试，不读取真实身份材料。
+`infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py` 是无 ChangeId、可重复的本地身份材料诊断器。它只调用本地 `ssh-keygen`，不包含 SSH、SFTP、SCP、socket 或远端命令能力；不得输出路径、指纹、摘要或密钥正文。Windows 本地工具环境只允许 `SystemRoot` 与系统 OpenSSH 必需的 `PROGRAMDATA`，禁止继承代理、PATH 或用户环境。仓库验证只允许 `--self-test` 和临时伪造材料测试，不读取真实身份材料。
 
-`infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py` 是一次性 013 Drop 暂存只读取证候选。它不提供 `--local-check`，正式模式在未来独立授权后最多启动一个固定 OpenSSH，远端只读核验 011 五文件、manifest 和回执。当前只允许以下离线命令：
+`infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py` 是已失效 013 的墓碑入口，任何参数都固定返回 `change_id_consumed`，不得恢复其联网能力。`infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-014.py` 是新的 Drop 暂存只读取证工程候选；它不提供 `--local-check`，只有完成工程门禁、主线合并、摘要复核和用户再次授权后才可最多启动一个固定 OpenSSH。当前只允许以下离线命令：
 
 ```powershell
 python -I -W error::ResourceWarning infra/scripts/test_diagnose_ai_gateway_g8_local_ssh_materials.py -v
 python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_013.py -v
+python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_014.py -v
 python -I infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py --self-test
-python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py --self-test
+python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-014.py --self-test
 ```
 
-Linux 动态测试必须在 `python:3.13-alpine --network none` 中运行。当前禁止真实诊断参数和 013 正式参数；授权清单见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-authorization-20260813-013.md`。
+Linux 动态测试必须在 `python:3.13-alpine --network none` 中运行。当前禁止 014 正式参数；旧 013 历史记录见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-authorization-20260813-013.md`，014 工程候选见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-authorization-20260814-014.md`。
 
 ## CI 变更范围分类器
 
