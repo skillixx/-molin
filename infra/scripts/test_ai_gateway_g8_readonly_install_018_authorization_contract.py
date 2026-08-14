@@ -28,7 +28,7 @@ class TestG8ReadonlyInstall018AuthorizationContract(unittest.TestCase):
         """018 必须是未消费的新候选，但远端执行仍未获授权。"""
         document = AUTH_PATH.read_text(encoding="utf-8")
         module = load_generator()
-        self.assertIn("PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED", document)
+        self.assertIn("PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED", document)
         self.assertIn(CHANGE_ID, document)
         self.assertIn("017 已按", document)
         self.assertIn("永久消费并墓碑化", document)

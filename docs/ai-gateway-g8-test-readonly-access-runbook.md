@@ -137,9 +137,9 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 5. 017 在独立用户授权后的唯一人工本地段返回统一低敏 `local_gate_failed` 并退出 2；现有证据不能区分 SSH 前瞬时失败与 SSH 非零返回，因此 SSH 启动/连接保持 `UNKNOWN / 最多 1`。
 6. 017 的远端第二段未粘贴，sudo、安装器、post-check、业务请求、上游请求和费用均为 0；安装未确认，017 已失败关闭消费并墓碑化。
 7. 当前只可为新的 ChangeId 完成工程候选；必须先让低敏结果可区分 SSH 前门禁和 SSH 调用失败，017 的历史批准、工程合并或生成命令均不构成新授权。
-8. 018 已实现上述分阶段低敏诊断与精确 SSH 到达标志，但在工程 PR、CI、三方复评、main 合并和合并后摘要复核全部完成前仍为 `REMOTE_NOT_AUTHORIZED`；完成这些工程步骤后也必须停止并等待用户独立授权。
-8. 若未来安装成功，真实运行态审计仍必须使用新的 ChangeId；测试候选部署、Fake 旅程、零差额对账和实际回滚继续分开授权。
-9. API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因本地测试、安装候选或暂存三态自动关闭。
+8. 018 已实现上述分阶段低敏诊断与精确 SSH 到达标志；工程 PR、CI、三方复评、main 合并和合并后摘要复核均已完成，当前仍为 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`，必须停止并等待用户独立授权。
+9. 若未来安装成功，真实运行态审计仍必须使用新的 ChangeId；测试候选部署、Fake 旅程、零差额对账和实际回滚继续分开授权。
+10. API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因本地测试、安装候选或暂存三态自动关闭。
 
 `CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005` 已完成唯一一次本地检查和正式只读 SSH，结果为 `ZERO / EXACT / stderr EMPTY / diagnostic PASS`；005 已消费并禁止重放。该历史结果当时只证明传输链路可用，暂存 UNKNOWN 后续已由 014 收敛为 `PRESENT / PASS / NONE`。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`、`docs/ai-gateway-g8-test-readonly-transport-diagnostic-attempt-20260812-005.md`。
 

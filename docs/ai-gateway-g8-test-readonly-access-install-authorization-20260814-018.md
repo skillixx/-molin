@@ -2,7 +2,7 @@
 
 ## 1. 当前状态
 
-`PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`
+`PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`
 
 018 是独立工程候选，ChangeId 为 `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-018`。本清单只冻结代码、测试、命令摘要和允许影响；不授权 SSH、sudo、安装器、post-check、运行态审计或任何测试服操作。生成器固定声明 `CHANGE_ID_CONSUMED=False`、`REMOTE_EXECUTION_AUTHORIZED=False`。
 
@@ -28,7 +28,7 @@
 | `infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_018_command.py` | 33386 | `2519059d48b7dd0a9273476cb033d23d3aaa546b8991dccccef90f7c6baa5fb0` | `fc202a28cce7484086a96966da6e4f00b15582c8` / CRLF=0 |
 | 纯内存生成的冻结双段命令 | 26932 | `7cf503dd0a32a43fa716680b0287838a5d0b8d7a2bb31b15c39195698da09500` | 不写盘 |
 
-这些值只对应当前未合并工程候选。本地 Windows PowerShell 5.1 门禁与已缓存 `python:3.13-bookworm --network none`、只读挂载的 Linux 回归已通过，下一步仅允许 Git 集成、CI 与独立评审。018 五个脚本/测试由 `.gitattributes` 强制 LF，防止 Windows checkout 改变冻结字节。冻结 known_hosts 在经 Windows API 验证的用户目录中以 `CreateNew` 建立，并持有只允许其他读取的文件句柄直到 SSH 返回；调用方伪造 TEMP/TMP、预占、写入或删除都不能改变已校验内容，只有成功取得创建所有权才允许清理该文件，任何创建或写入失败均归为 `known_hosts_failed` 且不会形成 SSH 尝试标志。生成器在任何 `exists/open` 前以纯字符串门禁拒绝 UNC、设备命名空间、DOS 保留设备名、尾随点/空格别名与 ADS，禁止输出文件参数触发 SMB 或设备访问。任何代码、测试或文档修订都必须重新计算并同步契约；工程合并后还必须从 main 原始 Git blob 与纯内存命令重新复核，复核前不得申请远端安装授权。
+这些值对应已合入 main 的固定工程候选。本地 Windows PowerShell 5.1 门禁与已缓存 `python:3.13-bookworm --network none`、只读挂载的 Linux 回归已通过。018 五个脚本/测试由 `.gitattributes` 强制 LF，防止 Windows checkout 改变冻结字节。冻结 known_hosts 在经 Windows API 验证的用户目录中以 `CreateNew` 建立，并持有只允许其他读取的文件句柄直到 SSH 返回；调用方伪造 TEMP/TMP、预占、写入或删除都不能改变已校验内容，只有成功取得创建所有权才允许清理该文件，任何创建或写入失败均归为 `known_hosts_failed` 且不会形成 SSH 尝试标志。生成器在任何 `exists/open` 前以纯字符串门禁拒绝 UNC、设备命名空间、DOS 保留设备名、尾随点/空格别名与 ADS，禁止输出文件参数触发 SMB 或设备访问。任何代码、测试或文档修订都必须重新计算并同步契约。
 
 ## 4. 将来独立授权最多允许的影响
 
@@ -42,3 +42,11 @@
 - 安装事务失败时只撤销本次已创建项；HUP、TERM、INT 以及清理期间重复信号必须保持不可重入回滚。
 - 011 暂存不得删除或修改；017 墓碑不得修改。
 - 本轮在 018 工程合并及合并后摘要归档完成后停止，等待新的独立远端安装授权。不得把工程合并、CI 或离线测试表述为测试服已安装、运行态通过或 `G8_SOFTWARE_CLOSED_LOOP` 完成。
+
+## 6. 工程集成与合并后冻结复核
+
+018 工程候选由 PR `#388` 完成集成：最终工程 HEAD 为 `715376dd330324891ef7568ea0da06c8b8d0a95e`，CI run `31811990627` 的 attempt `2` 为 `completed/success`，全部适用任务及 `CI 必选门禁汇总` 成功；代码安全、QA、产品/规格独立复评均为 P0/P1/P2/P3=`0/0/0/0`。PR 使用 merge commit `ef9f65f851cc657eaa6fba7df866ba3c4c7a0912` 合入 main，父提交依次为旧 main `d0884f3a6655ff81045d176846032521bd4e8d8e` 与工程 HEAD `715376dd330324891ef7568ea0da06c8b8d0a95e`；远端工程分支已删除。
+
+从合并后的 main 原始 Git blob 独立复核第 3 节四个文件，大小、SHA-256、Git blob 与表中冻结值逐项一致，CRLF 计数均为 0。以合并后安装器和生成器原始 blob 在隔离 Python 中纯内存重建命令，结果仍为 `26932` 字节、SHA-256 `7cf503dd0a32a43fa716680b0287838a5d0b8d7a2bb31b15c39195698da09500`；`Get-FileHash` 计数为 0，固定 SSH 目标与 `SSH_ATTEMPTED` 标志各 1 次。命令未写盘、未执行。
+
+该证据只证明 018 工程候选已进入主干并完成冻结复核。018 仍为 `CHANGE_ID_CONSUMED=False`、`REMOTE_EXECUTION_AUTHORIZED=False`，测试服最小只读入口仍未确认安装；本归档不授权 SSH、sudo、安装器、post-check 或任何运行态动作，`G8_SOFTWARE_CLOSED_LOOP` 仍未完成。
