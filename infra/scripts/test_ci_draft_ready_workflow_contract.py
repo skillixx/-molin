@@ -149,6 +149,7 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
         self.assertIn("$PSNativeCommandUseErrorActionPreference = $false", block)
         self.assertIn("reason=change_id_consumed", block)
         self.assertIn("G8_TEST_READONLY_DROP_STAGING_EVIDENCE_014=FAILED reason=change_id_consumed", block)
+        self.assertIn("exit 0", block)
         self.assertIn("needs.change-scope.outputs.gateway_g8 == 'true'", block)
 
     def test_ready_heavy_command_sentinels_are_not_removed(self):

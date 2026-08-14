@@ -1091,6 +1091,8 @@ jobs:
           if ($LASTEXITCODE -ne 2 -or [string]$g8Consumed014Output -cne 'G8_TEST_READONLY_DROP_STAGING_EVIDENCE_014=FAILED reason=change_id_consumed') {
             throw '014 已消费入口未在 Windows 门禁中失败关闭'
           }
+          # 两个预期消费命令都会留下退出码 2；精确断言通过后显式结束，避免 Actions 包装器误判步骤失败。
+          exit 0
 
   gateway-g8-real-e2e:
     name: AI 网关 G8 真实后端浏览器验收
