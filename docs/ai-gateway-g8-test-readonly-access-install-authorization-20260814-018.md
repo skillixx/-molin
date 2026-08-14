@@ -2,9 +2,9 @@
 
 ## 1. 当前状态
 
-`PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`
+`CONSUMED_HOST_WINDOW_CLOSED_NO_OUTPUT_SSH_REACHABILITY_UNKNOWN`
 
-018 是独立工程候选，ChangeId 为 `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-018`。本清单只冻结代码、测试、命令摘要和允许影响；不授权 SSH、sudo、安装器、post-check、运行态审计或任何测试服操作。生成器固定声明 `CHANGE_ID_CONSUMED=False`、`REMOTE_EXECUTION_AUTHORIZED=False`。
+018 当时是独立工程候选，ChangeId 为 `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-018`。用户后来作出一次独立精确授权；唯一人工本地段窗口直接关闭且没有可见输出。SSH 启动与连接只能记为 `UNKNOWN / 最多 1`，远端固定段、sudo、安装器、post-check、业务、上游和费用均为 0。018 已失败关闭消费，当前生成器和安装器均为固定 `change_id_consumed` 墓碑。
 
 017 已按 `CONSUMED_LOCAL_GATE_FAILED_SSH_REACHABILITY_UNKNOWN` 永久消费并墓碑化，禁止恢复、重试、重放或复用历史命令。018 不继承 017 的任何授权。
 
@@ -30,18 +30,18 @@
 
 这些值对应已合入 main 的固定工程候选。本地 Windows PowerShell 5.1 门禁与已缓存 `python:3.13-bookworm --network none`、只读挂载的 Linux 回归已通过。018 五个脚本/测试由 `.gitattributes` 强制 LF，防止 Windows checkout 改变冻结字节。冻结 known_hosts 在经 Windows API 验证的用户目录中以 `CreateNew` 建立，并持有只允许其他读取的文件句柄直到 SSH 返回；调用方伪造 TEMP/TMP、预占、写入或删除都不能改变已校验内容，只有成功取得创建所有权才允许清理该文件，任何创建或写入失败均归为 `known_hosts_failed` 且不会形成 SSH 尝试标志。生成器在任何 `exists/open` 前以纯字符串门禁拒绝 UNC、设备命名空间、DOS 保留设备名、尾随点/空格别名与 ADS，禁止输出文件参数触发 SMB 或设备访问。任何代码、测试或文档修订都必须重新计算并同步契约。
 
-## 4. 将来独立授权最多允许的影响
+## 4. 历史授权上限（现已失效）
 
-只有工程 PR 以精确 HEAD 通过全部适用 CI、代码安全、QA、产品/规格评审并合入 main，且合并后摘要复核完成后，用户才可对 018 作出新的独立精确授权。届时最多允许 1 个固定 SSH 会话、1 次非特权只读预检、预检成功后的 1 次人工 `sudo -k -v` 提示，以及安装固定最小只读审计入口；连接和安装失败均零重试。
+以下内容只记录 018 在消费前曾获得的一次精确授权上限：最多 1 个固定 SSH 会话、1 次非特权只读预检、预检成功后的 1 次人工 `sudo -k -v` 提示，以及固定最小只读审计入口安装；连接和安装失败均零重试。该授权已随唯一人工本地段结束而消费，018 不得再次授权、重试或重放；任何继续工程必须使用新的独立 ChangeId，当前为 019。
 
-即使将来获得独立安装授权，也不允许 SFTP、SCP、覆盖既有 live 文件、服务启停、远端 Docker、数据库、队列、migration、业务 HTTP、真实上游、钱包、费用、通知、客户流量或生产动作。业务请求、上游请求和费用固定为 `0 / 0 / 0 CNY`。
+018 当时的授权也不允许 SFTP、SCP、覆盖既有 live 文件、服务启停、远端 Docker、数据库、队列、migration、业务 HTTP、真实上游、钱包、费用、通知、客户流量或生产动作。实际业务请求、上游请求和费用为 `0 / 0 / 0 CNY`；本段历史上限不构成 019 或任何后续 ChangeId 的授权。
 
 ## 5. 回滚与停止条件
 
 - 所有 root/live 文件继续使用 no-clobber；已有目标、符号链接、owner/mode/摘要漂移、sudo 范围扩张或 Docker 组异常均立即停止。
 - 安装事务失败时只撤销本次已创建项；HUP、TERM、INT 以及清理期间重复信号必须保持不可重入回滚。
-- 011 暂存不得删除或修改；017 墓碑不得修改。
-- 本轮在 018 工程合并及合并后摘要归档完成后停止，等待新的独立远端安装授权。不得把工程合并、CI 或离线测试表述为测试服已安装、运行态通过或 `G8_SOFTWARE_CLOSED_LOOP` 完成。
+- 011 暂存不得删除或修改；017、018 墓碑不得修改。
+- 018 已完成工程合并、唯一人工执行失败关闭及墓碑归档，不再等待或接受任何 018 远端授权。后续 019 必须独立完成工程门禁、合并后复核并取得新的精确授权；不得把工程合并、CI 或离线测试表述为测试服已安装、运行态通过或 `G8_SOFTWARE_CLOSED_LOOP` 完成。
 
 ## 6. 工程集成与合并后冻结复核
 
@@ -49,4 +49,4 @@
 
 从合并后的 main 原始 Git blob 独立复核第 3 节四个文件，大小、SHA-256、Git blob 与表中冻结值逐项一致，CRLF 计数均为 0。以合并后安装器和生成器原始 blob 在隔离 Python 中纯内存重建命令，结果仍为 `26932` 字节、SHA-256 `7cf503dd0a32a43fa716680b0287838a5d0b8d7a2bb31b15c39195698da09500`；`Get-FileHash` 计数为 0，固定 SSH 目标与 `SSH_ATTEMPTED` 标志各 1 次。命令未写盘、未执行。
 
-该证据只证明 018 工程候选已进入主干并完成冻结复核。018 仍为 `CHANGE_ID_CONSUMED=False`、`REMOTE_EXECUTION_AUTHORIZED=False`，测试服最小只读入口仍未确认安装；本归档不授权 SSH、sudo、安装器、post-check 或任何运行态动作，`G8_SOFTWARE_CLOSED_LOOP` 仍未完成。
+该证据只证明 018 当时的工程候选已进入主干并完成冻结复核。后续唯一人工执行的精确结果与墓碑摘要见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260815-018.md`。测试服最小只读入口仍未确认安装；018 禁止重试或重放，继续工程只能使用新的独立 ChangeId，`G8_SOFTWARE_CLOSED_LOOP` 仍未完成。
