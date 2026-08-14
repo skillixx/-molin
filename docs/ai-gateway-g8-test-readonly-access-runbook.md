@@ -70,9 +70,9 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 该候选不包含 SFTP、SCP、下载、删除、sudo、Docker、数据库、队列、服务或 HTTP 能力。用户批准后，本地检查 PASS，唯一正式调用返回 `remote_evidence_failed` 并按停止条件零重试结束；未形成远端状态证据，暂存仍为 `UNKNOWN`。004 已消费，禁止再次连接或重放。读取和 SSH 可能由操作系统产生 sshd/journald/audit 日志，并可能按文件系统策略更新 atime；不得表述为操作系统层绝对零写入。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-staging-evidence-authorization-20260812-004.md`、`docs/ai-gateway-g8-test-readonly-staging-evidence-attempt-20260812-004.md`。
 
-## 3. 017 当前安装候选与历史停止记录
+## 3. 017 已消费安装尝试与历史停止记录
 
-015 已在唯一获批本地段中出现 PowerShell 正则错误并消费；下游影响保持 `UNKNOWN`。016 经 PR #381 合入 main 并完成合并后冻结摘要复核，用户随后独立批准唯一执行；人工第一段在交互 PowerShell 解析 `Get-FileHash` 时以终止错误停止，错误位于唯一 SSH 调用之前，SSH、sudo、安装和远端影响均为 0，016 已消费并墓碑化。017 使用新 ChangeId `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-017`，仍只以 014 已证明 `PRESENT / PASS / NONE` 的 011 暂存为输入，并以纯 .NET 流式 SHA-256 消除模块自动加载依赖，同时关闭加密私钥提示、低敏输出和 HUP/TERM/INT 回滚边界。PR #384 最终 HEAD `ee947fd61919215500ef516488d56e01ad2ea72d` 通过 CI run `31791430839` 与三方零缺陷复评，按 merge commit `e2a7e4f89c4115b3e32dc27292b0bc11d7d09a57` 合入 main，合并后原始 Git blob 与冻结命令复核一致。当前为 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`，017 尚未安装、尚未消费，禁止 SSH、sudo 和安装。完整证据见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-016.md` 与 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260814-017.md`。
+015 已在唯一获批本地段中出现 PowerShell 正则错误并消费；下游影响保持 `UNKNOWN`。016 经 PR #381 合入 main 并完成合并后冻结摘要复核，用户随后独立批准唯一执行；人工第一段在交互 PowerShell 解析 `Get-FileHash` 时以终止错误停止，错误位于唯一 SSH 调用之前，SSH、sudo、安装和远端影响均为 0，016 已消费并墓碑化。017 使用新 ChangeId `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-017`，仍只以 014 已证明 `PRESENT / PASS / NONE` 的 011 暂存为输入，并以纯 .NET 流式 SHA-256 消除模块自动加载依赖，同时关闭加密私钥提示、低敏输出和 HUP/TERM/INT 回滚边界。PR #384 最终 HEAD `ee947fd61919215500ef516488d56e01ad2ea72d` 通过 CI run `31791430839` 与三方零缺陷复评，按 merge commit `e2a7e4f89c4115b3e32dc27292b0bc11d7d09a57` 合入 main，合并后原始 Git blob 与冻结命令复核一致。用户随后独立批准唯一执行；人工本地段返回固定 `local_gate_failed` 并退出 2，事后 SSH 前同构门禁通过，但本地审计不能证明当时是否启动 `ssh.exe`。远端第二段未粘贴，sudo、安装器、post-check 和业务影响均为 0；017 以 `CONSUMED_LOCAL_GATE_FAILED_SSH_REACHABILITY_UNKNOWN` 消费并墓碑化。完整证据见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-016.md`、`docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-017.md` 与 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260814-017.md`。
 
 ### 3.1 历史已停止安装变更（禁止执行）
 
@@ -124,16 +124,16 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 ### 3.6 当前重新申请顺序
 
-001 至 016 均已消费。014 在修复 Windows 可信系统目录缺陷并完成工程门禁后，获得独立用户授权；唯一一次本地诊断 PASS，唯一一次只读 SSH 返回 `PRESENT / PASS / NONE`，把 011 暂存从 `UNKNOWN` 收敛为存在且五文件、manifest 与回执完整。014 结果与墓碑已由 PR #379 按 merge commit `97ee6037cafa90577be619fc67e78866c4d75efe` 合入 main；015 的本地正则错误与下游 `UNKNOWN`、016 的本地模块错误与远端零触达均已归档。当前顺序为：
+001 至 017 均已消费。014 在修复 Windows 可信系统目录缺陷并完成工程门禁后，获得独立用户授权；唯一一次本地诊断 PASS，唯一一次只读 SSH 返回 `PRESENT / PASS / NONE`，把 011 暂存从 `UNKNOWN` 收敛为存在且五文件、manifest 与回执完整。014 结果与墓碑已由 PR #379 按 merge commit `97ee6037cafa90577be619fc67e78866c4d75efe` 合入 main；015 的本地正则错误与下游 `UNKNOWN`、016 的本地模块错误与远端零触达、017 的统一低敏本地失败与 SSH 到达边界 `UNKNOWN` 均已归档。当前顺序为：
 
 1. 011、012、013、014 的包装器、命令生成器、历史命令和授权均保持消费态，禁止重放。
 2. 011 暂存存在性和完整性已关闭，无需再次诊断；不得把该结论外推为 live 入口或运行态可用。
 3. 015 已在独立用户授权后的唯一人工本地段中出现 PowerShell 路径正则错误；由于该错误默认非终止，身份材料读取、SSH、sudo、root-only 副本和 live 安装均保持 `UNKNOWN`，重试 0，015 已消费并墓碑化。
 4. 016 在独立用户授权后的唯一人工第一段因 `Get-FileHash` 模块解析错误终止；控制流没有到达 SSH，远端影响为 0。016 已消费并墓碑化。
-5. 017 已完成本地离线门禁、精确 HEAD CI、独立代码安全/QA/产品复评、PR 合并和合并后原始 Git blob 摘要复核；这些工程证据均未连接测试服。
-6. 当前只可申请用户对 017 ChangeId 的独立精确执行授权；016 的历史批准、工程合并或命令生成均不构成 SSH、sudo 或安装授权。
-7. 017 首次 SSH、sudo、安装器或 post-check 无论成功或失败均立即消费，结果先归档并把入口墓碑化；清理 root-only 副本需要新 ChangeId。
-8. 安装后的真实运行态审计必须使用新的 ChangeId；测试候选部署、Fake 旅程、零差额对账和实际回滚继续分开授权。
+5. 017 在独立用户授权后的唯一人工本地段返回统一低敏 `local_gate_failed` 并退出 2；现有证据不能区分 SSH 前瞬时失败与 SSH 非零返回，因此 SSH 启动/连接保持 `UNKNOWN / 最多 1`。
+6. 017 的远端第二段未粘贴，sudo、安装器、post-check、业务请求、上游请求和费用均为 0；安装未确认，017 已失败关闭消费并墓碑化。
+7. 当前只可为新的 ChangeId 完成工程候选；必须先让低敏结果可区分 SSH 前门禁和 SSH 调用失败，017 的历史批准、工程合并或生成命令均不构成新授权。
+8. 若未来安装成功，真实运行态审计仍必须使用新的 ChangeId；测试候选部署、Fake 旅程、零差额对账和实际回滚继续分开授权。
 9. API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因本地测试、安装候选或暂存三态自动关闭。
 
 `CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005` 已完成唯一一次本地检查和正式只读 SSH，结果为 `ZERO / EXACT / stderr EMPTY / diagnostic PASS`；005 已消费并禁止重放。该历史结果当时只证明传输链路可用，暂存 UNKNOWN 后续已由 014 收敛为 `PRESENT / PASS / NONE`。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`、`docs/ai-gateway-g8-test-readonly-transport-diagnostic-attempt-20260812-005.md`。
