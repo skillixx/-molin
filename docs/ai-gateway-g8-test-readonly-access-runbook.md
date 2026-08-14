@@ -74,9 +74,9 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 015 已在唯一获批本地段中出现 PowerShell 正则错误并消费；下游影响保持 `UNKNOWN`。016 经 PR #381 合入 main 并完成合并后冻结摘要复核，用户随后独立批准唯一执行；人工第一段在交互 PowerShell 解析 `Get-FileHash` 时以终止错误停止，错误位于唯一 SSH 调用之前，SSH、sudo、安装和远端影响均为 0，016 已消费并墓碑化。017 使用新 ChangeId `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-017`，仍只以 014 已证明 `PRESENT / PASS / NONE` 的 011 暂存为输入，并以纯 .NET 流式 SHA-256 消除模块自动加载依赖，同时关闭加密私钥提示、低敏输出和 HUP/TERM/INT 回滚边界。PR #384 最终 HEAD `ee947fd61919215500ef516488d56e01ad2ea72d` 通过 CI run `31791430839` 与三方零缺陷复评，按 merge commit `e2a7e4f89c4115b3e32dc27292b0bc11d7d09a57` 合入 main，合并后原始 Git blob 与冻结命令复核一致。用户随后独立批准唯一执行；人工本地段返回固定 `local_gate_failed` 并退出 2，事后 SSH 前同构门禁通过，但本地审计不能证明当时是否启动 `ssh.exe`。远端第二段未粘贴，sudo、安装器、post-check 和业务影响均为 0；017 以 `CONSUMED_LOCAL_GATE_FAILED_SSH_REACHABILITY_UNKNOWN` 消费并墓碑化。完整证据见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-016.md`、`docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-017.md` 与 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260814-017.md`。
 
-## 3.1 018 失败关闭与 019 工程候选（未授权执行）
+## 3.1 018 失败关闭与 019 冻结候选（待独立授权）
 
-018 的唯一人工本地段窗口直接关闭且无可见输出；SSH 启动/连接保持 `UNKNOWN / 最多 1`，远端固定段、sudo、安装器和 post-check 均为 0。018 已失败关闭消费并墓碑化，禁止重试或重放。019 使用独立 ChangeId `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-019`，仍只读取 014 已证明完整的固定 011 暂存资产。生成器将完整远端脚本作为无秘密 Base64 参数随唯一 `ssh -tt` 调用传入，不再要求人工第二次粘贴；stdin/TTY 只留给最多一次 sudo 密码提示。父 PowerShell 无论成功或失败都只输出固定 `HOST_RESULT`、设置 `$global:LASTEXITCODE`，不得主动关闭窗口。当前 `REMOTE_EXECUTION_AUTHORIZED=False`，禁止执行 019 生成命令、SSH、sudo、安装器或 post-check；见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260815-018.md` 与 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260815-019.md`。
+018 的唯一人工本地段窗口直接关闭且无可见输出；SSH 启动/连接保持 `UNKNOWN / 最多 1`，远端固定段、sudo、安装器和 post-check 均为 0。018 已失败关闭消费并墓碑化，禁止重试或重放。019 使用独立 ChangeId `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-019`，仍只读取 014 已证明完整的固定 011 暂存资产。生成器将完整远端脚本作为无秘密 Base64 参数随唯一 `ssh -tt` 调用传入，不再要求人工第二次粘贴；stdin/TTY 只留给最多一次 sudo 密码提示。父 PowerShell 无论成功或失败都只输出固定 `HOST_RESULT`、设置 `$global:LASTEXITCODE`，不得主动关闭窗口。019 已通过 PR #390、CI run `31829691838` 与独立评审，以 merge commit `70485d893fd86db00be4dbb9e324f9d4322d55b0` 合入 main，并从合并后的原始 Git blob 完成冻结摘要复核。当前 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`，禁止执行 019 生成命令、SSH、sudo、安装器或 post-check；见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260815-018.md` 与 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260815-019.md`。
 
 ### 3.1 历史已停止安装变更（禁止执行）
 
@@ -138,7 +138,7 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 6. 017 的远端第二段未粘贴，sudo、安装器、post-check、业务请求、上游请求和费用均为 0；安装未确认，017 已失败关闭消费并墓碑化。
 7. 当前只可为新的 ChangeId 完成工程候选；必须先让低敏结果可区分 SSH 前门禁和 SSH 调用失败，017 的历史批准、工程合并或生成命令均不构成新授权。
 8. 018 已完成工程合并；独立授权后的唯一人工段关闭父窗口且无可见输出，SSH 到达保持未知，所有远端安装影响为 0，018 已消费并墓碑化。
-9. 019 改为单次 `ssh -tt` 自动携带远端固定脚本，TTY 只用于 sudo，父 PowerShell 保持打开；当前仅允许工程门禁，远端执行未授权。
+9. 019 改为单次 `ssh -tt` 自动携带远端固定脚本，TTY 只用于 sudo，父 PowerShell 保持打开；工程候选已合并并完成摘要复核，当前等待用户独立授权，远端执行仍未授权。
 10. 若未来安装成功，真实运行态审计仍必须使用新的 ChangeId；测试候选部署、Fake 旅程、零差额对账和实际回滚继续分开授权。
 11. API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因本地测试、安装候选或暂存三态自动关闭。
 
