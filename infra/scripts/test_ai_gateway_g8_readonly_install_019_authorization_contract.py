@@ -48,7 +48,7 @@ class TestG8ReadonlyInstall019AuthorizationContract(unittest.TestCase):
         self.assertIn(f"`{BASE_PARENT}`、`{ENGINEERING_HEAD}`", document)
         self.assertIn("远端工程分支 `feature/backend-d-ai-gateway-g8-install-019-single-session` 已删除", document)
         self.assertIn("不构成 SSH、sudo、安装或测试服操作授权", document)
-        self.assertIn("`G8_SOFTWARE_CLOSED_LOOP` 已完成", document)
+        self.assertIn("也不证明测试服已安装或 `G8_SOFTWARE_CLOSED_LOOP` 已完成", document)
 
     def test_single_tty_session_and_persistent_parent_are_frozen(self) -> None:
         """唯一 SSH 必须携带远端脚本，TTY 留给 sudo，父 PowerShell 不退出。"""
