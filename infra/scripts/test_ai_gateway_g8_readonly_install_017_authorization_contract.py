@@ -37,7 +37,7 @@ class TestG8ReadonlyInstall017AuthorizationContract(unittest.TestCase):
         self.assertFalse(self.generator.CHANGE_ID_CONSUMED)
         self.assertFalse(self.generator.REMOTE_EXECUTION_AUTHORIZED)
         self.assertIn("当前仍禁止运行生成命令中的 SSH、交互 sudo 或安装段", self.document)
-        self.assertIn("尚未创建 PR、运行精确 HEAD CI 或完成独立复评", self.document)
+        self.assertIn("工程候选正在进行 PR、精确 HEAD CI 与独立复评", self.document)
         self.assertIn("纯 .NET 流式 SHA-256", self.document)
         self.assertNotIn("Get-FileHash", self.generator.build_command(self.generator.read_frozen_installer()))
         self.assertIn("017 仍未消费", self.document)
