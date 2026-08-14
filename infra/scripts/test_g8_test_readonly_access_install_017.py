@@ -111,36 +111,39 @@ class TestG8ReadonlyAccessInstall017(unittest.TestCase):
 
     @unittest.skipIf(os.name == "nt", "异步终止回滚由 Linux 断网门禁执行。")
     def test_async_termination_after_target_creation_removes_live_file(self) -> None:
-        """目标独占创建后立即终止时，EXIT trap 仍必须识别所有权并删除半成品。"""
-        with tempfile.TemporaryDirectory(prefix="g8-017-signal-rollback-") as temporary:
-            root = Path(temporary)
-            parent = root / "molin"
-            parent.mkdir()
-            source = root / "source"
-            source.write_text("auditor", encoding="ascii")
-            target = parent / "auditor"
-            functions = self.source.split("main() {", 1)[0]
-            # 在独占创建完成、所有权标记尚未写入的最窄窗口注入 TERM，复现 SSH 断开场景。
-            injected = functions.replace(
-                "    fi\n    # 独占创建即代表本事务取得目标所有权",
-                "    fi\n    kill -TERM $$\n    # 独占创建即代表本事务取得目标所有权",
-                1,
-            )
-            self.assertNotEqual(injected, functions)
-            harness = root / "harness.sh"
-            harness.write_text(
-                injected
-                + '\nAUDITOR_TARGET="$1"\nTOOLS_PARENT="$2"\n'
-                + 'install_live_file "$3" "$AUDITOR_TARGET" 0600 created_auditor\n',
-                encoding="utf-8",
-            )
-            result = subprocess.run(
-                ["/bin/bash", str(harness), str(target), str(parent), str(source)],
-                capture_output=True,
-                check=False,
-            )
-            self.assertNotEqual(result.returncode, 0)
-            self.assertFalse(target.exists())
+        """目标独占创建后收到 TERM 或 INT 时，EXIT trap 必须删除半成品。"""
+        for signal_name, expected_code in (("TERM", 143), ("INT", 130)):
+            with self.subTest(signal=signal_name), tempfile.TemporaryDirectory(
+                prefix=f"g8-017-{signal_name.lower()}-rollback-"
+            ) as temporary:
+                root = Path(temporary)
+                parent = root / "molin"
+                parent.mkdir()
+                source = root / "source"
+                source.write_text("auditor", encoding="ascii")
+                target = parent / "auditor"
+                functions = self.source.split("main() {", 1)[0]
+                # 在独占创建完成、所有权标记尚未写入的最窄窗口注入信号。
+                injected = functions.replace(
+                    "    fi\n    # 独占创建即代表本事务取得目标所有权",
+                    f"    fi\n    kill -{signal_name} $$\n    # 独占创建即代表本事务取得目标所有权",
+                    1,
+                )
+                self.assertNotEqual(injected, functions)
+                harness = root / "harness.sh"
+                harness.write_text(
+                    injected
+                    + '\nAUDITOR_TARGET="$1"\nTOOLS_PARENT="$2"\n'
+                    + 'install_live_file "$3" "$AUDITOR_TARGET" 0600 created_auditor\n',
+                    encoding="utf-8",
+                )
+                result = subprocess.run(
+                    ["/bin/bash", str(harness), str(target), str(parent), str(source)],
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, expected_code)
+                self.assertFalse(target.exists())
 
     @unittest.skipIf(os.name == "nt", "真实 no-clobber 语义由 Linux 断网门禁执行。")
     def test_copy_no_clobber_preserves_existing_target(self) -> None:

@@ -67,6 +67,10 @@ terminate_on_term() {
     exit 143
 }
 
+terminate_on_int() {
+    exit 130
+}
+
 defer_hup() {
     deferred_signal=129
 }
@@ -75,16 +79,22 @@ defer_term() {
     deferred_signal=143
 }
 
+defer_int() {
+    deferred_signal=130
+}
+
 begin_live_creation_window() {
     deferred_signal=0
     trap defer_hup HUP
     trap defer_term TERM
+    trap defer_int INT
 }
 
 end_live_creation_window() {
     # 先恢复终止处理；若临界区收到信号，等所有权标记稳定后再触发 EXIT 回滚。
     trap terminate_on_hup HUP
     trap terminate_on_term TERM
+    trap terminate_on_int INT
     pending_signal=$deferred_signal
     deferred_signal=0
     if [ "$pending_signal" -ne 0 ]; then
@@ -94,6 +104,7 @@ end_live_creation_window() {
 
 trap terminate_on_hup HUP
 trap terminate_on_term TERM
+trap terminate_on_int INT
 
 check_secure_directory() {
     directory=$1
