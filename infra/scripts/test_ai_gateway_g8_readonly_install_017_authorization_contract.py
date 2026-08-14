@@ -48,11 +48,11 @@ class TestG8ReadonlyInstall017AuthorizationContract(unittest.TestCase):
 
     def test_frozen_file_sizes_and_hashes_match_document(self) -> None:
         expected = {
-            INSTALLER_PATH: (10833, "c8d410abd27c228532f02be955a035e22768ba633760602c982fbd3efd522628"),
-            GENERATOR_PATH: (16696, "a00a962618ccbd5d1e506342e39a4b16d9a3e8faf2f6cc4760c37a17fc604c36"),
+            INSTALLER_PATH: (10977, "4deb5a26c27e83a2afe766dd815e4b611b5bc0c3c19eed9afb1bfe0e1d0b1188"),
+            GENERATOR_PATH: (16696, "b9b552a71118560e5a2d18789ac9a1bc3c312fd80666b50d318cc08994fac669"),
             REPO_ROOT / "infra/scripts/test_g8_test_readonly_access_install_017.py": (
-                16435,
-                "2fcf51531cbed3f3bdea5fd66a20e7596dc0e155dfd60a2d1e82db15a9d4eda8",
+                18234,
+                "24b12102942ffb6128b44360b375ac827dda8a41ba003fab61fd619025c2e00c",
             ),
             REPO_ROOT / "infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_017_command.py": (
                 21493,
@@ -67,9 +67,9 @@ class TestG8ReadonlyInstall017AuthorizationContract(unittest.TestCase):
     def test_generated_command_hash_matches_document(self) -> None:
         installer = self.generator.read_frozen_installer()
         command = self.generator.build_command(installer).encode("utf-8")
-        self.assertEqual(len(command), 25670)
-        self.assertEqual(hashlib.sha256(command).hexdigest(), "a0f3c9826702663e4c5057174a41a0a2f9cfee0f2e0d55397da086bd2ffa6a06")
-        self.assertIn("| 25670 | `a0f3c9826702663e4c5057174a41a0a2f9cfee0f2e0d55397da086bd2ffa6a06` |", self.document)
+        self.assertEqual(len(command), 25862)
+        self.assertEqual(hashlib.sha256(command).hexdigest(), "6acc63972cb779eea18df49dcaec271c7d50223000d96f2a1c1d57364d4cc98e")
+        self.assertIn("| 25862 | `6acc63972cb779eea18df49dcaec271c7d50223000d96f2a1c1d57364d4cc98e` |", self.document)
 
     def test_scope_and_stop_conditions_are_explicit(self) -> None:
         for required in (

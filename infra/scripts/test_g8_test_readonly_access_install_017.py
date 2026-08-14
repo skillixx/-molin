@@ -145,6 +145,43 @@ class TestG8ReadonlyAccessInstall017(unittest.TestCase):
                 self.assertEqual(result.returncode, expected_code)
                 self.assertFalse(target.exists())
 
+    @unittest.skipIf(os.name == "nt", "回滚重入信号由 Linux 断网门禁执行。")
+    def test_second_signal_cannot_interrupt_exit_rollback(self) -> None:
+        """首次 INT 进入回滚后，再次 INT 不得中断剩余清理。"""
+        with tempfile.TemporaryDirectory(prefix="g8-017-double-signal-") as temporary:
+            root = Path(temporary)
+            parent = root / "molin"
+            parent.mkdir()
+            source = root / "source"
+            source.write_text("auditor", encoding="ascii")
+            target = parent / "auditor"
+            functions = self.source.split("main() {", 1)[0]
+            injected = functions.replace(
+                '        /usr/bin/rm -f -- "$AUDITOR_TARGET"',
+                '        /usr/bin/sleep 0.2\n        /usr/bin/rm -f -- "$AUDITOR_TARGET"',
+                1,
+            ).replace(
+                "    fi\n    # 独占创建即代表本事务取得目标所有权",
+                "    fi\n    ( /usr/bin/sleep 0.05; kill -INT $$ ) &\n    kill -INT $$\n"
+                "    # 独占创建即代表本事务取得目标所有权",
+                1,
+            )
+            self.assertNotEqual(injected, functions)
+            harness = root / "harness.sh"
+            harness.write_text(
+                injected
+                + '\nAUDITOR_TARGET="$1"\nTOOLS_PARENT="$2"\n'
+                + 'install_live_file "$3" "$AUDITOR_TARGET" 0600 created_auditor\n',
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                ["/bin/bash", str(harness), str(target), str(parent), str(source)],
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 130)
+            self.assertFalse(target.exists())
+
     @unittest.skipIf(os.name == "nt", "真实 no-clobber 语义由 Linux 断网门禁执行。")
     def test_copy_no_clobber_preserves_existing_target(self) -> None:
         """执行生产复制函数，证明既有目标不会被覆盖。"""

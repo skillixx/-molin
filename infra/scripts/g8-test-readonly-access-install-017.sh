@@ -36,6 +36,9 @@ fail() {
 
 rollback() {
     rc=$?
+    # 回滚只允许进入一次；清理期间的重复终止信号不得打断后续目标撤销。
+    trap - EXIT
+    trap '' HUP TERM INT
     if [ "$install_complete" -eq 0 ]; then
         # sudoers 必须先移除并重新校验全局语法，再撤销本次创建的两个工具。
         if [ "$created_sudoers" -eq 1 ]; then
