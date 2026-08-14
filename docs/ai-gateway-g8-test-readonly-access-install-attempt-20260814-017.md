@@ -48,3 +48,9 @@ G8_TEST_READONLY_ACCESS_017_LOCAL_GATE=FAILED reason=local_gate_failed
 017 生成器和安装器现均为固定 `change_id_consumed` 墓碑，在参数解析、材料读取和联网之前退出。任何继续诊断或安装都必须使用新的 ChangeId，先修复“SSH 前失败与 SSH 返回失败不可区分”的低敏阶段证据，完成本地测试、CI、独立代码安全/QA/产品复评、主线合并和合并后冻结摘要复核，再取得用户独立精确授权。
 
 本记录不授权 SSH、sudo、安装、清理 root-only 副本、运行态审计、部署、服务操作、数据库/队列操作、业务请求、付费上游、真实通知、客户流量或生产动作。
+
+## 5. 消费归档工程集成与合并后复核
+
+017 消费归档由 PR `#386` 完成工程集成：最终 HEAD 为 `48489d5cc2e29d4a89b6ed9da2e0104ebdea3066`，CI run `31807824354` 为 `completed/success`，`CI 必选门禁汇总` 成功；代码安全、QA、产品/规格独立复评均为 P0/P1/P2/P3=`0/0/0/0`。PR 使用 merge commit `6c198580a22d60c70271ee0f059b3a614b3821f6` 合入 main，父提交依次为旧 main `05a5b6e5a73037c1b77703154314448626aefe0c` 与工程 HEAD `48489d5cc2e29d4a89b6ed9da2e0104ebdea3066`；远端工程分支已删除。
+
+从合并后 `origin/main` 的原始 Git blob 独立复核第 1 节四个墓碑文件，大小、SHA-256、Git blob 与表中冻结值逐项一致，CRLF 计数均为 0。该复核只证明消费归档已进入主干且历史入口不可重放，不证明测试服已安装，也不授权 018 的 SSH、sudo、安装或任何运行态动作。
