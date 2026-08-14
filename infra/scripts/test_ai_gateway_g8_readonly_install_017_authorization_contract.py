@@ -21,6 +21,7 @@ class TestG8ReadonlyInstall017ConsumedContract(unittest.TestCase):
     def test_documents_record_uncertain_ssh_boundary_and_zero_install(self) -> None:
         """记录必须区分未知 SSH 到达边界与确定未执行的远端安装段。"""
         combined = AUTH_PATH.read_text(encoding="utf-8") + ATTEMPT_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("017 仅为新的工程候选", AUTH_PATH.read_text(encoding="utf-8"))
         for required in (
             "CONSUMED_LOCAL_GATE_FAILED_SSH_REACHABILITY_UNKNOWN",
             "G8_TEST_READONLY_ACCESS_017_LOCAL_GATE=FAILED reason=local_gate_failed",

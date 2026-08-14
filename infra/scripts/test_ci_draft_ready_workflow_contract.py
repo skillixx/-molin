@@ -206,6 +206,11 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
         self.assertGreaterEqual(block.count("test_ai_gateway_g8_readonly_install_017_authorization_contract.py"), 2)
         self.assertIn("g8_consumed_017_exit", block)
         self.assertIn("G8_TEST_READONLY_ACCESS_017_COMMAND=FAILED reason=change_id_consumed", block)
+        self.assertIn("验证 G8 015/016/017 消费墓碑离线门禁", block)
+        self.assertIn(
+            "python:3.13-bookworm \\\n            python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_install_017_authorization_contract.py -v",
+            block,
+        )
         self.assertIn("docker run --rm --network none", block)
         bookworm_network_none = block.split("python:3.13-bookworm", 1)[1].split("docker run --rm --network none", 1)[0]
         self.assertIn("test_g8_test_readonly_access_install_017.py", bookworm_network_none)
