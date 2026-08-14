@@ -1,10 +1,10 @@
-# G8 Drop 最小只读入口安装 017 候选清单
+# G8 Drop 最小只读入口安装 017 已消费授权记录
 
 ## 1. 当前状态
 
-`PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`
+`CONSUMED_LOCAL_GATE_FAILED_SSH_REACHABILITY_UNKNOWN / REMOTE_NOT_AUTHORIZED`
 
-本清单仅冻结 017 工程候选，不是测试服执行授权。PR #384、精确 HEAD CI、独立代码安全/QA/产品复评、主线 merge commit 与合并后原始 Git blob 摘要复核均已通过；当前仍禁止运行生成命令中的 SSH、交互 sudo 或安装段。只有再次取得用户对 017 的独立精确授权后，才能执行一次。
+用户已对固定 017 清单作出一次独立精确授权。唯一人工本地段返回固定低敏 `local_gate_failed` 并以退出码 2 停止；该输出不能区分 SSH 前瞬时门禁异常与 `ssh.exe` 非零返回。用户没有粘贴远端第二段、没有响应 sudo 密码，四项成功标志均未形成。017 因无法反证 SSH 是否到达而按失败关闭规则消费，历史生成命令与授权现均作废，禁止重放。完整记录见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-017.md`。
 
 工程门禁与合并后归档回执：
 
@@ -13,7 +13,7 @@
 - 独立代码安全、QA、产品/规格复评均绑定同一最终 HEAD，P0/P1/P2/P3=`0/0/0/0`，允许合并。
 - 主线 merge commit：`e2a7e4f89c4115b3e32dc27292b0bc11d7d09a57`；父提交依次为旧 main `8cdffdfe2bf62a5ff8454e227d6724e893b1c0cb` 与工程 HEAD `ee947fd61919215500ef516488d56e01ad2ea72d`。远端功能分支已删除。
 - 合并后从 `origin/main` 原始 Git blob 复核 4 个冻结文件：大小、SHA-256、Git blob 与第 3 节冻结值全部一致，CRLF 计数均为 0；纯内存重建双段命令仍为 `25862 / 6acc63972cb779eea18df49dcaec271c7d50223000d96f2a1c1d57364d4cc98e`，未写出或执行命令资产。
-- 本次工程集成与归档复核未连接测试服：SSH、sudo、安装、业务请求、上游请求和费用均为 `0 / 0 / 0 / 0 / 0 / 0 CNY`。017 尚未安装、尚未消费；本回执不构成远端执行授权。
+- 工程集成与合并后归档复核未连接测试服。其后唯一获批本地段的 SSH 启动/连接保持 `UNKNOWN / 最多 1`；远端第二段、sudo、安装、post-check、业务请求、上游请求和费用均为 `0 / 0 / 0 / 0 / 0 / 0 / 0 CNY`。017 未确认安装且已消费；本记录不构成新的远端执行授权。
 
 016 已在用户批准后的唯一人工第一段中失败关闭：交互 PowerShell 无法解析 `Get-FileHash`，终止错误发生在唯一 SSH 调用之前，SSH、sudo、安装、业务请求、上游请求和费用均为 `0 / 0 / 0 / 0 / 0 / 0 CNY`。016 已消费并禁止重放；017 仅为新的工程候选，不继承 016 执行授权。
 
@@ -56,11 +56,11 @@
 
 工程复评进一步收紧失败关闭边界：客户端公钥派生显式传入空口令，使加密私钥在 sudo 前快速无提示拒绝；本地材料异常统一输出固定低敏原因，OpenSSH 客户端采用 `LogLevel=QUIET`，不回显身份绝对路径、临时 known_hosts 路径、对端指纹或原始异常；live 目标独占创建期间先暂缓 HUP、TERM 与 INT 终止，在所有权标记稳定后再触发 EXIT trap，覆盖断连和 Ctrl-C 落在创建与登记之间的最窄信号窗口；回滚入口立即移除 EXIT trap 并忽略后续重复信号，防止清理被二次中断。SSH 数量、sudo 唯一人工提示、no-clobber、远端输出和允许影响范围保持不变。
 
-生成器只在本地写入调用方指定的全新绝对路径，不读取 SSH 身份材料、不联网、不调用子进程。`--self-test` 只读取冻结安装器并在内存构造命令，不创建输出文件。017 仍未消费；生成命令文件不等于获得远端授权。
+以上生成器行为是已消费前的历史冻结事实。当前生成器与安装器均已墓碑化，只能固定返回 `change_id_consumed`；历史生成命令文件不再有效，也不构成新的远端授权。
 
-## 4. 唯一允许的远端影响
+## 4. 已消费授权曾允许的远端影响
 
-获得独立批准后，017 最多允许：
+017 的一次性独立批准当时最多允许：
 
 1. 建立 1 个固定 SSH 交互会话，连接重试 0；SSH 密码认证、键盘交互认证、代理、端口转发和本地命令均禁用。
 2. 完成一次非特权只读预检；只有固定输出 `G8_TEST_READONLY_ACCESS_PREFLIGHT_017=PASS` 后，才允许人工响应一次 `sudo -k -v` 的终端密码提示。密码不得出现在聊天、命令、环境变量、文件、日志或生成物中。
@@ -80,8 +80,8 @@ sudoers 只能新增一条精确的 root `NOPASSWD` 命令：`/usr/local/libexec
 - 首次 SSH、sudo、安装器或 post-check 任一步完成或失败后，017 都立即消费，重试为 0；不得在同一 ChangeId 下重新连接或修复。
 - 成功必须依次可见：`PREFLIGHT_017=PASS`、审计器 `G8_TEST_READONLY_AUDIT_SELF_TEST=PASS`、`INSTALL_017=PASS`、`POSTCHECK_017=PASS`。缺失、额外敏感输出或非零退出均会按冻结事务停止。
 
-## 6. 后续边界
+## 6. 实际结果与后续边界
 
-017 成功只证明最小只读入口安装及 self-test 通过，不证明 API、schema、MySQL、Redis、RabbitMQ、Bifrost、Prometheus、Grafana、Alertmanager、备份或账务运行态通过。
+017 没有形成成功。唯一人工本地段返回 `local_gate_failed`、退出码 2；SSH 是否启动保持 `UNKNOWN / 最多 1`，远端第二段、sudo、安装器、post-check、业务请求、上游请求和费用均为 0。测试服最小只读入口继续保持“未确认安装”，API、schema、MySQL、Redis、RabbitMQ、Bifrost、Prometheus、Grafana、Alertmanager、备份和账务运行态均未因此关闭。
 
-安装结果必须先归档、墓碑化 017 并完成独立工程门禁。随后运行态审计、测试候选部署、临时 Fake 业务旅程、对账和回滚必须分别使用新的 ChangeId 和独立用户授权。生产、真实付费上游、真实客户流量、真实通知及商业观察不属于 017。
+017 已消费并墓碑化。继续诊断或安装必须使用新的 ChangeId，先补齐可区分 SSH 前门禁与 SSH 调用失败的低敏阶段证据并重新完成工程门禁；运行态审计、测试候选部署、临时 Fake 业务旅程、对账和回滚仍必须分别使用新的 ChangeId 和独立用户授权。生产、真实付费上游、真实客户流量、真实通知及商业观察不属于 017。
