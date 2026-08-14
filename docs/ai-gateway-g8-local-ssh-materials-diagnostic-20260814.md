@@ -35,12 +35,13 @@ G8_LOCAL_SSH_MATERIALS_DIAGNOSTIC=FAILED reason=known_hosts_unavailable
 
 修复候选从 Windows 系统 API 获取 Windows 目录和公共应用数据目录，仅把这两个可信本地绝对路径传给系统 OpenSSH；调用方伪造的 `SystemRoot`、`PROGRAMDATA`、UNC、相对路径、代理、PATH 或其他环境变量均不继承。验证结果：
 
-- Windows 定向单测：诊断器 18 项通过、1 项按平台跳过；013 墓碑入口 1 项通过；014 包装器 22 项通过、6 项 POSIX 动态语义按平台跳过。
-- Linux 断网门禁：诊断器 17 项通过、2 项 Windows 路径语义按平台跳过；013 墓碑入口 1/1、014 包装器 28/28 全部通过。
+- Windows 定向单测：诊断器 18 项通过、1 项按平台跳过；013 墓碑入口 1 项通过；014 包装器 23 项通过、6 项 POSIX 动态语义按平台跳过。
+- Linux 断网门禁：诊断器 17 项通过、2 项 Windows 路径语义按平台跳过；013 墓碑入口 1/1、014 包装器 29/29 全部通过。
 - 离线 self-test：`PASS`。
 - 真实本地材料诊断：`G8_LOCAL_SSH_MATERIALS_DIAGNOSTIC=PASS`。
 - 修复候选诊断器大小：`15833`。
 - 修复候选诊断器 SHA-256：`3382b66c289c08b54ad36abc78969983ce89a89b7216e84c23b31aec6e34cadf`。
 - 旧 013 已墓碑化；新的 014 包装器摘要记录在独立 014 工程候选清单中。
+- 跨平台检出通过 `.gitattributes` 固定相关安全脚本为 LF，确保 Windows CI 与 Git 原始对象使用同一冻结字节摘要。
 
 修复候选尚未完成精确 HEAD CI、独立评审和主线合并，因脚本摘要已变化，2026-08-13 的旧 013 冻结清单失效且可执行入口已墓碑化。不得使用本次本地 PASS 直接联网；新的 014 必须先完成工程门禁，再以合并后的精确摘要取得用户明确批准。

@@ -115,6 +115,16 @@ class StagingEvidence014Tests(unittest.TestCase):
         self.assertNotIn("staging-evidence-012", source)
         self.assertNotIn("import_012", source)
 
+    def test_checkout_policy_preserves_frozen_helper_bytes(self):
+        """Windows 检出必须保持 LF，避免换行转换破坏冻结 helper 摘要。"""
+        attributes = (SCRIPT_PATH.parents[2] / ".gitattributes").read_text(encoding="utf-8")
+        for name in (
+            "diagnose-ai-gateway-g8-local-ssh-materials.py",
+            "run-ai-gateway-g8-test-drop-staging-evidence-013.py",
+            "run-ai-gateway-g8-test-drop-staging-evidence-014.py",
+        ):
+            self.assertIn(f"infra/scripts/{name} text eol=lf", attributes)
+
     def test_parser_accepts_three_legal_states(self):
         absent = self.module.parse_remote_output(self.remote_output())
         present = self.module.parse_remote_output(self.remote_output("PRESENT", "PASS", "NONE"))
