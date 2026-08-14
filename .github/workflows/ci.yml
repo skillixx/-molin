@@ -1076,19 +1076,38 @@ jobs:
       - name: 验证 Windows 可信系统目录与失效入口失败关闭
         shell: pwsh
         run: |
-          # 013/014 墓碑以退出码 2 表示预期消费状态，必须交给下方精确断言处理，不能由 PowerShell 提前提升为异常。
-          $PSNativeCommandUseErrorActionPreference = $false
           python -I -W error::ResourceWarning infra/scripts/test_diagnose_ai_gateway_g8_local_ssh_materials.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'Windows 本地材料诊断单测失败' }
           python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_013.py -v
+          if ($LASTEXITCODE -ne 0) { throw '013 墓碑单测失败' }
           python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_014.py -v
+          if ($LASTEXITCODE -ne 0) { throw '014 墓碑单测失败' }
           python -I -m py_compile infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-014.py
+          if ($LASTEXITCODE -ne 0) { throw 'Windows G8 Python 编译检查失败' }
           python -I infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py --self-test
-          $g8ConsumedOutput = & python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py --self-test 2>&1
-          if ($LASTEXITCODE -ne 2 -or [string]$g8ConsumedOutput -cne 'G8_TEST_READONLY_DROP_STAGING_EVIDENCE_013=FAILED reason=change_id_consumed') {
+          if ($LASTEXITCODE -ne 0) { throw 'Windows 本地材料诊断自检失败' }
+          # 仅在调用预期退出 2 的 013 墓碑时暂时关闭原生命令异常提升，前置门禁继续使用 runner 默认失败关闭。
+          $g8PreviousNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+          try {
+            $PSNativeCommandUseErrorActionPreference = $false
+            $g8ConsumedOutput = & python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py --self-test 2>&1
+            $g8ConsumedExit = $LASTEXITCODE
+          } finally {
+            $PSNativeCommandUseErrorActionPreference = $g8PreviousNativeErrorPreference
+          }
+          if ($g8ConsumedExit -ne 2 -or [string]$g8ConsumedOutput -cne 'G8_TEST_READONLY_DROP_STAGING_EVIDENCE_013=FAILED reason=change_id_consumed') {
             throw '013 失效入口未在 Windows 门禁中失败关闭'
           }
-          $g8Consumed014Output = & python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-014.py --self-test 2>&1
-          if ($LASTEXITCODE -ne 2 -or [string]$g8Consumed014Output -cne 'G8_TEST_READONLY_DROP_STAGING_EVIDENCE_014=FAILED reason=change_id_consumed') {
+          # 014 使用独立局部作用域，确保偏好值即使在异常路径也恢复。
+          $g8PreviousNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+          try {
+            $PSNativeCommandUseErrorActionPreference = $false
+            $g8Consumed014Output = & python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-014.py --self-test 2>&1
+            $g8Consumed014Exit = $LASTEXITCODE
+          } finally {
+            $PSNativeCommandUseErrorActionPreference = $g8PreviousNativeErrorPreference
+          }
+          if ($g8Consumed014Exit -ne 2 -or [string]$g8Consumed014Output -cne 'G8_TEST_READONLY_DROP_STAGING_EVIDENCE_014=FAILED reason=change_id_consumed') {
             throw '014 已消费入口未在 Windows 门禁中失败关闭'
           }
           # 两个预期消费命令都会留下退出码 2；精确断言通过后显式结束，避免 Actions 包装器误判步骤失败。

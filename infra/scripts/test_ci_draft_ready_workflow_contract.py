@@ -146,7 +146,22 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
         self.assertIn("test_diagnose_ai_gateway_g8_local_ssh_materials.py", block)
         self.assertIn("test_run_ai_gateway_g8_test_drop_staging_evidence_013.py", block)
         self.assertIn("test_run_ai_gateway_g8_test_drop_staging_evidence_014.py", block)
-        self.assertIn("$PSNativeCommandUseErrorActionPreference = $false", block)
+        self.assertEqual(block.count("$PSNativeCommandUseErrorActionPreference = $false"), 2)
+        self.assertGreater(
+            block.index("$PSNativeCommandUseErrorActionPreference = $false"),
+            block.index("diagnose-ai-gateway-g8-local-ssh-materials.py --self-test"),
+        )
+        self.assertIn("$g8ConsumedExit = $LASTEXITCODE", block)
+        self.assertIn("$g8Consumed014Exit = $LASTEXITCODE", block)
+        self.assertEqual(block.count("$PSNativeCommandUseErrorActionPreference = $g8PreviousNativeErrorPreference"), 2)
+        for failure_message in (
+            "Windows 本地材料诊断单测失败",
+            "013 墓碑单测失败",
+            "014 墓碑单测失败",
+            "Windows G8 Python 编译检查失败",
+            "Windows 本地材料诊断自检失败",
+        ):
+            self.assertIn(failure_message, block)
         self.assertIn("reason=change_id_consumed", block)
         self.assertIn("G8_TEST_READONLY_DROP_STAGING_EVIDENCE_014=FAILED reason=change_id_consumed", block)
         self.assertIn("exit 0", block)
