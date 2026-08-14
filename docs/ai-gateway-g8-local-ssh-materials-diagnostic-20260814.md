@@ -44,4 +44,4 @@ G8_LOCAL_SSH_MATERIALS_DIAGNOSTIC=FAILED reason=known_hosts_unavailable
 - 旧 013 已墓碑化；新的 014 包装器摘要记录在独立 014 工程候选清单中。
 - 跨平台检出通过 `.gitattributes` 固定相关安全脚本为 LF，确保 Windows CI 与 Git 原始对象使用同一冻结字节摘要。
 
-工程候选 HEAD `1852203878f0cb8b2c00989573302ab898355a5f` 的 CI run `31762169628` 已完成并成功，原生 Windows G8 门禁、Linux 断网动态测试所在 G8 主门禁及 `CI 必选门禁汇总` 均为 SUCCESS；同一 HEAD 的独立安全与产品复评为 P0/P1/P2=0，QA 仅要求同步本段状态后对新 HEAD 重跑 CI。后续提交仍必须以 PR 当前精确 HEAD 的 checks 和独立复评为准，不得沿用旧 run。主线尚未合并；2026-08-13 的旧 013 冻结清单继续失效且可执行入口已墓碑化。不得使用本次本地 PASS 或工程合并直接联网；新的 014 必须在合并后复核精确摘要，再取得用户明确批准。
+PR #377 最终工程 HEAD `477a2d3da9b672c1fbc8b792de5eef7a4ed29af1` 的 CI run `31762838448` 已完成并成功，原生 Windows G8 门禁、Linux 断网动态测试所在 G8 主门禁及 `CI 必选门禁汇总` 均为 SUCCESS；同一 HEAD 的独立安全、QA、产品/规格复评均为 P0/P1/P2=0。PR 已按 merge commit `3c9c5cf489b28e45b789c114243e45936a0d81d2` 合入 main，远端功能分支已删除；合并后从原始 Git blob 复核诊断器与 014 的大小、SHA-256 和 LF 均未漂移。2026-08-13 的旧 013 冻结清单继续失效且可执行入口已墓碑化。不得使用本次本地 PASS 或工程合并直接联网；014 当前为 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`，只有用户对独立清单再次明确批准后才可执行一次。
