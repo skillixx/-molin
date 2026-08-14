@@ -2,9 +2,17 @@
 
 ## 1. 当前状态
 
-`PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`
+`PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`
 
-本文件是工程候选，不是执行授权。只有精确 HEAD CI、独立代码安全/QA/产品复评、主线合并、合并后摘要复核和用户再次明确批准全部满足后，才可执行一次 014；当前禁止执行正式命令。
+本文件是等待用户批准的执行候选，不是执行授权。精确 HEAD CI、独立代码安全/QA/产品复评、主线 merge commit、合并后摘要复核和远端功能分支删除均已完成；当前唯一未满足条件是用户对本清单再次明确批准，因此仍禁止执行正式命令。
+
+工程门禁回执：
+
+- PR：`#377`，最终工程 HEAD：`477a2d3da9b672c1fbc8b792de5eef7a4ed29af1`。
+- CI：run `31762838448` completed/success；G8 主门禁、原生 Windows 门禁、真实后端 E2E 与 `CI 必选门禁汇总` 均为 SUCCESS。
+- 独立代码安全、QA、产品/规格复评：同一最终 HEAD 均为 P0/P1/P2=0，并允许合并。
+- 主线 merge commit：`3c9c5cf489b28e45b789c114243e45936a0d81d2`；父提交依次为旧 main `c56a0e8b0f357d4f27520b60333abd43abdd6f1d` 与工程 HEAD `477a2d3da9b672c1fbc8b792de5eef7a4ed29af1`。
+- 远端功能分支已删除。合并后从 `origin/main` 原始 Git blob 复核：诊断器 `15833 / 3382b66c289c08b54ad36abc78969983ce89a89b7216e84c23b31aec6e34cadf`，014 包装器 `22846 / a2b20b22fe97769d49a88e80338380c3392411466ec94ebdfea63e51567809d8`，均为 LF 且与冻结值一致。
 
 ## 2. 固定范围
 
