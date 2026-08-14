@@ -1135,6 +1135,8 @@ python -I infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py --self-tes
 
 014 的历史命令、ChangeId 和授权均已消费，禁止正式参数、自检入口或任何重放。旧 013 历史记录见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-authorization-20260813-013.md`；014 授权与执行记录见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-authorization-20260814-014.md`、`docs/ai-gateway-g8-test-readonly-drop-staging-evidence-attempt-20260814-014.md`。后续安装、部署和运行态审计必须使用新的 ChangeId 与独立授权。
 
+`infra/scripts/prepare-ai-gateway-g8-test-readonly-access-015-command.py` 与 `infra/scripts/g8-test-readonly-access-install-015.sh` 是新的 015 工程候选。生成器不连接测试服、不读取身份材料，只能生成一个冻结的双段人工命令；安装器只从已由 014 证明完整的 011 暂存以 no-clobber 方式安装两个 root-owned 工具和一条精确 sudoers，失败时撤销本次 live 创建。当前清单为 `PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`，只允许运行单测、`bash -n`、`py_compile` 和生成器 `--self-test`；禁止运行生成命令中的 SSH、sudo 或安装段。详见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260814-015.md`。
+
 ## CI 变更范围分类器
 
 | 项目 | 说明 |

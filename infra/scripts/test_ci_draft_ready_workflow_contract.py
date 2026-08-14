@@ -146,6 +146,9 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
         self.assertIn("test_diagnose_ai_gateway_g8_local_ssh_materials.py", block)
         self.assertIn("test_run_ai_gateway_g8_test_drop_staging_evidence_013.py", block)
         self.assertIn("test_run_ai_gateway_g8_test_drop_staging_evidence_014.py", block)
+        self.assertIn("test_g8_test_readonly_access_install_015.py", block)
+        self.assertIn("test_prepare_ai_gateway_g8_test_readonly_access_015_command.py", block)
+        self.assertIn("test_ai_gateway_g8_readonly_install_015_authorization_contract.py", block)
         self.assertEqual(block.count("$PSNativeCommandUseErrorActionPreference = $false"), 2)
         self.assertGreater(
             block.index("$PSNativeCommandUseErrorActionPreference = $false"),
@@ -158,14 +161,29 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
             "Windows 本地材料诊断单测失败",
             "013 墓碑单测失败",
             "014 墓碑单测失败",
+            "015 安装器单测失败",
+            "015 命令生成器单测失败",
+            "015 授权清单契约测试失败",
             "Windows G8 Python 编译检查失败",
             "Windows 本地材料诊断自检失败",
+            "015 命令生成器自检失败",
         ):
             self.assertIn(failure_message, block)
         self.assertIn("reason=change_id_consumed", block)
         self.assertIn("G8_TEST_READONLY_DROP_STAGING_EVIDENCE_014=FAILED reason=change_id_consumed", block)
         self.assertIn("exit 0", block)
         self.assertIn("needs.change-scope.outputs.gateway_g8 == 'true'", block)
+
+    def test_g8_ready_job_runs_015_in_host_and_network_none(self):
+        """015 必须同时覆盖 Linux 安装器语义和断网命令生成器回归。"""
+
+        block = self.job_block("gateway-g8")
+        self.assertIn("bash -n infra/scripts/g8-test-readonly-access-install-015.sh", block)
+        self.assertIn("test_g8_test_readonly_access_install_015.py", block)
+        self.assertGreaterEqual(block.count("test_prepare_ai_gateway_g8_test_readonly_access_015_command.py"), 2)
+        self.assertGreaterEqual(block.count("test_ai_gateway_g8_readonly_install_015_authorization_contract.py"), 2)
+        self.assertIn("prepare-ai-gateway-g8-test-readonly-access-015-command.py --self-test", block)
+        self.assertIn("docker run --rm --network none", block)
 
     def test_ready_heavy_command_sentinels_are_not_removed(self):
         for sentinel in (
