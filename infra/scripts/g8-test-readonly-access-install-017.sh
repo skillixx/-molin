@@ -27,6 +27,7 @@ created_reconcile=0
 created_sudoers=0
 created_parent=0
 install_complete=0
+deferred_signal=0
 
 fail() {
     /usr/bin/printf '%s\n' 'G8_TEST_READONLY_ACCESS_INSTALL_017=FAILED reason=install_gate_failed'
@@ -57,6 +58,42 @@ rollback() {
     exit "$rc"
 }
 trap rollback EXIT
+
+terminate_on_hup() {
+    exit 129
+}
+
+terminate_on_term() {
+    exit 143
+}
+
+defer_hup() {
+    deferred_signal=129
+}
+
+defer_term() {
+    deferred_signal=143
+}
+
+begin_live_creation_window() {
+    deferred_signal=0
+    trap defer_hup HUP
+    trap defer_term TERM
+}
+
+end_live_creation_window() {
+    # 先恢复终止处理；若临界区收到信号，等所有权标记稳定后再触发 EXIT 回滚。
+    trap terminate_on_hup HUP
+    trap terminate_on_term TERM
+    pending_signal=$deferred_signal
+    deferred_signal=0
+    if [ "$pending_signal" -ne 0 ]; then
+        exit "$pending_signal"
+    fi
+}
+
+trap terminate_on_hup HUP
+trap terminate_on_term TERM
 
 check_secure_directory() {
     directory=$1
@@ -122,14 +159,21 @@ copy_no_clobber() {
     target_mode=$3
     created_variable=${4-}
     [ ! -e "$target" ] && [ ! -L "$target" ] || return 1
+    if [ -n "$created_variable" ]; then
+        begin_live_creation_window
+    fi
     set -o noclobber
     if ! exec 3> "$target"; then
         set +o noclobber
+        if [ -n "$created_variable" ]; then
+            end_live_creation_window
+        fi
         return 1
     fi
     # 独占创建即代表本事务取得目标所有权；先登记再复制，确保 HUP/TERM 窗口也会回滚。
     if [ -n "$created_variable" ]; then
         builtin printf -v "$created_variable" '%s' 1
+        end_live_creation_window
     fi
     set +o noclobber
     if ! /usr/bin/cat "$source" >&3 || ! exec 3>&- \

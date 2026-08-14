@@ -35,15 +35,15 @@
 
 | 文件/生成物 | 大小 | SHA-256 |
 |---|---:|---|
-| `infra/scripts/g8-test-readonly-access-install-017.sh` | 9794 | `5b6f5c58bb69e06dcd5985b0eac54deb12169a685210f1a975fd36e7fb19857f` |
-| `infra/scripts/prepare-ai-gateway-g8-test-readonly-access-017-command.py` | 16695 | `133fdc8fa0211eacf2bee681f9f2fa1798eb403dd8830345ae8c251e7f072bc8` |
-| `infra/scripts/test_g8_test_readonly_access_install_017.py` | 16132 | `c08bdbd319b12c5e5de79555d4a52fbb8d833ea85d8013f08b780bec8d4e674b` |
-| `infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_017_command.py` | 21392 | `6f144f518b40ad861a402e37cf0286cfb6dffd5ccc7edad5f960f102c8d78298` |
-| 生成器输出的冻结双段命令 | 24285 | `b66ad424b69282d644a89701488fc74c3922663d9e220d421e087d64f4f142f3` |
+| `infra/scripts/g8-test-readonly-access-install-017.sh` | 10676 | `ccdc81212ae29ca1fccec97f5c2b6e1b3480ea5615a56cd3b45910cc8d289cc9` |
+| `infra/scripts/prepare-ai-gateway-g8-test-readonly-access-017-command.py` | 16696 | `723b72b59804eb6a639713212d7665fd3b2fd5178a9119218887edb1fa712343` |
+| `infra/scripts/test_g8_test_readonly_access_install_017.py` | 16185 | `81436efa74549d3b06e7399df3bf814ca693c0a8c3c8ab71b908a49970493036` |
+| `infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_017_command.py` | 21493 | `7b8cd85bdb5917dea6fdb0b86e0f055bb98946e09028ddd87c0bd456c906eb7d` |
+| 生成器输出的冻结双段命令 | 25462 | `91f703722d200df3d8f8fd1564c09b4842475b392abbc55f773d80bcb57f7fa2` |
 
 017 相对 016 的基础修复是把冻结材料摘要从模块自动加载的 `Get-FileHash` 改为 Windows PowerShell 5.1 可用的纯 .NET 流式 SHA-256；嵌套 `try/finally` 保证哈希对象创建失败或释放失败时，文件流仍由外层 `finally` 关闭。生成命令在禁用模块自动加载并卸载 `Microsoft.PowerShell.Utility` 后仍能对固定字节得到标准摘要，并以故障注入覆盖哈希对象创建和释放失败。
 
-工程复评进一步收紧三项失败关闭边界：客户端公钥派生显式传入空口令，使加密私钥在 sudo 前快速无提示拒绝；本地材料异常统一输出固定低敏原因，不回显身份绝对路径或原始异常；live 目标一经独占创建就立即登记回滚所有权，使 HUP/TERM 落在复制窗口时也会由 EXIT trap 删除半成品。SSH 数量、sudo 唯一人工提示、no-clobber、远端输出和允许影响范围保持不变。
+工程复评进一步收紧失败关闭边界：客户端公钥派生显式传入空口令，使加密私钥在 sudo 前快速无提示拒绝；本地材料异常统一输出固定低敏原因，OpenSSH 客户端采用 `LogLevel=QUIET`，不回显身份绝对路径、临时 known_hosts 路径、对端指纹或原始异常；live 目标独占创建期间先暂缓 HUP/TERM 终止，在所有权标记稳定后再触发 EXIT trap，覆盖创建与登记之间的最窄信号窗口。SSH 数量、sudo 唯一人工提示、no-clobber、远端输出和允许影响范围保持不变。
 
 生成器只在本地写入调用方指定的全新绝对路径，不读取 SSH 身份材料、不联网、不调用子进程。`--self-test` 只读取冻结安装器并在内存构造命令，不创建输出文件。017 仍未消费；生成命令文件不等于获得远端授权。
 
@@ -64,7 +64,7 @@ sudoers 只能新增一条精确的 root `NOPASSWD` 命令：`/usr/local/libexec
 ## 5. 事务、回滚与停止条件
 
 - 所有 root/live 文件使用 no-clobber 创建；既有目标、符号链接、owner/mode/摘要漂移、父目录可写、`visudo` 失败、sudo 范围超出或 Docker 组成员关系异常均立即失败。
-- 安装未完成时，只撤销本次已创建的 sudoers、对账器、审计器和可选空父目录；live 目标在独占创建成功后立即登记回滚所有权，异步 HUP/TERM 也不得遗留半成品；必须先移除 sudoers 并重新校验全局 sudoers 语法。
+- 安装未完成时，只撤销本次已创建的 sudoers、对账器、审计器和可选空父目录；live 目标独占创建与所有权登记构成暂缓终止的临界区，异步 HUP/TERM 会在标记稳定后触发 EXIT 回滚，不得遗留半成品；必须先移除 sudoers 并重新校验全局 sudoers 语法。
 - 011 暂存不删除、不修改。root-only 017 副本作为低敏执行证据保留；其后续清理均须新 ChangeId 和独立授权。
 - 首次 SSH、sudo、安装器或 post-check 任一步完成或失败后，017 都立即消费，重试为 0；不得在同一 ChangeId 下重新连接或修复。
 - 成功必须依次可见：`PREFLIGHT_017=PASS`、审计器 `G8_TEST_READONLY_AUDIT_SELF_TEST=PASS`、`INSTALL_017=PASS`、`POSTCHECK_017=PASS`。缺失、额外敏感输出或非零退出均会按冻结事务停止。

@@ -120,10 +120,10 @@ class TestG8ReadonlyAccessInstall017(unittest.TestCase):
             source.write_text("auditor", encoding="ascii")
             target = parent / "auditor"
             functions = self.source.split("main() {", 1)[0]
-            # 在独占创建完成、复制尚未开始的精确窗口注入 TERM，复现 SSH 断开场景。
+            # 在独占创建完成、所有权标记尚未写入的最窄窗口注入 TERM，复现 SSH 断开场景。
             injected = functions.replace(
-                "    set +o noclobber\n    if ! /usr/bin/cat",
-                "    set +o noclobber\n    kill -TERM $$\n    if ! /usr/bin/cat",
+                "    fi\n    # 独占创建即代表本事务取得目标所有权",
+                "    fi\n    kill -TERM $$\n    # 独占创建即代表本事务取得目标所有权",
                 1,
             )
             self.assertNotEqual(injected, functions)

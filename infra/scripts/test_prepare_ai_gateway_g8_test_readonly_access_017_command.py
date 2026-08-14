@@ -102,6 +102,8 @@ class TestPrepareG8ReadonlyAccess017Command(unittest.TestCase):
         self.assertIn("KbdInteractiveAuthentication=no", command)
         self.assertIn("StrictHostKeyChecking=yes", command)
         self.assertIn("ClearAllForwardings=yes", command)
+        self.assertIn("LogLevel=QUIET", command)
+        self.assertNotIn("LogLevel=ERROR", command)
         self.assertEqual(command.count("pc@8.130.9.163"), 1)
 
     @unittest.skipUnless(os.name == "nt", "加密私钥无提示拒绝只在原生 Windows 门禁执行。")

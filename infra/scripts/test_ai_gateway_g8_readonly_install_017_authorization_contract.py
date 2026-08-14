@@ -42,20 +42,21 @@ class TestG8ReadonlyInstall017AuthorizationContract(unittest.TestCase):
         command = self.generator.build_command(self.generator.read_frozen_installer())
         self.assertNotIn("Get-FileHash", command)
         self.assertIn("$sshKeygen -y -P '' -f $identity", command)
+        self.assertIn("LogLevel=QUIET", command)
         self.assertIn("G8_TEST_READONLY_ACCESS_017_LOCAL_GATE=FAILED reason=local_gate_failed", command)
         self.assertIn("017 仍未消费", self.document)
 
     def test_frozen_file_sizes_and_hashes_match_document(self) -> None:
         expected = {
-            INSTALLER_PATH: (9794, "5b6f5c58bb69e06dcd5985b0eac54deb12169a685210f1a975fd36e7fb19857f"),
-            GENERATOR_PATH: (16695, "133fdc8fa0211eacf2bee681f9f2fa1798eb403dd8830345ae8c251e7f072bc8"),
+            INSTALLER_PATH: (10676, "ccdc81212ae29ca1fccec97f5c2b6e1b3480ea5615a56cd3b45910cc8d289cc9"),
+            GENERATOR_PATH: (16696, "723b72b59804eb6a639713212d7665fd3b2fd5178a9119218887edb1fa712343"),
             REPO_ROOT / "infra/scripts/test_g8_test_readonly_access_install_017.py": (
-                16132,
-                "c08bdbd319b12c5e5de79555d4a52fbb8d833ea85d8013f08b780bec8d4e674b",
+                16185,
+                "81436efa74549d3b06e7399df3bf814ca693c0a8c3c8ab71b908a49970493036",
             ),
             REPO_ROOT / "infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_017_command.py": (
-                21392,
-                "6f144f518b40ad861a402e37cf0286cfb6dffd5ccc7edad5f960f102c8d78298",
+                21493,
+                "7b8cd85bdb5917dea6fdb0b86e0f055bb98946e09028ddd87c0bd456c906eb7d",
             ),
         }
         for path, (size, sha256) in expected.items():
@@ -66,9 +67,9 @@ class TestG8ReadonlyInstall017AuthorizationContract(unittest.TestCase):
     def test_generated_command_hash_matches_document(self) -> None:
         installer = self.generator.read_frozen_installer()
         command = self.generator.build_command(installer).encode("utf-8")
-        self.assertEqual(len(command), 24285)
-        self.assertEqual(hashlib.sha256(command).hexdigest(), "b66ad424b69282d644a89701488fc74c3922663d9e220d421e087d64f4f142f3")
-        self.assertIn("| 24285 | `b66ad424b69282d644a89701488fc74c3922663d9e220d421e087d64f4f142f3` |", self.document)
+        self.assertEqual(len(command), 25462)
+        self.assertEqual(hashlib.sha256(command).hexdigest(), "91f703722d200df3d8f8fd1564c09b4842475b392abbc55f773d80bcb57f7fa2")
+        self.assertIn("| 25462 | `91f703722d200df3d8f8fd1564c09b4842475b392abbc55f773d80bcb57f7fa2` |", self.document)
 
     def test_scope_and_stop_conditions_are_explicit(self) -> None:
         for required in (

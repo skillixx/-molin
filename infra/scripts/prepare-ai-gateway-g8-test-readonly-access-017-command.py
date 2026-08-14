@@ -22,8 +22,8 @@ CHANGE_ID_CONSUMED = False
 REMOTE_EXECUTION_AUTHORIZED = False
 ROOT_COPY = "/root/molin-g8-install-CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-017"
 INSTALLER_NAME = "g8-test-readonly-access-install-017.sh"
-EXPECTED_INSTALLER_SHA256 = "5b6f5c58bb69e06dcd5985b0eac54deb12169a685210f1a975fd36e7fb19857f"
-EXPECTED_INSTALLER_SIZE = 9794
+EXPECTED_INSTALLER_SHA256 = "ccdc81212ae29ca1fccec97f5c2b6e1b3480ea5615a56cd3b45910cc8d289cc9"
+EXPECTED_INSTALLER_SIZE = 10676
 
 
 class SafeArgumentParser(argparse.ArgumentParser):
@@ -170,7 +170,7 @@ try {{
       -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o NumberOfPasswordPrompts=0 `
       -o StrictHostKeyChecking=yes -o HostKeyAlgorithms=ssh-ed25519 `
       -o ForwardAgent=no -o ClearAllForwardings=yes -o RequestTTY=force `
-      -o PermitLocalCommand=no -o LogLevel=ERROR `
+      -o PermitLocalCommand=no -o LogLevel=QUIET `
       -o UserKnownHostsFile="$frozenKnownHosts" `
       -i "$identity" `
       pc@8.130.9.163
