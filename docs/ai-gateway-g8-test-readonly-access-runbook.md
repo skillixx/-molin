@@ -139,8 +139,8 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 7. 当前只可为新的 ChangeId 完成工程候选；必须先让低敏结果可区分 SSH 前门禁和 SSH 调用失败，017 的历史批准、工程合并或生成命令均不构成新授权。
 8. 018 已完成工程合并；独立授权后的唯一人工段关闭父窗口且无可见输出，SSH 到达保持未知，所有远端安装影响为 0，018 已消费并墓碑化。
 9. 019 改为单次 `ssh -tt` 自动携带远端固定脚本；独立授权后的唯一执行在 PowerShell 状态恢复阶段失败，固定标志不可恢复，SSH 与安装链路到达保持 UNKNOWN，019 已消费并墓碑化。
-10. 020 使用新的独立 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-020`：不再安装受控入口或 sudoers，不使用 sudo，由 `pc` 通过既有 Docker 权限在单次非交互 SSH 中执行冻结内存只读审计；可信用户目录耐久低敏回执只保留 SSH 到达边界。PR #394 精确 HEAD `dcb594d33e79bfbb059293e4734e49e62409d51a` 经 CI run `31861762018` 和三方零缺陷复评后，按 merge commit `3c63539279a34ae2365fc9d7e26e207dd728c4ba` 合入 main，合并后摘要复核一致。当前为 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`，未获新的独立授权前不执行 SSH、Docker、HTTP、数据库查询或测试服操作，`G8_SOFTWARE_CLOSED_LOOP` 仍未完成。
-11. 020 工程合并不证明运行态通过；未来执行必须对精确 ChangeId、合并提交、命令摘要以及固定只读 Docker/宿主/HTTP/数据库查询范围重新独立授权。测试候选部署、Fake 旅程、零差额对账和实际回滚继续分开授权。
+10. 020 使用独立 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-020`，不安装受控入口或 sudoers，不使用 sudo，候选经 PR #394、CI run `31861762018`、merge `3c63539279a34ae2365fc9d7e26e207dd728c4ba` 和合并后摘要复核通过。用户独立授权后，本地生成与冻结摘要 PASS，但外层 PowerShell 包装在整段解析时因缺少右括号失败，未调用 Windows PowerShell 5.1、冻结命令或 SSH。SSH、Docker/HTTP/数据库查询、sudo、安装、宿主写入、业务/上游/费用均为 0，重试 0；020 已消费并墓碑化，禁止重试或重放。`G8_SOFTWARE_CLOSED_LOOP` 仍未完成。
+11. 020 工程合并和本次失败尝试均不证明运行态通过；020 已永久消费，不得再次授权、重试或重放。若继续，只能为新的独立 ChangeId 重新完成工程、摘要与用户精确授权。测试候选部署、Fake 旅程、零差额对账和实际回滚继续分开授权。
 12. API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因本地测试、安装候选或暂存三态自动关闭。
 
 `CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005` 已完成唯一一次本地检查和正式只读 SSH，结果为 `ZERO / EXACT / stderr EMPTY / diagnostic PASS`；005 已消费并禁止重放。该历史结果当时只证明传输链路可用，暂存 UNKNOWN 后续已由 014 收敛为 `PRESENT / PASS / NONE`。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`、`docs/ai-gateway-g8-test-readonly-transport-diagnostic-attempt-20260812-005.md`。
@@ -165,7 +165,7 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 ## 4. 020 无安装独立只读核验
 
-001 至 019 的 root-owned 审计器、sudoers 与 `sudo -n /usr/local/libexec/...` 路径均为已停止的历史方案，禁止用于 020。020 只允许在工程合并、原始 blob/命令摘要复核和用户新独立授权后，由 `pc` 通过一次 `ssh -T` 执行冻结内存脚本；不上传、不安装、不申请 TTY、不执行 sudo，也不接受调用方提供的远端参数。
+001 至 019 的 root-owned 审计器、sudoers 与 `sudo -n /usr/local/libexec/...` 路径均为已停止的历史方案，禁止用于 020。020 当时只允许在工程合并、原始 blob/命令摘要复核和用户独立授权后，由 `pc` 通过一次 `ssh -T` 执行冻结内存脚本；该唯一尝试现已在 SSH 前失败关闭消费，020 不得再次授权、重试或重放。
 
 远端脚本只允许固定 Docker/宿主/本机 HTTP/数据库只读查询。hostname、machine-id、密码状态与 Docker 组枚举不属于 Drop 入口运行态验收范围，020 不读取也不输出。全部低敏结果先保存在会话内存；脚本非零、必需探针出现 `UNAVAILABLE/MISSING/INVALID/000`、空值、缺少固定必需键或缺少 `AUDIT_COMPLETE=true` 时，固定返回 `audit_evidence_failed` 并结束唯一会话，零重试。`COLLECTION_PASS` 仅表示证据采集完整，不表示证据值已满足 G8 验收。
 

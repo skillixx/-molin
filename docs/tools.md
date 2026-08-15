@@ -1049,7 +1049,7 @@ python infra/scripts/verify-ai-gateway-g8-migration-manifest.py `
 
 实际 SSH 必须绑定唯一 ChangeId、固定 known_hosts、`BatchMode=yes`、精确目标和零重试。历史凭据比较值只以内存中的 SHA-256 注入，不写入脚本、命令输出或 Git。每个 ChangeId 只允许一次连接；失败后必须生成新候选，不能重放。
 
-历史候选曾假设测试账号缺少 Docker 读取权限，因此设计 root-owned 固定审计器、root-owned 对账二进制和单命令 sudoers；该入口从未安装。用户现已明确 020 不安装受控入口且不使用 sudo，由 `pc` 使用既有 Docker 权限执行冻结无参数只读审计；旧安装方案已失效，禁止继续使用。020 的工程合并与未来远端只读执行仍须分开授权，详见 `docs/ai-gateway-g8-test-readonly-access-runbook.md`。
+历史候选曾假设测试账号缺少 Docker 读取权限，因此设计 root-owned 固定审计器、root-owned 对账二进制和单命令 sudoers；该入口从未安装。用户随后明确 020 不安装受控入口且不使用 sudo，由 `pc` 使用既有 Docker 权限执行冻结无参数只读审计；旧安装方案已失效，禁止继续使用。020 的工程合并与当时唯一远端授权相互独立，该尝试现已在 SSH 前失败关闭消费；020 不得再次授权、重试或重放。详见 `docs/ai-gateway-g8-test-readonly-access-runbook.md`。
 
 ### G8 测试服务器只读入口候选生成器
 
@@ -1139,7 +1139,7 @@ python -I infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py --self-tes
 
 018 工具在唯一人工本地段窗口直接关闭、没有可见输出后已失败关闭消费；SSH 启动/连接为 `UNKNOWN / 最多 1`，远端固定段、sudo、安装器与 post-check 均为 0。019 的单会话候选通过 PR #390、CI run `31829691838` 和独立评审，以 merge commit `70485d893fd86db00be4dbb9e324f9d4322d55b0` 合入 main，并完成合并后原始 blob 与冻结命令摘要复核。用户精确授权后的唯一可见 PowerShell 最终在恢复 `$ErrorActionPreference` 时因 `Null` 失败，固定标志不可恢复；SSH、远端预检、sudo、安装器与 post-check 均保持 `UNKNOWN / 最多 1`。重试为 0，018 与 019 的生成器、安装器均为固定 `change_id_consumed` 墓碑，禁止执行历史生成文件或任何形式的重放。见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260815-018.md`、`docs/ai-gateway-g8-test-readonly-access-install-attempt-20260815-019.md` 与 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260815-019.md`。
 
-020 工具改用新 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-020`，不安装受控入口、不写 sudoers、不使用 sudo；它把冻结审计源转换为单次 `ssh -T` 携带的内存脚本，由 `pc` 通过既有 Docker 权限执行固定只读 Docker/宿主/HTTP/数据库核验。Docker 权限接近宿主 root，因此生成器会反向拒绝 Docker 变更、宿主写入、migration、任意调用参数、业务请求、真实上游和费用动作，并以固定可信用户目录耐久低敏回执记录 SSH 到达边界。PR #394 精确 HEAD `dcb594d33e79bfbb059293e4734e49e62409d51a`、CI run `31861762018`、merge commit `3c63539279a34ae2365fc9d7e26e207dd728c4ba` 和合并后原始 blob/纯内存命令摘要均已复核。当前状态为 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`；020 尚未执行、尚未消费，未取得新的独立授权前不执行 SSH、Docker 命令、HTTP、数据库查询或任何测试服操作，`G8_SOFTWARE_CLOSED_LOOP` 仍未完成。见 `docs/ai-gateway-g8-test-readonly-runtime-audit-authorization-20260815-020.md`。
+020 工具使用 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-020`，历史候选不安装受控入口、不写 sudoers、不使用 sudo，并把能力限定为 `pc` 既有 Docker 权限下的固定只读运行态审计。PR #394、CI run `31861762018`、merge `3c63539279a34ae2365fc9d7e26e207dd728c4ba` 和合并后摘要复核均已通过。用户独立授权后，外层 PowerShell 包装在调用 Windows PowerShell 5.1 前因缺少右括号解析失败；正式命令、SSH 和远端能力均未启动，所有远端影响为 0，重试 0。020 已消费，生成器现为联网前固定 `change_id_consumed` 的墓碑，历史命令禁止重放；`G8_SOFTWARE_CLOSED_LOOP` 仍未完成。见 `docs/ai-gateway-g8-test-readonly-runtime-audit-attempt-20260815-020.md`。
 
 ## CI 变更范围分类器
 
