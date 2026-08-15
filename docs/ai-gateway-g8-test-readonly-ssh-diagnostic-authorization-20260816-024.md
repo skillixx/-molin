@@ -3,9 +3,11 @@
 ## 1. 当前状态
 
 - ChangeId：`CHG-G8-TEST-READONLY-SSH-DIAGNOSTIC-20260816-024`。
-- 当前状态：`PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`。
+- 当前状态：`PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`。
+- 工程 HEAD `97876c03baeed226362aaa304fb1a30e959ac42a` 已经 PR #407、CI run `31897233312 completed/success` 和代码安全/QA/产品规格三项独立零缺陷评审，以 merge commit `ffca18aace03fd9185280fb7a2b2807d337a590d` 合入 main。
+- merge 父提交依次为旧 main `337560b819c0105bde9d6991bf65e2f8c5f8fc3a` 与工程 HEAD；远端工程分支已删除，合并后原始 Git blob、大小、SHA-256 与 CRLF=0 已重新核对一致。
 - 023 已固定为 `CONSUMED_SSH_SESSION_FAILED_REMOTE_AUDIT_NOT_PROVEN` 并永久墓碑化；024 不恢复、重试或重放 023。
-- 本轮只授权本地工程、测试、PR、CI、独立评审、main 合并和合并后摘要复核；**不授权执行 024**。
+- 本轮工程授权已经消费完毕；工程合并和摘要复核仍**不授权执行 024**，执行须用户针对上述精确 merge 与冻结 runner 作出新的独立授权。
 - `G8_SOFTWARE_CLOSED_LOOP` 尚未完成。
 
 ## 2. 诊断目标与唯一远端能力
