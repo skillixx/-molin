@@ -25,7 +25,12 @@ class G8ReadonlySshDiagnostic024AuthorizationContractTests(unittest.TestCase):
         document = DOCUMENT.read_text(encoding="utf-8")
         for expected in (
             CHANGE_ID,
-            "PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED",
+            "PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED",
+            "97876c03baeed226362aaa304fb1a30e959ac42a",
+            "PR #407",
+            "31897233312 completed/success",
+            "ffca18aace03fd9185280fb7a2b2807d337a590d",
+            "337560b819c0105bde9d6991bf65e2f8c5f8fc3a",
             "pc@8.130.9.163:10003",
             "最多 1 个非交互 SSH 会话",
             "固定 `printf` 回执",
