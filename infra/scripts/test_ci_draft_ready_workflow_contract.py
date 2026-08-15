@@ -139,7 +139,7 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
         self.assertNotIn("ci-draft-gate", block)
 
     def test_g8_windows_job_covers_trusted_paths_and_consumed_entry(self):
-        """原生 Windows 门禁必须覆盖可信路径、015 至 019 墓碑与 020 无安装审计。"""
+        """原生 Windows 门禁必须覆盖可信路径与 015 至 020 全部墓碑。"""
 
         block = self.job_block("gateway-g8-windows")
         self.assertIn("runs-on: windows-latest", block)
@@ -200,8 +200,8 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
             "019 安装器单测失败",
             "019 命令生成器单测失败",
             "019 授权清单契约测试失败",
-            "020 无安装只读审计生成器单测失败",
-            "020 无安装只读审计授权契约失败",
+            "020 墓碑生成器单测失败",
+            "020 消费授权契约失败",
             "Windows G8 Python 编译检查失败",
             "Windows 本地材料诊断自检失败",
         ):
@@ -216,7 +216,7 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
         self.assertIn("needs.change-scope.outputs.gateway_g8 == 'true'", block)
 
     def test_g8_ready_job_runs_consumed_tombstones_and_020_in_host_and_network_none(self):
-        """Linux 门禁必须覆盖 015 至 019 历史墓碑、020 无安装审计与断网回归。"""
+        """Linux 门禁必须覆盖 015 至 020 历史墓碑与断网回归。"""
 
         block = self.job_block("gateway-g8")
         self.assertIn("bash -n infra/scripts/g8-test-readonly-access-install-015.sh", block)
@@ -243,7 +243,7 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
         self.assertGreaterEqual(block.count("test_ai_gateway_g8_readonly_runtime_audit_020_authorization_contract.py"), 2)
         self.assertNotIn("g8-test-readonly-access-install-020.sh", block)
         self.assertNotIn("test_g8_test_readonly_access_install_020.py", block)
-        self.assertIn("验证 G8 015/016/017/018/019 墓碑与 020 无安装只读审计离线门禁", block)
+        self.assertIn("验证 G8 015/016/017/018/019/020 墓碑离线门禁", block)
         self.assertIn(
             "python:3.13-bookworm \\\n            python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_install_017_authorization_contract.py -v",
             block,

@@ -2,11 +2,11 @@
 
 ## 1. 当前状态
 
-`PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`
+`CONSUMED_LOCAL_WRAPPER_PARSE_FAILED_SSH_NOT_STARTED / REMOTE_NOT_AUTHORIZED`
 
 020 使用独立 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-020`。根据用户确认，本候选不安装受控只读审计入口，不创建 `/usr/local/libexec` 文件、不写 sudoers、不执行 sudo；由 `pc` 直接使用既有 Docker 权限，在单次非交互 SSH 会话中以内存脚本完成固定只读运行态核验。
 
-工程候选已完成 Git 推送、PR、CI、独立评审、merge commit 与合并后原始 blob 复核；这些证据不授权 SSH、Docker 命令、HTTP、数据库查询或测试服操作。020 尚未执行、尚未消费，测试服运行态仍未形成新证据，`G8_SOFTWARE_CLOSED_LOOP` 尚未完成。
+用户后续对精确 ChangeId、工程 merge、冻结命令摘要和唯一非交互 SSH 上限作出了独立授权。本地冻结门禁与命令生成 PASS，但外层 PowerShell 包装在语法解析阶段因缺少右括号失败，没有调用 Windows PowerShell 5.1、冻结命令或 SSH。SSH、Docker/HTTP/数据库查询、sudo、安装、宿主写入、业务/上游/费用均为 0，重试为 0；020 已失败关闭消费，测试服运行态仍未形成新证据，`G8_SOFTWARE_CLOSED_LOOP` 尚未完成。详见 `docs/ai-gateway-g8-test-readonly-runtime-audit-attempt-20260815-020.md`。
 
 ## 2. 权限与能力边界
 
@@ -39,7 +39,7 @@ Docker 控制权限本质上接近宿主 root 能力，因此“不使用 sudo�
 | `infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_020_command.py` | 14896 | `a156e62417826ce5a8f6347d46edca384f6abfaa5e819aa300dc0dc55b3d5b8b` | CRLF=0 |
 | 纯内存冻结命令 | 32009 | `31c1eaaf6f3916dbabb51447a63d263ac4f73509bb8e535451df28db4e024a3d` | 不写盘 |
 
-冻结命令只有一个 SSH 目标、`ConnectionAttempts=1`、`RequestTTY=no`；远端 `sudo`、安装器、host 写入与 Docker 变更命令均为 0。摘要只证明工程候选可复核，不证明测试服运行态通过。
+上表是执行前冻结的历史工程候选。冻结命令只有一个 SSH 目标、`ConnectionAttempts=1`、`RequestTTY=no`；远端 `sudo`、安装器、host 写入与 Docker 变更命令均为 0。该命令现已消费，禁止执行或重放；摘要不证明测试服运行态通过。
 
 工程 PR #394 精确 HEAD 为 `dcb594d33e79bfbb059293e4734e49e62409d51a`，CI run `31861762018` 为 `completed/success`，代码安全、QA、产品/规格独立复评均为 P0/P1/P2/P3=`0/0/0/0`。PR 以 merge commit `3c63539279a34ae2365fc9d7e26e207dd728c4ba` 合入 main，父提交顺序为 `b9211b8a90610aa2e45873fa9de54575bce58fb5` 后 `dcb594d33e79bfbb059293e4734e49e62409d51a`，远端工程分支已删除。
 
@@ -49,4 +49,4 @@ Docker 控制权限本质上接近宿主 root 能力，因此“不使用 sudo�
 
 精确 HEAD 已通过本地 Windows/Linux 断网门禁、敏感信息扫描、适用 CI 和代码安全、QA、产品/规格独立评审，并按 merge commit 合入 main；合并后 main 原始 Git blob 大小、SHA-256、Git blob、CRLF 与冻结命令摘要已重算且一致。
 
-合并和摘要复核完成后必须停止。只有用户对精确 020 ChangeId、合并提交、命令摘要以及“单次 SSH + 固定只读 Docker/宿主/HTTP/数据库查询”的最大影响作出新的独立授权，才可生成或执行正式命令。任何失败立即停止、零重试；执行完成或失败后 020 都必须永久消费并墓碑化。
+020 的唯一授权尝试已失败并按零重试规则消费。现有冻结命令、工程 merge、归档证据与改名后的本地文件均不构成再次授权；020 不得再次授权、重试或重放。继续运行态审计只能使用新的独立 ChangeId，重新完成工程门禁和用户精确授权。

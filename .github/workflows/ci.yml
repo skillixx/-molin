@@ -993,7 +993,7 @@ jobs:
             python:3.13-alpine \
             python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_014.py -v
 
-      - name: 验证 G8 015/016/017/018/019 墓碑与 020 无安装只读审计离线门禁
+      - name: 验证 G8 015/016/017/018/019/020 墓碑离线门禁
         run: |
           bash -n infra/scripts/g8-test-readonly-access-install-015.sh
           bash -n infra/scripts/g8-test-readonly-access-install-016.sh
@@ -1205,9 +1205,9 @@ jobs:
           python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_install_019_authorization_contract.py -v
           if ($LASTEXITCODE -ne 0) { throw '019 授权清单契约测试失败' }
           python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_020_command.py -v
-          if ($LASTEXITCODE -ne 0) { throw '020 无安装只读审计生成器单测失败' }
+          if ($LASTEXITCODE -ne 0) { throw '020 墓碑生成器单测失败' }
           python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_runtime_audit_020_authorization_contract.py -v
-          if ($LASTEXITCODE -ne 0) { throw '020 无安装只读审计授权契约失败' }
+          if ($LASTEXITCODE -ne 0) { throw '020 消费授权契约失败' }
           python -I -m py_compile infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-014.py infra/scripts/prepare-ai-gateway-g8-test-readonly-access-015-command.py infra/scripts/test_ai_gateway_g8_readonly_install_015_authorization_contract.py infra/scripts/prepare-ai-gateway-g8-test-readonly-access-016-command.py infra/scripts/test_ai_gateway_g8_readonly_install_016_authorization_contract.py infra/scripts/prepare-ai-gateway-g8-test-readonly-access-017-command.py infra/scripts/test_ai_gateway_g8_readonly_install_017_authorization_contract.py infra/scripts/prepare-ai-gateway-g8-test-readonly-access-018-command.py infra/scripts/test_ai_gateway_g8_readonly_install_018_authorization_contract.py infra/scripts/prepare-ai-gateway-g8-test-readonly-access-019-command.py infra/scripts/test_ai_gateway_g8_readonly_install_019_authorization_contract.py infra/scripts/prepare-ai-gateway-g8-test-readonly-runtime-audit-020-command.py infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_020_command.py infra/scripts/test_ai_gateway_g8_readonly_runtime_audit_020_authorization_contract.py
           if ($LASTEXITCODE -ne 0) { throw 'Windows G8 Python 编译检查失败' }
           python -I infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py --self-test
