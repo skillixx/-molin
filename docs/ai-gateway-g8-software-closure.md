@@ -1,6 +1,6 @@
 # AI 网关 G8 软件闭环执行清单
 
-> 当前状态：`IN_PROGRESS`。本清单用于完成 `G8_SOFTWARE_CLOSED_LOOP`，不包含生产部署、真实付费上游、客户灰度、真实通知或商业观察。020 的唯一授权尝试在启动冻结命令和 SSH 前失败，未形成测试服运行态证据且已永久消费；021 工程候选已经 PR #398、CI、独立评审、merge commit 和合并后摘要复核，当前为 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`。
+> 当前状态：`IN_PROGRESS`。本清单用于完成 `G8_SOFTWARE_CLOSED_LOOP`，不包含生产部署、真实付费上游、客户灰度、真实通知或商业观察。020 的唯一授权尝试在启动冻结命令和 SSH 前失败，未形成测试服运行态证据且已永久消费；021 工程候选已经 PR #398、CI、独立评审、merge commit 和合并后摘要复核。ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-021` 的唯一授权尝试固定结果为 `CONSUMED_LOCAL_RECEIPT_UNAVAILABLE_SSH_NOT_STARTED`：PowerShell 启动一次后因本地耐久回执不可用在 SSH 前失败关闭，`PRE_SSH_GATE`、`SSH_ATTEMPTED`、SSH、远端命令及全部测试服能力均为 0，重试为 0；021 已永久消费并墓碑化，仍未形成测试服运行态证据。
 
 ## 1. 闭环目标
 
@@ -38,7 +38,7 @@
 - “复核工程 merge 原始 blob、生成冻结命令、校验大小与 SHA-256、解析并启动”必须收敛为仓库内唯一固定入口，禁止人工拼接或临时外层包装。
 - 固定入口必须兼容 Windows PowerShell 5.1，不依赖可选模块；使用纯 .NET 完成摘要与语法解析，并在任何材料读取、子进程或网络动作前失败关闭。
 - 原生 Windows 动态测试必须以假子 PowerShell、假 `ssh.exe` 和临时低敏回执证明：语法错误时子进程为 0；成功路径只启动一个子 PowerShell、一个假 SSH；父窗口保活且退出码、阶段标志和 ActionPreference 均可确定恢复。
-- Linux `--network none` 与 Windows CI 必须同时覆盖参数拒绝、摘要漂移、命令预占、回执故障、低敏输出、零重试和历史 015 至 020 墓碑；测试不得读取真实 SSH 身份或建立网络连接。
+- Linux `--network none` 与 Windows CI 必须同时覆盖参数拒绝、摘要漂移、命令预占、回执故障、低敏输出、零重试和历史 015 至 021 墓碑；测试不得读取真实 SSH 身份或建立网络连接。
 - 工程 HEAD、适用 CI、三项独立评审、merge commit 与合并后原始 blob/冻结命令摘要全部通过后必须停止；实际 SSH/Docker 只读审计仍须用户对精确新 ChangeId 作出另一份独立授权。
 
 ## 3. 完成门禁
