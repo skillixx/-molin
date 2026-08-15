@@ -138,8 +138,8 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
             self.assertIn(job_id, block)
         self.assertNotIn("ci-draft-gate", block)
 
-    def test_g8_windows_job_covers_tombstones_and_023_candidate(self):
-        """原生 Windows 门禁必须覆盖 015 至 022 墓碑与 023 候选。"""
+    def test_g8_windows_job_covers_015_through_023_tombstones(self):
+        """原生 Windows 门禁必须覆盖 015 至 023 墓碑。"""
 
         block = self.job_block("gateway-g8-windows")
         self.assertIn("runs-on: windows-latest", block)
@@ -230,8 +230,8 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
         self.assertIn("exit 0", block)
         self.assertIn("needs.change-scope.outputs.gateway_g8 == 'true'", block)
 
-    def test_g8_ready_job_runs_tombstones_and_023_in_host_and_network_none(self):
-        """Linux 门禁必须覆盖 015 至 022 墓碑与 023 候选断网回归。"""
+    def test_g8_ready_job_runs_015_through_023_tombstones_in_host_and_network_none(self):
+        """Linux 门禁必须覆盖 015 至 023 墓碑断网回归。"""
 
         block = self.job_block("gateway-g8")
         self.assertIn("bash -n infra/scripts/g8-test-readonly-access-install-015.sh", block)
@@ -271,7 +271,7 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
         self.assertGreaterEqual(block.count("test_ai_gateway_g8_readonly_runtime_audit_023_authorization_contract.py"), 2)
         self.assertNotIn("g8-test-readonly-access-install-020.sh", block)
         self.assertNotIn("test_g8_test_readonly_access_install_020.py", block)
-        self.assertIn("验证 G8 015/016/017/018/019/020/021/022 墓碑与 023 候选离线门禁", block)
+        self.assertIn("验证 G8 015/016/017/018/019/020/021/022/023 墓碑离线门禁", block)
         digest = "python@sha256:62eafe52c91cad83c2c74e630bfde917da8c253673e695665d454def84fc9a13"
         self.assertIn(f"g8_bookworm_image='{digest}'", block)
         self.assertEqual(block.count('docker pull "$g8_bookworm_image"'), 1)

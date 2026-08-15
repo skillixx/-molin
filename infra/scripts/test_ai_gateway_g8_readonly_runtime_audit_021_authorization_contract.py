@@ -184,7 +184,7 @@ class TestG8ReadonlyRuntimeAudit021ConsumedContract(unittest.TestCase):
         workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         for test in (GENERATOR_TEST_PATH.name, RUNNER_TEST_PATH.name, Path(__file__).name):
             self.assertGreaterEqual(workflow.count(test), 2, test)
-        self.assertIn("验证 G8 015/016/017/018/019/020/021/022 墓碑", workflow)
+        self.assertIn("验证 G8 015/016/017/018/019/020/021/022/023 墓碑", workflow)
         self.assertIn("--network none", workflow)
         self.assertIn(
             "python@sha256:62eafe52c91cad83c2c74e630bfde917da8c253673e695665d454def84fc9a13",
