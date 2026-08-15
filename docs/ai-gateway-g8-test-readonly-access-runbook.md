@@ -139,8 +139,9 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 7. 当前只可为新的 ChangeId 完成工程候选；必须先让低敏结果可区分 SSH 前门禁和 SSH 调用失败，017 的历史批准、工程合并或生成命令均不构成新授权。
 8. 018 已完成工程合并；独立授权后的唯一人工段关闭父窗口且无可见输出，SSH 到达保持未知，所有远端安装影响为 0，018 已消费并墓碑化。
 9. 019 改为单次 `ssh -tt` 自动携带远端固定脚本；独立授权后的唯一执行在 PowerShell 状态恢复阶段失败，固定标志不可恢复，SSH 与安装链路到达保持 UNKNOWN，019 已消费并墓碑化。
-10. 若未来安装成功，真实运行态审计仍必须使用新的 ChangeId；测试候选部署、Fake 旅程、零差额对账和实际回滚继续分开授权。
-11. API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因本地测试、安装候选或暂存三态自动关闭。
+10. 020 使用新的独立 ChangeId `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260815-020`：通过可信用户目录耐久低敏回执保留阶段证据，并在交互 sudo 前区分 `EXACT / ABSENT / DRIFT`；当前为 `PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`，本轮不授权 SSH、sudo、安装器或 post-check。
+11. 若未来安装成功，真实运行态审计仍必须使用新的 ChangeId；测试候选部署、Fake 旅程、零差额对账和实际回滚继续分开授权。
+12. API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因本地测试、安装候选或暂存三态自动关闭。
 
 `CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005` 已完成唯一一次本地检查和正式只读 SSH，结果为 `ZERO / EXACT / stderr EMPTY / diagnostic PASS`；005 已消费并禁止重放。该历史结果当时只证明传输链路可用，暂存 UNKNOWN 后续已由 014 收敛为 `PRESENT / PASS / NONE`。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`、`docs/ai-gateway-g8-test-readonly-transport-diagnostic-attempt-20260812-005.md`。
 

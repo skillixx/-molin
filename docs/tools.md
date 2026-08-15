@@ -1139,6 +1139,8 @@ python -I infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py --self-tes
 
 018 工具在唯一人工本地段窗口直接关闭、没有可见输出后已失败关闭消费；SSH 启动/连接为 `UNKNOWN / 最多 1`，远端固定段、sudo、安装器与 post-check 均为 0。019 的单会话候选通过 PR #390、CI run `31829691838` 和独立评审，以 merge commit `70485d893fd86db00be4dbb9e324f9d4322d55b0` 合入 main，并完成合并后原始 blob 与冻结命令摘要复核。用户精确授权后的唯一可见 PowerShell 最终在恢复 `$ErrorActionPreference` 时因 `Null` 失败，固定标志不可恢复；SSH、远端预检、sudo、安装器与 post-check 均保持 `UNKNOWN / 最多 1`。重试为 0，018 与 019 的生成器、安装器均为固定 `change_id_consumed` 墓碑，禁止执行历史生成文件或任何形式的重放。见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260815-018.md`、`docs/ai-gateway-g8-test-readonly-access-install-attempt-20260815-019.md` 与 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260815-019.md`。
 
+020 工具使用新 ChangeId `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260815-020`，通过固定可信用户目录耐久低敏回执记录本地阶段，规范化 `Null` ActionPreference，并在唯一 SSH 会话内、交互 sudo 前只读分类 live 的 `EXACT / ABSENT / DRIFT` 状态。当前只完成工程候选，状态为 `PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`；020 尚未安装、尚未消费，本轮不授权 SSH、sudo、安装器、post-check 或任何测试服操作。见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260815-020.md`。
+
 ## CI 变更范围分类器
 
 | 项目 | 说明 |
