@@ -37,7 +37,7 @@ python -I infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-022.py --c
 
 - Windows PowerShell 5.1 动态覆盖可信 LocalAppData、伪造环境变量、目录/权限失败、预占不覆盖、Writer/WriteLine、Flush、Flush(true)、Null ActionPreference、父窗口保活与固定低敏输出。
 - 本地假 SSH 必须只调用一次，回执中 `SSH_ATTEMPTED` 恰好一次；失败后不得重试。
-- Linux cached `python:3.13-bookworm` 以 `--pull=never --network none`、仓库只读挂载运行生成器、启动器、授权契约和 015 至 021 历史墓碑；不得读取真实 SSH 身份或建立网络连接。
+- Linux CI 先获取固定 digest `python@sha256:62eafe52c91cad83c2c74e630bfde917da8c253673e695665d454def84fc9a13`，随后所有测试容器均以 `--pull=never --network none`、仓库只读挂载运行生成器、启动器、授权契约和 015 至 021 历史墓碑；测试容器不得读取真实 SSH 身份或建立网络连接。
 - Windows 与 Linux 同时运行 py_compile、Bash 语法、差异格式、敏感信息和 CI workflow 契约门禁。
 
 ## 5. 冻结工程候选

@@ -263,14 +263,14 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
         self.assertNotIn("g8-test-readonly-access-install-020.sh", block)
         self.assertNotIn("test_g8_test_readonly_access_install_020.py", block)
         self.assertIn("验证 G8 015/016/017/018/019/020/021 墓碑与 022 候选离线门禁", block)
-        self.assertIn(
-            "python:3.13-bookworm \\\n            python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_install_017_authorization_contract.py -v",
-            block,
-        )
+        digest = "python@sha256:62eafe52c91cad83c2c74e630bfde917da8c253673e695665d454def84fc9a13"
+        self.assertIn(f"g8_bookworm_image='{digest}'", block)
+        self.assertEqual(block.count('docker pull "$g8_bookworm_image"'), 1)
         self.assertIn("docker run --rm --pull=never --network none", block)
-        bookworm_network_none = block.split("python:3.13-bookworm", 1)[1].split(
+        bookworm_network_none = block.split("docker run --rm --pull=never --network none", 1)[1].split(
             "docker run --rm --pull=never --network none", 1
         )[0]
+        self.assertIn('"$g8_bookworm_image"', bookworm_network_none)
         self.assertIn("test_g8_test_readonly_access_install_015.py", bookworm_network_none)
         self.assertIn("test_prepare_ai_gateway_g8_test_readonly_access_015_command.py", bookworm_network_none)
         self.assertIn("test_ai_gateway_g8_readonly_install_015_authorization_contract.py", bookworm_network_none)

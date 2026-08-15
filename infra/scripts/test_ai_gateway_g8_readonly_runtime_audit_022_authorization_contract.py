@@ -146,7 +146,11 @@ class TestG8ReadonlyRuntimeAudit022AuthorizationContract(unittest.TestCase):
         ):
             self.assertGreaterEqual(workflow.count(test), 2, test)
         self.assertIn("--network none", workflow)
-        self.assertIn("python:3.13-bookworm", workflow)
+        self.assertIn(
+            "python@sha256:62eafe52c91cad83c2c74e630bfde917da8c253673e695665d454def84fc9a13",
+            workflow,
+        )
+        self.assertIn('docker pull "$g8_bookworm_image"', workflow)
 
 
 if __name__ == "__main__":
