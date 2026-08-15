@@ -142,7 +142,7 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 10. 020 使用独立 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-020`，不安装受控入口或 sudoers，不使用 sudo，候选经 PR #394、CI run `31861762018`、merge `3c63539279a34ae2365fc9d7e26e207dd728c4ba` 和合并后摘要复核通过。用户独立授权后，本地生成与冻结摘要 PASS，但外层 PowerShell 包装在整段解析时因缺少右括号失败，未调用 Windows PowerShell 5.1、冻结命令或 SSH。SSH、Docker/HTTP/数据库查询、sudo、安装、宿主写入、业务/上游/费用均为 0，重试 0；020 已消费并墓碑化，禁止重试或重放。`G8_SOFTWARE_CLOSED_LOOP` 仍未完成。
 11. 020 工程合并和本次失败尝试均不证明运行态通过；020 已永久消费，不得再次授权、重试或重放。若继续，只能为新的独立 ChangeId 重新完成工程、摘要与用户精确授权。测试候选部署、Fake 旅程、零差额对账和实际回滚继续分开授权。
 12. API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因本地测试、安装候选或暂存三态自动关闭。
-13. 021 使用新的独立 ChangeId 修复本地启动链路：固定 Python 入口从工程 merge 原始 blob 复核生成器、审计源和自身，在内存中生成并核对命令后只启动一次可信 Windows PowerShell 5.1；工程阶段只运行假 SSH 与断网测试。当前为 `PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`，实际 SSH/Docker 审计必须在工程合并与摘要复核后另行授权。
+13. 021 使用新的独立 ChangeId 修复本地启动链路：固定 Python 入口从工程 merge 原始 blob 复核生成器、审计源和自身，在内存中生成并核对命令后只启动一次可信 Windows PowerShell 5.1；工程阶段只运行假 SSH 与断网测试。PR #398 已合并为 `8bc05cbf3bc71a8954087dc7f26732f836e5212e`，合并后摘要复核无漂移；当前为 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`，实际 SSH/Docker 审计仍须新的独立精确授权。
 
 `CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005` 已完成唯一一次本地检查和正式只读 SSH，结果为 `ZERO / EXACT / stderr EMPTY / diagnostic PASS`；005 已消费并禁止重放。该历史结果当时只证明传输链路可用，暂存 UNKNOWN 后续已由 014 收敛为 `PRESENT / PASS / NONE`。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`、`docs/ai-gateway-g8-test-readonly-transport-diagnostic-attempt-20260812-005.md`。
 
