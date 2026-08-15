@@ -4,7 +4,6 @@
 import ast
 import hashlib
 from pathlib import Path
-import subprocess
 import unittest
 
 
@@ -31,8 +30,8 @@ def load_constants(path: Path) -> dict[str, object]:
 
 
 class TestG8ReadonlyRuntimeAudit022AuthorizationContract(unittest.TestCase):
-    def test_status_documents_keep_022_pending_and_g8_incomplete(self) -> None:
-        """共享状态文档必须一致记录 022 未授权且软件闭环未完成。"""
+    def test_status_documents_keep_022_pending_user_approval_and_g8_incomplete(self) -> None:
+        """共享状态文档必须一致记录 022 待用户授权且软件闭环未完成。"""
         for relative in (
             "README.md",
             "docs/ai-gateway-g8-acceptance.md",
@@ -42,6 +41,7 @@ class TestG8ReadonlyRuntimeAudit022AuthorizationContract(unittest.TestCase):
         ):
             document = (REPO_ROOT / relative).read_text(encoding="utf-8")
             self.assertIn(CHANGE_ID, document, relative)
+            self.assertIn("PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED", document, relative)
             self.assertIn("REMOTE_NOT_AUTHORIZED", document, relative)
             self.assertIn("G8_SOFTWARE_CLOSED_LOOP", document, relative)
 
@@ -50,7 +50,10 @@ class TestG8ReadonlyRuntimeAudit022AuthorizationContract(unittest.TestCase):
         document = AUTH_PATH.read_text(encoding="utf-8")
         for required in (
             CHANGE_ID,
-            "PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED",
+            "PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED",
+            "PR #401",
+            "31884793587 completed/success",
+            "84ae5b0ad87958ee63fbfa709c4f164baca39a1b",
             "021 已永久消费",
             "不安装",
             "不使用 sudo",
@@ -96,7 +99,9 @@ class TestG8ReadonlyRuntimeAudit022AuthorizationContract(unittest.TestCase):
             content = path.read_bytes()
             digest = hashlib.sha256(content).hexdigest()
             self.assertNotIn(b"\r\n", content, path)
-            self.assertIn(f"| `{path.relative_to(REPO_ROOT).as_posix()}` | {len(content)} | `{digest}` |", document)
+            relative = path.relative_to(REPO_ROOT).as_posix()
+            blob = hashlib.sha1(f"blob {len(content)}\0".encode("ascii") + content).hexdigest()
+            self.assertIn(f"| `{relative}` | {len(content)} | `{digest}` | `{blob}` |", document)
         namespace = {"__name__": "g8_022_freeze", "__file__": str(GENERATOR_PATH)}
         exec(compile(GENERATOR_PATH.read_text(encoding="utf-8"), str(GENERATOR_PATH), "exec"), namespace)
         auditor = (GENERATOR_PATH.with_name("audit-ai-gateway-g8-test-server-readonly.sh")).read_bytes()
