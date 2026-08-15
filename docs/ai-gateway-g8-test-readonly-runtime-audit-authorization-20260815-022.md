@@ -2,13 +2,13 @@
 
 ## 1. 当前状态
 
-`PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`
+`PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`
 
 022 使用独立 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-022`。021 的唯一授权尝试在 Windows PowerShell 5.1 启动后、SSH 前固定返回 `receipt_unavailable`；021 已永久消费并墓碑化，不得再次授权、重试或重放。
 
 本地离线复现确认：021 普通 Python 字符串把回执目录校验正则末尾的两个反斜杠折叠为一个，生成的 PowerShell 正则无效，异常被旧实现统一映射为 `receipt_unavailable`。022 删除该正则，改用 Windows SpecialFolder、盘符根、固定盘和逐级非 reparse 校验，并把目录、预占、写入与刷盘故障分别收敛为固定低敏原因。
 
-022 尚未执行、尚未消费。工程实现、测试、CI、评审和合并均不授权 SSH、测试服 Docker、HTTP、数据库、sudo、安装、宿主写入、migration、业务请求、真实上游或费用动作；`G8_SOFTWARE_CLOSED_LOOP` 尚未完成。
+022 工程 HEAD `fc0344283813bd873aa70520e0b8fcd1da424500` 已通过 PR #401、CI run `31884793587 completed/success` 及代码安全、QA、产品/规格三项独立零缺陷评审，以 merge commit `84ae5b0ad87958ee63fbfa709c4f164baca39a1b` 合入 main；父提交顺序为 `dc035aec34903bbaf2a991cd64c6109db52fbdeb` 后 `fc0344283813bd873aa70520e0b8fcd1da424500`，远端工程分支已删除。022 尚未执行、尚未消费；工程合并不授权 SSH、测试服 Docker、HTTP、数据库、sudo、安装、宿主写入、migration、业务请求、真实上游或费用动作，`G8_SOFTWARE_CLOSED_LOOP` 尚未完成。
 
 ## 2. 固定启动入口
 
@@ -42,20 +42,20 @@ python -I infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-022.py --c
 
 ## 5. 冻结工程候选
 
-以下摘要来自当前普通文件及纯内存生成物，换行均为 LF、CRLF=0：
+以下摘要已从合并后的 main 原始 Git blob 与纯内存生成物重新计算；换行均为 LF、CRLF=0：
 
-| 文件/生成物 | 大小 | SHA-256 | 状态 |
-|---|---:|---|---|
-| `infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-022.py` | 13256 | `3f9d4dfbb283a4275556d6c3949bbfd790dd06eeaf2c9b88ece0e0db29e2f65f` | 当前候选 |
-| `infra/scripts/prepare-ai-gateway-g8-test-readonly-runtime-audit-022-command.py` | 30098 | `4ecf224f848f6597c59db705f122c5e4ffe8593ac48395451f2e11e8973fba00` | 当前候选 |
-| `infra/scripts/test_run_ai_gateway_g8_test_readonly_runtime_audit_022.py` | 6079 | `12b6855db5a186d821376d961ad0210c567e17a239221d6637c653a557c4f6d1` | 当前候选 |
-| `infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_022_command.py` | 33218 | `b043ec28f936e7cc700982291f481e8d529a6dc3cfae2d3998157279dd70ab12` | 当前候选 |
-| 纯内存冻结命令 | 34027 | `d649d2f896a224f3c1063b4bbb49953de1a7330d36b1db0cbaaf2bbfdea2e9e9` | 不落盘 |
+| 文件/生成物 | 大小 | SHA-256 | Git blob | 状态 |
+|---|---:|---|---|---|
+| `infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-022.py` | 13256 | `3f9d4dfbb283a4275556d6c3949bbfd790dd06eeaf2c9b88ece0e0db29e2f65f` | `0a3e88fd1830cf2a1da328b9dc342d28bc125c67` | 合并后复核 |
+| `infra/scripts/prepare-ai-gateway-g8-test-readonly-runtime-audit-022-command.py` | 30098 | `4ecf224f848f6597c59db705f122c5e4ffe8593ac48395451f2e11e8973fba00` | `931947ed15128004b80fd16cde04fb3d4e8921b4` | 合并后复核 |
+| `infra/scripts/test_run_ai_gateway_g8_test_readonly_runtime_audit_022.py` | 6079 | `12b6855db5a186d821376d961ad0210c567e17a239221d6637c653a557c4f6d1` | `1025f1722d80f6d6dc0956e9da2b2e25f66625aa` | 合并后复核 |
+| `infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_022_command.py` | 33218 | `b043ec28f936e7cc700982291f481e8d529a6dc3cfae2d3998157279dd70ab12` | `feb27b095a6c9cf787bdf05e92fb37d2cb2a8a27` | 合并后复核 |
+| 纯内存冻结命令 | 34027 | `d649d2f896a224f3c1063b4bbb49953de1a7330d36b1db0cbaaf2bbfdea2e9e9` | 不落盘 | 合并后复核 |
 
 固定审计源仍为 `infra/scripts/audit-ai-gateway-g8-test-server-readonly.sh`：18377 字节，SHA-256 `308908d2a2b9fa8679fd21d77fde68b5ce5d521ed37dac6b7726e6c323452256`，022 不修改该文件。
 
 ## 6. 合并与停止条件
 
-022 必须完成 Windows/Linux 断网本地门禁、敏感信息扫描、精确 HEAD 的全部适用 CI，以及代码安全、QA、产品/规格独立评审；P0/P1 必须为 0。满足后以 merge commit 合入 main并删除远端功能分支，再从 main 原始 Git blob重新核对执行文件、测试、审计源、换行和纯内存命令摘要。
+022 已完成 Windows/Linux 断网本地门禁、敏感信息扫描、精确 HEAD 的全部适用 CI，以及代码安全、QA、产品/规格独立评审；P0/P1 为 0。工程候选已以 merge commit 合入 main、远端功能分支已删除，执行文件、测试、审计源、换行和纯内存命令摘要已从 main 原始 Git blob 复核一致。
 
 合并及摘要复核后必须停止并保持 `REMOTE_NOT_AUTHORIZED`。只有用户对精确 ChangeId、工程 merge、命令大小、命令 SHA-256、最多一次非交互 SSH 和零重试另行作出独立授权，才允许调用固定正式入口。

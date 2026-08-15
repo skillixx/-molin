@@ -1,6 +1,6 @@
 # AI 网关 G8 软件闭环执行清单
 
-> 当前状态：`IN_PROGRESS`。本清单用于完成 `G8_SOFTWARE_CLOSED_LOOP`，不包含生产部署、真实付费上游、客户灰度、真实通知或商业观察。ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-021` 的唯一授权尝试固定结果为 `CONSUMED_LOCAL_RECEIPT_UNAVAILABLE_SSH_NOT_STARTED`：PowerShell 启动一次后因本地耐久回执不可用在 SSH 前失败关闭，`PRE_SSH_GATE`、`SSH_ATTEMPTED`、SSH、远端命令及全部测试服能力均为 0，重试为 0；021 已永久消费并墓碑化。022 使用新的独立 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-022` 修复已离线复现的反斜杠折叠与回执诊断缺口，当前仍为 `PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`，尚未形成测试服运行态证据。
+> 当前状态：`IN_PROGRESS`。本清单用于完成 `G8_SOFTWARE_CLOSED_LOOP`，不包含生产部署、真实付费上游、客户灰度、真实通知或商业观察。ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-021` 的唯一授权尝试固定结果为 `CONSUMED_LOCAL_RECEIPT_UNAVAILABLE_SSH_NOT_STARTED`：PowerShell 启动一次后因本地耐久回执不可用在 SSH 前失败关闭，`PRE_SSH_GATE`、`SSH_ATTEMPTED`、SSH、远端命令及全部测试服能力均为 0，重试为 0；021 已永久消费并墓碑化。022 使用新的独立 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-022` 修复已离线复现的反斜杠折叠与回执诊断缺口；PR #401、CI run `31884793587`、merge commit `84ae5b0ad87958ee63fbfa709c4f164baca39a1b` 与合并后摘要复核均已通过。当前为 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`，尚未形成测试服运行态证据。
 
 ## 1. 闭环目标
 
