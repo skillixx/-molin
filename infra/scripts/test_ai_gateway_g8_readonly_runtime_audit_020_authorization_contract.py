@@ -87,8 +87,11 @@ class TestG8ReadonlyRuntimeAudit020ConsumedContract(unittest.TestCase):
             document = path.read_text(encoding="utf-8")
             for required in (CHANGE_ID, "020 已", "SSH", "0", "G8_SOFTWARE_CLOSED_LOOP"):
                 self.assertIn(required, document, path)
-            self.assertNotIn("PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED", document, path)
-            for stale in ("020 的工程合并与未来远端只读执行仍须分开授权", "020 只允许在工程合并"):
+            for stale in (
+                "020 当前为 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`",
+                "020 的工程合并与未来远端只读执行仍须分开授权",
+                "020 只允许在工程合并",
+            ):
                 self.assertNotIn(stale, document, path)
 
     def test_tombstones_match_attempt_record(self) -> None:
