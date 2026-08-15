@@ -30,12 +30,14 @@ class TestG8ReadonlyInstall018ConsumedContract(unittest.TestCase):
             "业务请求、上游请求、费用：`0 / 0 / 0 CNY`",
             "018 不得再次授权、重试或重放",
             "本段历史上限不构成 019 或任何后续 ChangeId 的授权",
+            "019 现已执行失败并永久消费，不得再次授权、重试或重放",
         ):
             self.assertIn(required, combined)
         for stale_authorization in (
             "才可对 018 作出新的独立精确授权",
             "即使将来获得独立安装授权",
             "等待新的独立远端安装授权",
+            "后续 019 必须独立完成工程门禁、合并后复核并取得新的精确授权",
         ):
             self.assertNotIn(stale_authorization, AUTH_PATH.read_text(encoding="utf-8"))
 
