@@ -49,3 +49,6 @@ infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-023.py text eol=lf
 infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_023_command.py text eol=lf
 infra/scripts/test_run_ai_gateway_g8_test_readonly_runtime_audit_023.py text eol=lf
 infra/scripts/test_ai_gateway_g8_readonly_runtime_audit_023_authorization_contract.py text eol=lf
+infra/scripts/run-ai-gateway-g8-test-readonly-ssh-diagnostic-024.py text eol=lf
+infra/scripts/test_run_ai_gateway_g8_test_readonly_ssh_diagnostic_024.py text eol=lf
+infra/scripts/test_ai_gateway_g8_readonly_ssh_diagnostic_024_authorization_contract.py text eol=lf
