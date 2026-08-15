@@ -1,6 +1,6 @@
 # AI 网关 G8 软件闭环执行清单
 
-> 当前状态：`IN_PROGRESS`。本清单用于完成 `G8_SOFTWARE_CLOSED_LOOP`，不包含生产部署、真实付费上游、客户灰度、真实通知或商业观察。020 的唯一授权尝试在启动冻结命令和 SSH 前失败，未形成测试服运行态证据且已永久消费；后续只读核验必须使用新的独立 ChangeId，不得重试或重放 020。
+> 当前状态：`IN_PROGRESS`。本清单用于完成 `G8_SOFTWARE_CLOSED_LOOP`，不包含生产部署、真实付费上游、客户灰度、真实通知或商业观察。020 的唯一授权尝试在启动冻结命令和 SSH 前失败，未形成测试服运行态证据且已永久消费；021 已按新的独立 ChangeId 建立仓库内固定启动器工程候选，当前仍为 `PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`。
 
 ## 1. 闭环目标
 
