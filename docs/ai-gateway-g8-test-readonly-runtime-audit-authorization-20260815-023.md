@@ -2,23 +2,25 @@
 
 ## 1. 当前状态
 
-`PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`
+`CONSUMED_SSH_SESSION_FAILED_REMOTE_AUDIT_NOT_PROVEN`
 
 023 使用独立 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-023`。022 因固定客户端私钥、公钥和指纹配对门禁返回 `identity_pair_failed`，且已永久消费并墓碑化，不得再次授权、重试或重放。
 
-023 取消固定客户端私钥路径、对应公钥文件、客户端指纹和 `IdentitiesOnly` 门禁，改用开发机现有的免交互 SSH 认证链。工程 HEAD `9a969d4dd2881e659c50ab694a4d35b57adba803` 经 PR #404、CI run `31892659673 completed/success` 和代码安全、QA、产品/规格三项独立零缺陷评审后，以 merge commit `1eb23c8b87720cceea64dcfc349b0a9b9c04de4b` 合入 main；父提交顺序为 `0db6d060f4b3763c39f13a030fb7bec2485b546b` 后 `9a969d4dd2881e659c50ab694a4d35b57adba803`，远端工程分支已删除。023 尚未执行、尚未消费；工程实现、测试、CI、评审和合并均不授权 SSH、测试服 Docker、HTTP、数据库、sudo、安装、宿主写入、migration、业务请求、真实上游或费用动作；`G8_SOFTWARE_CLOSED_LOOP` 尚未完成。
+023 取消固定客户端私钥路径、对应公钥文件、客户端指纹和 `IdentitiesOnly` 门禁，改用开发机现有的免交互 SSH 认证链。工程 HEAD `9a969d4dd2881e659c50ab694a4d35b57adba803` 经 PR #404、CI run `31892659673 completed/success` 和代码安全、QA、产品/规格三项独立零缺陷评审后，以 merge commit `1eb23c8b87720cceea64dcfc349b0a9b9c04de4b` 合入 main；父提交顺序为 `0db6d060f4b3763c39f13a030fb7bec2485b546b` 后 `9a969d4dd2881e659c50ab694a4d35b57adba803`，远端工程分支已删除。
+
+用户精确授权后的唯一正式调用形成 `PRE_SSH_GATE=PASS` 与 `SSH_ATTEMPTED=YES`，随后 SSH 会话非零并固定返回 `ssh_session_failed`，零重试停止。SSH 调用 `1`、会话成功 `0`，没有固定远端审计结果或 `COLLECTION_PASS`；远端固定脚本与 Docker 只读查询为 `UNKNOWN / 最多启动 1 次`。sudo、安装、Docker 变更、宿主写入、业务 HTTP、数据库写入、migration、真实上游和费用动作均为 0。023 已永久消费并墓碑化，不得再次授权、重试或重放；`G8_SOFTWARE_CLOSED_LOOP` 尚未完成。执行证据见 `docs/ai-gateway-g8-test-readonly-runtime-audit-attempt-20260816-023.md`。
 
 ## 2. 固定启动入口
 
-仓库内 `infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-023.py` 是唯一正式入口。它只接受精确 ChangeId、工程 merge、冻结命令大小与 SHA-256 以及显式 `--execute-authorized`；默认模式在读取工程材料和启动子进程前失败关闭。
+历史工程中的 `infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-023.py` 曾是唯一正式入口。023 现已消费，当前启动器与生成器均在参数解析、材料读取、子进程启动和联网前固定返回 `change_id_consumed`。
 
-工程合并和摘要复核已经完成。正式形式只能由后续新的独立用户授权启用：
+以下形式仅用于记录已经失效的历史授权对象，不得再次执行：
 
 ```text
 python -I infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-023.py --change-id=CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-023 --engineering-merge=<40位工程merge> --expected-command-size=32954 --expected-command-sha256=bb48f5b4baf69eb6f563f021f676b97880e9570eaf5327daaffe69aaa32d6fe6 --execute-authorized
 ```
 
-当前禁止执行上述正式形式。启动器必须验证双父 merge，并逐字节核对 merge 与第二父中的启动器、生成器和审计源；任一材料或摘要漂移均在 PowerShell 前固定失败，零重试。
+当前禁止执行上述正式形式。历史启动器曾验证双父 merge，并逐字节核对 merge 与第二父中的启动器、生成器和审计源；当前无 import 墓碑在参数解析和 PowerShell 前固定拒绝，零重试。
 
 ## 3. 认证与能力边界
 
@@ -39,7 +41,16 @@ python -I infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-023.py --c
 - Linux CI 先获取固定 digest `python@sha256:62eafe52c91cad83c2c74e630bfde917da8c253673e695665d454def84fc9a13`，随后所有测试容器均以 `--pull=never --network none`、仓库只读挂载运行 023 生成器、启动器、授权契约及 015 至 022 历史墓碑。
 - Windows 与 Linux 同时运行 py_compile、Bash 语法、差异格式、敏感信息和 CI workflow 契约门禁。
 
-## 5. 冻结工程候选
+## 5. 当前墓碑与历史冻结候选
+
+当前四个普通入口与测试均为墓碑，换行均为 LF、CRLF=0：
+
+| 文件 | 大小 | SHA-256 | Git blob | 状态 |
+|---|---:|---|---|---|
+| `infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-023.py` | 401 | `ce1cc20d4950ad99ef9d5ab73c74649f0f46a522ceb1de149ef1ad9a4fb5fe32` | `89a7cc213b27c2b8797d8eb6b910d0692760aed4` | 当前消费墓碑 |
+| `infra/scripts/prepare-ai-gateway-g8-test-readonly-runtime-audit-023-command.py` | 399 | `bcd90bf71d9e4711f1d92708c5e78ad4c4f9c4defc3add91ef092da8100970bc` | `3e0950e36eccccd343dd200688f17aca4b9157d7` | 当前消费墓碑 |
+| `infra/scripts/test_run_ai_gateway_g8_test_readonly_runtime_audit_023.py` | 2222 | `ae221ac32077d0e8c197259aa90c651b4b3989f60ecd96c7a7463e4c0e5f8c80` | `d126dee1c9d856d7e1e6a21a2b0761366718ecdf` | 当前墓碑测试 |
+| `infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_023_command.py` | 1831 | `3d69da0ec7bd4fd7135a1f2648c29193d9285e2f889a10aa93f31a84ab918e2e` | `c1ee5271581bbe5c130635b4a4643a8e5a68e30b` | 当前墓碑测试 |
 
 以下摘要来自 merge commit `1eb23c8b87720cceea64dcfc349b0a9b9c04de4b` 的原始 Git blob 及纯内存重建，换行均为 LF、CRLF=0：
 
@@ -56,4 +67,4 @@ python -I infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-023.py --c
 
 023 已完成 Windows/Linux 断网本地门禁、敏感信息扫描、精确 HEAD 的全部适用 CI，以及代码安全、QA、产品/规格独立评审；P0/P1 均为 0。工程候选已以 merge commit 合入 main并删除远端功能分支，执行文件、测试、审计源、换行和纯内存命令摘要已从 main 原始 Git blob 重新核对一致。
 
-合并及摘要复核后必须停止并保持 `REMOTE_NOT_AUTHORIZED`。只有用户对精确 ChangeId、工程 merge、命令大小、命令 SHA-256、最多一次非交互 SSH 和零重试另行作出独立授权，才允许调用固定正式入口。
+023 已失败关闭消费；历史工程 merge、冻结命令和本次授权均不构成后续授权。继续只能使用新的独立 ChangeId，重新完成工程、离线门禁、PR、CI、独立评审、main 合并、冻结摘要复核与新的用户精确授权。
