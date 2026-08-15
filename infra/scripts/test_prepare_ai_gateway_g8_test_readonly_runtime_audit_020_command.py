@@ -137,6 +137,7 @@ class TestPrepareG8ReadonlyRuntimeAudit020Command(unittest.TestCase):
                 input=synthetic,
                 text=True,
                 capture_output=True,
+                encoding="utf-8",
                 check=False,
                 timeout=15,
             )

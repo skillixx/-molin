@@ -36,7 +36,7 @@ Docker 控制权限本质上接近宿主 root 能力，因此“不使用 sudo�
 |---|---:|---|---|
 | `infra/scripts/audit-ai-gateway-g8-test-server-readonly.sh` | 18377 | `308908d2a2b9fa8679fd21d77fde68b5ce5d521ed37dac6b7726e6c323452256` | CRLF=0 |
 | `infra/scripts/prepare-ai-gateway-g8-test-readonly-runtime-audit-020-command.py` | 27486 | `3a286187602277c2255e978712e37cff7d6edf46d292a185e665aaa70654bbae` | CRLF=0 |
-| `infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_020_command.py` | 14862 | `777255ebbd0e1e4b87bef54236eb7eea0292e50890f08f046fff51cc985227cd` | CRLF=0 |
+| `infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_020_command.py` | 14896 | `a156e62417826ce5a8f6347d46edca384f6abfaa5e819aa300dc0dc55b3d5b8b` | CRLF=0 |
 | 纯内存冻结命令 | 32009 | `31c1eaaf6f3916dbabb51447a63d263ac4f73509bb8e535451df28db4e024a3d` | 不写盘 |
 
 冻结命令只有一个 SSH 目标、`ConnectionAttempts=1`、`RequestTTY=no`；远端 `sudo`、安装器、host 写入与 Docker 变更命令均为 0。摘要只证明工程候选可复核，不证明测试服运行态通过。
