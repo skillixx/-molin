@@ -3,6 +3,7 @@
 
 import ast
 import hashlib
+import os
 from pathlib import Path
 import subprocess
 import unittest
@@ -15,6 +16,19 @@ GENERATOR_PATH = REPO_ROOT / "infra/scripts/prepare-ai-gateway-g8-test-readonly-
 GENERATOR_TEST_PATH = REPO_ROOT / "infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_023_command.py"
 RUNNER_TEST_PATH = REPO_ROOT / "infra/scripts/test_run_ai_gateway_g8_test_readonly_runtime_audit_023.py"
 CHANGE_ID = "CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-023"
+ENGINEERING_MERGE = "1eb23c8b87720cceea64dcfc349b0a9b9c04de4b"
+ENGINEERING_HEAD = "9a969d4dd2881e659c50ab694a4d35b57adba803"
+ENGINEERING_BASE = "0db6d060f4b3763c39f13a030fb7bec2485b546b"
+
+
+def git_blob(relative: str) -> bytes:
+    """只从工程 merge 的 Git 对象读取候选，避免工作树状态替代归档证据。"""
+    return subprocess.run(
+        ["git", "-c", f"safe.directory={REPO_ROOT}", "show", f"{ENGINEERING_MERGE}:{relative}"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=True,
+    ).stdout
 
 
 def load_constants(path: Path) -> dict[str, object]:
@@ -31,8 +45,8 @@ def load_constants(path: Path) -> dict[str, object]:
 
 
 class TestG8ReadonlyRuntimeAudit023AuthorizationContract(unittest.TestCase):
-    def test_status_documents_keep_023_pending_and_g8_incomplete(self) -> None:
-        """共享状态文档必须一致记录 023 未授权且软件闭环未完成。"""
+    def test_status_documents_keep_023_pending_user_approval_and_g8_incomplete(self) -> None:
+        """共享状态文档必须一致记录 023 待用户授权且软件闭环未完成。"""
         for relative in (
             "README.md",
             "docs/ai-gateway-g8-acceptance.md",
@@ -42,6 +56,7 @@ class TestG8ReadonlyRuntimeAudit023AuthorizationContract(unittest.TestCase):
         ):
             document = (REPO_ROOT / relative).read_text(encoding="utf-8")
             self.assertIn(CHANGE_ID, document, relative)
+            self.assertIn("PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED", document, relative)
             self.assertIn("REMOTE_NOT_AUTHORIZED", document, relative)
             self.assertIn("G8_SOFTWARE_CLOSED_LOOP", document, relative)
 
@@ -50,7 +65,12 @@ class TestG8ReadonlyRuntimeAudit023AuthorizationContract(unittest.TestCase):
         document = AUTH_PATH.read_text(encoding="utf-8")
         for required in (
             CHANGE_ID,
-            "PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED",
+            "PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED",
+            "PR #404",
+            "31892659673 completed/success",
+            ENGINEERING_MERGE,
+            ENGINEERING_HEAD,
+            ENGINEERING_BASE,
             "022 因固定客户端私钥、公钥和指纹配对门禁返回",
             "不得再次授权、重试或重放",
             "pc@8.130.9.163:10003",
@@ -91,18 +111,45 @@ class TestG8ReadonlyRuntimeAudit023AuthorizationContract(unittest.TestCase):
         self.assertNotIn("ssh.exe", source)
         self.assertNotIn("8.130.9.163", source)
 
-    def test_frozen_files_and_command_match_document(self) -> None:
-        """四个 023 文件和纯内存命令必须与清单冻结摘要精确一致。"""
+    def test_postmerge_blobs_and_command_match_document(self) -> None:
+        """工程 merge 的五个原始 blob 与纯内存命令必须和归档清单一致。"""
+        if os.name != "nt" and (REPO_ROOT / ".git").is_file():
+            self.skipTest("linked worktree 的外部 Git 对象库未挂载")
         document = AUTH_PATH.read_text(encoding="utf-8")
-        for path in (RUNNER_PATH, GENERATOR_PATH, RUNNER_TEST_PATH, GENERATOR_TEST_PATH):
-            content = path.read_bytes()
+        parents = subprocess.run(
+            ["git", "-c", f"safe.directory={REPO_ROOT}", "show", "-s", "--format=%P", ENGINEERING_MERGE],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        ).stdout.strip()
+        self.assertEqual(parents, f"{ENGINEERING_BASE} {ENGINEERING_HEAD}")
+        paths = (
+            RUNNER_PATH,
+            GENERATOR_PATH,
+            RUNNER_TEST_PATH,
+            GENERATOR_TEST_PATH,
+            GENERATOR_PATH.with_name("audit-ai-gateway-g8-test-server-readonly.sh"),
+        )
+        historical: dict[str, bytes] = {}
+        for path in paths:
+            relative = path.relative_to(REPO_ROOT).as_posix()
+            content = git_blob(relative)
+            historical[relative] = content
             digest = hashlib.sha256(content).hexdigest()
+            blob = hashlib.sha1(f"blob {len(content)}\0".encode("ascii") + content).hexdigest()
             self.assertNotIn(b"\r\n", content, path)
-            self.assertIn(f"| `{path.relative_to(REPO_ROOT).as_posix()}` | {len(content)} | `{digest}` |", document)
-        namespace = {"__name__": "g8_023_freeze", "__file__": str(GENERATOR_PATH)}
-        exec(compile(GENERATOR_PATH.read_text(encoding="utf-8"), str(GENERATOR_PATH), "exec"), namespace)
-        auditor = (GENERATOR_PATH.with_name("audit-ai-gateway-g8-test-server-readonly.sh")).read_bytes()
-        command = namespace["build_command"](auditor, receipt_path=namespace["TRUSTED_LOCAL_APPDATA_RECEIPT"]).encode("utf-8")
+            self.assertIn(f"| `{relative}` | {len(content)} | `{digest}` | `{blob}` |", document)
+        generator_relative = GENERATOR_PATH.relative_to(REPO_ROOT).as_posix()
+        auditor_relative = GENERATOR_PATH.with_name(
+            "audit-ai-gateway-g8-test-server-readonly.sh"
+        ).relative_to(REPO_ROOT).as_posix()
+        namespace = {"__name__": "g8_023_postmerge_freeze", "__file__": "<git-blob>"}
+        exec(compile(historical[generator_relative].decode("utf-8"), "<git-blob>", "exec"), namespace)
+        command = namespace["build_command"](
+            historical[auditor_relative], receipt_path=namespace["TRUSTED_LOCAL_APPDATA_RECEIPT"]
+        ).encode("utf-8")
         self.assertIn(f"| 纯内存冻结命令 | {len(command)} | `{hashlib.sha256(command).hexdigest()}` |", document)
 
     def test_022_tombstones_remain_byte_exact(self) -> None:

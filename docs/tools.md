@@ -1145,7 +1145,7 @@ python -I infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py --self-tes
 
 022 工具使用 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-022`。历史候选通过可信 LocalApplicationData、固定盘、逐级非 reparse 与唯一 GUID CreateNew 修复 021 回执缺口；PR #401、CI run `31884793587`、merge commit `84ae5b0ad87958ee63fbfa709c4f164baca39a1b` 及合并后原始 blob/冻结命令摘要复核均已通过。唯一授权调用与归档 TDD 错误触发的一次未授权本地重放都在 `identity_pair_failed` 时于 SSH 前停止；固定状态为 `CONSUMED_LOCAL_IDENTITY_PAIR_FAILED_SSH_NOT_STARTED`，本地正式入口/PowerShell 总调用 `2 / 2`、未授权本地重放 `1`，两份非空回执均无 `PRE_SSH_GATE`/`SSH_ATTEMPTED`，SSH、测试服 Docker/HTTP/数据库、sudo、安装、业务、上游和费用均为 0。两个普通入口现均为无 import 墓碑；022 已永久消费，不得再次授权、重试或重放，`G8_SOFTWARE_CLOSED_LOOP` 未完成。见 `docs/ai-gateway-g8-test-readonly-runtime-audit-authorization-20260815-022.md` 与 `docs/ai-gateway-g8-test-readonly-runtime-audit-attempt-20260815-022.md`。
 
-023 工具使用 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-023`。生成器不再固定客户端私钥、公钥、客户端指纹或 `IdentitiesOnly`，而是让可信 Windows OpenSSH 使用其现有免交互认证链；仍固定服务器目标、known_hosts 与 host key，并强制 BatchMode、禁密码交互、单会话和零重试。当前仅允许运行离线生成器、启动器自测、假 SSH、授权契约和 CI；状态为 `PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`，不授权执行正式入口或连接测试服务器，`G8_SOFTWARE_CLOSED_LOOP` 未完成。
+023 工具使用 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-023`。生成器不再固定客户端私钥、公钥、客户端指纹或 `IdentitiesOnly`，而是让可信 Windows OpenSSH 使用其现有免交互认证链；仍固定服务器目标、known_hosts 与 host key，并强制 BatchMode、禁密码交互、单会话和零重试。工程 HEAD `9a969d4dd2881e659c50ab694a4d35b57adba803` 经 PR #404、CI run `31892659673 completed/success` 和三项独立零缺陷评审后，以 merge commit `1eb23c8b87720cceea64dcfc349b0a9b9c04de4b` 合入 main；合并后原始 Git blob、LF 与 32954 字节冻结命令摘要均已复核无漂移。当前为 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`；未取得新的独立精确授权前，不得执行正式入口、SSH、测试服 Docker/HTTP/数据库、sudo、安装、业务、上游或费用动作，`G8_SOFTWARE_CLOSED_LOOP` 未完成。
 
 ## CI 变更范围分类器
 
