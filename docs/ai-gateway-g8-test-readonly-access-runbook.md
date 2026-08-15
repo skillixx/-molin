@@ -139,8 +139,9 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 7. 当前只可为新的 ChangeId 完成工程候选；必须先让低敏结果可区分 SSH 前门禁和 SSH 调用失败，017 的历史批准、工程合并或生成命令均不构成新授权。
 8. 018 已完成工程合并；独立授权后的唯一人工段关闭父窗口且无可见输出，SSH 到达保持未知，所有远端安装影响为 0，018 已消费并墓碑化。
 9. 019 改为单次 `ssh -tt` 自动携带远端固定脚本；独立授权后的唯一执行在 PowerShell 状态恢复阶段失败，固定标志不可恢复，SSH 与安装链路到达保持 UNKNOWN，019 已消费并墓碑化。
-10. 若未来安装成功，真实运行态审计仍必须使用新的 ChangeId；测试候选部署、Fake 旅程、零差额对账和实际回滚继续分开授权。
-11. API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因本地测试、安装候选或暂存三态自动关闭。
+10. 020 使用新的独立 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-020`：不再安装受控入口或 sudoers，不使用 sudo，由 `pc` 通过既有 Docker 权限在单次非交互 SSH 中执行冻结内存只读审计；可信用户目录耐久低敏回执只保留 SSH 到达边界。当前为 `PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`，本轮不授权 SSH、Docker、HTTP、数据库查询或测试服操作，`G8_SOFTWARE_CLOSED_LOOP` 仍未完成。
+11. 020 工程合并不证明运行态通过；未来执行必须对精确 ChangeId、合并提交、命令摘要以及固定只读 Docker/宿主/HTTP/数据库查询范围重新独立授权。测试候选部署、Fake 旅程、零差额对账和实际回滚继续分开授权。
+12. API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因本地测试、安装候选或暂存三态自动关闭。
 
 `CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005` 已完成唯一一次本地检查和正式只读 SSH，结果为 `ZERO / EXACT / stderr EMPTY / diagnostic PASS`；005 已消费并禁止重放。该历史结果当时只证明传输链路可用，暂存 UNKNOWN 后续已由 014 收敛为 `PRESENT / PASS / NONE`。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`、`docs/ai-gateway-g8-test-readonly-transport-diagnostic-attempt-20260812-005.md`。
 
@@ -162,21 +163,16 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-016` 已消费。用户独立批准后，唯一人工第一段在交互 PowerShell 的 `Get-FileHash` 处返回 `CommandNotFoundException`；`$ErrorActionPreference='Stop'` 使控制流在唯一 SSH 调用之前终止，SSH、sudo、安装、业务请求、上游请求和费用均为 0。016 禁止重放；017 以纯 .NET 流式 SHA-256 替代模块 cmdlet，并须重新完成工程门禁和独立授权。证据见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-016.md`。
 
-## 4. 安装后的独立只读核验
+## 4. 020 无安装独立只读核验
 
-安装成功也不自动授权读取运行态。必须再申请新的 `CHG-G8-TEST-READONLY-YYYYMMDD-NNN`，固定为一次 SSH、零重试，并只执行：
+001 至 019 的 root-owned 审计器、sudoers 与 `sudo -n /usr/local/libexec/...` 路径均为已停止的历史方案，禁止用于 020。020 只允许在工程合并、原始 blob/命令摘要复核和用户新独立授权后，由 `pc` 通过一次 `ssh -T` 执行冻结内存脚本；不上传、不安装、不申请 TTY、不执行 sudo，也不接受调用方提供的远端参数。
 
-```bash
-sudo -n /usr/local/libexec/molin/g8-test-readonly-audit \
-  --change-id=CHG-G8-TEST-READONLY-YYYYMMDD-NNN
-```
+远端脚本只允许固定 Docker/宿主/本机 HTTP/数据库只读查询。hostname、machine-id、密码状态与 Docker 组枚举不属于 Drop 入口运行态验收范围，020 不读取也不输出。全部低敏结果先保存在会话内存；脚本非零、必需探针出现 `UNAVAILABLE/MISSING/INVALID/000`、空值、缺少固定必需键或缺少 `AUDIT_COMPLETE=true` 时，固定返回 `audit_evidence_failed` 并结束唯一会话，零重试。`COLLECTION_PASS` 仅表示证据采集完整，不表示证据值已满足 G8 验收。
 
-输出必须只保存低敏聚合结果。出现目标身份不一致、`privileged_installation!=VERIFIED`、未知参数、真实 Secret、非只读 SQL、队列消费、服务信号或任何业务请求时立即停止。该核验仍不授权部署、重启、Migration、凭据轮换、付费上游、真实通知或客户灰度。
+## 5. 020 运行态验收标准
 
-## 5. 验收标准
-
-- `pc` 不属于 Docker 管理组，审计输出 `pc_docker_group_member=false`，且 `sudo -n -l -U pc` 仅出现固定审计命令。
-- 审计器和对账器均为批准 SHA、`root:root:755`，sudoers 为 `root:root:440`。
+- `pc` 直接使用既有 Docker 权限；Docker 权限接近宿主 root，因此实际命令必须保持冻结白名单，任何容器创建、启停、删除、复制、compose、网络/卷变更、宿主 bind mount 或任意参数入口均失败关闭。
+- 不存在 020 安装目标或 sudoers 验收项；固定 011 暂存对账器只按批准路径、`pc:pc:700`、大小与 SHA-256 执行只读模式。
 - schema 精确为批准版本且 `dirty=0`；MySQL/Redis/RabbitMQ/Bifrost/监控事实不再是 UNKNOWN。Bifrost 两节点与 LB 必须输出镜像摘要、健康和仅变量名的运行时注入集合；审计器在内存中按完整 `KEY=value` 从容器环境扣除相同镜像的基础环境，再只输出差异键名并与专用变量白名单精确比较。同名变量被容器覆盖也属于运行时注入；任何额外业务 Secret 或缺失必需变量均失败关闭。
 - 22 条告警、16 个 Grafana 面板和 Alertmanager discard/受控路由均可核对，不发送真实通知。
 - 三项正常账务差额、七类异常、未释放 hold、Outbox 和补偿积压全部为 0；任一非零均失败关闭。
