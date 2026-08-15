@@ -1147,6 +1147,8 @@ python -I infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py --self-tes
 
 023 工具使用 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-023`，固定状态为 `CONSUMED_SSH_SESSION_FAILED_REMOTE_AUDIT_NOT_PROVEN`。唯一授权调用形成 `PRE_SSH_GATE=PASS` 与 `SSH_ATTEMPTED=YES`，随后以 `ssh_session_failed` 非零停止且零重试；SSH 调用 `1`、会话成功 `0`，没有 `COLLECTION_PASS`，远端固定脚本与 Docker 只读查询只能记为 `UNKNOWN / 最多启动 1 次`。023 已永久消费，生成器与固定启动器现为无 import 墓碑；sudo、安装、Docker 变更、宿主写入、业务 HTTP、数据库写入、migration、真实上游和费用动作均为 0，`G8_SOFTWARE_CLOSED_LOOP` 未完成。
 
+024 工具使用 ChangeId `CHG-G8-TEST-READONLY-SSH-DIAGNOSTIC-20260816-024`。`run-ai-gateway-g8-test-readonly-ssh-diagnostic-024.py` 是唯一候选入口：默认拒绝，未来只有绑定双父工程 merge、runner 大小/SHA-256 和 `--execute-authorized` 才能到达一次固定 SSH；它使用当前用户 OpenSSH 认证链，保留固定目标与 host key，只运行固定 `printf` 回执并低敏分类结果，不含 Docker、sudo、安装、HTTP、数据库或业务能力。当前为 `PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`，尚未执行或消费，`G8_SOFTWARE_CLOSED_LOOP` 未完成。
+
 ## CI 变更范围分类器
 
 | 项目 | 说明 |

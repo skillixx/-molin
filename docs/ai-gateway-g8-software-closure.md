@@ -1,6 +1,6 @@
 # AI 网关 G8 软件闭环执行清单
 
-> 当前状态：`IN_PROGRESS`。本清单用于完成 `G8_SOFTWARE_CLOSED_LOOP`，不包含生产部署、真实付费上游、客户灰度、真实通知或商业观察。ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-021` 的固定结果为 `CONSUMED_LOCAL_RECEIPT_UNAVAILABLE_SSH_NOT_STARTED`，021 已在 SSH 前失败关闭并永久墓碑化。ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-022` 的固定结果为 `CONSUMED_LOCAL_IDENTITY_PAIR_FAILED_SSH_NOT_STARTED`，唯一授权调用与一次已披露的未授权本地重放均在 SSH 前停止，022 已永久消费并墓碑化。ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-023` 改用开发机现有免交互 SSH 认证链；用户精确授权后的唯一正式调用形成 `PRE_SSH_GATE=PASS` 与 `SSH_ATTEMPTED=YES`，随后 SSH 会话非零并返回 `ssh_session_failed`，零重试停止。固定状态为 `CONSUMED_SSH_SESSION_FAILED_REMOTE_AUDIT_NOT_PROVEN`：SSH 调用 `1`、会话成功 `0`，无 `COLLECTION_PASS`；远端固定脚本与 Docker 只读查询为 `UNKNOWN / 最多启动 1 次`。023 已永久消费并墓碑化，尚未形成测试服运行态通过证据。
+> 当前状态：`IN_PROGRESS`。本清单用于完成 `G8_SOFTWARE_CLOSED_LOOP`，不包含生产部署、真实付费上游、客户灰度、真实通知或商业观察。ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-021` 的固定结果为 `CONSUMED_LOCAL_RECEIPT_UNAVAILABLE_SSH_NOT_STARTED`，021 已在 SSH 前失败关闭并永久墓碑化。ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-022` 的固定结果为 `CONSUMED_LOCAL_IDENTITY_PAIR_FAILED_SSH_NOT_STARTED`，唯一授权调用与一次已披露的未授权本地重放均在 SSH 前停止，022 已永久消费并墓碑化。ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-023` 改用开发机现有免交互 SSH 认证链；用户精确授权后的唯一正式调用形成 `PRE_SSH_GATE=PASS` 与 `SSH_ATTEMPTED=YES`，随后 SSH 会话非零并返回 `ssh_session_failed`，零重试停止。固定状态为 `CONSUMED_SSH_SESSION_FAILED_REMOTE_AUDIT_NOT_PROVEN`：SSH 调用 `1`、会话成功 `0`，无 `COLLECTION_PASS`；远端固定脚本与 Docker 只读查询为 `UNKNOWN / 最多启动 1 次`。023 已永久消费并墓碑化。024 当前为 `PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED` 的最小 SSH 连接诊断候选，尚未执行，尚未形成测试服运行态通过证据。
 
 ## 1. 闭环目标
 
@@ -38,8 +38,9 @@
 - “复核工程 merge 原始 blob、生成冻结命令、校验大小与 SHA-256、解析并启动”必须收敛为仓库内唯一固定入口，禁止人工拼接或临时外层包装。
 - 固定入口必须兼容 Windows PowerShell 5.1，不依赖可选模块；使用纯 .NET 完成摘要与语法解析，并在任何材料读取、子进程或网络动作前失败关闭。
 - 原生 Windows 动态测试必须以假子 PowerShell、假 `ssh.exe` 和临时低敏回执证明：语法错误时子进程为 0；成功路径只启动一个子 PowerShell、一个假 SSH；父窗口保活且退出码、阶段标志和 ActionPreference 均可确定恢复。
-- Linux `--network none` 与 Windows CI 必须同时覆盖历史 015 至 023 墓碑、消费状态、低敏输出和零重试；测试不得读取真实 SSH 身份或建立网络连接。
+- Linux `--network none` 与 Windows CI 必须同时覆盖历史 015 至 023 墓碑，并覆盖 024 候选的未授权、低敏输出、单假 SSH 和零重试；测试不得读取真实 SSH 身份或建立网络连接。
 - 023 不得再次授权、重试或重放。若继续诊断 SSH 会话失败或获取运行态证据，必须使用新的独立 ChangeId，并重新完成工程、CI、独立评审、main 合并与冻结摘要复核。
+- 024 只允许固定目标上的一次 `printf` 回执探针，不包含 Docker、HTTP、数据库或业务能力；工程合并后仍须新的独立精确授权才可执行。
 
 ## 3. 完成门禁
 
