@@ -138,8 +138,8 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
             self.assertIn(job_id, block)
         self.assertNotIn("ci-draft-gate", block)
 
-    def test_g8_windows_job_covers_trusted_paths_tombstones_and_021_runner(self):
-        """原生 Windows 门禁必须覆盖可信路径与 015 至 021 历史墓碑。"""
+    def test_g8_windows_job_covers_trusted_paths_tombstones_and_022_runner(self):
+        """原生 Windows 门禁必须覆盖 015 至 021 墓碑与 022 可信回执候选。"""
 
         block = self.job_block("gateway-g8-windows")
         self.assertIn("runs-on: windows-latest", block)
@@ -169,6 +169,9 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
         self.assertIn("test_prepare_ai_gateway_g8_test_readonly_runtime_audit_021_command.py", block)
         self.assertIn("test_run_ai_gateway_g8_test_readonly_runtime_audit_021.py", block)
         self.assertIn("test_ai_gateway_g8_readonly_runtime_audit_021_authorization_contract.py", block)
+        self.assertIn("test_prepare_ai_gateway_g8_test_readonly_runtime_audit_022_command.py", block)
+        self.assertIn("test_run_ai_gateway_g8_test_readonly_runtime_audit_022.py", block)
+        self.assertIn("test_ai_gateway_g8_readonly_runtime_audit_022_authorization_contract.py", block)
         self.assertNotIn("test_g8_test_readonly_access_install_020.py", block)
         self.assertNotIn("test_prepare_ai_gateway_g8_test_readonly_access_020_command.py", block)
         self.assertIn("fetch-depth: 0", block)
@@ -205,6 +208,9 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
             "019 授权清单契约测试失败",
             "020 墓碑生成器单测失败",
             "020 消费授权契约失败",
+            "022 命令生成器单测失败",
+            "022 固定启动器单测失败",
+            "022 授权清单契约失败",
             "Windows G8 Python 编译检查失败",
             "Windows 本地材料诊断自检失败",
         ):
@@ -218,14 +224,18 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
         self.assertIn("exit 0", block)
         self.assertIn("needs.change-scope.outputs.gateway_g8 == 'true'", block)
 
-    def test_g8_ready_job_runs_consumed_tombstones_and_021_in_host_and_network_none(self):
-        """Linux 门禁必须覆盖 015 至 021 墓碑断网回归。"""
+    def test_g8_ready_job_runs_consumed_tombstones_and_022_in_host_and_network_none(self):
+        """Linux 门禁必须覆盖 015 至 021 墓碑与 022 候选断网回归。"""
 
         block = self.job_block("gateway-g8")
         self.assertIn("bash -n infra/scripts/g8-test-readonly-access-install-015.sh", block)
-        self.assertIn("test_g8_test_readonly_access_install_015.py", block)
+        self.assertGreaterEqual(block.count("test_g8_test_readonly_access_install_015.py"), 2)
+        self.assertGreaterEqual(block.count("test_prepare_ai_gateway_g8_test_readonly_access_015_command.py"), 2)
+        self.assertGreaterEqual(block.count("test_ai_gateway_g8_readonly_install_015_authorization_contract.py"), 2)
         self.assertIn("bash -n infra/scripts/g8-test-readonly-access-install-016.sh", block)
-        self.assertIn("test_g8_test_readonly_access_install_016.py", block)
+        self.assertGreaterEqual(block.count("test_g8_test_readonly_access_install_016.py"), 2)
+        self.assertGreaterEqual(block.count("test_prepare_ai_gateway_g8_test_readonly_access_016_command.py"), 2)
+        self.assertGreaterEqual(block.count("test_ai_gateway_g8_readonly_install_016_authorization_contract.py"), 2)
         self.assertIn("bash -n infra/scripts/g8-test-readonly-access-install-017.sh", block)
         self.assertIn("test_g8_test_readonly_access_install_017.py", block)
         self.assertGreaterEqual(block.count("test_prepare_ai_gateway_g8_test_readonly_access_017_command.py"), 2)
@@ -247,15 +257,26 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
         self.assertGreaterEqual(block.count("test_prepare_ai_gateway_g8_test_readonly_runtime_audit_021_command.py"), 2)
         self.assertGreaterEqual(block.count("test_run_ai_gateway_g8_test_readonly_runtime_audit_021.py"), 2)
         self.assertGreaterEqual(block.count("test_ai_gateway_g8_readonly_runtime_audit_021_authorization_contract.py"), 2)
+        self.assertGreaterEqual(block.count("test_prepare_ai_gateway_g8_test_readonly_runtime_audit_022_command.py"), 2)
+        self.assertGreaterEqual(block.count("test_run_ai_gateway_g8_test_readonly_runtime_audit_022.py"), 2)
+        self.assertGreaterEqual(block.count("test_ai_gateway_g8_readonly_runtime_audit_022_authorization_contract.py"), 2)
         self.assertNotIn("g8-test-readonly-access-install-020.sh", block)
         self.assertNotIn("test_g8_test_readonly_access_install_020.py", block)
-        self.assertIn("验证 G8 015/016/017/018/019/020/021 墓碑离线门禁", block)
+        self.assertIn("验证 G8 015/016/017/018/019/020/021 墓碑与 022 候选离线门禁", block)
         self.assertIn(
             "python:3.13-bookworm \\\n            python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_install_017_authorization_contract.py -v",
             block,
         )
-        self.assertIn("docker run --rm --network none", block)
-        bookworm_network_none = block.split("python:3.13-bookworm", 1)[1].split("docker run --rm --network none", 1)[0]
+        self.assertIn("docker run --rm --pull=never --network none", block)
+        bookworm_network_none = block.split("python:3.13-bookworm", 1)[1].split(
+            "docker run --rm --pull=never --network none", 1
+        )[0]
+        self.assertIn("test_g8_test_readonly_access_install_015.py", bookworm_network_none)
+        self.assertIn("test_prepare_ai_gateway_g8_test_readonly_access_015_command.py", bookworm_network_none)
+        self.assertIn("test_ai_gateway_g8_readonly_install_015_authorization_contract.py", bookworm_network_none)
+        self.assertIn("test_g8_test_readonly_access_install_016.py", bookworm_network_none)
+        self.assertIn("test_prepare_ai_gateway_g8_test_readonly_access_016_command.py", bookworm_network_none)
+        self.assertIn("test_ai_gateway_g8_readonly_install_016_authorization_contract.py", bookworm_network_none)
         self.assertIn("test_g8_test_readonly_access_install_017.py", bookworm_network_none)
         self.assertIn("test_prepare_ai_gateway_g8_test_readonly_access_017_command.py", bookworm_network_none)
         self.assertIn("test_g8_test_readonly_access_install_018.py", bookworm_network_none)
@@ -267,6 +288,9 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
         self.assertIn("test_prepare_ai_gateway_g8_test_readonly_runtime_audit_021_command.py", bookworm_network_none)
         self.assertIn("test_run_ai_gateway_g8_test_readonly_runtime_audit_021.py", bookworm_network_none)
         self.assertIn("test_ai_gateway_g8_readonly_runtime_audit_021_authorization_contract.py", bookworm_network_none)
+        self.assertIn("test_prepare_ai_gateway_g8_test_readonly_runtime_audit_022_command.py", bookworm_network_none)
+        self.assertIn("test_run_ai_gateway_g8_test_readonly_runtime_audit_022.py", bookworm_network_none)
+        self.assertIn("test_ai_gateway_g8_readonly_runtime_audit_022_authorization_contract.py", bookworm_network_none)
 
     def test_ready_heavy_command_sentinels_are_not_removed(self):
         for sentinel in (

@@ -184,7 +184,7 @@ class TestG8ReadonlyRuntimeAudit021ConsumedContract(unittest.TestCase):
         workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         for test in (GENERATOR_TEST_PATH.name, RUNNER_TEST_PATH.name, Path(__file__).name):
             self.assertGreaterEqual(workflow.count(test), 2, test)
-        self.assertIn("验证 G8 015/016/017/018/019/020/021 墓碑离线门禁", workflow)
+        self.assertIn("验证 G8 015/016/017/018/019/020/021 墓碑与 022 候选离线门禁", workflow)
         self.assertIn("--network none", workflow)
         self.assertIn("python:3.13-bookworm", workflow)
 

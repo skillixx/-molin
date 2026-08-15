@@ -993,7 +993,7 @@ jobs:
             python:3.13-alpine \
             python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_014.py -v
 
-      - name: 验证 G8 015/016/017/018/019/020/021 墓碑离线门禁
+      - name: 验证 G8 015/016/017/018/019/020/021 墓碑与 022 候选离线门禁
         run: |
           bash -n infra/scripts/g8-test-readonly-access-install-015.sh
           bash -n infra/scripts/g8-test-readonly-access-install-016.sh
@@ -1020,6 +1020,9 @@ jobs:
           python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_021_command.py -v
           python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_readonly_runtime_audit_021.py -v
           python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_runtime_audit_021_authorization_contract.py -v
+          python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_022_command.py -v
+          python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_readonly_runtime_audit_022.py -v
+          python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_runtime_audit_022_authorization_contract.py -v
           python -I -m py_compile \
             infra/scripts/prepare-ai-gateway-g8-test-readonly-access-015-command.py \
             infra/scripts/test_g8_test_readonly_access_install_015.py \
@@ -1048,7 +1051,12 @@ jobs:
             infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-021.py \
             infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_021_command.py \
             infra/scripts/test_run_ai_gateway_g8_test_readonly_runtime_audit_021.py \
-            infra/scripts/test_ai_gateway_g8_readonly_runtime_audit_021_authorization_contract.py
+            infra/scripts/test_ai_gateway_g8_readonly_runtime_audit_021_authorization_contract.py \
+            infra/scripts/prepare-ai-gateway-g8-test-readonly-runtime-audit-022-command.py \
+            infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-022.py \
+            infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_022_command.py \
+            infra/scripts/test_run_ai_gateway_g8_test_readonly_runtime_audit_022.py \
+            infra/scripts/test_ai_gateway_g8_readonly_runtime_audit_022_authorization_contract.py
           set +e
           g8_consumed_017_output="$(python -I infra/scripts/prepare-ai-gateway-g8-test-readonly-access-017-command.py --self-test 2>&1)"
           g8_consumed_017_exit=$?
@@ -1061,27 +1069,27 @@ jobs:
           set -e
           test "$g8_consumed_018_exit" -eq 2
           test "$g8_consumed_018_output" = 'G8_TEST_READONLY_ACCESS_018_COMMAND=FAILED reason=change_id_consumed'
-          docker run --rm --network none \
+          docker run --rm --pull=never --network none \
             -v "${{ github.workspace }}:/repo:ro" \
             -w /repo \
             python:3.13-bookworm \
-            bash -ceu "python -I -W error::ResourceWarning infra/scripts/test_g8_test_readonly_access_install_017.py -v; python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_017_command.py -v; python -I -W error::ResourceWarning infra/scripts/test_g8_test_readonly_access_install_018.py -v; python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_018_command.py -v; python -I -W error::ResourceWarning infra/scripts/test_g8_test_readonly_access_install_019.py -v; python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_019_command.py -v; python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_020_command.py -v; python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_runtime_audit_020_authorization_contract.py -v; python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_021_command.py -v; python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_readonly_runtime_audit_021.py -v; python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_runtime_audit_021_authorization_contract.py -v"
-          docker run --rm --network none \
+            bash -ceu "python -I -W error::ResourceWarning infra/scripts/test_g8_test_readonly_access_install_015.py -v; python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_015_command.py -v; python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_install_015_authorization_contract.py -v; python -I -W error::ResourceWarning infra/scripts/test_g8_test_readonly_access_install_016.py -v; python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_016_command.py -v; python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_install_016_authorization_contract.py -v; python -I -W error::ResourceWarning infra/scripts/test_g8_test_readonly_access_install_017.py -v; python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_017_command.py -v; python -I -W error::ResourceWarning infra/scripts/test_g8_test_readonly_access_install_018.py -v; python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_018_command.py -v; python -I -W error::ResourceWarning infra/scripts/test_g8_test_readonly_access_install_019.py -v; python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_access_019_command.py -v; python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_020_command.py -v; python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_runtime_audit_020_authorization_contract.py -v; python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_021_command.py -v; python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_readonly_runtime_audit_021.py -v; python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_runtime_audit_021_authorization_contract.py -v; python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_022_command.py -v; python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_readonly_runtime_audit_022.py -v; python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_runtime_audit_022_authorization_contract.py -v"
+          docker run --rm --pull=never --network none \
             -v "${{ github.workspace }}:/repo:ro" \
             -w /repo \
             python:3.13-bookworm \
             python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_install_017_authorization_contract.py -v
-          docker run --rm --network none \
+          docker run --rm --pull=never --network none \
             -v "${{ github.workspace }}:/repo:ro" \
             -w /repo \
             python:3.13-bookworm \
             python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_install_018_authorization_contract.py -v
-          docker run --rm --network none \
+          docker run --rm --pull=never --network none \
             -v "${{ github.workspace }}:/repo:ro" \
             -w /repo \
             python:3.13-bookworm \
             python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_install_019_authorization_contract.py -v
-          docker run --rm --network none \
+          docker run --rm --pull=never --network none \
             -v "${{ github.workspace }}:/repo:ro" \
             -w /repo \
             python:3.13-bookworm \
@@ -1222,7 +1230,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw '021 固定启动器墓碑单测失败' }
           python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_runtime_audit_021_authorization_contract.py -v
           if ($LASTEXITCODE -ne 0) { throw '021 消费授权契约失败' }
-          python -I -m py_compile infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-014.py infra/scripts/prepare-ai-gateway-g8-test-readonly-access-015-command.py infra/scripts/test_ai_gateway_g8_readonly_install_015_authorization_contract.py infra/scripts/prepare-ai-gateway-g8-test-readonly-access-016-command.py infra/scripts/test_ai_gateway_g8_readonly_install_016_authorization_contract.py infra/scripts/prepare-ai-gateway-g8-test-readonly-access-017-command.py infra/scripts/test_ai_gateway_g8_readonly_install_017_authorization_contract.py infra/scripts/prepare-ai-gateway-g8-test-readonly-access-018-command.py infra/scripts/test_ai_gateway_g8_readonly_install_018_authorization_contract.py infra/scripts/prepare-ai-gateway-g8-test-readonly-access-019-command.py infra/scripts/test_ai_gateway_g8_readonly_install_019_authorization_contract.py infra/scripts/prepare-ai-gateway-g8-test-readonly-runtime-audit-020-command.py infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_020_command.py infra/scripts/test_ai_gateway_g8_readonly_runtime_audit_020_authorization_contract.py infra/scripts/prepare-ai-gateway-g8-test-readonly-runtime-audit-021-command.py infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-021.py infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_021_command.py infra/scripts/test_run_ai_gateway_g8_test_readonly_runtime_audit_021.py infra/scripts/test_ai_gateway_g8_readonly_runtime_audit_021_authorization_contract.py
+          python -I -W error::ResourceWarning infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_022_command.py -v
+          if ($LASTEXITCODE -ne 0) { throw '022 命令生成器单测失败' }
+          python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_readonly_runtime_audit_022.py -v
+          if ($LASTEXITCODE -ne 0) { throw '022 固定启动器单测失败' }
+          python -I -W error::ResourceWarning infra/scripts/test_ai_gateway_g8_readonly_runtime_audit_022_authorization_contract.py -v
+          if ($LASTEXITCODE -ne 0) { throw '022 授权清单契约失败' }
+          python -I -m py_compile infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-014.py infra/scripts/prepare-ai-gateway-g8-test-readonly-access-015-command.py infra/scripts/test_ai_gateway_g8_readonly_install_015_authorization_contract.py infra/scripts/prepare-ai-gateway-g8-test-readonly-access-016-command.py infra/scripts/test_ai_gateway_g8_readonly_install_016_authorization_contract.py infra/scripts/prepare-ai-gateway-g8-test-readonly-access-017-command.py infra/scripts/test_ai_gateway_g8_readonly_install_017_authorization_contract.py infra/scripts/prepare-ai-gateway-g8-test-readonly-access-018-command.py infra/scripts/test_ai_gateway_g8_readonly_install_018_authorization_contract.py infra/scripts/prepare-ai-gateway-g8-test-readonly-access-019-command.py infra/scripts/test_ai_gateway_g8_readonly_install_019_authorization_contract.py infra/scripts/prepare-ai-gateway-g8-test-readonly-runtime-audit-020-command.py infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_020_command.py infra/scripts/test_ai_gateway_g8_readonly_runtime_audit_020_authorization_contract.py infra/scripts/prepare-ai-gateway-g8-test-readonly-runtime-audit-021-command.py infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-021.py infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_021_command.py infra/scripts/test_run_ai_gateway_g8_test_readonly_runtime_audit_021.py infra/scripts/test_ai_gateway_g8_readonly_runtime_audit_021_authorization_contract.py infra/scripts/prepare-ai-gateway-g8-test-readonly-runtime-audit-022-command.py infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-022.py infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_022_command.py infra/scripts/test_run_ai_gateway_g8_test_readonly_runtime_audit_022.py infra/scripts/test_ai_gateway_g8_readonly_runtime_audit_022_authorization_contract.py
           if ($LASTEXITCODE -ne 0) { throw 'Windows G8 Python 编译检查失败' }
           python -I infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py --self-test
           if ($LASTEXITCODE -ne 0) { throw 'Windows 本地材料诊断自检失败' }
