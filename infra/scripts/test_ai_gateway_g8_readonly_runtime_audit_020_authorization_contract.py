@@ -54,6 +54,13 @@ class TestG8ReadonlyRuntimeAudit020ConsumedContract(unittest.TestCase):
         ):
             self.assertIn(required, combined)
         self.assertNotIn("PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED", combined)
+        for stale in (
+            "020 必须把实际命令收窄为冻结白名单",
+            "正式命令继续使用 Windows API",
+            "CI 同时在原生 Windows 与 Linux 只读断网容器运行 020 生成器",
+        ):
+            self.assertNotIn(stale, combined)
+        self.assertIn("015 至 020 全部墓碑", combined)
 
     def test_consumed_entry_rejects_before_parser_materials_and_network(self) -> None:
         """历史参数不得让已消费入口恢复生成或联网能力。"""
