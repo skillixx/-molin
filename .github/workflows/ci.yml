@@ -1150,6 +1150,8 @@ jobs:
     needs: change-scope
     if: github.event.pull_request.draft == false && needs.change-scope.outputs.gateway_g8 == 'true'
     runs-on: windows-latest
+    # Windows 故障注入不得无限占用 runner，整个任务超时后必须失败关闭。
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -1162,6 +1164,8 @@ jobs:
           python-version: "3.13"
 
       - name: 验证 Windows 可信系统目录与失效入口失败关闭
+        # 单步留出清理时间，即使子进程句柄异常也不得挂起整个 CI。
+        timeout-minutes: 12
         shell: pwsh
         run: |
           python -I -W error::ResourceWarning infra/scripts/test_diagnose_ai_gateway_g8_local_ssh_materials.py -v

@@ -143,6 +143,9 @@ class CIDraftReadyWorkflowContractTest(unittest.TestCase):
 
         block = self.job_block("gateway-g8-windows")
         self.assertIn("runs-on: windows-latest", block)
+        self.assertIn("timeout-minutes: 15", block)
+        windows_step = block[block.index("- name: 验证 Windows 可信系统目录与失效入口失败关闭") :]
+        self.assertIn("timeout-minutes: 12", windows_step.split("run: |", 1)[0])
         self.assertIn("test_diagnose_ai_gateway_g8_local_ssh_materials.py", block)
         self.assertIn("test_run_ai_gateway_g8_test_drop_staging_evidence_013.py", block)
         self.assertIn("test_run_ai_gateway_g8_test_drop_staging_evidence_014.py", block)
