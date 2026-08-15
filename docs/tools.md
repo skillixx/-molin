@@ -1141,7 +1141,7 @@ python -I infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py --self-tes
 
 020 工具使用 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-020`，历史候选不安装受控入口、不写 sudoers、不使用 sudo，并把能力限定为 `pc` 既有 Docker 权限下的固定只读运行态审计。PR #394、CI run `31861762018`、merge `3c63539279a34ae2365fc9d7e26e207dd728c4ba` 和合并后摘要复核均已通过。用户独立授权后，外层 PowerShell 包装在调用 Windows PowerShell 5.1 前因缺少右括号解析失败；正式命令、SSH 和远端能力均未启动，所有远端影响为 0，重试 0。020 已消费，生成器现为联网前固定 `change_id_consumed` 的墓碑，历史命令禁止重放；`G8_SOFTWARE_CLOSED_LOOP` 仍未完成。见 `docs/ai-gateway-g8-test-readonly-runtime-audit-attempt-20260815-020.md`。
 
-021 工具使用 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-021`。`prepare-ai-gateway-g8-test-readonly-runtime-audit-021-command.py` 生成不落盘执行链使用的冻结内存脚本；`run-ai-gateway-g8-test-readonly-runtime-audit-021.py` 是唯一固定启动入口，负责核对工程 merge 原始 blob、命令大小/SHA-256并只启动一次 Windows PowerShell 5.1。工程自检仅使用假 SSH 和 Linux 断网容器，不读取真实身份、不连接测试服。当前为 `PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`；正式入口不得在新的独立精确授权前执行。见 `docs/ai-gateway-g8-test-readonly-runtime-audit-authorization-20260815-021.md`。
+021 工具使用 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-021`。`prepare-ai-gateway-g8-test-readonly-runtime-audit-021-command.py` 生成不落盘执行链使用的冻结内存脚本；`run-ai-gateway-g8-test-readonly-runtime-audit-021.py` 是唯一固定启动入口，负责核对工程 merge 原始 blob、命令大小/SHA-256并只启动一次 Windows PowerShell 5.1。工程自检仅使用假 SSH 和 Linux 断网容器，不读取真实身份、不连接测试服。PR #398 已合并为 `8bc05cbf3bc71a8954087dc7f26732f836e5212e` 并完成合并后摘要复核；当前为 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`，正式入口不得在新的独立精确授权前执行。见 `docs/ai-gateway-g8-test-readonly-runtime-audit-authorization-20260815-021.md`。
 
 ## CI 变更范围分类器
 

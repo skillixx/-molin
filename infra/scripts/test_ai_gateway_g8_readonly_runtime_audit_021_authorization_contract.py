@@ -15,6 +15,9 @@ GENERATOR_PATH = REPO_ROOT / "infra/scripts/prepare-ai-gateway-g8-test-readonly-
 GENERATOR_TEST_PATH = REPO_ROOT / "infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_021_command.py"
 RUNNER_TEST_PATH = REPO_ROOT / "infra/scripts/test_run_ai_gateway_g8_test_readonly_runtime_audit_021.py"
 CHANGE_ID = "CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-021"
+ENGINEERING_HEAD = "c73ef139721bcfc693ffb31caa6fe803be526286"
+ENGINEERING_MERGE = "8bc05cbf3bc71a8954087dc7f26732f836e5212e"
+ENGINEERING_BASE = "358edfd8e8d5d3293944314d79d503245049649a"
 
 
 def load_constants(path: Path) -> dict[str, object]:
@@ -36,7 +39,11 @@ class TestG8ReadonlyRuntimeAudit021AuthorizationContract(unittest.TestCase):
         document = AUTH_PATH.read_text(encoding="utf-8")
         for required in (
             CHANGE_ID,
-            "PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED",
+            "PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED",
+            "PR #398",
+            "31867790659 completed/success",
+            ENGINEERING_HEAD,
+            ENGINEERING_MERGE,
             "020 已永久消费",
             "不安装",
             "不使用 sudo",
@@ -48,6 +55,7 @@ class TestG8ReadonlyRuntimeAudit021AuthorizationContract(unittest.TestCase):
             self.assertIn(required, document)
         for forbidden in ("REMOTE_AUTHORIZED", "测试服运行态已通过", "`G8_SOFTWARE_CLOSED_LOOP` 已完成"):
             self.assertNotIn(forbidden, document)
+        self.assertNotIn("PENDING_ENGINEERING_REVIEW", document)
 
     def test_execution_files_bind_new_change_id_and_default_closed_state(self) -> None:
         """生成器与固定启动器必须绑定 021，默认不得代表远端授权。"""
@@ -97,6 +105,48 @@ class TestG8ReadonlyRuntimeAudit021AuthorizationContract(unittest.TestCase):
         }
         for relative, digest in expected.items():
             self.assertEqual(hashlib.sha256((REPO_ROOT / relative).read_bytes()).hexdigest(), digest, relative)
+
+    def test_postmerge_objects_match_archived_evidence(self) -> None:
+        """合并提交父顺序和五个原始 blob 必须与归档证据逐字节一致。"""
+        expected = {
+            RUNNER_PATH: "8662e3e6558453799245d084e32b8826ec84e969",
+            GENERATOR_PATH: "087683242cae3b3a1696e8815a9102f6650f002b",
+            RUNNER_TEST_PATH: "78b68b48cf18892393f6e71abb89ac2e96c59d6e",
+            GENERATOR_TEST_PATH: "ec8a2e184ea7e1abd5aa1dfe8d3db4d4eee69adc",
+            GENERATOR_PATH.with_name("audit-ai-gateway-g8-test-server-readonly.sh"): "27450efc39af7e763ea8df0c59d584433d5e5edd",
+        }
+        parents = subprocess.run(
+            ["git", "show", "-s", "--format=%P", ENGINEERING_MERGE],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+            timeout=15,
+        )
+        if parents.returncode != 0:
+            self.skipTest("linked worktree 的外部 Git 对象库未挂载")
+        self.assertEqual(parents.stdout.strip(), f"{ENGINEERING_BASE} {ENGINEERING_HEAD}")
+        for path, blob in expected.items():
+            relative = path.relative_to(REPO_ROOT).as_posix()
+            actual_blob = subprocess.run(
+                ["git", "rev-parse", f"{ENGINEERING_MERGE}:{relative}"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=True,
+                timeout=15,
+            ).stdout.strip()
+            frozen = subprocess.run(
+                ["git", "show", f"{ENGINEERING_MERGE}:{relative}"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                check=True,
+                timeout=15,
+            ).stdout
+            self.assertEqual(actual_blob, blob, relative)
+            self.assertEqual(frozen, path.read_bytes(), relative)
 
     def test_workflow_runs_021_on_windows_and_network_none_linux(self) -> None:
         """CI 必须运行生成器、固定启动器和授权契约，且 Linux 保持断网只读。"""

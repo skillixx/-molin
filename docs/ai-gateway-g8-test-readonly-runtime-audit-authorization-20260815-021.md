@@ -2,7 +2,7 @@
 
 ## 1. 当前状态
 
-`PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`
+`PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`
 
 021 使用独立 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-021`。020 已永久消费，不得再次授权、重试或重放；021 只复用 020 已审计的固定无安装、无 sudo、Docker 只读审计能力，并修复仓库外临时 PowerShell 包装导致的启动链路缺口。
 
@@ -12,10 +12,10 @@
 
 仓库内 `infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-021.py` 是唯一正式入口。它把工程 merge 原始 blob 复核、冻结命令内存生成、大小和 SHA-256 校验、PowerShell 5.1 语法解析及启动收敛为一次固定调用，不创建可重放的 `.ps1` 文件，也不接受脚本路径、SSH 路径、回执路径或远端参数覆盖。
 
-未来若获得新的独立精确执行授权，只允许把清单合并后填写的工程 merge、命令大小和命令摘要代入以下单次入口；`--execute-authorized` 只表示操作者正在使用另行取得的授权，不能由工程合并或 CI 自动满足：
+未来若获得新的独立精确执行授权，只允许把已归档的工程 merge、命令大小和命令摘要代入以下单次入口；`--execute-authorized` 只表示操作者正在使用另行取得的授权，不能由工程合并或 CI 自动满足：
 
 ```text
-python -I infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-021.py --change-id=CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-021 --engineering-merge=<40位工程merge> --expected-command-size=32009 --expected-command-sha256=8407837bc7e9af65dc7d2fe8ad1f8a9728186745ad25d20e802c8793a9740dcd --execute-authorized
+python -I infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-021.py --change-id=CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-021 --engineering-merge=8bc05cbf3bc71a8954087dc7f26732f836e5212e --expected-command-size=32009 --expected-command-sha256=8407837bc7e9af65dc7d2fe8ad1f8a9728186745ad25d20e802c8793a9740dcd --execute-authorized
 ```
 
 当前禁止执行上述正式形式。固定入口缺少任一参数、工程 blob 漂移、命令摘要漂移、PowerShell 启动失败或子脚本失败时必须输出固定低敏原因并立即停止，零重试。
@@ -41,16 +41,18 @@ python -I infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-021.py --c
 
 | 文件/生成物 | 大小 | SHA-256 | 状态 |
 |---|---:|---|---|
-| `infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-021.py` | 13157 | `092ebfa2453552a46eda55e91c3db2777e28bb87dcfc191156f7690e472d348f` | 当前候选 |
-| `infra/scripts/prepare-ai-gateway-g8-test-readonly-runtime-audit-021-command.py` | 27486 | `d1d413c3e82ff97de221c611c35c507daeb928e6cba674a4b0843c603724036f` | 当前候选 |
-| `infra/scripts/test_run_ai_gateway_g8_test_readonly_runtime_audit_021.py` | 5404 | `47cff939adade4b695ca62869b04e63a4ce0806d9e41071dbfebb3a9008cfc8b` | 当前候选 |
-| `infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_021_command.py` | 14896 | `bf338ef520cd2000991455c1dec8405b4dd2195dfd8f363f3f31f0599d1318ee` | 当前候选 |
+| `infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-021.py` | 13157 | `092ebfa2453552a46eda55e91c3db2777e28bb87dcfc191156f7690e472d348f` | main 原始 blob |
+| `infra/scripts/prepare-ai-gateway-g8-test-readonly-runtime-audit-021-command.py` | 27486 | `d1d413c3e82ff97de221c611c35c507daeb928e6cba674a4b0843c603724036f` | main 原始 blob |
+| `infra/scripts/test_run_ai_gateway_g8_test_readonly_runtime_audit_021.py` | 5404 | `47cff939adade4b695ca62869b04e63a4ce0806d9e41071dbfebb3a9008cfc8b` | main 原始 blob |
+| `infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_021_command.py` | 14896 | `bf338ef520cd2000991455c1dec8405b4dd2195dfd8f363f3f31f0599d1318ee` | main 原始 blob |
 | 纯内存冻结命令 | 32009 | `8407837bc7e9af65dc7d2fe8ad1f8a9728186745ad25d20e802c8793a9740dcd` | 不落盘 |
 
 固定审计源仍为 `infra/scripts/audit-ai-gateway-g8-test-server-readonly.sh`：18377 字节，SHA-256 `308908d2a2b9fa8679fd21d77fde68b5ce5d521ed37dac6b7726e6c323452256`，不因 021 修改。
 
+合并后 Git blob 已从 merge commit 原始对象逐项复核：启动器 `8662e3e6558453799245d084e32b8826ec84e969`、生成器 `087683242cae3b3a1696e8815a9102f6650f002b`、启动器测试 `78b68b48cf18892393f6e71abb89ac2e96c59d6e`、生成器测试 `ec8a2e184ea7e1abd5aa1dfe8d3db4d4eee69adc`、固定审计源 `27450efc39af7e763ea8df0c59d584433d5e5edd`；五个文件均为 LF、CRLF=0。
+
 ## 6. 合并与停止条件
 
-021 必须完成本地 Windows/Linux 断网门禁、敏感信息扫描、精确 HEAD 的全部适用 CI、代码安全、QA、产品/规格独立评审，并以 merge commit 合入 main；随后从 main 原始 Git blob 重新核对执行文件、测试、审计源和纯内存命令摘要。
+021 工程 HEAD `c73ef139721bcfc693ffb31caa6fe803be526286` 已通过 PR #398、CI run `31867790659 completed/success` 及代码安全、QA、产品/规格独立评审，并以 merge commit `8bc05cbf3bc71a8954087dc7f26732f836e5212e` 合入 main。父提交顺序为 `358edfd8e8d5d3293944314d79d503245049649a` 后 `c73ef139721bcfc693ffb31caa6fe803be526286`，远端工程分支已删除；main 原始 Git blob、LF 和纯内存命令摘要已重新核对且无漂移。
 
 合并后必须停止并保持 `REMOTE_NOT_AUTHORIZED`。只有用户对精确 ChangeId、工程 merge、命令大小、命令 SHA-256、最多一次非交互 SSH 和零重试重新作出独立授权，才允许调用固定正式入口。
