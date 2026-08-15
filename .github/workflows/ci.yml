@@ -993,7 +993,7 @@ jobs:
             python:3.13-alpine \
             python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_014.py -v
 
-      - name: 验证 G8 015/016/017/018 墓碑与 019 候选离线门禁
+      - name: 验证 G8 015/016/017/018/019 墓碑离线门禁
         run: |
           bash -n infra/scripts/g8-test-readonly-access-install-015.sh
           bash -n infra/scripts/g8-test-readonly-access-install-016.sh
