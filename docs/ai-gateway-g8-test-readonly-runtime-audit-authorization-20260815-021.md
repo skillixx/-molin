@@ -41,7 +41,7 @@ python -I infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-021.py --c
 
 | 文件/生成物 | 大小 | SHA-256 | 状态 |
 |---|---:|---|---|
-| `infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-021.py` | 13177 | `7f9c357b462d51862aec6395a90ce829dedb3e14fc86055cae23fffdb46a3ccf` | 当前候选 |
+| `infra/scripts/run-ai-gateway-g8-test-readonly-runtime-audit-021.py` | 13157 | `092ebfa2453552a46eda55e91c3db2777e28bb87dcfc191156f7690e472d348f` | 当前候选 |
 | `infra/scripts/prepare-ai-gateway-g8-test-readonly-runtime-audit-021-command.py` | 27486 | `d1d413c3e82ff97de221c611c35c507daeb928e6cba674a4b0843c603724036f` | 当前候选 |
 | `infra/scripts/test_run_ai_gateway_g8_test_readonly_runtime_audit_021.py` | 5404 | `47cff939adade4b695ca62869b04e63a4ce0806d9e41071dbfebb3a9008cfc8b` | 当前候选 |
 | `infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_021_command.py` | 14896 | `bf338ef520cd2000991455c1dec8405b4dd2195dfd8f363f3f31f0599d1318ee` | 当前候选 |

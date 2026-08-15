@@ -32,7 +32,6 @@ FIXED_FAILURE_REASONS = (
     "known_hosts_failed",
     "receipt_unavailable",
     "ssh_session_failed",
-    "test_failure",
     "trusted_windows_path_failed",
 )
 FIXED_CHILD_LINES = frozenset(
