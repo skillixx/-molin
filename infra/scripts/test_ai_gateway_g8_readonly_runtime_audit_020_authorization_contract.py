@@ -4,6 +4,8 @@
 import base64
 import hashlib
 import importlib.util
+import os
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -14,6 +16,9 @@ GENERATOR_PATH = REPO_ROOT / "infra/scripts/prepare-ai-gateway-g8-test-readonly-
 TEST_PATH = REPO_ROOT / "infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_020_command.py"
 AUDITOR_PATH = REPO_ROOT / "infra/scripts/audit-ai-gateway-g8-test-server-readonly.sh"
 CHANGE_ID = "CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-020"
+ENGINEERING_HEAD = "dcb594d33e79bfbb059293e4734e49e62409d51a"
+ENGINEERING_MERGE = "3c63539279a34ae2365fc9d7e26e207dd728c4ba"
+ENGINEERING_BASE = "b9211b8a90610aa2e45873fa9de54575bce58fb5"
 STATUS_PATHS = (
     REPO_ROOT / "README.md",
     REPO_ROOT / "docs/ai-gateway-g8-acceptance.md",
@@ -37,13 +42,17 @@ class TestG8ReadonlyRuntimeAudit020AuthorizationContract(unittest.TestCase):
         """工程授权不得被解释为 SSH 或运行态审计授权。"""
         document = AUTH_PATH.read_text(encoding="utf-8")
         for required in (
-            "PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED",
+            "PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED",
             CHANGE_ID,
             "不安装受控只读审计入口",
             "不执行 sudo",
             "`pc` 直接使用既有 Docker 权限",
             "不授权 SSH、Docker 命令、HTTP、数据库查询或测试服操作",
             "`G8_SOFTWARE_CLOSED_LOOP` 尚未完成",
+            "PR #394",
+            "31861762018",
+            ENGINEERING_HEAD,
+            ENGINEERING_MERGE,
         ):
             self.assertIn(required, document)
 
@@ -62,7 +71,7 @@ class TestG8ReadonlyRuntimeAudit020AuthorizationContract(unittest.TestCase):
             document = path.read_text(encoding="utf-8")
             for required in (
                 CHANGE_ID,
-                "PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED",
+                "PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED",
                 "不使用 sudo",
                 "`pc`",
                 "Docker",
@@ -110,6 +119,47 @@ class TestG8ReadonlyRuntimeAudit020AuthorizationContract(unittest.TestCase):
         }
         for relative, digest in expected.items():
             self.assertEqual(hashlib.sha256((REPO_ROOT / relative).read_bytes()).hexdigest(), digest, relative)
+
+    def test_merged_main_blobs_and_parent_order_match_archive(self) -> None:
+        """归档必须从工程 merge 原始对象复核父顺序与冻结文件。"""
+        if os.name != "nt" and (REPO_ROOT / ".git").is_file():
+            self.skipTest("linked worktree 的外部 Git 对象库未挂载")
+        parents = subprocess.run(
+            ["git", "-c", f"safe.directory={REPO_ROOT}", "show", "-s", "--format=%P", ENGINEERING_MERGE],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        ).stdout.strip()
+        self.assertEqual(parents, f"{ENGINEERING_BASE} {ENGINEERING_HEAD}")
+        expected = {
+            "infra/scripts/audit-ai-gateway-g8-test-server-readonly.sh": (
+                18377,
+                "308908d2a2b9fa8679fd21d77fde68b5ce5d521ed37dac6b7726e6c323452256",
+                "27450efc39af7e763ea8df0c59d584433d5e5edd",
+            ),
+            "infra/scripts/prepare-ai-gateway-g8-test-readonly-runtime-audit-020-command.py": (
+                27486,
+                "3a286187602277c2255e978712e37cff7d6edf46d292a185e665aaa70654bbae",
+                "212124e085c2f34adf11eae62b0e0119c5d8f44e",
+            ),
+            "infra/scripts/test_prepare_ai_gateway_g8_test_readonly_runtime_audit_020_command.py": (
+                14896,
+                "a156e62417826ce5a8f6347d46edca384f6abfaa5e819aa300dc0dc55b3d5b8b",
+                "c3930bc478b2b05d33822db2996618949384f9f3",
+            ),
+        }
+        for relative, (size, digest, blob) in expected.items():
+            content = subprocess.run(
+                ["git", "-c", f"safe.directory={REPO_ROOT}", "show", f"{ENGINEERING_MERGE}:{relative}"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                check=True,
+            ).stdout
+            self.assertEqual((len(content), hashlib.sha256(content).hexdigest()), (size, digest), relative)
+            self.assertEqual(hashlib.sha1(b"blob " + str(size).encode("ascii") + b"\0" + content).hexdigest(), blob)
+            self.assertNotIn(b"\r\n", content, relative)
 
 
 if __name__ == "__main__":
