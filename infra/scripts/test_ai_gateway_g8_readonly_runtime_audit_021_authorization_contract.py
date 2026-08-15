@@ -186,7 +186,12 @@ class TestG8ReadonlyRuntimeAudit021ConsumedContract(unittest.TestCase):
             self.assertGreaterEqual(workflow.count(test), 2, test)
         self.assertIn("验证 G8 015/016/017/018/019/020/021 墓碑与 022 候选离线门禁", workflow)
         self.assertIn("--network none", workflow)
-        self.assertIn("python:3.13-bookworm", workflow)
+        self.assertIn(
+            "python@sha256:62eafe52c91cad83c2c74e630bfde917da8c253673e695665d454def84fc9a13",
+            workflow,
+        )
+        self.assertIn('docker pull "$g8_bookworm_image"', workflow)
+        self.assertIn("docker run --rm --pull=never --network none", workflow)
 
 
 if __name__ == "__main__":
