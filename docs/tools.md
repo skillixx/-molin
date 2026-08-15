@@ -1049,7 +1049,7 @@ python infra/scripts/verify-ai-gateway-g8-migration-manifest.py `
 
 实际 SSH 必须绑定唯一 ChangeId、固定 known_hosts、`BatchMode=yes`、精确目标和零重试。历史凭据比较值只以内存中的 SHA-256 注入，不写入脚本、命令输出或 Git。每个 ChangeId 只允许一次连接；失败后必须生成新候选，不能重放。
 
-测试账号缺少 Docker 读取权限时，不得将账号直接加入 Docker 组。候选最小权限方案使用 root-owned 固定审计器、root-owned 对账二进制和单命令 sudoers；审计器拒绝非规范 ChangeId、非固定安装路径及错误所有权。安装、sudoers 修改和再次远端核验必须分别取得独立授权，详见 `docs/ai-gateway-g8-test-readonly-access-runbook.md`。
+历史候选曾假设测试账号缺少 Docker 读取权限，因此设计 root-owned 固定审计器、root-owned 对账二进制和单命令 sudoers；该入口从未安装。用户现已明确 020 不安装受控入口且不使用 sudo，由 `pc` 使用既有 Docker 权限执行冻结无参数只读审计；旧安装方案已失效，禁止继续使用。020 的工程合并与未来远端只读执行仍须分开授权，详见 `docs/ai-gateway-g8-test-readonly-access-runbook.md`。
 
 ### G8 测试服务器只读入口候选生成器
 
@@ -1138,6 +1138,8 @@ python -I infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py --self-tes
 015、016 与 017 的生成器、安装器均已改为固定 `change_id_consumed` 墓碑。015 的唯一获批本地段出现 PowerShell 正则错误且下游影响保持 `UNKNOWN`；016 经 PR #381 合并和冻结摘要复核后获得独立授权，但唯一人工第一段在模块自动加载的 `Get-FileHash` 处以终止错误停止，控制流没有到达 SSH，远端影响为 0。017 工程候选曾把冻结材料摘要改用 Windows PowerShell 5.1 可用的纯 .NET 流式 SHA-256，并收紧加密私钥提示、低敏输出和信号回滚；PR #384 最终 HEAD `ee947fd61919215500ef516488d56e01ad2ea72d` 通过 CI run `31791430839` 与三方零缺陷复评，按 merge commit `e2a7e4f89c4115b3e32dc27292b0bc11d7d09a57` 合入 main，合并后原始 Git blob 与冻结命令复核一致。用户独立批准后，唯一人工本地段返回统一低敏 `local_gate_failed` 并退出 2；事后不联网同构门禁通过，但现有证据无法绑定 SSH 调用次数为 0。远端第二段、sudo、安装器、post-check、业务、上游和费用均为 0，安装未确认；017 已失败关闭消费，历史生成命令禁止重放。当前只允许运行墓碑及授权契约测试；继续诊断或安装必须使用新 ChangeId、重新完成工程门禁并取得独立授权。详见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-016.md`、`docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-017.md` 和 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260814-017.md`。
 
 018 工具在唯一人工本地段窗口直接关闭、没有可见输出后已失败关闭消费；SSH 启动/连接为 `UNKNOWN / 最多 1`，远端固定段、sudo、安装器与 post-check 均为 0。019 的单会话候选通过 PR #390、CI run `31829691838` 和独立评审，以 merge commit `70485d893fd86db00be4dbb9e324f9d4322d55b0` 合入 main，并完成合并后原始 blob 与冻结命令摘要复核。用户精确授权后的唯一可见 PowerShell 最终在恢复 `$ErrorActionPreference` 时因 `Null` 失败，固定标志不可恢复；SSH、远端预检、sudo、安装器与 post-check 均保持 `UNKNOWN / 最多 1`。重试为 0，018 与 019 的生成器、安装器均为固定 `change_id_consumed` 墓碑，禁止执行历史生成文件或任何形式的重放。见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260815-018.md`、`docs/ai-gateway-g8-test-readonly-access-install-attempt-20260815-019.md` 与 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260815-019.md`。
+
+020 工具改用新 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-020`，不安装受控入口、不写 sudoers、不使用 sudo；它把冻结审计源转换为单次 `ssh -T` 携带的内存脚本，由 `pc` 通过既有 Docker 权限执行固定只读 Docker/宿主/HTTP/数据库核验。Docker 权限接近宿主 root，因此生成器会反向拒绝 Docker 变更、宿主写入、migration、任意调用参数、业务请求、真实上游和费用动作，并以固定可信用户目录耐久低敏回执记录 SSH 到达边界。当前只完成工程候选，状态为 `PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`；020 尚未执行、尚未消费，本轮不授权 SSH、Docker 命令、HTTP、数据库查询或任何测试服操作，`G8_SOFTWARE_CLOSED_LOOP` 仍未完成。见 `docs/ai-gateway-g8-test-readonly-runtime-audit-authorization-20260815-020.md`。
 
 ## CI 变更范围分类器
 
