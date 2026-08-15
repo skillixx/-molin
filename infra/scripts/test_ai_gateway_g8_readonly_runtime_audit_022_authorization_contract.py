@@ -111,8 +111,8 @@ class TestG8ReadonlyRuntimeAudit022ConsumedContract(unittest.TestCase):
                 self.assertIn(required, document, path)
             for stale in (
                 "022 当前为 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`",
-                "当前状态为 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`",
-                "未取得新的独立精确授权前",
+                "当前状态为 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`；022 尚未执行",
+                "022 尚未执行、尚未消费",
             ):
                 self.assertNotIn(stale, document, path)
 
