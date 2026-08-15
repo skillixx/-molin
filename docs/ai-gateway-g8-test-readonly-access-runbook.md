@@ -139,7 +139,7 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 7. 当前只可为新的 ChangeId 完成工程候选；必须先让低敏结果可区分 SSH 前门禁和 SSH 调用失败，017 的历史批准、工程合并或生成命令均不构成新授权。
 8. 018 已完成工程合并；独立授权后的唯一人工段关闭父窗口且无可见输出，SSH 到达保持未知，所有远端安装影响为 0，018 已消费并墓碑化。
 9. 019 改为单次 `ssh -tt` 自动携带远端固定脚本；独立授权后的唯一执行在 PowerShell 状态恢复阶段失败，固定标志不可恢复，SSH 与安装链路到达保持 UNKNOWN，019 已消费并墓碑化。
-10. 020 使用新的独立 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-020`：不再安装受控入口或 sudoers，不使用 sudo，由 `pc` 通过既有 Docker 权限在单次非交互 SSH 中执行冻结内存只读审计；可信用户目录耐久低敏回执只保留 SSH 到达边界。当前为 `PENDING_ENGINEERING_REVIEW / REMOTE_NOT_AUTHORIZED`，本轮不授权 SSH、Docker、HTTP、数据库查询或测试服操作，`G8_SOFTWARE_CLOSED_LOOP` 仍未完成。
+10. 020 使用新的独立 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-020`：不再安装受控入口或 sudoers，不使用 sudo，由 `pc` 通过既有 Docker 权限在单次非交互 SSH 中执行冻结内存只读审计；可信用户目录耐久低敏回执只保留 SSH 到达边界。PR #394 精确 HEAD `dcb594d33e79bfbb059293e4734e49e62409d51a` 经 CI run `31861762018` 和三方零缺陷复评后，按 merge commit `3c63539279a34ae2365fc9d7e26e207dd728c4ba` 合入 main，合并后摘要复核一致。当前为 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`，未获新的独立授权前不执行 SSH、Docker、HTTP、数据库查询或测试服操作，`G8_SOFTWARE_CLOSED_LOOP` 仍未完成。
 11. 020 工程合并不证明运行态通过；未来执行必须对精确 ChangeId、合并提交、命令摘要以及固定只读 Docker/宿主/HTTP/数据库查询范围重新独立授权。测试候选部署、Fake 旅程、零差额对账和实际回滚继续分开授权。
 12. API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因本地测试、安装候选或暂存三态自动关闭。
 
