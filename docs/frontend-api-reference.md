@@ -2573,7 +2573,8 @@ DELETE /api/token/projects/{id}/keys/{key_id}
 页面入口：`/token/workbench`，读取权限 `ai_gateway:view`，并要求管理员双重认证。接口和状态机详见 `docs/ai-gateway-g5-development.md`。
 
 - `GET /api/admin/token/overview`：支持 `from/to/model/channel_id/status`，返回请求量、成功率、Token、人民币销售额/成本/毛利、治理拒绝和配置异常；金额和比率为十进制字符串。
-- `POST /api/admin/token/models/{id}/rollback`：从历史快照创建新的发布版本，不修改历史版本。
+- `POST /api/admin/token/models/{id}/rollback`：从历史快照创建新的发布版本，不修改历史版本；当前生效价格异常返回 `40911`、健康路由缺失返回 `40912`、状态并发变化返回 `40913`。
+- `POST /api/admin/token/models/{id}/publish`：发布首个版本或新快照；相同快照重复请求返回既有版本，历史孤儿编号会被安全跳过。`40910` 表示操作文档/快速入门未就绪，`40911` 表示当前生效价格不是唯一一份，`40912` 表示缺少健康生效路由，`40913` 表示模型状态已变化，前端应展示服务端具体原因并刷新模型目录。模型下架或回滚遇到并发状态变化时也使用 `40913`。
 - `POST /api/admin/token/prices/{id}/rollback`：从历史价格复制新草稿，前端必须提示重新审批发布。
 - `POST /api/admin/token/channels/{id}/health-check`：执行无密钥、无模型费用的 `/health` 检测；默认只允许公网 HTTPS，拒绝内网/回环/链路本地/DNS 重绑定和重定向。测试 Bifrost 内网地址必须由运维使用精确白名单配置，前端不得提供“放开全部内网”选项。
 - 模型状态使用 `active/inactive`，路由状态使用 `active/disabled`，二者不得混用。

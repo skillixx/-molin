@@ -2543,9 +2543,9 @@ Body 使用 `resolution=release|settle`；`settle` 时同时提交 `prompt_token
 |---|---|---|---|
 | GET | `/api/admin/token/overview` | `ai_gateway:view` | 模型、渠道、价格、路由和异常聚合 |
 | GET | `/api/admin/token/models/{id}/versions` | `ai_gateway:view` | 不可变模型发布版本 |
-| POST | `/api/admin/token/models/{id}/publish` | `ai_gateway:model_manage` | body：`{"reason":"..."}` |
-| POST | `/api/admin/token/models/{id}/unpublish` | `ai_gateway:model_manage` | 下架且退役当前快照 |
-| POST | `/api/admin/token/models/{id}/rollback` | `ai_gateway:model_manage` | body：`{"target_version_no":1,"reason":"..."}`；创建新发布版本 |
+| POST | `/api/admin/token/models/{id}/publish` | `ai_gateway:model_manage` | body：`{"reason":"..."}`；相同快照幂等返回既有版本，历史孤儿编号按最大版本继续分配；发布门禁错误为 `40910` 文档未就绪、`40911` 生效价格数量异常、`40912` 健康路由缺失、`40913` 状态并发变化 |
+| POST | `/api/admin/token/models/{id}/unpublish` | `ai_gateway:model_manage` | 下架且退役当前快照；状态并发变化返回 `40913` |
+| POST | `/api/admin/token/models/{id}/rollback` | `ai_gateway:model_manage` | body：`{"target_version_no":1,"reason":"..."}`；创建新发布版本；生效价格异常返回 `40911`、健康路由缺失返回 `40912`、状态并发变化返回 `40913` |
 | POST | `/api/admin/token/channels/{id}/health-check` | `ai_gateway:route_manage` | 只访问渠道根 `/health`，不携带密钥且不调用模型；默认仅允许公网 HTTPS，并在实际拨号前校验全部 DNS 结果，拒绝 loopback、link-local、RFC1918、IPv6 本地地址和重定向。测试 Bifrost 内网目标必须由 `AI_GATEWAY_HEALTH_INTERNAL_ALLOWLIST` 精确放行 |
 | GET/POST | `/api/admin/token/routes` | view / route_manage | Bifrost 路由列表与创建 |
 | PUT | `/api/admin/token/routes/{id}` | `ai_gateway:route_manage` | 全量提交路由及当前 `version_no` |
@@ -2561,7 +2561,7 @@ Body 使用 `resolution=release|settle`；`settle` 时同时提交 `prompt_token
 
 G5 路由仅在确认请求未发送时按 `max_retries` 重试；超时、结果未知、已收到 HTTP/SSE 数据均禁止重试。安全失败达到阈值后写入共享熔断表并开启 30 秒窗口，后续请求按优先级和回退顺序选择其他路由。
 
-新增权限：`ai_gateway:model_manage`、`ai_gateway:price_manage`、`ai_gateway:route_manage`。冲突统一返回 `409/40900`，不满足发布门禁返回 `409/40900`，参数错误返回 `400/40000`。
+新增权限：`ai_gateway:model_manage`、`ai_gateway:price_manage`、`ai_gateway:route_manage`。通用价格与路由冲突返回 `409/40900`；模型发布门禁按上表返回 `409/40910` 至 `409/40913`，模型发布、下架和回滚的残余并发状态变化统一返回 `409/40913`，便于前端展示可恢复原因；参数错误返回 `400/40000`。
 
 ## AI 网关 G6 用户端模型市场与请求账本接口
 
