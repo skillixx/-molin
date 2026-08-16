@@ -38,7 +38,7 @@
           </el-table-column>
           <el-table-column prop="provider_name" label="供应商" width="130" />
           <el-table-column label="模态" width="90"><template #default="{ row }"><el-tag effect="plain">{{ modalityLabel(row.modality) }}</el-tag></template></el-table-column>
-          <el-table-column label="发布" width="120"><template #default="{ row }"><el-tag :type="row.status === 'active' ? 'success' : 'info'">v{{ row.release_version_no }} · {{ row.status === 'active' ? '已上架' : '已下架' }}</el-tag></template></el-table-column>
+          <el-table-column label="发布" width="120"><template #default="{ row }"><el-tag :type="modelPublicationTag(row)">v{{ row.release_version_no }} · {{ modelPublicationLabel(row) }}</el-tag></template></el-table-column>
           <el-table-column label="文档" min-width="180"><template #default="{ row }"><el-link v-if="row.docs_url" :href="row.docs_url" target="_blank">操作文档</el-link><span v-else class="muted">尚未配置</span></template></el-table-column>
           <el-table-column label="操作" width="210"><template #default="{ row }">
             <el-button text type="primary" @click="showVersions(row)">版本</el-button>
@@ -287,7 +287,32 @@ const detailDrawer = ref(false), detailData = ref<unknown>(null)
 const modelVersionsDialog = ref(false), selectedModel = ref<TokenModel | null>(null), modelReleases = ref<AIModelRelease[]>([])
 async function showVersions(row: TokenModel) { selectedModel.value = row; modelReleases.value = (await listAIModelReleases(row.id)).items; modelVersionsDialog.value = true }
 async function withConfirmation(task: () => Promise<void>) { if (saving.value) return; saving.value = true; try { await task() } catch (error) { if (error !== 'cancel' && error !== 'close') throw error } finally { saving.value = false } }
-async function publishModel(row: TokenModel) { return withConfirmation(async () => { const { value } = await ElMessageBox.prompt('请输入本次发布原因', `发布 ${row.display_name}`, { inputPattern: /\S+/, inputErrorMessage: '发布原因不能为空' }); await publishAIModel(row.id, value); ElMessage.success('模型发布成功'); await refreshCurrent() }) }
+function modelPublicationLabel(row: TokenModel) { return row.release_version_no === 0 ? '未发布' : row.status === 'active' ? '已上架' : '已下架' }
+function modelPublicationTag(row: TokenModel) { return row.release_version_no === 0 ? 'warning' : row.status === 'active' ? 'success' : 'info' }
+function modelPublishBlockReason(row: TokenModel) {
+  if (!row.docs_url || !row.quick_start_url || row.docs_url_health_status !== 'healthy' || row.quick_start_url_health_status !== 'healthy') return '发布前请先配置操作文档和快速入门，并确认两项检查均为健康'
+  return ''
+}
+async function publishModel(row: TokenModel) {
+  return withConfirmation(async () => {
+    const blocked = modelPublishBlockReason(row)
+    if (blocked) {
+      ElMessage.warning(blocked)
+      await loadModels()
+      return
+    }
+    const { value } = await ElMessageBox.prompt('请输入本次发布原因', `发布 ${row.display_name}`, { inputPattern: /\S+/, inputErrorMessage: '发布原因不能为空' })
+    try {
+      await publishAIModel(row.id, value)
+      ElMessage.success('模型发布成功')
+      await refreshCurrent()
+    } catch (error) {
+      // 发布失败后刷新目录，避免页面继续展示造成冲突的旧状态。
+      await loadModels()
+      throw error
+    }
+  })
+}
 async function unpublishModelRow(row: TokenModel) { return withConfirmation(async () => { await ElMessageBox.confirm(`确认下架「${row.display_name}」？`, '下架确认', { type: 'warning' }); await unpublishAIModel(row.id); ElMessage.success('模型已下架'); await refreshCurrent() }) }
 async function rollbackModelVersion(release: AIModelRelease) { return withConfirmation(async () => { if (!selectedModel.value) return; const { value } = await ElMessageBox.prompt(`将创建一个基于 v${release.version_no} 快照的新发布版本，请输入回滚原因。`, '模型版本回滚', { inputPattern: /\S+/, inputErrorMessage: '回滚原因不能为空', type: 'warning' }); await rollbackAIModel(selectedModel.value.id, release.version_no, value); ElMessage.success('模型已生成新的回滚版本'); await showVersions(selectedModel.value); await refreshCurrent() }) }
 async function showPrice(row: AIPriceVersion) { detailData.value = await getAIPrice(row.id); detailDrawer.value = true }

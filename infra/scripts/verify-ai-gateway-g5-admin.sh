@@ -30,9 +30,11 @@ mysql_exec() { docker exec -i -e "MYSQL_PWD=${password}" "${container}" mysql -u
 for _ in $(seq 1 60); do mysql_exec -e 'SELECT 1' >/dev/null 2>&1 && break; sleep 1; done
 mysql_exec -e 'SELECT 1' >/dev/null 2>&1 || { echo "G5_VERIFY=FAILED reason=mysql_not_ready"; exit 2; }
 
-# 从空库应用至 G4，并显式模拟 migrate 的 63:0 -> 64:0、down 与 re-up 状态流转。
+# 从空库严格应用至 G4；较新的迁移必须等 G5 的 64 版本完成回滚/重放验证后再执行。
 for migration in "${repo_root}"/server/migrations/*.up.sql; do
-  [[ "${migration}" == "${up64}" ]] && continue
+  migration_name="$(basename "${migration}")"
+  migration_version="${migration_name%%_*}"
+  (( 10#${migration_version} <= 63 )) || continue
   docker exec -i -e "MYSQL_PWD=${password}" "${container}" mysql -uroot --database="${database}" < "${migration}"
 done
 mysql_exec -e 'CREATE TABLE schema_migrations (version BIGINT NOT NULL PRIMARY KEY, dirty BOOLEAN NOT NULL); INSERT INTO schema_migrations(version,dirty) VALUES(63,0);'
@@ -95,6 +97,14 @@ docker exec -i -e "MYSQL_PWD=${password}" "${container}" mysql -uroot --database
 mysql_exec -e 'UPDATE schema_migrations SET version=64,dirty=0 WHERE version=63 AND dirty=1;'
 assert_facts "reup"
 
+# G5 的版本迁移验证完成后，再按顺序应用 65 及后续迁移，供当前 HEAD 的仓储集成测试使用。
+for migration in "${repo_root}"/server/migrations/*.up.sql; do
+  migration_name="$(basename "${migration}")"
+  migration_version="${migration_name%%_*}"
+  (( 10#${migration_version} >= 65 )) || continue
+  docker exec -i -e "MYSQL_PWD=${password}" "${container}" mysql -uroot --database="${database}" < "${migration}"
+done
+
 assert_scalar "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('ai_model_release_versions','ai_model_routes','ai_model_route_runtime_states','ai_gateway_rejection_events')" "4" "table_count"
 assert_scalar "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='token_models' AND column_name IN ('provider_name','description','capabilities_json','context_window','intro_url','docs_url','quick_start_url','release_version_no','published_at','updated_by')" "10" "model_columns"
 assert_scalar "SELECT COUNT(*) FROM permissions WHERE code IN ('ai_gateway:model_manage','ai_gateway:price_manage','ai_gateway:route_manage')" "3" "permissions"
@@ -112,6 +122,8 @@ assert_rejected "UPDATE ai_model_routes SET weight=0 WHERE logical_model_code='m
 migrate_database="molin_g5_migrate_driver"
 docker exec -i -e "MYSQL_PWD=${password}" "${container}" mysql -uroot -e "CREATE DATABASE ${migrate_database} CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci"
 migrate_image="${G5_MIGRATE_IMAGE:-migrate/migrate:v4.18.3}"
+latest_version="$(find "${repo_root}/server/migrations" -maxdepth 1 -name '*.up.sql' -printf '%f\n' | sed 's/_.*//' | sort -n | tail -n 1 | sed 's/^0*//')"
+previous_version="$(find "${repo_root}/server/migrations" -maxdepth 1 -name '*.up.sql' -printf '%f\n' | sed 's/_.*//' | sort -n | tail -n 2 | head -n 1 | sed 's/^0*//')"
 migrate_run() {
   docker run --rm --pull="${G5_MIGRATE_PULL_POLICY:-missing}" --network "container:${container}" \
     -v "${repo_root}/server/migrations:/migrations:ro" \
@@ -122,11 +134,11 @@ migrate_version() {
   migrate_run version 2>&1 | tr -d '\r' | awk '/^[0-9]+$/ { version=$0 } END { print version }'
 }
 migrate_run up
-[[ "$(migrate_version)" == "64" ]] || { echo "G5_VERIFY=FAILED reason=migrate_driver_up_version"; exit 2; }
+[[ "$(migrate_version)" == "${latest_version}" ]] || { echo "G5_VERIFY=FAILED reason=migrate_driver_up_version"; exit 2; }
 migrate_run down 1
-[[ "$(migrate_version)" == "63" ]] || { echo "G5_VERIFY=FAILED reason=migrate_driver_down_version"; exit 2; }
+[[ "$(migrate_version)" == "${previous_version}" ]] || { echo "G5_VERIFY=FAILED reason=migrate_driver_down_version"; exit 2; }
 migrate_run up 1
-[[ "$(migrate_version)" == "64" ]] || { echo "G5_VERIFY=FAILED reason=migrate_driver_reup_version"; exit 2; }
+[[ "$(migrate_version)" == "${latest_version}" ]] || { echo "G5_VERIFY=FAILED reason=migrate_driver_reup_version"; exit 2; }
 
 # 在同一个临时 MySQL 网络命名空间中运行真实仓储集成测试，覆盖指标 SQL、熔断和并发版本控制。
 docker run --rm --network "container:${container}" \
@@ -137,4 +149,4 @@ docker run --rm --network "container:${container}" \
   -e "G5_MYSQL_DSN=root:${password}@tcp(127.0.0.1:3306)/${database}?charset=utf8mb4&parseTime=True&loc=UTC" \
   golang:1.25 go test -count=1 ./internal/modules/token_gateway/repository -run '^TestG5MySQLIntegration$'
 
-echo "G5_VERIFY=PASS mysql=8.0 isolated=true schema=64:0 migrations=63_to_64_repeated_up_down_to_63_reup_to_64 migration_driver=golang-migrate model_release=true route_constraints=true route_runtime=true rejection_metrics=true concurrency=true go_integration=true permissions=true admin_bindings=true project_database=false"
+echo "G5_VERIFY=PASS mysql=8.0 isolated=true schema=latest migrations=63_to_64_repeated_up_down_to_63_reup_to_64_then_latest migration_driver=golang-migrate model_release=true route_constraints=true route_runtime=true rejection_metrics=true concurrency=true go_integration=true permissions=true admin_bindings=true project_database=false"

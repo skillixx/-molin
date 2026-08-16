@@ -314,6 +314,14 @@ func writeG5Error(w http.ResponseWriter, err error) {
 		response.Error(w, http.StatusBadRequest, 40000, err.Error())
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		response.Error(w, http.StatusNotFound, 40400, "记录不存在")
+	case errors.Is(err, repository.ErrModelDocumentsNotReady):
+		response.Error(w, http.StatusConflict, 40910, "发布前必须配置且通过检查的操作文档和快速入门")
+	case errors.Is(err, repository.ErrModelPriceNotReady):
+		response.Error(w, http.StatusConflict, 40911, "发布前必须且只能有一个当前生效价格版本")
+	case errors.Is(err, repository.ErrModelRouteNotReady):
+		response.Error(w, http.StatusConflict, 40912, "发布前必须存在指向健康启用渠道的生效路由")
+	case errors.Is(err, repository.ErrModelReleaseConflict):
+		response.Error(w, http.StatusConflict, 40913, "模型状态已变化，请刷新后重试")
 	case service.IsG5Conflict(err), repository.IsDuplicateKeyForHandler(err):
 		response.Error(w, http.StatusConflict, 40900, "状态、版本或唯一键冲突")
 	default:

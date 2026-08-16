@@ -2543,7 +2543,7 @@ Body 使用 `resolution=release|settle`；`settle` 时同时提交 `prompt_token
 |---|---|---|---|
 | GET | `/api/admin/token/overview` | `ai_gateway:view` | 模型、渠道、价格、路由和异常聚合 |
 | GET | `/api/admin/token/models/{id}/versions` | `ai_gateway:view` | 不可变模型发布版本 |
-| POST | `/api/admin/token/models/{id}/publish` | `ai_gateway:model_manage` | body：`{"reason":"..."}` |
+| POST | `/api/admin/token/models/{id}/publish` | `ai_gateway:model_manage` | body：`{"reason":"..."}`；相同快照幂等返回既有版本；发布门禁错误为 `40910` 文档未就绪、`40911` 生效价格数量异常、`40912` 健康路由缺失、`40913` 状态并发变化 |
 | POST | `/api/admin/token/models/{id}/unpublish` | `ai_gateway:model_manage` | 下架且退役当前快照 |
 | POST | `/api/admin/token/models/{id}/rollback` | `ai_gateway:model_manage` | body：`{"target_version_no":1,"reason":"..."}`；创建新发布版本 |
 | POST | `/api/admin/token/channels/{id}/health-check` | `ai_gateway:route_manage` | 只访问渠道根 `/health`，不携带密钥且不调用模型；默认仅允许公网 HTTPS，并在实际拨号前校验全部 DNS 结果，拒绝 loopback、link-local、RFC1918、IPv6 本地地址和重定向。测试 Bifrost 内网目标必须由 `AI_GATEWAY_HEALTH_INTERNAL_ALLOWLIST` 精确放行 |

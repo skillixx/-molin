@@ -227,5 +227,5 @@ func (s *G5AdminService) RollbackPrice(ctx context.Context, id, operatorID uint6
 }
 
 func IsG5Conflict(err error) bool {
-	return errors.Is(err, repository.ErrModelReleaseConflict) || errors.Is(err, repository.ErrRouteVersionConflict) || errors.Is(err, repository.ErrPriceStateConflict) || errors.Is(err, repository.ErrPriceVersionNotPublishable) || errors.Is(err, repository.ErrPriceWindowOverlap)
+	return errors.Is(err, repository.ErrModelDocumentsNotReady) || errors.Is(err, repository.ErrModelPriceNotReady) || errors.Is(err, repository.ErrModelRouteNotReady) || errors.Is(err, repository.ErrModelReleaseConflict) || errors.Is(err, repository.ErrRouteVersionConflict) || errors.Is(err, repository.ErrPriceStateConflict) || errors.Is(err, repository.ErrPriceVersionNotPublishable) || errors.Is(err, repository.ErrPriceWindowOverlap)
 }

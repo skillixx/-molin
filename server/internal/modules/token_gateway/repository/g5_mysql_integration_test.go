@@ -40,39 +40,82 @@ func TestG5MySQLIntegration(t *testing.T) {
 	route := createG5Route(t, db, modelCode, channelID)
 	createG5ActivePrice(t, db, modelCode, now)
 
-	t.Run("同一模型并发发布只有一个事务成功", func(t *testing.T) {
+	t.Run("发布前置条件返回稳定错误分类", func(t *testing.T) {
+		if err := db.Model(&model.TokenModel{}).Where("id = ?", modelID).Updates(map[string]interface{}{"docs_url": nil, "docs_url_health_status": "unpublished"}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if _, err := repo.PublishModel(ctx, modelID, 901, "缺少文档"); !errors.Is(err, ErrModelDocumentsNotReady) {
+			t.Fatalf("缺少文档必须返回固定分类，实际 err=%v", err)
+		}
+		docsURL := "https://docs.invalid/api"
+		if err := db.Model(&model.TokenModel{}).Where("id = ?", modelID).Updates(map[string]interface{}{"docs_url": docsURL, "docs_url_health_status": "healthy"}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&model.AIPriceVersion{}).Where("logical_model_code = ?", modelCode).Update("status", model.AIPriceRetired).Error; err != nil {
+			t.Fatal(err)
+		}
+		if _, err := repo.PublishModel(ctx, modelID, 901, "缺少价格"); !errors.Is(err, ErrModelPriceNotReady) {
+			t.Fatalf("缺少唯一生效价格必须返回固定分类，实际 err=%v", err)
+		}
+		if err := db.Model(&model.AIPriceVersion{}).Where("logical_model_code = ?", modelCode).Update("status", model.AIPriceActive).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&model.AIModelRoute{}).Where("id = ?", route.ID).Update("status", "disabled").Error; err != nil {
+			t.Fatal(err)
+		}
+		if _, err := repo.PublishModel(ctx, modelID, 901, "缺少路由"); !errors.Is(err, ErrModelRouteNotReady) {
+			t.Fatalf("缺少健康生效路由必须返回固定分类，实际 err=%v", err)
+		}
+		if err := db.Model(&model.AIModelRoute{}).Where("id = ?", route.ID).Update("status", "active").Error; err != nil {
+			t.Fatal(err)
+		}
+		orphan := model.AIModelReleaseVersion{ModelID: modelID, VersionNo: 1, Status: "retired", SnapshotJSON: json.RawMessage(`{"orphan":true}`), Reason: "隔离测试孤儿版本", CreatedBy: 901, PublishedAt: now}
+		if err := db.Create(&orphan).Error; err != nil {
+			t.Fatal(err)
+		}
+		if _, err := repo.PublishModel(ctx, modelID, 901, "版本号被占用"); !errors.Is(err, ErrModelReleaseConflict) {
+			t.Fatalf("版本号被不一致记录占用时必须返回可恢复状态冲突，实际 err=%v", err)
+		}
+		if err := db.Delete(&orphan).Error; err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("同一模型并发发布收敛到唯一版本", func(t *testing.T) {
 		start := make(chan struct{})
-		results := make(chan error, 2)
+		results := make(chan *model.AIModelReleaseVersion, 2)
+		errorsCh := make(chan error, 2)
 		var wg sync.WaitGroup
 		for index := 0; index < 2; index++ {
 			wg.Add(1)
 			go func(index int) {
 				defer wg.Done()
 				<-start
-				_, publishErr := repo.PublishModel(ctx, modelID, 901, fmt.Sprintf("并发发布-%d", index))
-				results <- publishErr
+				release, publishErr := repo.PublishModel(ctx, modelID, 901, fmt.Sprintf("并发发布-%d", index))
+				if publishErr != nil {
+					errorsCh <- publishErr
+					return
+				}
+				results <- release
 			}(index)
 		}
 		close(start)
 		wg.Wait()
 		close(results)
-		var succeeded, conflicted int
-		for publishErr := range results {
-			switch {
-			case publishErr == nil:
-				succeeded++
-			case errors.Is(publishErr, ErrModelReleaseConflict):
-				conflicted++
-			default:
-				t.Fatalf("并发模型发布出现未知错误: %v", publishErr)
-			}
+		close(errorsCh)
+		for publishErr := range errorsCh {
+			t.Fatalf("并发重复发布应幂等收敛，实际 err=%v", publishErr)
+		}
+		var releaseIDs []uint64
+		for release := range results {
+			releaseIDs = append(releaseIDs, release.ID)
 		}
 		var releaseCount int64
 		if err := db.Model(&model.AIModelReleaseVersion{}).Where("model_id = ?", modelID).Count(&releaseCount).Error; err != nil {
 			t.Fatal(err)
 		}
-		if succeeded != 1 || conflicted != 1 || releaseCount != 1 {
-			t.Fatalf("模型并发发布门禁错误: succeeded=%d conflicted=%d releases=%d", succeeded, conflicted, releaseCount)
+		if len(releaseIDs) != 2 || releaseIDs[0] == 0 || releaseIDs[0] != releaseIDs[1] || releaseCount != 1 {
+			t.Fatalf("模型并发发布必须返回同一版本且只写一行: ids=%v releases=%d", releaseIDs, releaseCount)
 		}
 	})
 
