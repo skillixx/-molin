@@ -73,11 +73,12 @@ func TestG5MySQLIntegration(t *testing.T) {
 		if err := db.Create(&orphan).Error; err != nil {
 			t.Fatal(err)
 		}
-		if _, err := repo.PublishModel(ctx, modelID, 901, "版本号被占用"); !errors.Is(err, ErrModelReleaseConflict) {
-			t.Fatalf("版本号被不一致记录占用时必须返回可恢复状态冲突，实际 err=%v", err)
+		release, err := repo.PublishModel(ctx, modelID, 901, "跳过孤儿版本号")
+		if err != nil {
+			t.Fatalf("历史版本号被孤儿记录占用时必须自动分配下一版本，实际 err=%v", err)
 		}
-		if err := db.Delete(&orphan).Error; err != nil {
-			t.Fatal(err)
+		if release.VersionNo != 2 {
+			t.Fatalf("孤儿 v1 后首个有效发布必须使用 v2，实际 version=%d", release.VersionNo)
 		}
 	})
 
@@ -114,8 +115,8 @@ func TestG5MySQLIntegration(t *testing.T) {
 		if err := db.Model(&model.AIModelReleaseVersion{}).Where("model_id = ?", modelID).Count(&releaseCount).Error; err != nil {
 			t.Fatal(err)
 		}
-		if len(releaseIDs) != 2 || releaseIDs[0] == 0 || releaseIDs[0] != releaseIDs[1] || releaseCount != 1 {
-			t.Fatalf("模型并发发布必须返回同一版本且只写一行: ids=%v releases=%d", releaseIDs, releaseCount)
+		if len(releaseIDs) != 2 || releaseIDs[0] == 0 || releaseIDs[0] != releaseIDs[1] || releaseCount != 2 {
+			t.Fatalf("模型并发发布必须返回同一有效版本且保留一条历史孤儿记录: ids=%v releases=%d", releaseIDs, releaseCount)
 		}
 	})
 

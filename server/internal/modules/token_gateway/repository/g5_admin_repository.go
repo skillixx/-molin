@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"hash/fnv"
+	"math"
 	"reflect"
 	"strings"
 	"time"
@@ -188,25 +189,20 @@ func (r *G5AdminRepository) PublishModel(ctx context.Context, modelID, operatorI
 		if currentErr != nil && !errors.Is(currentErr, gorm.ErrRecordNotFound) {
 			return currentErr
 		}
+		nextVersionNo, err := nextModelReleaseVersionNo(tx, item.ID, item.ReleaseVersionNo)
+		if err != nil {
+			return err
+		}
 		now := r.now().UTC()
-		release = model.AIModelReleaseVersion{ModelID: item.ID, VersionNo: item.ReleaseVersionNo + 1, Status: "active", SnapshotJSON: snapshot, Reason: reason, CreatedBy: operatorID, PublishedAt: now}
-		// 在写入前检查目标版本号是否被孤儿记录占用，避免把数据库唯一键原文暴露给调用方。
-		var occupied model.AIModelReleaseVersion
-		occupiedErr := tx.Where("model_id = ? AND version_no = ?", item.ID, release.VersionNo).First(&occupied).Error
-		if occupiedErr == nil {
-			if occupied.Status == "active" && releaseSnapshotsEqual(occupied.SnapshotJSON, snapshot) {
-				release = occupied
-				return nil
-			}
-			return ErrModelReleaseConflict
-		}
-		if !errors.Is(occupiedErr, gorm.ErrRecordNotFound) {
-			return occupiedErr
-		}
+		release = model.AIModelReleaseVersion{ModelID: item.ID, VersionNo: nextVersionNo, Status: "active", SnapshotJSON: snapshot, Reason: reason, CreatedBy: operatorID, PublishedAt: now}
 		if err := tx.Model(&model.AIModelReleaseVersion{}).Where("model_id = ? AND status = ?", item.ID, "active").Updates(map[string]interface{}{"status": "retired", "retired_at": now}).Error; err != nil {
 			return err
 		}
 		if err := tx.Create(&release).Error; err != nil {
+			// 模型行锁已串行化正常发布；若仍发生唯一键竞态，返回稳定冲突分类而不是泄露数据库错误。
+			if isDuplicateKey(err) {
+				return ErrModelReleaseConflict
+			}
 			return err
 		}
 		result := tx.Model(&model.TokenModel{}).Where("id = ? AND release_version_no = ?", item.ID, item.ReleaseVersionNo).Updates(map[string]interface{}{
@@ -221,6 +217,22 @@ func (r *G5AdminRepository) PublishModel(ctx context.Context, modelID, operatorI
 		return nil
 	})
 	return &release, err
+}
+
+// nextModelReleaseVersionNo 在模型行锁保护下同时参考目录指针与历史最大版本，跳过孤儿或已退役记录占用的编号。
+func nextModelReleaseVersionNo(tx *gorm.DB, modelID, catalogVersionNo uint64) (uint64, error) {
+	var historicalMax uint64
+	if err := tx.Model(&model.AIModelReleaseVersion{}).Where("model_id = ?", modelID).
+		Select("COALESCE(MAX(version_no), 0)").Scan(&historicalMax).Error; err != nil {
+		return 0, err
+	}
+	if catalogVersionNo > historicalMax {
+		historicalMax = catalogVersionNo
+	}
+	if historicalMax == math.MaxUint64 {
+		return 0, ErrModelReleaseConflict
+	}
+	return historicalMax + 1, nil
 }
 
 // validateModelPublishMetadata 在任何发布写入前验证两份必需文档均已配置且检查健康。
@@ -282,11 +294,18 @@ func (r *G5AdminRepository) RollbackModel(ctx context.Context, modelID, targetVe
 		if err := validatePublishRoute(tx, snapshot.LogicalModelCode); err != nil {
 			return err
 		}
-		release = model.AIModelReleaseVersion{ModelID: modelID, VersionNo: item.ReleaseVersionNo + 1, Status: "active", SnapshotJSON: target.SnapshotJSON, Reason: reason, CreatedBy: operatorID, PublishedAt: now}
+		nextVersionNo, err := nextModelReleaseVersionNo(tx, modelID, item.ReleaseVersionNo)
+		if err != nil {
+			return err
+		}
+		release = model.AIModelReleaseVersion{ModelID: modelID, VersionNo: nextVersionNo, Status: "active", SnapshotJSON: target.SnapshotJSON, Reason: reason, CreatedBy: operatorID, PublishedAt: now}
 		if err := tx.Model(&model.AIModelReleaseVersion{}).Where("model_id = ? AND status = ?", modelID, "active").Updates(map[string]interface{}{"status": "retired", "retired_at": now}).Error; err != nil {
 			return err
 		}
 		if err := tx.Create(&release).Error; err != nil {
+			if isDuplicateKey(err) {
+				return ErrModelReleaseConflict
+			}
 			return err
 		}
 		updates := map[string]interface{}{
