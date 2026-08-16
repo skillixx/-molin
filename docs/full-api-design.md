@@ -2561,7 +2561,7 @@ Body 使用 `resolution=release|settle`；`settle` 时同时提交 `prompt_token
 
 G5 路由仅在确认请求未发送时按 `max_retries` 重试；超时、结果未知、已收到 HTTP/SSE 数据均禁止重试。安全失败达到阈值后写入共享熔断表并开启 30 秒窗口，后续请求按优先级和回退顺序选择其他路由。
 
-新增权限：`ai_gateway:model_manage`、`ai_gateway:price_manage`、`ai_gateway:route_manage`。冲突统一返回 `409/40900`，不满足发布门禁返回 `409/40900`，参数错误返回 `400/40000`。
+新增权限：`ai_gateway:model_manage`、`ai_gateway:price_manage`、`ai_gateway:route_manage`。通用价格与路由冲突返回 `409/40900`；模型发布门禁按上表返回 `409/40910` 至 `409/40913`，便于前端展示可恢复原因；参数错误返回 `400/40000`。
 
 ## AI 网关 G6 用户端模型市场与请求账本接口
 
