@@ -393,6 +393,8 @@ created 标记对象均已清理，才删除 `migration_000055_permission_owners
 - `token_models`
 - `token_model_routes`
 - `token_usage_logs`
+
+Migration `000067_align_token_usage_log_money_precision` 将 `token_usage_logs.sale_amount` 从 `DECIMAL(18,6)` 扩展为 `DECIMAL(20,8)`，与 G3 请求、钱包 hold 和流水的权威金额精度一致。该兼容汇总不参与扣费，迁移不补写历史记录；down 保留扩展后的精度，避免截断审计事实。
 - `token_quota_accounts`
 
 #### 3.5.1 AI 网关 Phase 1 G0/G1 Expand Schema

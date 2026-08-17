@@ -866,6 +866,66 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("结果未知请求经人工核定后写入待对账来源汇总", func(t *testing.T) {
+		request := integrationRequest("g3-manual-unknown-settle", 9)
+		if _, err := billing.PrepareRequest(ctx, request, map[string]interface{}{"max_tokens": "100"}); err != nil {
+			t.Fatal(err)
+		}
+		started := startIntegrationAttempt(t, ctx, g2, request.RequestID)
+		if err := billing.FinalizeRequest(ctx, request.RequestID, ExecutionResult{
+			Attempt: ExecutionAttempt{
+				AttemptNo: 1, Driver: "native", ProviderCode: "test", ProviderModel: "test-model",
+				StartedAt: started, FinishedAt: time.Now(), Outcome: "pending_reconcile", ResultUnknown: true,
+			},
+			Usage: ExecutionUsage{Present: false},
+		}); !errors.Is(err, ErrSettlementPending) {
+			t.Fatalf("结果未知请求必须先进入待对账: %v", err)
+		}
+		if err := db.Model(&model.AIRequest{}).Where("request_id = ?", request.RequestID).
+			Update("updated_at", time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)).Error; err != nil {
+			t.Fatal(err)
+		}
+		changed, err := billing.reconcileOne(ctx, request.RequestID, time.Now())
+		if err != nil || !changed {
+			t.Fatalf("结果未知请求超期后应进入人工异常: changed=%t err=%v", changed, err)
+		}
+		assertRequestAndHoldStatus(t, db, request.RequestID, model.AIBillingException, "holding")
+		usage := ExecutionUsage{PromptTokens: 3, CompletionTokens: 2, Present: true}
+		if err := billing.ResolveException(ctx, request.RequestID, ManualResolutionSettle, usage); err != nil {
+			t.Fatalf("结果未知请求经人工核定后应可结算: %v", err)
+		}
+		assertRequestAndHoldStatus(t, db, request.RequestID, model.AIBillingSettled, "settled")
+		var usageLog model.TokenUsageLog
+		if err := db.Where("request_id = ?", request.RequestID).First(&usageLog).Error; err != nil {
+			t.Fatal(err)
+		}
+		if usageLog.Status != "pending_reconcile" || usageLog.TotalTokens != 5 || usageLog.ErrorCode == nil || *usageLog.ErrorCode != "manual_reconciled" {
+			t.Fatalf("人工核定汇总必须保留原执行不确定性: %+v", usageLog)
+		}
+	})
+
+	t.Run("查询汇总金额保留八位小数精度", func(t *testing.T) {
+		request := integrationRequest("g8-usage-log-eight-decimals", 1)
+		saleAmount := decimal.RequireFromString("0.12345678")
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			// 直接验证兼容汇总的物理列精度；权威扣费事务已由前述完整结算用例覆盖。
+			return createTokenUsageLogTx(tx, request, ExecutionUsage{PromptTokens: 1, Present: true}, saleAmount, "success", nil, time.Now())
+		}); err != nil {
+			t.Fatalf("八位金额必须可无损写入查询汇总: %v", err)
+		}
+		var usageLog model.TokenUsageLog
+		if err := db.Where("request_id = ?", request.RequestID).First(&usageLog).Error; err != nil {
+			t.Fatal(err)
+		}
+		if !usageLog.SaleAmount.Equal(saleAmount) {
+			t.Fatalf("查询汇总金额精度发生漂移: got=%s", usageLog.SaleAmount.String())
+		}
+		// 该用例只验证物理列精度，不伪造已结算请求；验证后移除临时汇总，保持全局财务不变量。
+		if err := db.Where("request_id = ?", request.RequestID).Delete(&model.TokenUsageLog{}).Error; err != nil {
+			t.Fatal(err)
+		}
+	})
+
 	t.Run("待对账缺少执行记录时超期仍转人工异常", func(t *testing.T) {
 		request := integrationRequest("g3-manual-reconcile-missing-attempt", 9)
 		if _, err := billing.PrepareRequest(ctx, request, map[string]interface{}{"max_tokens": "100"}); err != nil {

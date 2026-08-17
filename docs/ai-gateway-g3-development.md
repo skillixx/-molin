@@ -36,7 +36,7 @@ Project SK 鉴权 -> 价格快照 -> 请求 + wallet hold + Outbox（同事务�
 
 结算先完整记录 unfreeze 后余额，再记录 consume 后余额，流水可按 ID 顺序还原。`actual > hold` 不调用旧钱包封顶逻辑，而是保留 hold、写异常状态和 P0 Outbox。
 
-仅当请求在同一事务内收敛为 `settled` 时，`AIBillingService` 才按权威 `ai_usage_items` 汇总幂等写入一条 `token_usage_logs`。写入后会逐字段核对用户、密钥、模型、流式标志、Token 汇总、状态和 `sale_amount`；任何不一致都会使结算事务整体回滚。该表只服务既有查询兼容与证据核对，不是价格计算、钱包扣费或补账依据，也不会回填历史请求。
+仅当请求在同一事务内收敛为 `settled` 时，`AIBillingService` 才按权威 `ai_usage_items` 汇总幂等写入一条 `token_usage_logs`。写入后会逐字段核对用户、密钥、模型、流式标志、Token 汇总、状态和 `sale_amount`；任何不一致都会使结算事务整体回滚。`sale_amount` 通过 migration 000067 与权威财务账本统一为 `DECIMAL(20,8)`。人工核定未知或取消执行时，汇总状态保留为 `pending_reconcile` 并标记 `manual_reconciled`，禁止伪装为执行成功。该表只服务既有查询兼容与证据核对，不是价格计算、钱包扣费或补账依据，也不会回填历史请求。
 
 Bifrost 非流式与流式驱动只接受响应 JSON 顶层 `id` 作为低敏 `upstream_request_id`，最大 191 字符且仅允许固定安全字符。流式分片出现不同顶层 `id` 时按结果未知失败关闭，禁止把两个上游请求拼成一条证据。引用经 `ExecutionAttempt -> ToLedgerModel -> finalizeAttemptTx` 写入 `ai_execution_attempts`，不进入公开接口；`infra/bifrost/config.json` 的 `client.enable_logging=false` 保持不变，禁止保存请求正文、响应正文、Header 或凭据。
 

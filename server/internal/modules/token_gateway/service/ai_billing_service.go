@@ -976,6 +976,9 @@ func tokenUsageStatusFromExecution(status string) string {
 		return "success"
 	case model.AIExecutionFailed:
 		return "failed"
+	case model.AIExecutionUnknown, model.AIExecutionCancelled:
+		// 人工核定只能确认 Usage 与结算金额，不能把未知或取消的执行结果伪装为成功。
+		return "pending_reconcile"
 	default:
 		return ""
 	}

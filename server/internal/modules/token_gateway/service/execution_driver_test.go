@@ -892,6 +892,15 @@ func TestExecutionAttemptLedgerStateMapping(t *testing.T) {
 	}
 }
 
+func TestTokenUsageStatusFromExecutionPreservesUnknownForManualReconcile(t *testing.T) {
+	if got := tokenUsageStatusFromExecution(model.AIExecutionUnknown); got != "pending_reconcile" {
+		t.Fatalf("结果未知请求经人工核定时必须保留待对账来源，got=%q", got)
+	}
+	if got := tokenUsageStatusFromExecution(model.AIExecutionCancelled); got != "pending_reconcile" {
+		t.Fatalf("取消请求经人工核定时必须保留待对账来源，got=%q", got)
+	}
+}
+
 func TestForwardService_ExecutionDriverDefaultsAndValidation(t *testing.T) {
 	service := &ForwardService{httpClient: &http.Client{Timeout: time.Second}}
 	if err := service.ConfigureExecutionDriver("", "", ""); err != nil {

@@ -11,11 +11,17 @@ command -v docker >/dev/null 2>&1 || { echo "G3_MYSQL=FAILED reason=docker_missi
 command -v openssl >/dev/null 2>&1 || { echo "G3_MYSQL=FAILED reason=openssl_missing"; exit 2; }
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# Windows Git Bash 调用 Docker Desktop 时必须传 Windows 绝对路径，并关闭 MSYS 对容器路径的二次改写。
+if [[ "$(uname -s)" == MINGW* || "$(uname -s)" == MSYS* ]]; then
+  repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -W)"
+  export MSYS_NO_PATHCONV=1
+fi
 g1_up="${repo_root}/server/migrations/000060_create_ai_gateway_ledger_expand.up.sql"
 g2_up="${repo_root}/server/migrations/000061_add_ai_gateway_g2_projects_keys.up.sql"
 g3_up="${repo_root}/server/migrations/000062_create_ai_gateway_g3_billing.up.sql"
 g3_down="${repo_root}/server/migrations/000062_create_ai_gateway_g3_billing.down.sql"
-for file in "${g1_up}" "${g2_up}" "${g3_up}" "${g3_down}"; do
+g8_evidence_up="${repo_root}/server/migrations/000067_align_token_usage_log_money_precision.up.sql"
+for file in "${g1_up}" "${g2_up}" "${g3_up}" "${g3_down}" "${g8_evidence_up}"; do
   test -f "${file}" || { echo "G3_MYSQL=FAILED reason=migration_file_missing"; exit 2; }
 done
 
@@ -165,7 +171,7 @@ CREATE TABLE token_usage_logs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 SQL
 
-for file in "${g1_up}" "${g2_up}" "${g3_up}" "${g3_down}"; do
+for file in "${g1_up}" "${g2_up}" "${g3_up}" "${g3_down}" "${g8_evidence_up}"; do
   docker cp "${file}" "${container_name}:/tmp/$(basename "${file}")" >/dev/null
 done
 
@@ -187,9 +193,11 @@ apply_file "$(basename "${g1_up}")"
 apply_file "$(basename "${g2_up}")"
 apply_file "$(basename "${g3_up}")"
 apply_file "$(basename "${g3_up}")"
+apply_file "$(basename "${g8_evidence_up}")"
 
 assert_scalar "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('ai_price_versions','ai_price_model_locks','ai_price_skus','ai_request_wallet_links','ai_outbox_events')" "5" "g3_tables"
 assert_scalar "SELECT CONCAT(numeric_precision,':',numeric_scale) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='wallets' AND column_name='balance_amount'" "20:8" "wallet_precision"
+assert_scalar "SELECT CONCAT(numeric_precision,':',numeric_scale) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='token_usage_logs' AND column_name='sale_amount'" "20:8" "usage_log_sale_amount_precision"
 assert_scalar "SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema=DATABASE() AND constraint_name IN ('chk_wallets_non_negative','chk_wallet_holds_amounts')" "2" "wallet_checks"
 
 if mysql_exec -e "INSERT INTO wallets(user_id,balance_amount,frozen_amount) VALUES(99,-1,0)" >/dev/null 2>&1; then
