@@ -1,6 +1,26 @@
 # AI 网关 G8 验收记录
 
-> 当前状态：`G8_ENGINEERING_READY` 已达成，`G8_SOFTWARE_CLOSED_LOOP` 尚未达成。当前优先补齐测试服运行态与端到端软件闭环；商业观察移至后续独立确认，不阻塞当前软件实现任务。
+> 当前状态：`G8_STAGE_ACCEPTANCE=PASS`、`G8_SOFTWARE_CLOSED_LOOP=COMPLETED`、`G8_TEST_ENV_USABLE=YES`、`G8_REAL_PROVIDER_SETTLEMENT=PASS`、`ACCEPTED_EXCEPTIONS=YES`。该结论是项目负责人基于已有技术证据与明确例外作出的阶段验收决定，不等于生产开放或商业验收。
+
+## 0. 最终阶段验收归档（2026-08-17）
+
+### 0.1 已有技术证据
+
+- 真实 Provider 调用、执行终态、Provider/平台 Usage、人民币价格快照、计费结算、钱包消费与释放契约、Outbox 及低敏 `upstream_request_id`/`token_usage_logs` 证据持久化主链路已形成阶段验收证据。
+- G5 模型发布冲突修复与 G8 证据闭环修复已完成代码、CI、独立评审、主线合并及测试服部署验证；本归档不执行新的 SSH、Chat、Provider、数据库或测试服操作。
+- qwen3.8-max 的唯一真实请求已形成执行成功和结算完成证据；历史响应事实固定为 `RESPONSE_MATCH=NO`，不得改写为内容验收通过。
+
+### 0.2 项目负责人接受的非阻断项
+
+- `ACCEPTED_EXCEPTIONS=YES`：不再要求额外手工 Python Chat；“未配置临时 SK”导致脚本未发送请求，不作为阶段阻断。
+- “只回复 OK”没有严格匹配，保留 `RESPONSE_MATCH=NO`；本次仅接受其不阻断调用与结算主链路验收，不声明响应内容验收通过。
+- 真实请求账单/争议查询的追加核对由项目负责人接受在本阶段关闭；未执行的追加步骤不得写成技术测试 PASS。
+
+### 0.3 转入后续运维专项
+
+- 测试服对账、失败补偿、双闸门和回滚演练转为后续运维专项，不再阻塞 G8 阶段验收。
+- Prometheus/Grafana 实际健康与采集目标、告警规则部署、备份周期以及 RabbitMQ ready 消息继续作为后续运维观察项，不得伪装为本次已验证通过。
+- 测试服真实流量闸门当前保持开启；真实请求可能触达 Provider 并产生真实费用，绝不是免费或无风险能力。后续测试必须继续使用精确授权、费用上限、单次调用和零重试边界。
 
 ## 1. 基线
 
@@ -14,7 +34,8 @@
 | merge commit | `71fce50f8bdab5078865154bb715e598cec32e0c` |
 | G7 PR | #326，merge commit `6e1f67ad`，CI 7/7 |
 | G8 Migration | 当前无新增 |
-| 生产/真实客户/真实费用 | 未执行 |
+| 生产部署/真实客户流量 | 未执行，仍须独立授权 |
+| 测试服真实 Provider 费用 | 已在受控单次请求和费用上限内发生并完成结算；真实流量闸门当前开启，后续请求仍可能产生真实费用 |
 
 ## 2. 工程门禁
 
