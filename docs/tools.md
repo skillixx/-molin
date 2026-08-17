@@ -2,6 +2,8 @@
 
 > 记录项目中使用到的所有工具，包含作用说明、使用者、涉及功能模块和常用命令，方便团队成员快速上手。
 
+> G8 最终归档：`G8_STAGE_ACCEPTANCE=PASS`、`G8_SOFTWARE_CLOSED_LOOP=COMPLETED`、`G8_TEST_ENV_USABLE=YES`、`G8_REAL_PROVIDER_SETTLEMENT=PASS`、`ACCEPTED_EXCEPTIONS=YES`。已有技术证据覆盖真实 Provider、执行、Usage、计费结算、钱包流水、Outbox 和低敏证据持久化主链路；历史 `RESPONSE_MATCH=NO` 与未配置临时 SK 的手工脚本作为负责人接受的非阻断事实保留。测试服对账、失败补偿、双闸门、回滚演练、Prometheus/Grafana、告警规则、备份周期与 RabbitMQ ready 消息转入后续运维专项。测试服真实流量闸门保持开启，任何真实请求均可能产生真实费用；本文不授权执行工具或远端操作。
+
 ---
 
 ## 目录

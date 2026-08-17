@@ -15,6 +15,22 @@ RUNNER = ROOT / "infra/scripts/run-ai-gateway-g8-test-readonly-ssh-diagnostic-02
 RUNNER_TEST = ROOT / "infra/scripts/test_run_ai_gateway_g8_test_readonly_ssh_diagnostic_024.py"
 DOCUMENT = ROOT / "docs/ai-gateway-g8-test-readonly-ssh-diagnostic-authorization-20260816-024.md"
 CHANGE_ID = "CHG-G8-TEST-READONLY-SSH-DIAGNOSTIC-20260816-024"
+FINAL_STATUS_PATHS = (
+    ROOT / "README.md",
+    ROOT / "docs/ai-gateway-g8-acceptance.md",
+    ROOT / "docs/ai-gateway-g8-software-closure.md",
+    ROOT / "docs/ai-gateway-g8-feature.md",
+    ROOT / "docs/development-execution-plan.md",
+    ROOT / "docs/test-plan.md",
+    ROOT / "docs/tools.md",
+)
+FINAL_STATUS_MARKERS = (
+    "G8_STAGE_ACCEPTANCE=PASS",
+    "G8_SOFTWARE_CLOSED_LOOP=COMPLETED",
+    "G8_TEST_ENV_USABLE=YES",
+    "G8_REAL_PROVIDER_SETTLEMENT=PASS",
+    "ACCEPTED_EXCEPTIONS=YES",
+)
 
 
 class G8ReadonlySshDiagnostic024AuthorizationContractTests(unittest.TestCase):
@@ -117,6 +133,35 @@ class G8ReadonlySshDiagnostic024AuthorizationContractTests(unittest.TestCase):
             )
             self.assertEqual(2, completed.returncode)
             self.assertIn("change_id_consumed", completed.stdout)
+
+    def test_final_g8_acceptance_status_is_consistent(self):
+        """最终验收归档必须在全部权威文档中使用同一组状态标识。"""
+        for path in FINAL_STATUS_PATHS:
+            document = path.read_text(encoding="utf-8")
+            for marker in FINAL_STATUS_MARKERS:
+                self.assertIn(marker, document, f"{path.relative_to(ROOT)} 缺少 {marker}")
+
+        acceptance = (ROOT / "docs/ai-gateway-g8-acceptance.md").read_text(encoding="utf-8")
+        closure = (ROOT / "docs/ai-gateway-g8-software-closure.md").read_text(encoding="utf-8")
+        combined = acceptance + "\n" + closure
+        for historical_fact in (
+            "RESPONSE_MATCH=NO",
+            "未配置临时 SK",
+        ):
+            self.assertIn(historical_fact, combined)
+        for deferred_item in (
+            "失败补偿",
+            "双闸门",
+            "回滚演练",
+            "Prometheus/Grafana",
+            "告警规则",
+            "备份周期",
+            "RabbitMQ ready 消息",
+        ):
+            self.assertIn(deferred_item, combined)
+        self.assertIn("真实流量闸门", combined)
+        self.assertIn("真实费用", combined)
+        self.assertNotIn("RESPONSE_MATCH=YES", combined)
 
 
 if __name__ == "__main__":
