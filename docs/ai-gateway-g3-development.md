@@ -2,12 +2,12 @@
 
 ## 1. 架构
 
-`RequestOrchestrator` 仍是唯一请求编排器。G3 注入 `AIBillingService` 后，Prepare 负责报价、建请求和预占；Finalize 负责写执行事实、Usage、钱包终态、请求终态和 Outbox。同步请求、Settlement Worker 使用同一结算入口。
+`RequestOrchestrator` 仍是唯一请求编排器。G3 注入 `AIBillingService` 后，Prepare 负责报价、建请求和预占；Finalize 负责写执行事实、Usage、钱包终态、请求终态、查询兼容用量汇总和 Outbox。同步请求、Settlement Worker 使用同一结算入口。
 
 ```text
 Project SK 鉴权 -> 价格快照 -> 请求 + wallet hold + Outbox（同事务）
 -> Native/Bifrost 执行 -> Usage
--> settle/release/pending/exception + 流水 + Outbox（同事务）
+-> settle/release/pending/exception + 流水 + settled 查询汇总 + Outbox（同事务）
 -> Outbox Worker -> RabbitMQ broker confirm -> 持久队列
 ```
 
@@ -35,6 +35,10 @@ Project SK 鉴权 -> 价格快照 -> 请求 + wallet hold + Outbox（同事务�
 固定锁顺序为 `ai_requests -> wallet_holds -> wallets`。预占和结算发生死锁或锁等待超时时重跑完整事务，最多 10 次；业务拒绝、唯一键冲突和金额异常不盲目重试。
 
 结算先完整记录 unfreeze 后余额，再记录 consume 后余额，流水可按 ID 顺序还原。`actual > hold` 不调用旧钱包封顶逻辑，而是保留 hold、写异常状态和 P0 Outbox。
+
+仅当请求在同一事务内收敛为 `settled` 时，`AIBillingService` 才按权威 `ai_usage_items` 汇总幂等写入一条 `token_usage_logs`。写入后会逐字段核对用户、密钥、模型、流式标志、Token 汇总、状态和 `sale_amount`；任何不一致都会使结算事务整体回滚。`sale_amount` 通过 migration 000067 与权威财务账本统一为 `DECIMAL(20,8)`。人工核定未知或取消执行时，汇总状态保留为 `pending_reconcile` 并标记 `manual_reconciled`，禁止伪装为执行成功。该表只服务既有查询兼容与证据核对，不是价格计算、钱包扣费或补账依据，也不会回填历史请求。
+
+Bifrost 非流式与流式驱动只接受响应 JSON 顶层 `id` 作为低敏 `upstream_request_id`，最大 191 字符且仅允许固定安全字符。流式分片出现不同顶层 `id` 时按结果未知失败关闭，禁止把两个上游请求拼成一条证据。引用经 `ExecutionAttempt -> ToLedgerModel -> finalizeAttemptTx` 写入 `ai_execution_attempts`，不进入公开接口；`infra/bifrost/config.json` 的 `client.enable_logging=false` 保持不变，禁止保存请求正文、响应正文、Header 或凭据。
 
 ## 5. 对账与 Outbox
 
@@ -71,7 +75,8 @@ AI_GATEWAY_G3_MYSQL_APPROVED=YES bash infra/scripts/verify-ai-gateway-migration-
 
 - 本地：`go test -count=1 ./...`、`go vet ./...`、`git diff --check`。
 - Linux：`go test -race -count=1 ./...`。
-- 隔离 MySQL：首次/重复 up、保留 down/re-up、同模型并发发布、100 并发钱包竞争、20 幂等竞争、终态互斥、同幂等键安全重试、写失败回滚、断连、Usage 缺失、坏记录隔离、人工释放/结算、Outbox 顺序/dead 重入/真实租约 CAS 和超额异常。
+- 隔离 MySQL：首次/重复 up、保留 down/re-up、同模型并发发布、100 并发钱包竞争、20 幂等竞争、终态互斥、同幂等键安全重试、写失败回滚、断连、Usage 缺失、坏记录隔离、人工释放/结算、settled 查询汇总幂等与回滚、Outbox 顺序/dead 重入/真实租约 CAS 和超额异常。
+- 执行证据：Bifrost 非流式与流式顶层引用提取、嵌套/超长/非法字符拒绝、跨分片引用冲突失败关闭、账本映射和请求日志关闭契约。
 - 隔离 RabbitMQ：Broker 停止留存、恢复发布、broker confirm 和持久队列实际消费。
 
 这些证据不代表生产部署、真实收费或真实上游调用已经批准。

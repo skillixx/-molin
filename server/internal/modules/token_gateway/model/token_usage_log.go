@@ -20,7 +20,7 @@ type TokenUsageLog struct {
 	OutputTokens     int64           `gorm:"not null;default:0" json:"output_tokens"`                                          // 输出 token 数
 	TotalTokens      int64           `gorm:"not null;default:0" json:"total_tokens"`                                           // 总 token 数
 	Units            decimal.Decimal `gorm:"type:decimal(18,6);not null;default:0" json:"units"`                               // 非 token 计量用量（生图/语音等）
-	SaleAmount       decimal.Decimal `gorm:"type:decimal(18,6);not null;default:0" json:"sale_amount"`                         // 本次销售金额（扣费金额）
+	SaleAmount       decimal.Decimal `gorm:"type:decimal(20,8);not null;default:0" json:"sale_amount"`                         // 本次销售金额，与 G3 权威财务账本保持 8 位小数精度
 	IsStream         bool            `gorm:"not null;default:0" json:"is_stream"`                                              // 是否流式调用
 	Status           string          `gorm:"size:32;not null" json:"status"`                                                   // success/failed/timeout/pending_reconcile
 	ErrorCode        *string         `gorm:"size:64" json:"error_code,omitempty"`                                              // 错误码，失败时记录
