@@ -856,6 +856,13 @@ func (s *RequestOrchestratorService) executeStream(ctx context.Context, sink Str
 	for scanner.Scan() {
 		line := append([]byte(nil), scanner.Bytes()...)
 		chunk, err := driver.NormalizeStreamLine(line, logicalModel)
+		if chunk.UpstreamRequestID != "" {
+			if executed.Attempt.UpstreamRequestID != "" && executed.Attempt.UpstreamRequestID != chunk.UpstreamRequestID {
+				executed.Attempt = failedAttempt(executed.Attempt, "upstream_reference_mismatch", true)
+				break
+			}
+			executed.Attempt.UpstreamRequestID = chunk.UpstreamRequestID
+		}
 		if chunk.Usage.Present {
 			usage = chunk.Usage
 		}

@@ -144,8 +144,24 @@ CREATE TABLE wallet_holds (
 CREATE TABLE token_usage_logs (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   request_id VARCHAR(128) NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  api_key_id BIGINT UNSIGNED NULL,
+  logical_model_code VARCHAR(128) NOT NULL,
+  modality VARCHAR(32) NOT NULL DEFAULT 'chat',
+  input_tokens BIGINT NOT NULL DEFAULT 0,
+  output_tokens BIGINT NOT NULL DEFAULT 0,
+  total_tokens BIGINT NOT NULL DEFAULT 0,
+  units DECIMAL(18,6) NOT NULL DEFAULT 0,
+  sale_amount DECIMAL(18,6) NOT NULL DEFAULT 0,
+  is_stream TINYINT(1) NOT NULL DEFAULT 0,
+  status VARCHAR(32) NOT NULL,
+  error_code VARCHAR(64) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
-  UNIQUE KEY uk_token_usage_logs_request (request_id)
+  UNIQUE KEY uk_token_usage_logs_request_id (request_id),
+  KEY idx_token_usage_logs_user_created (user_id, created_at),
+  KEY idx_token_usage_logs_apikey_created (api_key_id, created_at),
+  KEY idx_token_usage_logs_model (logical_model_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 SQL
 
@@ -303,7 +319,9 @@ apply_file "$(basename "${g3_up}")"
 assert_scalar "SELECT COUNT(*) FROM ai_requests WHERE request_id LIKE 'g3-%'" "${retained_requests_before}" "down_reup_fact_retention"
 assert_scalar "SELECT COUNT(*) FROM ai_price_versions WHERE id=1 AND status='suspended'" "1" "price_fact_retention"
 assert_scalar "SELECT COUNT(*) FROM wallets WHERE balance_amount < 0 OR frozen_amount < 0" "0" "non_negative_wallets"
-assert_scalar "SELECT COUNT(*) FROM token_usage_logs" "0" "legacy_ledger_not_written"
+# 每个 settled 请求必须恰好存在一条汇总日志；唯一索引负责阻止并发重复写入。
+assert_scalar "SELECT COUNT(*) FROM ai_requests r LEFT JOIN token_usage_logs l ON l.request_id=r.request_id WHERE r.billing_status='settled' AND l.id IS NULL" "0" "settled_usage_log_missing"
+assert_scalar "SELECT COUNT(*) FROM token_usage_logs l LEFT JOIN ai_requests r ON r.request_id=l.request_id WHERE r.request_id IS NULL OR r.billing_status<>'settled'" "0" "usage_log_without_settled_request"
 
 echo "G3_MYSQL=PASS mysql=8.0 isolated=true project_database=false first_up=true repeated_up=true retained_down=true reup=true go_integration=true concurrent_wallet=100 idempotency=20 terminal_once=true over_hold_exception=true"
 echo "G3_RABBITMQ=PASS broker_confirm=true stopped_retained=true recovered_published=true"
