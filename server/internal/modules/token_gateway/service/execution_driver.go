@@ -45,11 +45,13 @@ type ExecutionAttempt struct {
 	ProviderCode  string
 	EndpointCode  string
 	ProviderModel string
-	StartedAt     time.Time
-	FinishedAt    time.Time
-	Outcome       string
-	ErrorClass    string
-	ResultUnknown bool
+	// UpstreamRequestID 只保存固定白名单响应 id，禁止保存响应正文、响应头或供应商凭据。
+	UpstreamRequestID string
+	StartedAt         time.Time
+	FinishedAt        time.Time
+	Outcome           string
+	ErrorClass        string
+	ResultUnknown     bool
 }
 
 // LedgerStatus 把运行态 Outcome 收敛为 ai_execution_attempts.status 的冻结枚举。
@@ -107,6 +109,9 @@ func (a ExecutionAttempt) ToLedgerModel(requestID string, usage ExecutionUsage) 
 	}
 	if a.ErrorClass != "" {
 		ledger.ErrorClass = &a.ErrorClass
+	}
+	if a.UpstreamRequestID != "" {
+		ledger.UpstreamRequestID = &a.UpstreamRequestID
 	}
 	if !a.FinishedAt.IsZero() {
 		ledger.FinishedAt = &a.FinishedAt
@@ -175,7 +180,9 @@ type ExecutionResponse struct {
 type ExecutionStreamChunk struct {
 	PublicLine []byte
 	Usage      ExecutionUsage
-	Done       bool
+	// UpstreamRequestID 仅承载当前 SSE data JSON 顶层 id，不承载完整事件或 Header。
+	UpstreamRequestID string
+	Done              bool
 }
 
 // ExecutionDriver 隔离上游执行差异，未来 RequestOrchestrator 只依赖该接口。
@@ -412,6 +419,7 @@ func (d *BifrostDriver) execute(ctx context.Context, in ExecutionRequest, stream
 		attempt.ResultUnknown = true
 		return &ExecutionResponse{Attempt: attempt}, readErr
 	}
+	attempt.UpstreamRequestID = extractWhitelistedUpstreamRequestID(raw)
 	publicBody, usage, valid := normalizeExecutionJSON(raw, resp.StatusCode >= 200 && resp.StatusCode < 300, false, in.LogicalModel)
 	if !valid && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		resp.StatusCode = http.StatusBadGateway
@@ -458,11 +466,39 @@ func normalizeExecutionStreamLine(line []byte, logicalModel string) (ExecutionSt
 	if len(data) == 0 {
 		return ExecutionStreamChunk{PublicLine: line}, nil
 	}
+	upstreamRequestID := extractWhitelistedUpstreamRequestID(data)
 	public, usage, valid := normalizeExecutionJSON(data, true, true, logicalModel)
 	if !valid {
-		return ExecutionStreamChunk{Usage: usage}, errors.New("执行驱动 SSE 返回业务错误或非法数据")
+		return ExecutionStreamChunk{Usage: usage, UpstreamRequestID: upstreamRequestID}, errors.New("执行驱动 SSE 返回业务错误或非法数据")
 	}
-	return ExecutionStreamChunk{PublicLine: append(append([]byte("data: "), public...), '\n'), Usage: usage}, nil
+	return ExecutionStreamChunk{PublicLine: append(append([]byte("data: "), public...), '\n'), Usage: usage, UpstreamRequestID: upstreamRequestID}, nil
+}
+
+// extractWhitelistedUpstreamRequestID 只接受 OpenAI 兼容响应顶层 id，并限制为低敏安全字符集合。
+// 该函数故意忽略 extra_fields、响应 Header 和嵌套对象，避免把 Bifrost 内部路由或凭据写入账本。
+func extractWhitelistedUpstreamRequestID(raw []byte) string {
+	var envelope struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return ""
+	}
+	value := strings.TrimSpace(envelope.ID)
+	if value == "" || len(value) > 191 {
+		return ""
+	}
+	for _, current := range value {
+		if current >= 'a' && current <= 'z' || current >= 'A' && current <= 'Z' || current >= '0' && current <= '9' {
+			continue
+		}
+		switch current {
+		case '-', '_', '.', ':', '/':
+			continue
+		default:
+			return ""
+		}
+	}
+	return value
 }
 
 func executeHTTPRequest(ctx context.Context, client *http.Client, url, token, requestID string, body map[string]interface{}, stream bool) (*http.Response, error) {

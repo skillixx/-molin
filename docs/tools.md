@@ -2,6 +2,8 @@
 
 > 记录项目中使用到的所有工具，包含作用说明、使用者、涉及功能模块和常用命令，方便团队成员快速上手。
 
+> G8 最终归档：`G8_STAGE_ACCEPTANCE=PASS`、`G8_SOFTWARE_CLOSED_LOOP=COMPLETED`、`G8_TEST_ENV_USABLE=YES`、`G8_REAL_PROVIDER_SETTLEMENT=PASS`、`ACCEPTED_EXCEPTIONS=YES`。已有技术证据覆盖真实 Provider、执行、Usage、计费结算、钱包流水、Outbox 和低敏证据持久化主链路；历史 `RESPONSE_MATCH=NO` 与未配置临时 SK 的手工脚本作为负责人接受的非阻断事实保留。测试服对账、失败补偿、双闸门、回滚演练、Prometheus/Grafana、告警规则、备份周期与 RabbitMQ ready 消息转入后续运维专项。测试服真实流量闸门保持开启，任何真实请求均可能产生真实费用；本文不授权执行工具或远端操作。
+
 ---
 
 ## 目录
@@ -937,12 +939,13 @@ git log --oneline -10                            # 查看最近 10 条提交记�
 | **涉及功能** | PR 合并前自动运行后端测试、前端构建、代码检查，防止破坏性代码合并 |
 | **代码位置** | `.github/workflows/ci.yml` |
 
-**作用：** CI/CD 自动化流水线，每次 PR 自动触发 3 个并行检查 Job。
+**作用：** CI/CD 自动化流水线按 PR 状态和精确变更范围分级执行。`opened`、`synchronize`、`reopened`、`ready_for_review`、`converted_to_draft` 都会触发；同一 PR 的新运行会自动取消旧运行。
 
-**3 个并行 Job：**
-- `backend-test`（后端 A/B/C）：go vet + go test -race + go build
-- `frontend-admin-build`（前端 A）：type-check + lint + build
-- `frontend-user-build`（前端 B）：type-check + lint + build
+**两层门禁：**
+- Draft：统一轻量质量门禁，加 Python、Go、管理后台、用户控制台定向测试；不运行 Docker、race、完整构建或浏览器 E2E，汇总名为 `CI Draft 快速门禁汇总`。
+- Ready：保留并重新运行当前全部适用后端、短信发布安全、G3/G4/G7/G8、真实后端浏览器及双前端重型门禁，汇总名为 `CI 必选门禁汇总`。
+
+Draft PASS 只表示快速反馈通过，不能替代 Ready 精确 HEAD 的完整合并证据。
 
 **查看运行结果：** GitHub 仓库 → Actions 标签页
 
@@ -1048,7 +1051,7 @@ python infra/scripts/verify-ai-gateway-g8-migration-manifest.py `
 
 实际 SSH 必须绑定唯一 ChangeId、固定 known_hosts、`BatchMode=yes`、精确目标和零重试。历史凭据比较值只以内存中的 SHA-256 注入，不写入脚本、命令输出或 Git。每个 ChangeId 只允许一次连接；失败后必须生成新候选，不能重放。
 
-测试账号缺少 Docker 读取权限时，不得将账号直接加入 Docker 组。候选最小权限方案使用 root-owned 固定审计器、root-owned 对账二进制和单命令 sudoers；审计器拒绝非规范 ChangeId、非固定安装路径及错误所有权。安装、sudoers 修改和再次远端核验必须分别取得独立授权，详见 `docs/ai-gateway-g8-test-readonly-access-runbook.md`。
+历史候选曾假设测试账号缺少 Docker 读取权限，因此设计 root-owned 固定审计器、root-owned 对账二进制和单命令 sudoers；该入口从未安装。用户随后明确 020 不安装受控入口且不使用 sudo，由 `pc` 使用既有 Docker 权限执行冻结无参数只读审计；旧安装方案已失效，禁止继续使用。020 的工程合并与当时唯一远端授权相互独立，该尝试现已在 SSH 前失败关闭消费；020 不得再次授权、重试或重放。详见 `docs/ai-gateway-g8-test-readonly-access-runbook.md`。
 
 ### G8 测试服务器只读入口候选生成器
 
@@ -1110,18 +1113,60 @@ python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_ho
 
 `infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop-direct.py` 是已消费的 010 Drop 直连包装器。一次本地检查、一次只读 SSH 和一次原子 SFTP 已完成，五文件暂存成功；root 安装未建立连接，live/sudoers/visudo/sudo self-test 均未执行。包装器所有入口现必须在读取 helper、候选、身份材料或网络前固定返回 `change_id_consumed`。010 禁止重放；暂存清理、root 安装或新的 `pc` 非特权方案必须使用新 ChangeId。历史证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-010.md`。
 
+`infra/scripts/run-ai-gateway-g8-test-readonly-access-stage-drop-interactive.py` 是已消费的 011 暂存包装器。唯一一次 local-check 为 PASS；唯一正式暂存包装器调用以 `invalid_request`、退出码 2、stderr 为空停止，远端暂存状态保持 `UNKNOWN`，没有继续交互 SSH、sudo、root 安装或 self-test。包装器、命令生成器和候选生成器现均在读取材料或联网前拒绝 011；诊断或清理须使用新 ChangeId 和独立授权。执行记录见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-011.md`。
+
+`infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-012.py` 是已消费的 012 Drop 暂存只读取证入口。唯一 local-check 返回 `evidence_unavailable` 后停止，SSH 未启动，011 暂存仍为 `UNKNOWN`；所有入口现均在参数、材料和联网前拒绝重放。以下命令只用于回归消费门禁：
+
+```powershell
+python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_012.py -v
+python -I infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-012.py --self-test
+```
+
+Linux 动态竞态测试必须在 `python:3.13-alpine --network none` 中运行。授权清单见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-authorization-20260813-012.md`。
+
+`infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py` 是无 ChangeId、可重复的本地身份材料诊断器。它只调用本地 `ssh-keygen`，不包含 SSH、SFTP、SCP、socket 或远端命令能力；不得输出路径、指纹、摘要或密钥正文。Windows 本地工具环境只允许 `SystemRoot` 与系统 OpenSSH 必需的 `PROGRAMDATA`，禁止继承代理、PATH 或用户环境。仓库验证只允许 `--self-test` 和临时伪造材料测试，不读取真实身份材料。
+
+`infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-013.py` 是已失效 013 的墓碑入口，任何参数都固定返回 `change_id_consumed`，不得恢复其联网能力。014 在独立用户授权后完成唯一一次本地诊断和唯一一次只读 SSH，固定结果为 `PRESENT / PASS / NONE`、退出码 0、重试 0；固定 011 暂存存在且五文件、manifest 与回执完整性通过。`infra/scripts/run-ai-gateway-g8-test-drop-staging-evidence-014.py` 现同样是已消费墓碑入口，任何参数都必须在解析、材料读取和联网前返回 `change_id_consumed`。当前只允许以下离线回归：
+
+```powershell
+python -I -W error::ResourceWarning infra/scripts/test_diagnose_ai_gateway_g8_local_ssh_materials.py -v
+python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_013.py -v
+python -I -W error::ResourceWarning infra/scripts/test_run_ai_gateway_g8_test_drop_staging_evidence_014.py -v
+python -I infra/scripts/diagnose-ai-gateway-g8-local-ssh-materials.py --self-test
+```
+
+014 的历史命令、ChangeId 和授权均已消费，禁止正式参数、自检入口或任何重放。旧 013 历史记录见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-authorization-20260813-013.md`；014 授权与执行记录见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-authorization-20260814-014.md`、`docs/ai-gateway-g8-test-readonly-drop-staging-evidence-attempt-20260814-014.md`。后续安装、部署和运行态审计必须使用新的 ChangeId 与独立授权。
+
+015、016 与 017 的生成器、安装器均已改为固定 `change_id_consumed` 墓碑。015 的唯一获批本地段出现 PowerShell 正则错误且下游影响保持 `UNKNOWN`；016 经 PR #381 合并和冻结摘要复核后获得独立授权，但唯一人工第一段在模块自动加载的 `Get-FileHash` 处以终止错误停止，控制流没有到达 SSH，远端影响为 0。017 工程候选曾把冻结材料摘要改用 Windows PowerShell 5.1 可用的纯 .NET 流式 SHA-256，并收紧加密私钥提示、低敏输出和信号回滚；PR #384 最终 HEAD `ee947fd61919215500ef516488d56e01ad2ea72d` 通过 CI run `31791430839` 与三方零缺陷复评，按 merge commit `e2a7e4f89c4115b3e32dc27292b0bc11d7d09a57` 合入 main，合并后原始 Git blob 与冻结命令复核一致。用户独立批准后，唯一人工本地段返回统一低敏 `local_gate_failed` 并退出 2；事后不联网同构门禁通过，但现有证据无法绑定 SSH 调用次数为 0。远端第二段、sudo、安装器、post-check、业务、上游和费用均为 0，安装未确认；017 已失败关闭消费，历史生成命令禁止重放。当前只允许运行墓碑及授权契约测试；继续诊断或安装必须使用新 ChangeId、重新完成工程门禁并取得独立授权。详见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-016.md`、`docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-017.md` 和 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260814-017.md`。
+
+018 工具在唯一人工本地段窗口直接关闭、没有可见输出后已失败关闭消费；SSH 启动/连接为 `UNKNOWN / 最多 1`，远端固定段、sudo、安装器与 post-check 均为 0。019 的单会话候选通过 PR #390、CI run `31829691838` 和独立评审，以 merge commit `70485d893fd86db00be4dbb9e324f9d4322d55b0` 合入 main，并完成合并后原始 blob 与冻结命令摘要复核。用户精确授权后的唯一可见 PowerShell 最终在恢复 `$ErrorActionPreference` 时因 `Null` 失败，固定标志不可恢复；SSH、远端预检、sudo、安装器与 post-check 均保持 `UNKNOWN / 最多 1`。重试为 0，018 与 019 的生成器、安装器均为固定 `change_id_consumed` 墓碑，禁止执行历史生成文件或任何形式的重放。见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260815-018.md`、`docs/ai-gateway-g8-test-readonly-access-install-attempt-20260815-019.md` 与 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260815-019.md`。
+
+020 工具使用 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-020`，历史候选不安装受控入口、不写 sudoers、不使用 sudo，并把能力限定为 `pc` 既有 Docker 权限下的固定只读运行态审计。PR #394、CI run `31861762018`、merge `3c63539279a34ae2365fc9d7e26e207dd728c4ba` 和合并后摘要复核均已通过。用户独立授权后，外层 PowerShell 包装在调用 Windows PowerShell 5.1 前因缺少右括号解析失败；正式命令、SSH 和远端能力均未启动，所有远端影响为 0，重试 0。020 已消费，生成器现为联网前固定 `change_id_consumed` 的墓碑，历史命令禁止重放；`G8_SOFTWARE_CLOSED_LOOP` 仍未完成。见 `docs/ai-gateway-g8-test-readonly-runtime-audit-attempt-20260815-020.md`。
+
+021 工具使用 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-021`。历史工程候选中的 `prepare-ai-gateway-g8-test-readonly-runtime-audit-021-command.py` 生成不落盘执行链使用的冻结内存脚本，`run-ai-gateway-g8-test-readonly-runtime-audit-021.py` 是唯一固定启动入口；PR #398 已合并为 `8bc05cbf3bc71a8954087dc7f26732f836e5212e` 并完成合并后摘要复核。唯一授权尝试固定结果为 `CONSUMED_LOCAL_RECEIPT_UNAVAILABLE_SSH_NOT_STARTED`：PowerShell 启动一次后因本地耐久回执不可用在 SSH 前失败关闭，`PRE_SSH_GATE`、`SSH_ATTEMPTED`、SSH 与远端命令均为 0，测试服 Docker、HTTP、数据库、sudo、安装、业务、上游和费用均为 0，重试为 0。两个普通入口现均为无 import 墓碑，021 已永久消费，不得再次授权、重试或重放；`G8_SOFTWARE_CLOSED_LOOP` 仍未完成。见 `docs/ai-gateway-g8-test-readonly-runtime-audit-authorization-20260815-021.md` 与 `docs/ai-gateway-g8-test-readonly-runtime-audit-attempt-20260815-021.md`。
+
+022 工具使用 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-022`。历史候选通过可信 LocalApplicationData、固定盘、逐级非 reparse 与唯一 GUID CreateNew 修复 021 回执缺口；PR #401、CI run `31884793587`、merge commit `84ae5b0ad87958ee63fbfa709c4f164baca39a1b` 及合并后原始 blob/冻结命令摘要复核均已通过。唯一授权调用与归档 TDD 错误触发的一次未授权本地重放都在 `identity_pair_failed` 时于 SSH 前停止；固定状态为 `CONSUMED_LOCAL_IDENTITY_PAIR_FAILED_SSH_NOT_STARTED`，本地正式入口/PowerShell 总调用 `2 / 2`、未授权本地重放 `1`，两份非空回执均无 `PRE_SSH_GATE`/`SSH_ATTEMPTED`，SSH、测试服 Docker/HTTP/数据库、sudo、安装、业务、上游和费用均为 0。两个普通入口现均为无 import 墓碑；022 已永久消费，不得再次授权、重试或重放，`G8_SOFTWARE_CLOSED_LOOP` 未完成。见 `docs/ai-gateway-g8-test-readonly-runtime-audit-authorization-20260815-022.md` 与 `docs/ai-gateway-g8-test-readonly-runtime-audit-attempt-20260815-022.md`。
+
+023 工具使用 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-023`，固定状态为 `CONSUMED_SSH_SESSION_FAILED_REMOTE_AUDIT_NOT_PROVEN`。唯一授权调用形成 `PRE_SSH_GATE=PASS` 与 `SSH_ATTEMPTED=YES`，随后以 `ssh_session_failed` 非零停止且零重试；SSH 调用 `1`、会话成功 `0`，没有 `COLLECTION_PASS`，远端固定脚本与 Docker 只读查询只能记为 `UNKNOWN / 最多启动 1 次`。023 已永久消费，生成器与固定启动器现为无 import 墓碑；sudo、安装、Docker 变更、宿主写入、业务 HTTP、数据库写入、migration、真实上游和费用动作均为 0，`G8_SOFTWARE_CLOSED_LOOP` 未完成。
+
+024 工具使用 ChangeId `CHG-G8-TEST-READONLY-SSH-DIAGNOSTIC-20260816-024`。`run-ai-gateway-g8-test-readonly-ssh-diagnostic-024.py` 是唯一候选入口：默认拒绝，只有绑定双父工程 merge、runner 大小/SHA-256 和 `--execute-authorized` 才能到达一次固定 SSH；它保留 OpenSSH 默认身份文件与当前 `SSH_AUTH_SOCK`，以 `-F none` 隔离用户配置，固定目标与唯一 host key 信任源，只运行固定 `printf` 回执并低敏分类结果，不含 Docker、sudo、安装、HTTP、数据库或业务能力。工程候选已经 PR #407、CI run `31897233312` 和三项独立零缺陷评审，以 merge commit `ffca18aace03fd9185280fb7a2b2807d337a590d` 合入 main并完成摘要复核。当前为 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`，尚未执行或消费，`G8_SOFTWARE_CLOSED_LOOP` 未完成。
+
 ## CI 变更范围分类器
 
 | 项目 | 说明 |
 |---|---|
 | **使用者** | 全体开发、测试、产品与运维人员 |
-| **涉及功能** | 根据 PR 精确 base/head 的变更路径开启适用 CI；纯文档只跑轻量门禁，高风险或未知路径完整回归 |
-| **代码位置** | `infra/scripts/classify-ci-change-scope.py`、`infra/scripts/test_classify_ci_change_scope.py`、`.github/workflows/ci.yml` |
+| **涉及功能** | 根据 PR 精确 base/head 与 Draft/Ready 状态开启适用 CI；Draft 跑轻量和定向门禁，Ready 跑全部适用重型回归 |
+| **代码位置** | `infra/scripts/classify-ci-change-scope.py`、`infra/scripts/select-ci-draft-tests.py`、`infra/scripts/run-ci-draft-targets.py`、对应测试、`.github/workflows/ci.yml` |
 
-分类器默认失败关闭：`.github/`、`infra/`、账务交易、Migration、全局安全配置、根级未知文件和无法识别的路径会开启完整 CI；路径为空、绝对路径、反斜杠或路径穿越会直接失败。删除路径以及重命名/复制的源、目标路径会同时分类，禁止通过移动文件降级。每个 Job checkout 精确 PR head SHA；`skipped` 只表示该门禁经精确路径分类确认不适用，不能用于绕过已开启门禁。工作流末尾的 `CI 必选门禁汇总` 会复核完整 CI 标志、分类结果和所有适用 Job，必须作为分支保护 required check。
+分类器默认失败关闭：`.github/`、`infra/`、账务交易、Migration、全局安全配置、根级未知文件和无法识别的路径在 Ready 开启完整 CI；Draft 的未知路径开启全部定向门禁。路径为空、绝对路径、反斜杠、路径穿越、shell 元字符、目标选择为空或非法 JSON 会直接失败。删除路径以及重命名/复制的源、目标路径会同时分类，禁止通过移动文件降级。定向执行器只接受经过二次验证的仓库相对路径或 Go package，并始终使用参数数组启动子进程。
+
+每个 Job checkout 精确 PR head SHA；`skipped` 只表示该门禁经分类确认不适用，不能用于绕过已开启门禁。Draft 由 `CI Draft 快速门禁汇总` 收口，Ready 由 `CI 必选门禁汇总` 复核完整标志、分类结果和所有适用 Job。当前仓库没有 classic branch protection/ruleset，因此后者只是工作流检查名称，尚未被 GitHub 平台强制为 required check；设置 required 需要后续单独授权。
 
 ```powershell
-# 本地验证分类规则和语法
-python -m unittest infra/scripts/test_classify_ci_change_scope.py
-python -m py_compile infra/scripts/classify-ci-change-scope.py infra/scripts/test_classify_ci_change_scope.py
+# 本地验证分类、选择、执行和工作流契约
+python -I -W error::ResourceWarning infra/scripts/test_classify_ci_change_scope.py -v
+python -I -W error::ResourceWarning infra/scripts/test_select_ci_draft_tests.py -v
+python -I -W error::ResourceWarning infra/scripts/test_run_ci_draft_targets.py -v
+python -I -W error::ResourceWarning infra/scripts/test_ci_draft_ready_workflow_contract.py -v
 ```

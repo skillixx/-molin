@@ -2354,7 +2354,8 @@ Chat 请求 Body 参数：
 策略规则项结构为 `{code,category,keywords}`；每个可发布版本必须完整覆盖 illegal、sexual、gambling、drugs、terror、hate、self_harm 七类，规范化后的单个关键词最长 256 字符。列表统一返回 `{items,page,page_size,total}`。用户事件接口只返回当前 JWT 用户的最小化事件，申诉时仓储层再次校验 event_id 归属。资源策略 scope_type 为 user/project/api_key/model，预算 scope_type 为 project/api_key；每个非空日/月限额都必须大于 0。Outbox 重试要求 `ai_gateway:reconcile_manage`、管理员二次认证、非空原因和前置审计，只允许 dead 状态按原 event_id 重排，重复或状态冲突返回 409。
 
 G4/G8 错误码：40310 内容违规、40311 主体暂停、42920 hard 预算、42921 RPM/TPM、42922 并发、50320 审核不可用、50321 治理不可用、50330 商业流量总闸关闭。42921/42922 包含 `Retry-After`、`request_id` 和公开 `limit_scope`。50330 只表示新文字模型调用尚未开放或已受控关闭，不泄露生产配置缺项。
-- G3 在上游调用前写不可变价格快照并创建钱包 hold。JSON 或正常结束 SSE 的可信 Usage 完整时，无论执行成功或明确失败都按四类 SKU 汇总一次金额并 settle；成功且存在正用量时才应用最低收费。只有确认未产生成本且无 Usage 时 release；Usage 缺失、不一致、结果未知或 SSE 未正常结束时，即使已经取得中间 Usage 也返回 `202/settlement_pending` 并保留 hold。Settlement Worker 对遗留 held/pending 请求按相同规则收敛，超过期限进入人工异常。正式链路不写旧 `token_usage_logs`。
+- G3 在上游调用前写不可变价格快照并创建钱包 hold。JSON 或正常结束 SSE 的可信 Usage 完整时，无论执行成功或明确失败都按四类 SKU 汇总一次金额并 settle；成功且存在正用量时才应用最低收费。只有确认未产生成本且无 Usage 时 release；Usage 缺失、不一致、结果未知或 SSE 未正常结束时，即使已经取得中间 Usage 也返回 `202/settlement_pending` 并保留 hold。Settlement Worker 对遗留 held/pending 请求按相同规则收敛，超过期限进入人工异常。G8 证据闭环增量对新产生的 `settled` 请求在同一事务幂等同步一条 `token_usage_logs` 查询兼容汇总，并以 `DECIMAL(20,8)` 与权威 Usage、结算金额逐字段核对；人工核定未知或取消执行时保留 `pending_reconcile` 来源状态。该汇总不参与价格计算或钱包扣费，也不回填历史请求。
+- Bifrost 真实执行只从非流式响应或 SSE `data` JSON 顶层 `id` 提取低敏上游引用，经固定字符集和 191 字节上限校验后写入内部执行尝试。公开 Chat、请求状态和错误响应均不返回该字段；Bifrost 请求日志保持关闭，不保存请求正文、响应正文、Header、Token 或 Key。流式分片出现不同引用时进入结果未知终态，禁止拼接证据。
 - 请求状态可通过 `GET /api/token/requests/{request_id}` 或 OpenAI 兼容入口 `GET /v1/requests/{request_id}` 查询；必须使用原 Project SK，跨用户或跨 SK 统一拒绝且不泄露请求是否存在。
 - `messages` 必须包含至少一条非空文字内容；G2 对图片、音频等多模态消息在写账本和调用上游前返回 400/40000。未实名返回 400/70001，渠道不可用返回 503/50300。
 - 周期恢复扫描先找候选，再在事务锁内重新校验状态和截止时间，只把仍超过安全窗口的 pending/running 请求收敛为 `unknown`，不重放上游。Project SK 创建、轮换和吊销必须在同一数据库事务中写脱敏安全审计；审计组件缺失或持久化失败时返回 HTTP 503 + `50030`，并回滚密钥变更，禁止出现密钥状态已变化但安全审计缺失的事实断裂。紧急吊销可用性由数据库与审计表共用同一事务保证，测试环境和生产环境必须监控该错误码并优先恢复数据库写入能力。
@@ -2543,9 +2544,9 @@ Body 使用 `resolution=release|settle`；`settle` 时同时提交 `prompt_token
 |---|---|---|---|
 | GET | `/api/admin/token/overview` | `ai_gateway:view` | 模型、渠道、价格、路由和异常聚合 |
 | GET | `/api/admin/token/models/{id}/versions` | `ai_gateway:view` | 不可变模型发布版本 |
-| POST | `/api/admin/token/models/{id}/publish` | `ai_gateway:model_manage` | body：`{"reason":"..."}` |
-| POST | `/api/admin/token/models/{id}/unpublish` | `ai_gateway:model_manage` | 下架且退役当前快照 |
-| POST | `/api/admin/token/models/{id}/rollback` | `ai_gateway:model_manage` | body：`{"target_version_no":1,"reason":"..."}`；创建新发布版本 |
+| POST | `/api/admin/token/models/{id}/publish` | `ai_gateway:model_manage` | body：`{"reason":"..."}`；相同快照幂等返回既有版本，历史孤儿编号按最大版本继续分配；发布门禁错误为 `40910` 文档未就绪、`40911` 生效价格数量异常、`40912` 健康路由缺失、`40913` 状态并发变化 |
+| POST | `/api/admin/token/models/{id}/unpublish` | `ai_gateway:model_manage` | 下架且退役当前快照；状态并发变化返回 `40913` |
+| POST | `/api/admin/token/models/{id}/rollback` | `ai_gateway:model_manage` | body：`{"target_version_no":1,"reason":"..."}`；创建新发布版本；生效价格异常返回 `40911`、健康路由缺失返回 `40912`、状态并发变化返回 `40913` |
 | POST | `/api/admin/token/channels/{id}/health-check` | `ai_gateway:route_manage` | 只访问渠道根 `/health`，不携带密钥且不调用模型；默认仅允许公网 HTTPS，并在实际拨号前校验全部 DNS 结果，拒绝 loopback、link-local、RFC1918、IPv6 本地地址和重定向。测试 Bifrost 内网目标必须由 `AI_GATEWAY_HEALTH_INTERNAL_ALLOWLIST` 精确放行 |
 | GET/POST | `/api/admin/token/routes` | view / route_manage | Bifrost 路由列表与创建 |
 | PUT | `/api/admin/token/routes/{id}` | `ai_gateway:route_manage` | 全量提交路由及当前 `version_no` |
@@ -2561,7 +2562,7 @@ Body 使用 `resolution=release|settle`；`settle` 时同时提交 `prompt_token
 
 G5 路由仅在确认请求未发送时按 `max_retries` 重试；超时、结果未知、已收到 HTTP/SSE 数据均禁止重试。安全失败达到阈值后写入共享熔断表并开启 30 秒窗口，后续请求按优先级和回退顺序选择其他路由。
 
-新增权限：`ai_gateway:model_manage`、`ai_gateway:price_manage`、`ai_gateway:route_manage`。冲突统一返回 `409/40900`，不满足发布门禁返回 `409/40900`，参数错误返回 `400/40000`。
+新增权限：`ai_gateway:model_manage`、`ai_gateway:price_manage`、`ai_gateway:route_manage`。通用价格与路由冲突返回 `409/40900`；模型发布门禁按上表返回 `409/40910` 至 `409/40913`，模型发布、下架和回滚的残余并发状态变化统一返回 `409/40913`，便于前端展示可恢复原因；参数错误返回 `400/40000`。
 
 ## AI 网关 G6 用户端模型市场与请求账本接口
 

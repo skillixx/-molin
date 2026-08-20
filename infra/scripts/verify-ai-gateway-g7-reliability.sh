@@ -148,6 +148,8 @@ assert_scalar "SELECT COUNT(*) FROM wallet_holds WHERE user_id BETWEEN 701 AND 8
 assert_scalar "SELECT COUNT(*) FROM wallets WHERE user_id BETWEEN 701 AND 803 AND (balance_amount < 0 OR frozen_amount <> 0)" "0" "wallet_invariant"
 assert_scalar "SELECT COUNT(*) FROM ai_outbox_events WHERE status IN ('pending','publishing','dead')" "0" "outbox_backlog"
 assert_scalar "SELECT COUNT(*) FROM ai_compensation_tasks WHERE status IN ('pending','retry','dead','manual_review')" "0" "compensation_backlog"
-assert_scalar "SELECT COUNT(*) FROM token_usage_logs" "0" "legacy_ledger_not_written"
+# G7 负载结算请求必须同步生成唯一汇总日志，证明高并发下账单查询事实没有缺口。
+assert_scalar "SELECT COUNT(*) FROM ai_requests r LEFT JOIN token_usage_logs l ON l.request_id=r.request_id WHERE r.request_id LIKE 'g7-%' AND r.billing_status='settled' AND l.id IS NULL" "0" "settled_usage_log_missing"
+assert_scalar "SELECT COUNT(*) FROM token_usage_logs l JOIN ai_requests r ON r.request_id=l.request_id WHERE r.request_id LIKE 'g7-%' AND r.billing_status<>'settled'" "0" "usage_log_without_settled_request"
 
 echo "G7_VERIFY=PASS isolated=true current_migrations=true fake_http_upstream=true paid_upstream=false total_requests=1000 concurrency=100 idempotency=100 stream_disconnect=true fake_http_upstream_stop_recover=true redis_stop_recover=true request_usage_difference=0 request_hold_difference=0 request_wallet_difference=0 billing_anomalies=0 unreleased_holds=0 outbox_backlog=0 compensation_backlog=0 project_database=false"

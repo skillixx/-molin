@@ -2148,7 +2148,7 @@ Wechatpay-Nonce: <随机串>
 > 计费口径（2026-06-21 决策）：**按量（token 数）+ 按次（调用次数）+ 套餐（预付 token 额度）三种并存**；按量/按次为后付扣钱包，套餐为预付扣 entitlement 额度。Agent/Skill/插件均免费，唯一收费点是模型 token 调用。
 > 状态标记：✅ 已实现并合并 main ｜ 🔜 待实现（含归属）。前端按状态决定可对接时间。
 > 站内聊天工作台的 Agent 对话端点（tool-use 编排）契约见 §14.8（待实现）。
-> G3 增量：公开 `/api/token/chat/completions` 与 `/v1/chat/completions` 已在 Project SK + RequestOrchestrator 上启用人民币钱包按量计费。`max_tokens` 可选；缺省时后端使用平台兜底上限与模型上限的较小值报价和预占，再执行并按可信 Usage 一次结算。G3 只允许单候选 `n=1`，`n>1` 在调用上游前拒绝。G3 不使用积分或套餐额度。
+> G3 增量：公开 `/api/token/chat/completions` 与 `/v1/chat/completions` 已在 Project SK + RequestOrchestrator 上启用人民币钱包按量计费。`max_tokens` 可选；缺省时后端使用平台兜底上限与模型上限的较小值报价和预占，再执行并按可信 Usage 一次结算。G3 只允许单候选 `n=1`，`n>1` 在调用上游前拒绝。G3 不使用积分或套餐额度。G8 证据闭环增量只在后端事务中同步 settled 查询汇总和低敏上游引用，不新增或改变任何前端请求、响应字段。
 
 ### 本模块专用错误码（chat 转发）
 
@@ -2216,6 +2216,7 @@ Wechatpay-Nonce: <随机串>
 - **流式**（`stream=true`）：`Content-Type: text/event-stream`，服务端按有界审核段输出，不保证上游单个 chunk 立即透传；账本 Finalize 成功后才发送 `data: [DONE]`。客户端断连后后台继续读取可确定的尾部 Usage。
 - **前置错误**（尚未开始透传时）：返回统一 JSON `{code,error,message,data}`。`error` 为 G3 稳定字符串分类；既有非财务错误可能省略该字段。
 - G3 计量：确定结果且完整一致的 Usage 按价格快照结算；缺失、不一致、结果未知或 SSE 未正常结束时返回 202 或已有待结算状态，即使已看到中间 Usage 也不实扣。`billing_status` 可能为 `held/settlement_pending/settled/released/exception`；**对话内容不落明文日志**。
+- G8 证据闭环：成功提交为 `settled` 的请求会在同一后端事务同步一条查询兼容用量汇总；该内部记录不改变前端账单口径。Bifrost 顶层响应 `id` 只作为受限低敏内部执行引用持久化，前端不得依赖或展示该字段。
 - SSE 已开始后，待结算或异常通过 `event: molin.status` 通知，`data` 包含 `request_id` 与 `error`。前端收到后停止展示“已完成”，并调用请求状态接口刷新；不得把 `settlement_pending` 显示为免费或已退款。
 - G3 暂不提供人工对账 UI；后台已提供 `POST /api/admin/token/billing/exceptions/{request_id}/resolve`，后续管理页面只能在 `token:manage` 和管理员二次认证通过后调用。
 
@@ -2573,7 +2574,8 @@ DELETE /api/token/projects/{id}/keys/{key_id}
 页面入口：`/token/workbench`，读取权限 `ai_gateway:view`，并要求管理员双重认证。接口和状态机详见 `docs/ai-gateway-g5-development.md`。
 
 - `GET /api/admin/token/overview`：支持 `from/to/model/channel_id/status`，返回请求量、成功率、Token、人民币销售额/成本/毛利、治理拒绝和配置异常；金额和比率为十进制字符串。
-- `POST /api/admin/token/models/{id}/rollback`：从历史快照创建新的发布版本，不修改历史版本。
+- `POST /api/admin/token/models/{id}/rollback`：从历史快照创建新的发布版本，不修改历史版本；当前生效价格异常返回 `40911`、健康路由缺失返回 `40912`、状态并发变化返回 `40913`。
+- `POST /api/admin/token/models/{id}/publish`：发布首个版本或新快照；相同快照重复请求返回既有版本，历史孤儿编号会被安全跳过。`40910` 表示操作文档/快速入门未就绪，`40911` 表示当前生效价格不是唯一一份，`40912` 表示缺少健康生效路由，`40913` 表示模型状态已变化，前端应展示服务端具体原因并刷新模型目录。模型下架或回滚遇到并发状态变化时也使用 `40913`。
 - `POST /api/admin/token/prices/{id}/rollback`：从历史价格复制新草稿，前端必须提示重新审批发布。
 - `POST /api/admin/token/channels/{id}/health-check`：执行无密钥、无模型费用的 `/health` 检测；默认只允许公网 HTTPS，拒绝内网/回环/链路本地/DNS 重绑定和重定向。测试 Bifrost 内网地址必须由运维使用精确白名单配置，前端不得提供“放开全部内网”选项。
 - 模型状态使用 `active/inactive`，路由状态使用 `active/disabled`，二者不得混用。

@@ -6,6 +6,21 @@ import (
 	"molin/server/internal/modules/token_gateway/model"
 )
 
+func TestValidateModelPublishMetadataRejectsMissingDocuments(t *testing.T) {
+	channelID := uint64(1)
+	upstream := "openrouter/qwen/qwen3.8-max"
+	item := model.TokenModel{ChannelID: &channelID, UpstreamModel: &upstream, DocsURLHealthStatus: "unpublished", QuickStartURLHealthStatus: "unpublished"}
+	if err := validateModelPublishMetadata(item); err != ErrModelDocumentsNotReady {
+		t.Fatalf("缺少发布文档必须返回固定分类，实际 err=%v", err)
+	}
+	docs, quick := "https://example.invalid/docs", "https://example.invalid/quick"
+	item.DocsURL, item.QuickStartURL = &docs, &quick
+	item.DocsURLHealthStatus, item.QuickStartURLHealthStatus = "healthy", "healthy"
+	if err := validateModelPublishMetadata(item); err != nil {
+		t.Fatalf("完整且健康的模型材料应通过，实际 err=%v", err)
+	}
+}
+
 func TestChooseWeightedPrimaryRouteHonorsFallbackAndPriority(t *testing.T) {
 	candidates := []model.AIModelRoute{
 		{ID: 1, FallbackOrder: 0, Priority: 100, Weight: 10},

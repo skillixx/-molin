@@ -34,6 +34,11 @@ TRUSTED_PATH = os.pathsep.join(
         r"C:\Program Files\Go\bin",
     )
 )
+DROP_TRANSPORTS = {
+    "DROP_SSH",
+    "DROP_SSH_DIRECT",
+    "DROP_SSH_INTERACTIVE_SUDO",
+}
 
 
 @dataclass(frozen=True)
@@ -80,6 +85,13 @@ CONSUMED_CANDIDATES = {
         "/home/pc/molin",
         "DROP_SSH_DIRECT",
     ),
+    "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011": FrozenCandidate(
+        "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011",
+        "099c38ed62ccd62c3c5a3b6811f1369d7f0d3084",
+        "c2d1252a05d031d842549345128fa7a1ffe53dc8",
+        "/home/pc/molin",
+        "DROP_SSH_INTERACTIVE_SUDO",
+    ),
 }
 EXPECTED_CONSUMED_RECEIPTS = {
     "win32": {
@@ -88,6 +100,7 @@ EXPECTED_CONSUMED_RECEIPTS = {
         "CHG-G8-TEST-READONLY-ACCESS-20260812-003": "82b18d6040bcd6be72cf170fa066ecd7cf469a53f4901365f379bec5a89c496d",
         "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009": "840bdbed48edab6d70d351fa232b7426903bf3f3098f682e2884f513b9cd0efd",
         "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010": "3ff8cf3ad7237f866f83305d00ab73f766381b7f3247abee915efee629e41fb0",
+        "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011": "15617634b0d291f12cc5776eb80ec29e26369af1959ab4a596fcd5c836c3361f",
     },
     "linux": {
         "CHG-G8-TEST-READONLY-ACCESS-20260812-001": "14b7d8cd832f0b719031fcc93adbbb2208afe76d34383e63d51c44b044772b5a",
@@ -95,6 +108,7 @@ EXPECTED_CONSUMED_RECEIPTS = {
         "CHG-G8-TEST-READONLY-ACCESS-20260812-003": "7f4633357bf6883d166b0ee7d9750d7e745cf0a15d23163a547d6519e217efc1",
         "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-009": "5bb49ad531410c8a719008bcd860d143eb9c51d23858a14737d678d5a60fc893",
         "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010": "b3fac1a1530124da9dc604c32d11bd665de3daa5d6799aebb33c38a3d2f174f4",
+        "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011": "8bb8efcd789c87af28b8495a9841b95934e50d145e8d40a5eed70cd32565b963",
     },
 }
 
@@ -300,7 +314,7 @@ def prepare(candidate: FrozenCandidate, output_dir: Path) -> dict[str, str]:
                 "RECONCILE_SIZE": str(reconcile_size),
                 "REPRODUCIBLE_BUILD_COUNT": "2",
             }
-            if candidate.target_transport in {"DROP_SSH", "DROP_SSH_DIRECT"}:
+            if candidate.target_transport in DROP_TRANSPORTS:
                 # Drop 映射只绑定已批准的 SSH 端点，不把物理主机身份误作固定入口契约。
                 values["TARGET_SSH"] = "pc@8.130.9.163:10003"
                 values["TARGET_SSH_ED25519_FINGERPRINT"] = "SHA256:q5xYBX+tB+VPPCSTYFN6GTIbdn4sPicQslLLbkxRG+I"

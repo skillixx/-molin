@@ -16,11 +16,31 @@ type rejectingAudit struct {
 }
 
 func TestG5ConflictReturnsHTTP409(t *testing.T) {
-	for _, conflict := range []error{repository.ErrModelReleaseConflict, repository.ErrRouteVersionConflict, repository.ErrPriceStateConflict} {
+	for _, conflict := range []error{repository.ErrRouteVersionConflict, repository.ErrPriceStateConflict} {
 		recorder := httptest.NewRecorder()
 		writeG5Error(recorder, conflict)
 		if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), `"code":40900`) {
 			t.Fatalf("G5 并发冲突必须统一映射为 HTTP 409: err=%v code=%d body=%s", conflict, recorder.Code, recorder.Body.String())
+		}
+	}
+}
+
+func TestModelPublishPreconditionReturnsSpecificHTTP409(t *testing.T) {
+	tests := []struct {
+		err     error
+		code    string
+		message string
+	}{
+		{repository.ErrModelDocumentsNotReady, `"code":40910`, "发布前必须配置且通过检查的操作文档和快速入门"},
+		{repository.ErrModelPriceNotReady, `"code":40911`, "发布前必须且只能有一个当前生效价格版本"},
+		{repository.ErrModelRouteNotReady, `"code":40912`, "发布前必须存在指向健康启用渠道的生效路由"},
+		{repository.ErrModelReleaseConflict, `"code":40913`, "模型状态已变化，请刷新后重试"},
+	}
+	for _, tt := range tests {
+		recorder := httptest.NewRecorder()
+		writeG5Error(recorder, tt.err)
+		if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), tt.code) || !strings.Contains(recorder.Body.String(), tt.message) {
+			t.Fatalf("模型发布冲突必须返回可诊断的固定分类: err=%v code=%d body=%s", tt.err, recorder.Code, recorder.Body.String())
 		}
 	}
 }

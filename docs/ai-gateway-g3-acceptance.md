@@ -20,7 +20,9 @@
 | 客户端断连 | 可信 Usage 继续结算，流水连续可还原 |
 | 超过 hold | exception、价格暂停、P0 Outbox、无补扣 |
 | RabbitMQ | 停止留存、恢复 confirm、持久队列消费通过 |
-| 旧账本 | G3 正式链路不写 `token_usage_logs` |
+| 旧账本（G3 历史基线） | G3 原始交付不写 `token_usage_logs`；该历史断言不代表后续阶段永久禁止证据同步 |
+
+> G8 真实请求证据闭环增量：对新产生且成功提交为 `settled` 的请求，同一事务幂等同步一条 `token_usage_logs` 查询兼容汇总，并与权威 Usage、`settled_amount` 逐字段核对；不回填或修改历史请求。Bifrost 仅持久化固定白名单顶层 `id` 的低敏引用，且继续关闭请求日志。本段不改变上述 G3 历史候选的验收事实。
 
 最终候选为 v38，归档 `molin-g3-v38.tar.gz`。本地与测试 Linux 重新计算的 SHA-256 均为：
 
