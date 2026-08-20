@@ -262,9 +262,14 @@ feature/docs-{描述}
 
 ### 8.2c CI 变更范围分级
 
-所有 PR 都必须先运行 `CI 变更范围分类`，分类器读取精确 base/head 的 Git 路径集合，并遵守以下规则：
+所有 PR 都必须先运行 `CI 变更范围分类`，分类器读取精确 base/head 的 Git 路径集合。同一 PR 使用固定 concurrency key；新提交、转 Ready、转回 Draft 或重新打开都会自动取消该 PR 的旧运行，不同 PR 不互相取消。
 
-| 变更范围 | 必须执行的门禁 |
+CI 分为两层：
+
+- Draft 层运行差异格式、敏感扫描、分类/工作流契约，以及与 Python、Go、管理后台、用户控制台变更直接相关的定向测试；不运行 Docker、race、生产构建、Playwright 或真实后端浏览器门禁。Draft 结论固定汇总为 `CI Draft 快速门禁汇总`，只提供开发反馈，不能作为最终合并证据。
+- Ready 层在当前精确 HEAD 内重新分类并执行下表全部适用门禁；现有重型测试一项不少，固定汇总为 `CI 必选门禁汇总`。Ready 后新增提交会重新触发完整适用门禁，不能复用旧 HEAD 或 Draft 的结果。
+
+| 变更范围 | Ready 必须执行的门禁 |
 |---|---|
 | 仅 `README.md`、`docs/**/*.md` | 文档与基础质量轻量门禁 |
 | `web/admin-console/**` | 管理后台构建；命中文字网关页面时追加 G8 真实后端浏览器验收 |
@@ -276,7 +281,9 @@ feature/docs-{描述}
 | auth、iam、identity、账务交易、Migration、全局配置/中间件 | 完整 CI，禁止降级 |
 | `.github/**`、`infra/**`、根级/未知路径 | 完整 CI，禁止降级 |
 
-分类器必须同时读取重命名/复制的源路径和目标路径，并覆盖删除路径；禁止把高风险文件移动到轻量目录后绕过原门禁。分类器报错、变更路径为空、路径不规范或出现未知目录时必须失败关闭为阻断或完整 CI。每个 Job 必须显式 checkout `pull_request.head.sha`，禁止用 GitHub 合成 merge ref 冒充精确 PR HEAD。未命中的重型 Job 可以显示 `skipped`，表示经分类确认“不适用”，不等于跳过 CI；`CI 必选门禁汇总` 必须加入分支保护 required checks，并在分类成功、轻量门禁（若适用）以及所有被开启 Job 均成功后才通过。发布、账务、安全、Migration、生产配置和 CI 自身变更不得以节省时间为由降级。
+分类器必须同时读取重命名/复制的源路径和目标路径，并覆盖删除路径；禁止把高风险文件移动到轻量目录后绕过原门禁。分类器报错、目标选择为空、路径不规范或出现未知目录时，Draft 必须失败关闭到阻断或全部定向门禁，Ready 必须失败关闭到完整 CI。每个 Job 必须显式 checkout `pull_request.head.sha`，禁止用 GitHub 合成 merge ref 冒充精确 PR HEAD。未命中的重型 Job 可以显示 `skipped`，表示经分类确认“不适用”，不等于跳过 CI。
+
+仓库当前尚未配置 classic branch protection 或 ruleset，因此工作流生成 `CI 必选门禁汇总` 不等于 GitHub 平台已经把它设为 required check。在后续取得仓库设置独立授权前，产品经理必须人工核对 PR 精确 `headRefOid`、同 HEAD 的 Ready 完整汇总和独立评审证据；不得声称平台已经自动阻断绕过。后续建议把 `CI 必选门禁汇总` 配置为 required check，但该设置不属于本次 CI 文件变更。发布、账务、安全、Migration、生产配置和 CI 自身变更不得以节省时间为由删除或降级 Ready 重型门禁。
 
 ### 8.3 开发前检查步骤（必须执行）
 

@@ -49,8 +49,32 @@ func TestBifrostDriver_NonStreamMappingAuthUsageAndRedaction(t *testing.T) {
 	if !result.Usage.Present || result.Usage.PromptTokens != 3 || result.Usage.CompletionTokens != 5 || result.Usage.ReasoningTokens != 4 || result.Usage.CachedTokens != 2 {
 		t.Fatalf("usage 归一化错误: %+v", result.Usage)
 	}
+	if result.Attempt.UpstreamRequestID != "ok" {
+		t.Fatalf("固定白名单响应 id 必须进入低敏执行尝试证据: %+v", result.Attempt)
+	}
 	if bytes.Contains(raw, []byte("extra_fields")) || bytes.Contains(raw, []byte("routing_info")) || bytes.Contains(raw, []byte("secret-name")) || bytes.Contains(raw, []byte("\"cost\"")) {
 		t.Fatalf("响应泄露 Bifrost 内部字段: %s", raw)
+	}
+}
+
+func TestBifrostDriver_UpstreamRequestIDUsesStrictTopLevelWhitelist(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "固定顶层字段", body: `{"id":"chatcmpl-safe_1"}`, want: "chatcmpl-safe_1"},
+		{name: "忽略嵌套扩展字段", body: `{"extra_fields":{"upstream_request_id":"secret-nested"}}`},
+		{name: "拒绝控制字符", body: `{"id":"unsafe id"}`},
+		{name: "拒绝超长引用", body: `{"id":"` + strings.Repeat("a", 192) + `"}`},
+		{name: "忽略非字符串", body: `{"id":123}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := extractWhitelistedUpstreamRequestID([]byte(tc.body)); got != tc.want {
+				t.Fatalf("固定白名单引用提取错误 got=%q want=%q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -216,6 +240,10 @@ func TestBifrostDriver_ChatCompletionStreamInjectsUsageAndReadsSSE(t *testing.T)
 	})
 	if err != nil || !streamRequested || !includeUsage || !usage.Present || usage.TotalTokens != 3 {
 		t.Fatalf("Bifrost HTTP SSE 契约错误 stream=%v include_usage=%v usage=%+v err=%v", streamRequested, includeUsage, usage, err)
+	}
+	chunk, err := driver.NormalizeStreamLine([]byte(`data: {"id":"chatcmpl-stream-safe","choices":[{"delta":{"content":"OK"}}]}`), "molin/qwen-turbo")
+	if err != nil || chunk.UpstreamRequestID != "chatcmpl-stream-safe" {
+		t.Fatalf("流式固定白名单响应 id 必须可进入执行尝试证据: chunk=%+v err=%v", chunk, err)
 	}
 }
 
@@ -845,7 +873,7 @@ func TestExecutionAttemptLedgerStateMapping(t *testing.T) {
 	finished := time.Now()
 	attempt := ExecutionAttempt{
 		AttemptNo: 1, Driver: "bifrost", ProviderCode: "bailian", EndpointCode: "bifrost/bailian",
-		ProviderModel: "bailian/qwen-turbo", StartedAt: started, FinishedAt: finished, Outcome: "success",
+		ProviderModel: "bailian/qwen-turbo", UpstreamRequestID: "chatcmpl-ledger-safe", StartedAt: started, FinishedAt: finished, Outcome: "success",
 	}
 	ledger := attempt.ToLedgerModel("req-ledger-map", ExecutionUsage{PromptTokens: 3, CompletionTokens: 5, ReasoningTokens: 2, CachedTokens: 1, Present: true})
 	if ledger.RequestID != "req-ledger-map" || ledger.Status != "succeeded" || ledger.ProviderCode != "bailian" || ledger.EndpointCode == nil || *ledger.EndpointCode != "bifrost/bailian" {
@@ -854,10 +882,22 @@ func TestExecutionAttemptLedgerStateMapping(t *testing.T) {
 	if ledger.PromptTokens == nil || *ledger.PromptTokens != 3 || ledger.CompletionTokens == nil || *ledger.CompletionTokens != 5 || ledger.LatencyMS == nil {
 		t.Fatalf("执行尝试 Usage 或耗时映射错误: %+v", ledger)
 	}
+	if ledger.UpstreamRequestID == nil || *ledger.UpstreamRequestID != "chatcmpl-ledger-safe" {
+		t.Fatalf("低敏上游请求引用必须映射到账本: %+v", ledger)
+	}
 	clockSkewAttempt := ExecutionAttempt{StartedAt: finished, FinishedAt: started}
 	clockSkewLedger := clockSkewAttempt.ToLedgerModel("req-clock-skew", ExecutionUsage{})
 	if clockSkewLedger.LatencyMS == nil || *clockSkewLedger.LatencyMS != 0 {
 		t.Fatalf("时钟回拨时耗时必须归零，不能发生无符号整数溢出: %+v", clockSkewLedger)
+	}
+}
+
+func TestTokenUsageStatusFromExecutionPreservesUnknownForManualReconcile(t *testing.T) {
+	if got := tokenUsageStatusFromExecution(model.AIExecutionUnknown); got != "pending_reconcile" {
+		t.Fatalf("结果未知请求经人工核定时必须保留待对账来源，got=%q", got)
+	}
+	if got := tokenUsageStatusFromExecution(model.AIExecutionCancelled); got != "pending_reconcile" {
+		t.Fatalf("取消请求经人工核定时必须保留待对账来源，got=%q", got)
 	}
 }
 
@@ -896,6 +936,9 @@ func TestBifrostFrozenModelsMatchInfrastructureConfig(t *testing.T) {
 		t.Fatalf("读取 Bifrost 配置失败: %v", err)
 	}
 	var config struct {
+		Client struct {
+			EnableLogging bool `json:"enable_logging"`
+		} `json:"client"`
 		Providers map[string]struct {
 			Keys []struct {
 				Value  string   `json:"value"`
@@ -905,6 +948,9 @@ func TestBifrostFrozenModelsMatchInfrastructureConfig(t *testing.T) {
 	}
 	if err := json.Unmarshal(raw, &config); err != nil {
 		t.Fatalf("解析 Bifrost 配置失败: %v", err)
+	}
+	if config.Client.EnableLogging {
+		t.Fatal("Bifrost 必须关闭请求日志，禁止持久化请求正文、响应正文或 Header")
 	}
 	for provider, expectedEnv := range map[string]string{
 		"bailian":    "env.BAILIAN_API_KEY",

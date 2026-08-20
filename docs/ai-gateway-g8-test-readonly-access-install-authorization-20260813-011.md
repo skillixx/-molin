@@ -1,6 +1,6 @@
 # G8 测试服只读入口 011 交互 sudo 安装授权清单
 
-> 状态：`PENDING_USER_APPROVAL`。PR #365 最终 HEAD `30cf58083088628c0ad8ac321cca3078f39b5341` 已通过 CI run `31685942115` 12/12 和独立代码安全、QA、产品/规格 P0/P1/P2=0，并按 merge commit `018f7344a5a52ccc6c23b478555a7ddc02f5ba63` 合入主干。本清单只冻结候选与未来执行边界；工程合并不构成测试服授权，当前未执行 `--local-check`、SFTP、交互 SSH、sudo 认证、root 安装或远端 self-test。
+> 状态：`CONSUMED_STAGING_UNKNOWN`。用户批准后唯一一次 `--local-check` 为 PASS；唯一正式暂存包装器调用以 `invalid_request`、退出码 2、stderr 为空停止并零重试。低敏结果不能确认 SFTP 是否启动或远端五文件是否部分上传，暂存状态为 `UNKNOWN`。交互 SSH、sudo 认证、root 安装和远端 self-test 均未执行。本 ChangeId、候选、回执、授权与以下命令已全部消费，仅保留用于历史审计，禁止再次执行。
 
 ## 1. 精确目标与冻结资产
 
@@ -27,7 +27,9 @@
 - 命令生成器：合并后 SHA `37d3184721438b33e670edca8460058db96ec46e80e8b37e5f691c52e4422d2f`，大小 `11610` 字节；与 PR 最终候选一致。
 - 冻结 010 helper：`4fb920e32574c640685ddd9bed919485473dc54873d157a409c1adf987b3ab6a`。
 
-## 2. 未来需再次批准的唯一执行顺序
+## 2. 已消费的历史执行顺序
+
+以下步骤仅记录当时授权上限，不再构成可执行命令或授权。任何取证、清理或安装必须使用新 ChangeId。
 
 1. 执行一次 011 包装器 `--local-check`；只核验五文件、manifest、回执、known_hosts、密钥对和本地稳定性，不联网。
 2. 完整通过后执行同一包装器正式模式一次；只启动一次 SFTP，独占创建 011 暂存并上传五文件，零重试，不启动 SSH 或 sudo。
@@ -40,7 +42,7 @@
 
 ## 3. 影响、回滚和停止条件
 
-- 授权上限：未来独立批准后本地检查 1 次、SFTP 1 次、交互 SSH 1 次、`sudo -k -v` 1 次、root 安装 1 次、固定 self-test 1 次；全部零重试。
+- 历史授权上限：本地检查 1 次、正式暂存包装器 1 次、交互 SSH 1 次、`sudo -k -v` 1 次、root 安装 1 次、固定 self-test 1 次；全部零重试。本次实际只执行到唯一正式暂存包装器调用，后续项目均未执行且不得继续。
 - 创建面：一个 `pc:pc:0700` 暂存、一个 `root:root:0700` root-only 目录、可能新建的 `/usr/local/libexec/molin`、两个工具和一个 sudoers 文件。
 - 三个 live 目标均以 no-clobber 同一文件描述符创建并逐项登记。预存目标不得覆盖、删除或修改。
 - 失败时只逆序删除本次登记的新 live 目标；sudoers 优先删除并重新校验 `/etc/sudoers`。仅本次新建且已证明为空的工具父目录允许精确 `rmdir`。

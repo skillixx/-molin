@@ -331,7 +331,7 @@
 - Agent 模板管理、用户 Agent 创建和定制订单（agent）。
 - Skills 管理、版本、购买、安装、Agent 绑定（skill）。
 
-AI 网关 Phase 1 的商业文字链路按 G0-G6 独立门禁完成；G7 作为生产开放前的可靠性扩展门禁，补齐低基数指标、Prometheus/Blackbox 告警、Grafana SLO、request_id 级只读财务核对、1000 请求@100 并发、100 路幂等、JSON/SSE 附加开销、流式断连、Fake HTTP/Redis 混沌和安全验收。G7 不推进数据库版本，不包含生产部署、真实客户灰度或图片/视频模型；这些属于需另行授权的 G8，最终状态以 `docs/ai-gateway-g7-acceptance.md` 为准。
+AI 网关 Phase 1 的文字链路按 G0-G6 独立门禁完成；G7 作为可靠性扩展门禁，补齐低基数指标、Prometheus/Blackbox 告警、Grafana SLO、request_id 级只读财务核对、1000 请求@100 并发、100 路幂等、JSON/SSE 附加开销、流式断连、Fake HTTP/Redis 混沌和安全验收。G8 最终归档状态为 `G8_STAGE_ACCEPTANCE=PASS`、`G8_SOFTWARE_CLOSED_LOOP=COMPLETED`、`G8_TEST_ENV_USABLE=YES`、`G8_REAL_PROVIDER_SETTLEMENT=PASS`、`ACCEPTED_EXCEPTIONS=YES`。已有技术证据覆盖真实 Provider、执行、Usage、结算、钱包与 Outbox 主链路；`RESPONSE_MATCH=NO`、未配置临时 SK 的手工脚本及账单/争议追加核对由负责人接受为非阻断。测试服对账、失败补偿、双闸门、回滚演练和监控/告警/备份/队列观察转入后续运维专项。测试服真实流量闸门仍开启且可能产生真实费用；`G8_COMMERCIAL_ACCEPTED`、生产开放、客户流量和其他真实费用动作仍须另行授权，最终口径以 `docs/ai-gateway-g8-acceptance.md` 和 `docs/ai-gateway-g8-software-closure.md` 为准。
 
 ### Week 10–12：GPU 服务器出售（第三阶段）
 

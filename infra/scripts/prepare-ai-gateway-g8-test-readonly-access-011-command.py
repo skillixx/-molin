@@ -16,7 +16,7 @@ from pathlib import Path
 
 
 CHANGE_ID = "CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011"
-CHANGE_ID_CONSUMED = False
+CHANGE_ID_CONSUMED = True
 ROOT_COPY = "/root/molin-g8-install-CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011"
 INSTALLER_NAME = "g8-test-readonly-access-install-011.sh"
 EXPECTED_INSTALLER_SHA256 = "28e49509d34f6cc76e56310f2a6a24d713f85430542733caf62c38d743fe5c20"
@@ -159,14 +159,15 @@ exit
 
 
 def main() -> int:
+    # 011 已消费时必须在任何参数解析前固定拒绝，避免帮助或错误输出回显调用方参数。
+    if CHANGE_ID_CONSUMED:
+        print("G8_TEST_READONLY_ACCESS_011_COMMAND=FAILED reason=change_id_consumed")
+        return 2
     parser = argparse.ArgumentParser(add_help=True)
     parser.add_argument("--change-id")
     parser.add_argument("--output-file")
     arguments = parser.parse_args()
     try:
-        if CHANGE_ID_CONSUMED:
-            print("G8_TEST_READONLY_ACCESS_011_COMMAND=FAILED reason=change_id_consumed")
-            return 2
         output = Path(arguments.output_file or "")
         installer_path = Path(__file__).with_name(INSTALLER_NAME)
         if arguments.change_id != CHANGE_ID or not output.is_absolute() or output.exists():

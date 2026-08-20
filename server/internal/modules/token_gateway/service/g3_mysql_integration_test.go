@@ -350,7 +350,7 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 		}
 		started := startIntegrationAttempt(t, ctx, g2, request.RequestID)
 		attempt := successfulIntegrationAttempt(started)
-		attempt.Outcome, attempt.ErrorClass = "failed", "provider_rejected"
+		attempt.Outcome, attempt.ErrorClass, attempt.UpstreamRequestID = "failed", "provider_rejected", "chatcmpl-integration-safe"
 		if err := billing.FinalizeRequest(ctx, request.RequestID, ExecutionResult{Attempt: attempt, Usage: ExecutionUsage{PromptTokens: 10, CompletionTokens: 5, Present: true}}); err != nil {
 			t.Fatal(err)
 		}
@@ -359,6 +359,25 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 		assertCount(t, db, "ai_usage_items", "request_id = ? AND source = 'provider' AND sequence_no = 0", request.RequestID, 3)
 		assertCount(t, db, "ai_usage_items", "request_id = ? AND source = 'provider' AND sequence_no = 1 AND unit_price IS NOT NULL AND amount IS NOT NULL", request.RequestID, 4)
 		assertCount(t, db, "ai_usage_items", "request_id = ? AND source = 'provider' AND sequence_no = 2 AND unit_price IS NOT NULL AND amount IS NOT NULL", request.RequestID, 4)
+		assertCount(t, db, "token_usage_logs", "request_id = ?", request.RequestID, 1)
+		var usageLog model.TokenUsageLog
+		if err := db.Where("request_id = ?", request.RequestID).First(&usageLog).Error; err != nil {
+			t.Fatal(err)
+		}
+		var settledAmount decimal.Decimal
+		if err := db.Model(&model.AIRequest{}).Select("settled_amount").Where("request_id = ?", request.RequestID).Row().Scan(&settledAmount); err != nil {
+			t.Fatal(err)
+		}
+		if usageLog.InputTokens != 10 || usageLog.OutputTokens != 5 || usageLog.TotalTokens != 15 || usageLog.Status != "failed" || !usageLog.SaleAmount.Equal(settledAmount) {
+			t.Fatalf("聚合用量日志必须与权威 Usage 和结算金额一致: %+v", usageLog)
+		}
+		var upstreamRequestID *string
+		if err := db.Model(&model.AIExecutionAttempt{}).Select("upstream_request_id").Where("request_id = ?", request.RequestID).Row().Scan(&upstreamRequestID); err != nil {
+			t.Fatal(err)
+		}
+		if upstreamRequestID == nil || *upstreamRequestID != "chatcmpl-integration-safe" {
+			t.Fatal("低敏上游请求引用未持久化到执行尝试")
+		}
 	})
 
 	t.Run("输出审核拦截保留上游成本但不向用户扣费", func(t *testing.T) {
@@ -693,6 +712,11 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 		}
 		assertAtMostOne(t, db, "wallet_transactions", "user_id = ? AND type = 'consume'", 4)
 		assertCount(t, db, "wallet_holds", "user_id = ? AND status IN ('settled','released')", 4, 1)
+		expectedUsageLogs := int64(0)
+		if status == model.AIBillingSettled {
+			expectedUsageLogs = 1
+		}
+		assertCount(t, db, "token_usage_logs", "request_id = ?", request.RequestID, expectedUsageLogs)
 	})
 
 	t.Run("Usage 缺失保留预占并进入待对账", func(t *testing.T) {
@@ -743,6 +767,7 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 
 	t.Run("可信全零 Usage 形成零金额结算终态", func(t *testing.T) {
 		request := integrationRequest("g3-zero-usage", 7)
+		request.IsStream = true
 		if _, err := billing.PrepareRequest(ctx, request, map[string]interface{}{"max_tokens": "100"}); err != nil {
 			t.Fatal(err)
 		}
@@ -757,6 +782,13 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 		assertCount(t, db, "ai_usage_items", "request_id = ?", request.RequestID, 11)
 		assertCount(t, db, "ai_usage_items", "request_id = ? AND source = 'provider' AND sequence_no = 2 AND amount IS NOT NULL", request.RequestID, 4)
 		assertCount(t, db, "wallet_transactions", "user_id = ? AND type = 'consume'", 7, 1)
+		var usageLog model.TokenUsageLog
+		if err := db.Where("request_id = ?", request.RequestID).First(&usageLog).Error; err != nil {
+			t.Fatal(err)
+		}
+		if !usageLog.IsStream || usageLog.Status != "success" || !usageLog.SaleAmount.IsZero() || usageLog.TotalTokens != 0 {
+			t.Fatalf("流式零用量汇总日志不一致: %+v", usageLog)
+		}
 	})
 
 	t.Run("结算最后一步失败时整笔事务回滚", func(t *testing.T) {
@@ -783,6 +815,7 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 		assertRequestAndHoldStatus(t, db, request.RequestID, model.AIBillingHeld, "holding")
 		assertCount(t, db, "wallet_transactions", "user_id = ? AND type = 'consume'", 8, 0)
 		assertCount(t, db, "ai_usage_items", "request_id = ?", request.RequestID, 0)
+		assertCount(t, db, "token_usage_logs", "request_id = ?", request.RequestID, 0)
 		if err := db.Exec("DROP TRIGGER IF EXISTS " + triggerName).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -791,6 +824,7 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 		}
 		assertRequestAndHoldStatus(t, db, request.RequestID, model.AIBillingSettled, "settled")
 		assertCount(t, db, "wallet_transactions", "user_id = ? AND type = 'consume'", 8, 1)
+		assertCount(t, db, "token_usage_logs", "request_id = ?", request.RequestID, 1)
 	})
 
 	t.Run("待对账超过期限转人工异常且保留 hold", func(t *testing.T) {
@@ -829,6 +863,66 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 		}
 		if err := billing.ResolveException(ctx, request.RequestID, ManualResolutionSettle, ExecutionUsage{Present: true}); !errors.Is(err, ErrBillingAmountException) {
 			t.Fatalf("已释放请求也必须先拒绝人工零用量结算: %v", err)
+		}
+	})
+
+	t.Run("结果未知请求经人工核定后写入待对账来源汇总", func(t *testing.T) {
+		request := integrationRequest("g3-manual-unknown-settle", 9)
+		if _, err := billing.PrepareRequest(ctx, request, map[string]interface{}{"max_tokens": "100"}); err != nil {
+			t.Fatal(err)
+		}
+		started := startIntegrationAttempt(t, ctx, g2, request.RequestID)
+		if err := billing.FinalizeRequest(ctx, request.RequestID, ExecutionResult{
+			Attempt: ExecutionAttempt{
+				AttemptNo: 1, Driver: "native", ProviderCode: "test", ProviderModel: "test-model",
+				StartedAt: started, FinishedAt: time.Now(), Outcome: "pending_reconcile", ResultUnknown: true,
+			},
+			Usage: ExecutionUsage{Present: false},
+		}); !errors.Is(err, ErrSettlementPending) {
+			t.Fatalf("结果未知请求必须先进入待对账: %v", err)
+		}
+		if err := db.Model(&model.AIRequest{}).Where("request_id = ?", request.RequestID).
+			Update("updated_at", time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)).Error; err != nil {
+			t.Fatal(err)
+		}
+		changed, err := billing.reconcileOne(ctx, request.RequestID, time.Now())
+		if err != nil || !changed {
+			t.Fatalf("结果未知请求超期后应进入人工异常: changed=%t err=%v", changed, err)
+		}
+		assertRequestAndHoldStatus(t, db, request.RequestID, model.AIBillingException, "holding")
+		usage := ExecutionUsage{PromptTokens: 3, CompletionTokens: 2, Present: true}
+		if err := billing.ResolveException(ctx, request.RequestID, ManualResolutionSettle, usage); err != nil {
+			t.Fatalf("结果未知请求经人工核定后应可结算: %v", err)
+		}
+		assertRequestAndHoldStatus(t, db, request.RequestID, model.AIBillingSettled, "settled")
+		var usageLog model.TokenUsageLog
+		if err := db.Where("request_id = ?", request.RequestID).First(&usageLog).Error; err != nil {
+			t.Fatal(err)
+		}
+		if usageLog.Status != "pending_reconcile" || usageLog.TotalTokens != 5 || usageLog.ErrorCode == nil || *usageLog.ErrorCode != "manual_reconciled" {
+			t.Fatalf("人工核定汇总必须保留原执行不确定性: %+v", usageLog)
+		}
+	})
+
+	t.Run("查询汇总金额保留八位小数精度", func(t *testing.T) {
+		request := integrationRequest("g8-usage-log-eight-decimals", 1)
+		saleAmount := decimal.RequireFromString("0.12345678")
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			// 直接验证兼容汇总的物理列精度；权威扣费事务已由前述完整结算用例覆盖。
+			return createTokenUsageLogTx(tx, request, ExecutionUsage{PromptTokens: 1, Present: true}, saleAmount, "success", nil, time.Now())
+		}); err != nil {
+			t.Fatalf("八位金额必须可无损写入查询汇总: %v", err)
+		}
+		var usageLog model.TokenUsageLog
+		if err := db.Where("request_id = ?", request.RequestID).First(&usageLog).Error; err != nil {
+			t.Fatal(err)
+		}
+		if !usageLog.SaleAmount.Equal(saleAmount) {
+			t.Fatalf("查询汇总金额精度发生漂移: got=%s", usageLog.SaleAmount.String())
+		}
+		// 该用例只验证物理列精度，不伪造已结算请求；验证后移除临时汇总，保持全局财务不变量。
+		if err := db.Where("request_id = ?", request.RequestID).Delete(&model.TokenUsageLog{}).Error; err != nil {
+			t.Fatal(err)
 		}
 	})
 
@@ -939,6 +1033,18 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 		if err := billing.ResolveException(ctx, request.RequestID, ManualResolutionSettle, ExecutionUsage{CompletionTokens: 2, Present: true}); !errors.Is(err, repository.ErrRequestStateConflict) {
 			t.Fatalf("不同 Usage 的人工结算重试必须冲突: %v", err)
 		}
+		assertCount(t, db, "token_usage_logs", "request_id = ?", request.RequestID, 1)
+		var usageLog model.TokenUsageLog
+		if err := db.Where("request_id = ?", request.RequestID).First(&usageLog).Error; err != nil {
+			t.Fatal(err)
+		}
+		var settledAmount decimal.Decimal
+		if err := db.Raw("SELECT settled_amount FROM ai_requests WHERE request_id = ?", request.RequestID).Row().Scan(&settledAmount); err != nil {
+			t.Fatal(err)
+		}
+		if usageLog.Status != "success" || usageLog.TotalTokens != 1 || !usageLog.SaleAmount.Equal(settledAmount) {
+			t.Fatalf("人工核定汇总日志不一致: %+v", usageLog)
+		}
 		var providerRawItems, providerBilledItems, reconciledItems int64
 		if err := db.Model(&model.AIUsageItem{}).Where("request_id = ? AND source = 'provider' AND sequence_no = 0", request.RequestID).Count(&providerRawItems).Error; err != nil {
 			t.Fatal(err)
@@ -954,7 +1060,6 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 		}
 	})
 
-	assertCount(t, db, "token_usage_logs", "1 = ?", 1, 0)
 }
 
 func assertWalletTransactionContinuity(t *testing.T, db *gorm.DB, userID uint64) {

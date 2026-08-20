@@ -358,6 +358,10 @@ func (s *AIBillingService) FinalizeRequest(ctx context.Context, requestID string
 			if err := updateRequestBillingTx(tx, request, executionStatus, model.AIBillingSettled, result.ClientDisconnected, &billed.FinalAmount, errorClass, errorCode, ledgerAttempt.ExecutionModelCode, completed); err != nil {
 				return err
 			}
+			// 汇总用量日志与请求终态、钱包结算和 Outbox 必须处于同一事务，避免页面账单与权威 Usage 分叉。
+			if err := createTokenUsageLogTx(tx, request, result.Usage, billed.FinalAmount, tokenUsageStatusFromAttempt(ledgerAttempt.Status), firstNonEmptyStringPointer(errorCode, errorClass), completed); err != nil {
+				return err
+			}
 			if err := createOutboxTx(tx, requestID, "billing_settled", model.AIBillingSettled, billed.FinalAmount, completed); err != nil {
 				return err
 			}
@@ -545,6 +549,12 @@ func (s *AIBillingService) ResolveException(ctx context.Context, requestID, reso
 			}
 			if updated.RowsAffected != 1 {
 				return repository.ErrRequestStateConflict
+			}
+			if resolution == ManualResolutionSettle {
+				// 人工核定同样属于 settled 终态，汇总日志必须反映核定后的权威 Usage 与最终销售金额。
+				if err := createTokenUsageLogTx(tx, request, usage, finalAmount, tokenUsageStatusFromExecution(request.ExecutionStatus), stringPointer("manual_reconciled"), s.now()); err != nil {
+					return err
+				}
 			}
 			return createOutboxTx(tx, requestID, eventType, status, finalAmount, s.now())
 		})
@@ -855,7 +865,8 @@ func finalizeAttemptTx(tx *gorm.DB, attempt model.AIExecutionAttempt) error {
 			"status": attempt.Status, "result_unknown": attempt.ResultUnknown, "latency_ms": attempt.LatencyMS,
 			"prompt_tokens": attempt.PromptTokens, "completion_tokens": attempt.CompletionTokens,
 			"reasoning_tokens": attempt.ReasoningTokens, "cached_tokens": attempt.CachedTokens,
-			"error_class": attempt.ErrorClass, "finished_at": attempt.FinishedAt,
+			"upstream_request_id": attempt.UpstreamRequestID,
+			"error_class":         attempt.ErrorClass, "finished_at": attempt.FinishedAt,
 		})
 	if result.Error != nil {
 		return result.Error
@@ -867,7 +878,7 @@ func finalizeAttemptTx(tx *gorm.DB, attempt model.AIExecutionAttempt) error {
 	if err := tx.Where("request_id = ? AND attempt_no = ?", attempt.RequestID, attempt.AttemptNo).First(&existing).Error; err != nil {
 		return repository.ErrRequestStateConflict
 	}
-	if existing.Status != attempt.Status {
+	if existing.Status != attempt.Status || pointerValue(existing.UpstreamRequestID) != pointerValue(attempt.UpstreamRequestID) {
 		return repository.ErrRequestStateConflict
 	}
 	return nil
@@ -904,6 +915,89 @@ func createUsageTx(tx *gorm.DB, items []model.AIUsageItem) error {
 		}
 	}
 	return nil
+}
+
+// createTokenUsageLogTx 幂等保存面向查询的汇总日志；已有行必须与本次权威结算事实完全一致。
+func createTokenUsageLogTx(tx *gorm.DB, request *model.AIRequest, usage ExecutionUsage, saleAmount decimal.Decimal, status string, errorCode *string, createdAt time.Time) error {
+	if request == nil || !usage.Present || status == "" {
+		return repository.ErrRequestStateConflict
+	}
+	expected := model.TokenUsageLog{
+		RequestID:        request.RequestID,
+		UserID:           request.UserID,
+		APIKeyID:         request.APIKeyID,
+		LogicalModelCode: request.LogicalModelCode,
+		Modality:         request.Modality,
+		InputTokens:      usage.PromptTokens,
+		OutputTokens:     usage.CompletionTokens,
+		TotalTokens:      usage.PromptTokens + usage.CompletionTokens,
+		Units:            decimal.Zero,
+		SaleAmount:       saleAmount,
+		IsStream:         request.IsStream,
+		Status:           status,
+		ErrorCode:        errorCode,
+		CreatedAt:        createdAt,
+	}
+	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&expected).Error; err != nil {
+		return err
+	}
+	var existing model.TokenUsageLog
+	if err := tx.Where("request_id = ?", request.RequestID).First(&existing).Error; err != nil {
+		return err
+	}
+	if existing.UserID != expected.UserID || !optionalUint64Equal(existing.APIKeyID, expected.APIKeyID) ||
+		existing.LogicalModelCode != expected.LogicalModelCode || existing.Modality != expected.Modality ||
+		existing.InputTokens != expected.InputTokens || existing.OutputTokens != expected.OutputTokens || existing.TotalTokens != expected.TotalTokens ||
+		!existing.Units.Equal(expected.Units) || !existing.SaleAmount.Equal(expected.SaleAmount) || existing.IsStream != expected.IsStream ||
+		existing.Status != expected.Status || pointerValue(existing.ErrorCode) != pointerValue(expected.ErrorCode) {
+		return repository.ErrRequestStateConflict
+	}
+	return nil
+}
+
+// tokenUsageStatusFromAttempt 将执行账本终态收敛为 token_usage_logs 的固定枚举。
+func tokenUsageStatusFromAttempt(status string) string {
+	switch status {
+	case "succeeded":
+		return "success"
+	case "timeout":
+		return "timeout"
+	case "failed":
+		return "failed"
+	default:
+		return ""
+	}
+}
+
+// tokenUsageStatusFromExecution 为人工核定路径复用请求执行终态，禁止把未知状态伪装为成功。
+func tokenUsageStatusFromExecution(status string) string {
+	switch status {
+	case model.AIExecutionSucceeded:
+		return "success"
+	case model.AIExecutionFailed:
+		return "failed"
+	case model.AIExecutionUnknown, model.AIExecutionCancelled:
+		// 人工核定只能确认 Usage 与结算金额，不能把未知或取消的执行结果伪装为成功。
+		return "pending_reconcile"
+	default:
+		return ""
+	}
+}
+
+func firstNonEmptyStringPointer(values ...*string) *string {
+	for _, value := range values {
+		if value != nil && *value != "" {
+			return value
+		}
+	}
+	return nil
+}
+
+func optionalUint64Equal(left, right *uint64) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func updateWalletLinkTx(tx *gorm.DB, link *model.AIRequestWalletLink, result *billingservice.SettleTxResult) error {

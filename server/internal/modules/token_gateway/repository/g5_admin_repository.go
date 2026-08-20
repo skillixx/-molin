@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"hash/fnv"
+	"math"
 	"reflect"
 	"strings"
 	"time"
@@ -17,10 +18,13 @@ import (
 )
 
 var (
-	ErrModelReleaseConflict = errors.New("模型发布版本冲突")
-	ErrRouteVersionConflict = errors.New("路由版本冲突")
-	ErrRouteUnavailable     = errors.New("已配置路由暂时不可用")
-	ErrPriceStateConflict   = errors.New("价格版本状态冲突")
+	ErrModelDocumentsNotReady = errors.New("模型发布文档未就绪")
+	ErrModelPriceNotReady     = errors.New("模型发布价格未就绪")
+	ErrModelRouteNotReady     = errors.New("模型发布路由未就绪")
+	ErrModelReleaseConflict   = errors.New("模型发布版本冲突")
+	ErrRouteVersionConflict   = errors.New("路由版本冲突")
+	ErrRouteUnavailable       = errors.New("已配置路由暂时不可用")
+	ErrPriceStateConflict     = errors.New("价格版本状态冲突")
 )
 
 // G5AdminRepository 保存管理工作台产生的发布事实，所有状态变更均使用事务和版本条件。
@@ -154,16 +158,18 @@ func (r *G5AdminRepository) PublishModel(ctx context.Context, modelID, operatorI
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&item, modelID).Error; err != nil {
 			return err
 		}
-		if item.ChannelID == nil || item.UpstreamModel == nil || item.DocsURL == nil || item.QuickStartURL == nil ||
-			item.DocsURLHealthStatus != "healthy" || item.QuickStartURLHealthStatus != "healthy" {
-			return ErrModelReleaseConflict
+		if err := validateModelPublishMetadata(item); err != nil {
+			return err
+		}
+		if item.ChannelID == nil || item.UpstreamModel == nil || strings.TrimSpace(*item.UpstreamModel) == "" {
+			return ErrModelRouteNotReady
 		}
 		var priceCount int64
 		if err := tx.Model(&model.AIPriceVersion{}).Where("logical_model_code = ? AND status = ? AND effective_at <= ? AND (expires_at IS NULL OR expires_at > ?)", item.LogicalModelCode, model.AIPriceActive, r.now().UTC(), r.now().UTC()).Count(&priceCount).Error; err != nil {
 			return err
 		}
 		if priceCount != 1 {
-			return ErrModelReleaseConflict
+			return ErrModelPriceNotReady
 		}
 		if err := validatePublishRoute(tx, item.LogicalModelCode); err != nil {
 			return err
@@ -172,22 +178,31 @@ func (r *G5AdminRepository) PublishModel(ctx context.Context, modelID, operatorI
 		if err != nil {
 			return err
 		}
-		// 同一份目录快照不得重复发布，避免两个并发管理员操作生成语义相同的活动版本。
+		// 同一份目录快照重复发布时直接返回既有活动版本，使重复请求和并发请求收敛到同一结果。
 		var current model.AIModelReleaseVersion
 		// 这里必须使用锁定当前读；普通快照读在 REPEATABLE READ 下可能看不到等待期间刚提交的活动版本。
 		currentErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("model_id = ? AND status = ?", item.ID, "active").First(&current).Error
 		if currentErr == nil && releaseSnapshotsEqual(current.SnapshotJSON, snapshot) {
-			return ErrModelReleaseConflict
+			release = current
+			return nil
 		}
 		if currentErr != nil && !errors.Is(currentErr, gorm.ErrRecordNotFound) {
 			return currentErr
 		}
+		nextVersionNo, err := nextModelReleaseVersionNo(tx, item.ID, item.ReleaseVersionNo)
+		if err != nil {
+			return err
+		}
 		now := r.now().UTC()
-		release = model.AIModelReleaseVersion{ModelID: item.ID, VersionNo: item.ReleaseVersionNo + 1, Status: "active", SnapshotJSON: snapshot, Reason: reason, CreatedBy: operatorID, PublishedAt: now}
+		release = model.AIModelReleaseVersion{ModelID: item.ID, VersionNo: nextVersionNo, Status: "active", SnapshotJSON: snapshot, Reason: reason, CreatedBy: operatorID, PublishedAt: now}
 		if err := tx.Model(&model.AIModelReleaseVersion{}).Where("model_id = ? AND status = ?", item.ID, "active").Updates(map[string]interface{}{"status": "retired", "retired_at": now}).Error; err != nil {
 			return err
 		}
 		if err := tx.Create(&release).Error; err != nil {
+			// 模型行锁已串行化正常发布；若仍发生唯一键竞态，返回稳定冲突分类而不是泄露数据库错误。
+			if isDuplicateKey(err) {
+				return ErrModelReleaseConflict
+			}
 			return err
 		}
 		result := tx.Model(&model.TokenModel{}).Where("id = ? AND release_version_no = ?", item.ID, item.ReleaseVersionNo).Updates(map[string]interface{}{
@@ -202,6 +217,31 @@ func (r *G5AdminRepository) PublishModel(ctx context.Context, modelID, operatorI
 		return nil
 	})
 	return &release, err
+}
+
+// nextModelReleaseVersionNo 在模型行锁保护下同时参考目录指针与历史最大版本，跳过孤儿或已退役记录占用的编号。
+func nextModelReleaseVersionNo(tx *gorm.DB, modelID, catalogVersionNo uint64) (uint64, error) {
+	var historicalMax uint64
+	if err := tx.Model(&model.AIModelReleaseVersion{}).Where("model_id = ?", modelID).
+		Select("COALESCE(MAX(version_no), 0)").Scan(&historicalMax).Error; err != nil {
+		return 0, err
+	}
+	if catalogVersionNo > historicalMax {
+		historicalMax = catalogVersionNo
+	}
+	if historicalMax == math.MaxUint64 {
+		return 0, ErrModelReleaseConflict
+	}
+	return historicalMax + 1, nil
+}
+
+// validateModelPublishMetadata 在任何发布写入前验证两份必需文档均已配置且检查健康。
+func validateModelPublishMetadata(item model.TokenModel) error {
+	if item.DocsURL == nil || strings.TrimSpace(*item.DocsURL) == "" || item.QuickStartURL == nil || strings.TrimSpace(*item.QuickStartURL) == "" ||
+		item.DocsURLHealthStatus != "healthy" || item.QuickStartURLHealthStatus != "healthy" {
+		return ErrModelDocumentsNotReady
+	}
+	return nil
 }
 
 // releaseSnapshotsEqual 按 JSON 语义比较快照，避免 MySQL JSON 列规范化对象键顺序后误判为配置变化。
@@ -249,16 +289,23 @@ func (r *G5AdminRepository) RollbackModel(ctx context.Context, modelID, targetVe
 			return err
 		}
 		if priceCount != 1 {
-			return ErrModelReleaseConflict
+			return ErrModelPriceNotReady
 		}
 		if err := validatePublishRoute(tx, snapshot.LogicalModelCode); err != nil {
 			return err
 		}
-		release = model.AIModelReleaseVersion{ModelID: modelID, VersionNo: item.ReleaseVersionNo + 1, Status: "active", SnapshotJSON: target.SnapshotJSON, Reason: reason, CreatedBy: operatorID, PublishedAt: now}
+		nextVersionNo, err := nextModelReleaseVersionNo(tx, modelID, item.ReleaseVersionNo)
+		if err != nil {
+			return err
+		}
+		release = model.AIModelReleaseVersion{ModelID: modelID, VersionNo: nextVersionNo, Status: "active", SnapshotJSON: target.SnapshotJSON, Reason: reason, CreatedBy: operatorID, PublishedAt: now}
 		if err := tx.Model(&model.AIModelReleaseVersion{}).Where("model_id = ? AND status = ?", modelID, "active").Updates(map[string]interface{}{"status": "retired", "retired_at": now}).Error; err != nil {
 			return err
 		}
 		if err := tx.Create(&release).Error; err != nil {
+			if isDuplicateKey(err) {
+				return ErrModelReleaseConflict
+			}
 			return err
 		}
 		updates := map[string]interface{}{
@@ -303,7 +350,7 @@ func validatePublishRoute(tx *gorm.DB, logicalModelCode string) error {
 		return err
 	}
 	if routeCount == 0 {
-		return ErrModelReleaseConflict
+		return ErrModelRouteNotReady
 	}
 	return nil
 }

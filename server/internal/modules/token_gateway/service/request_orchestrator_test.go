@@ -1289,6 +1289,35 @@ func TestRequestOrchestratorUnknownFailureAndIncompleteSSEDoNotFallback(t *testi
 	}
 }
 
+func TestRequestOrchestratorRejectsConflictingStreamUpstreamReferences(t *testing.T) {
+	store := newMemoryOrchestratorStore()
+	orchestrator := newTestOrchestrator(store)
+	stream := "data: {\"id\":\"upstream-one\",\"choices\":[{\"delta\":{\"content\":\"O\"}}]}\n\n" +
+		"data: {\"id\":\"upstream-two\",\"choices\":[{\"delta\":{\"content\":\"K\"}}]}\n\n" +
+		"data: [DONE]\n\n"
+	orchestrator.SetExecutionDriverSelector(staticExecutionDriverSelector{driver: &fakeOrchestratorDriver{streamBody: io.NopCloser(strings.NewReader(stream))}})
+	prepared, err := orchestrator.Prepare(context.Background(), PrepareCommand{
+		RequestID: "req-sse-upstream-mismatch", UserID: 3, APIKeyID: 7, LogicalModel: "molin/qwen-turbo", Stream: true,
+		Body: map[string]interface{}{"model": "molin/qwen-turbo", "stream": true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := orchestrator.Execute(context.Background(), prepared.RequestID, &memorySink{}); err != nil {
+		t.Fatalf("上游引用冲突应收敛为可查询的未知终态: %v", err)
+	}
+	attempt := store.attempts[prepared.RequestID]
+	if attempt.Status != "failed" || !attempt.ResultUnknown || attempt.ErrorClass == nil || *attempt.ErrorClass != "upstream_reference_mismatch" {
+		t.Fatalf("流式上游引用冲突必须失败关闭且不得拼接不同请求证据: %+v", attempt)
+	}
+	if store.requests[prepared.RequestID].ExecutionStatus != model.AIExecutionUnknown {
+		t.Fatalf("引用冲突的请求必须收敛为 unknown: %+v", store.requests[prepared.RequestID])
+	}
+	if attempt.UpstreamRequestID == nil || *attempt.UpstreamRequestID != "upstream-one" {
+		t.Fatalf("冲突时只能保留首个已验证低敏引用: %+v", attempt.UpstreamRequestID)
+	}
+}
+
 func TestWriteStreamBillingStatusEmitsMachineReadableEvent(t *testing.T) {
 	sink := &memorySink{}
 	if err := writeStreamBillingStatus(sink, "req-settlement-pending", ErrSettlementPending); err != nil {

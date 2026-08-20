@@ -70,7 +70,15 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 该候选不包含 SFTP、SCP、下载、删除、sudo、Docker、数据库、队列、服务或 HTTP 能力。用户批准后，本地检查 PASS，唯一正式调用返回 `remote_evidence_failed` 并按停止条件零重试结束；未形成远端状态证据，暂存仍为 `UNKNOWN`。004 已消费，禁止再次连接或重放。读取和 SSH 可能由操作系统产生 sshd/journald/audit 日志，并可能按文件系统策略更新 atime；不得表述为操作系统层绝对零写入。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-staging-evidence-authorization-20260812-004.md`、`docs/ai-gateway-g8-test-readonly-staging-evidence-attempt-20260812-004.md`。
 
-## 3. 历史已停止安装变更（禁止执行）
+## 3. 017 已消费安装尝试与历史停止记录
+
+015 已在唯一获批本地段中出现 PowerShell 正则错误并消费；下游影响保持 `UNKNOWN`。016 经 PR #381 合入 main 并完成合并后冻结摘要复核，用户随后独立批准唯一执行；人工第一段在交互 PowerShell 解析 `Get-FileHash` 时以终止错误停止，错误位于唯一 SSH 调用之前，SSH、sudo、安装和远端影响均为 0，016 已消费并墓碑化。017 使用新 ChangeId `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-017`，仍只以 014 已证明 `PRESENT / PASS / NONE` 的 011 暂存为输入，并以纯 .NET 流式 SHA-256 消除模块自动加载依赖，同时关闭加密私钥提示、低敏输出和 HUP/TERM/INT 回滚边界。PR #384 最终 HEAD `ee947fd61919215500ef516488d56e01ad2ea72d` 通过 CI run `31791430839` 与三方零缺陷复评，按 merge commit `e2a7e4f89c4115b3e32dc27292b0bc11d7d09a57` 合入 main，合并后原始 Git blob 与冻结命令复核一致。用户随后独立批准唯一执行；人工本地段返回固定 `local_gate_failed` 并退出 2，事后 SSH 前同构门禁通过，但本地审计不能证明当时是否启动 `ssh.exe`。远端第二段未粘贴，sudo、安装器、post-check 和业务影响均为 0；017 以 `CONSUMED_LOCAL_GATE_FAILED_SSH_REACHABILITY_UNKNOWN` 消费并墓碑化。完整证据见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-016.md`、`docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-017.md` 与 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260814-017.md`。
+
+## 3.1 018 与 019 失败关闭记录
+
+018 的唯一人工本地段窗口直接关闭且无可见输出；SSH 启动/连接保持 `UNKNOWN / 最多 1`，远端固定段、sudo、安装器和 post-check 均为 0。018 已失败关闭消费并墓碑化，禁止重试或重放。019 使用独立 ChangeId `CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-019`，以唯一 `ssh -tt` 自动携带无秘密 Base64 远端脚本；PR #390、CI run `31829691838`、独立评审、main merge commit `70485d893fd86db00be4dbb9e324f9d4322d55b0` 和合并后摘要复核均通过。用户精确授权后，本地门禁和冻结摘要通过，唯一可见 PowerShell 最终在恢复 `$ErrorActionPreference` 时因保存值为 `Null` 失败；窗口固定标志不可恢复，SSH、远端预检、sudo、安装器与 post-check 均保持 `UNKNOWN / 最多 1`。019 已失败关闭消费并墓碑化，禁止再次授权、重试或重放；见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260815-018.md`、`docs/ai-gateway-g8-test-readonly-access-install-attempt-20260815-019.md` 与 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260815-019.md`。
+
+### 3.1 历史已停止安装变更（禁止执行）
 
 已消费 ChangeId：`CHG-G8-TEST-READONLY-ACCESS-20260812-001`。本节保留原批准计划用于审计，所有命令均已作废并禁止执行。
 
@@ -84,7 +92,7 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 - 对账器 SHA-256：`37f6ee369f1ce489a3966123dfea3bd172d5386045495e069433c7f3d993f2c1`，大小 `13066129` 字节；连续两次独立构建摘要一致。
 - `<ADMIN_CHANNEL>`：可执行 root 命令的受控运维通道；不得在聊天或命令参数中传递 sudo 密码。
 
-### 3.1 精确目标
+### 3.2 精确目标
 
 - 主机：`pc@8.130.9.163:10003`
 - hostname 基线：`pc-Z790-UD-AX`
@@ -94,7 +102,7 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 任一身份不一致立即停止，禁止安装。
 
-### 3.2 历史命令摘要（未执行，禁止重放）
+### 3.3 历史命令摘要（未执行，禁止重放）
 
 1. 在本地从源码提交 `c50f092339fcad79ca1262925480219db1755318` 按上述参数重新构建 Linux amd64 只读对账器，或使用第 2.1 节生成器生成候选包；无论采用哪种方式，均要求三份资产 SHA-256 与冻结值精确一致。
 2. 通过单次 SCP 将两个资产和 sudoers 文件上传到 `/home/pc/molin/.g8-staging/CHG-G8-TEST-READONLY-ACCESS-20260812-001/`；不覆盖运行文件。
@@ -104,7 +112,7 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 6. 执行 `visudo -cf /etc/sudoers.d/molin-g8-test-readonly-audit`；再执行 `sudo -n -l -U pc`，确认只新增固定审计器命令，没有 `SETENV`、通配符、Shell 或 Docker 命令；执行 `id -nG pc` 确认不存在 `docker` 组。
 7. 只执行审计器 `--self-test`；本 ChangeId 不执行真实审计，不读取业务数据。
 
-### 3.3 影响、上限与回滚
+### 3.4 影响、上限与回滚
 
 - 影响范围：测试服务器新增两个 root-owned 可执行文件和一个 sudoers 文件；不改变现有容器、服务、数据库、队列、环境文件或流量。
 - 最大 SSH/SCP 会话：上传 1 次、管理员安装会话 1 次、非特权核验会话 1 次。
@@ -114,20 +122,32 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 上述上传与安装命令均未执行，且不得使用 001 重放。
 
-### 3.4 首次授权执行记录
+### 3.5 首次授权执行记录
 
 `CHG-G8-TEST-READONLY-ACCESS-20260812-001` 已于 2026-08-12 执行一次只读前置检查：本机固定 ED25519 指纹匹配，但首个远端命令 `sudo -n -l` 返回“需要密码”。该结果触发停止条件，未上传、安装或修改任何测试服资产，ChangeId 已消费且禁止重放。若继续必须使用新的 ChangeId 和经用户明确指定的受控 root 管理通道，见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260812.md`。
 
-### 3.5 当前重新申请顺序
+### 3.6 当前重新申请顺序
 
-001、002、003、004、005、006、007、008 均已消费。008 的唯一正式只读 SSH 已返回 `ABSENT / NOT_APPLICABLE / NONE`，把固定 003 暂存状态从 `UNKNOWN` 收敛为 `ABSENT`。Drop 映射下旧的物理主机身份核验顺序不再适用；当前必须依次完成：
+001 至 019 均已消费。014 在修复 Windows 可信系统目录缺陷并完成工程门禁后，获得独立用户授权；唯一一次本地诊断 PASS，唯一一次只读 SSH 返回 `PRESENT / PASS / NONE`，把 011 暂存从 `UNKNOWN` 收敛为存在且五文件、manifest 与回执完整。014 结果与墓碑已由 PR #379 按 merge commit `97ee6037cafa90577be619fc67e78866c4d75efe` 合入 main；015 的本地正则错误与下游 `UNKNOWN`、016 的本地模块错误与远端零触达、017 的统一低敏本地失败、018 的无输出窗口关闭，以及 019 的 PowerShell 状态恢复失败与执行到达边界 `UNKNOWN` 均已归档。当前顺序为：
 
-1. 008 已按独立用户授权完成一次本地检查和一次只读 SSH，零重试；结果为 `ABSENT/NOT_APPLICABLE/NONE`，全部历史命令作废并禁止重放。
-2. 固定 003 暂存目录不存在，因此未执行也无需执行清理；不得为“确认结果”再次连接或扩大读取范围。
-3. 若继续准备安装，必须使用新 ChangeId 重新冻结安装候选、制品回执和授权，不得复用 001、002、003 或 008 的候选、回执和授权。
-4. 安装后的真实运行态审计仍使用另一个独立 ChangeId，后续安装授权不得顺带执行；API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因暂存目录不存在而自动关闭。
+1. 011、012、013、014 的包装器、命令生成器、历史命令和授权均保持消费态，禁止重放。
+2. 011 暂存存在性和完整性已关闭，无需再次诊断；不得把该结论外推为 live 入口或运行态可用。
+3. 015 已在独立用户授权后的唯一人工本地段中出现 PowerShell 路径正则错误；由于该错误默认非终止，身份材料读取、SSH、sudo、root-only 副本和 live 安装均保持 `UNKNOWN`，重试 0，015 已消费并墓碑化。
+4. 016 在独立用户授权后的唯一人工第一段因 `Get-FileHash` 模块解析错误终止；控制流没有到达 SSH，远端影响为 0。016 已消费并墓碑化。
+5. 017 在独立用户授权后的唯一人工本地段返回统一低敏 `local_gate_failed` 并退出 2；现有证据不能区分 SSH 前瞬时失败与 SSH 非零返回，因此 SSH 启动/连接保持 `UNKNOWN / 最多 1`。
+6. 017 的远端第二段未粘贴，sudo、安装器、post-check、业务请求、上游请求和费用均为 0；安装未确认，017 已失败关闭消费并墓碑化。
+7. 当前只可为新的 ChangeId 完成工程候选；必须先让低敏结果可区分 SSH 前门禁和 SSH 调用失败，017 的历史批准、工程合并或生成命令均不构成新授权。
+8. 018 已完成工程合并；独立授权后的唯一人工段关闭父窗口且无可见输出，SSH 到达保持未知，所有远端安装影响为 0，018 已消费并墓碑化。
+9. 019 改为单次 `ssh -tt` 自动携带远端固定脚本；独立授权后的唯一执行在 PowerShell 状态恢复阶段失败，固定标志不可恢复，SSH 与安装链路到达保持 UNKNOWN，019 已消费并墓碑化。
+10. 020 使用独立 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-020`，不安装受控入口或 sudoers，不使用 sudo，候选经 PR #394、CI run `31861762018`、merge `3c63539279a34ae2365fc9d7e26e207dd728c4ba` 和合并后摘要复核通过。用户独立授权后，本地生成与冻结摘要 PASS，但外层 PowerShell 包装在整段解析时因缺少右括号失败，未调用 Windows PowerShell 5.1、冻结命令或 SSH。SSH、Docker/HTTP/数据库查询、sudo、安装、宿主写入、业务/上游/费用均为 0，重试 0；020 已消费并墓碑化，禁止重试或重放。`G8_SOFTWARE_CLOSED_LOOP` 仍未完成。
+11. 020 工程合并和本次失败尝试均不证明运行态通过；020 已永久消费，不得再次授权、重试或重放。若继续，只能为新的独立 ChangeId 重新完成工程、摘要与用户精确授权。测试候选部署、Fake 旅程、零差额对账和实际回滚继续分开授权。
+12. API、数据库、Bifrost、监控、备份和账务 UNKNOWN/P1 不因本地测试、安装候选或暂存三态自动关闭。
+13. 021 使用新的独立 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-021` 修复本地启动链路：固定 Python 入口从工程 merge 原始 blob 复核生成器、审计源和自身，在内存中生成并核对命令后只启动一次可信 Windows PowerShell 5.1；工程阶段只运行假 SSH 与断网测试。PR #398 已合并为 `8bc05cbf3bc71a8954087dc7f26732f836e5212e`，合并后摘要复核无漂移。唯一授权尝试固定结果为 `CONSUMED_LOCAL_RECEIPT_UNAVAILABLE_SSH_NOT_STARTED`：PowerShell 启动一次后因本地耐久回执不可用在 SSH 前失败关闭，`PRE_SSH_GATE`、`SSH_ATTEMPTED`、SSH 与远端命令均为 0，重试为 0。021 已永久消费并墓碑化，不得再次授权、重试或重放；若继续必须使用新的独立 ChangeId，`G8_SOFTWARE_CLOSED_LOOP` 仍未完成。
+14. 022 使用新的独立 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-022` 修复 021 的耐久回执缺口。PR #401 已以 merge commit `84ae5b0ad87958ee63fbfa709c4f164baca39a1b` 合入 main，合并后摘要复核一致。唯一授权调用在 PowerShell 启动后因 `identity_pair_failed` 于 SSH 前失败关闭；消费归档 TDD 错误触发一次未授权本地重放，亦在相同门禁停止。固定状态为 `CONSUMED_LOCAL_IDENTITY_PAIR_FAILED_SSH_NOT_STARTED`：本地正式入口/PowerShell 总调用 `2 / 2`、未授权本地重放 `1`，两份非空耐久回执都没有 `PRE_SSH_GATE`/`SSH_ATTEMPTED`，SSH 与全部远端能力为 0。发现偏差后两个入口立即永久墓碑化；022 已永久消费，不得再次授权、重试或重放，若继续只能使用新的独立 ChangeId，`G8_SOFTWARE_CLOSED_LOOP` 仍未完成。
+15. 023 使用新的独立 ChangeId `CHG-G8-TEST-READONLY-RUNTIME-AUDIT-DROP-20260815-023`，移除固定客户端私钥、公钥和指纹配对门禁，使用开发机现有 OpenSSH 免交互认证链。唯一授权调用形成 `PRE_SSH_GATE=PASS` 与 `SSH_ATTEMPTED=YES`，随后以 `ssh_session_failed` 非零停止且零重试。固定状态为 `CONSUMED_SSH_SESSION_FAILED_REMOTE_AUDIT_NOT_PROVEN`：SSH 调用 `1`、会话成功 `0`，远端固定脚本与 Docker 只读查询为 `UNKNOWN / 最多启动 1 次`，没有 `COLLECTION_PASS`；其余未授权能力均为 0。023 已永久消费并墓碑化，不得再次授权、重试或重放。
+16. 024 使用新的独立 ChangeId `CHG-G8-TEST-READONLY-SSH-DIAGNOSTIC-20260816-024`，只诊断固定 SSH 连接与固定 `printf` 回执。它保留 OpenSSH 默认身份文件和当前 `SSH_AUTH_SOCK`，以 `-F none` 隔离用户 `ssh_config`，并固定目标、端口、唯一 host key 信任源、BatchMode、禁密码/代理/转发/TTY、单会话与零重试；原始 stderr 只在本机内存有界映射为固定低敏原因。PR #407 的工程 HEAD `97876c03baeed226362aaa304fb1a30e959ac42a` 已通过 CI run `31897233312` 与三项独立零缺陷评审，以 merge commit `ffca18aace03fd9185280fb7a2b2807d337a590d` 合入 main并完成合并后摘要复核。当前为 `PENDING_USER_APPROVAL / REMOTE_NOT_AUTHORIZED`；新的独立精确授权前禁止执行 024、SSH 或任何测试服操作。
 
-`CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005` 已完成唯一一次本地检查和正式只读 SSH，结果为 `ZERO / EXACT / stderr EMPTY / diagnostic PASS`，证明传输链路可用但未关闭暂存 UNKNOWN；005 已消费并禁止重放。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`、`docs/ai-gateway-g8-test-readonly-transport-diagnostic-attempt-20260812-005.md`。下一次暂存只读取证必须使用新的 ChangeId，重新完成代码安全、QA、产品、精确 HEAD CI、merge commit 与用户独立授权。
+`CHG-G8-TEST-READONLY-TRANSPORT-DIAG-20260812-005` 已完成唯一一次本地检查和正式只读 SSH，结果为 `ZERO / EXACT / stderr EMPTY / diagnostic PASS`；005 已消费并禁止重放。该历史结果当时只证明传输链路可用，暂存 UNKNOWN 后续已由 014 收敛为 `PRESENT / PASS / NONE`。授权与执行记录见 `docs/ai-gateway-g8-test-readonly-transport-diagnostic-authorization-20260812-005.md`、`docs/ai-gateway-g8-test-readonly-transport-diagnostic-attempt-20260812-005.md`。
 
 `CHG-G8-TEST-READONLY-STAGING-EVIDENCE-20260812-006` 通过 PR #345、CI 12/12 和三方独立门禁后合入主干。用户批准后，本地检查 PASS；唯一正式只读 SSH 返回 `BLOCKED / MACHINE_ID` 并零重试停止。暂存查找未执行，003 暂存继续为 `UNKNOWN`。006 已消费，禁止重放；授权与执行记录见 `docs/ai-gateway-g8-test-readonly-staging-evidence-authorization-20260812-006.md`、`docs/ai-gateway-g8-test-readonly-staging-evidence-attempt-20260812-006.md`。
 
@@ -139,23 +159,24 @@ PR `#333` 已按 merge commit `69439c4c9b14c67bf8a17dd8822d80ecdc784a27` 合并�
 
 `CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-010` 已消费。用户授权后一次本地检查、一次只读 SSH 与一次原子 SFTP 均 PASS，五文件暂存成功；唯一 root 安装编排在本地参数构造阶段停止，未建立 root 连接、未发送安装脚本、未创建 root-only/live/sudoers 目标，也未执行 visudo、sudo 范围、Docker 组或固定 self-test。零重试，业务/上游/费用为 `0 / 0 / 0 CNY`。状态为 `CONSUMED_STAGED_ROOT_NOT_RUN`，禁止重放；直接改用 `pc` 不满足 root-owned 和 sudoers 契约，未执行。暂存清理、root 安装或新的 `pc` 非特权方案均须新 ChangeId、重新工程门禁和独立用户授权。证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-010.md`。
 
-`CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011` 采用已批准的方案 A：独立包装器未来只执行一次 SFTP；随后在唯一交互 SSH 会话内先完成非特权预检，再由操作者仅通过 TTY 执行一次 `sudo -k -v`，认证后只运行冻结的 `sudo -n` root 安装器和固定 self-test。密码不得进入参数、stdin、脚本、环境变量、日志或文档。PR #365 最终 HEAD `30cf58083088628c0ad8ac321cca3078f39b5341` 已通过 CI run `31685942115` 12/12 和独立三方 P0/P1/P2=0，并按 merge commit `018f7344a5a52ccc6c23b478555a7ddc02f5ba63` 合入主干；合并后的包装器、命令生成器与安装器摘要均未漂移。当前未连接测试服，状态为 `PENDING_USER_APPROVAL`；工程合并不授权执行，权威清单见 `docs/ai-gateway-g8-test-readonly-access-install-authorization-20260813-011.md`。
+`CHG-G8-TEST-READONLY-ACCESS-DROP-20260813-011` 已消费。用户批准后唯一一次 local-check 为 PASS；唯一正式暂存包装器调用以 `invalid_request`、退出码 2、stderr 为空停止并零重试。当时低敏失败无法区分 SFTP 是否启动、远端独占建目录是否成功或五文件是否部分上传；后续 014 已通过独立只读取证把该暂存收敛为 `PRESENT / PASS / NONE`。011 的交互 SSH、sudo 认证、root 安装、`visudo`、sudo 范围、Docker 组和 self-test 从未执行；没有 live 目标需要回滚。011 禁止重放；015 与 016 都只把已证明完整的 011 暂存作为冻结输入且现已消费，017 继续使用同一只读来源但采用新的独立 ChangeId。历史证据见 `docs/ai-gateway-g8-test-readonly-access-attempt-20260813-011.md`，当前暂存证据见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-attempt-20260814-014.md`。
 
-## 4. 安装后的独立只读核验
+`CHG-G8-TEST-READONLY-STAGING-EVIDENCE-DROP-20260814-014` 已完成唯一一次本地诊断和唯一一次只读 SSH，结果为 `PRESENT / PASS / NONE`、退出码 0、重试 0；014 已消费并墓碑化。该结果只关闭 011 暂存存在性与完整性，不授权清理、安装或运行态审计。结果归档见 `docs/ai-gateway-g8-test-readonly-drop-staging-evidence-attempt-20260814-014.md`。
 
-安装成功也不自动授权读取运行态。必须再申请新的 `CHG-G8-TEST-READONLY-YYYYMMDD-NNN`，固定为一次 SSH、零重试，并只执行：
+`CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-015` 已消费。其工程候选由 PR #380 合入 main 后获得独立用户授权；唯一人工本地段在可信 Windows 路径正则处报告末尾反斜杠非法，但该错误默认非终止，身份材料读取、SSH、sudo、安装和 root-only/live/sudoers 状态均不能由错误顺序证明，保持 `UNKNOWN`；四项成功标志均未形成。事后单独打印的 `$LASTEXITCODE=0` 可能来自此前任一原生程序，不能证明成功或 SSH 为 0。015 禁止重放，修复版必须使用 016 新 ChangeId。证据见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-015.md`。
 
-```bash
-sudo -n /usr/local/libexec/molin/g8-test-readonly-audit \
-  --change-id=CHG-G8-TEST-READONLY-YYYYMMDD-NNN
-```
+`CHG-G8-TEST-READONLY-ACCESS-INSTALL-DROP-20260814-016` 已消费。用户独立批准后，唯一人工第一段在交互 PowerShell 的 `Get-FileHash` 处返回 `CommandNotFoundException`；`$ErrorActionPreference='Stop'` 使控制流在唯一 SSH 调用之前终止，SSH、sudo、安装、业务请求、上游请求和费用均为 0。016 禁止重放；017 以纯 .NET 流式 SHA-256 替代模块 cmdlet，并须重新完成工程门禁和独立授权。证据见 `docs/ai-gateway-g8-test-readonly-access-install-attempt-20260814-016.md`。
 
-输出必须只保存低敏聚合结果。出现目标身份不一致、`privileged_installation!=VERIFIED`、未知参数、真实 Secret、非只读 SQL、队列消费、服务信号或任何业务请求时立即停止。该核验仍不授权部署、重启、Migration、凭据轮换、付费上游、真实通知或客户灰度。
+## 4. 020 无安装独立只读核验
 
-## 5. 验收标准
+001 至 019 的 root-owned 审计器、sudoers 与 `sudo -n /usr/local/libexec/...` 路径均为已停止的历史方案，禁止用于 020。020 当时只允许在工程合并、原始 blob/命令摘要复核和用户独立授权后，由 `pc` 通过一次 `ssh -T` 执行冻结内存脚本；该唯一尝试现已在 SSH 前失败关闭消费，020 不得再次授权、重试或重放。
 
-- `pc` 不属于 Docker 管理组，审计输出 `pc_docker_group_member=false`，且 `sudo -n -l -U pc` 仅出现固定审计命令。
-- 审计器和对账器均为批准 SHA、`root:root:755`，sudoers 为 `root:root:440`。
+远端脚本只允许固定 Docker/宿主/本机 HTTP/数据库只读查询。hostname、machine-id、密码状态与 Docker 组枚举不属于 Drop 入口运行态验收范围，020 不读取也不输出。全部低敏结果先保存在会话内存；脚本非零、必需探针出现 `UNAVAILABLE/MISSING/INVALID/000`、空值、缺少固定必需键或缺少 `AUDIT_COMPLETE=true` 时，固定返回 `audit_evidence_failed` 并结束唯一会话，零重试。`COLLECTION_PASS` 仅表示证据采集完整，不表示证据值已满足 G8 验收。
+
+## 5. 020 运行态验收标准
+
+- `pc` 直接使用既有 Docker 权限；Docker 权限接近宿主 root，因此实际命令必须保持冻结白名单，任何容器创建、启停、删除、复制、compose、网络/卷变更、宿主 bind mount 或任意参数入口均失败关闭。
+- 不存在 020 安装目标或 sudoers 验收项；固定 011 暂存对账器只按批准路径、`pc:pc:700`、大小与 SHA-256 执行只读模式。
 - schema 精确为批准版本且 `dirty=0`；MySQL/Redis/RabbitMQ/Bifrost/监控事实不再是 UNKNOWN。Bifrost 两节点与 LB 必须输出镜像摘要、健康和仅变量名的运行时注入集合；审计器在内存中按完整 `KEY=value` 从容器环境扣除相同镜像的基础环境，再只输出差异键名并与专用变量白名单精确比较。同名变量被容器覆盖也属于运行时注入；任何额外业务 Secret 或缺失必需变量均失败关闭。
 - 22 条告警、16 个 Grafana 面板和 Alertmanager discard/受控路由均可核对，不发送真实通知。
 - 三项正常账务差额、七类异常、未释放 hold、Outbox 和补偿积压全部为 0；任一非零均失败关闭。
