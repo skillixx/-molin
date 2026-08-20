@@ -9,11 +9,11 @@ import (
 // TestAIGatewayBailianChannelNameRepairContract 固定百炼渠道名称的数据修复边界。
 // 迁移只能修复已确认的乱码字节，不能覆盖管理员后续设置的合法渠道名称。
 func TestAIGatewayBailianChannelNameRepairContract(t *testing.T) {
-	up, err := os.ReadFile("000067_fix_bailian_channel_name_utf8.up.sql")
+	up, err := os.ReadFile("000068_fix_bailian_channel_name_utf8.up.sql")
 	if err != nil {
 		t.Fatalf("读取百炼渠道名称修复迁移失败: %v", err)
 	}
-	down, err := os.ReadFile("000067_fix_bailian_channel_name_utf8.down.sql")
+	down, err := os.ReadFile("000068_fix_bailian_channel_name_utf8.down.sql")
 	if err != nil {
 		t.Fatalf("读取百炼渠道名称修复回滚迁移失败: %v", err)
 	}

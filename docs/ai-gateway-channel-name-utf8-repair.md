@@ -19,8 +19,8 @@ AI 网关工作台的 Bifrost 路由列表应显示渠道名称“百炼 Bifrost
 
 核心文件：
 
-- `server/migrations/000067_fix_bailian_channel_name_utf8.up.sql`：使用十六进制 UTF-8 常量修复精确匹配的错误数据。
-- `server/migrations/000067_fix_bailian_channel_name_utf8.down.sql`：保留已纠正的数据。
+- `server/migrations/000068_fix_bailian_channel_name_utf8.up.sql`：使用十六进制 UTF-8 常量修复精确匹配的错误数据。
+- `server/migrations/000068_fix_bailian_channel_name_utf8.down.sql`：保留已纠正的数据。
 - `server/migrations/ai_gateway_channel_name_migration_test.go`：锁定渠道编码、错误字节和正确字节三重契约。
 
 本次不改变接口字段和数据库表结构。管理后台仍通过既有 AI 网关渠道/路由查询接口读取 `token_channels.name`。
