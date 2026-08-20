@@ -20,6 +20,7 @@
 2. Project 已允许调用 `molin/qwen-turbo`。
 3. 调用账户已满足实名、钱包余额及平台访问策略。
 4. 平台 SK 只放入执行脚本的服务端进程环境变量，不写入浏览器、源码、文档或提交记录。
+5. 每次真实调用必须显式传入 `-ConfirmSend`；仅设置环境变量不会发送请求。
 
 ## 从密钥文件执行
 
@@ -28,7 +29,7 @@
 ```powershell
 $env:MOLIN_API_KEY = (Get-Content -LiteralPath 'D:\test.txt' -Raw).Trim()
 try {
-    .\scripts\test_molin_chat.ps1
+    .\scripts\test_molin_chat.ps1 -ConfirmSend
 } finally {
     Remove-Item Env:MOLIN_API_KEY -ErrorAction SilentlyContinue
 }
@@ -41,7 +42,7 @@ try {
 ```powershell
 $env:MOLIN_API_KEY = (Get-Clipboard).Trim()
 try {
-    .\scripts\test_molin_chat.ps1
+    .\scripts\test_molin_chat.ps1 -ConfirmSend
 } finally {
     Remove-Item Env:MOLIN_API_KEY -ErrorAction SilentlyContinue
 }
@@ -51,6 +52,7 @@ try {
 
 ```powershell
 .\scripts\test_molin_chat.ps1 `
+    -ConfirmSend `
     -BaseUrl 'http://8.130.9.163:3000' `
     -Model 'molin/qwen-turbo' `
     -Prompt '仅回复 OK' `
@@ -73,7 +75,7 @@ try {
 | 退出码 | 含义 |
 |---|---|
 | `0` | 模型执行成功且账本完成结算 |
-| `2` | 未设置 `MOLIN_API_KEY` |
+| `2` | 未传入 `-ConfirmSend` 或未设置 `MOLIN_API_KEY` |
 | `3` | 鉴权、调用、查询或最终状态失败 |
 | `4` | Chat 响应缺少 `request_id` |
 | `5` | 轮询期限内账本仍未完成结算 |
@@ -94,4 +96,4 @@ Fake 测试不会访问真实上游，也不会产生真实费用：
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/tests/test_molin_chat.ps1
 ```
 
-测试覆盖缺少密钥、立即结算、异步结算和模型无权限四种场景，并校验测试密钥不会出现在命令输出中。
+测试覆盖缺少显式确认、缺少密钥、立即结算、异步结算和模型无权限五种场景，并校验测试密钥不会出现在命令输出中。

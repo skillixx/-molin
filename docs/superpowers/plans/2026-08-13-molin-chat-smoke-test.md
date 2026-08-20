@@ -26,7 +26,7 @@
 - Create: `scripts/tests/test_molin_chat.ps1`
 
 **Interfaces:**
-- Consumes: 环境变量 `MOLIN_API_KEY`；参数 `BaseUrl:string`、`Model:string`、`Prompt:string`、`MaxTokens:int`、`PollCount:int`、`PollIntervalMilliseconds:int`。
+- Consumes: 环境变量 `MOLIN_API_KEY`；参数 `BaseUrl:string`、`Model:string`、`Prompt:string`、`MaxTokens:int`、`PollCount:int`、`PollIntervalMilliseconds:int`、`ConfirmSend:switch`。
 - Produces: 标准输出中的脱敏测试摘要；成功退出码 `0`；配置、鉴权、调用或结算失败退出码非 `0`。
 
 - [ ] **Step 1: 写入缺失密钥和成功结算的失败测试**
@@ -167,7 +167,7 @@ git commit -m "新增墨灵模型调用冒烟测试脚本"
 ```powershell
 $env:MOLIN_API_KEY = (Get-Clipboard).Trim()
 try {
-    .\scripts\test_molin_chat.ps1
+    .\scripts\test_molin_chat.ps1 -ConfirmSend
 } finally {
     Remove-Item Env:MOLIN_API_KEY -ErrorAction SilentlyContinue
 }
@@ -192,7 +192,7 @@ Run:
 ```powershell
 $env:MOLIN_API_KEY = (Get-Clipboard).Trim()
 try {
-    .\scripts\test_molin_chat.ps1 -BaseUrl 'http://8.130.9.163:3000' -Model 'molin/qwen-turbo' -Prompt '仅回复 OK' -MaxTokens 16
+    .\scripts\test_molin_chat.ps1 -ConfirmSend -BaseUrl 'http://8.130.9.163:3000' -Model 'molin/qwen-turbo' -Prompt '仅回复 OK' -MaxTokens 16
 } finally {
     Remove-Item Env:MOLIN_API_KEY -ErrorAction SilentlyContinue
 }

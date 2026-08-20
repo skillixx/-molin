@@ -5,13 +5,20 @@ param(
     [string]$Prompt = '仅回复 OK',
     [ValidateRange(1, 128)][int]$MaxTokens = 16,
     [ValidateRange(1, 60)][int]$PollCount = 10,
-    [ValidateRange(0, 30000)][int]$PollIntervalMilliseconds = 1000
+    [ValidateRange(0, 30000)][int]$PollIntervalMilliseconds = 1000,
+    [switch]$ConfirmSend
 )
 
 $ErrorActionPreference = 'Stop'
 
 # Windows PowerShell 5.1 不会自动加载 HttpClient 所在程序集，显式加载以保持 5.1/7 双版本兼容。
 Add-Type -AssemblyName System.Net.Http
+
+# 即使当前进程残留平台 SK，也必须再次显式确认，避免误运行脚本产生真实请求和费用。
+if (-not $ConfirmSend) {
+    [Console]::Error.WriteLine('未确认发送。仅在明确授权一次真实请求后增加 -ConfirmSend。')
+    exit 2
+}
 
 function ConvertFrom-SafeJson {
     param([string]$Content)

@@ -15,12 +15,13 @@
 - 提示词：`仅回复 OK`
 - `max_tokens`：16
 - 账本轮询：最多 10 次，每次间隔 1 秒
+- 真实发送确认：必须显式传入 `-ConfirmSend`
 
 平台 SK 只允许通过当前进程的 `MOLIN_API_KEY` 环境变量传入。为了使用剪切板中的 SK，可先执行：
 
 ```powershell
 $env:MOLIN_API_KEY = (Get-Clipboard).Trim()
-.\scripts\test_molin_chat.ps1
+.\scripts\test_molin_chat.ps1 -ConfirmSend
 Remove-Item Env:MOLIN_API_KEY
 ```
 
@@ -28,7 +29,7 @@ Remove-Item Env:MOLIN_API_KEY
 
 ## 数据流
 
-1. 校验 `MOLIN_API_KEY` 非空，只输出脱敏前缀和长度，不输出完整值。
+1. 校验 `-ConfirmSend` 和 `MOLIN_API_KEY`，任一缺失都在网络前停止。
 2. 为本次调用生成唯一 `Idempotency-Key`。
 3. 向 `${BaseUrl}/v1/chat/completions` 发送非流式请求：
    - `Authorization: Bearer <SK>`

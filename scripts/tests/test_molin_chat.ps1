@@ -169,8 +169,14 @@ function Wait-FakeServerReady {
 
 $oldKey = $env:MOLIN_API_KEY
 try {
+    $env:MOLIN_API_KEY = $fakeSecret
+    $confirmationResult = Invoke-ClientScript -Arguments @()
+    Assert-True ($confirmationResult.ExitCode -ne 0) '缺少显式确认时必须失败'
+    Assert-True ($confirmationResult.Output -match 'ConfirmSend') '缺少显式确认时必须提示确认参数'
+    Assert-True ($confirmationResult.Output -notmatch [regex]::Escape($fakeSecret)) '确认门禁输出不得包含完整平台 SK'
+
     Remove-Item Env:MOLIN_API_KEY -ErrorAction SilentlyContinue
-    $missingResult = Invoke-ClientScript -Arguments @()
+    $missingResult = Invoke-ClientScript -Arguments @('-ConfirmSend')
     Assert-True ($missingResult.ExitCode -ne 0) '缺少密钥时必须失败'
     Assert-True ($missingResult.Output -match 'MOLIN_API_KEY') '缺少密钥时必须给出安全提示'
 
@@ -181,7 +187,7 @@ try {
     try {
         Wait-FakeServerReady -ReadyFile $readyFile -Job $job
         $env:MOLIN_API_KEY = $fakeSecret
-        $clientResult = Invoke-ClientScript -Arguments @('-BaseUrl', "http://127.0.0.1:$port", '-PollCount', '2', '-PollIntervalMilliseconds', '0')
+        $clientResult = Invoke-ClientScript -Arguments @('-ConfirmSend', '-BaseUrl', "http://127.0.0.1:$port", '-PollCount', '2', '-PollIntervalMilliseconds', '0')
         $output = $clientResult.Output
         $clientExitCode = $clientResult.ExitCode
         Wait-Job -Job $job -Timeout 10 | Out-Null
@@ -209,7 +215,7 @@ try {
     $pendingJob = Start-FakeMolinServer -Port $pendingPort -Secret $fakeSecret -ReadyFile $pendingReadyFile -TraceFile $pendingTraceFile -Scenario 'pending'
     try {
         Wait-FakeServerReady -ReadyFile $pendingReadyFile -Job $pendingJob
-        $pendingResult = Invoke-ClientScript -Arguments @('-BaseUrl', "http://127.0.0.1:$pendingPort", '-PollCount', '3', '-PollIntervalMilliseconds', '0')
+        $pendingResult = Invoke-ClientScript -Arguments @('-ConfirmSend', '-BaseUrl', "http://127.0.0.1:$pendingPort", '-PollCount', '3', '-PollIntervalMilliseconds', '0')
         Wait-Job -Job $pendingJob -Timeout 10 | Out-Null
         $pendingServerResult = Receive-Job -Job $pendingJob -ErrorAction Stop
 
@@ -233,7 +239,7 @@ try {
     $forbiddenJob = Start-FakeMolinServer -Port $forbiddenPort -Secret $fakeSecret -ReadyFile $forbiddenReadyFile -TraceFile $forbiddenTraceFile -Scenario 'forbidden'
     try {
         Wait-FakeServerReady -ReadyFile $forbiddenReadyFile -Job $forbiddenJob
-        $forbiddenResult = Invoke-ClientScript -Arguments @('-BaseUrl', "http://127.0.0.1:$forbiddenPort", '-PollCount', '1', '-PollIntervalMilliseconds', '0')
+        $forbiddenResult = Invoke-ClientScript -Arguments @('-ConfirmSend', '-BaseUrl', "http://127.0.0.1:$forbiddenPort", '-PollCount', '1', '-PollIntervalMilliseconds', '0')
         Wait-Job -Job $forbiddenJob -Timeout 10 | Out-Null
         $forbiddenServerResult = Receive-Job -Job $forbiddenJob -ErrorAction Stop
 
