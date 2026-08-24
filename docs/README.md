@@ -32,6 +32,7 @@
 
 | 文档 | 说明 |
 |---|---|
+| [backend-development-progress-and-api-status.md](./backend-development-progress-and-api-status.md) | 后端开发进度、路由规模、接口内容与验收边界总览（先看现状） |
 | [full-api-design.md](./full-api-design.md) | 全量 API 设计（接口/字段/错误码权威） |
 | [frontend-api-reference.md](./frontend-api-reference.md) | 前端对接 API 参考 |
 | [api-pagination-standard.md](./api-pagination-standard.md) | 扁平分页规范（D-95） |
