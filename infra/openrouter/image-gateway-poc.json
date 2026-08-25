@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "base_url": "https://openrouter.ai/api/v1",
+  "api_key_env": "OPENROUTER_API_KEY",
+  "model": "bytedance-seed/seedream-5-0-lite",
+  "provider_tag": "seed",
+  "catalog": {
+    "models_path": "/images/models",
+    "endpoints_path": "/images/models/bytedance-seed/seedream-5-0-lite/endpoints",
+    "expected_billable": "output_image",
+    "expected_pricing_unit": "image",
+    "expected_cost_usd": "0.035",
+    "verified_at": "2026-08-24"
+  },
+  "generation": {
+    "path": "/images",
+    "resolution": "2K",
+    "aspect_ratio": "1:1",
+    "n": 1,
+    "stream": false,
+    "allow_fallbacks": false,
+    "prompt_env": "OPENROUTER_IMAGE_POC_PROMPT"
+  },
+  "limits": {
+    "timeout_seconds": 180,
+    "max_response_bytes": 33554432,
+    "max_decoded_image_bytes": 25165824,
+    "max_retries": 0,
+    "max_actual_cost_usd": "0.04"
+  },
+  "image_validation": {
+    "allowed_formats": ["png", "jpeg", "webp"],
+    "min_width": 1920,
+    "max_width": 2304,
+    "min_height": 1920,
+    "max_height": 2304,
+    "expected_aspect_ratio": "1:1",
+    "aspect_ratio_tolerance": "0.01",
+    "max_pixels": 5308416
+  },
+  "authorization": {
+    "change_id": "IMG-OPENROUTER-POC-20260824-001",
+    "max_real_requests": 1,
+    "status": "consumed",
+    "consumed_at": "2026-08-24T13:36:14.305288Z"
+  },
+  "logging": {
+    "print_prompt": false,
+    "print_response_body": false,
+    "print_image_data": false,
+    "print_api_key": false
+  }
+}
