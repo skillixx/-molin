@@ -33,7 +33,7 @@ type PublishedCatalogRow struct {
 	PriceSKUs    []model.AIPriceSKU
 }
 
-// ListPublishedCatalog 只返回可实际执行的已发布文字模型。
+// ListPublishedCatalog 返回可执行的已发布模型；文字模型要求健康路由，图片模型由关闭态图片运行时独立装配。
 func (r *G6UserRepository) ListPublishedCatalog(ctx context.Context, at time.Time) ([]PublishedCatalogRow, error) {
 	var models []model.TokenModel
 	if err := r.db.WithContext(ctx).Where(
@@ -60,7 +60,7 @@ func (r *G6UserRepository) ListPublishedCatalog(ctx context.Context, at time.Tim
 			continue
 		}
 		var snapshot model.TokenModelReleaseSnapshot
-		if json.Unmarshal(releases[i].SnapshotJSON, &snapshot) != nil || snapshot.LogicalModelCode == "" || snapshot.Modality != "chat" {
+		if json.Unmarshal(releases[i].SnapshotJSON, &snapshot) != nil || snapshot.LogicalModelCode == "" || (snapshot.Modality != "chat" && snapshot.Modality != "image") {
 			continue
 		}
 		releaseByModel[releases[i].ModelID], snapshotByModel[releases[i].ModelID] = releases[i], snapshot
@@ -79,6 +79,13 @@ func (r *G6UserRepository) ListPublishedCatalog(ctx context.Context, at time.Tim
 	routable := make(map[string]bool, len(routableCodes))
 	for _, code := range routableCodes {
 		routable[code] = true
+	}
+	// 图片模型不经过文字 Bifrost 路由；只有发布快照和活动测试价格同时存在时才会进入最终目录。
+	for _, snapshot := range snapshotByModel {
+		if snapshot.Modality == "image" {
+			routable[snapshot.LogicalModelCode] = true
+			routableCodes = append(routableCodes, snapshot.LogicalModelCode)
+		}
 	}
 	var versions []model.AIPriceVersion
 	if len(routableCodes) > 0 {

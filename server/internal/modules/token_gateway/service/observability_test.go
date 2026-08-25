@@ -103,6 +103,7 @@ func TestAIGatewayMetricsExportsClosedSeriesAndReadOnlyGauges(t *testing.T) {
 		`molin_ai_gateway_billing_difference_cny{kind="request_wallet"} 0.00000000`,
 		`molin_ai_gateway_concurrency_leases{scope="project"} 1`,
 		`molin_ai_gateway_ghost_leases_total 2`,
+		`molin_ai_gateway_image_reconciliation_difference 0.00000000`,
 	}
 	for _, expected := range checks {
 		if !strings.Contains(text, expected) {
@@ -140,6 +141,12 @@ func TestAIGatewayDBGaugeCollectorReadsFinancialFactsWithoutWrites(t *testing.T)
 	mock.ExpectQuery("SELECT status, COUNT\\(\\*\\) AS count,.*FROM ai_compensation_tasks.*status IN \\(").
 		WithArgs(now, "pending", "retry", "dead", "manual_review").
 		WillReturnRows(sqlmock.NewRows([]string{"status", "count", "oldest_age_seconds"}).AddRow("retry", 1, 90))
+	mock.ExpectQuery("SELECT status, COUNT\\(\\*\\) AS count,.*FROM ai_gateway_tasks GROUP BY status").
+		WithArgs(now).
+		WillReturnRows(sqlmock.NewRows([]string{"status", "count", "oldest_age_seconds"}).AddRow("pending_reconcile", 2, 55))
+	mock.ExpectQuery("SELECT lifecycle_state, COUNT\\(\\*\\) AS count FROM ai_gateway_assets GROUP BY lifecycle_state").
+		WillReturnRows(sqlmock.NewRows([]string{"lifecycle_state", "count"}).AddRow("available", 4))
+	mock.ExpectQuery("WITH sales AS.*asset_counts").WillReturnRows(sqlmock.NewRows([]string{"difference"}).AddRow("0.00000000"))
 	mock.ExpectQuery("WITH selected_usage AS.*request_settled").
 		WillReturnRows(sqlmock.NewRows([]string{"request_settled", "model_usage", "wallet_consumed"}).AddRow("1.25000000", "1.25000000", "1.25000000"))
 	mock.ExpectQuery("SELECT COUNT\\(DISTINCT target_id\\) FROM audit_logs.*target_type = \\?.*created_at >= \\?").
@@ -161,6 +168,9 @@ func TestAIGatewayDBGaugeCollectorReadsFinancialFactsWithoutWrites(t *testing.T)
 	}
 	if snapshot.OutboxBacklog["pending"].OldestAgeSeconds != 45 || snapshot.CompensationBacklog["retry"].OldestAgeSeconds != 90 {
 		t.Fatalf("任务积压快照错误: %+v", snapshot)
+	}
+	if snapshot.ImageTasks["pending_reconcile"].Count != 2 || snapshot.ImageAssets["available"] != 4 || !snapshot.ImageDifference.IsZero() {
+		t.Fatalf("图片任务、资产或对账指标错误: %+v", snapshot)
 	}
 	if !snapshot.BillingDifferences["request_usage"].IsZero() || !snapshot.BillingDifferences["request_wallet"].IsZero() {
 		t.Fatalf("零差额账单被错误识别: %+v", snapshot.BillingDifferences)

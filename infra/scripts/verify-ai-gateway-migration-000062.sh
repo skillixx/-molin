@@ -21,7 +21,12 @@ g2_up="${repo_root}/server/migrations/000061_add_ai_gateway_g2_projects_keys.up.
 g3_up="${repo_root}/server/migrations/000062_create_ai_gateway_g3_billing.up.sql"
 g3_down="${repo_root}/server/migrations/000062_create_ai_gateway_g3_billing.down.sql"
 g8_evidence_up="${repo_root}/server/migrations/000067_align_token_usage_log_money_precision.up.sql"
-for file in "${g1_up}" "${g2_up}" "${g3_up}" "${g3_down}" "${g8_evidence_up}"; do
+image_g1_up="${repo_root}/server/migrations/000068_expand_image_gateway_schema.up.sql"
+image_g2_up="${repo_root}/server/migrations/000069_expand_image_pricing_quotes.up.sql"
+image_g3_up="${repo_root}/server/migrations/000070_expand_image_task_asset_repository.up.sql"
+image_g5_up="${repo_root}/server/migrations/000071_expand_image_billing_adjustments.up.sql"
+for file in "${g1_up}" "${g2_up}" "${g3_up}" "${g3_down}" "${g8_evidence_up}" \
+  "${image_g1_up}" "${image_g2_up}" "${image_g3_up}" "${image_g5_up}"; do
   test -f "${file}" || { echo "G3_MYSQL=FAILED reason=migration_file_missing"; exit 2; }
 done
 
@@ -57,11 +62,21 @@ mysql_exec() {
     mysql --protocol=socket -uroot --database="${database_name}" --batch --skip-column-names "$@"
 }
 
-for _ in $(seq 1 60); do
-  if mysql_exec -e 'SELECT 1' >/dev/null 2>&1; then break; fi
+ready_count=0
+for _ in $(seq 1 120); do
+  if mysql_exec -e 'SELECT 1' >/dev/null 2>&1; then
+    ready_count=$((ready_count + 1))
+  else
+    ready_count=0
+  fi
+  [[ "${ready_count}" -ge 2 ]] && break
   sleep 1
 done
-mysql_exec -e 'SELECT 1' >/dev/null 2>&1 || { echo "G3_MYSQL=FAILED reason=mysql_not_ready"; exit 2; }
+if [[ "${ready_count}" -lt 2 ]]; then
+  docker logs --tail 80 "${container_name}" 2>&1 || true
+  echo "G3_MYSQL=FAILED reason=mysql_not_ready"
+  exit 2
+fi
 
 mysql_exec <<'SQL'
 CREATE TABLE users (
@@ -171,7 +186,8 @@ CREATE TABLE token_usage_logs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 SQL
 
-for file in "${g1_up}" "${g2_up}" "${g3_up}" "${g3_down}" "${g8_evidence_up}"; do
+for file in "${g1_up}" "${g2_up}" "${g3_up}" "${g3_down}" "${g8_evidence_up}" \
+  "${image_g1_up}" "${image_g2_up}" "${image_g3_up}" "${image_g5_up}"; do
   docker cp "${file}" "${container_name}:/tmp/$(basename "${file}")" >/dev/null
 done
 
@@ -194,6 +210,11 @@ apply_file "$(basename "${g2_up}")"
 apply_file "$(basename "${g3_up}")"
 apply_file "$(basename "${g3_up}")"
 apply_file "$(basename "${g8_evidence_up}")"
+# G3回归使用当前HEAD编译的模型，必须继续应用后续兼容性Expand migration；否则旧隔离Schema会误报新增列不存在。
+apply_file "$(basename "${image_g1_up}")"
+apply_file "$(basename "${image_g2_up}")"
+apply_file "$(basename "${image_g3_up}")"
+apply_file "$(basename "${image_g5_up}")"
 
 assert_scalar "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('ai_price_versions','ai_price_model_locks','ai_price_skus','ai_request_wallet_links','ai_outbox_events')" "5" "g3_tables"
 assert_scalar "SELECT CONCAT(numeric_precision,':',numeric_scale) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='wallets' AND column_name='balance_amount'" "20:8" "wallet_precision"

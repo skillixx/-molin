@@ -14,6 +14,7 @@
     "test:vite-isolation": "node --test tests/vite-proxy-isolation.test.mjs",
     "test:g6-e2e": "playwright test tests/g6-customer-journey.spec.ts",
     "test:g8-real-e2e": "playwright test --config playwright.g8-real.config.ts"
+    ,"test:image-gateway": "node --test tests/image-gateway-contract.test.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.0",

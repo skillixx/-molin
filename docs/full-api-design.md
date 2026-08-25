@@ -2272,6 +2272,56 @@ POST  /api/admin/token/billing/exceptions/{request_id}/resolve
 
 > G0/G1 商业账本契约：`request_id`、Project、SK、逻辑模型、执行模型、三类正交状态、标准 Usage 和执行尝试见 [`ai-gateway-g0-g1-contract.md`](./ai-gateway-g0-g1-contract.md)。G3 已在 G2 RequestOrchestrator 上启用价格快照、钱包预占和一次终态结算；公开 Chat 不再使用 G2 的 `unquoted` 规则。
 
+> 图片网关 IMG-G1 仅通过 `000068` 建立 Quote、任务、资产、图片 Usage 和交付状态 Expand Schema，尚未注册任何图片 HTTP 路由。当前 `/v1/images/generations`、`/api/token/images/*` 和 `/api/admin/token/image-*` 均不得视为可调用接口；正式契约将在 IMG-G6 同步本文档后开放。
+
+> 图片网关 IMG-G2 已实现内部 `meter_type + variant_hash` 选价、V2 `selected_lines`、一次性 Quote HMAC 指纹、5分钟过期、并发单消费和按可交付张数的 Decimal 金样。当前金额仅为 `test_fixture`，正式图片模型发布和真实钱包计费保持关闭；本节仍不新增可调用 HTTP 路由。
+
+> 图片网关 IMG-G3 已实现内部任务/资产 Repository、横向归属隔离、乐观锁、争议/legal hold、删除/隔离访问规则和 Fake ObjectStore。普通资产读取同时要求请求已结算且交付状态可用；本阶段仍不注册图片 HTTP 路由，也不签发真实下载地址。
+
+> 图片网关 IMG-G4 已实现内部 Fake ImageGateway、Prompt/图片Fake审核、PNG/JPEG/WebP有界解码、双标识、临时/结果/隔离存储和SSRF/DNS重绑定防护。全部测试不访问真实Provider或外部URL；当前仍没有图片HTTP路由或可交付下载地址。
+
+> 图片网关 IMG-G5 已实现内部Quote消费、Wallet Hold、结算/释放、Usage/Outbox、补偿和request_id零差异对账。`settlement_pending`和未通过安全/存储/结算门禁的资产不能交付；当前仍不注册图片HTTP路由，调账也没有公开入口。
+
+### 14.0A 图片网关IMG-G6本地HTTP合同
+
+> IMG-G6已实现独立关闭态路由注册函数，但未接入bootstrap，当前运行时仍不可达。以下合同只由本地httptest、Fake ImageGateway和隔离MySQL证明，不代表测试环境或生产开放。
+
+用户与兼容端点：
+
+| 方法 | 路径 | 鉴权 | 响应 |
+|---|---|---|---|
+| POST | `/v1/images/generations` | 仅Project SK | 成功200原始OpenAI兼容对象；结果未知504 |
+| POST | `/api/token/images/quotes` | JWT或Project SK | 201，不可变CNY Quote |
+| POST | `/api/token/images/generations` | JWT或Project SK | 强制Quote和Idempotency-Key，202任务 |
+| GET | `/api/token/image-tasks` | JWT或Project SK | D-95 `{items,page,page_size,total}` |
+| GET | `/api/token/image-tasks/{task_id}` | JWT或Project SK | 本人/所属Project任务 |
+| DELETE | `/api/token/image-tasks/{task_id}` | JWT或Project SK | 未执行立即释放；已执行只记录取消意图 |
+| GET | `/api/token/image-assets/{asset_id}/download-url` | JWT或Project SK | settled+available资产15分钟URL |
+| GET | `/api/token/images/requests/{request_id}` | JWT或Project SK | 504后查询原请求 |
+
+图片请求严格支持 `model/prompt/n/size/quality/output_format/user`；MVP只接受 `n=1 + size=2K + 1:1 + quality=standard + output_format=url`，任何其他规格在报价、生成和管理价格入口都失败关闭。Prompt NFC规范化后最多4000个Unicode字符且UTF-8不超过16 KiB，绝不进入MySQL、Outbox或普通日志。所有生成写接口要求16～128字节单值 `Idempotency-Key`。
+
+Project SK必须显式拥有该图片模型的 `api_key_model_scopes` 记录；历史 `all/legacy_all` Key不得自动继承图片能力。模型必须为已发布的active image模型，且 `capabilities_json` 必须显式包含 `image.generate`，缺失或损坏时失败关闭。JWT平台请求必须明确本人project_id，body/query冲突时返回400。
+
+管理端点：
+
+| 方法 | 路径 | 权限 |
+|---|---|---|
+| GET | `/api/admin/token/image-tasks` | `ai_gateway:view` + 管理员双重认证 |
+| GET | `/api/admin/token/image-tasks/{task_id}` | `ai_gateway:view` + 管理员双重认证 |
+| GET | `/api/admin/token/image-assets` | `ai_gateway:view` + 管理员双重认证 |
+| POST | `/api/admin/token/image-assets/{asset_id}/quarantine` | `ai_gateway:safety_manage` + 双重认证 + reason + 前置审计 + version CAS |
+| POST | `/api/admin/token/image-requests/{request_id}/reconcile` | `ai_gateway:reconcile_manage` + 双重认证 + reason + 前置审计 |
+| GET | `/api/admin/token/image-reconciliation/summary` | `ai_gateway:view` + 管理员双重认证 |
+
+现有价格创建接口支持 `capability=image.generate + pricing_template=image_variant + limits + minimum_charge + image_count variant SKU`。IMG-G6只允许 `price_purpose=test_fixture`，Token上限写SQL NULL，正式发布入口必须失败关闭。
+
+稳定图片错误：`invalid_idempotency_key`、`image_option_unsupported`、`project_key_required`、`capability_not_allowed`、`content_policy_violation`、`output_policy_rejected`、`insufficient_balance`、`idempotency_conflict`、`quote_expired`、`model_not_configured`、`upstream_error`、`result_invalid`、`request_timeout_unknown`、`asset_not_available`、`concurrency_limit_exceeded`。并发硬上限为用户1、Project 2、API Key 1、模型4，队列1000满载和并发超限均返回429；Redis/RabbitMQ不可确认返回503并在Provider调用前释放Hold。精确HTTP/业务码与完整说明见 [`image-gateway-img-g6-http-contract.md`](./image-gateway-img-g6-http-contract.md)。
+
+> IMG-G7增量：图片路由可由bootstrap装配，但默认 `IMAGE_GATEWAY_ENABLED=false` 且流量/真实OpenRouter均关闭。关闭态写接口返回50330；真实Provider仍属于IMG-G9。MinIO内部连接与浏览器公开签名入口分离，公开入口必须为HTTPS，本地隔离验收才允许回环HTTP；短效URL签发前继续执行归属和交付门禁。MinIO、RabbitMQ、Redis图片租约、对象清理补偿、指标和回滚合同见 [`image-gateway-img-g7-infrastructure.md`](./image-gateway-img-g7-infrastructure.md)。
+
+> IMG-G8增量：用户页面 `/ai/images` 和管理页面 `/token/images` 已对接上述真实HTTP合同。公开模型目录在原有发布快照、活动CNY价格和可见性约束下支持 `image`；文字模型仍要求健康Bifrost路由，图片模型由独立图片运行时承载。页面只展示后端Decimal报价和 `primary_output+available+passed` 资产。当前证据仅为本地隔离Fake Provider与非商业test_fixture，正式发布、真实Provider和生产流量仍关闭。详见 [`image-gateway-img-g8-frontends.md`](./image-gateway-img-g8-frontends.md)。
+
 > Request ID 与幂等：`X-Request-ID` 由墨灵生成，并由 Token Handler、执行驱动和账本共用。客户端重放可使用单值 `Idempotency-Key`；重复、逗号多值、空值或超过 191 字节在写账本前返回 400/40000。同用户、Project、SK、请求指纹返回已有状态，不同指纹返回 HTTP 409/code 40901。
 
 Project 管理使用登录态 JWT，不能使用 SK 自助扩大权限。创建 body 为 `{name,timezone?}`；更新 body 可包含 `name`、`status=active|suspended|archived` 和 `timezone`。时区必须是有效 IANA 标识（如 `Asia/Shanghai`），创建时缺省为 `Asia/Shanghai`，禁止使用依赖宿主机的 `Local`。列表为扁平分页 `{items,page,page_size,total}`。

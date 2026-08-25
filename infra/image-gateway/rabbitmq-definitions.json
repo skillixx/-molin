@@ -1,0 +1,20 @@
+{
+  "exchanges": [
+    {"name": "molin.image.tasks", "vhost": "/", "type": "direct", "durable": true, "auto_delete": false, "internal": false, "arguments": {}},
+    {"name": "molin.image.tasks.dead", "vhost": "/", "type": "direct", "durable": true, "auto_delete": false, "internal": false, "arguments": {}}
+  ],
+  "queues": [
+    {
+      "name": "molin.image.tasks.generate",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {"x-dead-letter-exchange": "molin.image.tasks.dead", "x-dead-letter-routing-key": "image.generate.dead"}
+    },
+    {"name": "molin.image.tasks.dead", "vhost": "/", "durable": true, "auto_delete": false, "arguments": {}}
+  ],
+  "bindings": [
+    {"source": "molin.image.tasks", "vhost": "/", "destination": "molin.image.tasks.generate", "destination_type": "queue", "routing_key": "image.generate", "arguments": {}},
+    {"source": "molin.image.tasks.dead", "vhost": "/", "destination": "molin.image.tasks.dead", "destination_type": "queue", "routing_key": "image.generate.dead", "arguments": {}}
+  ]
+}

@@ -57,6 +57,7 @@ import (
 	smsservice "molin/server/internal/modules/sms/service"
 	tokengatewaymod "molin/server/internal/modules/token_gateway"
 	tokenclient "molin/server/internal/modules/token_gateway/client"
+	imagegateway "molin/server/internal/modules/token_gateway/image"
 	tokengatewaysvc "molin/server/internal/modules/token_gateway/service"
 	workbenchmod "molin/server/internal/modules/workbench"
 	wbsecurity "molin/server/internal/modules/workbench/security"
@@ -517,6 +518,71 @@ func (a *orderBillingAdapter) DeductTx(tx *gorm.DB, userID uint64, amount decima
 	return txID, nil
 }
 
+func buildImageRuntime(ctx context.Context, cfg config.Config, gormDB *gorm.DB, walletHolds *billingsvc.WalletHoldService, visibility *tokengatewaysvc.CatalogService, metrics *tokengatewaysvc.AIGatewayMetrics, limiter tokengatewaysvc.ImageResourceLimiter) (*tokengatewaymod.ImageRuntime, error) {
+	quoteSecret, err := imagegateway.ReadRestrictedSecretFile(cfg.ImageGatewayQuoteSecretFile, 32)
+	if err != nil {
+		return nil, err
+	}
+	promptSecret, err := imagegateway.ReadRestrictedSecretFile(cfg.ImageGatewayPromptSecretFile, 32)
+	if err != nil || quoteSecret == promptSecret {
+		return nil, imagegateway.ErrImageSecretFileInvalid
+	}
+	minioAccess, err := imagegateway.ReadRestrictedSecretFile(cfg.ImageGatewayMinIOAccessKeyFile, 8)
+	if err != nil {
+		return nil, err
+	}
+	minioSecret, err := imagegateway.ReadRestrictedSecretFile(cfg.ImageGatewayMinIOSecretKeyFile, 16)
+	if err != nil || minioAccess == minioSecret {
+		return nil, imagegateway.ErrImageSecretFileInvalid
+	}
+	store, err := imagegateway.NewMinIOObjectStore(imagegateway.MinIOObjectStoreConfig{
+		Endpoint: cfg.ImageGatewayMinIOEndpoint, PublicDownloadEndpoint: cfg.ImageGatewayMinIOPublicDownloadEndpoint,
+		AccessKey: minioAccess, SecretKey: minioSecret, UseSSL: cfg.ImageGatewayMinIOUseSSL,
+		Buckets: []string{cfg.ImageGatewayTempBucket, cfg.ImageGatewayResultBucket, cfg.ImageGatewayQuarantineBucket},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := store.VerifyBuckets(ctx); err != nil {
+		return nil, err
+	}
+	var provider imagegateway.ImageProviderAdapter
+	switch cfg.ImageGatewayProvider {
+	case "fake":
+		provider = imagegateway.NewFakeImageAdapter(imagegateway.FakeImageSuccess)
+	case "openrouter":
+		key, keyErr := imagegateway.ReadRestrictedSecretFile(cfg.ImageGatewayOpenRouterKeyFile, 16)
+		if keyErr != nil {
+			return nil, keyErr
+		}
+		provider, err = imagegateway.NewOpenRouterImageAdapter(imagegateway.OpenRouterImageAdapterConfig{
+			APIKey: key, ProviderTag: "seed", Timeout: 3 * time.Minute,
+			ModelMap: map[string]string{"bytedance-seed/seedream-5-0-lite": "bytedance-seed/seedream-5-0-lite"},
+		})
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("图片Provider配置不支持")
+	}
+	queue, err := imagegateway.NewImageTaskQueue(imagegateway.ImageTaskQueueConfig{
+		URL: cfg.RabbitMQURL, Exchange: cfg.ImageGatewayQueueExchange, Queue: cfg.ImageGatewayQueueName, RoutingKey: cfg.ImageGatewayQueueRoutingKey,
+		DeadExchange: cfg.ImageGatewayDeadExchange, DeadQueue: cfg.ImageGatewayDeadQueue, DeadRouting: cfg.ImageGatewayDeadRoutingKey,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := queue.EnsureTopology(ctx); err != nil {
+		return nil, err
+	}
+	return tokengatewaymod.NewImageRuntime(tokengatewaymod.ImageRuntimeDeps{
+		DB: gormDB, WalletHolds: walletHolds, Provider: provider, Metrics: metrics,
+		Moderation: imagegateway.NewFakeModerationAdapter(imagegateway.FakeModerationAllow), Store: store, Queue: queue,
+		Secrets: tokengatewaysvc.ImageAPISecrets{QuoteFingerprint: []byte(quoteSecret), PromptHMAC: []byte(promptSecret)}, Visibility: visibility,
+		ImageResourceLimiter: limiter,
+	})
+}
+
 // NewApp 初始化所有基础设施和模块，完成依赖注入，返回可启动的 App。
 func NewApp() (*App, error) {
 	cfg := config.Load()
@@ -529,6 +595,9 @@ func NewApp() (*App, error) {
 	}
 	if err := cfg.ValidateAIGatewayGovernanceConfig(); err != nil {
 		return nil, fmt.Errorf("AI 网关治理配置无效: %w", err)
+	}
+	if err := cfg.ValidateImageGatewayConfig(); err != nil {
+		return nil, fmt.Errorf("图片网关配置无效: %w", err)
 	}
 	if err := cfg.ValidateAIGatewayProductionConfig(); err != nil {
 		return nil, fmt.Errorf("AI 网关生产配置无效: %w", err)
@@ -910,6 +979,26 @@ func NewApp() (*App, error) {
 			}
 			tokengatewaymod.RegisterUserRoutes(mux, tokenGatewayModule.ForwardService, tokenGatewayModule.Orchestrator, tokenGatewayModule.ProjectService, tokenGatewayModule.CatalogService,
 				tokenGatewayModule.UsageService, tokenGatewayModule.GovernanceAdmin, tokenGatewayModule.G6User, auditSvc, cfg.JWTSecret, authService, tokenAPIKeyResolver, cfg.AIGatewayTrafficEnabled)
+			if cfg.ImageGatewayEnabled {
+				setupCtx, cancelSetup := context.WithTimeout(context.Background(), 30*time.Second)
+				imageRuntime, imageErr := buildImageRuntime(setupCtx, cfg, gormDB, walletHoldService, tokenGatewayModule.CatalogService, tokenGatewayModule.Metrics, tokenGatewayModule.ImageResourceLimiter)
+				cancelSetup()
+				if imageErr != nil {
+					return nil, fmt.Errorf("图片网关关闭态装配失败: %w", imageErr)
+				}
+				tokenGatewayModule.Metrics.WithImageQueueGaugeCollector(tokengatewaysvc.NewImageQueueMetricsCollector(imageRuntime.Queue))
+				tokengatewaymod.RegisterImageUserRoutes(mux, imageRuntime.API, cfg.JWTSecret, authService, tokenAPIKeyResolver, cfg.ImageGatewayTrafficEnabled)
+				tokengatewaymod.RegisterImageAdminRoutes(mux, imageRuntime.API, auditSvc, cfg.JWTSecret, iamService, authService, authService)
+				go imageRuntime.CleanupWorker.Start(context.Background(), time.Minute)
+				go imageRuntime.ObjectCleanupWorker.Start(context.Background(), time.Minute)
+				go imageRuntime.CompensationWorker.Start(context.Background(), time.Minute)
+				// 每秒复核陈旧reserved，保证300秒硬上限仅有调度级抖动；查询每批最多100条且不读取Prompt。
+				go imageRuntime.TaskDispatcher.StartExpiryWorker(context.Background(), time.Second)
+				if cfg.ImageGatewayTrafficEnabled {
+					// 只有本地Fake流量门禁通过时才启动生成消费者；关闭态绝不调用任何Provider。
+					go imageRuntime.TaskWorker.Start(context.Background())
+				}
+			}
 			// 供 workbench 编排端点复用单轮转发（ChatOnce 含门禁/选渠道/计费）。
 			tokenForwardSvc = tokenGatewayModule.ForwardService
 		}

@@ -647,13 +647,21 @@ jobs:
           INTERNAL_API_TOKEN: test_internal_token_for_g7_ci_only_32chars
         run: |
           bash -n infra/scripts/verify-ai-gateway-g7-reliability.sh
+          bash -n infra/scripts/verify-image-gateway-img-g7-infrastructure.sh
           python -m json.tool infra/grafana/dashboards/ai-gateway-slo.json >/dev/null
+          python -m json.tool infra/grafana/dashboards/image-gateway-g7.json >/dev/null
+          python -m json.tool infra/image-gateway/minio-service-account-policy.json >/dev/null
+          python -m json.tool infra/image-gateway/rabbitmq-definitions.json >/dev/null
           docker compose --profile monitoring -f infra/docker-compose.yml config --quiet
           test "$(grep -c '^[[:space:]]*- alert:' infra/prometheus/ai-gateway-alerts.yml)" -eq "$(grep -c '^[[:space:]]*runbook_url:' infra/prometheus/ai-gateway-alerts.yml)"
           test "$(grep -c '^[[:space:]]*- alert:' infra/prometheus/ai-gateway-alerts.yml)" -eq "$(grep -c '^[[:space:]]*p_level:' infra/prometheus/ai-gateway-alerts.yml)"
           while IFS= read -r anchor; do
             grep -Fq "<a id=\"${anchor}\"></a>" docs/ai-gateway-g7-alert-runbook.md
           done < <(sed -n 's/.*runbook_url:.*#\([^[:space:]]*\).*/\1/p' infra/prometheus/ai-gateway-alerts.yml)
+          test "$(grep -c '^[[:space:]]*- alert:' infra/prometheus/image-gateway-alerts.yml)" -eq "$(grep -c '^[[:space:]]*runbook_url:' infra/prometheus/image-gateway-alerts.yml)"
+          while IFS= read -r anchor; do
+            grep -Fq "<a id=\"${anchor}\"></a>" docs/image-gateway-img-g7-infrastructure.md
+          done < <(sed -n 's/.*runbook_url:.*#\([^[:space:]]*\).*/\1/p' infra/prometheus/image-gateway-alerts.yml)
           docker run --rm --entrypoint=/bin/promtool \
             --workdir=/rules \
             -v "${{ github.workspace }}/infra/prometheus:/rules:ro" \
@@ -663,10 +671,38 @@ jobs:
             --workdir=/rules \
             -v "${{ github.workspace }}/infra/prometheus:/rules:ro" \
             prom/prometheus:v3.12.0-distroless \
+            check rules image-gateway-alerts.yml
+          docker run --rm --entrypoint=/bin/promtool \
+            --workdir=/rules \
+            -v "${{ github.workspace }}/infra/prometheus:/rules:ro" \
+            prom/prometheus:v3.12.0-distroless \
             test rules ai-gateway-alerts.test.yml
 
       - name: 扫描 G7 分支敏感信息
         run: python scripts/verify-sms-phase5-sensitive-data.py --repo-root . --base-ref origin/main
+
+      - name: 执行图片网关 G1 至 G7 隔离门禁
+        env:
+          IMAGE_GATEWAY_G1_MYSQL_MIGRATION_APPROVED: "YES"
+          IMAGE_GATEWAY_G2_MYSQL_MIGRATION_APPROVED: "YES"
+          IMAGE_GATEWAY_G3_MYSQL_MIGRATION_APPROVED: "YES"
+          IMAGE_GATEWAY_G5_MYSQL_MIGRATION_APPROVED: "YES"
+          IMAGE_GATEWAY_G6_HTTP_APPROVED: "YES"
+          IMAGE_GATEWAY_G7_INFRA_APPROVED: "YES"
+        run: |
+          (cd server && go mod download)
+          docker pull mysql:8.0
+          docker pull golang:1.25-bookworm
+          docker pull rabbitmq:3-management-alpine
+          docker pull minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+          docker pull minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+          docker pull prom/prometheus:v3.12.0
+          bash infra/scripts/verify-image-gateway-migration-000068.sh
+          bash infra/scripts/verify-image-gateway-migration-000069.sh
+          bash infra/scripts/verify-image-gateway-migration-000070.sh
+          bash infra/scripts/verify-image-gateway-migration-000071.sh
+          bash infra/scripts/verify-image-gateway-img-g6-http.sh
+          bash infra/scripts/verify-image-gateway-img-g7-infrastructure.sh
 
       - name: 隔离验证 100 并发、幂等、断连、混沌与只读对账
         env:
@@ -919,6 +955,12 @@ jobs:
           set -e
           test "$status" -eq 2
           grep -q '^G8_MIGRATION_MANIFEST=FAILED' /tmp/g8-manifest-example.log
+
+      - name: 校验OpenRouter图片POC配置与一次性门禁
+        run: |
+          python -m json.tool infra/openrouter/image-gateway-poc.json >/dev/null
+          python -I -W error::ResourceWarning infra/scripts/test_probe_openrouter_image_model_once.py -v
+          python -I -m py_compile infra/scripts/probe-openrouter-image-model-once.py infra/scripts/test_probe_openrouter_image_model_once.py
 
       - name: 验证 G8 Drop 暂存取证 008
         run: |
@@ -1399,6 +1441,7 @@ jobs:
           npm run test:email-management
           npm run test:vite-isolation
           npm run test:outbound-url
+          npm run test:image-gateway
 
       - name: TypeScript 类型检查
         working-directory: web/admin-console
@@ -1435,6 +1478,7 @@ jobs:
           npm run test:sms
           npm run test:email-otp
           npm run test:vite-isolation
+          npm run test:image-gateway
 
       - name: TypeScript 类型检查
         working-directory: web/user-console

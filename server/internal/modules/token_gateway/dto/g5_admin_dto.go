@@ -70,15 +70,22 @@ type PriceSKUReq struct {
 }
 
 type CreatePriceReq struct {
-	LogicalModelCode string        `json:"logical_model_code"`
-	MinMarginRate    string        `json:"min_margin_rate"`
-	MaxInputTokens   uint64        `json:"max_input_tokens"`
-	MaxOutputTokens  uint64        `json:"max_output_tokens"`
-	CostUpdatedAt    time.Time     `json:"cost_updated_at"`
-	CostExpiresAt    time.Time     `json:"cost_expires_at"`
-	EffectiveAt      time.Time     `json:"effective_at"`
-	ExpiresAt        *time.Time    `json:"expires_at"`
-	SKUs             []PriceSKUReq `json:"skus"`
+	LogicalModelCode  string          `json:"logical_model_code"`
+	Capability        string          `json:"capability,omitempty"`
+	PricingTemplate   string          `json:"pricing_template,omitempty"`
+	MinMarginRate     string          `json:"min_margin_rate"`
+	MaxInputTokens    uint64          `json:"max_input_tokens"`
+	MaxOutputTokens   uint64          `json:"max_output_tokens"`
+	Limits            json.RawMessage `json:"limits,omitempty"`
+	MinimumCharge     string          `json:"minimum_charge,omitempty"`
+	CostSource        string          `json:"cost_source,omitempty"`
+	CostSourceVersion string          `json:"cost_source_version,omitempty"`
+	PricePurpose      string          `json:"price_purpose,omitempty"`
+	CostUpdatedAt     time.Time       `json:"cost_updated_at"`
+	CostExpiresAt     time.Time       `json:"cost_expires_at"`
+	EffectiveAt       time.Time       `json:"effective_at"`
+	ExpiresAt         *time.Time      `json:"expires_at"`
+	SKUs              []PriceSKUReq   `json:"skus"`
 }
 
 type PriceDetailResp struct {

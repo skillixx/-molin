@@ -1083,3 +1083,119 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - 011 必须是唯一活动候选并绑定 `DROP_SSH_INTERACTIVE_SUDO`。测试必须覆盖五文件与 Windows/Linux 回执、SFTP 包装器不具备 SSH/sudo 能力、一次 SFTP 和零重试、`sudo -k -v` 仅一次且密码不进入任何仓库资产、root-only/no-clobber、两次 visudo、精确 sudo 范围、Docker 组以及只回滚本次新建目标。Windows 测试与 Linux `--network none` 动态门禁均不得连接测试服或调用真实 sudo。
 - 011 已消费且暂存保持 `UNKNOWN`。012 只读取证必须独立冻结固定端点的唯一 ED25519 known_hosts、客户端密钥对、五文件、manifest 和回执；远端以目录描述符锚定部署根、暂存和文件，严格输出九键三态，并覆盖路径/文件集/元数据/内容/manifest/回执/读取错误、同名替换竞态、64 KiB 有界双流、单 SSH、零重试、local-check 不联网和消费门禁。Windows 测试及 Linux `--network none` 必须通过；CI 不得传正式参数或连接测试服。
 - 本地身份材料诊断必须与远端 ChangeId 生命周期拆分。本地诊断器无 ChangeId、可重复且源码不得包含 SSH/SFTP/远端访问能力；它必须覆盖绝对路径、链接/reparse、fd/目录项竞态、known_hosts 明文/哈希 ED25519 唯一性、允许的其他算法共存、公私钥配对、有界本地工具输出和固定低敏失败。Windows 最小环境必须显式保留 `SystemRoot` 与 `PROGRAMDATA` 且拒绝继承其他变量。一次性远端包装器不提供 `--local-check`，只允许一次固定 SSH、九键三态、六行低敏结果和消费门禁。Windows 与 Linux `--network none` 必须同时通过，CI 不得读取真实身份材料或连接测试服；任一冻结脚本摘要变化均使旧授权清单失效。
+
+## 图片网关 IMG-G1 Expand Schema 验收
+
+- `000068` 必须把 `ai_requests.modality` 从仅 Chat 扩展为 `chat/image`，同时以 `capability + delivery_status` 组合约束确保旧 Chat 固定为 `chat.completions/not_applicable`、图片固定为 `image.generate`。
+- migration 前已有 Chat 请求和 Usage 必须自动获得兼容默认值；旧二进制不提交新列时仍能写入 Chat，重复 Usage 仍被数据库唯一约束拒绝。
+- `ai_gateway_quotes`、`ai_gateway_tasks`、`ai_gateway_assets` 必须通过用户、Project、request 和 Quote 归属键阻止跨租户事实。
+- `ai_usage_items` 必须支持 `usage_fact/sale_line/cost_line/adjustment`、variant、价格版本、计量单位、计量基数和 CNY Decimal；旧 Chat 使用 `legacy_chat` 哨兵，不改写历史金额。
+- `(request_id,result_index,asset_role)` 必须拒绝重复主图；非主图必须关联同请求父资产。
+- `available` 资产必须同时具备审核通过、显式标识、隐式标识、对象定位、MIME、字节、hash 和尺寸；任一缺失必须失败关闭。
+- migration 静态扫描必须确认表和列中不存在 Prompt、图片 Base64、签名 URL、Provider 原始响应或明文密钥字段。
+- down/re-up 必须保留 Quote、任务、资产、Usage、标识和交付状态事实，不得包含 `DROP TABLE`、`DROP COLUMN`、`DELETE` 或 `TRUNCATE`。
+- 本地必须通过图片模型/迁移定向测试、Go 全量测试、`go vet`、目标包 race 和 `git diff --check`。
+- 隔离 MySQL 8 必须使用本机已有镜像、`--pull=never --network none`、无端口和 tmpfs，验证首次 up、旧 Chat、新图片约束、保留式 down 和 re-up；不得连接项目库或测试服务器。
+- 本阶段没有 HTTP 或页面验收；图片 API、Repository、价格和前端属于 IMG-G2～IMG-G8，不能用 Schema 通过冒充业务闭环。
+
+## 图片网关 IMG-G2 价格与 Quote 验收
+
+- 图片必须按 `meter_type + variant_hash` 唯一选价；同 meter 多个 variant、缺价、重复 variant、零销售价、负成本、非正 unit size、成本过期和毛利不足均失败关闭。
+- V2 快照只保存本次 `selected_lines`；解码必须重新规范化 variant、核对 hash、拒绝重复行/未知 meter/未知 schema version，并重算 `quoted_amount=held_amount`。
+- 无 `schema_version` 的历史 Chat 快照继续按 V1 四类 Token SKU 解码，不改写历史 JSON 或金额。
+- Quote 指纹必须使用至少32字节专用 HMAC 密钥，绑定用户、Project、SK、模型、Prompt HMAC、张数和 variant；数据库不得保存 Prompt。
+- 未消费 Quote 5分钟后过期；同指纹同 request_id 已消费重放即使过期也返回原绑定；不同指纹或不同请求复用返回冲突。
+- 内存合同和真实 MySQL Repository 均执行100并发同 Quote，必须恰好1个胜者且不得形成第二个消费事实。
+- Decimal 金样覆盖成功、部分成功、完全失败、释放、部分退款、全额退款和超额拒绝；实际可交付数量不得超过报价数量。
+- 测试价格必须明确 `price_purpose=test_fixture`，正式发布入口拒绝测试夹具；Provider调用和钱包写入均为0。
+- MySQL 8.0.46 必须通过完整 `000001→000069`、Chat兼容、图片 CHECK、保留式 down 和 re-up。
+- Go 定向、全量、vet、Linux race、migration静态、脚本默认关闭、敏感扫描和 `git diff --check` 全部通过后，才可进入人工财务/幂等审查。
+
+## 图片网关 IMG-G3 任务与资产 Repository 验收
+
+- 任务创建和查询必须绑定用户、Project、Quote和request；Project SK读取额外绑定api_key。
+- 任务状态使用 `from_status + version_no` CAS，进度单调；100并发同版本只能1个胜者。
+- `(request_id,result_index,asset_role)` 唯一；100并发相同主图只能1个成功；非主图必须关联同请求父资产。
+- 用户A/ProjectA不能查询用户B/ProjectB的任务或资产，响应不能泄露记录是否存在。
+- 普通资产交付必须同时满足主图、可计费、available、审核通过、双标识、非争议、未删除，以及请求已settled且delivery available。
+- temporary、quarantined、deleted、争议中、未结算或未标识资产全部拒绝普通下载。
+- 开启争议必须原子设置legal hold；争议解决后legal hold继续保留；保全期间expiring/deleting/deleted全部拒绝。
+- Fake ObjectStore必须验证有界写入、同键幂等、冲突、读取副本、幂等删除、15分钟签名上限、路径拒绝和100并发。
+- MySQL 8.0.46完整 `000001→000070`、down/re-up、Go全量、vet、Linux race、默认关闭、敏感扫描和diff全部通过后，才可进入资产/权限人工审查。
+
+## 图片网关 IMG-G4 Fake执行与安全处理验收
+
+- Prompt拒绝必须发生在Provider前；Fake Adapter调用增量为0。
+- Fake Provider必须覆盖成功、部分成功、明确失败、超时、断连、结果未知和损坏结果；每次请求最多调用一次，unknown不得自动重试。
+- URL和Base64都必须有界读取；无Content-Length响应同样不能越过字节上限。
+- PNG/JPEG/WebP必须先config校验再完整解码；SVG、HTML、GIF、错误魔数、MIME不匹配、超宽高、超像素和图片炸弹必须拒绝。
+- 原始EXIF/GPS/XMP/文本metadata必须通过完整解码和重编码清理；主图与缩略图必须重新写显式和隐式标识并复检。
+- SSRF覆盖loopback、RFC1918、CGNAT、link-local、metadata、多播、文档/benchmark网段、IPv6私网、混合DNS、重定向和DNS rebinding；拨号必须使用本次已验证IP。
+- 输出审核拒绝写Fake隔离区且可交付/可计费数为0；审核不可用失败关闭。
+- 结果区存储失败不得返回资产或重调Provider；缩略图失败不增加计费且不阻断已安全主图。
+- Fake ObjectStore 100并发、同键幂等、不同内容冲突、删除幂等和15分钟签名上限通过。
+- `go mod verify`、`go mod tidy -diff`、Go定向/全量/vet、Linux race、敏感扫描和diff通过后，才可进入安全人工审查。
+
+## 图片网关 IMG-G5 钱包、补偿与对账验收
+
+- Quote消费、Wallet Hold、请求钱包关联和held Outbox必须在同一事务提交或回滚。
+- 同request 100并发只能形成一个hold/冻结流水/关联/held事件，并全部幂等返回同一事实。
+- 同钱包100个不同request并发不得超额预占；死锁/锁等待只能重试完整预占事务，不得调用Provider。
+- 全部成功和部分成功按实际可交付主图结算；Provider成本按已确认产物记录，销售与成本不能混淆。
+- Provider明确失败必须释放hold并形成0元销售/成本终态；超时和断连必须保留hold进入待核对，均只调用Provider一次。
+- 输出审核拒绝必须销售额0、全额释放hold、资产隔离并记录已确认Provider成本。
+- 结果未知、断连、超时、存储或结算失败必须保持 `settlement_pending`，禁止下载和自动重调Provider。
+- 补偿只读取任务/资产事实；完成后只结算和交付一次，无事实时第8次失败进入dead。
+- usage_fact、sale_line、cost_line、adjustment、请求金额、hold状态、冻结/解冻/消费流水、资产、补偿和Outbox payload必须按request_id零差异。
+- 调账maker/checker必须不同；没有配套钱包动作的调账必须让对账失败关闭。
+- MySQL 8.0.46完整 `000001→000071`、事实保留式down/re-up、金额金样、Go全量/vet/race、敏感扫描和diff全部通过后进入财务人工审查。
+
+## 图片网关 IMG-G6 HTTP、Project SK与幂等验收
+
+- `/v1/images/generations`只接受Project SK；JWT、无效SK、未实名、停用Project/Key、过期Key和无显式图片模型scope全部在Quote/Hold/Provider前拒绝。
+- 历史 `all/legacy_all` SK没有显式图片scope时不得继承图片能力。
+- 模型目录可见性必须在每次Quote/生成重新检查；组件缺失、读取失败或用户当前不可见均失败关闭。
+- 所有生成写接口必须携带16～128字节单值Idempotency-Key；缺失、过短、过长、重复、逗号多值、首尾空白和控制字符全部返回400。
+- OpenAI同步成功返回原始200兼容对象和Molin短效URL，不得套平台响应外壳或返回Provider URL/Base64。
+- 平台生成必须提交Quote，返回202任务；JWT绑定本人Project且api_key_id为空，SK绑定所属Project和Key。
+- 首次100并发同幂等键只能创建一个request/task/hold并调用Fake Provider一次；100次终态重放调用数仍为1；不同指纹返回40901。
+- Provider执行前取消必须释放hold并零差异；执行开始后只记录取消意图，不直接判定免费。
+- 结果未知返回50401和request_id，查询原请求保持settlement_pending，相同幂等键重放不得调用Provider。
+- 跨用户、跨Project、跨SK任务查询不得泄露记录；未结算、隔离、争议、删除和未标识资产不得签发URL。
+- 用户和管理列表必须D-95扁平分页；非法状态、project_id冲突、严格JSON重复键/未知字段必须前置拒绝。
+- 管理读取要求 `ai_gateway:view + MFA`；隔离要求 `safety_manage + MFA + reason + version CAS + 前置审计`；对账要求 `reconcile_manage + MFA + reason + 前置审计`。
+- 管理写入审计失败时业务服务增量为0；旧version隔离返回409且不覆盖新状态。
+- 图片价格只允许创建test_fixture，Token上限为SQL NULL，test_fixture发布必须失败关闭。
+- Prompt、Base64、内部对象地址、Provider原始响应、成本和SK不得出现在任务JSON、Outbox、日志或公开DTO。
+- G6不新增migration；MySQL 8.0.46完整000001→000071、Linux race、httptest、全量Go、vet、依赖、敏感扫描和diff全部通过后进入权限/幂等/资产人工审查。
+
+## 图片网关 IMG-G7 基础设施与关闭态验收
+
+- 默认 `IMAGE_GATEWAY_ENABLED/TRAFFIC_ENABLED/OPENROUTER_ENABLED=false`；模块关闭但任一流量/真实Provider开关开启必须拒绝启动。
+- G7只允许 `APP_ENV=test + LOCAL_FAKE_TEST=true + provider=fake` 的本地流量；OpenRouter真实启用属于IMG-G9。
+- OpenRouter Adapter正式构造只接受固定HTTPS端点，禁止重定向、fallback和重试；httptest覆盖成功、传输未知、畸形200、弱Key和端点改写。
+- Secret只从绝对普通文件读取；拒绝符号链接、宽权限、超大文件、空白/控制字符和跨用途复用。
+- MinIO三个bucket保持私有；内部连接与浏览器公开签名入口分离；匿名GET拒绝、公开签名GET返回正确MIME和图片签名、同键同内容幂等、冲突/删除/不存在正确。
+- RabbitMQ主队列和DLQ持久化，publisher confirm和mandatory开启；消息只有request_id，失败Nack不requeue并进入DLQ。
+- 异步平台任务只调用Fake Provider一次；内存Prompt丢失必须取消未执行任务、释放hold且Provider调用不增加。
+- 失败/取消temporary满24小时、quarantined过期和delete_failed资产进入清理；settlement_pending、exception、活动补偿、legal hold和开放争议跳过；删除使用version CAS，陈旧deleting可安全恢复。
+- `available` 成功资产的30天自动删除属于IMG-G10，本阶段只验证策略冻结且G7不会误删可交付资产。
+- 临时、结果或隔离对象已写入但元数据未落库时，删除失败必须幂等写入 `image_object_cleanup`；伪造bucket/key/reason组合拒绝，第8次失败dead，管理DTO不泄露对象路径。
+- 四类Put结果未知必须强制写tombstone并保持5分钟静默窗；覆盖Delete先NotFound、Put后到、引用/Head瞬时失败、commit结果未知完整/零/部分/查询未知和插入/删除交错。
+- 同步与异步图片执行共用Redis四维租约；用户1、Project 2、API Key 1、模型4为不可放宽硬上限，队列1000满载和并发超限返回429，所有终态释放租约。
+- 覆盖Hold提交后进程崩溃且无内存/消息的陈旧reserved恢复，以及活跃执行收到重复Rabbit消息时不释放原租约、不写取消、DLQ为0。
+- 覆盖Provider后结算与pending补偿连续落库失败：安全窗内不误收口，超过300秒后原子写unknown/pending、唯一补偿和Outbox，保留Hold且Provider调用不增加。
+- 补偿Worker不重调Provider，第8次失败dead；关闭态仍可执行对账与安全清理。
+- Prometheus输出图片请求、Provider、任务、资产和对账差异；标签不得包含request_id、用户、Project、SK、Prompt或错误原文。
+- Grafana JSON可解析，Prometheus规则通过promtool；告警覆盖pending_reconcile、非零对账、dead补偿和临时资产积压。
+- 无外网隔离Docker必须使用MySQL 8.0.46、MinIO、RabbitMQ和Fake凭据，宿主端口0、真实Provider调用0。
+- 全量Go、vet、Linux race、依赖、敏感扫描、diff和Chat回归通过后进入G7人工审查；没有测试服务器授权时不得报告测试环境集成通过。
+
+## 图片网关 IMG-G8 页面与真实后端浏览器验收
+
+- 管理端覆盖图片模型、非商业测试价格、任务、资产、账单对账、异常处理和隔离入口；写操作验证MFA、细粒度权限、reason、审计和version CAS。
+- 用户端覆盖固定规格、Quote、钱包预估、幂等生成、任务查询/取消、主图画廊、短效下载和失败/超时/安全拒绝/待结算提示。
+- 使用临时MySQL、Redis、RabbitMQ、MinIO、真实Go HTTP和Fake Provider；浏览器不得注册API Mock，并必须实际加载短效签名PNG，校验HTTP 200、MIME和图片签名。
+- 响应式固定验证 `1440×900`、`768×1024`、`390×844`、`375×667`，要求无横向溢出、无重叠、按钮有反馈。
+- 同次验收回归Chat、Project/SK、账单与申诉，最终 `request_usage/request_hold/request_wallet=0` 且Outbox backlog=0。
+- 真实Provider、正式价格、生产部署和商业开放不属于本阶段证据。

@@ -150,6 +150,11 @@ func (s *G5AdminService) CreatePrice(ctx context.Context, operatorID uint64, req
 	if err != nil || margin.IsNegative() || margin.GreaterThanOrEqual(decimal.NewFromInt(1)) {
 		return nil, newValidation("最低毛利率不合法")
 	}
+	capability := strings.TrimSpace(req.Capability)
+	pricingTemplate := strings.TrimSpace(req.PricingTemplate)
+	if capability == model.AIImageCapability || strings.HasPrefix(pricingTemplate, "image_") {
+		return s.createImagePrice(ctx, operatorID, req, modelCode, margin)
+	}
 	if modelCode == "" || req.MaxInputTokens == 0 || req.MaxOutputTokens == 0 || len(req.SKUs) != 4 {
 		return nil, newValidation("模型、Token 上限和四项计量价格不能为空")
 	}
@@ -184,14 +189,94 @@ func (s *G5AdminService) CreatePrice(ctx context.Context, operatorID uint64, req
 		skus = append(skus, model.AIPriceSKU{MeterType: item.MeterType, VariantJSON: canonical, VariantHash: hex.EncodeToString(hash[:]), CostUnitPrice: cost, SaleUnitPrice: sale, Scale: scale, Currency: "CNY"})
 		required[item.MeterType] = true
 	}
-	version := &model.AIPriceVersion{LogicalModelCode: modelCode, Currency: "CNY", ExchangeRate: decimal.NewFromInt(1), Status: model.AIPriceDraft,
+	version := &model.AIPriceVersion{LogicalModelCode: modelCode, Capability: "chat.completions", PricingTemplate: "token", Currency: "CNY", ExchangeRate: decimal.NewFromInt(1), Status: model.AIPriceDraft,
 		MinMarginRate: margin, MaxInputTokens: req.MaxInputTokens, MaxOutputTokens: req.MaxOutputTokens,
+		CostSource: "manual_cny", CostSourceVersion: "legacy", PricePurpose: "commercial", MinimumCharge: decimal.RequireFromString("0.00000100"),
 		FailureChargePolicy: "confirmed_usage", RoundingMode: "ceil_8", CostUpdatedAt: req.CostUpdatedAt.UTC(), CostExpiresAt: req.CostExpiresAt.UTC(),
 		EffectiveAt: req.EffectiveAt.UTC(), ExpiresAt: req.ExpiresAt, CreatedBy: operatorID}
 	if err := s.repo.CreatePrice(ctx, version, skus); err != nil {
 		return nil, err
 	}
 	return &dto.PriceDetailResp{Version: version, SKUs: skus}, nil
+}
+
+func (s *G5AdminService) createImagePrice(ctx context.Context, operatorID uint64, req dto.CreatePriceReq, modelCode string, margin decimal.Decimal) (*dto.PriceDetailResp, error) {
+	if modelCode == "" || strings.TrimSpace(req.Capability) != model.AIImageCapability || strings.TrimSpace(req.PricingTemplate) != "image_variant" ||
+		req.MaxInputTokens != 0 || req.MaxOutputTokens != 0 || len(req.SKUs) == 0 {
+		return nil, newValidation("图片价格必须使用image.generate/image_variant且Token上限必须为空")
+	}
+	if req.CostUpdatedAt.IsZero() || !req.CostExpiresAt.After(req.CostUpdatedAt) || req.EffectiveAt.IsZero() || (req.ExpiresAt != nil && !req.ExpiresAt.After(req.EffectiveAt)) {
+		return nil, newValidation("成本或价格生效时间不合法")
+	}
+	minimum, err := decimal.NewFromString(req.MinimumCharge)
+	if err != nil || minimum.LessThanOrEqual(decimal.Zero) {
+		return nil, newValidation("图片最低收费必须是正数Decimal")
+	}
+	if strings.TrimSpace(req.CostSource) != "test_fixture" || strings.TrimSpace(req.CostSourceVersion) == "" || strings.TrimSpace(req.PricePurpose) != "test_fixture" {
+		return nil, newValidation("IMG-G6只允许非商业图片测试价格夹具")
+	}
+	var limits imagePricingLimits
+	if len(req.Limits) == 0 || json.Unmarshal(req.Limits, &limits) != nil || limits.MaxCount != 1 || len(limits.Variants) != 1 || !frozenImageMVPVariant(limits.Variants[0]) {
+		return nil, newValidation("图片规格限制不合法")
+	}
+	allowed := make(map[string]json.RawMessage, len(limits.Variants))
+	for _, variant := range limits.Variants {
+		canonical, hash, canonicalErr := canonicalImageVariant(variant)
+		if canonicalErr != nil {
+			return nil, newValidation("图片规格限制不合法")
+		}
+		if _, duplicate := allowed[hash]; duplicate {
+			return nil, newValidation("图片规格限制不能重复")
+		}
+		allowed[hash] = canonical
+	}
+	if len(req.SKUs) != len(allowed) {
+		return nil, newValidation("每个图片规格必须且只能配置一条价格")
+	}
+	seen := make(map[string]bool, len(req.SKUs))
+	skus := make([]model.AIPriceSKU, 0, len(req.SKUs))
+	for _, item := range req.SKUs {
+		if item.MeterType != "image_count" || len(item.Variant) == 0 {
+			return nil, newValidation("图片价格计量类型必须为image_count且必须包含variant")
+		}
+		canonical, hash, canonicalErr := canonicalizeStoredVariant(item.Variant)
+		if canonicalErr != nil {
+			return nil, newValidation("图片价格variant不在规格白名单或重复")
+		}
+		allowedVariant, ok := allowed[hash]
+		if !ok || string(allowedVariant) != string(canonical) || seen[hash] {
+			return nil, newValidation("图片价格variant不在规格白名单或重复")
+		}
+		cost, costErr := decimal.NewFromString(item.CostUnitPrice)
+		sale, saleErr := decimal.NewFromString(item.SaleUnitPrice)
+		scale, scaleErr := decimal.NewFromString(item.Scale)
+		if costErr != nil || saleErr != nil || scaleErr != nil || cost.IsNegative() || sale.LessThanOrEqual(decimal.Zero) || scale.LessThanOrEqual(decimal.Zero) || sale.Sub(cost).Div(sale).LessThan(margin) {
+			return nil, newValidation("图片价格、计量基数或毛利率不合法")
+		}
+		seen[hash] = true
+		skus = append(skus, model.AIPriceSKU{
+			MeterType: "image_count", VariantJSON: canonical, VariantHash: hash,
+			CostUnitPrice: cost, SaleUnitPrice: sale, Scale: scale, Currency: "CNY",
+		})
+	}
+	canonicalLimits, _ := json.Marshal(limits)
+	version := &model.AIPriceVersion{
+		LogicalModelCode: modelCode, Capability: model.AIImageCapability, PricingTemplate: "image_variant",
+		Currency: "CNY", ExchangeRate: decimal.NewFromInt(1), Status: model.AIPriceDraft, MinMarginRate: margin,
+		LimitsJSON: canonicalLimits, MinimumCharge: minimum, CostSource: "test_fixture", CostSourceVersion: strings.TrimSpace(req.CostSourceVersion),
+		PricePurpose: "test_fixture", FailureChargePolicy: "confirmed_usage", RoundingMode: "ceil_8",
+		CostUpdatedAt: req.CostUpdatedAt.UTC(), CostExpiresAt: req.CostExpiresAt.UTC(), EffectiveAt: req.EffectiveAt.UTC(), ExpiresAt: req.ExpiresAt, CreatedBy: operatorID,
+	}
+	if err := s.repo.CreatePrice(ctx, version, skus); err != nil {
+		return nil, err
+	}
+	return &dto.PriceDetailResp{Version: version, SKUs: skus}, nil
+}
+
+// frozenImageMVPVariant 固定首批唯一销售规格；provider_default 是内部编码维度，对外交付仍固定 url。
+func frozenImageMVPVariant(variant ImagePriceVariant) bool {
+	return variant.Resolution == "2K" && variant.AspectRatio == "1:1" && variant.Quality == "standard" &&
+		variant.OutputFormat == "provider_default" && variant.Delivery == "url"
 }
 
 func (s *G5AdminService) ApprovePrice(ctx context.Context, id, operatorID uint64) error {

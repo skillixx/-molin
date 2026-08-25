@@ -12,7 +12,7 @@ export interface AIModelCatalogItem {
   description?: string
   capabilities?: Record<string, unknown> | string[]
   context_window: number
-  modality: 'chat'
+  modality: 'chat' | 'image'
   intro_url?: string
   intro_url_health_status: 'unpublished' | 'unknown' | 'healthy' | 'unhealthy'
   docs_url?: string
@@ -156,4 +156,74 @@ export interface RequestFilters {
   end?: string
   page?: number
   page_size?: number
+}
+
+// 图片报价行保留服务端冻结的规格和单价，页面不得自行计算正式销售价格。
+export interface ImageQuoteLine {
+  metric_code: string
+  variant: Record<string, string>
+  usage_amount: string
+  unit_size: string
+  sale_unit_price: string
+  subtotal: string
+}
+
+export interface ImageQuote {
+  quote_id: string
+  logical_model_code: string
+  price_version_no: number
+  currency: string
+  estimated_amount: string
+  expires_at: string
+  lines: ImageQuoteLine[]
+}
+
+export interface ImageAsset {
+  asset_id: string
+  request_id: string
+  role: string
+  result_index: number
+  mime_type?: string
+  width?: number
+  height?: number
+  size_bytes?: number
+  lifecycle_state: string
+  moderation_status: string
+  dispute_status: string
+  created_at: string
+}
+
+export interface ImageTask {
+  task_id: string
+  request_id: string
+  logical_model_code: string
+  status: string
+  progress: number
+  execution_status: string
+  billing_status: string
+  delivery_status: string
+  quoted_amount?: string
+  settled_amount?: string
+  error_code?: string
+  created_at: string
+  completed_at?: string
+  assets: ImageAsset[]
+  existing: boolean
+}
+
+export interface ImageGenerationInput {
+  model: string
+  prompt: string
+  n: number
+  size: string
+  quality: string
+  output_format: string
+  project_id: number
+  quote_id?: string
+}
+
+export interface ImageDownload {
+  asset_id: string
+  url: string
+  expires_at: string
 }

@@ -1,0 +1,37 @@
+# 图片网关G7关闭态告警；标签只使用固定状态枚举，不包含request_id、用户、Project、SK或错误原文。
+groups:
+  - name: molin-image-gateway-g7
+    interval: 15s
+    rules:
+      - alert: MolinImageGatewaySettlementPendingBacklog
+        expr: molin_ai_gateway_image_tasks_backlog{status="pending_reconcile"} > 0
+        for: 5m
+        labels: { severity: critical, module: image_gateway, p_level: P1 }
+        annotations:
+          summary: 图片任务持续待对账
+          description: 图片pending_reconcile任务持续五分钟，请保持图片流量关闭并执行只读对账。
+          runbook_url: https://github.com/skillixx/-molin/blob/main/docs/image-gateway-img-g7-infrastructure.md#image-settlement-pending
+      - alert: MolinImageGatewayReconciliationDifference
+        expr: molin_ai_gateway_image_reconciliation_difference != 0
+        for: 1m
+        labels: { severity: critical, module: image_gateway, p_level: P0 }
+        annotations:
+          summary: 图片账务或资产对账差异非零
+          description: 请求、销售、钱包或可交付资产存在差异，禁止继续交付和开放流量。
+          runbook_url: https://github.com/skillixx/-molin/blob/main/docs/image-gateway-img-g7-infrastructure.md#image-reconciliation-difference
+      - alert: MolinImageGatewayDLQBacklog
+        expr: molin_ai_gateway_image_queue_depth{queue="dead"} > 0
+        for: 5m
+        labels: { severity: warning, module: image_gateway, p_level: P1 }
+        annotations:
+          summary: 图片补偿死任务积压
+          description: 补偿任务进入dead，请检查RabbitMQ DLQ、持久化结果和人工处置入口。
+          runbook_url: https://github.com/skillixx/-molin/blob/main/docs/image-gateway-img-g7-infrastructure.md#image-dlq-backlog
+      - alert: MolinImageGatewayTemporaryAssetBacklog
+        expr: molin_ai_gateway_image_assets{lifecycle_state="temporary"} > 100
+        for: 15m
+        labels: { severity: warning, module: image_gateway, p_level: P1 }
+        annotations:
+          summary: 图片临时资产积压
+          description: 临时资产持续超过一百个，请检查清理Worker、MinIO和legal hold状态。
+          runbook_url: https://github.com/skillixx/-molin/blob/main/docs/image-gateway-img-g7-infrastructure.md#image-temporary-assets

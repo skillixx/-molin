@@ -45,16 +45,17 @@ SK 环境变量名称：BAILIAN_API_KEY
 ```text
 上游名称：OpenRouter
 API Base URL：https://openrouter.ai/api/v1
-允许调用的模型 ID：cohere/north-mini-code:free（已完成最小请求验证，其他模型待自动发现）
+允许调用的模型 ID：cohere/north-mini-code:free（文字验证）；bytedance-seed/seedream-5-0-lite（图片POC验证）
 SK 环境变量名称：OPENROUTER_API_KEY
-配置状态：本机临时鉴权验证通过，尚未配置到测试 Linux
+配置状态：受限测试运行时曾配置并完成一次受控POC；具体节点与来源不写入公开仓库，infra/.env.test未新增密钥落盘
 账号地域：全球
-备注：2026-07-30 使用剪贴板中的 Key 完成一次最小免费请求；文档未保存 Key 明文
+备注：2026-07-30完成最小免费文字请求；2026-08-24复用测试服现有容器运行时Key完成唯一一次OpenRouter专用Images请求；文档未保存Key明文、摘要或尾号
 ```
 
 参考资料：
 
 - API 快速入门：<https://openrouter.ai/docs/quickstart>
+- 图片生成：<https://openrouter.ai/docs/guides/overview/multimodal/image-generation>
 - Bifrost 接入说明：<https://docs.getbifrost.ai/providers/supported-providers/openrouter>
 
 ## 4. 上游三：硅基流动（可选）
@@ -82,6 +83,7 @@ SK 环境变量名称：SILICONFLOW_API_KEY
 |---|---|---|---|---|---|
 | 阿里云百炼 | `qwen-turbo` | 低价快速、连通性验证 | [x] 是 [ ] 否 | <https://help.aliyun.com/zh/model-studio/model-pricing> | 2026-07-30 最小请求验证通过，其他候选模型待发现 |
 | OpenRouter | `cohere/north-mini-code:free` | 免费冒烟测试 | [x] 是 [ ] 否 | <https://openrouter.ai/docs/quickstart> | 2026-07-30 最小请求验证通过，其他候选模型待发现 |
+| OpenRouter | `bytedance-seed/seedream-5-0-lite` | 图片直连POC | [x] 是 [ ] 否 | <https://openrouter.ai/api/v1/images/models/bytedance-seed/seedream-5-0-lite/endpoints> | 2026-08-24固定seed/2K/1:1/n=1成功，实际成本0.035 USD |
 | 硅基流动 | 待填写 | 备用 / 多模态预研 | [ ] 是 [ ] 否 | 待填写 | 待填写 |
 
 ## 6. 测试 Linux 配置确认
@@ -95,12 +97,14 @@ SK 环境变量名称：SILICONFLOW_API_KEY
 | 2026-07-30 | 阿里云百炼 | OpenAI 兼容 Chat Completions | `qwen-turbo` | 鉴权及请求成功 | 14 | 1 | 未写入项目文件，仅从剪贴板临时读取 |
 | 2026-07-30 | OpenRouter | OpenAI 兼容 Chat Completions | `cohere/north-mini-code:free` | 鉴权及请求成功 | 3 | 1 | 未写入项目文件，仅从剪贴板临时读取 |
 
+2026-08-24测试Linux图片POC：`POST /api/v1/images`使用`bytedance-seed/seedream-5-0-lite`返回HTTP 200和1张可完整解码的2048×2048 JPEG；目录/实际成本均为0.035 USD，零fallback、零重试、无需对账。只复用受限测试运行时Key，具体节点与来源不写入公开仓库，未写入`.env.test`或新密钥文件。该证据不代表Molin图片网关、钱包计费或MinIO完成。
+
 ### 6.2 测试 Linux 配置状态
 
 | 环境变量名称 | 对应上游 | 配置状态 | 配置日期 | 配置人 | 备注 |
 |---|---|---|---|---|---|
 | `BAILIAN_API_KEY` | 阿里云百炼 | [x] 未配置 [ ] 已配置 | - | 待填写 | 本机验证成功不代表测试 Linux 已配置 |
-| `OPENROUTER_API_KEY` | OpenRouter | [x] 未配置 [ ] 已配置 | - | 待填写 | 本机验证成功不代表测试 Linux 已配置 |
+| `OPENROUTER_API_KEY` | OpenRouter | [ ] 未配置 [x] POC时运行时已配置 | 2026-08-24复核 | 待填写 | 具体节点与来源不写入公开仓库；`.env.test`无该键，POC后应轮换 |
 | `SILICONFLOW_API_KEY` | 硅基流动 | [ ] 不使用 [ ] 未配置 [ ] 已配置 | 待填写 | 待填写 | 待填写 |
 
 安全要求：

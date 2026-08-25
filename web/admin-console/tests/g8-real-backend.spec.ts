@@ -27,10 +27,32 @@ async function callAPI(request: APIRequestContext, token: string, method: string
 
 async function assertNoHorizontalOverflow(page: Page, width: number, height: number) {
   await page.setViewportSize({ width, height })
-  await page.reload()
+  await page.goto('/token/workbench')
   await expect(page.getByRole('heading', { name: 'AI 网关工作台' })).toBeVisible()
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   expect(overflow).toBeLessThanOrEqual(1)
+}
+
+async function assertImageOperationsResponsive(page: Page, width: number, height: number) {
+  await page.setViewportSize({ width, height })
+  await page.goto('/token/images')
+  await expect(page.getByRole('heading', { name: '图片网关运营' })).toBeVisible()
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+  expect(overflow).toBeLessThanOrEqual(1)
+  await expect(page.getByRole('button', { name: '刷新' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '进入模型目录' })).toBeVisible()
+  const layout = await page.evaluate(() => {
+    const viewportWidth = document.documentElement.clientWidth
+    const selectors = ['.image-operations', '.page-header', '.metrics', '.config-links', '.filters', '.mobile-list']
+    const clipped = selectors.flatMap(selector => Array.from(document.querySelectorAll<HTMLElement>(selector))).filter(element => {
+      const rect = element.getBoundingClientRect()
+      return rect.width > 0 && (rect.left < -1 || rect.right > viewportWidth + 1)
+    }).length
+    const visibleButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('.image-operations button')).filter(button => button.offsetParent !== null)
+    return { clipped, emptyButtons: visibleButtons.filter(button => !button.getAttribute('aria-label') && !button.textContent?.trim()).length }
+  })
+  expect(layout.clipped).toBe(0)
+  expect(layout.emptyButtons).toBe(0)
 }
 
 test('G8 管理员通过真实后端发布文字模型并适配三种视口', async ({ page, request }) => {
@@ -87,11 +109,63 @@ test('G8 管理员通过真实后端发布文字模型并适配三种视口', as
   await dialog.getByRole('button', { name: '确定' }).click()
   await expect(row.getByText(/v1 · 已上架/)).toBeVisible()
 
+  // 使用真实Go HTTP、隔离钱包和Fake图片Provider创建一条完整图片事实，供管理页核查。
+  const quote = await callAPI(request, token, 'POST', '/api/token/images/quotes', {
+    project_id: 88001, model: 'molin/g8-image', prompt: 'IMG-G8 管理端隔离图片任务', n: 1, size: '2K', quality: 'standard', output_format: 'url',
+  })
+  const generationResponse = await request.post(`${apiBase}/api/token/images/generations`, {
+    headers: { Authorization: `Bearer ${token}`, 'Idempotency-Key': 'img-g8-admin-browser-0001' },
+    data: { project_id: 88001, model: 'molin/g8-image', prompt: 'IMG-G8 管理端隔离图片任务', n: 1, size: '2K', quality: 'standard', output_format: 'url', quote_id: quote.quote_id },
+  })
+  expect(generationResponse.status()).toBe(202)
+  const generatedTask = (await generationResponse.json()).data
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const current = await callAPI(request, token, 'GET', `/api/token/image-tasks/${generatedTask.task_id}?project_id=88001`)
+    if (['succeeded', 'failed'].includes(current.status)) break
+    await new Promise(resolve => setTimeout(resolve, 500))
+  }
+
+  await page.goto('/token/images')
+  await expect(page.getByRole('heading', { name: '图片网关运营' })).toBeVisible()
+  await expect(page.getByText(generatedTask.request_id).first()).toBeVisible()
+  await page.getByRole('button', { name: '详情' }).first().click()
+  await expect(page.getByRole('dialog', { name: '图片任务详情' })).toBeVisible()
+  await page.getByRole('button', { name: '关闭' }).click()
+  await page.getByRole('button', { name: '人工对账' }).first().click()
+  const reconciliation = page.getByRole('dialog', { name: '人工核查并对账' })
+  await reconciliation.getByRole('textbox').fill('IMG-G8 隔离真实后端零差异复核')
+  await reconciliation.getByRole('button', { name: '确认执行' }).click()
+  await expect(page.getByText('对账已执行，请核对零差异结果')).toBeVisible()
+
+  await page.getByRole('tab', { name: '资产与安全' }).click()
+  await expect(page.getByRole('button', { name: '隔离资产' }).first()).toBeVisible()
+  await page.getByRole('button', { name: '隔离资产' }).first().click()
+  const quarantine = page.getByRole('dialog', { name: '隔离图片资产' })
+  await quarantine.getByRole('textbox').fill('IMG-G8 隔离真实后端资产安全处置')
+  await quarantine.getByRole('button', { name: '确认执行' }).click()
+  await expect(page.getByText('资产已隔离并记录前置审计')).toBeVisible()
+
+  await page.getByRole('button', { name: '进入模型目录' }).click()
+  await expect(page).toHaveURL(/\/token\/models\?modality=image$/)
+  await expect(page.getByRole('heading', { name: '模型目录' })).toBeVisible()
+  await page.goto('/token/images')
+  await page.getByRole('button', { name: '进入价格配置' }).click()
+  await expect(page).toHaveURL(/\/token\/workbench\?section=prices&modality=image$/)
+  await page.getByRole('button', { name: '新建价格版本' }).click()
+  const imagePriceDialog = page.getByRole('dialog', { name: '新建人民币价格版本' })
+  await expect(imagePriceDialog.getByText('图片价格只能创建非商业测试夹具')).toBeVisible()
+  await imagePriceDialog.getByRole('button', { name: '取消' }).click()
+
   for (const viewport of [
     { width: 1440, height: 900 },
     { width: 768, height: 1024 },
     { width: 375, height: 812 },
   ]) await assertNoHorizontalOverflow(page, viewport.width, viewport.height)
+
+  for (const viewport of [
+    { width: 1440, height: 900 }, { width: 768, height: 1024 },
+    { width: 390, height: 844 }, { width: 375, height: 667 },
+  ]) await assertImageOperationsResponsive(page, viewport.width, viewport.height)
 
   expect(model.logical_model_code).toBe('molin/g8-text')
 })

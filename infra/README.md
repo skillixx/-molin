@@ -26,6 +26,34 @@ INTERNAL_API_TOKEN=<受限测试值> docker compose -f infra/docker-compose.yml 
 
 告警规则在 `infra/prometheus/ai-gateway-alerts.yml`，22 条告警均关联 `docs/ai-gateway-g7-alert-runbook.md`。在线或对账 Usage 异常会触发 P1；AI hold 最老年龄超过 300 秒或总额超过 10 元也会触发 P1。Grafana UID 为 `molin-ai-gateway-g7`，覆盖 P50/P95/P99、TTFT、按模型/驱动错误率、Bifrost 双节点、账务状态/差额/积压/租约、安全拒绝以及请求结算、模型 Usage、钱包消费金额。该 profile 不授权生产部署、真实流量或自动账务补偿。
 
+## OpenRouter图片POC
+
+图片MVP使用OpenRouter专用Images API的原生Adapter候选，不经过Bifrost。无密钥配置位于`infra/openrouter/image-gateway-poc.json`；目录检查和一次性真实探针位于`infra/scripts/probe-openrouter-image-model-once.py`。
+
+零费用目录检查不读取SK、不生成图片：
+
+```powershell
+python -I -W error::ResourceWarning infra\scripts\probe-openrouter-image-model-once.py --catalog-check
+```
+
+真实执行要求`OPENROUTER_API_KEY`只存在受限环境，并同时设置`IMAGE_GATEWAY_ALLOW_REAL_MODEL_TEST=YES`、请求上限1、固定ChangeId和仓库外绝对回执路径。脚本会先重新核对目录参数和0.035 USD按张成本，再且仅再发送一次`n=1`请求；失败零重试，回执存在时禁止重放。不得把真实SK写入命令、仓库、日志或聊天。
+
+2026-08-24测试服已复用受限测试运行时凭据执行唯一一次真实`n=1`请求，具体节点与凭据来源不写入公开仓库：HTTP 200，生成1张可完整解码的2048×2048 JPEG，实际成本0.035 USD，与目录价一致且低于0.04 USD上限，零fallback、零重试、无需对账。该结果只证明固定OpenRouter模型直连POC，不代表Molin图片网关、钱包计费、MinIO、安全审核或生产开放完成。测试服仍有历史可疑二进制残留，现有测试Key应在POC后轮换，生产Key不得注入该主机。
+
+## 图片网关IMG-G7关闭态候选
+
+IMG-G7新增默认关闭配置、固定OpenRouter Images协议Adapter、MinIO私有ObjectStore、RabbitMQ图片主队列/DLQ、清理/补偿Worker、图片指标和只读Grafana/Prometheus配置。默认三开关均为false，OpenRouter Key文件为空，不会读取真实Key或产生Provider请求。
+
+本地隔离验证入口：
+
+```bash
+IMAGE_GATEWAY_G7_INFRA_APPROVED=YES bash infra/scripts/verify-image-gateway-img-g7-infrastructure.sh
+```
+
+脚本只创建无外网、无宿主端口的临时MySQL/MinIO/RabbitMQ容器，使用本次Fake凭据并在退出时销毁。该结果不能替代测试服务器部署和回滚验收。完整合同见 `docs/image-gateway-img-g7-infrastructure.md`。
+
+本次真实POC完成后，固定ChangeId已写入`consumed`墓碑状态。当前本地与测试服脚本即使再次提供全部环境变量，也会在发起网络请求前返回`ERROR_CLASS=change_id_consumed`；测试服执行前版本已保存到受限运维备份目录，具体路径不写入公开仓库，仅供审计和回滚核对，不得用于重放付费请求。
+
 ## 测试环境部署
 
 测试环境部署为**手动触发**，合并到 main 不会自动部署。

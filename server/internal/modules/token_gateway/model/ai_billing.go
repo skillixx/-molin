@@ -24,13 +24,20 @@ const (
 type AIPriceVersion struct {
 	ID                  uint64          `gorm:"primaryKey;autoIncrement" json:"id"`
 	LogicalModelCode    string          `gorm:"size:128;not null;uniqueIndex:uk_ai_price_model_version,priority:1;index:idx_ai_price_active_window,priority:1" json:"logical_model_code"`
+	Capability          string          `gorm:"size:64;not null;default:chat.completions" json:"capability"`
+	PricingTemplate     string          `gorm:"size:32;not null;default:token" json:"pricing_template"`
 	VersionNo           uint64          `gorm:"not null;uniqueIndex:uk_ai_price_model_version,priority:2" json:"version_no"`
 	Currency            string          `gorm:"size:8;not null;default:CNY" json:"currency"`
 	ExchangeRate        decimal.Decimal `gorm:"type:decimal(20,8);not null;default:1" json:"exchange_rate"`
 	Status              string          `gorm:"size:16;not null;default:draft;index:idx_ai_price_active_window,priority:2" json:"status"`
 	MinMarginRate       decimal.Decimal `gorm:"type:decimal(12,8);not null" json:"min_margin_rate"`
-	MaxInputTokens      uint64          `gorm:"not null" json:"max_input_tokens"`
-	MaxOutputTokens     uint64          `gorm:"not null" json:"max_output_tokens"`
+	MaxInputTokens      uint64          `json:"max_input_tokens"`
+	MaxOutputTokens     uint64          `json:"max_output_tokens"`
+	LimitsJSON          json.RawMessage `gorm:"column:limits_json;type:json" json:"limits,omitempty"`
+	MinimumCharge       decimal.Decimal `gorm:"type:decimal(20,8);not null;default:0.00000100" json:"minimum_charge"`
+	CostSource          string          `gorm:"size:64;not null;default:manual_cny" json:"cost_source"`
+	CostSourceVersion   string          `gorm:"size:128;not null;default:legacy" json:"cost_source_version"`
+	PricePurpose        string          `gorm:"size:16;not null;default:commercial" json:"price_purpose"`
 	FailureChargePolicy string          `gorm:"size:32;not null;default:confirmed_usage" json:"failure_charge_policy"`
 	RoundingMode        string          `gorm:"size:16;not null;default:ceil_8" json:"rounding_mode"`
 	CostUpdatedAt       time.Time       `json:"cost_updated_at"`
