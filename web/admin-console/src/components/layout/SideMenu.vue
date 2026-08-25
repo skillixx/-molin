@@ -154,6 +154,10 @@
         <el-icon><Tickets /></el-icon>
         <template #title>用量统计</template>
       </el-menu-item>
+      <el-menu-item v-if="can('ai_gateway:view')" index="/token/images">
+        <el-icon><PictureFilled /></el-icon>
+        <template #title>图片网关运营</template>
+      </el-menu-item>
     </el-sub-menu>
 
     <el-sub-menu v-if="can('agent:manage') || can('skill:manage') || can('plugin:manage')" index="workbench">

@@ -170,6 +170,12 @@ const router = createRouter({
           meta: { requiresAuth: true, requiresAdminVerify: true, title: 'Token 用量统计', permission: 'token:manage' },
         },
         {
+          path: 'token/images',
+          name: 'ImageGatewayOperations',
+          component: () => import('@/views/token/ImageGatewayOperationsView.vue'),
+          meta: { requiresAuth: true, requiresAdminVerify: true, title: '图片网关运营', permission: 'ai_gateway:view' },
+        },
+        {
           path: 'workbench/config',
           name: 'WorkbenchConfig',
           component: () => import('@/views/token/WorkbenchConfigView.vue'),

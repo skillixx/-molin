@@ -11,6 +11,10 @@ import type {
   ProjectKey,
   RequestFilters,
   UserResourceLimits,
+  ImageDownload,
+  ImageGenerationInput,
+  ImageQuote,
+  ImageTask,
 } from '@/types/aiGateway'
 
 export interface ModelCatalogFilters {
@@ -106,4 +110,37 @@ export async function exportAIRequests(params: RequestFilters): Promise<void> {
   link.download = `ai-requests-${new Date().toISOString().slice(0, 10)}.csv`
   link.click()
   URL.revokeObjectURL(url)
+}
+
+export function createImageQuote(data: ImageGenerationInput) {
+  return http.post<unknown, ImageQuote>('/token/images/quotes', data, { skipGlobalErrorMessage: true })
+}
+
+export function generateImage(data: ImageGenerationInput, idempotencyKey: string) {
+  return http.post<unknown, ImageTask>('/token/images/generations', data, {
+    headers: { 'Idempotency-Key': idempotencyKey },
+    skipGlobalErrorMessage: true,
+  })
+}
+
+export function listImageTasks(params: { project_id: number; status?: string; page?: number; page_size?: number }) {
+  return http.get<unknown, PageResult<ImageTask>>('/token/image-tasks', { params, skipGlobalErrorMessage: true })
+}
+
+export function getImageTask(taskID: string, projectID: number) {
+  return http.get<unknown, ImageTask>(`/token/image-tasks/${encodeURIComponent(taskID)}`, {
+    params: { project_id: projectID }, skipGlobalErrorMessage: true,
+  })
+}
+
+export function cancelImageTask(taskID: string, projectID: number) {
+  return http.delete<unknown, ImageTask>(`/token/image-tasks/${encodeURIComponent(taskID)}`, {
+    params: { project_id: projectID }, skipGlobalErrorMessage: true,
+  })
+}
+
+export function getImageDownload(assetID: string, projectID: number) {
+  return http.get<unknown, ImageDownload>(`/token/image-assets/${encodeURIComponent(assetID)}/download-url`, {
+    params: { project_id: projectID }, skipGlobalErrorMessage: true,
+  })
 }

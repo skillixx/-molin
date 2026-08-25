@@ -469,6 +469,59 @@ Migration `000066_enforce_ai_dispute_request_owner` 在 `ai_requests(request_id,
 
 `ai_requests` 增加 `(user_id,execution_status,billing_status,created_at)` 查询索引，支持本人请求账本筛选。G6 不创建第二套 Usage 或财务表：用户用量、价格快照和钱包关联继续分别以 `ai_usage_items`、`ai_requests.price_snapshot_json` 和 `ai_request_wallet_links` 为事实源。000065 down 为事实保留型 no-op，不删除申诉和财务关联事实。
 
+#### 3.5.6 图片网关 IMG-G1 Expand Schema
+
+Migration `000068_expand_image_gateway_schema` 在保持旧 Chat 二进制兼容的前提下扩展图片数据底座：
+
+- `ai_requests` 增加 `capability` 和 `delivery_status`；旧 Chat 默认 `chat.completions/not_applicable`，图片固定 `image.generate` 且不允许流式。
+- `ai_usage_items` 增加 `record_kind`、价格版本、variant、计量单位、计量基数和币种；旧 Chat 使用 `legacy_chat` 与全零 variant hash，继续保持重复写入唯一约束。
+- `ai_gateway_quotes` 保存用户、Project、请求指纹、不可变价格快照、CNY Decimal 金额、过期时间和一次消费关系。
+- `ai_gateway_tasks` 保存图片执行、存储、审核和待对账状态，通过复合外键绑定 request、Quote、用户和 Project。
+- `ai_gateway_assets` 保存主图、缩略图、审核副本和派生图元数据；`available` 必须审核通过、显式/隐式标识完成、对象与图片元数据完整。
+
+关键唯一约束为 `(request_id,result_index,asset_role)`、每请求一个任务、每 Quote 一个任务和每 Quote 一个消费请求。新表禁止保存 Prompt、图片正文、Base64、长期签名 URL、Provider 原始响应和明文凭据。
+
+000068 down 为事实保留型 no-op。应用回退必须保持图片流量关闭，禁止删除财务、审计、任务或已交付资产事实。详细字段、状态和隔离 MySQL 证据见 [`image-gateway-img-g1-schema.md`](./image-gateway-img-g1-schema.md)。
+
+#### 3.5.7 图片网关 IMG-G2 价格与 Quote
+
+Migration `000069_expand_image_pricing_quotes` 泛化既有价格版本：
+
+- `ai_price_versions` 增加 `capability`、`pricing_template`、`limits_json`、`minimum_charge`、成本来源/版本和 `price_purpose`。
+- 历史 Chat 默认映射为 `chat.completions/token/manual_cny/legacy/commercial`，继续要求正数 Token 上限。
+- 图片价格使用 `image_variant` 或 `image_megapixel`，要求 Token 上限为空且规格限制 JSON 非空。
+- `ai_price_skus` 新增 `image_count/image_megapixels` meter；图片 SKU 必须包含规范化 variant JSON 和64位小写 hash。
+- `ai_gateway_quotes` 增加 `request_variant_hash`，与请求 HMAC 指纹、价格快照和一次消费关系共同冻结报价。
+- `price_purpose=test_fixture` 只允许本地非商业金额验证，应用发布入口必须拒绝正式发布。
+
+V2 快照按 `meter_type + variant_hash` 选择唯一行，只保存本次 `selected_lines`；历史 Chat V1 JSON 不改写。000069 down 保留价格、SKU、快照与 Quote 事实。详细合同见 [`image-gateway-img-g2-pricing-quote.md`](./image-gateway-img-g2-pricing-quote.md)。
+
+#### 3.5.8 图片网关 IMG-G3 Repository 状态
+
+Migration `000070_expand_image_task_asset_repository` 为 `ai_gateway_tasks` 和 `ai_gateway_assets` 增加 `version_no` 乐观锁，并为资产增加 `dispute_status/dispute_opened_at/dispute_resolved_at`。
+
+争议打开时必须同时设置 legal hold；争议解决后仍保留 legal hold，释放保全必须由后续具备权限、二次认证和审计的独立动作完成。普通交付查询同时要求资产可用/审核/双标识和请求 `billing_status=settled + delivery_status=available`。000070 down 保留任务、资产、争议和legal hold事实。详细合同见 [`image-gateway-img-g3-task-asset-repository.md`](./image-gateway-img-g3-task-asset-repository.md)。
+
+#### 3.5.9 图片网关 IMG-G5 调账与结算事实
+
+Migration `000071_expand_image_billing_adjustments` 为 `ai_usage_items` 增加调账方向、原因、操作人和复核人。`adjustment` 必须为正数CNY、操作人与复核人不同；非调账行的审计字段必须为空。
+
+钱包预占、结算、释放继续复用 `wallet_holds/wallet_transactions`，请求金额关联继续复用 `ai_request_wallet_links`，事件与补偿继续复用 `ai_outbox_events/ai_compensation_tasks`，不创建第二套财务账本。000071 down永久保留调账和既有财务事实。详细合同见 [`image-gateway-img-g5-billing-compensation.md`](./image-gateway-img-g5-billing-compensation.md)。
+
+#### 3.5.10 图片网关 IMG-G6 HTTP合同
+
+IMG-G6不新增migration，复用000068～000071。HTTP幂等依赖 `ai_requests(user_id,idempotency_key)`，Quote单消费依赖 `ai_gateway_quotes.consumed_request_id`，任务和资产归属继续依赖用户/Project/Key复合关系。
+
+管理端创建图片 `image_variant` 价格时，Repository通过Omit把 `max_input_tokens/max_output_tokens` 写为SQL NULL，满足图片价格CHECK；Chat价格仍写非零Token上限。G6只允许 `price_purpose=test_fixture` 图片价格，发布Repository继续要求commercial，因此测试夹具无法正式发布。详细接口和证据见 [`image-gateway-img-g6-http-contract.md`](./image-gateway-img-g6-http-contract.md)。
+
+#### 3.5.11 图片网关 IMG-G7 基础设施
+
+IMG-G7同样不新增migration。RabbitMQ消息只保存request_id，Prompt留在有界进程内存；MinIO对象引用继续只落 `ai_gateway_assets.bucket/object_key`。清理Worker通过既有 `lifecycle_state + version_no + legal_hold + dispute_status` 进行CAS删除。尚未形成资产元数据的受控对象删除失败时，复用 `ai_compensation_tasks` 的 `image_object_cleanup` 类型，`task_key` 使用bucket和key的SHA-256，`aggregate_id` 只保存可重建的脱敏描述符，管理接口不得回传原始对象路径。详细合同见 [`image-gateway-img-g7-infrastructure.md`](./image-gateway-img-g7-infrastructure.md)。
+
+#### 3.5.12 图片网关 IMG-G8 页面与目录聚合
+
+IMG-G8不新增Migration。用户模型目录在既有发布快照、可见性和活动价格约束下同时聚合 `chat` 与 `image`：文字模型仍要求健康Bifrost路由，图片模型由独立图片运行时装配。页面读写继续使用 `000068～000071` 事实；前端不得直接修改钱包、Quote、Usage、任务或资产状态。详细合同见 [`image-gateway-img-g8-frontends.md`](./image-gateway-img-g8-frontends.md)。
+
 ## 4. 关键状态
 
 用户状态：

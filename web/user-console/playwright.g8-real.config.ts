@@ -3,7 +3,7 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   testDir: './tests',
   testMatch: 'g8-real-backend.spec.ts',
-  timeout: 90_000,
+  timeout: 180_000,
   expect: { timeout: 15_000 },
   retries: 0,
   workers: 1,

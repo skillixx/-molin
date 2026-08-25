@@ -191,7 +191,7 @@ export type AIModelRouteWrite = Omit<AIModelRoute, 'id' | 'updated_at'>
 
 export interface AIPriceSKU {
   id?: number
-  meter_type: 'input_tokens' | 'output_tokens' | 'cached_tokens' | 'reasoning_tokens'
+  meter_type: 'input_tokens' | 'output_tokens' | 'cached_tokens' | 'reasoning_tokens' | 'image_count'
   variant?: Record<string, unknown>
   cost_unit_price: string
   sale_unit_price: string
@@ -216,6 +216,8 @@ export interface AIPriceVersion {
 
 export interface CreateAIPriceReq {
   logical_model_code: string
+  capability?: 'chat.completions' | 'image.generate'
+  pricing_template?: 'token' | 'image_variant'
   min_margin_rate: string
   max_input_tokens: number
   max_output_tokens: number
@@ -223,6 +225,11 @@ export interface CreateAIPriceReq {
   cost_expires_at: string
   effective_at: string
   expires_at?: string | null
+  limits?: Record<string, unknown>
+  minimum_charge?: string
+  cost_source?: string
+  cost_source_version?: string
+  price_purpose?: string
   skus: AIPriceSKU[]
 }
 
@@ -413,4 +420,54 @@ export interface AdminMcpDiscoverResult {
   discovered: number
   changed: number
   tools: AdminMcpTool[]
+}
+
+export interface AdminImageAsset {
+  asset_id: string
+  request_id: string
+  role: string
+  result_index: number
+  mime_type?: string
+  width?: number
+  height?: number
+  size_bytes?: number
+  lifecycle_state: string
+  moderation_status: string
+  dispute_status: string
+  created_at: string
+  user_id: number
+  project_id: number
+  task_id: number
+  legal_hold: boolean
+  version_no: number
+}
+
+export interface AdminImageTask {
+  task_id: string
+  request_id: string
+  logical_model_code: string
+  status: string
+  progress: number
+  execution_status: string
+  billing_status: string
+  delivery_status: string
+  quoted_amount?: string
+  settled_amount?: string
+  error_code?: string
+  created_at: string
+  completed_at?: string
+  assets: AdminImageAsset[]
+  existing: boolean
+  user_id: number
+  project_id: number
+  api_key_id?: number
+}
+
+export interface ImageReconciliationSummary {
+  settlement_pending: number
+  active_compensations: number
+  dead_compensations: number
+  outbox_pending: number
+  outbox_dead: number
+  unreleased_hold_amount: string
 }

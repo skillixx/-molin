@@ -51,6 +51,17 @@
 | [backend-token-gateway-design.md](./backend-token-gateway-design.md) | Token 网关设计 |
 | [backend-token-gateway-integration.md](./backend-token-gateway-integration.md) | Token 网关集成 |
 | [multimodal-ai-gateway-implementation-plan.md](./multimodal-ai-gateway-implementation-plan.md) | 多模态 AI 网关实施方案与任务分配 |
+| [image-gateway-billing-development-plan.md](./image-gateway-billing-development-plan.md) | 基于 G8 现状收窄的图片转接网关、计费、任务、资产、双端页面与验收执行计划 |
+| [image-gateway-goal-stage-execution-prompt.md](./image-gateway-goal-stage-execution-prompt.md) | IMG-G0～IMG-G8阶段目标问题、自动门禁规则、单阶段提示词和G0至G8连续自动开发总Goal提示词 |
+| [image-gateway-img-g0-gate.md](./image-gateway-img-g0-gate.md) | IMG-G0工程决策冻结、POC墓碑复核、容量/SLO默认值和最小人工问题包 |
+| [image-gateway-img-g1-schema.md](./image-gateway-img-g1-schema.md) | IMG-G1图片Quote、任务、资产、Usage Expand Schema、Chat兼容和保留式回滚说明 |
+| [image-gateway-img-g2-pricing-quote.md](./image-gateway-img-g2-pricing-quote.md) | IMG-G2图片价格variant、V2 selected_lines、一次性Quote、金额金样和并发门禁 |
+| [image-gateway-img-g3-task-asset-repository.md](./image-gateway-img-g3-task-asset-repository.md) | IMG-G3图片任务/资产Repository、归属隔离、争议访问和Fake ObjectStore合同 |
+| [image-gateway-img-g4-fake-processing-security.md](./image-gateway-img-g4-fake-processing-security.md) | IMG-G4 Fake ImageGateway、有界图片处理、双标识、SSRF和故障模型 |
+| [image-gateway-img-g5-billing-compensation.md](./image-gateway-img-g5-billing-compensation.md) | IMG-G5 Wallet Hold、结算/释放、Outbox、补偿和零差异对账 |
+| [image-gateway-img-g6-http-contract.md](./image-gateway-img-g6-http-contract.md) | IMG-G6 图片HTTP、Project SK显式能力、幂等、查询和管理合同 |
+| [image-gateway-img-g7-infrastructure.md](./image-gateway-img-g7-infrastructure.md) | IMG-G7 OpenRouter Adapter候选、MinIO、RabbitMQ/DLQ、清理、监控和关闭态装配 |
+| [image-gateway-img-g8-frontends.md](./image-gateway-img-g8-frontends.md) | IMG-G8 管理端、用户端、真实Go HTTP/Fake Provider页面旅程与人工审查包 |
 | [token-gateway-openai-compat.md](./token-gateway-openai-compat.md) | OpenAI 兼容对话 |
 | [backend-sk-auth-contract.md](./backend-sk-auth-contract.md) | SK 鉴权契约 |
 | [backend-chat-workbench-contract.md](./backend-chat-workbench-contract.md) | 聊天工作台契约 |
@@ -63,6 +74,8 @@
 | [ai-gateway-phase0-freeze-record.md](./ai-gateway-phase0-freeze-record.md) | 分支基线、首批模型、成本与销售价格冻结记录 |
 | [ai-gateway-phase1-commercial-text-plan.md](./ai-gateway-phase1-commercial-text-plan.md) | Phase 1 文字模型商业闭环唯一执行计划 |
 | [multimodal-ai-gateway-implementation-plan.md](./multimodal-ai-gateway-implementation-plan.md) | 图片、音频和视频长期蓝图，不作为 Phase 1 排期依据 |
+| [image-gateway-billing-development-plan.md](./image-gateway-billing-development-plan.md) | 图片网关与人民币计费IMG-G0～IMG-G8工程计划及完成证据；未授权生产开放 |
+| [image-gateway-goal-stage-execution-prompt.md](./image-gateway-goal-stage-execution-prompt.md) | 图片网关分阶段Goal执行规则；对应IMG-G0～IMG-G8已完成，IMG-G9以后仍需独立Goal |
 | [bifrost-docker-deployment-guide.md](./bifrost-docker-deployment-guide.md) | Bifrost 双节点 Docker 部署、验证与回滚 |
 | [token-gateway-worktree-development-guide.md](./token-gateway-worktree-development-guide.md) | Token 网关独立工作区开发规范 |
 | [ai-upstream-test-account-requirements.md](./ai-upstream-test-account-requirements.md) | 上游测试账号、模型权限和计量验收要求 |

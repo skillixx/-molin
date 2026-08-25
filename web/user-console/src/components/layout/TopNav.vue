@@ -71,6 +71,7 @@ function handleCommand(cmd: string) {
   else if (cmd === 'agents') router.push('/agents')
   else if (cmd === 'token-packages') router.push('/token/packages')
   else if (cmd === 'token-usage') router.push('/ai/usage')
+  else if (cmd === 'ai-images') router.push('/ai/images')
   else if (cmd === 'logout') handleLogout()
 }
 
@@ -176,6 +177,10 @@ onMounted(() => {
               <el-dropdown-item command="token-usage">
                 <el-icon><list /></el-icon>
                 AI 用量与账单
+              </el-dropdown-item>
+              <el-dropdown-item command="ai-images">
+                <el-icon><picture-filled /></el-icon>
+                图片生成工作台
               </el-dropdown-item>
               <el-dropdown-item command="consumption">
                 <el-icon><list /></el-icon>

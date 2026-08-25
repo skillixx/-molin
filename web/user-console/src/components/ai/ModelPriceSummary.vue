@@ -11,11 +11,12 @@ const meterLabels: Record<string, string> = {
   output_tokens: '输出',
   cached_tokens: '缓存读取',
   reasoning_tokens: '推理',
+  image_count: '可交付图片',
 }
 
 function priceText(item: AIPriceSKU) {
   const scale = Number(item.scale)
-  const unit = scale === 1_000_000 ? '/ 百万 Token' : `/ ${item.scale} Token`
+  const unit = item.meter_type === 'image_count' ? '/ 张' : scale === 1_000_000 ? '/ 百万 Token' : `/ ${item.scale} Token`
   return `¥${item.sale_unit_price} ${unit}`
 }
 </script>

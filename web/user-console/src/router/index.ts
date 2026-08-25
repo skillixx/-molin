@@ -83,6 +83,11 @@ const router = createRouter({
           meta: { requiresAuth: true, title: 'AI 用量与账单 — 墨灵' },
         },
         {
+          path: 'ai/images',
+          component: () => import('@/views/ai/AIImageWorkbenchView.vue'),
+          meta: { requiresAuth: true, requiresRealName: true, title: '图片生成工作台 — 墨灵' },
+        },
+        {
           path: 'agents',
           component: () => import('@/views/agent/AgentWorkbenchView.vue'),
           meta: { requiresAuth: true, title: 'Agent 工作台 — 墨灵' },

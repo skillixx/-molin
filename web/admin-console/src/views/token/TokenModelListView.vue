@@ -205,6 +205,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
@@ -235,6 +236,7 @@ import type {
 } from '@/types/token'
 
 const loading = ref(false)
+const route = useRoute()
 const models = ref<TokenModel[]>([])
 const searchForm = reactive<{ modality: TokenModelModality | ''; status: TokenModelStatus | '' }>({
   modality: '',
@@ -303,6 +305,10 @@ const rules: FormRules = {
 }
 
 onMounted(() => {
+  const requestedModality = String(route.query.modality || '')
+  if (['chat', 'image', 'audio', 'video'].includes(requestedModality)) {
+    searchForm.modality = requestedModality as TokenModelModality
+  }
   fetchChannels()
   fetchAudienceOptions()
   fetchModels()

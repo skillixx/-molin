@@ -35,6 +35,9 @@ import type {
   AIPriceVersion,
   AIPriceSKU,
   CreateAIPriceReq,
+  AdminImageAsset,
+  AdminImageTask,
+  ImageReconciliationSummary,
 } from '@/types/token'
 
 // ===== 渠道管理 /api/admin/token/channels =====
@@ -204,6 +207,30 @@ export function listAICompensationTasks(params: { page?: number; page_size?: num
 }
 export function resolveAICompensationTask(id: number, updatedAt: string, status: 'retry' | 'manual_review') {
   return http.post(`/admin/token/compensation-tasks/${id}/resolve`, { updated_at: updatedAt, status })
+}
+
+export function listAdminImageTasks(params: { user_id?: number; project_id?: number; model?: string; status?: string; page?: number; page_size?: number } = {}) {
+  return http.get<unknown, PageResponse<AdminImageTask>>('/admin/token/image-tasks', { params })
+}
+
+export function getAdminImageTask(taskID: string) {
+  return http.get<unknown, AdminImageTask>(`/admin/token/image-tasks/${encodeURIComponent(taskID)}`)
+}
+
+export function listAdminImageAssets(params: { user_id?: number; project_id?: number; lifecycle_state?: string; dispute_status?: string; page?: number; page_size?: number } = {}) {
+  return http.get<unknown, PageResponse<AdminImageAsset>>('/admin/token/image-assets', { params })
+}
+
+export function quarantineAdminImageAsset(assetID: string, versionNo: number, reason: string) {
+  return http.post<unknown, AdminImageAsset>(`/admin/token/image-assets/${encodeURIComponent(assetID)}/quarantine`, { version_no: versionNo, reason })
+}
+
+export function reconcileAdminImageRequest(requestID: string, reason: string) {
+  return http.post<unknown, Record<string, unknown>>(`/admin/token/image-requests/${encodeURIComponent(requestID)}/reconcile`, { reason })
+}
+
+export function getImageReconciliationSummary() {
+  return http.get<unknown, ImageReconciliationSummary>('/admin/token/image-reconciliation/summary')
 }
 export function requeueAIDeadOutbox(eventId: string, reason: string) {
   return http.post(`/admin/token/outbox-events/${encodeURIComponent(eventId)}/requeue`, { reason })

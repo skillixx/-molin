@@ -139,10 +139,12 @@
     </el-dialog>
 
     <el-dialog v-model="priceDialog" title="新建人民币价格版本" width="min(780px, 96vw)">
-      <el-form label-position="top"><div class="form-grid"><el-form-item label="逻辑模型"><el-select v-model="priceForm.logical_model_code" filterable><el-option v-for="m in models" :key="m.id" :label="m.display_name" :value="m.logical_model_code" /></el-select></el-form-item><el-form-item label="最低毛利率"><el-input v-model="priceForm.min_margin_rate" placeholder="0.20" /></el-form-item></div>
-      <div class="form-grid"><el-form-item label="最大输入 Token"><el-input-number v-model="priceForm.max_input_tokens" :min="1" /></el-form-item><el-form-item label="最大输出 Token"><el-input-number v-model="priceForm.max_output_tokens" :min="1" /></el-form-item></div>
+      <el-form label-position="top"><div class="form-grid"><el-form-item label="逻辑模型"><el-select v-model="priceForm.logical_model_code" filterable @change="resetPriceForModel"><el-option v-for="m in models" :key="m.id" :label="`${m.display_name} · ${modalityLabel(m.modality)}`" :value="m.logical_model_code" /></el-select></el-form-item><el-form-item label="最低毛利率"><el-input v-model="priceForm.min_margin_rate" placeholder="0.20" /></el-form-item></div>
+      <el-alert v-if="priceModelIsImage" type="warning" show-icon :closable="false" title="图片价格只能创建非商业测试夹具" description="规格固定为 2K / 1:1 / standard / URL / 最多 1 张，正式发布仍由服务端失败关闭。" />
+      <div v-if="!priceModelIsImage" class="form-grid"><el-form-item label="最大输入 Token"><el-input-number v-model="priceForm.max_input_tokens" :min="1" /></el-form-item><el-form-item label="最大输出 Token"><el-input-number v-model="priceForm.max_output_tokens" :min="1" /></el-form-item></div>
+      <div v-else class="form-grid"><el-form-item label="最低收费（元）"><el-input v-model="priceForm.minimum_charge" /></el-form-item><el-form-item label="夹具版本"><el-input v-model="priceForm.cost_source_version" placeholder="img-g8-ui-fixture" /></el-form-item></div>
       <div class="form-grid three"><el-form-item label="成本更新时间"><el-date-picker v-model="priceDates.costUpdated" type="datetime" :clearable="false" /></el-form-item><el-form-item label="成本失效时间"><el-date-picker v-model="priceDates.costExpires" type="datetime" :clearable="false" /></el-form-item><el-form-item label="价格生效时间"><el-date-picker v-model="priceDates.effective" type="datetime" :clearable="false" /></el-form-item></div>
-      <el-table :data="priceForm.skus" border><el-table-column label="计量项" min-width="140"><template #default="{ row }">{{ meterLabel(row.meter_type) }}</template></el-table-column><el-table-column label="成本价"><template #default="{ row }"><el-input v-model="row.cost_unit_price" /></template></el-table-column><el-table-column label="销售价"><template #default="{ row }"><el-input v-model="row.sale_unit_price" /></template></el-table-column><el-table-column label="单位数量"><template #default="{ row }"><el-input v-model="row.scale" /></template></el-table-column></el-table>
+      <el-table :data="priceForm.skus" border><el-table-column label="计量项" min-width="140"><template #default="{ row }">{{ meterLabel(row.meter_type) }}</template></el-table-column><el-table-column v-if="priceModelIsImage" label="规格" min-width="190"><template #default="{ row }">{{ Object.values(row.variant || {}).join(' · ') }}</template></el-table-column><el-table-column label="成本价"><template #default="{ row }"><el-input v-model="row.cost_unit_price" /></template></el-table-column><el-table-column label="销售价"><template #default="{ row }"><el-input v-model="row.sale_unit_price" /></template></el-table-column><el-table-column label="单位数量"><template #default="{ row }"><el-input v-model="row.scale" /></template></el-table-column></el-table>
       </el-form><template #footer><el-button @click="priceDialog=false">取消</el-button><el-button type="primary" :loading="saving" @click="savePrice">保存草稿</el-button></template>
     </el-dialog>
 
@@ -195,7 +197,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Search, Setting } from '@element-plus/icons-vue'
 import { approveAIPrice, checkTokenChannelHealth, createAIBudgetOverride, createAIModelRoute, createAIPrice, createAISafetyAction, createAISafetyPolicy, getAIGatewayOverview, getAIPrice, listAIBudgetAlerts, listAIBudgetOverrides, listAICompensationTasks, listAIBudgetPolicies, listAIModelReleases, listAIModelRoutes, listAIPrices, listAIResourcePolicies, listAISafetyActions, listAISafetyAppeals, listAISafetyEvents, listAISafetyPolicies, listTokenChannels, listTokenModels, publishAIModel, publishAIPrice, publishAISafetyPolicy, putAIBudgetPolicy, putAIResourcePolicy, requeueAIDeadOutbox, resolveAICompensationTask, resolveAISafetyAppeal, retireAIPrice, revokeAISafetyAction, rollbackAIModel, rollbackAIPrice, rollbackAISafetyPolicy, suspendAIPrice, unpublishAIModel, updateAIModelRoute } from '@/api/token'
@@ -220,6 +223,7 @@ interface GovernanceRow extends Record<string, unknown> {
 type PriceDraftForm = Omit<CreateAIPriceReq, 'cost_updated_at' | 'cost_expires_at' | 'effective_at' | 'expires_at'>
 
 const authStore = useAuthStore()
+const currentRoute = useRoute()
 const can = (permission: string) => authStore.hasPermission(permission)
 const activeTab = ref('models'), loading = ref(false), overviewLoading = ref(false), saving = ref(false)
 let overviewRequestSequence = 0
@@ -257,7 +261,11 @@ const defaultSafetyRules = [
 ].map(([category, keyword]) => ({ category, code: `base_${category}`, keywords: [keyword] }))
 let governanceRequestSequence = 0
 
-onMounted(async () => { await Promise.all([loadOverview(), loadModels(), loadChannels()]) })
+onMounted(async () => {
+  if (currentRoute.query.modality === 'image') modelFilter.value = 'image'
+  if (currentRoute.query.section === 'prices') activeTab.value = 'prices'
+  await Promise.all([loadOverview(), loadModels(), loadChannels(), activeTab.value === 'prices' ? loadPrices() : Promise.resolve()])
+})
 async function withLoading(task: () => Promise<void>) { loading.value = true; try { await task() } finally { loading.value = false } }
 async function loadOverview() { const dates = overviewDates.value; if (!dates?.[0] || !dates?.[1]) return; const sequence = ++overviewRequestSequence; const [from, to] = dates; overviewLoading.value = true; try { const result = await getAIGatewayOverview({ from: from.toISOString(), to: to.toISOString(), model: overviewFilter.model || undefined, channel_id: overviewFilter.channel_id, status: overviewFilter.status || undefined }); if (sequence === overviewRequestSequence) Object.assign(overview, result) } finally { if (sequence === overviewRequestSequence) overviewLoading.value = false } }
 async function loadModels() { await withLoading(async () => { models.value = (await listTokenModels({ page: 1, page_size: 100, modality: modelFilter.value || undefined })).items }) }
@@ -326,8 +334,15 @@ async function saveRoute() { if (!routeForm.logical_model_code || !routeForm.cha
 
 const priceDialog = ref(false), priceDates = reactive({ costUpdated: new Date(), costExpires: new Date(Date.now() + 30*864e5), effective: new Date() })
 const defaultSKUs = (): AIPriceSKU[] => ['input_tokens','output_tokens','cached_tokens','reasoning_tokens'].map(meter_type => ({ meter_type: meter_type as AIPriceSKU['meter_type'], cost_unit_price: '0.00000000', sale_unit_price: '0.00000100', scale: '1', variant: {} }))
+const imageVariant = { resolution: '2K', aspect_ratio: '1:1', quality: 'standard', output_format: 'provider_default', delivery: 'url' }
+const imageSKUs = (): AIPriceSKU[] => [{ meter_type: 'image_count', variant: imageVariant, cost_unit_price: '0.30000000', sale_unit_price: '0.50000000', scale: '1' }]
 const priceForm = reactive<PriceDraftForm>({ logical_model_code: '', min_margin_rate: '0.20', max_input_tokens: 128000, max_output_tokens: 8192, skus: defaultSKUs() })
-function openPriceDialog() { Object.assign(priceForm, { logical_model_code: models.value[0]?.logical_model_code || '', min_margin_rate: '0.20', max_input_tokens: 128000, max_output_tokens: 8192, skus: defaultSKUs() }); priceDialog.value = true }
+const priceModelIsImage = computed(() => models.value.find(item => item.logical_model_code === priceForm.logical_model_code)?.modality === 'image')
+function resetPriceForModel() {
+  if (priceModelIsImage.value) Object.assign(priceForm, { capability: 'image.generate', pricing_template: 'image_variant', max_input_tokens: 0, max_output_tokens: 0, limits: { max_count: 1, variants: [imageVariant] }, minimum_charge: '0.01000000', cost_source: 'test_fixture', cost_source_version: 'img-g8-ui-fixture', price_purpose: 'test_fixture', skus: imageSKUs() })
+  else Object.assign(priceForm, { capability: 'chat.completions', pricing_template: 'token', max_input_tokens: 128000, max_output_tokens: 8192, limits: undefined, minimum_charge: undefined, cost_source: undefined, cost_source_version: undefined, price_purpose: undefined, skus: defaultSKUs() })
+}
+function openPriceDialog() { Object.assign(priceForm, { logical_model_code: models.value[0]?.logical_model_code || '', min_margin_rate: '0.20' }); resetPriceForModel(); priceDialog.value = true }
 async function savePrice() { saving.value = true; try { await createAIPrice({ ...priceForm, cost_updated_at: priceDates.costUpdated.toISOString(), cost_expires_at: priceDates.costExpires.toISOString(), effective_at: priceDates.effective.toISOString() }); ElMessage.success('价格草稿已创建'); priceDialog.value = false; refreshCurrent() } finally { saving.value = false } }
 
 type GovernanceMode = 'safety' | 'resources' | 'budgets' | 'safety-actions' | 'budget-overrides' | 'outbox'
@@ -378,7 +393,7 @@ async function resolveAppeal(row: GovernanceRow, status: 'approved' | 'rejected'
 function modalityLabel(v: string) { return ({ chat: '文字', image: '图片', audio: '音频', video: '视频' } as Record<string, string>)[v] || v }
 function priceStatusLabel(v: string) { return ({ draft:'草稿', approved:'已审批', active:'生效中', suspended:'已暂停', retired:'已退役' } as Record<string, string>)[v] || v }
 function priceTag(v: string) { return v === 'active' ? 'success' : v === 'suspended' ? 'warning' : v === 'retired' ? 'info' : 'primary' }
-function meterLabel(v: string) { return ({ input_tokens:'输入 Token', output_tokens:'输出 Token', cached_tokens:'缓存 Token', reasoning_tokens:'推理 Token' } as Record<string, string>)[v] || v }
+function meterLabel(v: string) { return ({ input_tokens:'输入 Token', output_tokens:'输出 Token', cached_tokens:'缓存 Token', reasoning_tokens:'推理 Token', image_count:'可交付图片' } as Record<string, string>)[v] || v }
 function decimalFixed(value: string, scale: number) { const normalized = String(value || '0').trim(); const negative = normalized.startsWith('-'); const unsigned = normalized.replace(/^[+-]/, ''); const [integerRaw = '0', fractionRaw = ''] = unsigned.split('.'); const integerDigits = integerRaw.replace(/\D/g, '') || '0'; const padded = (fractionRaw.replace(/\D/g, '') + '0'.repeat(scale + 1)).slice(0, scale + 1); const kept = padded.slice(0, scale); const shouldRound = padded.charAt(scale) >= '5'; let scaled = BigInt(`${integerDigits}${kept}` || '0'); if (shouldRound) scaled += 1n; const digits = scaled.toString().padStart(scale + 1, '0'); const integerPart = scale ? digits.slice(0, -scale) : digits; const fractionPart = scale ? digits.slice(-scale) : ''; const grouped = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ','); const sign = negative && scaled !== 0n ? '-' : ''; return `${sign}${grouped}${scale ? `.${fractionPart}` : ''}` }
 function percent(v: string) { const normalized = String(v || '0'); const [integer = '0', fraction = ''] = normalized.split('.'); const tenthsOfPercent = `${integer}${(fraction + '000').slice(0, 3)}`.replace(/^0+(?=\d)/, '') || '0'; return `${tenthsOfPercent.length === 1 ? `0.${tenthsOfPercent}` : `${tenthsOfPercent.slice(0, -1)}.${tenthsOfPercent.slice(-1)}`}%` }
 function metricValue(key: keyof AIGatewayOverview) { if (key === 'success_rate') return percent(String(overview[key])); if (key === 'sale_amount' || key === 'upstream_cost' || key === 'gross_profit') return `¥${decimalFixed(String(overview[key]), 2)}`; if (key === 'total_tokens') return decimalFixed(String(overview[key]), 0); return overview[key] }
