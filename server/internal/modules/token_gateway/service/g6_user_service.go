@@ -186,6 +186,10 @@ func publicCatalogDTO(row repository.PublishedCatalogRow) dto.PublicModelCatalog
 		})
 	}
 	snapshot := row.Snapshot
+	minimumCharge := publicMinimumCharge
+	if snapshot.Modality == "image" {
+		minimumCharge = row.PriceVersion.MinimumCharge.StringFixed(8)
+	}
 	return dto.PublicModelCatalogItem{
 		LogicalModelCode: snapshot.LogicalModelCode, DisplayName: snapshot.DisplayName,
 		ProviderName: snapshot.ProviderName, Description: snapshot.Description,
@@ -196,7 +200,7 @@ func publicCatalogDTO(row repository.PublishedCatalogRow) dto.PublicModelCatalog
 		ReleaseVersionNo: row.Release.VersionNo, PublishedAt: row.Release.PublishedAt.UTC(),
 		PriceVersionNo: row.PriceVersion.VersionNo, PriceEffectiveAt: row.PriceVersion.EffectiveAt,
 		FailureChargePolicy: row.PriceVersion.FailureChargePolicy, RoundingMode: row.PriceVersion.RoundingMode,
-		MinimumCharge: publicMinimumCharge, ServiceStatus: "available", Prices: prices,
+		MinimumCharge: minimumCharge, ServiceStatus: "available", Prices: prices,
 	}
 }
 

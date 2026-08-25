@@ -2,11 +2,44 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
 	"molin/server/internal/modules/token_gateway/dto"
 )
+
+func TestG5AdminImagePriceOnlyAcceptsFrozenMVPContract(t *testing.T) {
+	service := NewG5AdminService(nil, nil)
+	now := time.Now().UTC()
+	frozenVariant := json.RawMessage(`{"resolution":"2K","aspect_ratio":"1:1","quality":"standard","output_format":"provider_default","delivery":"url"}`)
+	base := dto.CreatePriceReq{
+		LogicalModelCode: "molin/image", Capability: "image.generate", PricingTemplate: "image_variant",
+		MinMarginRate: "0.20", Limits: json.RawMessage(`{"max_count":1,"variants":[{"resolution":"2K","aspect_ratio":"1:1","quality":"standard","output_format":"provider_default","delivery":"url"}]}`),
+		MinimumCharge: "0.01", CostSource: "test_fixture", CostSourceVersion: "mvp-fixture", PricePurpose: "test_fixture",
+		CostUpdatedAt: now, CostExpiresAt: now.Add(time.Hour), EffectiveAt: now,
+		SKUs: []dto.PriceSKUReq{{MeterType: "image_count", Variant: frozenVariant, CostUnitPrice: "0.30", SaleUnitPrice: "0.50", Scale: "1"}},
+	}
+	tests := []struct {
+		name   string
+		limits json.RawMessage
+	}{
+		{name: "禁止max_count大于一", limits: json.RawMessage(`{"max_count":2,"variants":[{"resolution":"2K","aspect_ratio":"1:1","quality":"standard","output_format":"provider_default","delivery":"url"}]}`)},
+		{name: "禁止多个variant", limits: json.RawMessage(`{"max_count":1,"variants":[{"resolution":"2K","aspect_ratio":"1:1","quality":"standard","output_format":"provider_default","delivery":"url"},{"resolution":"1K","aspect_ratio":"1:1","quality":"standard","output_format":"provider_default","delivery":"url"}]}`)},
+		{name: "禁止其他尺寸", limits: json.RawMessage(`{"max_count":1,"variants":[{"resolution":"1K","aspect_ratio":"1:1","quality":"standard","output_format":"provider_default","delivery":"url"}]}`)},
+		{name: "禁止其他质量", limits: json.RawMessage(`{"max_count":1,"variants":[{"resolution":"2K","aspect_ratio":"1:1","quality":"hd","output_format":"provider_default","delivery":"url"}]}`)},
+		{name: "禁止其他输出", limits: json.RawMessage(`{"max_count":1,"variants":[{"resolution":"2K","aspect_ratio":"1:1","quality":"standard","output_format":"png","delivery":"url"}]}`)},
+	}
+	for _, item := range tests {
+		t.Run(item.name, func(t *testing.T) {
+			request := base
+			request.Limits = item.limits
+			if _, err := service.CreatePrice(context.Background(), 1, request); !IsValidation(err) {
+				t.Fatalf("管理价格越出冻结规格必须拒绝: %v", err)
+			}
+		})
+	}
+}
 
 func TestG5AdminRejectsRouteWithoutExplicitProvider(t *testing.T) {
 	svc := NewG5AdminService(nil, nil)

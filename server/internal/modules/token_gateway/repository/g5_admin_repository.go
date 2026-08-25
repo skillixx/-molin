@@ -525,7 +525,7 @@ func (r *G5AdminRepository) CreatePrice(ctx context.Context, version *model.AIPr
 			return err
 		}
 		version.VersionNo = next
-		if err := tx.Create(version).Error; err != nil {
+		if err := createAIPriceVersionTx(tx, version); err != nil {
 			return err
 		}
 		for i := range skus {
@@ -564,7 +564,7 @@ func (r *G5AdminRepository) ClonePriceAsDraft(ctx context.Context, sourceID, ope
 		cloned.EffectiveAt, cloned.ExpiresAt, cloned.CostExpiresAt = effectiveAt.UTC(), nil, costExpiresAt.UTC()
 		cloned.CreatedBy, cloned.ApprovedBy, cloned.ApprovedAt, cloned.PublishedAt, cloned.SuspendedReason = operatorID, nil, nil, nil, nil
 		cloned.CreatedAt, cloned.UpdatedAt = time.Time{}, time.Time{}
-		if err := tx.Create(&cloned).Error; err != nil {
+		if err := createAIPriceVersionTx(tx, &cloned); err != nil {
 			return err
 		}
 		clonedSKUs = make([]model.AIPriceSKU, len(sourceSKUs))
@@ -575,6 +575,14 @@ func (r *G5AdminRepository) ClonePriceAsDraft(ctx context.Context, sourceID, ope
 		return tx.Create(&clonedSKUs).Error
 	})
 	return &cloned, clonedSKUs, err
+}
+
+// createAIPriceVersionTx 让图片价格把两个Token上限写为SQL NULL，以满足图片模板CHECK；Chat仍按历史非零字段写入。
+func createAIPriceVersionTx(tx *gorm.DB, version *model.AIPriceVersion) error {
+	if version.PricingTemplate == "image_variant" || version.PricingTemplate == "image_megapixel" {
+		return tx.Omit("MaxInputTokens", "MaxOutputTokens").Create(version).Error
+	}
+	return tx.Create(version).Error
 }
 
 func (r *G5AdminRepository) ApprovePrice(ctx context.Context, id, operatorID uint64) error {
