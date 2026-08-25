@@ -18,9 +18,9 @@ const maxObservableModels = 32
 var (
 	requestDurationBuckets = []float64{0.005, 0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60}
 	ttftBuckets            = []float64{0.01, 0.03, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30}
-	requestTypes           = map[string]struct{}{"json": {}, "stream": {}}
+	requestTypes           = map[string]struct{}{"json": {}, "stream": {}, "image": {}}
 	requestOutcomes        = map[string]struct{}{"success": {}, "failure": {}, "rejected": {}}
-	metricDrivers          = map[string]struct{}{"native": {}, "bifrost": {}, "fake": {}}
+	metricDrivers          = map[string]struct{}{"native": {}, "bifrost": {}, "fake": {}, "openrouter-images": {}}
 	upstreamOutcomes       = map[string]struct{}{"success": {}, "timeout": {}, "rate_limited": {}, "client_error": {}, "server_error": {}, "malformed": {}, "unknown": {}}
 	billingStates          = []string{"unquoted", "held", "settlement_pending", "settled", "released", "exception"}
 	rejectionReasons       = map[string]struct{}{
@@ -32,6 +32,8 @@ var (
 	outboxStatuses       = []string{"pending", "publishing", "dead"}
 	compensationStatuses = []string{"pending", "retry", "dead", "manual_review"}
 	differenceKinds      = []string{"request_usage", "request_hold", "request_wallet"}
+	imageTaskStatuses    = []string{"created", "reserved", "submitted", "processing", "storing", "moderating", "succeeded", "failed", "cancelled", "expired", "pending_reconcile"}
+	imageAssetStates     = []string{"temporary", "available", "quarantined", "expiring", "deleting", "deleted", "delete_failed"}
 	billingAnomalyKinds  = []string{"duplicate_settlement", "unbilled_execution", "missing_price_snapshot", "missing_wallet_transaction", "missing_usage", "completed_pending", "billing_exception"}
 )
 
@@ -59,6 +61,9 @@ type AIGatewayGaugeSnapshot struct {
 	BillingAnomalies    map[string]uint64
 	BillingAmounts      map[string]decimal.Decimal
 	SecurityFindings    map[string]uint64
+	ImageTasks          map[string]AIGatewayBacklogGauge
+	ImageAssets         map[string]uint64
+	ImageDifference     decimal.Decimal
 }
 
 // AIGatewayGaugeCollector 只允许执行 SELECT 聚合，不拥有任何修复、补偿或钱包写入能力。
@@ -69,6 +74,10 @@ type AIGatewayGaugeCollector interface {
 // AIGatewayConcurrencyGaugeCollector 从 Redis 共享租约事实读取四层当前值，避免多实例各自维护 Gauge 后发生漂移。
 type AIGatewayConcurrencyGaugeCollector interface {
 	CollectConcurrencyLeases(ctx context.Context) (map[string]uint64, error)
+}
+
+type ImageQueueGaugeCollector interface {
+	CollectImageQueueDepths(ctx context.Context) (map[string]uint64, error)
 }
 
 type requestMetricKey struct {
@@ -101,6 +110,7 @@ type AIGatewayMetrics struct {
 
 	collector            AIGatewayGaugeCollector
 	concurrencyCollector AIGatewayConcurrencyGaugeCollector
+	imageQueueCollector  ImageQueueGaugeCollector
 	models               map[string]struct{}
 
 	requests              map[requestMetricKey]uint64
@@ -116,6 +126,16 @@ type AIGatewayMetrics struct {
 	concurrencyRejections map[string]uint64
 	heartbeatFailures     uint64
 	ghostLeases           uint64
+}
+
+func (m *AIGatewayMetrics) WithImageQueueGaugeCollector(collector ImageQueueGaugeCollector) *AIGatewayMetrics {
+	if m == nil {
+		return m
+	}
+	m.mu.Lock()
+	m.imageQueueCollector = collector
+	m.mu.Unlock()
+	return m
 }
 
 // WithConcurrencyGaugeCollector 注入 Redis 权威租约采集器；只应在模块装配阶段调用一次。
@@ -335,11 +355,20 @@ func (m *AIGatewayMetrics) AIGatewayPrometheus(ctx context.Context) (string, err
 	}
 	m.mu.RLock()
 	concurrencyCollector := m.concurrencyCollector
+	imageQueueCollector := m.imageQueueCollector
 	m.mu.RUnlock()
 	var sharedConcurrencyLeases map[string]uint64
 	if concurrencyCollector != nil {
 		var err error
 		sharedConcurrencyLeases, err = concurrencyCollector.CollectConcurrencyLeases(ctx)
+		if err != nil {
+			return "", err
+		}
+	}
+	imageQueueDepths := map[string]uint64{}
+	if imageQueueCollector != nil {
+		var err error
+		imageQueueDepths, err = imageQueueCollector.CollectImageQueueDepths(ctx)
 		if err != nil {
 			return "", err
 		}
@@ -383,6 +412,17 @@ func (m *AIGatewayMetrics) AIGatewayPrometheus(ctx context.Context) (string, err
 	fmt.Fprintf(&out, "molin_ai_gateway_unreleased_holds_oldest_age_seconds %d\n", gauges.UnreleasedHolds.OldestAgeSeconds)
 	writeBacklog(&out, "outbox", outboxStatuses, gauges.OutboxBacklog)
 	writeBacklog(&out, "compensation", compensationStatuses, gauges.CompensationBacklog)
+	writeBacklog(&out, "image_tasks", imageTaskStatuses, gauges.ImageTasks)
+	writeGaugeHeader(&out, "molin_ai_gateway_image_assets", "图片网关当前资产生命周期数量。")
+	for _, state := range imageAssetStates {
+		fmt.Fprintf(&out, "molin_ai_gateway_image_assets{lifecycle_state=%q} %d\n", state, gauges.ImageAssets[state])
+	}
+	writeGaugeHeader(&out, "molin_ai_gateway_image_reconciliation_difference", "图片请求、销售、钱包和可交付资产的聚合差异。")
+	fmt.Fprintf(&out, "molin_ai_gateway_image_reconciliation_difference %s\n", gauges.ImageDifference.Abs().StringFixed(8))
+	writeGaugeHeader(&out, "molin_ai_gateway_image_queue_depth", "图片网关RabbitMQ主队列和死信队列深度。")
+	for _, queueName := range []string{"main", "dead"} {
+		fmt.Fprintf(&out, "molin_ai_gateway_image_queue_depth{queue=%q} %d\n", queueName, imageQueueDepths[queueName])
+	}
 	writeGaugeHeader(&out, "molin_ai_gateway_billing_difference_cny", "AI 网关账单聚合差额。")
 	for _, kind := range differenceKinds {
 		fmt.Fprintf(&out, "molin_ai_gateway_billing_difference_cny{kind=%q} %s\n", kind, gauges.BillingDifferences[kind].Abs().StringFixed(8))

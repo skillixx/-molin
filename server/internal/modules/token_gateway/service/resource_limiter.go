@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -59,11 +60,22 @@ type ResourceLimiter struct {
 	defaults   ResourceDefaults
 	leaseTTL   time.Duration
 	windowTTL  time.Duration
+	ceilings   *ResourceDefaults
 	acquireLua *redis.Script
 	renewLua   *redis.Script
 	releaseLua *redis.Script
 	reconcile  *redis.Script
 	metrics    *AIGatewayMetrics
+}
+
+// WithConcurrencyCeilings 设置不可被默认值或数据库策略放宽的并发硬上限；零值表示该层不额外设顶。
+func (s *ResourceLimiter) WithConcurrencyCeilings(ceilings ResourceDefaults) *ResourceLimiter {
+	if s == nil {
+		return s
+	}
+	copyValue := ceilings
+	s.ceilings = &copyValue
+	return s
 }
 
 // WithMetrics 注入四层租约、限流拒绝和幽灵租约指标记录器，并把共享租约 Gauge 绑定到 Redis 权威事实。
@@ -87,30 +99,17 @@ func (s *ResourceLimiter) Acquire(ctx context.Context, requestID string, userID,
 	if s == nil || s.redis == nil || s.policies == nil || requestID == "" || reservedTokens == 0 {
 		return nil, ErrResourceUnavailable
 	}
-	scopeKeys := map[string]string{
-		"user": strconv.FormatUint(userID, 10), "project": strconv.FormatUint(projectID, 10),
-		"api_key": strconv.FormatUint(apiKeyID, 10), "model": logicalModel,
+	scopeKeys, scopes, keys, err := buildResourceTicketKeys(requestID, userID, projectID, apiKeyID, logicalModel)
+	if err != nil {
+		return nil, err
 	}
 	policies, err := s.policies.LoadResourcePolicies(ctx, scopeKeys)
 	if err != nil {
 		return nil, ErrResourceUnavailable
 	}
-	scopes := []string{"user", "project", "api_key", "model"}
-	limits := []ResourceLimits{s.defaults.User, s.defaults.Project, s.defaults.APIKey, s.defaults.Model}
-	keys := make([]string, 0, 20)
-	for index, scope := range scopes {
-		if policy, ok := policies[scope]; ok {
-			limits[index] = ResourceLimits{Concurrency: policy.ConcurrencyLimit, RPM: policy.RPMLimit, TPM: policy.TPMLimit}
-		}
-		if limits[index].Concurrency == 0 || limits[index].RPM == 0 || limits[index].TPM == 0 {
-			return nil, ErrResourceUnavailable
-		}
-		prefix := "molin:{ai-g4}:" + scope + ":" + scopeKeys[scope]
-		keys = append(keys, prefix+":concurrency", prefix+":rpm", prefix+":tpm:time", prefix+":tpm:value")
-	}
-	// 四个共享索引只用于跨实例 Gauge；准入仍由上面的实体级 ZSET 原子判定。
-	for _, scope := range scopes {
-		keys = append(keys, concurrencyMetricKey(scope))
+	limits, err := effectiveResourceLimits(s.defaults, s.ceilings, policies)
+	if err != nil {
+		return nil, err
 	}
 	now := time.Now()
 	args := []interface{}{requestID, now.UnixMilli(), now.Add(s.leaseTTL).UnixMilli(), now.Add(-s.windowTTL).UnixMilli(), reservedTokens, s.leaseTTL.Milliseconds(), (2 * s.windowTTL).Milliseconds(), s.windowTTL.Milliseconds()}
@@ -156,6 +155,69 @@ func (s *ResourceLimiter) Acquire(ctx context.Context, requestID string, userID,
 		}
 	}
 	return &ResourceTicket{LeaseID: requestID, Scopes: scopes, Keys: keys, ReservedTPM: reservedTokens}, nil
+}
+
+func effectiveResourceLimits(defaults ResourceDefaults, ceilings *ResourceDefaults, policies map[string]model.AIResourcePolicy) ([]ResourceLimits, error) {
+	scopes := []string{"user", "project", "api_key", "model"}
+	limits := []ResourceLimits{defaults.User, defaults.Project, defaults.APIKey, defaults.Model}
+	ceilingValues := []uint64{0, 0, 0, 0}
+	if ceilings != nil {
+		ceilingValues = []uint64{ceilings.User.Concurrency, ceilings.Project.Concurrency, ceilings.APIKey.Concurrency, ceilings.Model.Concurrency}
+	}
+	for index, scope := range scopes {
+		if policy, ok := policies[scope]; ok {
+			limits[index] = ResourceLimits{Concurrency: policy.ConcurrencyLimit, RPM: policy.RPMLimit, TPM: policy.TPMLimit}
+		}
+		if limits[index].Concurrency == 0 || limits[index].RPM == 0 || limits[index].TPM == 0 {
+			return nil, ErrResourceUnavailable
+		}
+		if ceilingValues[index] > 0 && limits[index].Concurrency > ceilingValues[index] {
+			limits[index].Concurrency = ceilingValues[index]
+		}
+	}
+	return limits, nil
+}
+
+// RestoreTicket 根据数据库中的不可变请求归属重建 Redis 租约定位信息。
+// 本方法不创建或延长租约，只供进程重启、错实例消费等恢复路径执行幂等 Release。
+func (s *ResourceLimiter) RestoreTicket(requestID string, userID, projectID, apiKeyID uint64, logicalModel string) (*ResourceTicket, error) {
+	if s == nil {
+		return nil, ErrResourceUnavailable
+	}
+	_, scopes, keys, err := buildResourceTicketKeys(requestID, userID, projectID, apiKeyID, logicalModel)
+	if err != nil {
+		return nil, err
+	}
+	return &ResourceTicket{LeaseID: requestID, Scopes: scopes, Keys: keys}, nil
+}
+
+// buildResourceTicketKeys 是 Acquire 与恢复释放共用的唯一键生成入口，防止两条路径的 Redis 命名漂移。
+func buildResourceTicketKeys(requestID string, userID, projectID, apiKeyID uint64, logicalModel string) (map[string]string, []string, []string, error) {
+	if userID == 0 || projectID == 0 || apiKeyID == 0 || !validResourceTicketPart(requestID) || !validResourceTicketPart(logicalModel) {
+		return nil, nil, nil, ErrResourceUnavailable
+	}
+	scopeKeys := map[string]string{
+		"user": strconv.FormatUint(userID, 10), "project": strconv.FormatUint(projectID, 10),
+		"api_key": strconv.FormatUint(apiKeyID, 10), "model": logicalModel,
+	}
+	scopes := []string{"user", "project", "api_key", "model"}
+	keys := make([]string, 0, 20)
+	for _, scope := range scopes {
+		prefix := "molin:{ai-g4}:" + scope + ":" + scopeKeys[scope]
+		keys = append(keys, prefix+":concurrency", prefix+":rpm", prefix+":tpm:time", prefix+":tpm:value")
+	}
+	// 四个共享索引只用于跨实例 Gauge；准入仍由实体级 ZSET 原子判定。
+	for _, scope := range scopes {
+		keys = append(keys, concurrencyMetricKey(scope))
+	}
+	return scopeKeys, scopes, keys, nil
+}
+
+func validResourceTicketPart(value string) bool {
+	if value == "" || value != strings.TrimSpace(value) || len(value) > 191 {
+		return false
+	}
+	return !strings.ContainsAny(value, " \t\r\n")
 }
 
 func (s *ResourceLimiter) Renew(ctx context.Context, ticket *ResourceTicket) error {

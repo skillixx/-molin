@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -95,6 +96,31 @@ type Config struct {
 	AIGatewayHealthInternalAllowlist []string
 	// AIGatewayTrafficEnabled 是文字模型商业流量总闸；生产默认关闭，必须由受控发布显式开启。
 	AIGatewayTrafficEnabled bool
+
+	// 图片网关默认关闭；G7只允许本地Fake流量，OpenRouter真实执行继续由G9独立授权。
+	ImageGatewayEnabled           bool
+	ImageGatewayTrafficEnabled    bool
+	ImageGatewayLocalFakeTest     bool
+	ImageGatewayProvider          string
+	ImageGatewayOpenRouterEnabled bool
+	ImageGatewayOpenRouterKeyFile string
+	ImageGatewayQuoteSecretFile   string
+	ImageGatewayPromptSecretFile  string
+	ImageGatewayMinIOEndpoint     string
+	// ImageGatewayMinIOPublicDownloadEndpoint 是浏览器可访问的签名地址，禁止复用仅容器内部可解析的连接端点。
+	ImageGatewayMinIOPublicDownloadEndpoint string
+	ImageGatewayMinIOAccessKeyFile          string
+	ImageGatewayMinIOSecretKeyFile          string
+	ImageGatewayMinIOUseSSL                 bool
+	ImageGatewayTempBucket                  string
+	ImageGatewayResultBucket                string
+	ImageGatewayQuarantineBucket            string
+	ImageGatewayQueueExchange               string
+	ImageGatewayQueueName                   string
+	ImageGatewayQueueRoutingKey             string
+	ImageGatewayDeadExchange                string
+	ImageGatewayDeadQueue                   string
+	ImageGatewayDeadRoutingKey              string
 
 	// 平台 API Key（sk）HMAC 密钥（S2-甲5）。
 	// DB 只存 HMAC-SHA256(sk 明文, APIKeyHMACSecret)，明文只在签发时返回一次。
@@ -237,6 +263,29 @@ func Load() Config {
 		AIGatewayHealthInternalAllowlist: splitCSV(getenv("AI_GATEWAY_HEALTH_INTERNAL_ALLOWLIST", "")),
 		AIGatewayTrafficEnabled:          getenvBool("AI_GATEWAY_TRAFFIC_ENABLED", appEnv != "production"),
 
+		ImageGatewayEnabled:                     getenvBool("IMAGE_GATEWAY_ENABLED", false),
+		ImageGatewayTrafficEnabled:              getenvBool("IMAGE_GATEWAY_TRAFFIC_ENABLED", false),
+		ImageGatewayLocalFakeTest:               getenvBool("IMAGE_GATEWAY_LOCAL_FAKE_TEST", false),
+		ImageGatewayProvider:                    strings.ToLower(strings.TrimSpace(getenv("IMAGE_GATEWAY_PROVIDER", "fake"))),
+		ImageGatewayOpenRouterEnabled:           getenvBool("IMAGE_GATEWAY_OPENROUTER_ENABLED", false),
+		ImageGatewayOpenRouterKeyFile:           strings.TrimSpace(getenv("IMAGE_GATEWAY_OPENROUTER_KEY_FILE", "")),
+		ImageGatewayQuoteSecretFile:             strings.TrimSpace(getenv("IMAGE_GATEWAY_QUOTE_SECRET_FILE", "")),
+		ImageGatewayPromptSecretFile:            strings.TrimSpace(getenv("IMAGE_GATEWAY_PROMPT_SECRET_FILE", "")),
+		ImageGatewayMinIOEndpoint:               strings.TrimSpace(getenv("IMAGE_GATEWAY_MINIO_ENDPOINT", "")),
+		ImageGatewayMinIOPublicDownloadEndpoint: strings.TrimSpace(getenv("IMAGE_GATEWAY_MINIO_PUBLIC_DOWNLOAD_ENDPOINT", "")),
+		ImageGatewayMinIOAccessKeyFile:          strings.TrimSpace(getenv("IMAGE_GATEWAY_MINIO_ACCESS_KEY_FILE", "")),
+		ImageGatewayMinIOSecretKeyFile:          strings.TrimSpace(getenv("IMAGE_GATEWAY_MINIO_SECRET_KEY_FILE", "")),
+		ImageGatewayMinIOUseSSL:                 getenvBool("IMAGE_GATEWAY_MINIO_USE_SSL", true),
+		ImageGatewayTempBucket:                  strings.TrimSpace(getenv("IMAGE_GATEWAY_TEMP_BUCKET", "ai-upload-temp")),
+		ImageGatewayResultBucket:                strings.TrimSpace(getenv("IMAGE_GATEWAY_RESULT_BUCKET", "ai-result")),
+		ImageGatewayQuarantineBucket:            strings.TrimSpace(getenv("IMAGE_GATEWAY_QUARANTINE_BUCKET", "ai-quarantine")),
+		ImageGatewayQueueExchange:               strings.TrimSpace(getenv("IMAGE_GATEWAY_QUEUE_EXCHANGE", "molin.image.tasks")),
+		ImageGatewayQueueName:                   strings.TrimSpace(getenv("IMAGE_GATEWAY_QUEUE_NAME", "molin.image.tasks.generate")),
+		ImageGatewayQueueRoutingKey:             strings.TrimSpace(getenv("IMAGE_GATEWAY_QUEUE_ROUTING_KEY", "image.generate")),
+		ImageGatewayDeadExchange:                strings.TrimSpace(getenv("IMAGE_GATEWAY_DEAD_EXCHANGE", "molin.image.tasks.dead")),
+		ImageGatewayDeadQueue:                   strings.TrimSpace(getenv("IMAGE_GATEWAY_DEAD_QUEUE", "molin.image.tasks.dead")),
+		ImageGatewayDeadRoutingKey:              strings.TrimSpace(getenv("IMAGE_GATEWAY_DEAD_ROUTING_KEY", "image.generate.dead")),
+
 		APIKeyHMACSecret: getenv("API_KEY_HMAC_SECRET", ""),
 
 		InternalAPIToken:        getenv("INTERNAL_API_TOKEN", ""),
@@ -290,6 +339,57 @@ func (c Config) ValidateAIGatewayGovernanceConfig() error {
 	for key, value := range values {
 		if value <= 0 {
 			return fmt.Errorf("%s 必须大于 0", key)
+		}
+	}
+	return nil
+}
+
+// ValidateImageGatewayConfig 保证图片流量默认关闭，并把G7限制在本地Fake和受限Secret文件。
+func (c Config) ValidateImageGatewayConfig() error {
+	if !c.ImageGatewayEnabled {
+		if c.ImageGatewayTrafficEnabled || c.ImageGatewayOpenRouterEnabled {
+			return fmt.Errorf("IMAGE_GATEWAY_ENABLED=false 时图片流量和OpenRouter必须关闭")
+		}
+		return nil
+	}
+	if c.ImageGatewayProvider != "fake" && c.ImageGatewayProvider != "openrouter" {
+		return fmt.Errorf("IMAGE_GATEWAY_PROVIDER 只能为 fake/openrouter")
+	}
+	if len([]byte(c.TokenProviderKey)) != 32 || len([]byte(c.APIKeyHMACSecret)) < 32 {
+		return fmt.Errorf("图片网关装配要求安全TOKEN_PROVIDER_KEY和API_KEY_HMAC_SECRET")
+	}
+	if c.ImageGatewayProvider == "openrouter" || c.ImageGatewayOpenRouterEnabled {
+		return fmt.Errorf("真实OpenRouter图片执行属于IMG-G9，IMG-G7 bootstrap禁止启用")
+	}
+	if c.ImageGatewayTrafficEnabled && (strings.ToLower(strings.TrimSpace(c.AppEnv)) != "test" || !c.ImageGatewayLocalFakeTest || c.ImageGatewayProvider != "fake") {
+		return fmt.Errorf("IMG-G7图片流量只允许APP_ENV=test且LOCAL_FAKE_TEST=true的Fake路径")
+	}
+	files := []string{c.ImageGatewayQuoteSecretFile, c.ImageGatewayPromptSecretFile, c.ImageGatewayMinIOAccessKeyFile, c.ImageGatewayMinIOSecretKeyFile}
+	for _, path := range files {
+		if !filepath.IsAbs(path) {
+			return fmt.Errorf("图片网关Secret必须使用绝对文件路径")
+		}
+	}
+	if c.ImageGatewayQuoteSecretFile == c.ImageGatewayPromptSecretFile || c.ImageGatewayMinIOAccessKeyFile == c.ImageGatewayMinIOSecretKeyFile {
+		return fmt.Errorf("图片网关不同用途Secret文件不得复用")
+	}
+	if c.ImageGatewayMinIOEndpoint == "" || strings.Contains(c.ImageGatewayMinIOEndpoint, "://") || c.ImageGatewayMinIOPublicDownloadEndpoint == "" || strings.TrimSpace(c.RabbitMQURL) == "" {
+		return fmt.Errorf("图片网关MinIO或RabbitMQ配置缺失")
+	}
+	buckets := map[string]bool{}
+	configuredBuckets := []string{c.ImageGatewayTempBucket, c.ImageGatewayResultBucket, c.ImageGatewayQuarantineBucket}
+	for _, bucket := range configuredBuckets {
+		if bucket == "" || buckets[bucket] {
+			return fmt.Errorf("图片网关bucket必须非空且互不相同")
+		}
+		buckets[bucket] = true
+	}
+	if configuredBuckets[0] != "ai-upload-temp" || configuredBuckets[1] != "ai-result" || configuredBuckets[2] != "ai-quarantine" {
+		return fmt.Errorf("IMG-G7 bucket名称必须与冻结对象路由一致")
+	}
+	for _, value := range []string{c.ImageGatewayQueueExchange, c.ImageGatewayQueueName, c.ImageGatewayQueueRoutingKey, c.ImageGatewayDeadExchange, c.ImageGatewayDeadQueue, c.ImageGatewayDeadRoutingKey} {
+		if value == "" {
+			return fmt.Errorf("图片网关RabbitMQ topology配置不完整")
 		}
 	}
 	return nil

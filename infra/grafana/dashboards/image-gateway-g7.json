@@ -1,0 +1,48 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "图片任务状态",
+      "targets": [{"expr": "molin_ai_gateway_image_tasks_backlog", "legendFormat": "{{status}}"}],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "图片资产生命周期",
+      "targets": [{"expr": "molin_ai_gateway_image_assets", "legendFormat": "{{lifecycle_state}}"}],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+    },
+    {
+      "type": "stat",
+      "title": "图片对账差异",
+      "targets": [{"expr": "molin_ai_gateway_image_reconciliation_difference"}],
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 8}
+    },
+    {
+      "type": "stat",
+      "title": "图片主队列与DLQ",
+      "targets": [{"expr": "molin_ai_gateway_image_queue_depth", "legendFormat": "{{queue}}"}],
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 8}
+    },
+    {
+      "type": "timeseries",
+      "title": "图片请求与Provider结果",
+      "targets": [
+        {"expr": "sum by (outcome) (rate(molin_ai_gateway_requests_total{request_type=\"image\"}[5m]))", "legendFormat": "request {{outcome}}"},
+        {"expr": "sum by (outcome) (rate(molin_ai_gateway_upstream_requests_total{driver=~\"fake|openrouter-images\"}[5m]))", "legendFormat": "provider {{outcome}}"}
+      ],
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 8}
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["molin", "image-gateway", "g7", "closed-by-default"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "browser",
+  "title": "墨灵图片网关 G7",
+  "uid": "molin-image-gateway-g7",
+  "version": 1
+}

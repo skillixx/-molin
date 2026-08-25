@@ -164,6 +164,32 @@ func TestG4RedisResourceIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("图片硬并发上限不能被高默认值或高数据库策略放宽", func(t *testing.T) {
+		flush(t)
+		defaults := ResourceDefaults{
+			User: ResourceLimits{Concurrency: 100, RPM: 1000, TPM: 1000}, Project: ResourceLimits{Concurrency: 100, RPM: 1000, TPM: 1000},
+			APIKey: ResourceLimits{Concurrency: 50, RPM: 1000, TPM: 1000}, Model: ResourceLimits{Concurrency: 500, RPM: 1000, TPM: 1000},
+		}
+		policies := map[string]model.AIResourcePolicy{
+			"user": {ConcurrencyLimit: 999, RPMLimit: 1000, TPMLimit: 1000}, "project": {ConcurrencyLimit: 999, RPMLimit: 1000, TPMLimit: 1000},
+			"api_key": {ConcurrencyLimit: 999, RPMLimit: 1000, TPMLimit: 1000}, "model": {ConcurrencyLimit: 999, RPMLimit: 1000, TPMLimit: 1000},
+		}
+		limiter := NewResourceLimiter(client, fixedResourcePolicyReader{policies: policies}, defaults).WithConcurrencyCeilings(ResourceDefaults{
+			User: ResourceLimits{Concurrency: 1}, Project: ResourceLimits{Concurrency: 2},
+			APIKey: ResourceLimits{Concurrency: 1}, Model: ResourceLimits{Concurrency: 4},
+		})
+		first, err := limiter.Acquire(ctx, "img-lease-first", 51, 52, 53, "molin/image", 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := limiter.Acquire(ctx, "img-lease-second", 51, 54, 55, "molin/image", 1); !errors.Is(err, ErrConcurrencyExceeded) {
+			t.Fatalf("同一图片用户第二个请求必须被硬上限拒绝: %v", err)
+		}
+		if err := limiter.Release(ctx, first); err != nil {
+			t.Fatal(err)
+		}
+	})
+
 	t.Run("Redis不可用或脚本损坏时失败关闭", func(t *testing.T) {
 		defaults := ResourceDefaults{
 			User: ResourceLimits{Concurrency: 1, RPM: 1, TPM: 1}, Project: ResourceLimits{Concurrency: 1, RPM: 1, TPM: 1},

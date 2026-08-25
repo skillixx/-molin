@@ -111,6 +111,9 @@ func (c *AIGatewayDBGaugeCollector) CollectAIGatewayGauges(ctx context.Context, 
 	if err := c.collectBacklog(ctx, "ai_compensation_tasks", compensationStatuses, now, snapshot.CompensationBacklog); err != nil {
 		return snapshot, err
 	}
+	if err := c.collectImageGauges(ctx, now, &snapshot); err != nil {
+		return snapshot, err
+	}
 	var amounts aiGatewayBillingAmountRow
 	if err := c.db.WithContext(ctx).Raw(aiGatewayBillingAmountsSQL).Scan(&amounts).Error; err != nil {
 		return snapshot, err
@@ -187,17 +190,19 @@ func emptyAIGatewayGaugeSnapshot() AIGatewayGaugeSnapshot {
 		BillingAnomalies:    make(map[string]uint64),
 		BillingAmounts:      make(map[string]decimal.Decimal),
 		SecurityFindings:    make(map[string]uint64),
+		ImageTasks:          make(map[string]AIGatewayBacklogGauge),
+		ImageAssets:         make(map[string]uint64),
 	}
 }
 
 const aiGatewayBillingAmountsSQL = `WITH selected_usage AS (
 	SELECT usage_items.request_id, COALESCE(SUM(usage_items.amount), 0) AS sale_amount
 	FROM ai_usage_items AS usage_items
-	WHERE usage_items.sequence_no = 1
+	WHERE (usage_items.record_kind = 'sale_line' OR (usage_items.sequence_no = 1
 	  AND (usage_items.source = 'reconciled' OR (usage_items.source = 'provider' AND NOT EXISTS (
 		SELECT 1 FROM ai_usage_items AS reconciled
 		WHERE reconciled.request_id = usage_items.request_id AND reconciled.source = 'reconciled' AND reconciled.sequence_no = 1
-	  )))
+	  )))))
 	GROUP BY usage_items.request_id
 )
 SELECT
@@ -217,6 +222,66 @@ func (c *AIGatewayDBGaugeCollector) collectBacklog(ctx context.Context, table st
 			target[row.Status] = AIGatewayBacklogGauge{Count: row.Count, OldestAgeSeconds: row.OldestAgeSeconds}
 		}
 	}
+	return nil
+}
+
+func (c *AIGatewayDBGaugeCollector) collectImageGauges(ctx context.Context, now time.Time, snapshot *AIGatewayGaugeSnapshot) error {
+	var taskRows []aiGatewayBacklogRow
+	if err := c.db.WithContext(ctx).Raw("SELECT status, COUNT(*) AS count, CAST(COALESCE(GREATEST(TIMESTAMPDIFF(SECOND, MIN(created_at), ?), 0), 0) AS UNSIGNED) AS oldest_age_seconds FROM ai_gateway_tasks GROUP BY status", now).
+		Scan(&taskRows).Error; err != nil {
+		return err
+	}
+	for _, row := range taskRows {
+		if containsString(imageTaskStatuses, row.Status) {
+			snapshot.ImageTasks[row.Status] = AIGatewayBacklogGauge{Count: row.Count, OldestAgeSeconds: row.OldestAgeSeconds}
+		}
+	}
+	var assetRows []struct {
+		LifecycleState string
+		Count          uint64
+	}
+	if err := c.db.WithContext(ctx).Raw("SELECT lifecycle_state, COUNT(*) AS count FROM ai_gateway_assets GROUP BY lifecycle_state").Scan(&assetRows).Error; err != nil {
+		return err
+	}
+	for _, row := range assetRows {
+		if containsString(imageAssetStates, row.LifecycleState) {
+			snapshot.ImageAssets[row.LifecycleState] = row.Count
+		}
+	}
+	var difference string
+	if err := c.db.WithContext(ctx).Raw(`WITH sales AS (
+  SELECT request_id, COALESCE(SUM(amount),0) AS amount FROM ai_usage_items WHERE record_kind='sale_line' GROUP BY request_id
+), usage_counts AS (
+  SELECT request_id, COALESCE(SUM(quantity),0) AS quantity FROM ai_usage_items WHERE record_kind='usage_fact' AND meter_type='image_count' GROUP BY request_id
+), asset_counts AS (
+  SELECT request_id, COUNT(*) AS count FROM ai_gateway_assets WHERE asset_role='primary_output' AND is_billable_output=1 AND lifecycle_state='available' GROUP BY request_id
+), cost_counts AS (
+  SELECT request_id, COUNT(*) AS count,
+    SUM(CASE WHEN amount <=> (CEIL(quantity * unit_price / NULLIF(unit_size,0) * 100000000) * CAST(0.00000001 AS DECIMAL(20,8))) THEN 0 ELSE 1 END) AS invalid_count
+  FROM ai_usage_items WHERE record_kind='cost_line' GROUP BY request_id
+)
+SELECT CAST(COALESCE(SUM(
+  ABS(COALESCE(r.settled_amount,0)-COALESCE(s.amount,0)) +
+  ABS(COALESCE(r.settled_amount,0)-COALESCE(w.amount,0)) +
+  ABS(COALESCE(u.quantity,0)-COALESCE(a.count,0)) +
+  CASE WHEN COALESCE(c.count,0)=1 AND COALESCE(c.invalid_count,0)=0 THEN 0 ELSE 1 END +
+  CASE WHEN l.id IS NOT NULL AND l.release_transaction_id IS NOT NULL THEN 0 ELSE 1 END
+),0) AS CHAR)
+FROM ai_requests r
+LEFT JOIN sales s ON s.request_id=r.request_id
+LEFT JOIN usage_counts u ON u.request_id=r.request_id
+LEFT JOIN asset_counts a ON a.request_id=r.request_id
+LEFT JOIN cost_counts c ON c.request_id=r.request_id
+LEFT JOIN ai_request_wallet_links l ON l.request_id=r.request_id
+LEFT JOIN wallet_transactions w ON w.id=l.settle_transaction_id AND w.type='consume' AND w.direction='out'
+WHERE r.modality='image' AND r.billing_status IN ('settled','released')`).Row().Scan(&difference); err != nil {
+		return err
+	}
+	parsed, err := decimal.NewFromString(difference)
+	if err != nil {
+		return err
+	}
+	snapshot.ImageDifference = parsed
 	return nil
 }
 
@@ -279,7 +344,7 @@ const aiGatewayReconciliationSQL = `WITH selected_usage AS (
 	) AS duplicate_rows
 )
 SELECT
-	CAST(COALESCE(SUM(CASE WHEN requests.billing_status = 'settled'
+	CAST(COALESCE(SUM(CASE WHEN requests.modality = 'chat' AND requests.billing_status = 'settled'
 		THEN ABS(COALESCE(requests.settled_amount, 0) - COALESCE(selected_usage.sale_amount, 0)) ELSE 0 END), 0) AS CHAR) AS request_usage_difference,
 	CAST(COALESCE(SUM(CASE WHEN links.id IS NOT NULL
 		THEN ABS(COALESCE(requests.held_amount, 0) - links.held_amount)
@@ -294,7 +359,7 @@ SELECT
 		AND (requests.billing_status = 'unquoted' OR (requests.billing_status = 'released'
 			AND NOT (requests.error_code <=> 'output_moderation_blocked') AND NOT (requests.error_code <=> 'manual_reconciled')))
 		AND requests.updated_at < ? THEN 1 ELSE 0 END), 0) AS UNSIGNED) AS unbilled_execution,
-	CAST(COALESCE(SUM(CASE WHEN requests.billing_status IN ('held', 'settlement_pending', 'settled', 'released', 'exception') AND (
+	CAST(COALESCE(SUM(CASE WHEN requests.modality = 'chat' AND requests.billing_status IN ('held', 'settlement_pending', 'settled', 'released', 'exception') AND (
 		requests.price_snapshot_json IS NULL OR JSON_VALID(requests.price_snapshot_json) = 0
 		OR price_versions.id IS NULL OR price_versions.logical_model_code <> requests.logical_model_code OR price_versions.currency <> 'CNY'
 		OR COALESCE(JSON_TYPE(JSON_EXTRACT(requests.price_snapshot_json, '$.price_version_id')), '') <> 'INTEGER'
@@ -432,7 +497,7 @@ SELECT
 			))
 		))
 		THEN 1 ELSE 0 END), 0) AS UNSIGNED) AS missing_wallet_transaction,
-	CAST(COALESCE(SUM(CASE WHEN (
+	CAST(COALESCE(SUM(CASE WHEN requests.modality = 'chat' AND (
 		((requests.execution_status = 'succeeded' OR requests.billing_status = 'settled')
 			AND NOT (requests.billing_status = 'settled' AND selected_usage.selected_source = 'reconciled') AND (
 			NOT (requests.billing_status = 'released' AND requests.error_code <=> 'manual_reconciled') AND (
@@ -585,6 +650,7 @@ const aiGatewayReconciliationIssuesSQL = `WITH selected_usage AS (
 	LEFT JOIN wallet_transactions AS freeze_transactions ON freeze_transactions.id = links.hold_transaction_id
 	LEFT JOIN wallet_transactions AS transactions ON transactions.id = links.settle_transaction_id
 	LEFT JOIN wallet_transactions AS release_transactions ON release_transactions.id = links.release_transaction_id
+	WHERE requests.modality = 'chat'
 ), issues AS (
 	SELECT request_id, 'duplicate_settlement' AS issue_code, 'settled' AS billing_status,
 		'single_settlement' AS expected_value, CAST(COUNT(*) AS CHAR) AS actual_value
