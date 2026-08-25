@@ -26,6 +26,18 @@ const (
 	AIBillingSettled           = "settled"
 	AIBillingReleased          = "released"
 	AIBillingException         = "exception"
+
+	AIDeliveryNotApplicable = "not_applicable"
+	AIDeliveryPending       = "pending"
+	AIDeliveryAvailable     = "available"
+	AIDeliveryRejected      = "rejected"
+	AIDeliveryExpired       = "expired"
+
+	AIUsageLegacyChat = "legacy_chat"
+	AIUsageFact       = "usage_fact"
+	AIUsageSaleLine   = "sale_line"
+	AIUsageCostLine   = "cost_line"
+	AIUsageAdjustment = "adjustment"
 )
 
 // AIProject 是平台 SK、预算和消费归集的边界；G1 只冻结身份关系，不实现 G2 的 Project 管理接口。
@@ -57,10 +69,12 @@ type AIRequest struct {
 	LogicalModelCode   string           `gorm:"size:128;not null;index:idx_ai_requests_model_created,priority:1" json:"logical_model_code"`
 	ExecutionModelCode *string          `gorm:"size:191" json:"-"`
 	Modality           string           `gorm:"size:32;not null;default:chat" json:"modality"`
+	Capability         string           `gorm:"size:64;not null;default:chat.completions" json:"capability"`
 	IsStream           bool             `gorm:"not null;default:0" json:"is_stream"`
 	ModerationStatus   string           `gorm:"size:32;not null;default:pending" json:"moderation_status"`
 	ExecutionStatus    string           `gorm:"size:32;not null;default:pending;index:idx_ai_requests_states_updated,priority:1" json:"execution_status"`
 	BillingStatus      string           `gorm:"size:32;not null;default:unquoted;index:idx_ai_requests_states_updated,priority:2" json:"billing_status"`
+	DeliveryStatus     string           `gorm:"size:32;not null;default:not_applicable" json:"delivery_status"`
 	ClientDisconnected bool             `gorm:"not null;default:0" json:"client_disconnected"`
 	PriceSnapshotJSON  json.RawMessage  `gorm:"column:price_snapshot_json;type:json" json:"-"`
 	QuotedAmount       *decimal.Decimal `gorm:"type:decimal(20,8)" json:"quoted_amount,omitempty"`
@@ -80,15 +94,26 @@ func (AIRequest) TableName() string { return "ai_requests" }
 
 // AIUsageItem 保存标准化计量项。数量和金额均使用 Decimal，禁止用 float64 参与财务计算。
 type AIUsageItem struct {
-	ID         uint64           `gorm:"primaryKey;autoIncrement" json:"id"`
-	RequestID  string           `gorm:"size:128;not null;uniqueIndex:uk_ai_usage_request_meter_source_seq,priority:1;index:idx_ai_usage_request" json:"request_id"`
-	MeterType  string           `gorm:"size:64;not null;uniqueIndex:uk_ai_usage_request_meter_source_seq,priority:2;index:idx_ai_usage_meter_created,priority:1" json:"meter_type"`
-	Source     string           `gorm:"size:32;not null;uniqueIndex:uk_ai_usage_request_meter_source_seq,priority:3" json:"source"`
-	SequenceNo uint32           `gorm:"not null;default:0;uniqueIndex:uk_ai_usage_request_meter_source_seq,priority:4" json:"sequence_no"`
-	Quantity   decimal.Decimal  `gorm:"type:decimal(30,10);not null" json:"quantity"`
-	UnitPrice  *decimal.Decimal `gorm:"type:decimal(20,8)" json:"unit_price,omitempty"`
-	Amount     *decimal.Decimal `gorm:"type:decimal(20,8)" json:"amount,omitempty"`
-	CreatedAt  time.Time        `gorm:"index:idx_ai_usage_meter_created,priority:2" json:"created_at"`
+	ID                   uint64           `gorm:"primaryKey;autoIncrement" json:"id"`
+	RequestID            string           `gorm:"size:128;not null;uniqueIndex:uk_ai_usage_request_meter_variant_kind_source_seq,priority:1;index:idx_ai_usage_request" json:"request_id"`
+	MeterType            string           `gorm:"size:64;not null;uniqueIndex:uk_ai_usage_request_meter_variant_kind_source_seq,priority:2;index:idx_ai_usage_meter_created,priority:1" json:"meter_type"`
+	Source               string           `gorm:"size:32;not null;uniqueIndex:uk_ai_usage_request_meter_variant_kind_source_seq,priority:5" json:"source"`
+	RecordKind           string           `gorm:"size:32;not null;default:legacy_chat;uniqueIndex:uk_ai_usage_request_meter_variant_kind_source_seq,priority:4" json:"record_kind"`
+	PriceVersionID       *uint64          `gorm:"index:idx_ai_usage_price_version" json:"price_version_id,omitempty"`
+	VariantHash          string           `gorm:"size:64;not null;default:0000000000000000000000000000000000000000000000000000000000000000;uniqueIndex:uk_ai_usage_request_meter_variant_kind_source_seq,priority:3" json:"variant_hash"`
+	VariantJSON          json.RawMessage  `gorm:"type:json" json:"variant,omitempty"`
+	SequenceNo           uint32           `gorm:"not null;default:0;uniqueIndex:uk_ai_usage_request_meter_variant_kind_source_seq,priority:6" json:"sequence_no"`
+	Quantity             decimal.Decimal  `gorm:"type:decimal(30,10);not null" json:"quantity"`
+	UsageUnit            string           `gorm:"size:32;not null;default:tokens" json:"usage_unit"`
+	UnitSize             decimal.Decimal  `gorm:"type:decimal(30,10);not null;default:1" json:"unit_size"`
+	UnitPrice            *decimal.Decimal `gorm:"type:decimal(20,8)" json:"unit_price,omitempty"`
+	Amount               *decimal.Decimal `gorm:"type:decimal(20,8)" json:"amount,omitempty"`
+	Currency             *string          `gorm:"size:8" json:"currency,omitempty"`
+	AdjustmentDirection  *string          `gorm:"size:8" json:"adjustment_direction,omitempty"`
+	AdjustmentReason     *string          `gorm:"size:512" json:"adjustment_reason,omitempty"`
+	AdjustmentOperatorID *uint64          `json:"adjustment_operator_id,omitempty"`
+	AdjustmentReviewedBy *uint64          `json:"adjustment_reviewed_by,omitempty"`
+	CreatedAt            time.Time        `gorm:"index:idx_ai_usage_meter_created,priority:2" json:"created_at"`
 }
 
 // TableName 指定标准化 Usage 表名。
