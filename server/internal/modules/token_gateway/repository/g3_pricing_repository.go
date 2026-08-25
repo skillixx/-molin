@@ -36,6 +36,7 @@ func (r *G3PricingRepository) PublishApprovedVersion(ctx context.Context, versio
 			return err
 		}
 		if version.Status != model.AIPriceApproved || version.ApprovedBy == nil || version.ApprovedAt == nil ||
+			version.PricePurpose != "commercial" ||
 			version.Currency != "CNY" || !version.ExchangeRate.Equal(decimal.NewFromInt(1)) || !version.CostExpiresAt.After(publishedAt) ||
 			(version.ExpiresAt != nil && !version.ExpiresAt.After(version.EffectiveAt)) {
 			return ErrPriceVersionNotPublishable
