@@ -22,8 +22,8 @@ func TestOpenRouterImageAdapterStrictRequestAndResponse(t *testing.T) {
 	expectedAuthorization := strings.Join([]string{"Bearer", "fake-openrouter-key-123456"}, " ")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/images" || r.Header.Get("Authorization") != expectedAuthorization {
-			t.Fatalf("请求协议错误: method=%s path=%s auth=%s", r.Method, r.URL.Path, r.Header.Get("Authorization"))
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/images" || r.Header.Get("Authorization") != expectedAuthorization || r.Header.Get("X-OpenRouter-Experimental-Metadata") != "enabled" {
+			t.Fatalf("请求协议错误: method=%s path=%s auth=%s metadata=%s", r.Method, r.URL.Path, r.Header.Get("Authorization"), r.Header.Get("X-OpenRouter-Experimental-Metadata"))
 		}
 		var body map[string]interface{}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -55,9 +55,57 @@ func TestOpenRouterImageAdapterStrictRequestAndResponse(t *testing.T) {
 }
 
 func TestOpenRouterImageAdapterPreservesSafeFailureEvidence(t *testing.T) {
+	testCases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "费用额度", body: `{"error":{"code":403,"message":"Insufficient credits for this request"}}`, want: "403:credit_limit"},
+		{name: "工作区预算", body: `{"error":{"code":403,"message":"Workspace monthly budget exceeded"}}`, want: "403:workspace_budget"},
+		{name: "模型策略", body: `{"error":{"code":403,"message":"Requested model is not allowed by the model allowlist"}}`, want: "403:model_policy"},
+		{name: "Provider策略", body: `{"error":{"code":403,"message":"Requested provider is not allowed by the provider allowlist"}}`, want: "403:provider_policy"},
+		{name: "数据策略", body: `{"error":{"code":403,"message":"Request does not satisfy the ZDR data policy"}}`, want: "403:data_policy"},
+		{name: "内容护栏", body: `{"error":{"code":"guardrail_blocked","message":"不得持久化的上游明文"},"openrouter_metadata":{"pipeline":[{"type":"guardrail","name":"regex_pi_detection","summary":"Blocked by content filter"}]}}`, want: "403:content_guardrail"},
+		{name: "Key权限", body: `{"error":{"code":403,"message":"API key does not have permission to access the requested resource"}}`, want: "403:key_permission"},
+		{name: "上游权限", body: `{"error":{"code":403,"message":"Provider request failed"},"openrouter_metadata":{"provider_responses":[{"provider":"Google Vertex","status_code":403}]}}`, want: "403:upstream_permission"},
+		{name: "上游名称证据", body: `{"error":{"code":403,"message":"Provider request failed","metadata":{"provider_name":"Google Vertex","raw":"不得持久化的Provider原文"}}}`, want: "403:upstream_permission"},
+		{name: "未知分类", body: `{"error":{"code":403,"message":"opaque failure sk-or-v1-secret-value AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}`, want: "403:unknown"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("X-OpenRouter-Experimental-Metadata") != "enabled" {
+					t.Fatal("403诊断请求必须显式请求安全路由元数据")
+				}
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(testCase.body))
+			}))
+			defer server.Close()
+			adapter, err := newOpenRouterImageAdapter(OpenRouterImageAdapterConfig{
+				APIKey: "fake-openrouter-key-123456", ProviderTag: "google-vertex/global", MaxCostUSD: "0.25", Timeout: time.Second,
+				ModelMap: map[string]string{"google/gemini-3-pro-image": "google/gemini-3-pro-image"},
+			}, server.URL, server.Client(), true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := adapter.Generate(context.Background(), ProviderImageRequest{RequestID: "req-safe-error", ModelCode: "google/gemini-3-pro-image", Prompt: "测试", Count: 1})
+			if !errors.Is(err, ErrProviderFailed) || !result.ProviderAttempted || result.ProviderHTTPStatus != http.StatusForbidden || result.ProviderErrorCode != testCase.want {
+				t.Fatalf("明确失败必须保留白名单分类: result=%+v err=%v", result, err)
+			}
+			encoded, _ := json.Marshal(result)
+			for _, forbidden := range []string{"不得持久化", "sk-or-v1-secret-value", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"} {
+				if strings.Contains(string(encoded), forbidden) {
+					t.Fatalf("Provider原始错误内容不得进入低敏回执: %s", forbidden)
+				}
+			}
+		})
+	}
+}
+
+func TestOpenRouterImageAdapterPreservesNonForbiddenSafeErrorCode(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-		_, _ = w.Write([]byte(`{"error":{"code":"guardrail_blocked","message":"不得持久化的上游明文"}}`))
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"code":"rate_limited","message":"不得持久化的限流明文"}}`))
 	}))
 	defer server.Close()
 	adapter, err := newOpenRouterImageAdapter(OpenRouterImageAdapterConfig{
@@ -67,13 +115,13 @@ func TestOpenRouterImageAdapterPreservesSafeFailureEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := adapter.Generate(context.Background(), ProviderImageRequest{RequestID: "req-safe-error", ModelCode: "google/gemini-3-pro-image", Prompt: "测试", Count: 1})
-	if !errors.Is(err, ErrProviderFailed) || !result.ProviderAttempted || result.ProviderHTTPStatus != http.StatusForbidden || result.ProviderErrorCode != "guardrail_blocked" {
-		t.Fatalf("明确失败必须保留低敏状态和错误码: result=%+v err=%v", result, err)
+	result, err := adapter.Generate(context.Background(), ProviderImageRequest{RequestID: "req-rate-limit", ModelCode: "google/gemini-3-pro-image", Prompt: "测试", Count: 1})
+	if !errors.Is(err, ErrProviderFailed) || result.ProviderHTTPStatus != http.StatusTooManyRequests || result.ProviderErrorCode != "rate_limited" {
+		t.Fatalf("非403失败必须继续保留封闭字符集错误码: result=%+v err=%v", result, err)
 	}
 	encoded, _ := json.Marshal(result)
 	if strings.Contains(string(encoded), "不得持久化") {
-		t.Fatal("Provider错误消息不得进入低敏回执")
+		t.Fatal("非403原始错误消息不得进入低敏回执")
 	}
 }
 

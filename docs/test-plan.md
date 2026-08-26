@@ -1216,6 +1216,8 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - Project SK正式签发必须允许已激活、已发布且对用户可见的图片模型进入显式allowlist；不存在、未发布、非chat/image或不可见模型仍失败关闭，`all/legacy_all`不得隐式获得图片能力。
 - SQL价格夹具必须覆盖应用`loc=Local`与MySQL会话时区差异；真实调用前必须以Quote 0.50元成功、未消费、未Hold和Provider Usage=0作为最终价格门禁。
 - OpenRouter返回HTTP 403时必须记录`provider_code/attempt_count/http_status/error_code`，用户销售额、Provider成本和结算额均为0，Hold完整释放且Outbox按顺序发布；原始Provider错误消息仍不得落库或写日志。
+- OpenRouter请求必须携带`X-OpenRouter-Experimental-Metadata: enabled`；HTTP 403只能映射为费用额度、Workspace预算、模型策略、Provider策略、数据策略、内容护栏、Key权限、上游权限或unknown九种固定低敏分类。
+- 403分类测试必须覆盖字符串/数字错误码、路由Pipeline、Provider响应状态和未知错误体，并断言完整错误消息、Prompt、Key、长Base64片段及原始元数据不会进入`ProviderImageResult`或任务摘要。
 - 测试钱包最多预占/结算0.60元，正常test_fixture销售价为0.50元；每次余额变化都有唯一流水。
 - 主图必须经过完整解码、格式与尺寸校验、元数据清理、双标识审核和MinIO私有存储，结算提交前不得available。
 - 请求、Quote、Usage、sale_line、cost_line、钱包、资产和Outbox对账差异必须为0；同时单独核对OpenRouter Key Usage增量与任务中的Provider费用回执一致。

@@ -153,3 +153,25 @@ Quote 0.50
 本轮同时发现并修复正式Project SK签发缺陷：旧实现使用`ActiveChatModelsExist`，会把图片模型统一判为不可授权。修复后只允许已激活且已发布的`chat/image`模型进入显式allowlist；图片调用仍要求`api_key_model_scopes`存在精确模型记录，`all/legacy_all`不会自动获得图片能力。
 
 测试夹具时间窗不得直接假设MySQL `NOW()`与应用`loc=Local`一致。优先通过应用服务创建价格；必须使用SQL夹具时，`effective_at/expires_at/cost_expires_at`需要覆盖应用本地时区比较窗口，并在调用前实际执行Quote验证，不能只用数据库会话时间证明未过期。
+
+## 10. 本机直连诊断与403安全分类
+
+在不经过Molin接口、测试服务器、钱包和对象存储的条件下，使用同一短效测试Key固定调用`google/gemini-3-pro-image + google-vertex/global + 2K + 1:1 + n=1`。本机直连返回HTTP 200和一张`image/png`，图片为4,559,278字节，Provider回执费用为0.134436美元，重试和fallback均为0。图片只在进程内完成Base64解码和签名校验，未落盘，Prompt、Key和原始响应未进入证据正文。
+
+该证据证明OpenRouter账户、Key、模型、Provider tag和固定图片参数本身可用，但不证明测试服务器出口IP、原测试Prompt或Molin运行时请求链路可用。测试服务器后续只读检查确认NTP、DNS、TLS、公开模型目录、Images POST路径和代理环境均无一般性异常，因此旧403继续按“测试服务器路径特有”处理，不能把本机直连成功冒充IMG-G9网关闭环通过。
+
+为避免下一次真实请求仍只留下裸`403`，`OpenRouterImageAdapter`固定发送`X-OpenRouter-Experimental-Metadata: enabled`，但只在内存中读取错误码、错误消息、元数据键、路由阶段名称/摘要和Provider响应状态。HTTP 403最终只能落入以下白名单分类：
+
+| `provider_error_code` | 含义 |
+|---|---|
+| `403:credit_limit` | Key或账户费用额度不足 |
+| `403:workspace_budget` | Workspace预算门禁 |
+| `403:model_policy` | 模型访问或allowlist策略 |
+| `403:provider_policy` | Provider访问或allowlist策略 |
+| `403:data_policy` | ZDR或数据策略 |
+| `403:content_guardrail` | Prompt注入、敏感信息、内容过滤或其他Guardrail |
+| `403:key_permission` | OpenRouter API Key权限不足 |
+| `403:upstream_permission` | 已确认的上游Provider HTTP 403 |
+| `403:unknown` | 无法安全归类，失败关闭 |
+
+分类器不得保存或输出完整错误消息、Prompt、Key、Base64、原始响应、Pipeline原文或Provider响应原文。现有`provider_http_status`与`provider_error_code`字段足以承载证据，本次不新增表、migration、重试、fallback或交付路径。
