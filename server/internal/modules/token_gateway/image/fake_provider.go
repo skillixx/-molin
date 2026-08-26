@@ -51,9 +51,9 @@ func (a *FakeImageAdapter) Generate(ctx context.Context, request ProviderImageRe
 	case FakeImageDisconnected:
 		return ProviderImageResult{}, ErrProviderDisconnected
 	case FakeImageUnknown:
-		return ProviderImageResult{ProviderRequestID: "fake-unknown", ResultUnknown: true}, ErrProviderUnknown
+		return ProviderImageResult{ProviderRequestID: "fake-unknown-" + request.RequestID, ResultUnknown: true}, ErrProviderUnknown
 	case FakeImageCorrupt:
-		return ProviderImageResult{ProviderRequestID: "fake-corrupt", Images: []ProviderImage{{Index: 0, Base64: base64.StdEncoding.EncodeToString([]byte("not-an-image")), MediaType: "image/png"}}}, nil
+		return ProviderImageResult{ProviderRequestID: "fake-corrupt-" + request.RequestID, Images: []ProviderImage{{Index: 0, Base64: base64.StdEncoding.EncodeToString([]byte("not-an-image")), MediaType: "image/png"}}}, nil
 	}
 	count := request.Count
 	if count == 0 {
@@ -71,7 +71,7 @@ func (a *FakeImageAdapter) Generate(ctx context.Context, request ProviderImageRe
 		}
 		images = append(images, ProviderImage{Index: index, Base64: base64.StdEncoding.EncodeToString(raw), MediaType: "image/png"})
 	}
-	return ProviderImageResult{ProviderRequestID: "fake-success", Images: images}, nil
+	return ProviderImageResult{ProviderRequestID: "fake-success-" + request.RequestID, Images: images}, nil
 }
 
 func (a *FakeImageAdapter) Calls() int {

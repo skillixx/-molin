@@ -8,7 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
+
+	"github.com/shopspring/decimal"
 
 	"molin/server/internal/modules/token_gateway/model"
 )
@@ -116,8 +119,6 @@ func (g *ImageGateway) Generate(ctx context.Context, command GenerateImageComman
 		return classifyProviderFailure(result, providerResult, err)
 	}
 	if providerResult.ResultUnknown {
-		result.ProviderResultCount = uint64(len(providerResult.Images))
-		result.ProviderCostUSD = providerResult.ProviderCostUSD
 		result.Outcome, result.ErrorClass = GatewayUnknown, "result_unknown"
 		return result, ErrProviderUnknown
 	}
@@ -125,9 +126,6 @@ func (g *ImageGateway) Generate(ctx context.Context, command GenerateImageComman
 		result.Outcome, result.ErrorClass = GatewayFailed, "provider_result_invalid"
 		return result, ErrImageResultInvalid
 	}
-	result.ProviderResultCount = uint64(len(providerResult.Images))
-	result.ProviderCostUSD = providerResult.ProviderCostUSD
-
 	seen := make(map[uint64]struct{}, len(providerResult.Images))
 	lastErrorClass := ""
 	for _, providerImage := range providerResult.Images {
@@ -331,12 +329,28 @@ func copyProviderEvidence(result *GatewayResult, providerResult ProviderImageRes
 		return
 	}
 	result.ProviderResultCount = uint64(len(providerResult.Images))
-	result.ProviderCode = providerResult.ProviderCode
-	result.ProviderRequestID = providerResult.ProviderRequestID
-	result.ProviderCostUSD = providerResult.ProviderCostUSD
-	result.ProviderHTTPStatus = providerResult.ProviderHTTPStatus
-	result.ProviderErrorCode = providerResult.ProviderErrorCode
+	result.ProviderCode = sanitizeProviderErrorCode(providerResult.ProviderCode)
+	result.ProviderRequestID = sanitizeProviderRequestID(providerResult.ProviderRequestID)
+	result.ProviderCostUSD = sanitizeProviderCostUSD(providerResult.ProviderCostUSD)
+	if providerResult.ProviderHTTPStatus >= 100 && providerResult.ProviderHTTPStatus <= 599 {
+		result.ProviderHTTPStatus = providerResult.ProviderHTTPStatus
+	}
+	result.ProviderErrorCode = sanitizeProviderErrorCode(providerResult.ProviderErrorCode)
 	result.ProviderAttempted = providerResult.ProviderAttempted
+}
+
+func sanitizeProviderCostUSD(value string) string {
+	if value == "" {
+		return ""
+	}
+	if value != strings.TrimSpace(value) || len(value) > 32 {
+		return ""
+	}
+	cost, err := decimal.NewFromString(value)
+	if err != nil || !cost.IsPositive() {
+		return ""
+	}
+	return cost.String()
 }
 
 func requestNamespace(requestID string) string {

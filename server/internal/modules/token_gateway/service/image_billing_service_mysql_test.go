@@ -99,6 +99,7 @@ func TestImageBillingServiceMySQLClosedLoop(t *testing.T) {
 		if fixture.adapter.Calls() != 1 {
 			t.Fatalf("成功请求Provider调用必须为1: %d", fixture.adapter.Calls())
 		}
+		assertImageProviderTaskEvidence(t, db, fixture.requestID, "fake", true)
 		replayedReservation, err := fixture.service.Reserve(context.Background(), fixture.reserveCommand())
 		if err != nil || replayedReservation.HoldID == 0 {
 			t.Fatalf("终态后的预占重放必须返回原hold: reservation=%+v err=%v", replayedReservation, err)
@@ -132,9 +133,12 @@ func TestImageBillingServiceMySQLClosedLoop(t *testing.T) {
 		fixture := seedImageBillingFixture(t, db, 97102, "g5-partial", 2, imagegateway.FakeImagePartial, imagegateway.FakeModerationAllow, decimal.NewFromInt(10), now, nil)
 		mustReserveImageG5(t, fixture)
 		execution, err := fixture.service.Execute(context.Background(), fixture.requestID, fixture.command)
-		if err != nil || execution.GatewayResult.Outcome != imagegateway.GatewayPartial || execution.GatewayResult.DeliverableCount != 1 || execution.GatewayResult.ProviderResultCount != 2 {
+		if err != nil || execution == nil {
+			t.Fatalf("部分成功执行错误: execution=%+v err=%v snapshot=%s", execution, err, imageG5PricingDiagnostic(db, fixture.requestID))
+		}
+		if execution.GatewayResult.Outcome != imagegateway.GatewayPartial || execution.GatewayResult.DeliverableCount != 1 || execution.GatewayResult.ProviderResultCount != 2 {
 			diagnosticErr := fixture.service.finalizeSuccess(context.Background(), fixture.requestID, execution.GatewayResult.ProviderResultCount)
-			t.Fatalf("部分成功执行错误: %+v err=%v diagnostic=%v snapshot=%s", execution, err, diagnosticErr, imageG5PricingDiagnostic(db, fixture.requestID))
+			t.Fatalf("部分成功结果错误: %+v diagnostic=%v snapshot=%s", execution, diagnosticErr, imageG5PricingDiagnostic(db, fixture.requestID))
 		}
 		assertWalletAmounts(t, db, fixture.owner.UserID, "9.50000000", "0.00000000")
 		var sale, cost decimal.Decimal
@@ -164,6 +168,7 @@ func TestImageBillingServiceMySQLClosedLoop(t *testing.T) {
 		if !sale.IsZero() || cost.StringFixed(8) != "0.30000000" {
 			t.Fatalf("输出拒绝必须用户0元、平台记成本: sale=%s cost=%s", sale, cost)
 		}
+		assertImageProviderTaskEvidence(t, db, fixture.requestID, "fake", true)
 		assertImageG5Count(t, db, "ai_gateway_assets", "request_id=? AND lifecycle_state='quarantined'", fixture.requestID, 1)
 		report, err := fixture.service.ReconcileRequest(context.Background(), fixture.requestID)
 		if err != nil || !report.ZeroDifference() {
@@ -182,6 +187,7 @@ func TestImageBillingServiceMySQLClosedLoop(t *testing.T) {
 		if report, err := failed.service.ReconcileRequest(context.Background(), failed.requestID); err != nil || !report.ZeroDifference() {
 			t.Fatalf("明确失败必须零差异: report=%+v err=%v", report, err)
 		}
+		assertImageProviderTaskEvidence(t, db, failed.requestID, "fake", true)
 
 		pendingModes := []struct {
 			userID uint64
@@ -199,6 +205,106 @@ func TestImageBillingServiceMySQLClosedLoop(t *testing.T) {
 				t.Fatalf("超时/断连必须待核对: mode=%s execution=%+v calls=%d err=%v", item.mode, execution, fixture.adapter.Calls(), err)
 			}
 			assertWalletAmounts(t, db, fixture.owner.UserID, "9.50000000", "0.50000000")
+			assertImageProviderTaskEvidence(t, db, fixture.requestID, "fake", true)
+		}
+	})
+
+	t.Run("Provider回执后本地失败仍保留美元费用", func(t *testing.T) {
+		fixture := seedImageBillingFixture(t, db, 97143, "g5-provider-receipt-failed", 1, imagegateway.FakeImageSuccess, imagegateway.FakeModerationAllow, decimal.NewFromInt(10), now, nil)
+		mustReserveImageG5(t, fixture)
+		fixture.service.gateway = &g5StaticGateway{result: imagegateway.GatewayResult{
+			Outcome: imagegateway.GatewayFailed, RequestedCount: 1, ProviderResultCount: 1,
+			ProviderCode: "openrouter-images", ProviderRequestID: "or-safe-failed", ProviderCostUSD: "0.1365",
+			ProviderHTTPStatus: 200, ProviderAttempted: true, ErrorClass: "provider_result_invalid",
+		}, err: imagegateway.ErrImageResultInvalid}
+		execution, err := fixture.service.Execute(context.Background(), fixture.requestID, fixture.command)
+		if !errors.Is(err, imagegateway.ErrImageResultInvalid) || execution == nil || execution.BillingStatus != model.AIBillingReleased {
+			t.Fatalf("Provider回执后的本地失败必须释放: execution=%+v err=%v", execution, err)
+		}
+		var task model.AIImageTask
+		if err := db.Where("request_id = ?", fixture.requestID).First(&task).Error; err != nil {
+			t.Fatal(err)
+		}
+		var summary map[string]interface{}
+		if err := json.Unmarshal(task.ResultJSON, &summary); err != nil || summary["provider_cost_usd"] != "0.1365" || summary["provider_request_id"] != "or-safe-failed" {
+			t.Fatalf("明确失败不得覆盖Provider费用和请求标识: summary=%+v err=%v", summary, err)
+		}
+		assertImageProviderTaskEvidence(t, db, fixture.requestID, "openrouter-images", true)
+	})
+
+	t.Run("Provider非2xx低敏错误证据进入失败终态", func(t *testing.T) {
+		fixture := seedImageBillingFixture(t, db, 97145, "g5-provider-http-failed", 1, imagegateway.FakeImageSuccess, imagegateway.FakeModerationAllow, decimal.NewFromInt(10), now, nil)
+		mustReserveImageG5(t, fixture)
+		fixture.service.gateway = &g5StaticGateway{result: imagegateway.GatewayResult{
+			Outcome: imagegateway.GatewayFailed, RequestedCount: 1, ProviderCode: "openrouter-images",
+			ProviderHTTPStatus: 403, ProviderErrorCode: "guardrail_blocked", ProviderAttempted: true, ErrorClass: "provider_failed",
+		}, err: imagegateway.ErrProviderFailed}
+		execution, err := fixture.service.Execute(context.Background(), fixture.requestID, fixture.command)
+		if !errors.Is(err, imagegateway.ErrProviderFailed) || execution == nil || execution.BillingStatus != model.AIBillingReleased {
+			t.Fatalf("Provider非2xx必须进入明确失败终态: execution=%+v err=%v", execution, err)
+		}
+		var task model.AIImageTask
+		var summary map[string]interface{}
+		if err := db.Where("request_id = ?", fixture.requestID).First(&task).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(task.ResultJSON, &summary); err != nil || summary["provider_http_status"] != float64(403) || summary["provider_error_code"] != "guardrail_blocked" || summary["provider_attempted"] != true {
+			t.Fatalf("Provider非2xx必须只保留低敏状态和错误码: summary=%+v err=%v", summary, err)
+		}
+		assertImageProviderTaskEvidence(t, db, fixture.requestID, "openrouter-images", true)
+	})
+
+	t.Run("Provider有HTTP响应的结果未知保留尝试证据", func(t *testing.T) {
+		fixture := seedImageBillingFixture(t, db, 97146, "g5-provider-http-unknown", 1, imagegateway.FakeImageSuccess, imagegateway.FakeModerationAllow, decimal.NewFromInt(10), now, nil)
+		mustReserveImageG5(t, fixture)
+		fixture.service.gateway = &g5StaticGateway{result: imagegateway.GatewayResult{
+			Outcome: imagegateway.GatewayUnknown, RequestedCount: 1, ProviderCode: "openrouter-images",
+			ProviderHTTPStatus: 200, ProviderAttempted: true, ErrorClass: "result_unknown",
+		}, err: imagegateway.ErrProviderUnknown}
+		execution, err := fixture.service.Execute(context.Background(), fixture.requestID, fixture.command)
+		if !errors.Is(err, ErrImagePendingReconcile) || execution == nil || execution.BillingStatus != model.AIBillingSettlementPending {
+			t.Fatalf("Provider有响应但结果未知必须保留Hold: execution=%+v err=%v", execution, err)
+		}
+		var task model.AIImageTask
+		var facts imageRecoveryFacts
+		if err := db.Where("request_id = ?", fixture.requestID).First(&task).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(task.ResultJSON, &facts); err != nil || facts.ProviderHTTPStatus != 200 || !facts.ProviderAttempted || facts.ProviderCode != "openrouter-images" {
+			t.Fatalf("结果未知必须保留HTTP和尝试证据: facts=%+v err=%v", facts, err)
+		}
+	})
+
+	t.Run("Provider调用前置事实阻止崩溃后重调", func(t *testing.T) {
+		fixture := seedImageBillingFixture(t, db, 97144, "g5-provider-crash-window", 1, imagegateway.FakeImageSuccess, imagegateway.FakeModerationAllow, decimal.NewFromInt(10), now, nil)
+		mustReserveImageG5(t, fixture)
+		if _, err := fixture.service.claimExecution(context.Background(), fixture.requestID); err != nil {
+			t.Fatal(err)
+		}
+		inner := &g5CrashWindowProvider{}
+		adapter, err := NewAttemptRecordingImageAdapter(inner, db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		providerRequest := imagegateway.ProviderImageRequest{RequestID: fixture.requestID, ModelCode: imageG5ModelCode, Prompt: "崩溃窗口", Count: 1}
+		if _, err := adapter.Generate(context.Background(), providerRequest); err == nil || inner.calls.Load() != 1 {
+			t.Fatalf("首次尝试必须先落库再进入Provider: calls=%d err=%v", inner.calls.Load(), err)
+		}
+		assertImageProviderTaskEvidence(t, db, fixture.requestID, "openrouter-images", true)
+		if _, err := adapter.Generate(context.Background(), providerRequest); !errors.Is(err, imagegateway.ErrProviderUnknown) || inner.calls.Load() != 1 {
+			t.Fatalf("已有尝试事实必须禁止第二次Provider调用: calls=%d err=%v", inner.calls.Load(), err)
+		}
+		recovered, err := fixture.service.RecoverStaleActiveExecutions(context.Background(), time.Now().Add(time.Minute), 10)
+		if err != nil || recovered < 1 {
+			t.Fatalf("崩溃窗口必须恢复为结果未知: recovered=%d err=%v", recovered, err)
+		}
+		var task model.AIImageTask
+		var facts imageRecoveryFacts
+		if err := db.Where("request_id = ?", fixture.requestID).First(&task).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(task.ResultJSON, &facts); err != nil || !facts.ProviderAttempted || facts.ProviderCode != "openrouter-images" {
+			t.Fatalf("陈旧恢复必须保留Provider尝试事实: facts=%+v err=%v", facts, err)
 		}
 	})
 
@@ -787,7 +893,11 @@ func newImageG5Service(t *testing.T, db *gorm.DB, adapter imagegateway.ImageProv
 		t.Fatal(err)
 	}
 	cleanup := repository.NewImageObjectCleanupRepository(db)
-	gateway, err := imagegateway.NewImageGateway(adapter, moderation, processor, store, cleanup)
+	attemptAdapter, err := NewAttemptRecordingImageAdapter(adapter, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway, err := imagegateway.NewImageGateway(attemptAdapter, moderation, processor, store, cleanup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -835,6 +945,34 @@ func assertImageG5Count(t *testing.T, db *gorm.DB, table, where string, arg inte
 	}
 	if count != expected {
 		t.Fatalf("数量不符: table=%s where=%s count=%d expected=%d", table, where, count, expected)
+	}
+}
+
+func assertImageProviderTaskEvidence(t *testing.T, db *gorm.DB, requestID, providerCode string, attempted bool) {
+	t.Helper()
+	var task model.AIImageTask
+	if err := db.Where("request_id = ?", requestID).First(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	expectedAttempts := uint32(0)
+	if attempted {
+		expectedAttempts = 1
+	}
+	actualProvider := ""
+	if task.ProviderCode != nil {
+		actualProvider = *task.ProviderCode
+	}
+	if task.AttemptCount != expectedAttempts || actualProvider != providerCode {
+		t.Fatalf("Provider尝试证据错误: request=%s attempts=%d provider=%s", requestID, task.AttemptCount, actualProvider)
+	}
+	if len(task.ResultJSON) > 0 {
+		var summary map[string]interface{}
+		if err := json.Unmarshal(task.ResultJSON, &summary); err != nil {
+			t.Fatal(err)
+		}
+		if attempted && (summary["provider_attempted"] != true || summary["provider_code"] != providerCode) {
+			t.Fatalf("任务摘要缺少Provider尝试证据: request=%s summary=%+v", requestID, summary)
+		}
 	}
 }
 
@@ -886,6 +1024,26 @@ type g5PersistOneAssetGateway struct {
 	requestID string
 	owner     repository.ImageOwner
 	now       time.Time
+}
+
+type g5StaticGateway struct {
+	result imagegateway.GatewayResult
+	err    error
+}
+
+func (g *g5StaticGateway) Generate(context.Context, imagegateway.GenerateImageCommand) (imagegateway.GatewayResult, error) {
+	return g.result, g.err
+}
+
+type g5CrashWindowProvider struct {
+	calls atomic.Int64
+}
+
+func (p *g5CrashWindowProvider) Name() string { return "openrouter-images" }
+
+func (p *g5CrashWindowProvider) Generate(context.Context, imagegateway.ProviderImageRequest) (imagegateway.ProviderImageResult, error) {
+	p.calls.Add(1)
+	return imagegateway.ProviderImageResult{}, errors.New("模拟Provider调用后进程退出")
 }
 
 // Generate 在正式元数据事务前仅落一条主图，稳定复现部分资产事实与清理任务并发交错。

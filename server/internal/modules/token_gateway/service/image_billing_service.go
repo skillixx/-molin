@@ -604,7 +604,8 @@ func (s *ImageBillingService) persistGatewayAssets(ctx context.Context, requestI
 		resultSummary, _ := json.Marshal(map[string]interface{}{
 			"provider_result_count": result.ProviderResultCount, "provider_code": result.ProviderCode,
 			"provider_http_status": result.ProviderHTTPStatus, "provider_error_code": result.ProviderErrorCode,
-			"provider_cost_usd": result.ProviderCostUSD, "deliverable_count": result.DeliverableCount,
+			"provider_request_id": result.ProviderRequestID, "provider_cost_usd": result.ProviderCostUSD,
+			"provider_attempted": result.ProviderAttempted, "deliverable_count": result.DeliverableCount,
 		})
 		taskUpdates := map[string]interface{}{"status": model.AIImageTaskModerating, "progress": 80, "result_json": resultSummary, "version_no": gorm.Expr("version_no + 1")}
 		applyImageProviderTaskEvidence(taskUpdates, result)
@@ -854,6 +855,8 @@ func (s *ImageBillingService) finalizeRelease(ctx context.Context, requestID str
 			resultSummary, _ := json.Marshal(map[string]interface{}{
 				"provider_result_count": gatewayResult.ProviderResultCount, "provider_code": gatewayResult.ProviderCode,
 				"provider_http_status": gatewayResult.ProviderHTTPStatus, "provider_error_code": gatewayResult.ProviderErrorCode,
+				"provider_request_id": gatewayResult.ProviderRequestID, "provider_cost_usd": gatewayResult.ProviderCostUSD,
+				"provider_attempted": gatewayResult.ProviderAttempted, "deliverable_count": gatewayResult.DeliverableCount,
 			})
 			taskUpdates := map[string]interface{}{
 				"status": model.AIImageTaskFailed, "progress": 100, "error_code": gatewayResult.ErrorClass,
@@ -1042,6 +1045,13 @@ func (s *ImageBillingService) RecoverStaleActiveExecutions(ctx context.Context, 
 				}
 				facts := imageRecoveryFacts{RecoveryAction: imageRecoveryUnknown, FinalErrorClass: "result_unknown"}
 				_ = json.Unmarshal(task.ResultJSON, &facts)
+				if task.ProviderCode != nil {
+					facts.ProviderCode = *task.ProviderCode
+				}
+				if task.ProviderTaskID != nil {
+					facts.ProviderRequestID = *task.ProviderTaskID
+				}
+				facts.ProviderAttempted = task.AttemptCount > 0
 				facts.RecoveryAction = imageRecoveryUnknown
 				facts.FinalErrorClass = "result_unknown"
 				recoveryJSON, err := json.Marshal(facts)

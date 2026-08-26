@@ -1210,6 +1210,8 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - 成功响应必须包含合法图片和 `usage.cost`；费用缺失、非正或超过0.25美元一律结果未知并禁止交付。
 - Provider美元费用必须以规范Decimal字符串进入任务低敏结果摘要，禁止保存Provider原文、Prompt或Base64。
 - 上游成功、明确失败和结果未知都必须记录低敏尝试证据：`provider_code`、`provider_attempted`、HTTP状态和封闭字符集错误码；实际调用后任务`attempt_count`必须为1，禁止把已尝试请求记录为0。
+- Provider调用前必须先以行锁和version CAS提交唯一尝试事实；模拟提交后进程退出时，重放不得再次进入Provider，陈旧恢复必须保留`provider_code/attempt_count`并转为结果未知。
+- Provider已确认费用后发生本地解码、审核、存储或终态失败时，任务摘要仍必须保留`provider_cost_usd/provider_request_id`；隔离MySQL需覆盖成功、非2xx明确失败、HTTP成功但结果未知三类终态。
 - OpenRouter图片失败返回502且费用为0时，不得只依据Key Usage或Last Used判断请求未发出；必须结合新候选保存的HTTP状态、低敏错误码和OpenRouter控制台Activity/Guardrail证据定位根因。
 - 测试钱包最多预占/结算0.60元，正常test_fixture销售价为0.50元；每次余额变化都有唯一流水。
 - 主图必须经过完整解码、格式与尺寸校验、元数据清理、双标识审核和MinIO私有存储，结算提交前不得available。

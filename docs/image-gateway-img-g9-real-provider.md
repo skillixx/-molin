@@ -46,6 +46,7 @@ ProviderTag来自OpenRouter官方图片端点目录。运行时只允许这一�
 - `server/internal/bootstrap/app.go`：关闭态禁用Adapter与真实OpenRouter Adapter装配。
 - `server/internal/modules/token_gateway/image/openrouter_adapter.go`：固定Images端点、单Provider、零重试，并提取HTTP状态和封闭字符集错误码；禁止保存上游错误消息和原始响应。
 - `server/internal/modules/token_gateway/image/gateway.go`：把Provider尝试标记、请求标识、HTTP状态、错误码、产物数量和美元费用回执传入深模块结果。
+- `server/internal/modules/token_gateway/service/image_provider_attempt.go`：在任何Provider调用前独立提交`provider_code + attempt_count=1`；已有尝试或记录失败时禁止进入上游。
 - `server/internal/modules/token_gateway/service/image_billing_service.go`：将低敏Provider证据写入任务结果，并把实际尝试同步为`attempt_count=1`和`provider_code`；继续使用test_fixture完成CNY计费。
 
 本阶段不新增migration。数据库继续使用 `ai_requests`、`ai_gateway_quotes`、`ai_gateway_tasks`、`ai_gateway_assets`、`ai_usage_items`、`ai_request_wallet_links`、`wallet_holds`、`wallet_transactions`、`ai_outbox_events` 和 `ai_compensation_tasks`。
@@ -120,6 +121,8 @@ Quote → Hold → Generate → Decode → Moderate → Store → Settle → Ava
 - `provider_http_status`。
 - 仅允许字母、数字、点、下划线、冒号和短横线的`provider_error_code`。
 - 成功时经过字符集校验的`provider_request_id`和`provider_cost_usd`。
+
+尝试事实必须在调用上游之前提交。若进程在提交后、网络调用前后或Provider返回后退出，陈旧恢复只能进入结果未知并保留Hold；后续执行看到`attempt_count=1`必须失败关闭，不能再次调用Provider。成功、明确失败和结果未知的任务摘要都必须保留已确认的美元费用，不能因本地解码、审核、存储或结算失败而覆盖丢失。
 
 第二次真实调用不是原一次请求Goal的自动重试。只有完成以下检查并取得新的单次书面授权后才允许执行：
 
