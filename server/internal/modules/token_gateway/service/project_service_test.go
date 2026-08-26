@@ -209,15 +209,15 @@ func TestProjectKeyAllowsExplicitPublishedImageModel(t *testing.T) {
 		WithAuditRecorder(&memoryProjectAudit{})
 	plaintext, view, err := service.IssueKey(context.Background(), IssueProjectKeyInput{
 		UserID: 5, ProjectID: 9, Name: "图片模型密钥", ScopeMode: ScopeModeAllowlist,
-		ModelCodes: []string{"google/gemini-3-pro-image"},
+		ModelCodes: []string{"bytedance-seed/seedream-5-0-lite"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plaintext == "" || view.ScopeMode != ScopeModeAllowlist || len(view.ModelCodes) != 1 || view.ModelCodes[0] != "google/gemini-3-pro-image" {
+	if plaintext == "" || view.ScopeMode != ScopeModeAllowlist || len(view.ModelCodes) != 1 || view.ModelCodes[0] != "bytedance-seed/seedream-5-0-lite" {
 		t.Fatalf("已发布且可见的图片模型必须能进入显式allowlist: %+v", view)
 	}
-	if scopes := store.scopes[view.ID]; len(scopes) != 1 || scopes[0] != "google/gemini-3-pro-image" {
+	if scopes := store.scopes[view.ID]; len(scopes) != 1 || scopes[0] != "bytedance-seed/seedream-5-0-lite" {
 		t.Fatalf("图片scope必须形成唯一数据库事实: %+v", scopes)
 	}
 }

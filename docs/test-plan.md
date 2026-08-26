@@ -1203,8 +1203,8 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 ## 图片网关 IMG-G9 真实Provider与人民币测试计费验收
 
 - 唯一源码必须从批准基线创建本地候选提交；真实调用前记录提交、二进制SHA和工作树状态。
-- 固定模型为 `google/gemini-3-pro-image`，固定 `provider_tag=google-vertex/global`，规格为 `n=1 / 2K / 1:1 / standard / url`。
-- OpenRouter专用Key必须是0600普通文件、非符号链接、费用限制不高于0.25美元且初始Usage为0；不得复用Bifrost或业务Key。
+- 固定模型为 `bytedance-seed/seedream-5-0-lite`，固定 `provider_tag=seed`，规格为 `n=1 / 2K / 1:1 / standard / url`；Gemini/Vertex只作为历史失败证据，不得进入当前候选配置。
+- OpenRouter专用Key必须是0600普通文件、非符号链接且费用限制覆盖本轮书面授权；调用前必须冻结Usage基线并按增量核对，新Key优先要求初始Usage为0；不得复用Bifrost或业务Key。
 - 关闭态必须允许 `provider=openrouter` 但不读取Key，图片入口返回50330且生成消费者为0。
 - 真实态只允许一次Provider调用；请求必须包含单一Provider `only`、`allow_fallbacks=false`、`stream=false`，Adapter和Worker均不得重试。
 - 成功响应必须包含合法图片和 `usage.cost`；费用缺失、非正或超过0.25美元一律结果未知并禁止交付。
@@ -1214,7 +1214,7 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - Provider已确认费用后发生本地解码、审核、存储或终态失败时，任务摘要仍必须保留`provider_cost_usd/provider_request_id`；隔离MySQL需覆盖成功、非2xx明确失败、HTTP成功但结果未知三类终态。
 - OpenRouter图片失败返回502且费用为0时，不得只依据Key Usage或Last Used判断请求未发出；必须结合新候选保存的HTTP状态、低敏错误码和OpenRouter控制台Activity/Guardrail证据定位根因。
 - Project SK正式签发必须允许已激活、已发布且对用户可见的图片模型进入显式allowlist；不存在、未发布、非chat/image或不可见模型仍失败关闭，`all/legacy_all`不得隐式获得图片能力。
-- SQL价格夹具必须覆盖应用`loc=Local`与MySQL会话时区差异；真实调用前必须以Quote 0.50元成功、未消费、未Hold和Provider Usage=0作为最终价格门禁。
+- SQL价格夹具必须覆盖应用`loc=Local`与MySQL会话时区差异；真实调用前必须以Quote 0.50元成功、未消费、未Hold和已冻结Provider Usage基线作为最终价格门禁。
 - OpenRouter返回HTTP 403时必须记录`provider_code/attempt_count/http_status/error_code`，用户销售额、Provider成本和结算额均为0，Hold完整释放且Outbox按顺序发布；原始Provider错误消息仍不得落库或写日志。
 - OpenRouter请求必须携带`X-OpenRouter-Experimental-Metadata: enabled`；HTTP 403只能映射为费用额度、Workspace预算、模型策略、Provider策略、数据策略、内容护栏、Key权限、上游权限或unknown九种固定低敏分类。
 - 403分类测试必须覆盖字符串/数字错误码、路由Pipeline、Provider响应状态和未知错误体，并断言完整错误消息、Prompt、Key、长Base64片段及原始元数据不会进入`ProviderImageResult`或任务摘要。

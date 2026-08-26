@@ -37,10 +37,10 @@ func TestActiveScopedModelsExistAllowsPublishedChatAndImage(t *testing.T) {
 	}
 	query := "SELECT COUNT(DISTINCT(`logical_model_code`)) FROM `token_models` WHERE logical_model_code IN (?,?) AND status = 'active' AND modality IN ('chat','image') AND release_version_no > 0 AND published_at IS NOT NULL"
 	mock.ExpectQuery(regexp.QuoteMeta(query)).
-		WithArgs("molin/qwen-turbo", "google/gemini-3-pro-image").
+		WithArgs("molin/qwen-turbo", "bytedance-seed/seedream-5-0-lite").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
 
-	ok, err := NewG2Repository(db).ActiveScopedModelsExist(context.Background(), []string{"molin/qwen-turbo", "google/gemini-3-pro-image"})
+	ok, err := NewG2Repository(db).ActiveScopedModelsExist(context.Background(), []string{"molin/qwen-turbo", "bytedance-seed/seedream-5-0-lite"})
 	if err != nil || !ok {
 		t.Fatalf("已发布Chat和图片模型必须共同进入显式scope: ok=%t err=%v", ok, err)
 	}

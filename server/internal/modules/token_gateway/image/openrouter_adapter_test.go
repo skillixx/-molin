@@ -31,24 +31,24 @@ func TestOpenRouterImageAdapterStrictRequestAndResponse(t *testing.T) {
 		}
 		provider := body["provider"].(map[string]interface{})
 		only, _ := provider["only"].([]interface{})
-		if body["model"] != "google/gemini-3-pro-image" || body["stream"] != false || provider["allow_fallbacks"] != false || len(only) != 1 || only[0] != "google-vertex/global" || body["prompt"] != "内存测试" {
+		if body["model"] != "bytedance-seed/seedream-5-0-lite" || body["stream"] != false || provider["allow_fallbacks"] != false || len(only) != 1 || only[0] != "seed" || body["prompt"] != "内存测试" {
 			t.Fatalf("请求门禁错误: %+v", body)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"id": "or-test-1", "data": []map[string]string{{"b64_json": base64.StdEncoding.EncodeToString(pngRaw), "media_type": "image/png"}},
-			"usage": map[string]interface{}{"cost": 0.1365},
+			"usage": map[string]interface{}{"cost": 0.035},
 		})
 	}))
 	defer server.Close()
 	client := server.Client()
 	client.Timeout = time.Second
 	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return errors.New("禁止重定向") }
-	adapter, err := newOpenRouterImageAdapter(OpenRouterImageAdapterConfig{APIKey: "fake-openrouter-key-123456", ProviderTag: "google-vertex/global", MaxCostUSD: "0.25", Timeout: time.Second, ModelMap: map[string]string{"google/gemini-3-pro-image": "google/gemini-3-pro-image"}}, server.URL+"/api/v1/images", client, true)
+	adapter, err := newOpenRouterImageAdapter(OpenRouterImageAdapterConfig{APIKey: "fake-openrouter-key-123456", ProviderTag: "seed", MaxCostUSD: "0.25", Timeout: time.Second, ModelMap: map[string]string{"bytedance-seed/seedream-5-0-lite": "bytedance-seed/seedream-5-0-lite"}}, server.URL+"/api/v1/images", client, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := adapter.Generate(context.Background(), ProviderImageRequest{RequestID: "req-1", ModelCode: "google/gemini-3-pro-image", Prompt: "内存测试", Count: 1, Resolution: "2K", AspectRatio: "1:1", Quality: "standard"})
-	if err != nil || calls.Load() != 1 || len(result.Images) != 1 || result.ProviderRequestID != "or-test-1" || result.ProviderCostUSD != "0.1365" ||
+	result, err := adapter.Generate(context.Background(), ProviderImageRequest{RequestID: "req-1", ModelCode: "bytedance-seed/seedream-5-0-lite", Prompt: "内存测试", Count: 1, Resolution: "2K", AspectRatio: "1:1", Quality: "standard"})
+	if err != nil || calls.Load() != 1 || len(result.Images) != 1 || result.ProviderRequestID != "or-test-1" || result.ProviderCostUSD != "0.035" ||
 		!result.ProviderAttempted || result.ProviderHTTPStatus != http.StatusOK || result.ProviderCode != "openrouter-images" {
 		t.Fatalf("Adapter响应错误: result=%+v calls=%d err=%v", result, calls.Load(), err)
 	}
@@ -67,8 +67,8 @@ func TestOpenRouterImageAdapterPreservesSafeFailureEvidence(t *testing.T) {
 		{name: "数据策略", body: `{"error":{"code":403,"message":"Request does not satisfy the ZDR data policy"}}`, want: "403:data_policy"},
 		{name: "内容护栏", body: `{"error":{"code":"guardrail_blocked","message":"不得持久化的上游明文"},"openrouter_metadata":{"pipeline":[{"type":"guardrail","name":"regex_pi_detection","summary":"Blocked by content filter"}]}}`, want: "403:content_guardrail"},
 		{name: "Key权限", body: `{"error":{"code":403,"message":"API key does not have permission to access the requested resource"}}`, want: "403:key_permission"},
-		{name: "上游权限", body: `{"error":{"code":403,"message":"Provider request failed"},"openrouter_metadata":{"provider_responses":[{"provider":"Google Vertex","status_code":403}]}}`, want: "403:upstream_permission"},
-		{name: "上游名称证据", body: `{"error":{"code":403,"message":"Provider request failed","metadata":{"provider_name":"Google Vertex","raw":"不得持久化的Provider原文"}}}`, want: "403:upstream_permission"},
+		{name: "上游权限", body: `{"error":{"code":403,"message":"Provider request failed"},"openrouter_metadata":{"provider_responses":[{"provider":"Seed","status_code":403}]}}`, want: "403:upstream_permission"},
+		{name: "上游名称证据", body: `{"error":{"code":403,"message":"Provider request failed","metadata":{"provider_name":"Seed","raw":"不得持久化的Provider原文"}}}`, want: "403:upstream_permission"},
 		{name: "未知分类", body: `{"error":{"code":403,"message":"opaque failure sk-or-v1-secret-value AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}`, want: "403:unknown"},
 	}
 	for _, testCase := range testCases {
@@ -82,13 +82,13 @@ func TestOpenRouterImageAdapterPreservesSafeFailureEvidence(t *testing.T) {
 			}))
 			defer server.Close()
 			adapter, err := newOpenRouterImageAdapter(OpenRouterImageAdapterConfig{
-				APIKey: "fake-openrouter-key-123456", ProviderTag: "google-vertex/global", MaxCostUSD: "0.25", Timeout: time.Second,
-				ModelMap: map[string]string{"google/gemini-3-pro-image": "google/gemini-3-pro-image"},
+				APIKey: "fake-openrouter-key-123456", ProviderTag: "seed", MaxCostUSD: "0.25", Timeout: time.Second,
+				ModelMap: map[string]string{"bytedance-seed/seedream-5-0-lite": "bytedance-seed/seedream-5-0-lite"},
 			}, server.URL, server.Client(), true)
 			if err != nil {
 				t.Fatal(err)
 			}
-			result, err := adapter.Generate(context.Background(), ProviderImageRequest{RequestID: "req-safe-error", ModelCode: "google/gemini-3-pro-image", Prompt: "测试", Count: 1})
+			result, err := adapter.Generate(context.Background(), ProviderImageRequest{RequestID: "req-safe-error", ModelCode: "bytedance-seed/seedream-5-0-lite", Prompt: "测试", Count: 1})
 			if !errors.Is(err, ErrProviderFailed) || !result.ProviderAttempted || result.ProviderHTTPStatus != http.StatusForbidden || result.ProviderErrorCode != testCase.want {
 				t.Fatalf("明确失败必须保留白名单分类: result=%+v err=%v", result, err)
 			}
@@ -109,13 +109,13 @@ func TestOpenRouterImageAdapterPreservesNonForbiddenSafeErrorCode(t *testing.T) 
 	}))
 	defer server.Close()
 	adapter, err := newOpenRouterImageAdapter(OpenRouterImageAdapterConfig{
-		APIKey: "fake-openrouter-key-123456", ProviderTag: "google-vertex/global", MaxCostUSD: "0.25", Timeout: time.Second,
-		ModelMap: map[string]string{"google/gemini-3-pro-image": "google/gemini-3-pro-image"},
+		APIKey: "fake-openrouter-key-123456", ProviderTag: "seed", MaxCostUSD: "0.25", Timeout: time.Second,
+		ModelMap: map[string]string{"bytedance-seed/seedream-5-0-lite": "bytedance-seed/seedream-5-0-lite"},
 	}, server.URL, server.Client(), true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := adapter.Generate(context.Background(), ProviderImageRequest{RequestID: "req-rate-limit", ModelCode: "google/gemini-3-pro-image", Prompt: "测试", Count: 1})
+	result, err := adapter.Generate(context.Background(), ProviderImageRequest{RequestID: "req-rate-limit", ModelCode: "bytedance-seed/seedream-5-0-lite", Prompt: "测试", Count: 1})
 	if !errors.Is(err, ErrProviderFailed) || result.ProviderHTTPStatus != http.StatusTooManyRequests || result.ProviderErrorCode != "rate_limited" {
 		t.Fatalf("非403失败必须继续保留封闭字符集错误码: result=%+v err=%v", result, err)
 	}
@@ -185,13 +185,13 @@ func TestOpenRouterImageAdapterRejectsMissingOrExcessiveReceiptCost(t *testing.T
 			}))
 			defer server.Close()
 			adapter, err := newOpenRouterImageAdapter(OpenRouterImageAdapterConfig{
-				APIKey: "fake-openrouter-key-123456", ProviderTag: "google-vertex/global", MaxCostUSD: "0.25", Timeout: time.Second,
-				ModelMap: map[string]string{"google/gemini-3-pro-image": "google/gemini-3-pro-image"},
+				APIKey: "fake-openrouter-key-123456", ProviderTag: "seed", MaxCostUSD: "0.25", Timeout: time.Second,
+				ModelMap: map[string]string{"bytedance-seed/seedream-5-0-lite": "bytedance-seed/seedream-5-0-lite"},
 			}, server.URL, server.Client(), true)
 			if err != nil {
 				t.Fatal(err)
 			}
-			result, err := adapter.Generate(context.Background(), ProviderImageRequest{RequestID: "req-cost", ModelCode: "google/gemini-3-pro-image", Prompt: "测试", Count: 1})
+			result, err := adapter.Generate(context.Background(), ProviderImageRequest{RequestID: "req-cost", ModelCode: "bytedance-seed/seedream-5-0-lite", Prompt: "测试", Count: 1})
 			if !errors.Is(err, ErrProviderUnknown) || !result.ResultUnknown || len(result.Images) != 1 {
 				t.Fatalf("缺失或越权费用必须保留结果未知且禁止交付: result=%+v err=%v", result, err)
 			}

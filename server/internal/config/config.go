@@ -15,9 +15,9 @@ import (
 
 const (
 	// ImageGatewayG9OpenRouterModel 固定IMG-G9唯一真实图片模型，禁止运行时透明换模。
-	ImageGatewayG9OpenRouterModel = "google/gemini-3-pro-image"
-	// ImageGatewayG9OpenRouterProviderTag 来自OpenRouter官方图片端点目录，固定Google Vertex全球端点。
-	ImageGatewayG9OpenRouterProviderTag = "google-vertex/global"
+	ImageGatewayG9OpenRouterModel = "bytedance-seed/seedream-5-0-lite"
+	// ImageGatewayG9OpenRouterProviderTag 来自OpenRouter官方图片端点目录，固定Seed单一端点。
+	ImageGatewayG9OpenRouterProviderTag = "seed"
 	// ImageGatewayG9MaxProviderCostUSD 是本轮唯一真实请求的美元硬上限，禁止部署时自动放宽。
 	ImageGatewayG9MaxProviderCostUSD = "0.25"
 )

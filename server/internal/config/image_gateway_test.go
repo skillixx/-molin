@@ -47,6 +47,9 @@ func TestImageGatewayLocalFakeConfiguration(t *testing.T) {
 }
 
 func TestImageGatewayG9OpenRouterConfiguration(t *testing.T) {
+	if ImageGatewayG9OpenRouterModel != "bytedance-seed/seedream-5-0-lite" || ImageGatewayG9OpenRouterProviderTag != "seed" {
+		t.Fatalf("IMG-G9冻结模型或Provider不正确: model=%s provider=%s", ImageGatewayG9OpenRouterModel, ImageGatewayG9OpenRouterProviderTag)
+	}
 	directory := t.TempDir()
 	config := Config{
 		AppEnv: "test", ImageGatewayEnabled: true, ImageGatewayProvider: "openrouter",
@@ -72,11 +75,16 @@ func TestImageGatewayG9OpenRouterConfiguration(t *testing.T) {
 	if err := config.ValidateImageGatewayConfig(); err != nil {
 		t.Fatalf("IMG-G9真实调用配置应通过: %v", err)
 	}
-	config.ImageGatewayOpenRouterProviderTag = "google-ai-studio/global"
+	config.ImageGatewayOpenRouterProviderTag = "google-vertex/global"
 	if err := config.ValidateImageGatewayConfig(); err == nil {
 		t.Fatal("非冻结ProviderTag必须拒绝")
 	}
 	config.ImageGatewayOpenRouterProviderTag = ImageGatewayG9OpenRouterProviderTag
+	config.ImageGatewayOpenRouterModel = "google/gemini-3-pro-image"
+	if err := config.ValidateImageGatewayConfig(); err == nil {
+		t.Fatal("非冻结图片模型必须拒绝")
+	}
+	config.ImageGatewayOpenRouterModel = ImageGatewayG9OpenRouterModel
 	config.ImageGatewayOpenRouterMaxCostUSD = "0.26"
 	if err := config.ValidateImageGatewayConfig(); err == nil {
 		t.Fatal("提高Provider费用上限必须拒绝")

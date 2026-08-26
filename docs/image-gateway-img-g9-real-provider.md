@@ -1,8 +1,8 @@
 # IMG-G9：真实OpenRouter图片与人民币测试计费闭环
 
-> 当前状态：两次真实调用均未交付图片；第二次已定位OpenRouter HTTP 403并完成实际回滚，等待控制面修正与新的请求授权
+> 当前状态：三次测试服务器真实调用均未交付图片；第三次确认Gemini/Vertex仅在测试服务器路径返回HTTP 403并完成实际回滚，当前本地候选切换为Seedream/seed
 >
-> 基线：`3d094679bd5e74f620ee9fd025fdec85f0d5e338`
+> 切换基线：`5f5bc0f14044756a3a2119420c3b0c6c2e90cf75`
 >
 > 证据边界：只允许已登记测试服务器、一次真实请求、非商业价格夹具；不代表生产或商业验收。
 
@@ -22,8 +22,8 @@ IMG-G9验证墨灵图片网关从真实OpenRouter图片生成到人民币测试�
 ## 2. 冻结合同
 
 ```text
-model=google/gemini-3-pro-image
-provider_tag=google-vertex/global
+model=bytedance-seed/seedream-5-0-lite
+provider_tag=seed
 n=1
 resolution=2K
 aspect_ratio=1:1
@@ -38,7 +38,7 @@ test_sale_price_cny=0.50
 max_wallet_charge_cny=0.60
 ```
 
-ProviderTag来自OpenRouter官方图片端点目录。运行时只允许这一模型和端点，禁止透明换模、路由到第二Provider或提高费用上限。
+ProviderTag来自OpenRouter官方图片端点目录；该端点当前按可交付图片计费，2K单张目录价为0.035美元。运行时只允许这一模型和端点，禁止透明换模、路由到第二Provider或提高费用上限。
 
 ## 3. 代码结构
 
@@ -72,8 +72,8 @@ IMAGE_GATEWAY_OPENROUTER_KEY_FILE=
 IMAGE_GATEWAY_TRAFFIC_ENABLED=true
 IMAGE_GATEWAY_OPENROUTER_ENABLED=true
 IMAGE_GATEWAY_OPENROUTER_KEY_FILE=/home/pc/molin/secrets/img-g9/openrouter-key
-IMAGE_GATEWAY_OPENROUTER_MODEL=google/gemini-3-pro-image
-IMAGE_GATEWAY_OPENROUTER_PROVIDER_TAG=google-vertex/global
+IMAGE_GATEWAY_OPENROUTER_MODEL=bytedance-seed/seedream-5-0-lite
+IMAGE_GATEWAY_OPENROUTER_PROVIDER_TAG=seed
 IMAGE_GATEWAY_OPENROUTER_MAX_COST_USD=0.25
 ```
 
@@ -106,11 +106,13 @@ Quote → Hold → Generate → Decode → Moderate → Store → Settle → Ava
 
 本地必须通过配置矩阵、Adapter协议/费用回执、Gateway传播、全量Go测试和go vet。测试服务器先备份数据库、二进制、环境、RabbitMQ、MinIO和监控，再完成关闭态50330验收。
 
-最终调用门禁要求Key限额、Usage=0、撤销方式、钱包基线、图片事实、队列深度和对账差异全部通过。唯一真实调用后立即关闭traffic和OpenRouter，恢复原二进制与环境，删除临时Project SK和Key文件，并确认用户已在OpenRouter控制台撤销Key。
+最终调用门禁要求Key限额、调用前Usage基线、撤销方式、钱包基线、图片事实、队列深度和对账差异全部通过。验收只计算本轮Usage增量，不能把此前已确认的诊断费用当成本轮费用。唯一真实调用后立即关闭traffic和OpenRouter，恢复原二进制与环境，删除临时Project SK和Key文件，并确认用户已在OpenRouter控制台撤销Key。
 
 回滚保留请求、Quote、Usage、成本、钱包、资产、Outbox、补偿和审计事实；禁止migration down、force、Provider重试、生产部署和客户流量。
 
 ## 8. 首次真实调用复盘与复验门禁
+
+本节至第10节记录Gemini/Vertex历史候选和诊断事实，不再代表当前Seedream/seed冻结合同；保留原文用于追踪为何更换供应商。
 
 首次真实调用只执行了一次，网关返回502，OpenRouter Key费用增量为0，可交付图片为0，钱包0.50元Hold已完整释放且对账差异为0。OpenRouter官方合同说明，图片生成失败可以返回502且不计费，因此控制台`Usage=0`或`Last Used=Never`不能单独证明请求没有到达OpenRouter。
 
@@ -175,3 +177,21 @@ Quote 0.50
 | `403:unknown` | 无法安全归类，失败关闭 |
 
 分类器不得保存或输出完整错误消息、Prompt、Key、Base64、原始响应、Pipeline原文或Provider响应原文。现有`provider_http_status`与`provider_error_code`字段足以承载证据，本次不新增表、migration、重试、fallback或交付路径。
+
+## 11. 第三次测试服务器结果与供应商切换
+
+第三次测试服务器真实调用使用`5f5bc0f14044756a3a2119420c3b0c6c2e90cf75`候选。调用前完成安全预检、数据库/RabbitMQ/MinIO/二进制/环境备份、关闭态安装、专用Project SK、0.50元Quote、钱包和队列门禁。首次网关HTTP因JWT Quote与Project SK归属不一致返回`40420 quote_not_found`，该请求在Provider之前结束，未创建请求、任务或Hold，Provider尝试和费用均为0；随后改用同一Project SK创建正确Quote，才消费唯一Provider授权。
+
+唯一Provider调用仍由OpenRouter返回HTTP 403，低敏分类为`403:unknown`。任务持久化`attempt_count=1`、`provider_code=openrouter-images`和`provider_http_status=403`；Provider费用增量为0，重试和fallback均为0。钱包0.50元Hold完整释放，sale/cost/usage均为0，资产0，Outbox held/released均published，补偿0，对账差异`0.00000000`。验收后恢复原二进制和原环境，图片RabbitMQ队列/exchange、临时MinIO服务账号和服务器Secret目录均已清理，Chat、Bifrost、用户端和管理端基线通过。
+
+同一Key、Gemini模型、Vertex Provider和固定规格在可信本机直连返回HTTP 200，而测试服务器目录GET和Key认证GET正常、真实Images POST返回403，说明Gemini/Vertex失败集中在测试服务器出口或上游控制路径，不能再用付费重试猜测。IMG-G9因此继续不通过。
+
+供应商切换合同如下：
+
+- 当前模型固定`bytedance-seed/seedream-5-0-lite`。
+- 当前ProviderTag固定`seed`。
+- 规格继续固定`n=1 / 2K / 1:1 / standard / url`。
+- OpenRouter官方目录当前显示2K、1:1和n=1均受支持，按张费用0.035美元。
+- 同一测试服务器已有Seedream 5.0 Lite真实POC成功证据，但该POC不等于Molin钱包、资产和对账闭环。
+- 单次Provider费用上限仍为0.25美元，Adapter和Worker继续零重试、零fallback。
+- 本地切换提交不授权真实Provider、测试服务器、部署或远程Git；再次测试必须使用新的SOURCE_COMMIT和单次书面授权。
