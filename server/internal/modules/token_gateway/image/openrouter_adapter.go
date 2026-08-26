@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/shopspring/decimal"
 )
 
 const (
@@ -22,6 +24,7 @@ const (
 type OpenRouterImageAdapterConfig struct {
 	APIKey      string
 	ProviderTag string
+	MaxCostUSD  string
 	Timeout     time.Duration
 	ModelMap    map[string]string
 }
@@ -32,6 +35,7 @@ type OpenRouterImageAdapter struct {
 	endpoint    string
 	client      *http.Client
 	modelMap    map[string]string
+	maxCostUSD  decimal.Decimal
 }
 
 // NewOpenRouterImageAdapter 只允许固定OpenRouter Images HTTPS入口；构造不会发送网络请求。
@@ -48,7 +52,9 @@ func NewOpenRouterImageAdapter(config OpenRouterImageAdapterConfig) (*OpenRouter
 func newOpenRouterImageAdapter(config OpenRouterImageAdapterConfig, endpoint string, client *http.Client, allowTestEndpoint bool) (*OpenRouterImageAdapter, error) {
 	key := strings.TrimSpace(config.APIKey)
 	providerTag := strings.TrimSpace(config.ProviderTag)
-	if key != config.APIKey || len(key) < 16 || providerTag == "" || config.Timeout <= 0 || config.Timeout > 3*time.Minute || client == nil || len(config.ModelMap) == 0 {
+	maxCostText := strings.TrimSpace(config.MaxCostUSD)
+	maxCostUSD, costErr := decimal.NewFromString(maxCostText)
+	if key != config.APIKey || len(key) < 16 || providerTag == "" || maxCostText != config.MaxCostUSD || costErr != nil || !maxCostUSD.IsPositive() || config.Timeout <= 0 || config.Timeout > 3*time.Minute || client == nil || len(config.ModelMap) == 0 {
 		return nil, ErrImageResultInvalid
 	}
 	for _, value := range key {
@@ -77,7 +83,7 @@ func newOpenRouterImageAdapter(config OpenRouterImageAdapterConfig, endpoint str
 		}
 		modelMap[normalizedLogical] = normalizedUpstream
 	}
-	return &OpenRouterImageAdapter{apiKey: key, providerTag: providerTag, endpoint: endpoint, client: client, modelMap: modelMap}, nil
+	return &OpenRouterImageAdapter{apiKey: key, providerTag: providerTag, endpoint: endpoint, client: client, modelMap: modelMap, maxCostUSD: maxCostUSD}, nil
 }
 
 func (a *OpenRouterImageAdapter) Name() string { return "openrouter-images" }
@@ -138,8 +144,13 @@ func (a *OpenRouterImageAdapter) Generate(ctx context.Context, request ProviderI
 			B64JSON   string `json:"b64_json"`
 			MediaType string `json:"media_type"`
 		} `json:"data"`
+		Usage struct {
+			Cost json.Number `json:"cost"`
+		} `json:"usage"`
 	}
-	if err := json.Unmarshal(responseRaw, &payload); err != nil || len(payload.Data) == 0 || uint64(len(payload.Data)) > request.Count {
+	decoder := json.NewDecoder(bytes.NewReader(responseRaw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&payload); err != nil || len(payload.Data) == 0 || uint64(len(payload.Data)) > request.Count {
 		return ProviderImageResult{ResultUnknown: true}, ErrProviderUnknown
 	}
 	providerRequestID := payload.ID
@@ -152,6 +163,17 @@ func (a *OpenRouterImageAdapter) Generate(ctx context.Context, request ProviderI
 			return ProviderImageResult{ProviderRequestID: result.ProviderRequestID, ResultUnknown: true}, ErrProviderUnknown
 		}
 		result.Images = append(result.Images, ProviderImage{Index: uint64(index), Base64: item.B64JSON, MediaType: item.MediaType})
+	}
+	// OpenRouter官方Images响应必须携带usage.cost；缺失、非正数或越过本次授权上限都进入结果未知，禁止交付或重试。
+	providerCost, costErr := decimal.NewFromString(payload.Usage.Cost.String())
+	if costErr != nil || !providerCost.IsPositive() {
+		result.ResultUnknown = true
+		return result, ErrProviderUnknown
+	}
+	result.ProviderCostUSD = providerCost.String()
+	if providerCost.GreaterThan(a.maxCostUSD) {
+		result.ResultUnknown = true
+		return result, ErrProviderUnknown
 	}
 	return result, nil
 }

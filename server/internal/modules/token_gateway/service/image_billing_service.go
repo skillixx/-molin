@@ -43,6 +43,7 @@ const (
 // imageRecoveryFacts 只保存补偿所需的低敏确定事实，禁止写入Prompt、Provider原始响应或对象正文。
 type imageRecoveryFacts struct {
 	ProviderResultCount uint64 `json:"provider_result_count"`
+	ProviderCostUSD     string `json:"provider_cost_usd,omitempty"`
 	DeliverableCount    uint64 `json:"deliverable_count"`
 	RecoveryAction      string `json:"recovery_action"`
 	FinalErrorClass     string `json:"final_error_class,omitempty"`
@@ -596,7 +597,7 @@ func (s *ImageBillingService) persistGatewayAssets(ctx context.Context, requestI
 			}
 		}
 		resultSummary, _ := json.Marshal(map[string]interface{}{
-			"provider_result_count": result.ProviderResultCount, "deliverable_count": result.DeliverableCount,
+			"provider_result_count": result.ProviderResultCount, "provider_cost_usd": result.ProviderCostUSD, "deliverable_count": result.DeliverableCount,
 		})
 		return tx.Model(&model.AIImageTask{}).Where("id = ?", task.ID).
 			Updates(map[string]interface{}{"status": model.AIImageTaskModerating, "progress": 80, "result_json": resultSummary, "version_no": gorm.Expr("version_no + 1")}).Error
@@ -873,6 +874,7 @@ func (s *ImageBillingService) markPendingReconcile(ctx context.Context, requestI
 	}
 	recoveryJSON, err := json.Marshal(imageRecoveryFacts{
 		ProviderResultCount: result.ProviderResultCount,
+		ProviderCostUSD:     result.ProviderCostUSD,
 		DeliverableCount:    result.DeliverableCount,
 		RecoveryAction:      recoveryAction,
 		FinalErrorClass:     result.ErrorClass,

@@ -3,6 +3,7 @@ package image
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -61,6 +62,20 @@ func TestImageGatewayFakeSuccessAndPartial(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestImageGatewayPreservesProviderCostReceipt(t *testing.T) {
+	gateway := mustGateway(t, receiptImageAdapter{}, NewFakeModerationAdapter(FakeModerationAllow), NewFakeObjectStore())
+	result, err := gateway.Generate(context.Background(), testGenerateCommand(1))
+	if err != nil || result.ProviderResultCount != 1 || result.ProviderCostUSD != "0.1365" || result.DeliverableCount != 1 {
+		t.Fatalf("真实Provider费用回执必须随深模块结果保留: result=%+v err=%v", result, err)
+	}
+
+	unknownGateway := mustGateway(t, unknownReceiptImageAdapter{}, NewFakeModerationAdapter(FakeModerationAllow), NewFakeObjectStore())
+	result, err = unknownGateway.Generate(context.Background(), testGenerateCommand(1))
+	if !errors.Is(err, ErrProviderUnknown) || result.ProviderResultCount != 1 || result.ProviderCostUSD != "0.25000001" || result.Outcome != GatewayUnknown {
+		t.Fatalf("费用越权的结果未知路径也必须保留产物数量和回执: result=%+v err=%v", result, err)
 	}
 }
 
@@ -474,6 +489,29 @@ func (fixedURLImageAdapter) Name() string { return "fixed-url" }
 
 func (fixedURLImageAdapter) Generate(context.Context, ProviderImageRequest) (ProviderImageResult, error) {
 	return ProviderImageResult{Images: []ProviderImage{{Index: 0, URL: "https://cdn.example.com/result.png", MediaType: "image/png"}}}, nil
+}
+
+type receiptImageAdapter struct{}
+
+func (receiptImageAdapter) Name() string { return "receipt" }
+
+func (receiptImageAdapter) Generate(context.Context, ProviderImageRequest) (ProviderImageResult, error) {
+	raw, _ := fakePNG(0)
+	return ProviderImageResult{
+		Images:            []ProviderImage{{Index: 0, Base64: base64.StdEncoding.EncodeToString(raw), MediaType: "image/png"}},
+		ProviderRequestID: "receipt-success", ProviderCostUSD: "0.1365",
+	}, nil
+}
+
+type unknownReceiptImageAdapter struct{}
+
+func (unknownReceiptImageAdapter) Name() string { return "receipt-unknown" }
+
+func (unknownReceiptImageAdapter) Generate(context.Context, ProviderImageRequest) (ProviderImageResult, error) {
+	return ProviderImageResult{
+		Images: []ProviderImage{{Index: 0, Base64: "not-delivered"}}, ProviderRequestID: "receipt-unknown",
+		ProviderCostUSD: "0.25000001", ResultUnknown: true,
+	}, ErrProviderUnknown
 }
 
 type gatewayStaticResolver struct {

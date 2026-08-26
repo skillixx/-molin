@@ -58,6 +58,7 @@ type GatewayResult struct {
 	Outcome             GatewayOutcome
 	RequestedCount      uint64
 	ProviderResultCount uint64
+	ProviderCostUSD     string
 	DeliverableCount    uint64
 	RejectedCount       uint64
 	FailedCount         uint64
@@ -109,6 +110,8 @@ func (g *ImageGateway) Generate(ctx context.Context, command GenerateImageComman
 		return classifyProviderFailure(result, providerResult, err)
 	}
 	if providerResult.ResultUnknown {
+		result.ProviderResultCount = uint64(len(providerResult.Images))
+		result.ProviderCostUSD = providerResult.ProviderCostUSD
 		result.Outcome, result.ErrorClass = GatewayUnknown, "result_unknown"
 		return result, ErrProviderUnknown
 	}
@@ -117,6 +120,7 @@ func (g *ImageGateway) Generate(ctx context.Context, command GenerateImageComman
 		return result, ErrImageResultInvalid
 	}
 	result.ProviderResultCount = uint64(len(providerResult.Images))
+	result.ProviderCostUSD = providerResult.ProviderCostUSD
 
 	seen := make(map[uint64]struct{}, len(providerResult.Images))
 	lastErrorClass := ""
@@ -301,6 +305,8 @@ func providerImageSource(providerImage ProviderImage) string {
 }
 
 func classifyProviderFailure(result GatewayResult, providerResult ProviderImageResult, err error) (GatewayResult, error) {
+	result.ProviderResultCount = uint64(len(providerResult.Images))
+	result.ProviderCostUSD = providerResult.ProviderCostUSD
 	switch {
 	case errors.Is(err, ErrProviderTimeout):
 		result.Outcome, result.ErrorClass = GatewayTimeout, "provider_timeout"

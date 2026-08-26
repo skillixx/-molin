@@ -33,6 +33,7 @@ type ProviderImage struct {
 type ProviderImageResult struct {
 	Images            []ProviderImage
 	ProviderRequestID string `json:"-"`
+	ProviderCostUSD   string
 	ResultUnknown     bool
 }
 

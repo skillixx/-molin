@@ -1199,3 +1199,18 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - 响应式固定验证 `1440×900`、`768×1024`、`390×844`、`375×667`，要求无横向溢出、无重叠、按钮有反馈。
 - 同次验收回归Chat、Project/SK、账单与申诉，最终 `request_usage/request_hold/request_wallet=0` 且Outbox backlog=0。
 - 真实Provider、正式价格、生产部署和商业开放不属于本阶段证据。
+
+## 图片网关 IMG-G9 真实Provider与人民币测试计费验收
+
+- 唯一源码必须从批准基线创建本地候选提交；真实调用前记录提交、二进制SHA和工作树状态。
+- 固定模型为 `google/gemini-3-pro-image`，固定 `provider_tag=google-vertex/global`，规格为 `n=1 / 2K / 1:1 / standard / url`。
+- OpenRouter专用Key必须是0600普通文件、非符号链接、费用限制不高于0.25美元且初始Usage为0；不得复用Bifrost或业务Key。
+- 关闭态必须允许 `provider=openrouter` 但不读取Key，图片入口返回50330且生成消费者为0。
+- 真实态只允许一次Provider调用；请求必须包含单一Provider `only`、`allow_fallbacks=false`、`stream=false`，Adapter和Worker均不得重试。
+- 成功响应必须包含合法图片和 `usage.cost`；费用缺失、非正或超过0.25美元一律结果未知并禁止交付。
+- Provider美元费用必须以规范Decimal字符串进入任务低敏结果摘要，禁止保存Provider原文、Prompt或Base64。
+- 测试钱包最多预占/结算0.60元，正常test_fixture销售价为0.50元；每次余额变化都有唯一流水。
+- 主图必须经过完整解码、格式与尺寸校验、元数据清理、双标识审核和MinIO私有存储，结算提交前不得available。
+- 请求、Quote、Usage、sale_line、cost_line、钱包、资产和Outbox对账差异必须为0；同时单独核对OpenRouter Key Usage增量与任务中的Provider费用回执一致。
+- 无论成功失败均关闭traffic/OpenRouter、停止消费者、恢复原API与环境、删除临时Project SK和Key文件，并由用户从OpenRouter控制台撤销短效Key。
+- 最终必须复验Chat、Bifrost、用户端、管理端和共享监控；不得进入生产或IMG-G10。
