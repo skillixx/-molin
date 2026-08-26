@@ -31,10 +31,14 @@ type ProviderImage struct {
 }
 
 type ProviderImageResult struct {
-	Images            []ProviderImage
-	ProviderRequestID string `json:"-"`
-	ProviderCostUSD   string
-	ResultUnknown     bool
+	Images             []ProviderImage
+	ProviderCode       string
+	ProviderRequestID  string `json:"-"`
+	ProviderCostUSD    string
+	ProviderHTTPStatus int
+	ProviderErrorCode  string
+	ProviderAttempted  bool
+	ResultUnknown      bool
 }
 
 // ImageProviderAdapter 只处理Provider协议，不负责用户鉴权、价格、钱包、资产归属或最终内容安全。

@@ -90,12 +90,13 @@ func (a *OpenRouterImageAdapter) Name() string { return "openrouter-images" }
 
 // Generate 严格一次POST且零重试；Prompt和Base64只存在于请求/响应内存，不写日志或持久化。
 func (a *OpenRouterImageAdapter) Generate(ctx context.Context, request ProviderImageRequest) (ProviderImageResult, error) {
+	result := ProviderImageResult{ProviderCode: a.Name()}
 	if a == nil || request.RequestID == "" || request.ModelCode == "" || request.Prompt == "" || request.Count == 0 {
-		return ProviderImageResult{}, ErrImageResultInvalid
+		return result, ErrImageResultInvalid
 	}
 	upstreamModel, ok := a.modelMap[request.ModelCode]
 	if !ok {
-		return ProviderImageResult{}, ErrImageResultInvalid
+		return result, ErrImageResultInvalid
 	}
 	body := map[string]interface{}{
 		"model": upstreamModel, "prompt": request.Prompt, "resolution": request.Resolution,
@@ -104,38 +105,44 @@ func (a *OpenRouterImageAdapter) Generate(ctx context.Context, request ProviderI
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {
-		return ProviderImageResult{}, ErrImageResultInvalid
+		return result, ErrImageResultInvalid
 	}
 	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, a.endpoint, bytes.NewReader(raw))
 	if err != nil {
-		return ProviderImageResult{}, ErrImageResultInvalid
+		return result, ErrImageResultInvalid
 	}
 	httpRequest.Header.Set("Accept", "application/json")
 	httpRequest.Header.Set("Content-Type", "application/json")
 	httpRequest.Header.Set("Authorization", "Bearer "+a.apiKey)
 	httpRequest.Header.Set("User-Agent", "Molin-Image-Gateway/1.0")
+	result.ProviderAttempted = true
 	response, err := a.client.Do(httpRequest)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return ProviderImageResult{}, ErrProviderTimeout
+			return result, ErrProviderTimeout
 		}
 		if errors.Is(err, context.Canceled) {
-			return ProviderImageResult{}, ErrProviderDisconnected
+			return result, ErrProviderDisconnected
 		}
 		// 请求是否已到达上游无法证明时必须进入结果未知，禁止自动重试。
-		return ProviderImageResult{ResultUnknown: true}, ErrProviderUnknown
+		result.ResultUnknown = true
+		return result, ErrProviderUnknown
 	}
 	defer response.Body.Close()
+	result.ProviderHTTPStatus = response.StatusCode
 	limited := io.LimitReader(response.Body, openRouterMaxResponse+1)
 	responseRaw, err := io.ReadAll(limited)
 	if err != nil {
-		return ProviderImageResult{ResultUnknown: true}, ErrProviderUnknown
+		result.ResultUnknown = true
+		return result, ErrProviderUnknown
 	}
 	if int64(len(responseRaw)) > openRouterMaxResponse {
-		return ProviderImageResult{ResultUnknown: true}, ErrProviderUnknown
+		result.ResultUnknown = true
+		return result, ErrProviderUnknown
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return ProviderImageResult{}, ErrProviderFailed
+		result.ProviderErrorCode = parseOpenRouterErrorCode(responseRaw)
+		return result, ErrProviderFailed
 	}
 	var payload struct {
 		ID        string `json:"id"`
@@ -151,16 +158,19 @@ func (a *OpenRouterImageAdapter) Generate(ctx context.Context, request ProviderI
 	decoder := json.NewDecoder(bytes.NewReader(responseRaw))
 	decoder.UseNumber()
 	if err := decoder.Decode(&payload); err != nil || len(payload.Data) == 0 || uint64(len(payload.Data)) > request.Count {
-		return ProviderImageResult{ResultUnknown: true}, ErrProviderUnknown
+		result.ResultUnknown = true
+		return result, ErrProviderUnknown
 	}
 	providerRequestID := payload.ID
 	if providerRequestID == "" {
 		providerRequestID = payload.RequestID
 	}
-	result := ProviderImageResult{ProviderRequestID: sanitizeProviderRequestID(providerRequestID), Images: make([]ProviderImage, 0, len(payload.Data))}
+	result.ProviderRequestID = sanitizeProviderRequestID(providerRequestID)
+	result.Images = make([]ProviderImage, 0, len(payload.Data))
 	for index, item := range payload.Data {
 		if item.B64JSON == "" || int64(len(item.B64JSON)) > openRouterMaxResponse {
-			return ProviderImageResult{ProviderRequestID: result.ProviderRequestID, ResultUnknown: true}, ErrProviderUnknown
+			result.ResultUnknown = true
+			return result, ErrProviderUnknown
 		}
 		result.Images = append(result.Images, ProviderImage{Index: uint64(index), Base64: item.B64JSON, MediaType: item.MediaType})
 	}
@@ -176,6 +186,40 @@ func (a *OpenRouterImageAdapter) Generate(ctx context.Context, request ProviderI
 		return result, ErrProviderUnknown
 	}
 	return result, nil
+}
+
+// parseOpenRouterErrorCode 只提取封闭字符集错误码；错误消息和原始响应一律不落库、不写日志。
+func parseOpenRouterErrorCode(raw []byte) string {
+	var payload struct {
+		Error struct {
+			Code json.RawMessage `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil || len(payload.Error.Code) == 0 {
+		return ""
+	}
+	var text string
+	if err := json.Unmarshal(payload.Error.Code, &text); err != nil {
+		var number json.Number
+		if numberErr := json.Unmarshal(payload.Error.Code, &number); numberErr != nil {
+			return ""
+		}
+		text = number.String()
+	}
+	return sanitizeProviderErrorCode(text)
+}
+
+func sanitizeProviderErrorCode(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 64 {
+		return ""
+	}
+	for _, char := range value {
+		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || strings.ContainsRune("._:-", char)) {
+			return ""
+		}
+	}
+	return value
 }
 
 func sanitizeProviderRequestID(value string) string {

@@ -1,6 +1,6 @@
 # IMG-G9：真实OpenRouter图片与人民币测试计费闭环
 
-> 当前状态：开发与门禁准备中
+> 当前状态：首次真实调用失败，已回滚；正在修复上游失败证据缺口，尚未授权第二次真实调用
 >
 > 基线：`3d094679bd5e74f620ee9fd025fdec85f0d5e338`
 >
@@ -44,9 +44,9 @@ ProviderTag来自OpenRouter官方图片端点目录。运行时只允许这一�
 
 - `server/internal/config/config.go`：IMG-G9测试环境、模型、ProviderTag、Key路径和费用上限失败关闭。
 - `server/internal/bootstrap/app.go`：关闭态禁用Adapter与真实OpenRouter Adapter装配。
-- `server/internal/modules/token_gateway/image/openrouter_adapter.go`：固定Images端点、单Provider、零重试、图片与费用回执解析。
-- `server/internal/modules/token_gateway/image/gateway.go`：把Provider产物数量和美元费用回执传入深模块结果。
-- `server/internal/modules/token_gateway/service/image_billing_service.go`：将低敏Provider费用摘要写入任务结果，继续使用test_fixture完成CNY计费。
+- `server/internal/modules/token_gateway/image/openrouter_adapter.go`：固定Images端点、单Provider、零重试，并提取HTTP状态和封闭字符集错误码；禁止保存上游错误消息和原始响应。
+- `server/internal/modules/token_gateway/image/gateway.go`：把Provider尝试标记、请求标识、HTTP状态、错误码、产物数量和美元费用回执传入深模块结果。
+- `server/internal/modules/token_gateway/service/image_billing_service.go`：将低敏Provider证据写入任务结果，并把实际尝试同步为`attempt_count=1`和`provider_code`；继续使用test_fixture完成CNY计费。
 
 本阶段不新增migration。数据库继续使用 `ai_requests`、`ai_gateway_quotes`、`ai_gateway_tasks`、`ai_gateway_assets`、`ai_usage_items`、`ai_request_wallet_links`、`wallet_holds`、`wallet_transactions`、`ai_outbox_events` 和 `ai_compensation_tasks`。
 
@@ -108,3 +108,22 @@ Quote → Hold → Generate → Decode → Moderate → Store → Settle → Ava
 最终调用门禁要求Key限额、Usage=0、撤销方式、钱包基线、图片事实、队列深度和对账差异全部通过。唯一真实调用后立即关闭traffic和OpenRouter，恢复原二进制与环境，删除临时Project SK和Key文件，并确认用户已在OpenRouter控制台撤销Key。
 
 回滚保留请求、Quote、Usage、成本、钱包、资产、Outbox、补偿和审计事实；禁止migration down、force、Provider重试、生产部署和客户流量。
+
+## 8. 首次真实调用复盘与复验门禁
+
+首次真实调用只执行了一次，网关返回502，OpenRouter Key费用增量为0，可交付图片为0，钱包0.50元Hold已完整释放且对账差异为0。OpenRouter官方合同说明，图片生成失败可以返回502且不计费，因此控制台`Usage=0`或`Last Used=Never`不能单独证明请求没有到达OpenRouter。
+
+首次候选把所有上游非2xx都压缩成`provider_failed`，任务仍显示`attempt_count=0`和空`provider_code`，无法区分Workspace Guardrail拒绝、模型或Provider限制、账户费用不足、参数拒绝和上游生成失败。修复后必须在不保存Prompt、Key、错误消息或原始响应的前提下持久化：
+
+- `provider_attempted`。
+- `provider_code`。
+- `provider_http_status`。
+- 仅允许字母、数字、点、下划线、冒号和短横线的`provider_error_code`。
+- 成功时经过字符集校验的`provider_request_id`和`provider_cost_usd`。
+
+第二次真实调用不是原一次请求Goal的自动重试。只有完成以下检查并取得新的单次书面授权后才允许执行：
+
+1. OpenRouter账户可用余额足以覆盖本轮上限，而不只是Key本身设置了0.25美元限额。
+2. Workspace Guardrail的有效模型和Provider集合包含`google/gemini-3-pro-image`与本轮唯一`provider_tag`，且Prompt安全规则不会误拦截测试输入。
+3. 新候选的全量Go测试、`go vet`、关闭态安装、备份、回滚和日志脱敏门禁通过。
+4. 新授权明确追加一次请求、累计Provider费用仍不高于0.25美元、零重试、零fallback，并声明是否继续固定Google Vertex。

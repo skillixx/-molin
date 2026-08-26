@@ -154,7 +154,7 @@ func TestImageBillingServiceMySQLClosedLoop(t *testing.T) {
 		mustReserveImageG5(t, fixture)
 		execution, err := fixture.service.Execute(context.Background(), fixture.requestID, fixture.command)
 		if !errors.Is(err, imagegateway.ErrImageResultInvalid) || execution.BillingStatus != model.AIBillingReleased || execution.GatewayResult.RejectedCount != 1 {
-			diagnosticErr := fixture.service.finalizeRelease(context.Background(), fixture.requestID, 1, "output_rejected")
+			diagnosticErr := fixture.service.finalizeRelease(context.Background(), fixture.requestID, imagegateway.GatewayResult{ProviderResultCount: 1, ErrorClass: "output_rejected"})
 			t.Fatalf("输出拒绝处理错误: %+v err=%v diagnostic=%v", execution, err, diagnosticErr)
 		}
 		assertWalletAmounts(t, db, fixture.owner.UserID, "10.00000000", "0.00000000")

@@ -68,7 +68,8 @@ func TestImageGatewayFakeSuccessAndPartial(t *testing.T) {
 func TestImageGatewayPreservesProviderCostReceipt(t *testing.T) {
 	gateway := mustGateway(t, receiptImageAdapter{}, NewFakeModerationAdapter(FakeModerationAllow), NewFakeObjectStore())
 	result, err := gateway.Generate(context.Background(), testGenerateCommand(1))
-	if err != nil || result.ProviderResultCount != 1 || result.ProviderCostUSD != "0.1365" || result.DeliverableCount != 1 {
+	if err != nil || result.ProviderResultCount != 1 || result.ProviderCostUSD != "0.1365" || result.DeliverableCount != 1 ||
+		result.ProviderCode != "receipt" || result.ProviderRequestID != "receipt-success" || !result.ProviderAttempted || result.ProviderHTTPStatus != http.StatusOK {
 		t.Fatalf("真实Provider费用回执必须随深模块结果保留: result=%+v err=%v", result, err)
 	}
 
@@ -498,8 +499,9 @@ func (receiptImageAdapter) Name() string { return "receipt" }
 func (receiptImageAdapter) Generate(context.Context, ProviderImageRequest) (ProviderImageResult, error) {
 	raw, _ := fakePNG(0)
 	return ProviderImageResult{
-		Images:            []ProviderImage{{Index: 0, Base64: base64.StdEncoding.EncodeToString(raw), MediaType: "image/png"}},
-		ProviderRequestID: "receipt-success", ProviderCostUSD: "0.1365",
+		Images:       []ProviderImage{{Index: 0, Base64: base64.StdEncoding.EncodeToString(raw), MediaType: "image/png"}},
+		ProviderCode: "receipt", ProviderRequestID: "receipt-success", ProviderCostUSD: "0.1365",
+		ProviderHTTPStatus: http.StatusOK, ProviderAttempted: true,
 	}, nil
 }
 
@@ -510,7 +512,7 @@ func (unknownReceiptImageAdapter) Name() string { return "receipt-unknown" }
 func (unknownReceiptImageAdapter) Generate(context.Context, ProviderImageRequest) (ProviderImageResult, error) {
 	return ProviderImageResult{
 		Images: []ProviderImage{{Index: 0, Base64: "not-delivered"}}, ProviderRequestID: "receipt-unknown",
-		ProviderCostUSD: "0.25000001", ResultUnknown: true,
+		ProviderCode: "receipt-unknown", ProviderCostUSD: "0.25000001", ProviderAttempted: true, ResultUnknown: true,
 	}, ErrProviderUnknown
 }
 

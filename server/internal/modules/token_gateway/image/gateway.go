@@ -58,7 +58,12 @@ type GatewayResult struct {
 	Outcome             GatewayOutcome
 	RequestedCount      uint64
 	ProviderResultCount uint64
+	ProviderCode        string
+	ProviderRequestID   string
 	ProviderCostUSD     string
+	ProviderHTTPStatus  int
+	ProviderErrorCode   string
+	ProviderAttempted   bool
 	DeliverableCount    uint64
 	RejectedCount       uint64
 	FailedCount         uint64
@@ -106,6 +111,7 @@ func (g *ImageGateway) Generate(ctx context.Context, command GenerateImageComman
 		RequestID: command.RequestID, ModelCode: command.ModelCode, Prompt: command.Prompt, Count: command.Count,
 		Resolution: command.Resolution, AspectRatio: command.AspectRatio, Quality: command.Quality, OutputFormat: command.OutputFormat,
 	})
+	copyProviderEvidence(&result, providerResult)
 	if err != nil {
 		return classifyProviderFailure(result, providerResult, err)
 	}
@@ -305,8 +311,7 @@ func providerImageSource(providerImage ProviderImage) string {
 }
 
 func classifyProviderFailure(result GatewayResult, providerResult ProviderImageResult, err error) (GatewayResult, error) {
-	result.ProviderResultCount = uint64(len(providerResult.Images))
-	result.ProviderCostUSD = providerResult.ProviderCostUSD
+	copyProviderEvidence(&result, providerResult)
 	switch {
 	case errors.Is(err, ErrProviderTimeout):
 		result.Outcome, result.ErrorClass = GatewayTimeout, "provider_timeout"
@@ -318,6 +323,20 @@ func classifyProviderFailure(result GatewayResult, providerResult ProviderImageR
 		result.Outcome, result.ErrorClass = GatewayFailed, "provider_failed"
 	}
 	return result, err
+}
+
+// copyProviderEvidence 只复制低敏Provider回执摘要，禁止携带Prompt、Key、原始响应或图片正文。
+func copyProviderEvidence(result *GatewayResult, providerResult ProviderImageResult) {
+	if result == nil {
+		return
+	}
+	result.ProviderResultCount = uint64(len(providerResult.Images))
+	result.ProviderCode = providerResult.ProviderCode
+	result.ProviderRequestID = providerResult.ProviderRequestID
+	result.ProviderCostUSD = providerResult.ProviderCostUSD
+	result.ProviderHTTPStatus = providerResult.ProviderHTTPStatus
+	result.ProviderErrorCode = providerResult.ProviderErrorCode
+	result.ProviderAttempted = providerResult.ProviderAttempted
 }
 
 func requestNamespace(requestID string) string {

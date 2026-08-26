@@ -48,8 +48,32 @@ func TestOpenRouterImageAdapterStrictRequestAndResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := adapter.Generate(context.Background(), ProviderImageRequest{RequestID: "req-1", ModelCode: "google/gemini-3-pro-image", Prompt: "内存测试", Count: 1, Resolution: "2K", AspectRatio: "1:1", Quality: "standard"})
-	if err != nil || calls.Load() != 1 || len(result.Images) != 1 || result.ProviderRequestID != "or-test-1" || result.ProviderCostUSD != "0.1365" {
+	if err != nil || calls.Load() != 1 || len(result.Images) != 1 || result.ProviderRequestID != "or-test-1" || result.ProviderCostUSD != "0.1365" ||
+		!result.ProviderAttempted || result.ProviderHTTPStatus != http.StatusOK || result.ProviderCode != "openrouter-images" {
 		t.Fatalf("Adapter响应错误: result=%+v calls=%d err=%v", result, calls.Load(), err)
+	}
+}
+
+func TestOpenRouterImageAdapterPreservesSafeFailureEvidence(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":{"code":"guardrail_blocked","message":"不得持久化的上游明文"}}`))
+	}))
+	defer server.Close()
+	adapter, err := newOpenRouterImageAdapter(OpenRouterImageAdapterConfig{
+		APIKey: "fake-openrouter-key-123456", ProviderTag: "google-vertex/global", MaxCostUSD: "0.25", Timeout: time.Second,
+		ModelMap: map[string]string{"google/gemini-3-pro-image": "google/gemini-3-pro-image"},
+	}, server.URL, server.Client(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := adapter.Generate(context.Background(), ProviderImageRequest{RequestID: "req-safe-error", ModelCode: "google/gemini-3-pro-image", Prompt: "测试", Count: 1})
+	if !errors.Is(err, ErrProviderFailed) || !result.ProviderAttempted || result.ProviderHTTPStatus != http.StatusForbidden || result.ProviderErrorCode != "guardrail_blocked" {
+		t.Fatalf("明确失败必须保留低敏状态和错误码: result=%+v err=%v", result, err)
+	}
+	encoded, _ := json.Marshal(result)
+	if strings.Contains(string(encoded), "不得持久化") {
+		t.Fatal("Provider错误消息不得进入低敏回执")
 	}
 }
 
