@@ -1213,6 +1213,9 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - Provider调用前必须先以行锁和version CAS提交唯一尝试事实；模拟提交后进程退出时，重放不得再次进入Provider，陈旧恢复必须保留`provider_code/attempt_count`并转为结果未知。
 - Provider已确认费用后发生本地解码、审核、存储或终态失败时，任务摘要仍必须保留`provider_cost_usd/provider_request_id`；隔离MySQL需覆盖成功、非2xx明确失败、HTTP成功但结果未知三类终态。
 - OpenRouter图片失败返回502且费用为0时，不得只依据Key Usage或Last Used判断请求未发出；必须结合新候选保存的HTTP状态、低敏错误码和OpenRouter控制台Activity/Guardrail证据定位根因。
+- Project SK正式签发必须允许已激活、已发布且对用户可见的图片模型进入显式allowlist；不存在、未发布、非chat/image或不可见模型仍失败关闭，`all/legacy_all`不得隐式获得图片能力。
+- SQL价格夹具必须覆盖应用`loc=Local`与MySQL会话时区差异；真实调用前必须以Quote 0.50元成功、未消费、未Hold和Provider Usage=0作为最终价格门禁。
+- OpenRouter返回HTTP 403时必须记录`provider_code/attempt_count/http_status/error_code`，用户销售额、Provider成本和结算额均为0，Hold完整释放且Outbox按顺序发布；原始Provider错误消息仍不得落库或写日志。
 - 测试钱包最多预占/结算0.60元，正常test_fixture销售价为0.50元；每次余额变化都有唯一流水。
 - 主图必须经过完整解码、格式与尺寸校验、元数据清理、双标识审核和MinIO私有存储，结算提交前不得available。
 - 请求、Quote、Usage、sale_line、cost_line、钱包、资产和Outbox对账差异必须为0；同时单独核对OpenRouter Key Usage增量与任务中的Provider费用回执一致。

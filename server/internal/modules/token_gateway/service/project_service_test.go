@@ -169,7 +169,7 @@ func (s *memoryProjectStore) RotateProjectKey(_ context.Context, oldKey *authmod
 	s.keys[oldKey.ID] = current
 	return nil
 }
-func (s *memoryProjectStore) ActiveChatModelsExist(_ context.Context, _ []string) (bool, error) {
+func (s *memoryProjectStore) ActiveScopedModelsExist(_ context.Context, _ []string) (bool, error) {
 	return s.modelsOK, nil
 }
 func (s *memoryProjectStore) UserRealNameStatus(_ context.Context, _ uint64) (string, error) {
@@ -199,6 +199,26 @@ func TestProjectKeyDefaultsToDenyAllAllowlistAndStoresOnlyHash(t *testing.T) {
 	}
 	if stored.KeyHash == "" || stored.KeyHash != crypto.HMAC256(plaintext, "project-key-test-secret") || stored.KeyHash == plaintext {
 		t.Fatal("数据库必须只保存 HMAC，不能保存可恢复明文")
+	}
+}
+
+func TestProjectKeyAllowsExplicitPublishedImageModel(t *testing.T) {
+	store := newMemoryProjectStore()
+	service := NewProjectService(store, "image-project-key-secret").
+		WithVisibilityChecker(fakeVisibilityChecker{visible: true}).
+		WithAuditRecorder(&memoryProjectAudit{})
+	plaintext, view, err := service.IssueKey(context.Background(), IssueProjectKeyInput{
+		UserID: 5, ProjectID: 9, Name: "图片模型密钥", ScopeMode: ScopeModeAllowlist,
+		ModelCodes: []string{"google/gemini-3-pro-image"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plaintext == "" || view.ScopeMode != ScopeModeAllowlist || len(view.ModelCodes) != 1 || view.ModelCodes[0] != "google/gemini-3-pro-image" {
+		t.Fatalf("已发布且可见的图片模型必须能进入显式allowlist: %+v", view)
+	}
+	if scopes := store.scopes[view.ID]; len(scopes) != 1 || scopes[0] != "google/gemini-3-pro-image" {
+		t.Fatalf("图片scope必须形成唯一数据库事实: %+v", scopes)
 	}
 }
 
@@ -247,7 +267,7 @@ func TestProjectKeyRejectsInactiveProjectInvalidModelAndExpiredTime(t *testing.T
 	store.project.Status = ProjectStatusActive
 	store.modelsOK = false
 	if _, _, err := service.IssueKey(context.Background(), IssueProjectKeyInput{UserID: 5, ProjectID: 9, Name: "缺失模型密钥", ModelCodes: []string{"missing-model"}}); !errors.Is(err, ErrScopeModelInvalid) {
-		t.Fatalf("不存在或非文字模型不得进入 allowlist: %v", err)
+		t.Fatalf("不存在、未发布或不支持Project SK的模型不得进入 allowlist: %v", err)
 	}
 	store.modelsOK = true
 	service.WithVisibilityChecker(fakeVisibilityChecker{visible: false})

@@ -30,7 +30,7 @@ var (
 	ErrProjectInvalid           = errors.New("Project 参数错误")
 	ErrProjectInactive          = errors.New("Project 已停用")
 	ErrScopeModeInvalid         = errors.New("模型权限模式无效")
-	ErrScopeModelInvalid        = errors.New("授权模型不存在、未发布或不是文字模型")
+	ErrScopeModelInvalid        = errors.New("授权模型不存在、未发布或不支持Project SK")
 	ErrKeyExpiresAtInvalid      = errors.New("SK 过期时间必须晚于当前时间")
 	ErrKeyNameInvalid           = errors.New("SK 名称不能为空且不能超过 191 个字符")
 	ErrSecurityAuditUnavailable = errors.New("安全审计服务暂不可用")
@@ -59,7 +59,7 @@ type projectStore interface {
 	ListKeyScopes(ctx context.Context, keyID uint64) ([]string, error)
 	RevokeProjectKey(ctx context.Context, userID, projectID, keyID uint64, audit repository.ProjectKeyAudit) error
 	RotateProjectKey(ctx context.Context, oldKey *authmodel.APIKey, newKey *authmodel.APIKey, scopes []authmodel.APIKeyModelScope, audit repository.ProjectKeyAudit) error
-	ActiveChatModelsExist(ctx context.Context, codes []string) (bool, error)
+	ActiveScopedModelsExist(ctx context.Context, codes []string) (bool, error)
 	UserRealNameStatus(ctx context.Context, userID uint64) (string, error)
 }
 
@@ -317,7 +317,7 @@ func (s *ProjectService) validateScope(ctx context.Context, userID uint64, mode 
 		}
 		return mode, nil, nil
 	}
-	ok, err := s.repo.ActiveChatModelsExist(ctx, models)
+	ok, err := s.repo.ActiveScopedModelsExist(ctx, models)
 	if err != nil {
 		return "", nil, err
 	}

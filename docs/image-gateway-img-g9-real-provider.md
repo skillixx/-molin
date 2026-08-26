@@ -1,6 +1,6 @@
 # IMG-G9：真实OpenRouter图片与人民币测试计费闭环
 
-> 当前状态：首次真实调用失败，已回滚；正在修复上游失败证据缺口，尚未授权第二次真实调用
+> 当前状态：两次真实调用均未交付图片；第二次已定位OpenRouter HTTP 403并完成实际回滚，等待控制面修正与新的请求授权
 >
 > 基线：`3d094679bd5e74f620ee9fd025fdec85f0d5e338`
 >
@@ -130,3 +130,26 @@ Quote → Hold → Generate → Decode → Moderate → Store → Settle → Ava
 2. Workspace Guardrail的有效模型和Provider集合包含`google/gemini-3-pro-image`与本轮唯一`provider_tag`，且Prompt安全规则不会误拦截测试输入。
 3. 新候选的全量Go测试、`go vet`、关闭态安装、备份、回滚和日志脱敏门禁通过。
 4. 新授权明确追加一次请求、累计Provider费用仍不高于0.25美元、零重试、零fallback，并声明是否继续固定Google Vertex。
+
+## 9. 第二次真实调用结果
+
+第二次真实调用使用`fe6297cfa2ff373b56d6a1860e0c0045d2eab531`候选，在全部关闭态、备份、Key、Quote、钱包、MinIO、RabbitMQ、监控和安全门禁通过后执行。结果为OpenRouter HTTP 403，低敏错误码403；任务已在调用前持久化`provider_code=openrouter-images`和`attempt_count=1`，证明请求进入真实Adapter。Provider费用和Key Usage均为0，重试和fallback均为0。
+
+失败终态为：
+
+```text
+Quote 0.50
+→ Hold 0.50
+→ OpenRouter HTTP 403
+→ sale/cost/usage 0
+→ Release 0.50
+→ 资产 0
+→ Outbox held/released published
+→ 对账差异 0
+```
+
+本轮没有可交付图片，因此IMG-G9不得通过。OpenRouter原始错误消息按安全合同未落库、未写日志，当前证据只能证明控制面HTTP/code均为403；Workspace Guardrail的模型、Provider、ZDR、内容过滤或预算规则仍需由控制台确认。用户要求图片闭环成功后再撤销Key，因此服务器副本已删除，本机Key尚未撤销。
+
+本轮同时发现并修复正式Project SK签发缺陷：旧实现使用`ActiveChatModelsExist`，会把图片模型统一判为不可授权。修复后只允许已激活且已发布的`chat/image`模型进入显式allowlist；图片调用仍要求`api_key_model_scopes`存在精确模型记录，`all/legacy_all`不会自动获得图片能力。
+
+测试夹具时间窗不得直接假设MySQL `NOW()`与应用`loc=Local`一致。优先通过应用服务创建价格；必须使用SQL夹具时，`effective_at/expires_at/cost_expires_at`需要覆盖应用本地时区比较窗口，并在调用前实际执行Quote验证，不能只用数据库会话时间证明未过期。

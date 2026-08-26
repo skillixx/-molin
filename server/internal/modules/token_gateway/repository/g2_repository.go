@@ -185,13 +185,15 @@ func (r *G2Repository) RotateProjectKey(ctx context.Context, oldKey *authmodel.A
 	})
 }
 
-func (r *G2Repository) ActiveChatModelsExist(ctx context.Context, codes []string) (bool, error) {
+// ActiveScopedModelsExist 只允许已激活且已发布的Chat或图片模型进入Project SK显式allowlist。
+// 图片模型仍必须在调用时通过独立的api_key_model_scopes能力门禁，all/legacy_all不会自动获得图片权限。
+func (r *G2Repository) ActiveScopedModelsExist(ctx context.Context, codes []string) (bool, error) {
 	if len(codes) == 0 {
 		return true, nil
 	}
 	var count int64
 	err := r.db.WithContext(ctx).Model(&model.TokenModel{}).
-		Where("logical_model_code IN ? AND status = 'active' AND modality = 'chat' AND release_version_no > 0 AND published_at IS NOT NULL", codes).
+		Where("logical_model_code IN ? AND status = 'active' AND modality IN ('chat','image') AND release_version_no > 0 AND published_at IS NOT NULL", codes).
 		Distinct("logical_model_code").Count(&count).Error
 	return count == int64(len(codes)), err
 }
