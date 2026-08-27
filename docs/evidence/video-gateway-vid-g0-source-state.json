@@ -1,42 +1,17 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-08-27T15:50:07.327153+00:00",
-  "head_commit": "a44c9bc2c0b25b2e106a5d65f7276d73fa932f75",
+  "captured_at": "2026-08-27T15:58:13.417253+00:00",
+  "head_commit": "d321b15ebb2eb25ce60e4db26ed34d2febf5d93a",
   "base_commit": "a44c9bc2c0b25b2e106a5d65f7276d73fa932f75",
   "origin_main_commit": "a44c9bc2c0b25b2e106a5d65f7276d73fa932f75",
   "origin_main_remote_url": "github.com/<owner>/-molin.git",
   "origin_main_provenance": "FRESH_FETCH",
-  "tracked_patch_sha256": "89e64fa19eb3ebd9ea99a852f985f7a55d0477ca076948e27200d30eb9676c36",
-  "untracked_manifest_sha256": "a68278811c942e016f2368e726c24980d93a638f1a562eac929360a1501aad7c",
-  "source_state_id": "8657e526f51f28dbd923f2578e23273eacb539302ea64b024be7d6d313be0b31",
+  "tracked_patch_sha256": "EMPTY",
+  "untracked_manifest_sha256": "EMPTY",
+  "source_state_id": "ec4239eafbaa48ad0bf5f216296c679eaa6b337b282fd5b41f6ed8df0facb1ec",
   "excluded_generated_evidence": [
     "docs/evidence/video-gateway-vid-g0-bifrost-contract.json",
     "docs/evidence/video-gateway-vid-g0-source-state.json"
   ],
-  "untracked_manifest": [
-    {
-      "path": "docs/video-gateway-goal-stage-execution-prompt.md",
-      "sha256": "9623129169fc9f61d77cfd60236aa6fbb429f35752c888181f91f18829c8153d"
-    },
-    {
-      "path": "docs/video-gateway-openapi-snapshot-v1.yaml",
-      "sha256": "3c47ec591b6494724c0168763e68f2c7707b7a8808770b4879069fda97bb59c9"
-    },
-    {
-      "path": "docs/video-gateway-vid-g0-gate.md",
-      "sha256": "017360ec99e698e9c4037e77a0a71243170a595b56c1cde19b8298f6504a20ac"
-    },
-    {
-      "path": "infra/scripts/probe-bifrost-video-contract.py",
-      "sha256": "796fa1d9f21f63dad6c8717deff37add1d93d8921cd03c00141996e78b847e2a"
-    },
-    {
-      "path": "infra/scripts/test_probe_bifrost_video_contract.py",
-      "sha256": "c16e595284496bafd49941dd45483001b1ee3db3949426db40ee7eb6a7e8ed9b"
-    },
-    {
-      "path": "infra/scripts/video-g0-fake-upstream.py",
-      "sha256": "511618f1885a3c9e0a13d22ba97cbe8808b4ac64f5b80df1d54381aa59fa5ff4"
-    }
-  ]
+  "untracked_manifest": []
 }

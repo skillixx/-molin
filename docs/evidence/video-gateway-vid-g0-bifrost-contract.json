@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "gate": "VID-G0-B",
-  "captured_at": "2026-08-27T15:50:29.484929+00:00",
-  "tested_source_state": "8657e526f51f28dbd923f2578e23273eacb539302ea64b024be7d6d313be0b31",
+  "captured_at": "2026-08-27T15:58:33.068571+00:00",
+  "tested_source_state": "ec4239eafbaa48ad0bf5f216296c679eaa6b337b282fd5b41f6ed8df0facb1ec",
   "bifrost_image_tag": "maximhq/bifrost:v2.0.0",
   "bifrost_image_digest": "maximhq/bifrost@sha256:cf71be9fad4e0749b6e26cbb774c687413dad9a0970b83f4e1dadb6f503ea208",
   "bifrost_health_http": 200,
