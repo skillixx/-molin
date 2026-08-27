@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "gate": "VID-G0-B",
+  "captured_at": "2026-08-27T15:58:33.068571+00:00",
+  "tested_source_state": "ec4239eafbaa48ad0bf5f216296c679eaa6b337b282fd5b41f6ed8df0facb1ec",
+  "bifrost_image_tag": "maximhq/bifrost:v2.0.0",
+  "bifrost_image_digest": "maximhq/bifrost@sha256:cf71be9fad4e0749b6e26cbb774c687413dad9a0970b83f4e1dadb6f503ea208",
+  "bifrost_health_http": 200,
+  "list_http": 200,
+  "text_to_video": {
+    "create_http": 200,
+    "retrieve_http": 200,
+    "retrieve_status": "completed",
+    "content_http": 200,
+    "content_type": "video/mp4",
+    "content_signature": "mp4-ftyp",
+    "delete_http": 200,
+    "deleted": true,
+    "compound_id_used": true
+  },
+  "image_to_video": {
+    "create_http": 200,
+    "retrieve_http": 200,
+    "retrieve_status": "completed",
+    "content_http": 200,
+    "content_type": "video/mp4",
+    "content_signature": "mp4-ftyp",
+    "delete_http": 200,
+    "deleted": true,
+    "compound_id_used": true,
+    "input_reference_forwarded": true,
+    "input_reference_size_bytes": 68,
+    "input_reference_sha256": "d525b1285ba1b1f03b2e9e84ab3dfc060da08292508a2bf677792c4f20cc3b50",
+    "input_reference_size_match": true,
+    "input_reference_sha256_match": true
+  },
+  "failure_http": {
+    "upstream_500": 500,
+    "upstream_timeout": 504,
+    "ack_drop": 502
+  },
+  "fake_counts": {
+    "text_to_video": 1,
+    "image_to_video": 1,
+    "upstream_500": 1,
+    "timeout": 1,
+    "ack_drop": 4,
+    "retrieve": 2,
+    "content": 2,
+    "delete": 2,
+    "list": 1
+  },
+  "authorization_counts": {
+    "text_to_video": 1,
+    "image_to_video": 1,
+    "upstream_500": 1,
+    "timeout": 1,
+    "ack_drop": 4
+  },
+  "authorization_forwarded": true,
+  "real_provider_requests": 0,
+  "provider_cost": "CNY 0",
+  "contract_status": "blocked_ack_drop_hidden_retry",
+  "driver_decision": "native_async",
+  "bifrost_video_enabled": false,
+  "assertion_total": 43,
+  "assertion_passed": 42,
+  "contract_errors": [
+    "ack_drop_submit_count"
+  ]
+}
