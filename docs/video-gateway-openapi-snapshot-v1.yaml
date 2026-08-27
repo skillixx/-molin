@@ -1,0 +1,489 @@
+openapi: 3.1.0
+info:
+  title: Molin OpenAI Videos兼容快照v1
+  version: 2026-08-27.snapshot-v1
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+  description: >-
+    墨灵自行维护的视频生成兼容快照。该合同以2026-08-27可观察的OpenAI Videos合同为输入，
+    但强制增加Idempotency-Key、服务端Quote/Hold、归属隔离和财务事实保留。
+    本快照不表示OpenAI、Bifrost或任何真实视频Provider已经启用。
+servers:
+  - url: https://api.example.invalid
+    description: 文档占位地址，禁止直接用于环境配置
+security:
+  - projectSkAuth: []
+paths:
+  /v1/videos:
+    post:
+      operationId: createVideo
+      summary: 创建文生或图生视频任务
+      description: >-
+        以multipart/form-data创建异步视频任务。未携带input_reference时为text_to_video，
+        携带单张参考图时为image_to_video。MVP固定n=1，不接受外部URL、音频、参考视频、
+        首尾帧、remix或Provider原始参数。
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/VideoCreateForm'
+            encoding:
+              input_reference:
+                contentType: image/jpeg, image/png
+      responses:
+        '200':
+          description: 已创建或按幂等键返回原任务
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+            X-Molin-Request-ID:
+              $ref: '#/components/headers/MolinRequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoJob'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: 幂等键已绑定不同请求指纹
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: 参数、输入资产或安全校验失败
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: 预算、并发、排队或容量门禁拒绝
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+                minimum: 1
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: 视频流量关闭或必要依赖不可用
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      operationId: listVideos
+      summary: 列出当前调用主体可见的视频任务
+      parameters:
+        - name: after
+          in: query
+          schema:
+            type: string
+          description: 上一页最后一个公开video_id
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        '200':
+          description: 视频任务列表
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /v1/videos/{video_id}:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+    get:
+      operationId: retrieveVideo
+      summary: 查询视频任务
+      responses:
+        '200':
+          description: 视频任务
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoJob'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: deleteVideo
+      summary: 删除已终态视频的媒体正文
+      description: >-
+        删除只影响媒体正文和兼容接口可见性，不删除请求、Quote、钱包、Usage、成本、
+        Outbox和审计事实。在途任务需要通过平台增强取消接口处理。
+      responses:
+        '200':
+          description: 媒体正文已删除
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoDeleted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 视频任务仍在排队、执行或等待对账
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/videos/{video_id}/content:
+    parameters:
+      - $ref: '#/components/parameters/VideoId'
+    get:
+      operationId: downloadVideoContent
+      summary: 流式下载视频正文
+      parameters:
+        - name: Range
+          in: header
+          schema:
+            type: string
+            pattern: '^bytes=[0-9]*-[0-9]*$'
+        - name: If-Range
+          in: header
+          schema:
+            type: string
+          description: ETag匹配时返回206，不匹配时返回完整200
+      responses:
+        '200':
+          description: 完整MP4视频
+          headers:
+            Accept-Ranges:
+              schema:
+                type: string
+                const: bytes
+            Content-Length:
+              schema:
+                type: integer
+                minimum: 0
+            ETag:
+              schema:
+                type: string
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        '206':
+          description: MP4字节范围
+          headers:
+            Accept-Ranges:
+              schema:
+                type: string
+                const: bytes
+            Content-Range:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: integer
+                minimum: 1
+            ETag:
+              schema:
+                type: string
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '416':
+          description: Range无效或越界
+          headers:
+            Content-Range:
+              schema:
+                type: string
+                pattern: '^bytes \*/[0-9]+$'
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  securitySchemes:
+    projectSkAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Project-SK
+      description: /v1/videos只接受具备video:generate能力的Project SK
+  headers:
+    RequestId:
+      description: 当前HTTP请求的追踪ID
+      schema:
+        type: string
+        maxLength: 128
+    MolinRequestId:
+      description: 业务视频请求ID，与HTTP追踪ID相互独立
+      schema:
+        type: string
+        maxLength: 128
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+        pattern: '^[A-Za-z0-9._:-]+$'
+      description: 同一调用主体内唯一；相同键不同指纹返回409
+    VideoId:
+      name: video_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^video_[A-Za-z0-9_-]{8,64}$'
+      description: 墨灵公开ID，不是Provider任务ID或Bifrost复合ID
+  schemas:
+    VideoCreateForm:
+      type: object
+      required: [prompt]
+      additionalProperties: false
+      properties:
+        model:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: 墨灵已发布的公开视频模型代码；仅在系统存在唯一默认模型时允许省略
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        input_reference:
+          type: string
+          format: binary
+          description: 可选单张静态JPEG或PNG；最大10MiB
+        seconds:
+          type: string
+          enum: ['5']
+          default: '5'
+          description: VID-G0至G8关闭态工程夹具只允许5秒
+        size:
+          type: string
+          enum: [1280x720]
+          default: 1280x720
+          description: VID-G0至G8关闭态工程夹具只允许横版720p
+    VideoJob:
+      type: object
+      required:
+        - id
+        - completed_at
+        - created_at
+        - error
+        - expires_at
+        - model
+        - object
+        - progress
+        - prompt
+        - remixed_from_video_id
+        - seconds
+        - size
+        - status
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          pattern: '^video_[A-Za-z0-9_-]{8,64}$'
+        object:
+          type: string
+          const: video
+        model:
+          type: string
+          description: 墨灵公开模型代码
+        status:
+          type: string
+          enum: [queued, in_progress, completed, failed]
+        progress:
+          type: number
+          minimum: 0
+          maximum: 100
+        prompt:
+          type: [string, 'null']
+          maxLength: 1000
+        remixed_from_video_id:
+          type: [string, 'null']
+          description: MVP不支持remix，固定返回null
+        seconds:
+          type: string
+          enum: ['5']
+        size:
+          type: string
+          enum: [1280x720]
+        created_at:
+          type: integer
+          format: int64
+        completed_at:
+          type: [integer, 'null']
+          format: int64
+        expires_at:
+          type: [integer, 'null']
+          format: int64
+        error:
+          oneOf:
+            - $ref: '#/components/schemas/VideoError'
+            - type: 'null'
+    VideoError:
+      type: object
+      required: [code, message]
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          maxLength: 64
+        message:
+          type: string
+          maxLength: 512
+    VideoList:
+      type: object
+      required: [object, data, first_id, last_id, has_more]
+      additionalProperties: false
+      properties:
+        object:
+          type: string
+          const: list
+        data:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/VideoJob'
+        first_id:
+          type: [string, 'null']
+        last_id:
+          type: [string, 'null']
+        has_more:
+          type: boolean
+    VideoDeleted:
+      type: object
+      required: [id, object, deleted]
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          const: video.deleted
+        deleted:
+          type: boolean
+          const: true
+    ErrorResponse:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          type: object
+          required: [code, message, request_id]
+          additionalProperties: false
+          properties:
+            code:
+              type: string
+              maxLength: 64
+            message:
+              type: string
+              maxLength: 512
+            request_id:
+              type: string
+              maxLength: 128
+  responses:
+    BadRequest:
+      description: 请求格式错误或缺少Idempotency-Key
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: 凭据缺失或无效
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: 实名、Project、Key、模型、资产或权限门禁拒绝
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: 资源不存在、不可见或媒体正文已经删除
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
