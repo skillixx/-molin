@@ -1223,3 +1223,4 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - 请求、Quote、Usage、sale_line、cost_line、钱包、资产和Outbox对账差异必须为0；同时单独核对OpenRouter Key Usage增量与任务中的Provider费用回执一致。
 - 无论成功失败均关闭traffic/OpenRouter、停止消费者、恢复原API与环境、删除临时Project SK和Key文件，并由用户从OpenRouter控制台撤销短效Key。
 - 最终必须复验Chat、Bifrost、用户端、管理端和共享监控；不得进入生产或IMG-G10。
+- 2026-08-27验收结果：`d97baf1400840d5e707b5ed2c9bfc4237885353c`在测试服务器以Seedream/seed完成唯一真实调用，图片交付、0.50元结算、0.035美元费用增量、私有MinIO、三条Outbox、0差异对账、Key撤销和实际回滚全部PASS；生产与商业证据仍为NO。

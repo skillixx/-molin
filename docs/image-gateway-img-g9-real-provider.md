@@ -1,6 +1,6 @@
 # IMG-G9：真实OpenRouter图片与人民币测试计费闭环
 
-> 当前状态：三次测试服务器真实调用均未交付图片；第三次确认Gemini/Vertex仅在测试服务器路径返回HTTP 403并完成实际回滚，当前本地候选切换为Seedream/seed
+> 当前状态：`AUTO_PASS`；Seedream/seed真实图片、人民币测试计费、私有资产交付、零差异对账、Key撤销和实际回滚均已完成
 >
 > 切换基线：`5f5bc0f14044756a3a2119420c3b0c6c2e90cf75`
 >
@@ -195,3 +195,32 @@ Quote 0.50
 - 同一测试服务器已有Seedream 5.0 Lite真实POC成功证据，但该POC不等于Molin钱包、资产和对账闭环。
 - 单次Provider费用上限仍为0.25美元，Adapter和Worker继续零重试、零fallback。
 - 本地切换提交不授权真实Provider、测试服务器、部署或远程Git；再次测试必须使用新的SOURCE_COMMIT和单次书面授权。
+
+## 12. Seedream真实闭环验收结果
+
+2026-08-27以`d97baf1400840d5e707b5ed2c9bfc4237885353c`为唯一SOURCE_COMMIT，在已登记测试服务器完成一次Seedream真实图片网关闭环验收。调用固定`bytedance-seed/seedream-5-0-lite + seed + n=1 + 2K + 1:1`，Provider请求精确1次，重试和fallback均为0。
+
+Provider返回HTTP 200和一张图片，Molin完成完整解码、格式/签名/尺寸校验、统一PNG重编码、显式与隐式标识、审核和MinIO私有存储。主图为2048×2048 PNG、195,648字节，SHA-256为`07b41590154a2e5097f18e4524fae31af1bdc8b6720470172331ea21de2608b2`；同时生成512×512缩略图。资产所有者的短效签名下载返回HTTP 200，移除签名参数后的匿名访问返回HTTP 403。
+
+费用和财务事实：
+
+- OpenRouter Key Usage从0.134436增加到0.169436美元，本轮增量精确为0.035美元。
+- Quote、Hold和结算金额均为0.50000000元，未超过0.60元钱包上限。
+- 钱包流水依次形成freeze、unfreeze和consume，最终余额9.50000000元、冻结0。
+- `usage_fact`、`sale_line`和`cost_line`各1条；销售行0.50元，非商业测试成本行0.30元。
+- 主图与缩略图共2个available资产；主图可交付数量为1。
+- Outbox的held、settled和delivery_available三条事件均published且retry=0；补偿任务0。
+- 请求、Quote、钱包、Usage、资产和Outbox对账差异为`0.00000000`。
+
+安全和回滚事实：
+
+- Prompt、OpenRouter Key、Project SK和Base64在普通日志、MySQL任务摘要与RabbitMQ消息中的匹配均为0。
+- 调用结束后立即恢复traffic=false、OpenRouter=false，再恢复原API二进制SHA-256 `1f27cf69f0b1f76648e55453060b87b794a168dc6a94af06e5fd1fbed09a84fc`和原环境。
+- 测试Project已归档、Project SK已吊销、测试模型/价格已退役、测试用户已禁用；请求、钱包、Usage、成本、资产、Outbox和审计事实完整保留。
+- RabbitMQ图片队列/exchange、临时MinIO服务账号和服务器Secret目录均已清理；两个交付对象继续保存在私有`ai-result` bucket中。
+- 回滚后health/ready为200，Chat为401鉴权语义，图片路由恢复404，Bifrost与用户端/管理端均为200。
+- OpenRouter账号侧`gatwayimage` Key已撤销，旧Key认证GET返回HTTP 401；服务器Key副本不存在。
+
+受限证据目录为`/home/pc/molin/backups/img-g9-d97baf1-20260827T010540Z`，最终清单SHA-256为`10f9b93f8fb7d4069eef3fd58fa31cf1bf0ad968e66cb93343cc26bf44bc4be1`。
+
+该结论只证明测试环境真实Provider和非商业人民币测试计费闭环，不代表正式价格、生产开放、客户流量或商业验收；完成后立即停止，不自动进入IMG-G10。
