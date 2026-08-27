@@ -43,6 +43,12 @@ const (
 // imageRecoveryFacts 只保存补偿所需的低敏确定事实，禁止写入Prompt、Provider原始响应或对象正文。
 type imageRecoveryFacts struct {
 	ProviderResultCount uint64 `json:"provider_result_count"`
+	ProviderCode        string `json:"provider_code,omitempty"`
+	ProviderRequestID   string `json:"provider_request_id,omitempty"`
+	ProviderCostUSD     string `json:"provider_cost_usd,omitempty"`
+	ProviderHTTPStatus  int    `json:"provider_http_status,omitempty"`
+	ProviderErrorCode   string `json:"provider_error_code,omitempty"`
+	ProviderAttempted   bool   `json:"provider_attempted,omitempty"`
 	DeliverableCount    uint64 `json:"deliverable_count"`
 	RecoveryAction      string `json:"recovery_action"`
 	FinalErrorClass     string `json:"final_error_class,omitempty"`
@@ -400,7 +406,7 @@ func (s *ImageBillingService) Execute(ctx context.Context, requestID string, com
 		return &ImageBillingExecution{GatewayResult: result, BillingStatus: model.AIBillingSettlementPending, DeliveryStatus: model.AIDeliveryPending}, ErrImagePendingReconcile
 	}
 	if err := runImagePostProviderAction(ctx, func(localCtx context.Context) error {
-		return s.finalizeRelease(localCtx, requestID, result.ProviderResultCount, result.ErrorClass)
+		return s.finalizeRelease(localCtx, requestID, result)
 	}); err != nil {
 		// Provider结果已经明确，释放事务失败后只登记本地release补偿，禁止再次调用Provider。
 		if pendingErr := runImagePostProviderAction(ctx, func(localCtx context.Context) error {
@@ -596,10 +602,14 @@ func (s *ImageBillingService) persistGatewayAssets(ctx context.Context, requestI
 			}
 		}
 		resultSummary, _ := json.Marshal(map[string]interface{}{
-			"provider_result_count": result.ProviderResultCount, "deliverable_count": result.DeliverableCount,
+			"provider_result_count": result.ProviderResultCount, "provider_code": result.ProviderCode,
+			"provider_http_status": result.ProviderHTTPStatus, "provider_error_code": result.ProviderErrorCode,
+			"provider_request_id": result.ProviderRequestID, "provider_cost_usd": result.ProviderCostUSD,
+			"provider_attempted": result.ProviderAttempted, "deliverable_count": result.DeliverableCount,
 		})
-		return tx.Model(&model.AIImageTask{}).Where("id = ?", task.ID).
-			Updates(map[string]interface{}{"status": model.AIImageTaskModerating, "progress": 80, "result_json": resultSummary, "version_no": gorm.Expr("version_no + 1")}).Error
+		taskUpdates := map[string]interface{}{"status": model.AIImageTaskModerating, "progress": 80, "result_json": resultSummary, "version_no": gorm.Expr("version_no + 1")}
+		applyImageProviderTaskEvidence(taskUpdates, result)
+		return tx.Model(&model.AIImageTask{}).Where("id = ?", task.ID).Updates(taskUpdates).Error
 	})
 	if persistErr == nil && s.afterAssetCommit != nil {
 		return s.afterAssetCommit()
@@ -804,7 +814,7 @@ func (s *ImageBillingService) finalizeSuccess(ctx context.Context, requestID str
 	})
 }
 
-func (s *ImageBillingService) finalizeRelease(ctx context.Context, requestID string, providerResultCount uint64, errorClass string) error {
+func (s *ImageBillingService) finalizeRelease(ctx context.Context, requestID string, gatewayResult imagegateway.GatewayResult) error {
 	return retryImageBillingTransaction(ctx, func() error {
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			request, link, err := lockImageRequestAndLink(tx, requestID)
@@ -817,7 +827,7 @@ func (s *ImageBillingService) finalizeRelease(ctx context.Context, requestID str
 			if request.BillingStatus != model.AIBillingHeld && request.BillingStatus != model.AIBillingSettlementPending {
 				return ErrImageBillingState
 			}
-			settlement, err := s.pricing.CalculateImageFinalWithProviderCount(requestID, request.PriceSnapshotJSON, 0, providerResultCount)
+			settlement, err := s.pricing.CalculateImageFinalWithProviderCount(requestID, request.PriceSnapshotJSON, 0, gatewayResult.ProviderResultCount)
 			if err != nil {
 				return err
 			}
@@ -830,10 +840,10 @@ func (s *ImageBillingService) finalizeRelease(ctx context.Context, requestID str
 			}
 			zero := decimal.Zero
 			moderationStatus := model.AIModerationPassed
-			if errorClass == "content_policy_violation" || errorClass == "no_deliverable_image" {
+			if gatewayResult.ErrorClass == "content_policy_violation" || gatewayResult.ErrorClass == "no_deliverable_image" {
 				moderationStatus = model.AIModerationRejected
 			}
-			if errorClass == "moderation_unavailable" {
+			if gatewayResult.ErrorClass == "moderation_unavailable" {
 				moderationStatus = model.AIModerationError
 			}
 			if err := tx.Model(&model.AIRequestWalletLink{}).Where("id = ?", link.ID).Updates(map[string]interface{}{
@@ -842,16 +852,24 @@ func (s *ImageBillingService) finalizeRelease(ctx context.Context, requestID str
 				return err
 			}
 			now := s.now().UTC()
+			resultSummary, _ := json.Marshal(map[string]interface{}{
+				"provider_result_count": gatewayResult.ProviderResultCount, "provider_code": gatewayResult.ProviderCode,
+				"provider_http_status": gatewayResult.ProviderHTTPStatus, "provider_error_code": gatewayResult.ProviderErrorCode,
+				"provider_request_id": gatewayResult.ProviderRequestID, "provider_cost_usd": gatewayResult.ProviderCostUSD,
+				"provider_attempted": gatewayResult.ProviderAttempted, "deliverable_count": gatewayResult.DeliverableCount,
+			})
+			taskUpdates := map[string]interface{}{
+				"status": model.AIImageTaskFailed, "progress": 100, "error_code": gatewayResult.ErrorClass,
+				"result_json": resultSummary, "completed_at": now, "version_no": gorm.Expr("version_no + 1"),
+			}
+			applyImageProviderTaskEvidence(taskUpdates, gatewayResult)
 			if err := tx.Model(&model.AIRequest{}).Where("id = ?", request.ID).Updates(map[string]interface{}{
 				"moderation_status": moderationStatus, "execution_status": model.AIExecutionFailed, "billing_status": model.AIBillingReleased,
-				"delivery_status": model.AIDeliveryRejected, "settled_amount": zero, "error_class": errorClass, "completed_at": now,
+				"delivery_status": model.AIDeliveryRejected, "settled_amount": zero, "error_class": gatewayResult.ErrorClass, "completed_at": now,
 			}).Error; err != nil {
 				return err
 			}
-			if err := tx.Model(&model.AIImageTask{}).Where("request_id = ?", requestID).Updates(map[string]interface{}{
-				"status": model.AIImageTaskFailed, "progress": 100, "error_code": errorClass,
-				"completed_at": now, "version_no": gorm.Expr("version_no + 1"),
-			}).Error; err != nil {
+			if err := tx.Model(&model.AIImageTask{}).Where("request_id = ?", requestID).Updates(taskUpdates).Error; err != nil {
 				return err
 			}
 			return createImageOutboxTx(tx, requestID, "image_billing_released", model.AIBillingReleased, zero, now)
@@ -873,6 +891,12 @@ func (s *ImageBillingService) markPendingReconcile(ctx context.Context, requestI
 	}
 	recoveryJSON, err := json.Marshal(imageRecoveryFacts{
 		ProviderResultCount: result.ProviderResultCount,
+		ProviderCode:        result.ProviderCode,
+		ProviderRequestID:   result.ProviderRequestID,
+		ProviderCostUSD:     result.ProviderCostUSD,
+		ProviderHTTPStatus:  result.ProviderHTTPStatus,
+		ProviderErrorCode:   result.ProviderErrorCode,
+		ProviderAttempted:   result.ProviderAttempted,
 		DeliverableCount:    result.DeliverableCount,
 		RecoveryAction:      recoveryAction,
 		FinalErrorClass:     result.ErrorClass,
@@ -906,10 +930,12 @@ func (s *ImageBillingService) markPendingReconcile(ctx context.Context, requestI
 		if err := tx.Model(&model.AIRequest{}).Where("id = ?", request.ID).Updates(updates).Error; err != nil {
 			return err
 		}
-		taskUpdate := tx.Model(&model.AIImageTask{}).Where("request_id = ?", requestID).Updates(map[string]interface{}{
+		taskUpdates := map[string]interface{}{
 			"status": model.AIImageTaskPendingReconcile, "error_code": errorClass,
 			"result_json": recoveryJSON, "completed_at": nil, "version_no": gorm.Expr("version_no + 1"),
-		})
+		}
+		applyImageProviderTaskEvidence(taskUpdates, result)
+		taskUpdate := tx.Model(&model.AIImageTask{}).Where("request_id = ?", requestID).Updates(taskUpdates)
 		if taskUpdate.Error != nil {
 			return taskUpdate.Error
 		}
@@ -953,9 +979,29 @@ func (s *ImageBillingService) ReconcilePending(ctx context.Context, requestID st
 		if facts.FinalErrorClass == "" {
 			return ErrImagePendingReconcile
 		}
-		return s.finalizeRelease(ctx, requestID, facts.ProviderResultCount, facts.FinalErrorClass)
+		return s.finalizeRelease(ctx, requestID, imagegateway.GatewayResult{
+			ProviderResultCount: facts.ProviderResultCount, ProviderCode: facts.ProviderCode, ProviderRequestID: facts.ProviderRequestID,
+			ProviderCostUSD: facts.ProviderCostUSD, ProviderHTTPStatus: facts.ProviderHTTPStatus, ProviderErrorCode: facts.ProviderErrorCode,
+			ProviderAttempted: facts.ProviderAttempted, ErrorClass: facts.FinalErrorClass,
+		})
 	}
 	return ErrImagePendingReconcile
+}
+
+// applyImageProviderTaskEvidence 只持久化低敏回执摘要，使成功、失败和结果未知都能证明是否真正尝试过上游。
+func applyImageProviderTaskEvidence(updates map[string]interface{}, result imagegateway.GatewayResult) {
+	if updates == nil {
+		return
+	}
+	if result.ProviderCode != "" {
+		updates["provider_code"] = result.ProviderCode
+	}
+	if result.ProviderAttempted {
+		updates["attempt_count"] = 1
+	}
+	if result.ProviderRequestID != "" {
+		updates["provider_task_id"] = result.ProviderRequestID
+	}
 }
 
 // RecoverStaleActiveExecutions 把越过安全窗且仍为running/held的图片执行原子转为结果未知。
@@ -999,6 +1045,13 @@ func (s *ImageBillingService) RecoverStaleActiveExecutions(ctx context.Context, 
 				}
 				facts := imageRecoveryFacts{RecoveryAction: imageRecoveryUnknown, FinalErrorClass: "result_unknown"}
 				_ = json.Unmarshal(task.ResultJSON, &facts)
+				if task.ProviderCode != nil {
+					facts.ProviderCode = *task.ProviderCode
+				}
+				if task.ProviderTaskID != nil {
+					facts.ProviderRequestID = *task.ProviderTaskID
+				}
+				facts.ProviderAttempted = task.AttemptCount > 0
 				facts.RecoveryAction = imageRecoveryUnknown
 				facts.FinalErrorClass = "result_unknown"
 				recoveryJSON, err := json.Marshal(facts)

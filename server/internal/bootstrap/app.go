@@ -503,6 +503,15 @@ type orderBillingAdapter struct {
 	svc *billingsvc.WalletService
 }
 
+// closedOpenRouterImageAdapter 只用于IMG-G9无Key关闭态装配；任何意外执行都明确失败，绝不回退Fake或真实上游。
+type closedOpenRouterImageAdapter struct{}
+
+func (closedOpenRouterImageAdapter) Name() string { return "openrouter-images" }
+
+func (closedOpenRouterImageAdapter) Generate(context.Context, imagegateway.ProviderImageRequest) (imagegateway.ProviderImageResult, error) {
+	return imagegateway.ProviderImageResult{}, imagegateway.ErrProviderFailed
+}
+
 // DeductTx 在外部事务内扣费并返回钱包流水 ID；错误归一化为 order 模块语义。
 func (a *orderBillingAdapter) DeductTx(tx *gorm.DB, userID uint64, amount decimal.Decimal, orderID uint64, remark string) (uint64, error) {
 	txID, err := a.svc.DeductTx(tx, userID, amount, orderID, remark)
@@ -551,13 +560,17 @@ func buildImageRuntime(ctx context.Context, cfg config.Config, gormDB *gorm.DB, 
 	case "fake":
 		provider = imagegateway.NewFakeImageAdapter(imagegateway.FakeImageSuccess)
 	case "openrouter":
+		if !cfg.ImageGatewayOpenRouterEnabled {
+			provider = closedOpenRouterImageAdapter{}
+			break
+		}
 		key, keyErr := imagegateway.ReadRestrictedSecretFile(cfg.ImageGatewayOpenRouterKeyFile, 16)
 		if keyErr != nil {
 			return nil, keyErr
 		}
 		provider, err = imagegateway.NewOpenRouterImageAdapter(imagegateway.OpenRouterImageAdapterConfig{
-			APIKey: key, ProviderTag: "seed", Timeout: 3 * time.Minute,
-			ModelMap: map[string]string{"bytedance-seed/seedream-5-0-lite": "bytedance-seed/seedream-5-0-lite"},
+			APIKey: key, ProviderTag: cfg.ImageGatewayOpenRouterProviderTag, MaxCostUSD: cfg.ImageGatewayOpenRouterMaxCostUSD, Timeout: 3 * time.Minute,
+			ModelMap: map[string]string{cfg.ImageGatewayOpenRouterModel: cfg.ImageGatewayOpenRouterModel},
 		})
 		if err != nil {
 			return nil, err

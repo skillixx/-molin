@@ -1199,3 +1199,28 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - 响应式固定验证 `1440×900`、`768×1024`、`390×844`、`375×667`，要求无横向溢出、无重叠、按钮有反馈。
 - 同次验收回归Chat、Project/SK、账单与申诉，最终 `request_usage/request_hold/request_wallet=0` 且Outbox backlog=0。
 - 真实Provider、正式价格、生产部署和商业开放不属于本阶段证据。
+
+## 图片网关 IMG-G9 真实Provider与人民币测试计费验收
+
+- 唯一源码必须从批准基线创建本地候选提交；真实调用前记录提交、二进制SHA和工作树状态。
+- 固定模型为 `bytedance-seed/seedream-5-0-lite`，固定 `provider_tag=seed`，规格为 `n=1 / 2K / 1:1 / standard / url`；Gemini/Vertex只作为历史失败证据，不得进入当前候选配置。
+- OpenRouter专用Key必须是0600普通文件、非符号链接且费用限制覆盖本轮书面授权；调用前必须冻结Usage基线并按增量核对，新Key优先要求初始Usage为0；不得复用Bifrost或业务Key。
+- 关闭态必须允许 `provider=openrouter` 但不读取Key，图片入口返回50330且生成消费者为0。
+- 真实态只允许一次Provider调用；请求必须包含单一Provider `only`、`allow_fallbacks=false`、`stream=false`，Adapter和Worker均不得重试。
+- 成功响应必须包含合法图片和 `usage.cost`；费用缺失、非正或超过0.25美元一律结果未知并禁止交付。
+- Provider美元费用必须以规范Decimal字符串进入任务低敏结果摘要，禁止保存Provider原文、Prompt或Base64。
+- 上游成功、明确失败和结果未知都必须记录低敏尝试证据：`provider_code`、`provider_attempted`、HTTP状态和封闭字符集错误码；实际调用后任务`attempt_count`必须为1，禁止把已尝试请求记录为0。
+- Provider调用前必须先以行锁和version CAS提交唯一尝试事实；模拟提交后进程退出时，重放不得再次进入Provider，陈旧恢复必须保留`provider_code/attempt_count`并转为结果未知。
+- Provider已确认费用后发生本地解码、审核、存储或终态失败时，任务摘要仍必须保留`provider_cost_usd/provider_request_id`；隔离MySQL需覆盖成功、非2xx明确失败、HTTP成功但结果未知三类终态。
+- OpenRouter图片失败返回502且费用为0时，不得只依据Key Usage或Last Used判断请求未发出；必须结合新候选保存的HTTP状态、低敏错误码和OpenRouter控制台Activity/Guardrail证据定位根因。
+- Project SK正式签发必须允许已激活、已发布且对用户可见的图片模型进入显式allowlist；不存在、未发布、非chat/image或不可见模型仍失败关闭，`all/legacy_all`不得隐式获得图片能力。
+- SQL价格夹具必须覆盖应用`loc=Local`与MySQL会话时区差异；真实调用前必须以Quote 0.50元成功、未消费、未Hold和已冻结Provider Usage基线作为最终价格门禁。
+- OpenRouter返回HTTP 403时必须记录`provider_code/attempt_count/http_status/error_code`，用户销售额、Provider成本和结算额均为0，Hold完整释放且Outbox按顺序发布；原始Provider错误消息仍不得落库或写日志。
+- OpenRouter请求必须携带`X-OpenRouter-Experimental-Metadata: enabled`；HTTP 403只能映射为费用额度、Workspace预算、模型策略、Provider策略、数据策略、内容护栏、Key权限、上游权限或unknown九种固定低敏分类。
+- 403分类测试必须覆盖字符串/数字错误码、路由Pipeline、Provider响应状态和未知错误体，并断言完整错误消息、Prompt、Key、长Base64片段及原始元数据不会进入`ProviderImageResult`或任务摘要。
+- 测试钱包最多预占/结算0.60元，正常test_fixture销售价为0.50元；每次余额变化都有唯一流水。
+- 主图必须经过完整解码、格式与尺寸校验、元数据清理、双标识审核和MinIO私有存储，结算提交前不得available。
+- 请求、Quote、Usage、sale_line、cost_line、钱包、资产和Outbox对账差异必须为0；同时单独核对OpenRouter Key Usage增量与任务中的Provider费用回执一致。
+- 无论成功失败均关闭traffic/OpenRouter、停止消费者、恢复原API与环境、删除临时Project SK和Key文件，并由用户从OpenRouter控制台撤销短效Key。
+- 最终必须复验Chat、Bifrost、用户端、管理端和共享监控；不得进入生产或IMG-G10。
+- 2026-08-27验收结果：`d97baf1400840d5e707b5ed2c9bfc4237885353c`在测试服务器以Seedream/seed完成唯一真实调用，图片交付、0.50元结算、0.035美元费用增量、私有MinIO、三条Outbox、0差异对账、Key撤销和实际回滚全部PASS；生产与商业证据仍为NO。

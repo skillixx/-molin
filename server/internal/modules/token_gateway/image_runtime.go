@@ -38,7 +38,7 @@ type ImageRuntimeDeps struct {
 
 // NewImageRuntime 统一装配图片深模块；调用方必须先完成配置、Secret、bucket和queue拓扑门禁。
 func NewImageRuntime(deps ImageRuntimeDeps) (*ImageRuntime, error) {
-	provider := deps.Provider
+	var provider imagegateway.ImageProviderAdapter = deps.Provider
 	if deps.Metrics != nil {
 		observed, err := service.NewObservedImageAdapter(provider, deps.Metrics)
 		if err != nil {
@@ -46,6 +46,11 @@ func NewImageRuntime(deps ImageRuntimeDeps) (*ImageRuntime, error) {
 		}
 		provider = observed
 	}
+	attemptProvider, err := service.NewAttemptRecordingImageAdapter(provider, deps.DB)
+	if err != nil {
+		return nil, err
+	}
+	provider = attemptProvider
 	processor, err := imagegateway.NewImageProcessor(imagegateway.ImageProcessingLimits{
 		MaxSourceBytes: 32 << 20, MaxNormalizedBytes: 32 << 20, MaxPixels: 5308416,
 		MaxWidth: 2304, MaxHeight: 2304, ExpectedAspectRatio: 1, AspectTolerance: 0.01, ThumbnailMaxEdge: 512,

@@ -13,6 +13,15 @@ import (
 	"unicode/utf8"
 )
 
+const (
+	// ImageGatewayG9OpenRouterModel 固定IMG-G9唯一真实图片模型，禁止运行时透明换模。
+	ImageGatewayG9OpenRouterModel = "bytedance-seed/seedream-5-0-lite"
+	// ImageGatewayG9OpenRouterProviderTag 来自OpenRouter官方图片端点目录，固定Seed单一端点。
+	ImageGatewayG9OpenRouterProviderTag = "seed"
+	// ImageGatewayG9MaxProviderCostUSD 是本轮唯一真实请求的美元硬上限，禁止部署时自动放宽。
+	ImageGatewayG9MaxProviderCostUSD = "0.25"
+)
+
 // Config 汇聚所有运行时配置，通过环境变量注入，无默认密钥。
 type Config struct {
 	AppEnv  string
@@ -98,15 +107,18 @@ type Config struct {
 	AIGatewayTrafficEnabled bool
 
 	// 图片网关默认关闭；G7只允许本地Fake流量，OpenRouter真实执行继续由G9独立授权。
-	ImageGatewayEnabled           bool
-	ImageGatewayTrafficEnabled    bool
-	ImageGatewayLocalFakeTest     bool
-	ImageGatewayProvider          string
-	ImageGatewayOpenRouterEnabled bool
-	ImageGatewayOpenRouterKeyFile string
-	ImageGatewayQuoteSecretFile   string
-	ImageGatewayPromptSecretFile  string
-	ImageGatewayMinIOEndpoint     string
+	ImageGatewayEnabled               bool
+	ImageGatewayTrafficEnabled        bool
+	ImageGatewayLocalFakeTest         bool
+	ImageGatewayProvider              string
+	ImageGatewayOpenRouterEnabled     bool
+	ImageGatewayOpenRouterKeyFile     string
+	ImageGatewayOpenRouterModel       string
+	ImageGatewayOpenRouterProviderTag string
+	ImageGatewayOpenRouterMaxCostUSD  string
+	ImageGatewayQuoteSecretFile       string
+	ImageGatewayPromptSecretFile      string
+	ImageGatewayMinIOEndpoint         string
 	// ImageGatewayMinIOPublicDownloadEndpoint 是浏览器可访问的签名地址，禁止复用仅容器内部可解析的连接端点。
 	ImageGatewayMinIOPublicDownloadEndpoint string
 	ImageGatewayMinIOAccessKeyFile          string
@@ -269,6 +281,9 @@ func Load() Config {
 		ImageGatewayProvider:                    strings.ToLower(strings.TrimSpace(getenv("IMAGE_GATEWAY_PROVIDER", "fake"))),
 		ImageGatewayOpenRouterEnabled:           getenvBool("IMAGE_GATEWAY_OPENROUTER_ENABLED", false),
 		ImageGatewayOpenRouterKeyFile:           strings.TrimSpace(getenv("IMAGE_GATEWAY_OPENROUTER_KEY_FILE", "")),
+		ImageGatewayOpenRouterModel:             strings.TrimSpace(getenv("IMAGE_GATEWAY_OPENROUTER_MODEL", "")),
+		ImageGatewayOpenRouterProviderTag:       strings.TrimSpace(getenv("IMAGE_GATEWAY_OPENROUTER_PROVIDER_TAG", "")),
+		ImageGatewayOpenRouterMaxCostUSD:        strings.TrimSpace(getenv("IMAGE_GATEWAY_OPENROUTER_MAX_COST_USD", "")),
 		ImageGatewayQuoteSecretFile:             strings.TrimSpace(getenv("IMAGE_GATEWAY_QUOTE_SECRET_FILE", "")),
 		ImageGatewayPromptSecretFile:            strings.TrimSpace(getenv("IMAGE_GATEWAY_PROMPT_SECRET_FILE", "")),
 		ImageGatewayMinIOEndpoint:               strings.TrimSpace(getenv("IMAGE_GATEWAY_MINIO_ENDPOINT", "")),
@@ -344,7 +359,7 @@ func (c Config) ValidateAIGatewayGovernanceConfig() error {
 	return nil
 }
 
-// ValidateImageGatewayConfig 保证图片流量默认关闭，并把G7限制在本地Fake和受限Secret文件。
+// ValidateImageGatewayConfig 保证图片流量默认关闭，并将真实OpenRouter严格限制在已批准的IMG-G9测试合同。
 func (c Config) ValidateImageGatewayConfig() error {
 	if !c.ImageGatewayEnabled {
 		if c.ImageGatewayTrafficEnabled || c.ImageGatewayOpenRouterEnabled {
@@ -358,11 +373,29 @@ func (c Config) ValidateImageGatewayConfig() error {
 	if len([]byte(c.TokenProviderKey)) != 32 || len([]byte(c.APIKeyHMACSecret)) < 32 {
 		return fmt.Errorf("图片网关装配要求安全TOKEN_PROVIDER_KEY和API_KEY_HMAC_SECRET")
 	}
-	if c.ImageGatewayProvider == "openrouter" || c.ImageGatewayOpenRouterEnabled {
-		return fmt.Errorf("真实OpenRouter图片执行属于IMG-G9，IMG-G7 bootstrap禁止启用")
-	}
-	if c.ImageGatewayTrafficEnabled && (strings.ToLower(strings.TrimSpace(c.AppEnv)) != "test" || !c.ImageGatewayLocalFakeTest || c.ImageGatewayProvider != "fake") {
-		return fmt.Errorf("IMG-G7图片流量只允许APP_ENV=test且LOCAL_FAKE_TEST=true的Fake路径")
+	appEnv := strings.ToLower(strings.TrimSpace(c.AppEnv))
+	switch c.ImageGatewayProvider {
+	case "fake":
+		if c.ImageGatewayOpenRouterEnabled || c.ImageGatewayOpenRouterKeyFile != "" || c.ImageGatewayOpenRouterModel != "" || c.ImageGatewayOpenRouterProviderTag != "" || c.ImageGatewayOpenRouterMaxCostUSD != "" {
+			return fmt.Errorf("Fake图片路径不得携带OpenRouter配置")
+		}
+		if c.ImageGatewayTrafficEnabled && (appEnv != "test" || !c.ImageGatewayLocalFakeTest) {
+			return fmt.Errorf("IMG-G7图片流量只允许APP_ENV=test且LOCAL_FAKE_TEST=true的Fake路径")
+		}
+	case "openrouter":
+		if appEnv != "test" || c.ImageGatewayLocalFakeTest {
+			return fmt.Errorf("IMG-G9 OpenRouter只允许APP_ENV=test且LOCAL_FAKE_TEST=false")
+		}
+		if c.ImageGatewayOpenRouterModel != ImageGatewayG9OpenRouterModel || c.ImageGatewayOpenRouterProviderTag != ImageGatewayG9OpenRouterProviderTag || c.ImageGatewayOpenRouterMaxCostUSD != ImageGatewayG9MaxProviderCostUSD {
+			return fmt.Errorf("IMG-G9 OpenRouter模型、ProviderTag或费用上限不符合冻结合同")
+		}
+		if c.ImageGatewayOpenRouterEnabled {
+			if !c.ImageGatewayTrafficEnabled || !filepath.IsAbs(c.ImageGatewayOpenRouterKeyFile) {
+				return fmt.Errorf("IMG-G9真实调用要求流量开启且使用绝对Key文件路径")
+			}
+		} else if c.ImageGatewayTrafficEnabled || c.ImageGatewayOpenRouterKeyFile != "" {
+			return fmt.Errorf("IMG-G9关闭态不得开启流量或配置OpenRouter Key文件")
+		}
 	}
 	files := []string{c.ImageGatewayQuoteSecretFile, c.ImageGatewayPromptSecretFile, c.ImageGatewayMinIOAccessKeyFile, c.ImageGatewayMinIOSecretKeyFile}
 	for _, path := range files {

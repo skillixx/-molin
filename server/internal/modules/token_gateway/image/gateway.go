@@ -8,7 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
+
+	"github.com/shopspring/decimal"
 
 	"molin/server/internal/modules/token_gateway/model"
 )
@@ -58,6 +61,12 @@ type GatewayResult struct {
 	Outcome             GatewayOutcome
 	RequestedCount      uint64
 	ProviderResultCount uint64
+	ProviderCode        string
+	ProviderRequestID   string
+	ProviderCostUSD     string
+	ProviderHTTPStatus  int
+	ProviderErrorCode   string
+	ProviderAttempted   bool
 	DeliverableCount    uint64
 	RejectedCount       uint64
 	FailedCount         uint64
@@ -105,6 +114,7 @@ func (g *ImageGateway) Generate(ctx context.Context, command GenerateImageComman
 		RequestID: command.RequestID, ModelCode: command.ModelCode, Prompt: command.Prompt, Count: command.Count,
 		Resolution: command.Resolution, AspectRatio: command.AspectRatio, Quality: command.Quality, OutputFormat: command.OutputFormat,
 	})
+	copyProviderEvidence(&result, providerResult)
 	if err != nil {
 		return classifyProviderFailure(result, providerResult, err)
 	}
@@ -116,8 +126,6 @@ func (g *ImageGateway) Generate(ctx context.Context, command GenerateImageComman
 		result.Outcome, result.ErrorClass = GatewayFailed, "provider_result_invalid"
 		return result, ErrImageResultInvalid
 	}
-	result.ProviderResultCount = uint64(len(providerResult.Images))
-
 	seen := make(map[uint64]struct{}, len(providerResult.Images))
 	lastErrorClass := ""
 	for _, providerImage := range providerResult.Images {
@@ -301,6 +309,7 @@ func providerImageSource(providerImage ProviderImage) string {
 }
 
 func classifyProviderFailure(result GatewayResult, providerResult ProviderImageResult, err error) (GatewayResult, error) {
+	copyProviderEvidence(&result, providerResult)
 	switch {
 	case errors.Is(err, ErrProviderTimeout):
 		result.Outcome, result.ErrorClass = GatewayTimeout, "provider_timeout"
@@ -312,6 +321,36 @@ func classifyProviderFailure(result GatewayResult, providerResult ProviderImageR
 		result.Outcome, result.ErrorClass = GatewayFailed, "provider_failed"
 	}
 	return result, err
+}
+
+// copyProviderEvidence 只复制低敏Provider回执摘要，禁止携带Prompt、Key、原始响应或图片正文。
+func copyProviderEvidence(result *GatewayResult, providerResult ProviderImageResult) {
+	if result == nil {
+		return
+	}
+	result.ProviderResultCount = uint64(len(providerResult.Images))
+	result.ProviderCode = sanitizeProviderErrorCode(providerResult.ProviderCode)
+	result.ProviderRequestID = sanitizeProviderRequestID(providerResult.ProviderRequestID)
+	result.ProviderCostUSD = sanitizeProviderCostUSD(providerResult.ProviderCostUSD)
+	if providerResult.ProviderHTTPStatus >= 100 && providerResult.ProviderHTTPStatus <= 599 {
+		result.ProviderHTTPStatus = providerResult.ProviderHTTPStatus
+	}
+	result.ProviderErrorCode = sanitizeProviderErrorCode(providerResult.ProviderErrorCode)
+	result.ProviderAttempted = providerResult.ProviderAttempted
+}
+
+func sanitizeProviderCostUSD(value string) string {
+	if value == "" {
+		return ""
+	}
+	if value != strings.TrimSpace(value) || len(value) > 32 {
+		return ""
+	}
+	cost, err := decimal.NewFromString(value)
+	if err != nil || !cost.IsPositive() {
+		return ""
+	}
+	return cost.String()
 }
 
 func requestNamespace(requestID string) string {
