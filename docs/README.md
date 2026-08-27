@@ -76,6 +76,9 @@
 | [multimodal-ai-gateway-implementation-plan.md](./multimodal-ai-gateway-implementation-plan.md) | 图片、音频和视频长期蓝图，不作为 Phase 1 排期依据 |
 | [image-gateway-billing-development-plan.md](./image-gateway-billing-development-plan.md) | 图片网关与人民币计费IMG-G0～IMG-G8工程计划及完成证据；未授权生产开放 |
 | [image-gateway-goal-stage-execution-prompt.md](./image-gateway-goal-stage-execution-prompt.md) | 图片网关分阶段Goal执行规则；对应IMG-G0～IMG-G8已完成，IMG-G9以后仍需独立Goal |
+| [video-gateway-goal-stage-execution-prompt.md](./video-gateway-goal-stage-execution-prompt.md) | Molin OpenAI Videos兼容快照v1视频网关VID-G0～VID-G8规则，含Codex自动阻塞审计；VID-G9和VID-G10需独立授权 |
+| [video-gateway-vid-g0-gate.md](./video-gateway-vid-g0-gate.md) | VID-G0工程冻结、Bifrost v2.0.0零费用Fake合同预探针、native_async裁决和最小人工问题包 |
+| [video-gateway-openapi-snapshot-v1.yaml](./video-gateway-openapi-snapshot-v1.yaml) | Molin OpenAI Videos兼容快照v1的版本化OpenAPI合同；不表示真实Provider或生产已经启用 |
 | [bifrost-docker-deployment-guide.md](./bifrost-docker-deployment-guide.md) | Bifrost 双节点 Docker 部署、验证与回滚 |
 | [token-gateway-worktree-development-guide.md](./token-gateway-worktree-development-guide.md) | Token 网关独立工作区开发规范 |
 | [ai-upstream-test-account-requirements.md](./ai-upstream-test-account-requirements.md) | 上游测试账号、模型权限和计量验收要求 |
