@@ -14,6 +14,7 @@ import (
 	"github.com/shopspring/decimal"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	"molin/server/internal/modules/token_gateway/model"
 )
@@ -23,7 +24,7 @@ func TestVideoQuoteRepositoryMySQLConcurrentCreateAndConsume(t *testing.T) {
 	if dsn == "" {
 		t.Skip("未配置 VID-G2 隔离 MySQL DSN")
 	}
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,6 +34,8 @@ func TestVideoQuoteRepositoryMySQLConcurrentCreateAndConsume(t *testing.T) {
 	}
 	sqlDB.SetMaxOpenConns(140)
 	sqlDB.SetMaxIdleConns(140)
+	// 先注册连接池关闭，后注册的夹具清理会按LIFO先执行，避免连接泄漏污染同库后续100并发测试。
+	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	const (
 		userID      = uint64(93001)

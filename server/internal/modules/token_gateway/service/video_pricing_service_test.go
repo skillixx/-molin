@@ -428,7 +428,7 @@ type fakeVideoInputResolver struct {
 	items map[string]VideoQuoteInputBinding
 }
 
-func (r *fakeVideoInputResolver) ResolveReadyInput(_ context.Context, _, _ uint64, inputAssetID string) (*VideoQuoteInputBinding, error) {
+func (r *fakeVideoInputResolver) ResolveReadyInput(_ context.Context, _, _, _ uint64, inputAssetID string) (*VideoQuoteInputBinding, error) {
 	item, ok := r.items[inputAssetID]
 	if !ok {
 		return nil, ErrVideoInputMismatch

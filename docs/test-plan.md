@@ -1133,6 +1133,25 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - `000074`首次up、重复up、保留式down/re-up和旧Chat/Image价格/Quote逐字段兼容通过。
 - 全量Go、vet、race、敏感扫描和`git diff --check`通过；Provider、真实钱包、项目数据库、测试服和生产写入均为0。
 
+## 视频网关 VID-G3 任务、资产与事件验收
+
+- 七类Repository必须全部落在共享`ai_requests/ai_gateway_quotes/ai_gateway_tasks/ai_gateway_assets`及VID-G1扩展表，不得创建平行视频账本。
+- 执行、计费、交付所有允许与禁止迁移必须逐格矩阵测试；状态不得回退，相反终态不得覆盖，`pending_reconcile`不得交付或释放输入租约。
+- Task、Request与Asset使用`version_no` CAS；真实MySQL 100并发任务迁移只能1胜者，其余稳定冲突且只追加1个TaskEvent。
+- T2V必须零TaskInput；I2V必须唯一ready参考图。Provider提交前复核owner、hash、version、审核、过期、删除和租约。
+- 绑定与删除100并发最终只能形成“一个绑定且ready”或“零绑定且pending_delete”，不得出现悬空TaskInput。
+- TaskInput冻结字段不可UPDATE，TaskInput与TaskEvent不可DELETE；TaskEvent不可UPDATE。
+- 回调三元唯一键、同正文重放、同事件异正文冲突、乱序、未知任务、错绑、重复ACK、相反终态与pending_reconcile迟到成功全部验证。
+- 回调只能从received写入一次终态，终态二次UPDATE和DELETE必须由MySQL拒绝；非1062插入错误不得伪装成重放冲突。
+- 视频Task普通JSON必须严格六键，result/error正文保持空；TaskEvent只接受四键结构白名单，message/data换名绕过需在Go与直接SQL两层拒绝。
+- AES-GCM必须覆盖round-trip、nonce唯一、AAD、nonce、密文、key version和归属篡改；普通JSON和源码证据不得出现测试Prompt明文。
+- UploadSession、InputAsset、GeneratedImageAsset来源、TaskInput、Task和Asset必须覆盖跨User、Project与API Key的统一不存在语义。
+- content、cover、preview、thumbnail、moderation_copy与derived必须具有同request/task父子关系；对象位置只能由Fake ObjectStore工厂生成。
+- Asset必须覆盖available、quarantined、expiring、deleting、deleted、delete_failed和争议访问阻断；媒体正文删除后hash、规格和追溯事实继续存在。
+- 必须运行`verify-video-gateway-migration-000075.sh`证明完整`000001→000075`、重复up、保留式down/re-up、race与两类100并发；项目数据库、Provider、真实钱包和费用均为0。
+- 必须回归VID-G2 000074脚本、Chat与Image全量Go测试、`go vet`、敏感信息扫描和`git diff --check`。
+- 独立QA、产品、Standards与Spec审查必须绑定同一源码状态，最终P0/P1/P2均为0；VID-G4必须保持未开始。
+
 ## 图片网关 IMG-G1 Expand Schema 验收
 
 - `000068` 必须把 `ai_requests.modality` 从仅 Chat 扩展为 `chat/image`，同时以 `capability + delivery_status` 组合约束确保旧 Chat 固定为 `chat.completions/not_applicable`、图片固定为 `image.generate`。

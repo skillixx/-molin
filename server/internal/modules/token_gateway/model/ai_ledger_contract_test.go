@@ -22,10 +22,10 @@ func TestAILedgerTableNamesAndOrthogonalStates(t *testing.T) {
 
 	moderation := []string{AIModerationPending, AIModerationPassed, AIModerationRejected, AIModerationError}
 	execution := []string{AIExecutionPending, AIExecutionRunning, AIExecutionSucceeded, AIExecutionFailed, AIExecutionCancelled, AIExecutionUnknown}
-	billing := []string{AIBillingUnquoted, AIBillingHeld, AIBillingSettlementPending, AIBillingSettled, AIBillingReleased, AIBillingException}
+	billing := []string{AIBillingUnquoted, AIBillingQuoted, AIBillingHeld, AIBillingSettlementPending, AIBillingSettled, AIBillingReleased, AIBillingAdjusted, AIBillingException}
 	assertUniqueStates(t, "moderation", moderation, 4)
 	assertUniqueStates(t, "execution", execution, 6)
-	assertUniqueStates(t, "billing", billing, 6)
+	assertUniqueStates(t, "billing", billing, 8)
 }
 
 func TestAILedgerGORMColumnsMatchFrozenContract(t *testing.T) {

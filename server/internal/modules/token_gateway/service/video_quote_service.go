@@ -64,7 +64,7 @@ type videoQuoteStore interface {
 
 // VideoInputSnapshotResolver 必须从可信持久层读取当前ready输入快照，禁止相信客户端提交的SHA或版本。
 type VideoInputSnapshotResolver interface {
-	ResolveReadyInput(ctx context.Context, userID, projectID uint64, inputAssetID string) (*VideoQuoteInputBinding, error)
+	ResolveReadyInput(ctx context.Context, userID, projectID, apiKeyID uint64, inputAssetID string) (*VideoQuoteInputBinding, error)
 }
 
 // VideoQuoteService 编排可信输入、请求HMAC、价格快照与Quote持久化，不触发钱包或Provider。
@@ -233,7 +233,7 @@ func (s *VideoQuoteService) resolveTrustedFingerprintInput(ctx context.Context, 
 	if input.Variant.Operation != model.AIVideoOperationImageToVideo || input.Input == nil || s.inputs == nil {
 		return VideoQuoteFingerprintInput{}, ErrVideoInputMismatch
 	}
-	trusted, err := s.inputs.ResolveReadyInput(ctx, input.UserID, input.ProjectID, strings.TrimSpace(input.Input.InputAssetID))
+	trusted, err := s.inputs.ResolveReadyInput(ctx, input.UserID, input.ProjectID, input.APIKeyID, strings.TrimSpace(input.Input.InputAssetID))
 	if err != nil || trusted == nil || strings.TrimSpace(trusted.InputAssetID) != strings.TrimSpace(input.Input.InputAssetID) ||
 		trusted.NormalizedSHA256 != input.Input.NormalizedSHA256 || trusted.Version != input.Input.Version {
 		return VideoQuoteFingerprintInput{}, ErrVideoInputMismatch

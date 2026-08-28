@@ -112,9 +112,10 @@ assert_scalar "SELECT COUNT(*) FROM information_schema.columns WHERE table_schem
 apply_file "$(basename "${up_file}")" >/dev/null
 assert_scalar "SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema=DATABASE() AND constraint_name='chk_ai_gateway_assets_dispute'" "1" "reup_dispute_check"
 
-# 阶段回滚断言仍停在000070；运行当前HEAD仓储测试前补装共享媒体与VID-G2 Quote兼容层。
+# 阶段回滚断言仍停在000070；运行当前HEAD仓储测试前补装共享媒体、VID-G2 Quote与VID-G3资产兼容层。
 apply_file "000072_expand_video_gateway_schema.up.sql" >/dev/null
 apply_file "000074_expand_video_pricing_quotes.up.sql" >/dev/null
+apply_file "000075_enforce_video_task_asset_events.up.sql" >/dev/null
 
 MSYS_NO_PATHCONV=1 docker run --rm --pull=never --network "${network_name}" \
   --mount "type=bind,src=${docker_repo_root},dst=/src,readonly" \

@@ -139,9 +139,10 @@ assert_scalar "SELECT COUNT(*) FROM ai_price_skus WHERE price_version_id=92001" 
 apply_file "$(basename "${up_file}")" >/dev/null
 assert_scalar "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='ai_gateway_quotes' AND column_name='request_variant_hash'" "1" "reup_quote_variant"
 
-# 阶段回滚断言仍停在000069；运行当前HEAD仓储测试前补装共享媒体与VID-G2 Quote兼容层。
+# 阶段回滚断言仍停在000069；运行当前HEAD仓储测试前补装共享媒体、VID-G2 Quote与VID-G3资产兼容层。
 apply_file "000072_expand_video_gateway_schema.up.sql" >/dev/null
 apply_file "000074_expand_video_pricing_quotes.up.sql" >/dev/null
+apply_file "000075_enforce_video_task_asset_events.up.sql" >/dev/null
 
 # 在同一内部网络运行真实仓储并发测试；源码只读，模块和构建缓存使用本轮隔离卷。
 MSYS_NO_PATHCONV=1 docker run --rm --pull=never --network "${network_name}" \

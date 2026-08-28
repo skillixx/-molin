@@ -560,6 +560,23 @@ VID-G2通过`000074_expand_video_pricing_quotes`扩展共享价格与Quote事实
 
 完整合同见[`video-gateway-vid-g2-pricing-quote.md`](./video-gateway-vid-g2-pricing-quote.md)。
 
+#### 3.5.15 视频网关 VID-G3 任务、资产与事件
+
+Migration `000075_enforce_video_task_asset_events`在VID-G1共享表上增加可执行强约束，不创建平行视频账本：
+
+- `ai_requests.billing_status`保留旧状态并增加`quoted/adjusted`，视频正常链固定为`unquoted→quoted→held→settlement_pending→settled|released→adjusted`。
+- Task执行轴使用`ai_gateway_tasks.status/version_no`，计费与交付轴使用`ai_requests.version_no`；三个Repository迁移互不改写其他轴。
+- TaskInput插入触发器锁定视频Task与ready InputAsset，沿UploadSession或GeneratedImageAsset来源核对Task API Key；T2V拒绝任何输入，I2V只接受一个`reference_image/ordinal=0`快照；更新触发器只允许安全终态后一次写入`lease_released_at`，DELETE永远拒绝。
+- InputAsset来源、owner、原始hash和已形成规范化快照被冻结；`pending_delete`、隔离、过期、审核拒绝、hash/version漂移均不能进入Provider提交。
+- Callback继续以`(provider_code,provider_task_id,external_event_id)`唯一，身份、body SHA-256、验签和owner一经写入不可修改；仅低敏应用结果可从received补充为applied/ignored/failed。
+- Callback应用结果只能从`received`写入一次终态，之后不能UPDATE或DELETE。TaskEvent详情只允许四个结构化白名单键，禁止自由文本换名持久化。
+- TaskPayload的AES-GCM信封通过UPDATE/DELETE触发器保持不可变；nonce固定12字节，AAD绑定Task/User/Project/Kind。Repository还强制Protector认证解密，不能把任意字节伪装成密文写入。
+- 视频资产补齐`cover`，`content/preview`支持MP4，`cover/thumbnail/moderation_copy/derived`支持图片或MP4；父子、owner、对象位置、来源和hash被冻结。VID-G3的available迁移只校验既有审核/双标识事实，不生成这些结果。
+- `deleted/media_deleted_at`只表示媒体正文已删，request、Quote、账单、hash、规格、生命周期和审计元数据继续保留。
+- 视频Task普通`input_json`固定六个规范化规格键，VID-G3的`result_json/error_message_safe`必须为空；敏感正文只能进入认证AES-GCM信封。
+
+完整Repository、状态矩阵、回滚和验收合同见[`video-gateway-vid-g3-task-asset-events.md`](./video-gateway-vid-g3-task-asset-events.md)。VID-G3没有HTTP、Provider Adapter、Worker、轮询、媒体抓取、审核或标识闭环。
+
 由于`ai_gateway_tasks/ai_gateway_assets`从图片专用事实扩展为共享媒体事实，既有图片Repository和Service必须显式限定任务`capability=image.generate AND operation IS NULL`、资产`modality=image`，请求关联同时限定`modality=image + capability=image.generate`。图片列表、取消、Provider领取、恢复、结算、清理和观测均不得依赖“当前尚无视频运行时”而省略过滤。
 
 ## 4. 关键状态

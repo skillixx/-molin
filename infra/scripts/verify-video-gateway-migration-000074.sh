@@ -128,6 +128,9 @@ apply_file "000074_expand_video_pricing_quotes.down.sql" >/dev/null
 assert_scalar "SELECT COUNT(*) FROM ai_price_skus WHERE price_version_id=93001" "2" "down_price_retention"
 apply_file "000074_expand_video_pricing_quotes.up.sql" >/dev/null
 
+# 阶段断言完成后补装VID-G3共享状态与追加事件兼容层，当前HEAD会显式写入quoted和TaskEvent。
+apply_file "000075_enforce_video_task_asset_events.up.sql" >/dev/null
+
 # 在同一内部网络运行真实GORM并发：100并发幂等创建一条，100并发消费一个赢家。
 MSYS_NO_PATHCONV=1 docker run --rm --pull=never --network "${network_name}" \
   --mount "type=bind,src=${docker_repo_root},dst=/src,readonly" \
