@@ -70,6 +70,7 @@ type AIRequest struct {
 	ExecutionModelCode *string          `gorm:"size:191" json:"-"`
 	Modality           string           `gorm:"size:32;not null;default:chat" json:"modality"`
 	Capability         string           `gorm:"size:64;not null;default:chat.completions" json:"capability"`
+	Operation          *string          `gorm:"size:32" json:"operation,omitempty"`
 	IsStream           bool             `gorm:"not null;default:0" json:"is_stream"`
 	ModerationStatus   string           `gorm:"size:32;not null;default:pending" json:"moderation_status"`
 	ExecutionStatus    string           `gorm:"size:32;not null;default:pending;index:idx_ai_requests_states_updated,priority:1" json:"execution_status"`
@@ -97,6 +98,7 @@ type AIUsageItem struct {
 	ID                   uint64           `gorm:"primaryKey;autoIncrement" json:"id"`
 	RequestID            string           `gorm:"size:128;not null;uniqueIndex:uk_ai_usage_request_meter_variant_kind_source_seq,priority:1;index:idx_ai_usage_request" json:"request_id"`
 	MeterType            string           `gorm:"size:64;not null;uniqueIndex:uk_ai_usage_request_meter_variant_kind_source_seq,priority:2;index:idx_ai_usage_meter_created,priority:1" json:"meter_type"`
+	Operation            *string          `gorm:"size:32" json:"operation,omitempty"`
 	Source               string           `gorm:"size:32;not null;uniqueIndex:uk_ai_usage_request_meter_variant_kind_source_seq,priority:5" json:"source"`
 	RecordKind           string           `gorm:"size:32;not null;default:legacy_chat;uniqueIndex:uk_ai_usage_request_meter_variant_kind_source_seq,priority:4" json:"record_kind"`
 	PriceVersionID       *uint64          `gorm:"index:idx_ai_usage_price_version" json:"price_version_id,omitempty"`

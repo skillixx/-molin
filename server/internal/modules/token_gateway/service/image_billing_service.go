@@ -184,7 +184,14 @@ func (s *ImageBillingService) PrepareAndReserve(ctx context.Context, command Ima
 	request := command.Request
 	if s == nil || request.RequestID == "" || request.IdempotencyKey == nil || request.RequestFingerprint == nil ||
 		*request.IdempotencyKey == "" || len(*request.RequestFingerprint) != 64 || command.Task.PublicID == "" ||
-		command.Owner.UserID == 0 || command.Owner.ProjectID == 0 || command.QuotePublicID == "" {
+		command.Owner.UserID == 0 || command.Owner.ProjectID == 0 || command.QuotePublicID == "" ||
+		request.Modality != "image" || request.Capability != model.AIImageCapability ||
+		command.Task.Capability != model.AIImageCapability || command.Task.Operation != nil {
+		return nil, ErrImageBillingState
+	}
+	// 内联报价在开启事务前失败关闭，确保视频报价不会触发图片请求或钱包写入。
+	if command.InlineQuote != nil && (command.InlineQuote.PublicID != command.QuotePublicID || command.InlineQuote.ID != 0 ||
+		command.InlineQuote.Capability != model.AIImageCapability || command.InlineQuote.Operation != nil) {
 		return nil, ErrImageBillingState
 	}
 	now := s.now().UTC()
@@ -201,12 +208,15 @@ func (s *ImageBillingService) PrepareAndReserve(ctx context.Context, command Ima
 					return ErrImageQuoteConflict
 				}
 				var task model.AIImageTask
-				if err := tx.Where("request_id = ?", existing.RequestID).First(&task).Error; err != nil {
+				if err := imageTaskRows(tx).Where("request_id = ?", existing.RequestID).First(&task).Error; err != nil {
 					return err
 				}
 				var existingQuote model.AIGatewayQuote
 				if err := tx.Where("id = ?", task.QuoteID).First(&existingQuote).Error; err != nil {
 					return err
+				}
+				if existingQuote.Capability != model.AIImageCapability || existingQuote.Operation != nil {
+					return ErrImageBillingState
 				}
 				reservation, err := s.reserveTx(tx, ImageReserveCommand{
 					RequestID: existing.RequestID, QuotePublicID: existingQuote.PublicID, Owner: command.Owner, RequestFingerprint: *request.RequestFingerprint,
@@ -222,7 +232,8 @@ func (s *ImageBillingService) PrepareAndReserve(ctx context.Context, command Ima
 			}
 			if command.InlineQuote != nil {
 				quote := *command.InlineQuote
-				if quote.PublicID != command.QuotePublicID || quote.ID != 0 {
+				if quote.PublicID != command.QuotePublicID || quote.ID != 0 ||
+					quote.Capability != model.AIImageCapability || quote.Operation != nil {
 					return ErrImageBillingState
 				}
 				if err := tx.Create(&quote).Error; err != nil {
@@ -231,7 +242,9 @@ func (s *ImageBillingService) PrepareAndReserve(ctx context.Context, command Ima
 				command.Task.QuoteID = quote.ID
 			} else {
 				var quote model.AIGatewayQuote
-				if err := tx.Where("public_id = ? AND user_id = ? AND project_id = ?", command.QuotePublicID, command.Owner.UserID, command.Owner.ProjectID).First(&quote).Error; err != nil {
+				if err := tx.Where("capability = ? AND operation IS NULL", model.AIImageCapability).
+					Where("public_id = ? AND user_id = ? AND project_id = ?", command.QuotePublicID, command.Owner.UserID, command.Owner.ProjectID).
+					First(&quote).Error; err != nil {
 					if errors.Is(err, gorm.ErrRecordNotFound) {
 						return repository.ErrImageQuoteNotFound
 					}
@@ -305,7 +318,7 @@ func (s *ImageBillingService) reserveTx(tx *gorm.DB, command ImageReserveCommand
 	if result.Error != nil || result.RowsAffected != 1 {
 		return nil, ErrImageBillingState
 	}
-	taskResult := tx.Model(&model.AIImageTask{}).Where("request_id = ? AND status = ?", request.RequestID, model.AIImageTaskCreated).
+	taskResult := imageTaskRows(tx.Model(&model.AIImageTask{})).Where("request_id = ? AND status = ?", request.RequestID, model.AIImageTaskCreated).
 		Updates(map[string]interface{}{"status": model.AIImageTaskReserved, "version_no": gorm.Expr("version_no + 1")})
 	if taskResult.Error != nil {
 		return nil, taskResult.Error
@@ -436,7 +449,7 @@ func (s *ImageBillingService) RequestCancel(ctx context.Context, taskPublicID st
 	}
 	pending := false
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("public_id = ? AND user_id = ? AND project_id = ?", taskPublicID, owner.UserID, owner.ProjectID)
+		query := imageTaskRows(tx.Clauses(clause.Locking{Strength: "UPDATE"})).Where("public_id = ? AND user_id = ? AND project_id = ?", taskPublicID, owner.UserID, owner.ProjectID)
 		if owner.APIKeyID != nil {
 			query = query.Where("api_key_id = ?", *owner.APIKeyID)
 		}
@@ -454,7 +467,7 @@ func (s *ImageBillingService) RequestCancel(ctx context.Context, taskPublicID st
 		now := s.now().UTC()
 		if task.Status != model.AIImageTaskReserved || request.ExecutionStatus != model.AIExecutionPending || request.BillingStatus != model.AIBillingHeld {
 			pending = true
-			return tx.Model(&model.AIImageTask{}).Where("id = ? AND cancel_requested_at IS NULL", task.ID).
+			return imageTaskRows(tx.Model(&model.AIImageTask{})).Where("id = ? AND cancel_requested_at IS NULL", task.ID).
 				Updates(map[string]interface{}{"cancel_requested_at": now, "version_no": gorm.Expr("version_no + 1")}).Error
 		}
 		settlement, err := s.pricing.CalculateImageFinalWithProviderCount(task.RequestID, request.PriceSnapshotJSON, 0, 0)
@@ -480,7 +493,7 @@ func (s *ImageBillingService) RequestCancel(ctx context.Context, taskPublicID st
 		}).Error; err != nil {
 			return err
 		}
-		if err := tx.Model(&model.AIImageTask{}).Where("id = ? AND status = ?", task.ID, model.AIImageTaskReserved).Updates(map[string]interface{}{
+		if err := imageTaskRows(tx.Model(&model.AIImageTask{})).Where("id = ? AND status = ?", task.ID, model.AIImageTaskReserved).Updates(map[string]interface{}{
 			"status": model.AIImageTaskCancelled, "progress": 100, "cancel_requested_at": now,
 			"completed_at": now, "version_no": gorm.Expr("version_no + 1"),
 		}).Error; err != nil {
@@ -497,7 +510,7 @@ func (s *ImageBillingService) CancelRequestBeforeExecution(ctx context.Context, 
 		return ErrImageBillingState
 	}
 	var task model.AIImageTask
-	if err := s.db.WithContext(ctx).Where("request_id = ?", requestID).First(&task).Error; err != nil {
+	if err := imageTaskRows(s.db.WithContext(ctx)).Where("request_id = ?", requestID).First(&task).Error; err != nil {
 		return err
 	}
 	_, err := s.RequestCancel(ctx, task.PublicID, repository.ImageOwner{UserID: task.UserID, ProjectID: task.ProjectID, APIKeyID: task.APIKeyID})
@@ -519,7 +532,7 @@ func (s *ImageBillingService) claimExecution(ctx context.Context, requestID stri
 		owner = repository.ImageOwner{}
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			var request model.AIRequest
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id = ?", requestID).First(&request).Error; err != nil {
+			if err := imageRequestRows(tx.Clauses(clause.Locking{Strength: "UPDATE"})).Where("request_id = ?", requestID).First(&request).Error; err != nil {
 				return err
 			}
 			if request.BillingStatus != model.AIBillingHeld || request.ExecutionStatus != model.AIExecutionPending {
@@ -531,13 +544,13 @@ func (s *ImageBillingService) claimExecution(ctx context.Context, requestID stri
 				return ErrImageExecutionStarted
 			}
 			var task model.AIImageTask
-			if err := tx.Where("request_id = ?", requestID).First(&task).Error; err != nil {
+			if err := imageTaskRows(tx).Where("request_id = ?", requestID).First(&task).Error; err != nil {
 				return err
 			}
 			if task.Status != model.AIImageTaskReserved {
 				return ErrImageBillingState
 			}
-			taskResult := tx.Model(&model.AIImageTask{}).Where("id = ? AND status = ?", task.ID, model.AIImageTaskReserved).
+			taskResult := imageTaskRows(tx.Model(&model.AIImageTask{})).Where("id = ? AND status = ?", task.ID, model.AIImageTaskReserved).
 				Updates(map[string]interface{}{"status": model.AIImageTaskProcessing, "progress": 40, "version_no": gorm.Expr("version_no + 1")})
 			if taskResult.Error != nil {
 				return taskResult.Error
@@ -555,11 +568,11 @@ func (s *ImageBillingService) claimExecution(ctx context.Context, requestID stri
 func (s *ImageBillingService) persistGatewayAssets(ctx context.Context, requestID string, owner repository.ImageOwner, result imagegateway.GatewayResult) error {
 	persistErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var task model.AIImageTask
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id = ? AND user_id = ? AND project_id = ?", requestID, owner.UserID, owner.ProjectID).First(&task).Error; err != nil {
+		if err := imageTaskRows(tx.Clauses(clause.Locking{Strength: "UPDATE"})).Where("request_id = ? AND user_id = ? AND project_id = ?", requestID, owner.UserID, owner.ProjectID).First(&task).Error; err != nil {
 			return err
 		}
 		var existing int64
-		if err := tx.Model(&model.AIImageAsset{}).Where("request_id = ?", requestID).Count(&existing).Error; err != nil {
+		if err := imageAssetRows(tx.Model(&model.AIImageAsset{})).Where("request_id = ?", requestID).Count(&existing).Error; err != nil {
 			return err
 		}
 		if existing > 0 {
@@ -609,7 +622,7 @@ func (s *ImageBillingService) persistGatewayAssets(ctx context.Context, requestI
 		})
 		taskUpdates := map[string]interface{}{"status": model.AIImageTaskModerating, "progress": 80, "result_json": resultSummary, "version_no": gorm.Expr("version_no + 1")}
 		applyImageProviderTaskEvidence(taskUpdates, result)
-		return tx.Model(&model.AIImageTask{}).Where("id = ?", task.ID).Updates(taskUpdates).Error
+		return imageTaskRows(tx.Model(&model.AIImageTask{})).Where("id = ?", task.ID).Updates(taskUpdates).Error
 	})
 	if persistErr == nil && s.afterAssetCommit != nil {
 		return s.afterAssetCommit()
@@ -657,6 +670,7 @@ func (s *ImageBillingService) inspectPersistedGatewayAssets(ctx context.Context,
 	var persisted []model.AIImageAsset
 	if err := s.db.WithContext(ctx).
 		Where("request_id = ? AND user_id = ? AND project_id = ?", requestID, owner.UserID, owner.ProjectID).
+		Where("modality = ?", "image").
 		Find(&persisted).Error; err != nil {
 		return imageAssetsPersistedPartial, err
 	}
@@ -691,7 +705,7 @@ func sameGatewayAssetMetadata(left, right imagegateway.GatewayAsset) bool {
 }
 
 func persistedAssetMatchesGateway(persisted model.AIImageAsset, expected imagegateway.GatewayAsset) bool {
-	return uint64(persisted.ResultIndex) == expected.ResultIndex && persisted.AssetRole == expected.AssetRole &&
+	return persisted.Modality == "image" && uint64(persisted.ResultIndex) == expected.ResultIndex && persisted.AssetRole == expected.AssetRole &&
 		persisted.IsBillableOutput == expected.IsBillableOutput && persisted.Bucket != nil && *persisted.Bucket == expected.StoredObject.Ref.Bucket &&
 		persisted.ObjectKey != nil && *persisted.ObjectKey == expected.StoredObject.Ref.Key && persisted.MIMEType != nil && *persisted.MIMEType == expected.MIMEType &&
 		persisted.SizeBytes != nil && *persisted.SizeBytes == expected.StoredObject.SizeBytes && persisted.SHA256 != nil && *persisted.SHA256 == expected.StoredObject.SHA256 &&
@@ -729,7 +743,8 @@ func (s *ImageBillingService) recordUntrackedGatewayAssets(ctx context.Context, 
 }
 
 func buildImageAsset(requestID string, taskID uint64, owner repository.ImageOwner, source imagegateway.GatewayAsset, parentID *uint64, now time.Time) (*model.AIImageAsset, error) {
-	if source.Width <= 0 || source.Height <= 0 || source.StoredObject.Ref.Bucket == "" || source.StoredObject.Ref.Key == "" || source.MIMEType == "" {
+	if source.Width <= 0 || source.Height <= 0 || source.StoredObject.Ref.Bucket == "" || source.StoredObject.Ref.Key == "" ||
+		!strings.HasPrefix(strings.ToLower(source.MIMEType), "image/") || !imageGatewayAssetRoleAllowed(source.AssetRole) {
 		return nil, ErrImageBillingState
 	}
 	width, height := uint32(source.Width), uint32(source.Height)
@@ -740,11 +755,23 @@ func buildImageAsset(requestID string, taskID uint64, owner repository.ImageOwne
 		RequestID: requestID, TaskID: taskID, ResultIndex: uint32(source.ResultIndex), AssetRole: source.AssetRole,
 		ParentAssetID: parentID, IsBillableOutput: source.IsBillableOutput, Bucket: &bucket, ObjectKey: &objectKey,
 		MIMEType: &mimeType, SizeBytes: &size, SHA256: &digest, Width: &width, Height: &height,
-		Source: source.Source, ModerationStatus: source.ModerationStatus,
+		Modality: "image",
+		Source:   source.Source, ModerationStatus: source.ModerationStatus,
 		ExplicitLabelStatus: source.ExplicitLabelState, ImplicitLabelStatus: source.ImplicitLabelState,
 		LifecycleState: source.LifecycleState, RetentionPolicyID: retentionPolicy(source.LifecycleState),
 		ExpiresAt: now.Add(30 * 24 * time.Hour),
 	}, nil
+}
+
+// imageGatewayAssetRoleAllowed 限定图片结果角色，防止共享资产表接入后误收视频成片或音视频派生物。
+func imageGatewayAssetRoleAllowed(role string) bool {
+	switch role {
+	case model.AIImageAssetPrimaryOutput, model.AIImageAssetThumbnail,
+		model.AIImageAssetModerationCopy, model.AIImageAssetDerived:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *ImageBillingService) finalizeSuccess(ctx context.Context, requestID string, providerResultCount uint64) error {
@@ -761,7 +788,7 @@ func (s *ImageBillingService) finalizeSuccess(ctx context.Context, requestID str
 				return ErrImageBillingState
 			}
 			var deliverableCount int64
-			if err := tx.Model(&model.AIImageAsset{}).
+			if err := imageAssetRows(tx.Model(&model.AIImageAsset{})).
 				Where("request_id = ? AND asset_role = ? AND is_billable_output = 1 AND lifecycle_state = ? AND moderation_status = ? AND explicit_label_status = ? AND implicit_label_status = ?",
 					requestID, model.AIImageAssetPrimaryOutput, model.AIImageAssetTemporary, model.AIModerationPassed, model.AIImageLabelApplied, model.AIImageLabelApplied).
 				Count(&deliverableCount).Error; err != nil {
@@ -788,7 +815,7 @@ func (s *ImageBillingService) finalizeSuccess(ctx context.Context, requestID str
 			if err := tx.Model(&model.AIRequestWalletLink{}).Where("id = ?", link.ID).Updates(updates).Error; err != nil {
 				return err
 			}
-			if err := tx.Model(&model.AIImageAsset{}).
+			if err := imageAssetRows(tx.Model(&model.AIImageAsset{})).
 				Where("request_id = ? AND lifecycle_state = ? AND moderation_status = ? AND explicit_label_status = ? AND implicit_label_status = ?",
 					requestID, model.AIImageAssetTemporary, model.AIModerationPassed, model.AIImageLabelApplied, model.AIImageLabelApplied).
 				Updates(map[string]interface{}{"lifecycle_state": model.AIImageAssetAvailable, "version_no": gorm.Expr("version_no + 1")}).Error; err != nil {
@@ -801,7 +828,7 @@ func (s *ImageBillingService) finalizeSuccess(ctx context.Context, requestID str
 			}).Error; err != nil {
 				return err
 			}
-			if err := tx.Model(&model.AIImageTask{}).Where("request_id = ?", requestID).Updates(map[string]interface{}{
+			if err := imageTaskRows(tx.Model(&model.AIImageTask{})).Where("request_id = ?", requestID).Updates(map[string]interface{}{
 				"status": model.AIImageTaskSucceeded, "progress": 100, "completed_at": now, "version_no": gorm.Expr("version_no + 1"),
 			}).Error; err != nil {
 				return err
@@ -869,7 +896,7 @@ func (s *ImageBillingService) finalizeRelease(ctx context.Context, requestID str
 			}).Error; err != nil {
 				return err
 			}
-			if err := tx.Model(&model.AIImageTask{}).Where("request_id = ?", requestID).Updates(taskUpdates).Error; err != nil {
+			if err := imageTaskRows(tx.Model(&model.AIImageTask{})).Where("request_id = ?", requestID).Updates(taskUpdates).Error; err != nil {
 				return err
 			}
 			return createImageOutboxTx(tx, requestID, "image_billing_released", model.AIBillingReleased, zero, now)
@@ -907,7 +934,7 @@ func (s *ImageBillingService) markPendingReconcile(ctx context.Context, requestI
 	now := s.now().UTC()
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var request model.AIRequest
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id = ?", requestID).First(&request).Error; err != nil {
+		if err := imageRequestRows(tx.Clauses(clause.Locking{Strength: "UPDATE"})).Where("request_id = ?", requestID).First(&request).Error; err != nil {
 			return err
 		}
 		if request.BillingStatus == model.AIBillingSettled || request.BillingStatus == model.AIBillingReleased {
@@ -935,7 +962,7 @@ func (s *ImageBillingService) markPendingReconcile(ctx context.Context, requestI
 			"result_json": recoveryJSON, "completed_at": nil, "version_no": gorm.Expr("version_no + 1"),
 		}
 		applyImageProviderTaskEvidence(taskUpdates, result)
-		taskUpdate := tx.Model(&model.AIImageTask{}).Where("request_id = ?", requestID).Updates(taskUpdates)
+		taskUpdate := imageTaskRows(tx.Model(&model.AIImageTask{})).Where("request_id = ?", requestID).Updates(taskUpdates)
 		if taskUpdate.Error != nil {
 			return taskUpdate.Error
 		}
@@ -952,7 +979,7 @@ func (s *ImageBillingService) markPendingReconcile(ctx context.Context, requestI
 // ReconcilePending 只使用已持久化任务和资产事实重试settle/release，不再次调用Provider。
 func (s *ImageBillingService) ReconcilePending(ctx context.Context, requestID string) error {
 	var request model.AIRequest
-	if err := s.db.WithContext(ctx).Where("request_id = ?", requestID).First(&request).Error; err != nil {
+	if err := imageRequestRows(s.db.WithContext(ctx)).Where("request_id = ?", requestID).First(&request).Error; err != nil {
 		return err
 	}
 	if request.BillingStatus == model.AIBillingSettled || request.BillingStatus == model.AIBillingReleased {
@@ -962,7 +989,7 @@ func (s *ImageBillingService) ReconcilePending(ctx context.Context, requestID st
 		return ErrImageBillingState
 	}
 	var task model.AIImageTask
-	if err := s.db.WithContext(ctx).Where("request_id = ?", requestID).First(&task).Error; err != nil {
+	if err := imageTaskRows(s.db.WithContext(ctx)).Where("request_id = ?", requestID).First(&task).Error; err != nil {
 		return err
 	}
 	var facts imageRecoveryFacts
@@ -1019,7 +1046,8 @@ func (s *ImageBillingService) RecoverStaleActiveExecutions(ctx context.Context, 
 		Select("task.request_id").
 		Joins("JOIN ai_requests AS request ON request.request_id = task.request_id").
 		Where("task.status IN ? AND task.updated_at <= ? AND request.updated_at <= ?", activeStatuses, staleBefore, staleBefore).
-		Where("request.modality = ? AND request.execution_status = ? AND request.billing_status = ?", "image", model.AIExecutionRunning, model.AIBillingHeld).
+		Where("task.capability = ? AND task.operation IS NULL", model.AIImageCapability).
+		Where("request.modality = ? AND request.capability = ? AND request.execution_status = ? AND request.billing_status = ?", "image", model.AIImageCapability, model.AIExecutionRunning, model.AIBillingHeld).
 		Order("task.id ASC").Limit(limit).Scan(&requestIDs).Error; err != nil {
 		return 0, err
 	}
@@ -1030,14 +1058,14 @@ func (s *ImageBillingService) RecoverStaleActiveExecutions(ctx context.Context, 
 		err := retryImageBillingTransaction(ctx, func() error {
 			return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 				var request model.AIRequest
-				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id = ?", requestID).First(&request).Error; err != nil {
+				if err := imageRequestRows(tx.Clauses(clause.Locking{Strength: "UPDATE"})).Where("request_id = ?", requestID).First(&request).Error; err != nil {
 					return err
 				}
 				if request.ExecutionStatus != model.AIExecutionRunning || request.BillingStatus != model.AIBillingHeld || request.UpdatedAt.After(staleBefore) {
 					return nil
 				}
 				var task model.AIImageTask
-				if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id = ?", requestID).First(&task).Error; err != nil {
+				if err := imageTaskRows(tx.Clauses(clause.Locking{Strength: "UPDATE"})).Where("request_id = ?", requestID).First(&task).Error; err != nil {
 					return err
 				}
 				if !containsImageActiveTaskStatus(task.Status) || task.UpdatedAt.After(staleBefore) {
@@ -1071,7 +1099,7 @@ func (s *ImageBillingService) RecoverStaleActiveExecutions(ctx context.Context, 
 				if requestUpdate.RowsAffected != 1 {
 					return ErrImageExecutionStarted
 				}
-				taskUpdate := tx.Model(&model.AIImageTask{}).
+				taskUpdate := imageTaskRows(tx.Model(&model.AIImageTask{})).
 					Where("id = ? AND status = ? AND version_no = ? AND updated_at = ?", task.ID, task.Status, task.VersionNo, task.UpdatedAt).
 					Updates(map[string]interface{}{
 						"status": model.AIImageTaskPendingReconcile, "error_code": "result_unknown", "result_json": recoveryJSON,
@@ -1144,7 +1172,7 @@ func (s *ImageBillingService) ReconcilePendingAndCompleteCompensation(ctx contex
 	}
 	var billingStatus string
 	if err := runImagePostProviderAction(ctx, func(localCtx context.Context) error {
-		return s.db.WithContext(localCtx).Model(&model.AIRequest{}).
+		return imageRequestRows(s.db.WithContext(localCtx).Model(&model.AIRequest{})).
 			Select("billing_status").Where("request_id = ?", requestID).Scan(&billingStatus).Error
 	}); err != nil {
 		if restoreErr := restoreClaim(); restoreErr != nil {
@@ -1172,7 +1200,7 @@ func (s *ImageBillingService) ReconcilePendingAndCompleteCompensation(ctx contex
 func (s *ImageBillingService) ReconcileRequest(ctx context.Context, requestID string) (ImageReconciliationReport, error) {
 	report := ImageReconciliationReport{RequestID: requestID}
 	var request model.AIRequest
-	if err := s.db.WithContext(ctx).Where("request_id = ?", requestID).First(&request).Error; err != nil {
+	if err := imageRequestRows(s.db.WithContext(ctx)).Where("request_id = ?", requestID).First(&request).Error; err != nil {
 		return report, err
 	}
 	report.BillingStatus = request.BillingStatus
@@ -1213,7 +1241,7 @@ func (s *ImageBillingService) ReconcileRequest(ctx context.Context, requestID st
 	}
 	report.SaleUsageCountDiff = usageCount.Sub(saleCount)
 	var assetCount int64
-	if err := s.db.WithContext(ctx).Model(&model.AIImageAsset{}).
+	if err := imageAssetRows(s.db.WithContext(ctx).Model(&model.AIImageAsset{})).
 		Where("request_id = ? AND asset_role = ? AND is_billable_output = 1 AND lifecycle_state = ?", requestID, model.AIImageAssetPrimaryOutput, model.AIImageAssetAvailable).
 		Count(&assetCount).Error; err != nil {
 		return report, err
@@ -1229,7 +1257,7 @@ func (s *ImageBillingService) ReconcileRequest(ctx context.Context, requestID st
 			return report, err
 		}
 		var task model.AIImageTask
-		if err := s.db.WithContext(ctx).Where("request_id = ?", requestID).First(&task).Error; err != nil {
+		if err := imageTaskRows(s.db.WithContext(ctx)).Where("request_id = ?", requestID).First(&task).Error; err != nil {
 			return report, err
 		}
 		var summary struct {
@@ -1364,7 +1392,7 @@ func (s *ImageBillingService) AppendAdjustment(ctx context.Context, requestID, d
 		return ErrImageAdjustmentInvalid
 	}
 	var request model.AIRequest
-	if err := s.db.WithContext(ctx).Where("request_id = ? AND billing_status IN (?,?)", requestID, model.AIBillingSettled, model.AIBillingReleased).First(&request).Error; err != nil {
+	if err := imageRequestRows(s.db.WithContext(ctx)).Where("request_id = ? AND billing_status IN (?,?)", requestID, model.AIBillingSettled, model.AIBillingReleased).First(&request).Error; err != nil {
 		return err
 	}
 	decoded, err := DecodePriceSnapshot(request.PriceSnapshotJSON)
@@ -1410,7 +1438,7 @@ func createImageOutboxTx(tx *gorm.DB, requestID, eventType, status string, amoun
 }
 
 func lockOwnedImageRequest(tx *gorm.DB, requestID string, owner repository.ImageOwner) (*model.AIRequest, error) {
-	query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id = ? AND user_id = ? AND project_id = ?", requestID, owner.UserID, owner.ProjectID)
+	query := imageRequestRows(tx.Clauses(clause.Locking{Strength: "UPDATE"})).Where("request_id = ? AND user_id = ? AND project_id = ?", requestID, owner.UserID, owner.ProjectID)
 	if owner.APIKeyID != nil {
 		query = query.Where("api_key_id = ?", *owner.APIKeyID)
 	}
@@ -1423,7 +1451,7 @@ func lockOwnedImageRequest(tx *gorm.DB, requestID string, owner repository.Image
 
 func lockImageRequestAndLink(tx *gorm.DB, requestID string) (*model.AIRequest, *model.AIRequestWalletLink, error) {
 	var request model.AIRequest
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id = ?", requestID).First(&request).Error; err != nil {
+	if err := imageRequestRows(tx.Clauses(clause.Locking{Strength: "UPDATE"})).Where("request_id = ?", requestID).First(&request).Error; err != nil {
 		return nil, nil, err
 	}
 	var link model.AIRequestWalletLink
@@ -1431,6 +1459,21 @@ func lockImageRequestAndLink(tx *gorm.DB, requestID string) (*model.AIRequest, *
 		return nil, nil, err
 	}
 	return &request, &link, nil
+}
+
+// imageTaskRows 为所有图片任务读写追加共享表判别式；operation为空是既有图片合同的一部分。
+func imageTaskRows(db *gorm.DB) *gorm.DB {
+	return db.Where("capability = ? AND operation IS NULL", model.AIImageCapability)
+}
+
+// imageAssetRows 防止图片结算、清理和对账在共享资产表中命中视频行。
+func imageAssetRows(db *gorm.DB) *gorm.DB {
+	return db.Where("modality = ?", "image")
+}
+
+// imageRequestRows 把图片财务状态机限定到图片请求，避免同一request_id异常数据串入视频路径。
+func imageRequestRows(db *gorm.DB) *gorm.DB {
+	return db.Where("modality = ? AND capability = ?", "image", model.AIImageCapability)
 }
 
 func imageEventID(requestID, eventType string) string {

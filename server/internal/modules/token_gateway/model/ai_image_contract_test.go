@@ -21,9 +21,19 @@ func TestAIImageTableNamesAndStateSets(t *testing.T) {
 		AIImageTaskStoring, AIImageTaskModerating, AIImageTaskSucceeded, AIImageTaskFailed,
 		AIImageTaskCancelled, AIImageTaskExpired, AIImageTaskPendingReconcile,
 	}, 11)
+	assertUniqueStates(t, "共享媒体任务", []string{
+		AIImageTaskCreated, AIImageTaskReserved, AIImageTaskQueued, AIImageTaskSubmitting,
+		AIImageTaskSubmitted, AIImageTaskProcessing, AIImageTaskFetching, AIImageTaskStoring,
+		AIImageTaskModerating, AIImageTaskLabeling, AIImageTaskSucceeded, AIImageTaskFailed,
+		AIImageTaskCancelled, AIImageTaskExpired, AIImageTaskPendingReconcile,
+	}, 15)
 	assertUniqueStates(t, "图片资产角色", []string{
 		AIImageAssetPrimaryOutput, AIImageAssetThumbnail, AIImageAssetModerationCopy, AIImageAssetDerived,
 	}, 4)
+	assertUniqueStates(t, "共享媒体资产角色", []string{
+		AIImageAssetPrimaryOutput, AIImageAssetContent, AIImageAssetPreview, AIImageAssetThumbnail,
+		AIImageAssetModerationCopy, AIImageAssetDerived,
+	}, 6)
 	assertUniqueStates(t, "图片资产生命周期", []string{
 		AIImageAssetTemporary, AIImageAssetAvailable, AIImageAssetQuarantined, AIImageAssetExpiring,
 		AIImageAssetDeleting, AIImageAssetDeleted, AIImageAssetDeleteFailed,
@@ -84,6 +94,65 @@ func TestAIRequestAndUsageModelsContainImageCompatibilityFields(t *testing.T) {
 	for _, column := range []string{"record_kind", "price_version_id", "variant_hash", "variant_json", "usage_unit", "unit_size", "currency"} {
 		if usageSchema.FieldsByDBName[column] == nil {
 			t.Fatalf("AIUsageItem 缺少图片计量列 %s", column)
+		}
+	}
+}
+
+func TestAIMediaCompatibilityFieldsRemainNullableAndInternalTopologyIsHidden(t *testing.T) {
+	models := []struct {
+		value    interface{}
+		required []string
+	}{
+		{value: &AIRequest{}, required: []string{"operation"}},
+		{value: &AIGatewayQuote{}, required: []string{"operation"}},
+		{value: &AIImageTask{}, required: []string{"operation", "bifrost_provider", "bifrost_task_id", "bifrost_compound_id"}},
+		{value: &AIUsageItem{}, required: []string{"operation"}},
+		{value: &AIImageAsset{}, required: []string{
+			"modality", "duration_seconds", "frame_rate", "container", "video_codec", "audio_codec",
+			"has_audio", "media_deleted_at",
+		}},
+	}
+
+	for _, item := range models {
+		parsed, err := schema.Parse(item.value, &sync.Map{}, schema.NamingStrategy{})
+		if err != nil {
+			t.Fatalf("解析媒体兼容模型失败: %v", err)
+		}
+		for _, column := range item.required {
+			field := parsed.FieldsByDBName[column]
+			if field == nil {
+				t.Fatalf("Go 模型 %s 缺少媒体兼容列 %s", parsed.Table, column)
+			}
+			if column == "operation" && field.NotNull {
+				t.Fatalf("Go 模型 %s 的 operation 必须可空，以兼容既有 Chat/Image 行", parsed.Table)
+			}
+		}
+	}
+
+	bifrostProvider := "internal-provider"
+	bifrostTaskID := "internal-task"
+	bifrostCompoundID := "internal-compound"
+	bucket := "private-video-bucket"
+	objectKey := "private/video/object.mp4"
+	taskRaw, err := json.Marshal(AIImageTask{
+		BifrostProvider:   &bifrostProvider,
+		BifrostTaskID:     &bifrostTaskID,
+		BifrostCompoundID: &bifrostCompoundID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assetRaw, err := json.Marshal(AIImageAsset{Bucket: &bucket, ObjectKey: &objectKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range [][]byte{taskRaw, assetRaw} {
+		for _, forbidden := range []string{
+			"internal-provider", "internal-task", "internal-compound", "private-video-bucket", "private/video/object.mp4",
+		} {
+			if strings.Contains(string(raw), forbidden) {
+				t.Fatalf("媒体模型 JSON 不得暴露内部拓扑或存储字段 %s: %s", forbidden, raw)
+			}
 		}
 	}
 }

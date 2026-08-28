@@ -26,7 +26,9 @@ func (r *ImageCleanupRepository) ListCleanupCandidates(ctx context.Context, now 
 	err := r.db.WithContext(ctx).Table("ai_gateway_assets AS assets").
 		Select("assets.*").
 		Joins("JOIN ai_requests AS requests ON requests.request_id = assets.request_id").
-		Where(`assets.legal_hold = 0
+		Where(`assets.modality = ?
+AND requests.modality = ? AND requests.capability = ?
+AND assets.legal_hold = 0
 AND assets.dispute_status <> ?
 AND assets.deleted_at IS NULL
 AND NOT EXISTS (
@@ -46,7 +48,8 @@ AND (
     (assets.lifecycle_state = ? AND assets.updated_at <= ?) OR
     (assets.lifecycle_state = ? AND assets.updated_at <= ?)
   ))
-)`,
+		)`,
+			"image", "image", model.AIImageCapability,
 			model.AIImageDisputeOpen,
 			model.AIBillingReleased,
 			model.AIImageAssetTemporary, now.Add(-24*time.Hour),

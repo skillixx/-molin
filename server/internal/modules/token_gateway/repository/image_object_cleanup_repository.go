@@ -192,6 +192,7 @@ func (r *ImageObjectCleanupRepository) HasAssetReference(ctx context.Context, re
 	}
 	var count int64
 	err := r.db.WithContext(ctx).Model(&model.AIImageAsset{}).
+		// 对象存储引用是跨模态共享事实。候选任务可以限定图片，但最终删除保护必须检查全部模态。
 		Where("bucket = ? AND object_key = ?", ref.Bucket, ref.Key).Limit(1).Count(&count).Error
 	return count > 0, err
 }

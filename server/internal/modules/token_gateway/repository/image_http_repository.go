@@ -115,7 +115,9 @@ func (r *ImageHTTPRepository) FindTaskRecordForOwner(ctx context.Context, public
 		Select(`tasks.*, requests.execution_status, requests.billing_status, requests.delivery_status,
 requests.quoted_amount, requests.settled_amount`).
 		Joins("JOIN ai_requests AS requests ON requests.request_id = tasks.request_id").
-		Where("tasks.public_id = ? AND tasks.user_id = ? AND tasks.project_id = ?", publicID, owner.UserID, owner.ProjectID)
+		Where("tasks.public_id = ? AND tasks.user_id = ? AND tasks.project_id = ?", publicID, owner.UserID, owner.ProjectID).
+		Where("tasks.capability = ? AND tasks.operation IS NULL", model.AIImageCapability).
+		Where("requests.modality = ? AND requests.capability = ?", "image", model.AIImageCapability)
 	if owner.APIKeyID != nil {
 		query = query.Where("tasks.api_key_id = ?", *owner.APIKeyID)
 	}
@@ -134,7 +136,9 @@ func (r *ImageHTTPRepository) FindTaskRecordByRequestForOwner(ctx context.Contex
 		Select(`tasks.*, requests.execution_status, requests.billing_status, requests.delivery_status,
 requests.quoted_amount, requests.settled_amount`).
 		Joins("JOIN ai_requests AS requests ON requests.request_id = tasks.request_id").
-		Where("tasks.request_id = ? AND tasks.user_id = ? AND tasks.project_id = ?", requestID, owner.UserID, owner.ProjectID)
+		Where("tasks.request_id = ? AND tasks.user_id = ? AND tasks.project_id = ?", requestID, owner.UserID, owner.ProjectID).
+		Where("tasks.capability = ? AND tasks.operation IS NULL", model.AIImageCapability).
+		Where("requests.modality = ? AND requests.capability = ?", "image", model.AIImageCapability)
 	if owner.APIKeyID != nil {
 		query = query.Where("tasks.api_key_id = ?", *owner.APIKeyID)
 	}
@@ -151,7 +155,9 @@ requests.quoted_amount, requests.settled_amount`).
 func (r *ImageHTTPRepository) ListTasksForOwner(ctx context.Context, filter ImageTaskFilter) ([]ImageTaskRecord, int64, error) {
 	query := r.db.WithContext(ctx).Table("ai_gateway_tasks AS tasks").
 		Joins("JOIN ai_requests AS requests ON requests.request_id = tasks.request_id").
-		Where("tasks.user_id = ? AND tasks.project_id = ?", filter.UserID, filter.ProjectID)
+		Where("tasks.user_id = ? AND tasks.project_id = ?", filter.UserID, filter.ProjectID).
+		Where("tasks.capability = ? AND tasks.operation IS NULL", model.AIImageCapability).
+		Where("requests.modality = ? AND requests.capability = ?", "image", model.AIImageCapability)
 	if filter.APIKeyID != nil {
 		query = query.Where("tasks.api_key_id = ?", *filter.APIKeyID)
 	}
@@ -169,9 +175,10 @@ requests.quoted_amount, requests.settled_amount`).Order("tasks.id DESC").Offset(
 }
 
 func (r *ImageHTTPRepository) ListAssetsForRequest(ctx context.Context, requestID string, owner ImageOwner) ([]model.AIImageAsset, error) {
-	query := r.db.WithContext(ctx).Where("request_id = ? AND user_id = ? AND project_id = ?", requestID, owner.UserID, owner.ProjectID)
+	query := r.db.WithContext(ctx).Where("request_id = ? AND user_id = ? AND project_id = ?", requestID, owner.UserID, owner.ProjectID).
+		Where("modality = ?", "image")
 	if owner.APIKeyID != nil {
-		query = query.Where("EXISTS (SELECT 1 FROM ai_gateway_tasks t WHERE t.id = ai_gateway_assets.task_id AND t.api_key_id = ?)", *owner.APIKeyID)
+		query = query.Where("EXISTS (SELECT 1 FROM ai_gateway_tasks t WHERE t.id = ai_gateway_assets.task_id AND t.api_key_id = ? AND t.capability = ? AND t.operation IS NULL)", *owner.APIKeyID, model.AIImageCapability)
 	}
 	var items []model.AIImageAsset
 	err := query.Order("result_index ASC, asset_role ASC").Find(&items).Error
@@ -179,7 +186,10 @@ func (r *ImageHTTPRepository) ListAssetsForRequest(ctx context.Context, requestI
 }
 
 func (r *ImageHTTPRepository) ListAdminTasks(ctx context.Context, filter ImageAdminTaskFilter) ([]ImageTaskRecord, int64, error) {
-	query := r.db.WithContext(ctx).Table("ai_gateway_tasks AS tasks").Joins("JOIN ai_requests AS requests ON requests.request_id = tasks.request_id")
+	query := r.db.WithContext(ctx).Table("ai_gateway_tasks AS tasks").
+		Joins("JOIN ai_requests AS requests ON requests.request_id = tasks.request_id").
+		Where("tasks.capability = ? AND tasks.operation IS NULL", model.AIImageCapability).
+		Where("requests.modality = ? AND requests.capability = ?", "image", model.AIImageCapability)
 	if filter.UserID != 0 {
 		query = query.Where("tasks.user_id = ?", filter.UserID)
 	}
@@ -208,7 +218,10 @@ func (r *ImageHTTPRepository) FindAdminTask(ctx context.Context, publicID string
 		Select(`tasks.*, requests.execution_status, requests.billing_status, requests.delivery_status,
 requests.quoted_amount, requests.settled_amount`).
 		Joins("JOIN ai_requests AS requests ON requests.request_id = tasks.request_id").
-		Where("tasks.public_id = ?", publicID).First(&item).Error
+		Where("tasks.public_id = ?", publicID).
+		Where("tasks.capability = ? AND tasks.operation IS NULL", model.AIImageCapability).
+		Where("requests.modality = ? AND requests.capability = ?", "image", model.AIImageCapability).
+		First(&item).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrImageTaskNotFound
 	}
@@ -216,7 +229,7 @@ requests.quoted_amount, requests.settled_amount`).
 }
 
 func (r *ImageHTTPRepository) ListAdminAssets(ctx context.Context, filter ImageAdminAssetFilter) ([]model.AIImageAsset, int64, error) {
-	query := r.db.WithContext(ctx).Model(&model.AIImageAsset{})
+	query := r.db.WithContext(ctx).Model(&model.AIImageAsset{}).Where("modality = ?", "image")
 	if filter.UserID != 0 {
 		query = query.Where("user_id = ?", filter.UserID)
 	}
@@ -240,7 +253,7 @@ func (r *ImageHTTPRepository) ListAdminAssets(ctx context.Context, filter ImageA
 
 func (r *ImageHTTPRepository) FindAdminAsset(ctx context.Context, publicID string) (*model.AIImageAsset, error) {
 	var item model.AIImageAsset
-	err := r.db.WithContext(ctx).Where("public_id = ?", publicID).First(&item).Error
+	err := r.db.WithContext(ctx).Where("public_id = ? AND modality = ?", publicID, "image").First(&item).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrImageAssetNotFound
 	}
