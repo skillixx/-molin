@@ -2156,6 +2156,20 @@ Wechatpay-Nonce: <随机串>
 
 ## 十四、Token 网关模块（第二阶段）
 
+### VID-G1 视频Schema状态（前端不可对接）
+
+VID-G1只建立视频Expand Schema、Go模型和本地约束验证。当前没有视频HTTP Handler、运行时路由或Vue页面，前端不得调用或探测`/v1/videos`、`/api/token/videos/*`、`/api/admin/token/video-*`，也不得把OpenAPI规划快照当成已上线接口。
+
+后续前端合同会复用同一任务体系并区分：
+
+- `text_to_video`：不提交参考图。
+- `image_to_video`：只绑定一个由后端生成的规范化输入快照。
+- 对外任务ID只使用Molin `video_id`；不得展示内部ID、Provider任务ID或Bifrost复合ID。
+- 共享Quote/Task/Asset及视频新模型的内部自增ID在模型JSON层已隐藏；未来前端只能消费VID-G6专用DTO映射出的`video_id`，不能直接依赖数据库模型字段。
+- 前端不得直接写任务、Usage、钱包、回调、资产生命周期或输入租约状态。
+
+十类`video:*`权限在VID-G1仅作为后续管理能力的数据库seed，权限存在不表示按钮、页面或接口已实现。正式页面必须在对应后续Goal中重新对账API、加载/错误/空状态、按钮反馈和桌面/平板/手机适配。Schema字段和证据边界见[`video-gateway-vid-g1-schema.md`](./video-gateway-vid-g1-schema.md)。
+
 ### G4 管理页面接口规划
 
 管理后台新增“安全治理”“资源策略”“预算策略”“补偿任务”四个页面；页面和列表读取统一要求 `ai_gateway:view`，写按钮再分别检查 `ai_gateway:safety_manage`、`ai_gateway:resource_manage`、`ai_gateway:budget_manage`、`ai_gateway:reconcile_manage`。接口清单和字段以 `docs/full-api-design.md` 的 G4 节为准；所有列表使用 `{items,page,page_size,total}`。策略创建只提交 `rules`，必须提示并校验七类安全底线完整覆盖，不得显示可编辑的拒绝文案。补偿页允许有权限人员对 Outbox dead 事件填写原因后按原 event_id 重试。策略、处置、预算和补偿写操作必须展示提交中、成功、失败和 409 冲突状态；409 后重新拉取记录，不能覆盖更新。

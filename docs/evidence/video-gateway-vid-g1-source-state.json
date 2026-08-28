@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-08-28T01:52:44.802164+00:00",
+  "head_commit": "ec3e4d08ad44d70faac3c3dd927ef30ecdd4bfc1",
+  "base_commit": "f9aff4d2aace3d9bf862a88f0ed6304e2953dacc",
+  "origin_main_commit": "f9aff4d2aace3d9bf862a88f0ed6304e2953dacc",
+  "origin_main_remote_url": "github.com/<owner>/-molin.git",
+  "origin_main_provenance": "FRESH_FETCH",
+  "tracked_patch_sha256": "EMPTY",
+  "untracked_manifest_sha256": "EMPTY",
+  "source_state_id": "75f098c77a577703915a4fceb784e96a89470effb6fd8936aa832d2e9990fc45",
+  "excluded_generated_evidence": [
+    "docs/evidence/video-gateway-vid-g0-bifrost-contract.json",
+    "docs/evidence/video-gateway-vid-g0-source-state.json",
+    "docs/evidence/video-gateway-vid-g1-mysql-contract.json",
+    "docs/evidence/video-gateway-vid-g1-source-state.json"
+  ],
+  "untracked_manifest": []
+}

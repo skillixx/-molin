@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -22,7 +23,28 @@ func (r *ImageAssetRepository) Create(ctx context.Context, asset *model.AIImageA
 	if r == nil || r.db == nil || asset == nil || asset.UserID == 0 || asset.ProjectID == 0 || asset.TaskID == 0 {
 		return ErrImageAssetNotFound
 	}
+	if asset.Modality == "" {
+		asset.Modality = "image"
+	}
+	if !validImageAssetFact(asset) {
+		return ErrImageAssetNotFound
+	}
 	return r.db.WithContext(ctx).Create(asset).Error
+}
+
+// validImageAssetFact 拒绝视频角色、视频MIME及视频专属媒体字段进入图片写路径。
+func validImageAssetFact(asset *model.AIImageAsset) bool {
+	if asset == nil || asset.Modality != "image" || asset.DurationSeconds != nil || asset.FrameRate != nil ||
+		asset.Container != nil || asset.VideoCodec != nil || asset.AudioCodec != nil || asset.HasAudio != nil {
+		return false
+	}
+	switch asset.AssetRole {
+	case model.AIImageAssetPrimaryOutput, model.AIImageAssetThumbnail,
+		model.AIImageAssetModerationCopy, model.AIImageAssetDerived:
+	default:
+		return false
+	}
+	return asset.MIMEType == nil || strings.HasPrefix(strings.ToLower(*asset.MIMEType), "image/")
 }
 
 // FindOwnedForInternal 只供网关内部状态机读取；对外下载必须使用 FindDeliverable。
@@ -31,7 +53,8 @@ func (r *ImageAssetRepository) FindOwnedForInternal(ctx context.Context, publicI
 		return nil, ErrImageAssetNotFound
 	}
 	var asset model.AIImageAsset
-	if err := r.db.WithContext(ctx).Where("public_id = ? AND user_id = ? AND project_id = ?", publicID, owner.UserID, owner.ProjectID).First(&asset).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("public_id = ? AND user_id = ? AND project_id = ?", publicID, owner.UserID, owner.ProjectID).
+		Where("modality = ?", "image").First(&asset).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrImageAssetNotFound
 		}
@@ -50,14 +73,16 @@ func (r *ImageAssetRepository) FindDeliverable(ctx context.Context, publicID str
 		Select("assets.*").
 		Joins("JOIN ai_requests AS requests ON requests.request_id = assets.request_id").
 		Where(`assets.public_id = ? AND assets.user_id = ? AND assets.project_id = ?
+AND assets.modality = ?
 AND assets.asset_role = ? AND assets.is_billable_output = 1
 AND assets.lifecycle_state = ? AND assets.moderation_status = ?
 AND assets.explicit_label_status = ? AND assets.implicit_label_status = ?
 AND assets.dispute_status <> ? AND assets.deleted_at IS NULL
+AND requests.modality = ? AND requests.capability = ?
 AND requests.billing_status = ? AND requests.delivery_status = ?`,
-			publicID, owner.UserID, owner.ProjectID, model.AIImageAssetPrimaryOutput, model.AIImageAssetAvailable,
+			publicID, owner.UserID, owner.ProjectID, "image", model.AIImageAssetPrimaryOutput, model.AIImageAssetAvailable,
 			model.AIModerationPassed, model.AIImageLabelApplied, model.AIImageLabelApplied, model.AIImageDisputeOpen,
-			model.AIBillingSettled, model.AIDeliveryAvailable).
+			"image", model.AIImageCapability, model.AIBillingSettled, model.AIDeliveryAvailable).
 		First(&asset).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -100,6 +125,7 @@ func (r *ImageAssetRepository) TransitionLifecycle(ctx context.Context, publicID
 	}
 	result := r.db.WithContext(ctx).Model(&model.AIImageAsset{}).
 		Where("id = ? AND user_id = ? AND project_id = ? AND lifecycle_state = ? AND version_no = ?", asset.ID, owner.UserID, owner.ProjectID, asset.LifecycleState, expectedVersion).
+		Where("modality = ?", "image").
 		Updates(updates)
 	if result.Error != nil {
 		return nil, result.Error
@@ -114,8 +140,8 @@ func (r *ImageAssetRepository) TransitionLifecycle(ctx context.Context, publicID
 func (r *ImageAssetRepository) ClaimStaleDeleting(ctx context.Context, publicID string, owner ImageOwner, expectedVersion uint64, now time.Time) (*model.AIImageAsset, error) {
 	result := r.db.WithContext(ctx).Model(&model.AIImageAsset{}).
 		Where(`public_id = ? AND user_id = ? AND project_id = ? AND lifecycle_state = ? AND version_no = ?
-AND legal_hold = 0 AND dispute_status <> ? AND deleted_at IS NULL`,
-			publicID, owner.UserID, owner.ProjectID, model.AIImageAssetDeleting, expectedVersion, model.AIImageDisputeOpen).
+AND modality = ? AND legal_hold = 0 AND dispute_status <> ? AND deleted_at IS NULL`,
+			publicID, owner.UserID, owner.ProjectID, model.AIImageAssetDeleting, expectedVersion, "image", model.AIImageDisputeOpen).
 		Updates(map[string]interface{}{"version_no": gorm.Expr("version_no + 1"), "updated_at": now})
 	if result.Error != nil {
 		return nil, result.Error
@@ -137,6 +163,7 @@ func (r *ImageAssetRepository) OpenDispute(ctx context.Context, publicID string,
 	result := r.db.WithContext(ctx).Model(&model.AIImageAsset{}).
 		Where("id = ? AND version_no = ? AND dispute_status = ? AND lifecycle_state NOT IN ?", asset.ID, expectedVersion, model.AIImageDisputeNone,
 			[]string{model.AIImageAssetExpiring, model.AIImageAssetDeleting, model.AIImageAssetDeleted}).
+		Where("modality = ?", "image").
 		Updates(map[string]interface{}{
 			"dispute_status": model.AIImageDisputeOpen, "dispute_opened_at": now, "dispute_resolved_at": nil,
 			"legal_hold": true, "version_no": gorm.Expr("version_no + 1"), "updated_at": now,
@@ -161,6 +188,7 @@ func (r *ImageAssetRepository) ResolveDispute(ctx context.Context, publicID stri
 	}
 	result := r.db.WithContext(ctx).Model(&model.AIImageAsset{}).
 		Where("id = ? AND version_no = ? AND dispute_status = ?", asset.ID, expectedVersion, model.AIImageDisputeOpen).
+		Where("modality = ?", "image").
 		Updates(map[string]interface{}{
 			"dispute_status": model.AIImageDisputeResolved, "dispute_resolved_at": now,
 			"version_no": gorm.Expr("version_no + 1"), "updated_at": now,

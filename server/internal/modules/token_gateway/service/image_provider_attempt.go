@@ -62,13 +62,13 @@ func (a *AttemptRecordingImageAdapter) Generate(ctx context.Context, request ima
 func (a *AttemptRecordingImageAdapter) recordAttempt(ctx context.Context, requestID, providerCode string) error {
 	return a.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var task model.AIImageTask
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id = ?", requestID).First(&task).Error; err != nil {
+		if err := imageTaskRows(tx.Clauses(clause.Locking{Strength: "UPDATE"})).Where("request_id = ?", requestID).First(&task).Error; err != nil {
 			return err
 		}
 		if task.Status != model.AIImageTaskProcessing || task.AttemptCount != 0 {
 			return ErrImageExecutionStarted
 		}
-		result := tx.Model(&model.AIImageTask{}).
+		result := imageTaskRows(tx.Model(&model.AIImageTask{})).
 			Where("id = ? AND status = ? AND attempt_count = 0 AND version_no = ?", task.ID, model.AIImageTaskProcessing, task.VersionNo).
 			Updates(map[string]interface{}{
 				"provider_code": providerCode, "attempt_count": 1, "version_no": gorm.Expr("version_no + 1"),

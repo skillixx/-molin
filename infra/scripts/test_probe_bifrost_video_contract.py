@@ -36,6 +36,20 @@ class ProbeBifrostVideoContractTest(unittest.TestCase):
     def setUp(self):
         self.module = load_probe_module()
 
+    def test_legacy_image_verifiers_apply_video_schema_before_current_head_tests(self):
+        """旧阶段脚本必须先完成本阶段断言，再为当前HEAD测试补装000072兼容层。"""
+        script_expectations = {
+            "verify-ai-gateway-migration-000062.sh": "video_g1_compat_up",
+            "verify-image-gateway-migration-000069.sh": "000072_expand_video_gateway_schema.up.sql",
+            "verify-image-gateway-migration-000070.sh": "000072_expand_video_gateway_schema.up.sql",
+            "verify-image-gateway-migration-000071.sh": "000072_expand_video_gateway_schema.up.sql",
+            "verify-image-gateway-img-g6-http.sh": '"${version}" -le 72',
+            "verify-image-gateway-img-g7-infrastructure.sh": '"${version}" -le 72',
+        }
+        for script_name, marker in script_expectations.items():
+            content = (SCRIPT_DIR / script_name).read_text(encoding="utf-8")
+            self.assertIn(marker, content, script_name)
+
     def test_locked_image_uses_exact_v2_digest(self):
         """G0-B必须锁定当前复核的镜像摘要，禁止使用浮动标签。"""
         self.assertEqual(self.module.BIFROST_IMAGE_TAG, "maximhq/bifrost:v2.0.0")
@@ -45,12 +59,14 @@ class ProbeBifrostVideoContractTest(unittest.TestCase):
         )
 
     def test_source_state_excludes_only_generated_evidence(self):
-        """源码快照只排除会递归写入自身的两份生成型证据。"""
+        """源码快照只排除会递归写入自身的各阶段生成型证据。"""
         self.assertEqual(
             self.module.SOURCE_STATE_EXCLUDES,
             {
                 "docs/evidence/video-gateway-vid-g0-bifrost-contract.json",
                 "docs/evidence/video-gateway-vid-g0-source-state.json",
+                "docs/evidence/video-gateway-vid-g1-mysql-contract.json",
+                "docs/evidence/video-gateway-vid-g1-source-state.json",
             },
         )
 

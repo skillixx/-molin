@@ -38,6 +38,13 @@ func (r *ImageTaskRepository) Create(ctx context.Context, task *model.AIImageTas
 	if r == nil || r.db == nil || task == nil || task.UserID == 0 || task.ProjectID == 0 {
 		return ErrImageTaskNotFound
 	}
+	// 共享任务表上线后，图片入口必须把旧图片事实显式钉死，禁止写入或接管视频operation。
+	if task.Capability == "" {
+		task.Capability = model.AIImageCapability
+	}
+	if task.Capability != model.AIImageCapability || task.Operation != nil {
+		return ErrImageTaskNotFound
+	}
 	return r.db.WithContext(ctx).Create(task).Error
 }
 
@@ -45,7 +52,9 @@ func (r *ImageTaskRepository) FindForOwner(ctx context.Context, publicID string,
 	if r == nil || r.db == nil || owner.UserID == 0 || owner.ProjectID == 0 {
 		return nil, ErrImageTaskNotFound
 	}
-	query := r.db.WithContext(ctx).Where("public_id = ? AND user_id = ? AND project_id = ?", publicID, owner.UserID, owner.ProjectID)
+	query := r.db.WithContext(ctx).
+		Where("public_id = ? AND user_id = ? AND project_id = ?", publicID, owner.UserID, owner.ProjectID).
+		Where("capability = ? AND operation IS NULL", model.AIImageCapability)
 	if owner.APIKeyID != nil {
 		query = query.Where("api_key_id = ?", *owner.APIKeyID)
 	}
@@ -81,6 +90,7 @@ func (r *ImageTaskRepository) Transition(ctx context.Context, publicID string, o
 	}
 	result := r.db.WithContext(ctx).Model(&model.AIImageTask{}).
 		Where("id = ? AND user_id = ? AND project_id = ? AND status = ? AND version_no = ?", task.ID, owner.UserID, owner.ProjectID, task.Status, expectedVersion).
+		Where("capability = ? AND operation IS NULL", model.AIImageCapability).
 		Updates(updates)
 	if result.Error != nil {
 		return nil, result.Error

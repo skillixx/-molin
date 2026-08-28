@@ -84,7 +84,8 @@ for path in "${repo_root}"/server/migrations/*.up.sql; do
   base="$(basename "${path}")"
   version_text="${base%%_*}"
   version=$((10#${version_text}))
-  if [[ "${version}" -le 71 ]]; then
+  # G6运行当前HEAD，需装配000072共享媒体兼容层；000073权限seed不属于HTTP隔离夹具。
+  if [[ "${version}" -le 72 ]]; then
     apply_file "${base}"
   fi
 done
@@ -120,4 +121,4 @@ MSYS_NO_PATHCONV=1 docker run --rm --pull=never --network "${network_name}" \
 
 docker volume rm "${build_cache_volume}" >/dev/null
 
-echo "IMAGE_G6_HTTP=PASS mysql=8.0.46 full_chain_1_to_71=true new_migration=false openai_sync=true platform_task_202=true quote_required=true project_sk=true jwt_project=true explicit_image_scope=true legacy_all_denied=true model_visibility_fail_closed=true strict_idempotency=true first_concurrency_100=true replay_100=true horizontal_isolation=true cancellation_release=true cancellation_reconcile_zero=true unknown_safe_query=true signed_url_fake=true admin_d95=true quarantine_cas=true prompt_not_persisted=true image_price_fixture_create=true image_price_publish_closed=true insufficient_rollback=true provider_calls_fake_only=true real_wallet_writes=0 external_http_calls=0 project_database=false"
+echo "IMAGE_G6_HTTP=PASS mysql=8.0.46 full_chain_1_to_71=true current_head_compat_72=true new_migration=false openai_sync=true platform_task_202=true quote_required=true project_sk=true jwt_project=true explicit_image_scope=true legacy_all_denied=true model_visibility_fail_closed=true strict_idempotency=true first_concurrency_100=true replay_100=true horizontal_isolation=true cancellation_release=true cancellation_reconcile_zero=true unknown_safe_query=true signed_url_fake=true admin_d95=true quarantine_cas=true prompt_not_persisted=true image_price_fixture_create=true image_price_publish_closed=true insufficient_rollback=true provider_calls_fake_only=true real_wallet_writes=0 external_http_calls=0 project_database=false"

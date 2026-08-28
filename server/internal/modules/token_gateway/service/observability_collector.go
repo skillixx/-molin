@@ -7,6 +7,8 @@ import (
 
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+
+	"molin/server/internal/modules/token_gateway/model"
 )
 
 const unbilledExecutionGracePeriod = 5 * time.Minute
@@ -227,7 +229,7 @@ func (c *AIGatewayDBGaugeCollector) collectBacklog(ctx context.Context, table st
 
 func (c *AIGatewayDBGaugeCollector) collectImageGauges(ctx context.Context, now time.Time, snapshot *AIGatewayGaugeSnapshot) error {
 	var taskRows []aiGatewayBacklogRow
-	if err := c.db.WithContext(ctx).Raw("SELECT status, COUNT(*) AS count, CAST(COALESCE(GREATEST(TIMESTAMPDIFF(SECOND, MIN(created_at), ?), 0), 0) AS UNSIGNED) AS oldest_age_seconds FROM ai_gateway_tasks GROUP BY status", now).
+	if err := c.db.WithContext(ctx).Raw("SELECT status, COUNT(*) AS count, CAST(COALESCE(GREATEST(TIMESTAMPDIFF(SECOND, MIN(created_at), ?), 0), 0) AS UNSIGNED) AS oldest_age_seconds FROM ai_gateway_tasks WHERE capability = ? AND operation IS NULL GROUP BY status", now, model.AIImageCapability).
 		Scan(&taskRows).Error; err != nil {
 		return err
 	}
@@ -240,7 +242,7 @@ func (c *AIGatewayDBGaugeCollector) collectImageGauges(ctx context.Context, now 
 		LifecycleState string
 		Count          uint64
 	}
-	if err := c.db.WithContext(ctx).Raw("SELECT lifecycle_state, COUNT(*) AS count FROM ai_gateway_assets GROUP BY lifecycle_state").Scan(&assetRows).Error; err != nil {
+	if err := c.db.WithContext(ctx).Raw("SELECT lifecycle_state, COUNT(*) AS count FROM ai_gateway_assets WHERE modality = ? GROUP BY lifecycle_state", "image").Scan(&assetRows).Error; err != nil {
 		return err
 	}
 	for _, row := range assetRows {
@@ -254,7 +256,7 @@ func (c *AIGatewayDBGaugeCollector) collectImageGauges(ctx context.Context, now 
 ), usage_counts AS (
   SELECT request_id, COALESCE(SUM(quantity),0) AS quantity FROM ai_usage_items WHERE record_kind='usage_fact' AND meter_type='image_count' GROUP BY request_id
 ), asset_counts AS (
-  SELECT request_id, COUNT(*) AS count FROM ai_gateway_assets WHERE asset_role='primary_output' AND is_billable_output=1 AND lifecycle_state='available' GROUP BY request_id
+  SELECT request_id, COUNT(*) AS count FROM ai_gateway_assets WHERE modality='image' AND asset_role='primary_output' AND is_billable_output=1 AND lifecycle_state='available' GROUP BY request_id
 ), cost_counts AS (
   SELECT request_id, COUNT(*) AS count,
     SUM(CASE WHEN amount <=> (CEIL(quantity * unit_price / NULLIF(unit_size,0) * 100000000) * CAST(0.00000001 AS DECIMAL(20,8))) THEN 0 ELSE 1 END) AS invalid_count
@@ -274,7 +276,7 @@ LEFT JOIN asset_counts a ON a.request_id=r.request_id
 LEFT JOIN cost_counts c ON c.request_id=r.request_id
 LEFT JOIN ai_request_wallet_links l ON l.request_id=r.request_id
 LEFT JOIN wallet_transactions w ON w.id=l.settle_transaction_id AND w.type='consume' AND w.direction='out'
-WHERE r.modality='image' AND r.billing_status IN ('settled','released')`).Row().Scan(&difference); err != nil {
+WHERE r.modality='image' AND r.capability='image.generate' AND r.billing_status IN ('settled','released')`).Row().Scan(&difference); err != nil {
 		return err
 	}
 	parsed, err := decimal.NewFromString(difference)

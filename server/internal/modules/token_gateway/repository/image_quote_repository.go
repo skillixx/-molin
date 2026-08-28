@@ -29,10 +29,15 @@ func NewImageQuoteRepository(db *gorm.DB) *ImageQuoteRepository {
 }
 
 func (r *ImageQuoteRepository) Create(ctx context.Context, quote *model.AIGatewayQuote) error {
-	if r == nil || r.db == nil || quote == nil {
+	if r == nil || r.db == nil || !validImageQuoteFact(quote) {
 		return ErrImageQuoteNotFound
 	}
 	return r.db.WithContext(ctx).Create(quote).Error
+}
+
+// validImageQuoteFact 统一约束图片报价入口，避免共享报价表中的视频报价进入图片计费链。
+func validImageQuoteFact(quote *model.AIGatewayQuote) bool {
+	return quote != nil && quote.Capability == model.AIImageCapability && quote.Operation == nil
 }
 
 // Consume 通过 SELECT FOR UPDATE 串行化消费；相同 request_id 重放返回原事实，不同请求只能有一个胜者。
@@ -59,6 +64,7 @@ func (r *ImageQuoteRepository) ConsumeTx(tx *gorm.DB, publicID string, userID, p
 		return nil, false, ErrImageQuoteNotFound
 	}
 	query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("capability = ? AND operation IS NULL", model.AIImageCapability).
 		Where("public_id = ? AND user_id = ? AND project_id = ?", publicID, userID, projectID)
 	if apiKeyID == nil {
 		query = query.Where("api_key_id IS NULL")

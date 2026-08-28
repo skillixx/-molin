@@ -2282,6 +2282,24 @@ POST  /api/admin/token/billing/exceptions/{request_id}/resolve
 
 > 图片网关 IMG-G5 已实现内部Quote消费、Wallet Hold、结算/释放、Usage/Outbox、补偿和request_id零差异对账。`settlement_pending`和未通过安全/存储/结算门禁的资产不能交付；当前仍不注册图片HTTP路由，调账也没有公开入口。
 
+### 14.0V 视频网关VID-G1 Schema合同（无HTTP接口）
+
+> VID-G1只通过`000072/000073`建立视频Expand Schema、Go模型、输入数量事务不变量和权限seed。本阶段不注册Handler或路由，不实现Provider Adapter、任务Worker、钱包运行逻辑或页面。以下路径均不得视为可调用：`/v1/videos`、`/api/token/videos/*`、`/api/admin/token/video-*`。
+
+视频沿用既有`ai_requests → ai_gateway_quotes → ai_gateway_tasks → ai_usage_items/ai_gateway_assets`事实链。`text_to_video`与`image_to_video`必须显式写入operation并复用同一套任务、计费关联、回调、输入租约和资产体系；`ai_gateway_tasks.public_id`是未来Molin兼容快照v1的`video_id`，Provider/Bifrost/内部ID不得返回。
+
+共享Quote/Task/Asset及六个视频新模型的内部自增ID均从JSON隐藏，旧图片PublicID合同保持不变。未来VID-G6只能由专用DTO将`Task.PublicID`映射为`video_id`。VID-G1的`CreateVideoSchemaFacts`只负责事务前纯校验和一次事务写Request→Task→可选I2V TaskInput；它不是HTTP Handler、Repository、CAS或运行时编排实现。
+
+VID-G1另以`RequestVideoInputPendingDelete`冻结输入删除申请事务：按输入ID、用户和Project锁定并复核资产归属，拒绝不安全生命周期/legal hold/活动租约后才写删除时间；它不删除ObjectStore对象，也不是公开删除接口。Schema中的operation、视频SKU JSON operation和ready输入字段显式拒绝NULL/UNKNOWN，上传版本与对象定位同时拒绝空白字符串；TaskEvent由数据库触发器禁止UPDATE/DELETE。这些内部门禁不表示视频接口已经可调用。
+
+上传完成与租约释放同样只有内部事务合同：`CompleteVideoUploadSession`拒绝过期、重复、跨归属或缺少对象版本事实的完成请求，并在一次事务中插入snapshot和完成会话；`ReleaseVideoInputLeases`只在任务安全终态与账单终态匹配时释放尚未释放的输入，`pending_reconcile`不得释放。二者都没有VID-G1运行态Repository或HTTP入口。
+
+图生视频输入在Schema层使用`ai_upload_sessions → ai_gateway_input_assets → ai_gateway_task_inputs`：上传或已有图片资产都必须生成独立、不可变、去除不必要元数据的私有规范化快照。平台不得把上传正文、Base64、对象键、签名URL或Provider临时URL写入公开DTO。`text_to_video`零输入与`image_to_video`恰好一张参考图由Service在同一事务内校验。
+
+VID-G1只扩展`video_seconds/video_megapixel_seconds`定价模板、同名meter和variant JSON表达能力。正式视频选价、Quote、人民币预占和结算属于VID-G2及后续阶段；Schema通过不能证明价格或钱包链路已启用。完整合同见[`video-gateway-vid-g1-schema.md`](./video-gateway-vid-g1-schema.md)。
+
+共享表扩展不能改变既有图片接口语义：全部图片Task查询/更新显式要求`image.generate + operation IS NULL`，全部图片Asset查询/清理显式要求`modality=image`。即使同一用户和Project未来同时存在视频事实，图片接口、图片Worker、图片清理器和图片观测指标也不得返回或推进视频行。
+
 ### 14.0A 图片网关IMG-G6本地HTTP合同
 
 > IMG-G6已实现独立关闭态路由注册函数，但未接入bootstrap，当前运行时仍不可达。以下合同只由本地httptest、Fake ImageGateway和隔离MySQL证明，不代表测试环境或生产开放。

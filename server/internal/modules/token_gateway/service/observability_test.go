@@ -141,10 +141,11 @@ func TestAIGatewayDBGaugeCollectorReadsFinancialFactsWithoutWrites(t *testing.T)
 	mock.ExpectQuery("SELECT status, COUNT\\(\\*\\) AS count,.*FROM ai_compensation_tasks.*status IN \\(").
 		WithArgs(now, "pending", "retry", "dead", "manual_review").
 		WillReturnRows(sqlmock.NewRows([]string{"status", "count", "oldest_age_seconds"}).AddRow("retry", 1, 90))
-	mock.ExpectQuery("SELECT status, COUNT\\(\\*\\) AS count,.*FROM ai_gateway_tasks GROUP BY status").
-		WithArgs(now).
+	mock.ExpectQuery("SELECT status, COUNT\\(\\*\\) AS count,.*FROM ai_gateway_tasks WHERE capability = \\? AND operation IS NULL GROUP BY status").
+		WithArgs(now, "image.generate").
 		WillReturnRows(sqlmock.NewRows([]string{"status", "count", "oldest_age_seconds"}).AddRow("pending_reconcile", 2, 55))
-	mock.ExpectQuery("SELECT lifecycle_state, COUNT\\(\\*\\) AS count FROM ai_gateway_assets GROUP BY lifecycle_state").
+	mock.ExpectQuery("SELECT lifecycle_state, COUNT\\(\\*\\) AS count FROM ai_gateway_assets WHERE modality = \\? GROUP BY lifecycle_state").
+		WithArgs("image").
 		WillReturnRows(sqlmock.NewRows([]string{"lifecycle_state", "count"}).AddRow("available", 4))
 	mock.ExpectQuery("WITH sales AS.*asset_counts").WillReturnRows(sqlmock.NewRows([]string{"difference"}).AddRow("0.00000000"))
 	mock.ExpectQuery("WITH selected_usage AS.*request_settled").

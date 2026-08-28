@@ -584,7 +584,7 @@ func (s *ImageBillingService) LoadImageResourceSubject(ctx context.Context, requ
 	}
 	var request model.AIRequest
 	if err := s.db.WithContext(ctx).Select("request_id", "user_id", "project_id", "api_key_id", "logical_model_code").
-		Where("request_id = ? AND modality = ?", requestID, "image").First(&request).Error; err != nil || request.ProjectID == nil {
+		Where("request_id = ? AND modality = ? AND capability = ?", requestID, "image", model.AIImageCapability).First(&request).Error; err != nil || request.ProjectID == nil {
 		return ImageResourceSubject{}, ErrImageAsyncUnavailable
 	}
 	return imageResourceSubject(request.RequestID, request.LogicalModelCode, request.UserID, *request.ProjectID, request.APIKeyID)
@@ -611,7 +611,8 @@ func (s *ImageBillingService) CancelStaleReserved(ctx context.Context, staleBefo
 		Select("task.public_id AS task_public_id, task.request_id, task.user_id, task.project_id, task.api_key_id").
 		Joins("JOIN ai_requests AS request ON request.request_id = task.request_id").
 		Where("task.status = ? AND task.created_at <= ? AND request.created_at <= ?", model.AIImageTaskReserved, staleBefore, staleBefore).
-		Where("request.modality = ? AND request.execution_status = ? AND request.billing_status = ?", "image", model.AIExecutionPending, model.AIBillingHeld).
+		Where("task.capability = ? AND task.operation IS NULL", model.AIImageCapability).
+		Where("request.modality = ? AND request.capability = ? AND request.execution_status = ? AND request.billing_status = ?", "image", model.AIImageCapability, model.AIExecutionPending, model.AIBillingHeld).
 		Order("task.id ASC").Limit(limit).Scan(&candidates).Error; err != nil {
 		return 0, err
 	}
@@ -645,7 +646,9 @@ func (s *ImageBillingService) ImageRequestQueueState(ctx context.Context, reques
 	if err := s.db.WithContext(ctx).Table("ai_gateway_tasks AS task").
 		Select("task.status AS task_status, request.execution_status, request.billing_status").
 		Joins("JOIN ai_requests AS request ON request.request_id = task.request_id").
-		Where("task.request_id = ? AND request.modality = ?", requestID, "image").Take(&state).Error; err != nil {
+		Where("task.request_id = ? AND task.capability = ? AND task.operation IS NULL", requestID, model.AIImageCapability).
+		Where("request.modality = ? AND request.capability = ?", "image", model.AIImageCapability).
+		Take(&state).Error; err != nil {
 		return imageQueueStateUnknown, err
 	}
 	activeTask := state.TaskStatus == model.AIImageTaskSubmitted || state.TaskStatus == model.AIImageTaskProcessing ||
