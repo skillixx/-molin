@@ -414,9 +414,9 @@ DEF-VID-G1-001..020均已完成修复和本地动态验证；最终门禁以自�
 
 ```text
 GATE=VID-G1
-SOURCE_COMMIT=WORKTREE
+SOURCE_COMMIT=见docs/evidence/video-gateway-vid-g1-source-state.json
 BASE_COMMIT=f9aff4d2aace3d9bf862a88f0ed6304e2953dacc
-HEAD_COMMIT=f9aff4d2aace3d9bf862a88f0ed6304e2953dacc
+HEAD_COMMIT=见docs/evidence/video-gateway-vid-g1-source-state.json
 ORIGIN_MAIN_COMMIT=f9aff4d2aace3d9bf862a88f0ed6304e2953dacc
 ORIGIN_MAIN_REMOTE_URL=github.com/<owner>/-molin.git
 ORIGIN_MAIN_PROVENANCE=FRESH_FETCH
@@ -426,7 +426,7 @@ UNTRACKED_MANIFEST_SHA256=见docs/evidence/video-gateway-vid-g1-source-state.jso
 SOURCE_STATE_ID=见docs/evidence/video-gateway-vid-g1-source-state.json
 EVIDENCE_CAPTURED_AT=见docs/evidence/video-gateway-vid-g1-source-state.json
 DECISION=HUMAN_REQUIRED
-CODE_STATE=feature/video-gateway-vid-g1-schema；WORKTREE；UNCOMMITTED
+CODE_STATE=feature/video-gateway-vid-g1-schema；LOCAL_COMMITTED；PUSH_PENDING
 SCOPE_COMPLETED=G0归档已回填；000072/000073、Go模型、事务不变量、本地隔离动态验证和文档已形成
 OPERATION_RESULTS=text_to_video=LOCAL_SCHEMA_PASS；image_to_video=LOCAL_SCHEMA_PASS
 TEST_EVIDENCE=隔离MySQL首次up/重复up/down-reup PASS；preexisting_chat_image/upload_expiry/expired_complete_rejected/duplicate_complete/cross_owner_complete/source_snapshot/price_operation_variant/safe_lease_release/null_fail_closed/empty_string_fail_closed/pending_delete_guard/task_event_append_only/video_asset_null_fail_closed/payload_crypto/callback_state_shape/bifrost_uniqueness/permission_admin_only PASS；T2V/I2V/归属/唯一/回调重放PASS；四类Service事务原子/回滚测试PASS；图片Task/Asset/Quote共享表隔离、跨模态对象引用保护和角色负例PASS；内部ID隐藏PASS；Provider调用0；钱包写入0
