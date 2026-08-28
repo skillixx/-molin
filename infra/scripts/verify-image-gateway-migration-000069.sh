@@ -139,8 +139,9 @@ assert_scalar "SELECT COUNT(*) FROM ai_price_skus WHERE price_version_id=92001" 
 apply_file "$(basename "${up_file}")" >/dev/null
 assert_scalar "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='ai_gateway_quotes' AND column_name='request_variant_hash'" "1" "reup_quote_variant"
 
-# 阶段回滚断言仍停在000069；运行当前HEAD仓储测试前补装共享媒体兼容层。
+# 阶段回滚断言仍停在000069；运行当前HEAD仓储测试前补装共享媒体与VID-G2 Quote兼容层。
 apply_file "000072_expand_video_gateway_schema.up.sql" >/dev/null
+apply_file "000074_expand_video_pricing_quotes.up.sql" >/dev/null
 
 # 在同一内部网络运行真实仓储并发测试；源码只读，模块和构建缓存使用本轮隔离卷。
 MSYS_NO_PATHCONV=1 docker run --rm --pull=never --network "${network_name}" \
@@ -156,4 +157,4 @@ MSYS_NO_PATHCONV=1 docker run --rm --pull=never --network "${network_name}" \
 
 docker volume rm "${build_cache_volume}" >/dev/null
 
-echo "IMAGE_G2_MYSQL_MIGRATION=PASS mysql=8.0.46 full_chain_1_to_69=true current_head_compat_72=true legacy_chat=true image_checks=true down_retained=true reup=true quote_concurrency=100_one_winner project_database=false provider_calls=0 wallet_writes=0"
+echo "IMAGE_G2_MYSQL_MIGRATION=PASS mysql=8.0.46 full_chain_1_to_69=true current_head_compat_72_74=true legacy_chat=true image_checks=true down_retained=true reup=true quote_concurrency=100_one_winner project_database=false provider_calls=0 wallet_writes=0"

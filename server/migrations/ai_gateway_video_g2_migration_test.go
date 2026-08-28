@@ -58,6 +58,23 @@ func TestVideoGatewayG2IsolationScriptContract(t *testing.T) {
 	}
 }
 
+// TestVideoGatewayG2LegacyImageScriptsInstallCurrentHeadCompatibility 防止旧图片阶段只装到000072，
+// 却用包含VID-G2共享Quote字段的当前HEAD模型运行测试，导致图片回归误报缺列。
+func TestVideoGatewayG2LegacyImageScriptsInstallCurrentHeadCompatibility(t *testing.T) {
+	for _, path := range []string{
+		"../../infra/scripts/verify-image-gateway-migration-000069.sh",
+		"../../infra/scripts/verify-image-gateway-migration-000070.sh",
+		"../../infra/scripts/verify-image-gateway-migration-000071.sh",
+		"../../infra/scripts/verify-image-gateway-img-g6-http.sh",
+		"../../infra/scripts/verify-image-gateway-img-g7-infrastructure.sh",
+	} {
+		script := readVideoG2File(t, path)
+		if !strings.Contains(script, "000074_expand_video_pricing_quotes.up.sql") && !strings.Contains(script, `"${version}" -eq 74`) {
+			t.Fatalf("旧图片隔离脚本运行当前HEAD前必须补装VID-G2共享Quote兼容层: %s", path)
+		}
+	}
+}
+
 func readVideoG2File(t *testing.T, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(path)
