@@ -548,6 +548,18 @@ Migration `000073_seed_video_gateway_permissions`幂等创建`video:view/model/p
 
 VID-G1没有HTTP路由、页面、Provider Adapter、Worker或钱包运行逻辑。Schema存在不表示`/v1/videos`或平台视频接口可调用。完整字段、不变量、回滚与验收矩阵见[`video-gateway-vid-g1-schema.md`](./video-gateway-vid-g1-schema.md)。
 
+#### 3.5.14 视频网关 VID-G2 价格与Quote
+
+VID-G2通过`000074_expand_video_pricing_quotes`扩展共享价格与Quote事实，不创建视频专用账本：
+
+- active视频价格只允许`non_commercial_test_fixture`，第一版只启用`video_seconds`。
+- 每个冻结variant显式包含operation、分辨率、时长、比例、帧率和音频；文生/图生分别存在唯一SKU。
+- `ai_gateway_quotes`增加可空`command_kind/idempotency_key`，唯一键为`(user_id,project_id,command_kind,idempotency_key)`；旧Image与VID-G1遗留Video Quote允许两列同时为空并保持原值。
+- Quote消费、hard项目预算检查、钱包Hold、Request、Task及I2V TaskInput在同一事务提交；失败零部分事实。
+- down采用事实保留式回滚，不删除价格、快照、幂等、消费或金额事实。
+
+完整合同见[`video-gateway-vid-g2-pricing-quote.md`](./video-gateway-vid-g2-pricing-quote.md)。
+
 由于`ai_gateway_tasks/ai_gateway_assets`从图片专用事实扩展为共享媒体事实，既有图片Repository和Service必须显式限定任务`capability=image.generate AND operation IS NULL`、资产`modality=image`，请求关联同时限定`modality=image + capability=image.generate`。图片列表、取消、Provider领取、恢复、结算、清理和观测均不得依赖“当前尚无视频运行时”而省略过滤。
 
 ## 4. 关键状态

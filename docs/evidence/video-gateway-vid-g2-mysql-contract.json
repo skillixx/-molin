@@ -1,0 +1,31 @@
+{
+  "gate": "VID-G2",
+  "result": "PASS",
+  "database": "MySQL 8 isolated temporary container",
+  "full_chain_1_to_74": true,
+  "repeat_up": true,
+  "down_retained": true,
+  "reup": true,
+  "legacy_chat_image": true,
+  "text_to_video_and_image_to_video_unique": true,
+  "quote_create_concurrency": "100_one_fact",
+  "quote_consume_concurrency": "100_one_winner",
+  "generation_concurrency": "100_one_request_hold_task",
+  "auto_explicit_atomic_reservation": true,
+  "image_to_video_task_input": true,
+  "hard_budget_concurrency": "one_winner_one_rejected",
+  "failure_rollback": [
+    "hard_budget_insufficient",
+    "wallet_insufficient",
+    "quote_expired",
+    "task_id_conflict",
+    "input_not_ready"
+  ],
+  "project_database": false,
+  "provider_calls": 0,
+  "real_wallet_writes": 0,
+  "fixture_wallet_writes": true,
+  "cost_cny": "0",
+  "test_server_writes": 0,
+  "production_operations": 0
+}

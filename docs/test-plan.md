@@ -1120,6 +1120,19 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 
 当前本地证据（2026-08-28）：隔离MySQL已通过`000001→000073`首次up、重复up、保留式down/re-up，以及`preexisting_chat_image/upload_expiry/expired_complete_rejected/duplicate_complete/cross_owner_complete/source_snapshot/price_operation_variant/safe_lease_release/null_fail_closed/empty_string_fail_closed/pending_delete_guard/task_event_append_only/video_asset_null_fail_closed`、T2V/I2V、归属、唯一、租约和回调重放矩阵；`provider_calls=0`、`wallet_writes=0`。Go定向测试已覆盖创建事实、上传完成、输入删除申请和租约释放四类事务的纯校验、原子提交、任一步失败回滚及内部ID隐藏。DEF-VID-G1-001～015已在同一源码快照完成QA、产品、工程与规范复核并全部`CLOSED_VERIFIED`，当前`P0=0/P1=0/P2=0`；但commit、push、PR、CI与合并仍未完成，因此阶段保持`HUMAN_REQUIRED`，该记录不能单独支撑VID-G1 `AUTO_PASS`。
 
+## 视频网关 VID-G2 价格与Quote验收
+
+- 冻结矩阵必须同时包含T2V/I2V，每个允许variant恰好一条`video_seconds` SKU；六维缺失、未知或禁止值失败关闭。
+- active视频价格仅允许`non_commercial_test_fixture`；缺价、零价、重复价、币种、成本过期和正式价格混入均拒绝。
+- Decimal `ceil_8`、minimum charge、5秒Hold/3.25秒结算释放、零用量全释放和快照篡改金样通过。
+- HMAC绑定owner、Project SK、operation、模型、Prompt摘要、variant及I2V输入ID/hash/version；可信resolver在创建与消费时重新读取ready快照。
+- 同键同指纹返回原Quote且不受调价影响，同键异指纹冲突；100并发Quote创建一条、消费一个赢家。
+- `/v1`自动与`/api/token`显式路径共享快照、Hold与结算输入；100并发Generation只形成一个Request、Hold、Task。
+- T2V/I2V在隔离MySQL完成Quote→预算/余额→Hold→Task；I2V额外形成唯一TaskInput。
+- 预算不足、余额不足、Quote过期/已消费和任务冲突必须回滚Request、Task、TaskInput、Link和Hold，Quote及钱包原事实保持一致。
+- `000074`首次up、重复up、保留式down/re-up和旧Chat/Image价格/Quote逐字段兼容通过。
+- 全量Go、vet、race、敏感扫描和`git diff --check`通过；Provider、真实钱包、项目数据库、测试服和生产写入均为0。
+
 ## 图片网关 IMG-G1 Expand Schema 验收
 
 - `000068` 必须把 `ai_requests.modality` 从仅 Chat 扩展为 `chat/image`，同时以 `capability + delivery_status` 组合约束确保旧 Chat 固定为 `chat.completions/not_applicable`、图片固定为 `image.generate`。

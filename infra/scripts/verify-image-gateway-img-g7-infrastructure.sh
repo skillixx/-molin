@@ -85,8 +85,8 @@ for path in "${repo_root}"/server/migrations/*.up.sql; do
   base="$(basename "${path}")"
   version_text="${base%%_*}"
   version=$((10#${version_text}))
-  # G7运行当前HEAD，需装配000072共享媒体兼容层；000073权限seed不属于基础设施夹具。
-  if [[ "${version}" -le 72 ]]; then
+  # G7运行当前HEAD，需装配000072共享媒体与000074 Quote兼容层；000073权限seed不属于基础设施夹具。
+  if [[ "${version}" -le 72 || "${version}" -eq 74 ]]; then
     docker exec -e "MYSQL_PWD=${mysql_password}" "${mysql_name}" sh -c \
       "mysql --protocol=socket --default-character-set=utf8mb4 -uroot --database='${database_name}' < '/migrations/${base}'"
   fi
@@ -109,4 +109,4 @@ MSYS_NO_PATHCONV=1 docker run --rm --pull=never \
 
 docker volume rm "${build_cache_volume}" >/dev/null
 
-echo "IMAGE_G7_INFRA=PASS mysql=8.0.46 full_chain_1_to_71=true current_head_compat_72=true network_internal=true host_ports=0 provider=fake real_provider_calls=0 minio_private_buckets=3 signed_url=true rabbit_durable_queue=true rabbit_dlq=true prompt_in_rabbit=false async_once=true missing_prompt_release=true cleanup_worker=true legal_hold_preserved=true compensation_worker=true image_metrics=true reconciliation_difference_zero=true prometheus_rules=true traffic_default_closed=true test_server=false real_credentials=0"
+echo "IMAGE_G7_INFRA=PASS mysql=8.0.46 full_chain_1_to_71=true current_head_compat_72_74=true network_internal=true host_ports=0 provider=fake real_provider_calls=0 minio_private_buckets=3 signed_url=true rabbit_durable_queue=true rabbit_dlq=true prompt_in_rabbit=false async_once=true missing_prompt_release=true cleanup_worker=true legal_hold_preserved=true compensation_worker=true image_metrics=true reconciliation_difference_zero=true prometheus_rules=true traffic_default_closed=true test_server=false real_credentials=0"

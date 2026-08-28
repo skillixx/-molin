@@ -1,18 +1,18 @@
 # 墨灵 OpenAI Videos兼容快照v1 文生/图生视频网关 Goal 目标阶段开发文档
 
-> 文档状态：ACTIVE / VID-G0 AUTO_PASS / VID-G1 EXECUTING / VID-G2-G8 PLANNED
+> 文档状态：ACTIVE / VID-G0-VID-G1 AUTO_PASS / VID-G2 EXECUTING / VID-G3-G8 PLANNED
 >
 > 编制日期：2026-08-27
 >
-> 最近更新：2026-08-28（VID-G0归档完成，VID-G1开始执行）
+> 最近更新：2026-08-28（VID-G1经PR #417完成squash merge，VID-G2开始执行）
 >
-> 当前执行基线：FRESH_FETCH origin/main@f9aff4d2aace3d9bf862a88f0ed6304e2953dacc；VID-G0经PR #416完成squash merge
+> 当前执行基线：FRESH_FETCH origin/main@d57afd6ec30861ebaadd0faf7775e1ff27a5ecee；VID-G1经PR #417完成squash merge
 >
 > 适用工作区：D:\molingproject\molin-gateway-worktree
 >
 > 适用范围：文生视频与图生视频共用的VID-G0至VID-G8；VID-G9与VID-G10仅定义边界，不在本文自动执行
 >
-> 证据边界：VID-G0已证明关闭态合同、零费用Bifrost+Fake预探针和仓库交付闭环；VID-G1当前只执行Expand Schema与本地验证。本文不证明视频HTTP接口、页面、真实Provider、测试环境migration、人民币结算、生产开放或商业验收已经可用。
+> 证据边界：VID-G0、VID-G1已合并；VID-G2正在本地开发非商业价格、Quote与原子预占，不证明已提交PR、测试环境migration、真实Provider、生产开放或商业验收。
 >
 > 协议边界：OpenAI官方Sora Videos API已标记将于2026-09-24关闭。本文冻结的是基于2026-08-27官方合同的“Molin OpenAI Videos兼容快照v1”，由Molin自行维护，不承诺继续跟随OpenAI接口或SDK变化；/api/token/videos/*是长期平台增强与迁移出口。
 
@@ -49,26 +49,12 @@
 
 ### 2.2 当前视频实现事实
 
-当前仓库没有：
+- VID-G1已通过PR #417扩展共享Request、Quote、Task、Usage、输入资产和视频媒体Schema，Chat/Image历史事实保持兼容。
+- VID-G2本地分支正在实现`video_seconds`、T2V/I2V独立价格、不可变快照、HMAC指纹、一次性Quote及自动/显式报价门面。
+- 当前仍没有VID-G3 Provider任务执行、回调、事件与资产交付闭环，也没有VID-G6正式HTTP路由、VID-G7测试环境装配或VID-G8页面。
+- 当前价格只能使用`non_commercial_test_fixture`，真实Provider请求、真实钱包写入和费用均保持为0。
 
-- 视频专用 migration。
-- VideoGateway、AsyncVideoAdapter 或 ProviderCallbackVerifier。
-- 视频提交、查询、事件、取消和回调路由。
-- 视频 Worker、轮询调度、回调验签和视频 DLQ。
-- 视频 Quote、video_seconds 或 video_megapixel_seconds 实现。
-- 视频 MIME、时长、帧率、Codec、音轨和缩略图资产合同。
-- 用户视频工作台或管理端视频运营页面。
-- 视频 Fake Provider、真实 Provider 或测试环境验收证据。
-- 图生视频参考图上传会话、输入资产、任务输入关联或引用已有图片资产合同。
-
-现有通用名称表仍存在图片约束：
-
-- ai_requests 只允许 chat 和 image。
-- ai_gateway_quotes 与 ai_gateway_tasks 只允许 image.generate。
-- ai_usage_items 尚未允许 seconds 和 megapixel_seconds。
-- available 资产只允许 PNG、JPEG 和 WebP。
-
-因此，视频不能通过填写环境变量或登记模型直接开启。
+因此，视频仍不能仅通过填写环境变量或登记模型直接对外开启。
 
 ### 2.3 立项治理冲突
 

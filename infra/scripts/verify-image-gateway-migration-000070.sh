@@ -112,8 +112,9 @@ assert_scalar "SELECT COUNT(*) FROM information_schema.columns WHERE table_schem
 apply_file "$(basename "${up_file}")" >/dev/null
 assert_scalar "SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema=DATABASE() AND constraint_name='chk_ai_gateway_assets_dispute'" "1" "reup_dispute_check"
 
-# 阶段回滚断言仍停在000070；运行当前HEAD仓储测试前补装共享媒体兼容层。
+# 阶段回滚断言仍停在000070；运行当前HEAD仓储测试前补装共享媒体与VID-G2 Quote兼容层。
 apply_file "000072_expand_video_gateway_schema.up.sql" >/dev/null
+apply_file "000074_expand_video_pricing_quotes.up.sql" >/dev/null
 
 MSYS_NO_PATHCONV=1 docker run --rm --pull=never --network "${network_name}" \
   --mount "type=bind,src=${docker_repo_root},dst=/src,readonly" \
@@ -129,4 +130,4 @@ MSYS_NO_PATHCONV=1 docker run --rm --pull=never --network "${network_name}" \
 
 docker volume rm "${build_cache_volume}" >/dev/null
 
-echo "IMAGE_G3_MYSQL_MIGRATION=PASS mysql=8.0.46 full_chain_1_to_70=true current_head_compat_72=true task_cas=100_one_winner asset_primary_unique=100_one_winner dispute_cas=100_one_winner horizontal_isolation=true quarantine_blocked=true dispute_blocked=true legal_hold_cleanup_blocked=true deleted_blocked=true fake_object_store=true down_retained=true reup=true project_database=false provider_calls=0 wallet_writes=0"
+echo "IMAGE_G3_MYSQL_MIGRATION=PASS mysql=8.0.46 full_chain_1_to_70=true current_head_compat_72_74=true task_cas=100_one_winner asset_primary_unique=100_one_winner dispute_cas=100_one_winner horizontal_isolation=true quarantine_blocked=true dispute_blocked=true legal_hold_cleanup_blocked=true deleted_blocked=true fake_object_store=true down_retained=true reup=true project_database=false provider_calls=0 wallet_writes=0"

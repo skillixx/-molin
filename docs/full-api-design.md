@@ -2298,6 +2298,12 @@ VID-G1另以`RequestVideoInputPendingDelete`冻结输入删除申请事务：按
 
 VID-G1只扩展`video_seconds/video_megapixel_seconds`定价模板、同名meter和variant JSON表达能力。正式视频选价、Quote、人民币预占和结算属于VID-G2及后续阶段；Schema通过不能证明价格或钱包链路已启用。完整合同见[`video-gateway-vid-g1-schema.md`](./video-gateway-vid-g1-schema.md)。
 
+### 14.0V2 视频网关VID-G2 Service合同（HTTP仍关闭）
+
+VID-G2冻结两个共享Service门面：`CreateTokenQuote`对应未来`POST /api/token/videos/quotes`，`GenerateWithTokenQuote`对应未来`POST /api/token/videos/generations`；`CreateOpenAIVideo`对应未来`POST /v1/videos`并在服务端自动Quote。三者当前没有注册Handler或路由，不能据此声称HTTP可调用。
+
+两种门面必须使用相同的规范化variant、价格版本、不可变快照、HMAC指纹、Decimal舍入和原子预占服务。显式/自动路径在事务内完成可信输入复核、hard项目预算、钱包余额检查、Quote单次消费、Hold、Request、Task与可选I2V TaskInput；事务提交前Provider、MQ和费用均为0。详细字段与错误边界见[`video-gateway-vid-g2-pricing-quote.md`](./video-gateway-vid-g2-pricing-quote.md)。
+
 共享表扩展不能改变既有图片接口语义：全部图片Task查询/更新显式要求`image.generate + operation IS NULL`，全部图片Asset查询/清理显式要求`modality=image`。即使同一用户和Project未来同时存在视频事实，图片接口、图片Worker、图片清理器和图片观测指标也不得返回或推进视频行。
 
 ### 14.0A 图片网关IMG-G6本地HTTP合同
