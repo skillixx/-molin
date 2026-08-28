@@ -25,8 +25,9 @@ image_g1_up="${repo_root}/server/migrations/000068_expand_image_gateway_schema.u
 image_g2_up="${repo_root}/server/migrations/000069_expand_image_pricing_quotes.up.sql"
 image_g3_up="${repo_root}/server/migrations/000070_expand_image_task_asset_repository.up.sql"
 image_g5_up="${repo_root}/server/migrations/000071_expand_image_billing_adjustments.up.sql"
+video_g1_compat_up="${repo_root}/server/migrations/000072_expand_video_gateway_schema.up.sql"
 for file in "${g1_up}" "${g2_up}" "${g3_up}" "${g3_down}" "${g8_evidence_up}" \
-  "${image_g1_up}" "${image_g2_up}" "${image_g3_up}" "${image_g5_up}"; do
+  "${image_g1_up}" "${image_g2_up}" "${image_g3_up}" "${image_g5_up}" "${video_g1_compat_up}"; do
   test -f "${file}" || { echo "G3_MYSQL=FAILED reason=migration_file_missing"; exit 2; }
 done
 
@@ -187,7 +188,7 @@ CREATE TABLE token_usage_logs (
 SQL
 
 for file in "${g1_up}" "${g2_up}" "${g3_up}" "${g3_down}" "${g8_evidence_up}" \
-  "${image_g1_up}" "${image_g2_up}" "${image_g3_up}" "${image_g5_up}"; do
+  "${image_g1_up}" "${image_g2_up}" "${image_g3_up}" "${image_g5_up}" "${video_g1_compat_up}"; do
   docker cp "${file}" "${container_name}:/tmp/$(basename "${file}")" >/dev/null
 done
 
@@ -215,6 +216,8 @@ apply_file "$(basename "${image_g1_up}")"
 apply_file "$(basename "${image_g2_up}")"
 apply_file "$(basename "${image_g3_up}")"
 apply_file "$(basename "${image_g5_up}")"
+# 当前HEAD的共享媒体模型包含operation列；旧G3语义断言完成后补装000072，避免用旧Schema误测新二进制。
+apply_file "$(basename "${video_g1_compat_up}")"
 
 assert_scalar "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name IN ('ai_price_versions','ai_price_model_locks','ai_price_skus','ai_request_wallet_links','ai_outbox_events')" "5" "g3_tables"
 assert_scalar "SELECT CONCAT(numeric_precision,':',numeric_scale) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='wallets' AND column_name='balance_amount'" "20:8" "wallet_precision"
@@ -352,5 +355,5 @@ assert_scalar "SELECT COUNT(*) FROM wallets WHERE balance_amount < 0 OR frozen_a
 assert_scalar "SELECT COUNT(*) FROM ai_requests r LEFT JOIN token_usage_logs l ON l.request_id=r.request_id WHERE r.billing_status='settled' AND l.id IS NULL" "0" "settled_usage_log_missing"
 assert_scalar "SELECT COUNT(*) FROM token_usage_logs l LEFT JOIN ai_requests r ON r.request_id=l.request_id WHERE r.request_id IS NULL OR r.billing_status<>'settled'" "0" "usage_log_without_settled_request"
 
-echo "G3_MYSQL=PASS mysql=8.0 isolated=true project_database=false first_up=true repeated_up=true retained_down=true reup=true go_integration=true concurrent_wallet=100 idempotency=20 terminal_once=true over_hold_exception=true"
+echo "G3_MYSQL=PASS mysql=8.0 isolated=true project_database=false first_up=true repeated_up=true retained_down=true reup=true current_head_compat_72=true go_integration=true concurrent_wallet=100 idempotency=20 terminal_once=true over_hold_exception=true"
 echo "G3_RABBITMQ=PASS broker_confirm=true stopped_retained=true recovered_published=true"

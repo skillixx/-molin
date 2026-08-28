@@ -405,8 +405,9 @@ VID-G1使用事实保留式回滚：
 | DEF-VID-G1-018 | P1 | CLOSED_VERIFIED | 图片对象删除前引用检查错误限定`modality=image`，可能误删仍被视频资产引用的同一对象 | 图片清理候选继续限定图片，最终`bucket + object_key`引用保护改为检查全部模态 | 跨模态同对象SQLMock负例、全量Go与独立预落地复核 |
 | DEF-VID-G1-019 | P1 | CLOSED_VERIFIED | 图片Quote写入、消费与预占入口可能锁定或消费同owner视频Quote | Create/Consume/既有/非内联/内联入口统一强制`image.generate + operation IS NULL`；内联视频Quote在事务前失败关闭 | 同owner视频Quote消费负例、钱包/数据库写入0及独立预落地复核 |
 | DEF-VID-G1-020 | P2 | CLOSED_VERIFIED | 图片资产白名单仍接受视频共享角色`content/preview`，仅依赖数据库CHECK兜底 | Repository与Service图片角色白名单移除`content/preview`并补真实枚举负例 | 角色负例、全量Go与独立预落地复核 |
+| DEF-VID-G1-021 | P1 | CLOSED_VERIFIED | 旧G3/G7隔离脚本只装配到000071或更早，却用当前HEAD模型测试，导致`operation`列不存在 | 保留各旧阶段up/down/re-up断言，运行当前HEAD Go测试前再装配000072兼容层；覆盖G3及图片G2/G3/G5/G6/G7 | 原CI失败日志、六个隔离脚本本地复跑及新CI |
 
-DEF-VID-G1-001..020均已完成修复和本地动态验证；最终门禁以自排除源码快照及其独立轻签为准。
+DEF-VID-G1-001..021均已完成修复和本地动态验证；最终门禁以自排除源码快照及其独立轻签为准。
 
 ## 12. 当前统一门禁
 
@@ -429,12 +430,12 @@ DECISION=HUMAN_REQUIRED
 CODE_STATE=feature/video-gateway-vid-g1-schema；LOCAL_COMMITTED；PUSH_PENDING
 SCOPE_COMPLETED=G0归档已回填；000072/000073、Go模型、事务不变量、本地隔离动态验证和文档已形成
 OPERATION_RESULTS=text_to_video=LOCAL_SCHEMA_PASS；image_to_video=LOCAL_SCHEMA_PASS
-TEST_EVIDENCE=隔离MySQL首次up/重复up/down-reup PASS；preexisting_chat_image/upload_expiry/expired_complete_rejected/duplicate_complete/cross_owner_complete/source_snapshot/price_operation_variant/safe_lease_release/null_fail_closed/empty_string_fail_closed/pending_delete_guard/task_event_append_only/video_asset_null_fail_closed/payload_crypto/callback_state_shape/bifrost_uniqueness/permission_admin_only PASS；T2V/I2V/归属/唯一/回调重放PASS；四类Service事务原子/回滚测试PASS；图片Task/Asset/Quote共享表隔离、跨模态对象引用保护和角色负例PASS；内部ID隐藏PASS；Provider调用0；钱包写入0
+TEST_EVIDENCE=隔离MySQL首次up/重复up/down-reup PASS；preexisting_chat_image/upload_expiry/expired_complete_rejected/duplicate_complete/cross_owner_complete/source_snapshot/price_operation_variant/safe_lease_release/null_fail_closed/empty_string_fail_closed/pending_delete_guard/task_event_append_only/video_asset_null_fail_closed/payload_crypto/callback_state_shape/bifrost_uniqueness/permission_admin_only PASS；T2V/I2V/归属/唯一/回调重放PASS；四类Service事务原子/回滚测试PASS；图片Task/Asset/Quote共享表隔离、跨模态对象引用保护和角色负例PASS；旧G3及图片G2/G3/G5/G6/G7阶段断言后装配000072运行当前HEAD均PASS；内部ID隐藏PASS；Provider调用0；钱包写入0
 TEST_MATRIX=VID-G1-MIG/COMPAT/OP/OWNER/UPLOAD/SNAPSHOT/PRICE/NULL/LEASE/DELETE/CALLBACK/EVENT/PAYLOAD/PERM/TXN/JSON/BOUNDARY/IMAGE-ISOLATION/QUOTE-ISOLATION/OBJECT-REFERENCE
-DEFECT_LEDGER=DEF-VID-G1-001..020（全部CLOSED_VERIFIED）
+DEFECT_LEDGER=DEF-VID-G1-001..021（全部CLOSED_VERIFIED）
 CODEX_BLOCKER_AUDIT=HUMAN_REQUIRED
 BLOCKER_SUMMARY=代码、测试、文档和本地证据门禁已关闭；commit/push/PR已授权，merge仍未授权
-AUTO_RESOLVED_BLOCKERS=G0前置门禁,DEF-VID-G1-001..020
+AUTO_RESOLVED_BLOCKERS=G0前置门禁,DEF-VID-G1-001..021
 CODEX_AUDITING_BLOCKERS=NONE
 AUTO_CONFIRMED_OPEN_BLOCKERS=NONE
 HUMAN_REQUIRED_BLOCKERS=VID-G1-GIT-MERGE
