@@ -1,16 +1,18 @@
 # 墨灵 OpenAI Videos兼容快照v1 文生/图生视频网关 Goal 目标阶段开发文档
 
-> 文档状态：DRAFT / NOT_EXECUTED / VID-G0-G8 PLANNED
+> 文档状态：ACTIVE / VID-G0 AUTO_PASS / VID-G1 EXECUTING / VID-G2-G8 PLANNED
 >
 > 编制日期：2026-08-27
 >
-> 代码基线：本地缓存 origin/main@a44c9bc2c0b25b2e106a5d65f7276d73fa932f75
+> 最近更新：2026-08-28（VID-G0归档完成，VID-G1开始执行）
+>
+> 当前执行基线：FRESH_FETCH origin/main@f9aff4d2aace3d9bf862a88f0ed6304e2953dacc；VID-G0经PR #416完成squash merge
 >
 > 适用工作区：D:\molingproject\molin-gateway-worktree
 >
 > 适用范围：文生视频与图生视频共用的VID-G0至VID-G8；VID-G9与VID-G10仅定义边界，不在本文自动执行
 >
-> 证据边界：本文只定义阶段目标、执行规则和验收门禁，不表示视频网关已经立项、实现、部署、调用真实 Provider、完成人民币结算、开放生产或通过商业验收。
+> 证据边界：VID-G0已证明关闭态合同、零费用Bifrost+Fake预探针和仓库交付闭环；VID-G1当前只执行Expand Schema与本地验证。本文不证明视频HTTP接口、页面、真实Provider、测试环境migration、人民币结算、生产开放或商业验收已经可用。
 >
 > 协议边界：OpenAI官方Sora Videos API已标记将于2026-09-24关闭。本文冻结的是基于2026-08-27官方合同的“Molin OpenAI Videos兼容快照v1”，由Molin自行维护，不承诺继续跟随OpenAI接口或SDK变化；/api/token/videos/*是长期平台增强与迁移出口。
 

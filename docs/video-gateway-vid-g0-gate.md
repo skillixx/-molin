@@ -1,14 +1,14 @@
-# VID-G0：视频网关决策冻结、Bifrost合同预探针与最小人工问题包
+# VID-G0：视频网关决策冻结、Bifrost合同预探针与最终归档
 
 > 当前阶段：`VID-G0`
 >
-> 当前结论：`HUMAN_REQUIRED`
+> 当前结论：`AUTO_PASS`
 >
 > 记录日期：2026-08-27
 >
 > 代码基线：`a44c9bc2c0b25b2e106a5d65f7276d73fa932f75`
 >
-> 当前分支：`codex/video-gateway-goal-doc`
+> 验收提交：`f9aff4d2aace3d9bf862a88f0ed6304e2953dacc`（PR #416 squash merge）
 >
 > 证据边界：本记录已形成G0-A关闭态工程合同并执行G0-B本地零费用Bifrost+Fake预探针；Runware、底层Runway Gen-4.5、`runway:1@2`、5秒规格、候选商业阈值和关闭态法律策略已经冻结，但尚未执行真实Provider调用、DPA签署、测试服务器部署、真实人民币结算、生产开放或商业验收。
 
@@ -25,12 +25,12 @@ VID_G0_G8_NON_COMMERCIAL_TEST_FIXTURE_ALLOWED=YES
 REAL_PROVIDER_REQUESTS_AUTHORIZED=NO
 TEST_SERVER_WRITE_AUTHORIZED=NO
 GIT_COMMIT_PUSH_PR_AUTHORIZED=YES
-GIT_MERGE_AUTHORIZED=NO
+GIT_MERGE_AUTHORIZED=YES(PR416;CONSUMED)
 PRODUCTION_OPEN_AUTHORIZED=NO
 COMMERCIAL_ACCEPTED=NO
 ```
 
-但VID-G0仍不能`AUTO_PASS`，原因不是普通工程问题：当前授权只覆盖commit、push和创建PR，不包含产品经理合并。DPA、真实Provider调用、正式法律适用结论、生产和商业验收属于G9/G10后续边界，不在本轮执行。
+VID-G0后续已完成独立工程、QA、产品复核和CI，并由项目负责人兼产品经理明确授权合并PR #416。GitHub于2026-08-27由`skillixx`完成squash merge，`main@f9aff4d2aace3d9bf862a88f0ed6304e2953dacc`与验收分支HEAD `02f9984b2dbb488bd2cff1ba68128b1f9e17ef0d`的tree均为`2a46804609ad882e813ea70b047b030bd058ccd5`，因此以tree等价证明main完整包含已验收内容。DPA、真实Provider调用、正式法律适用结论、测试环境部署、生产和商业验收仍属于G9/G10边界，不由本次合并授权。
 
 ## 2. G0-B锁定镜像与实际合同结论
 
@@ -513,7 +513,7 @@ SIGNED_BY=产品,财务,安全,法务,运维,项目负责人
 | VID-BLK-009 | P1/商业签署 | CODEX_AUTO_RESOLVED | 项目负责人明确兼任本阶段财务批准人并确认第11节阈值 |
 | VID-BLK-010 | 人工授权 | CODEX_AUTO_RESOLVED | 已批准第9节关闭态法律/数据失败关闭策略；DPA与生产法律结论留到G9/G10 |
 | VID-BLK-011 | 人工授权 | CODEX_AUTO_RESOLVED | 已授权当前VID-G0范围的commit、push和创建PR |
-| VID-BLK-012 | 人工授权 | CODEX_ESCALATED_HUMAN | merge仍未授权，且必须由产品经理按仓库流程执行 |
+| VID-BLK-012 | 人工授权 | CODEX_AUTO_RESOLVED | 项目负责人兼产品经理已授权合并PR #416；GitHub元数据证明由`skillixx`完成squash merge |
 
 ## 13. 缺陷台账
 
@@ -540,10 +540,10 @@ SIGNED_BY=产品,财务,安全,法务,运维,项目负责人
 | VID-DEC-COMMERCIAL-20260827-003 | 项目负责人+财务 | 当前用户（项目负责人兼任财务批准人） | 2026-08-27T15:35:38Z | `COMMERCIAL=APPROVE_CANDIDATE_THRESHOLDS` + `FINANCE_APPROVER=PROJECT_OWNER_ACTING_AS_FINANCE` | 第11节VID-G10商业阈值 | VALID | 价格、成本、客户范围或验收周期变化 |
 | VID-DEC-LEGAL-20260827-004 | 项目负责人（关闭态） | 当前用户 | 2026-08-27T13:35:52Z | `LEGAL=APPROVE_CLOSED_ENGINEERING_POLICY` | 第9节关闭态真人/未成年人/版权/留存/标识与`EXTERNAL_DATA_TRANSFER=NO` | VALID | 法规、Provider条款、DPA或产品范围变化 |
 | VID-DEC-GIT-20260827-005 | 项目负责人 | 当前用户 | 2026-08-27T13:35:52Z | `GIT=AUTHORIZE_COMMIT_PUSH_PR` | 当前VID-G0文件的commit、push、PR；不含merge | VALID | 授权动作、分支或提交范围变化 |
-| VID-DEC-MERGE-20260827-006 | 项目负责人+产品经理 | NONE | NONE | 尚未授权 | 当前VID-G0 PR merge | PENDING | PR提交、CI或评审结论变化 |
+| VID-DEC-MERGE-20260827-006 | 项目负责人+产品经理 | 当前用户 | 2026-08-27 | `GIT=AUTHORIZE_MERGE_PR416` | PR #416、源HEAD `02f9984b2dbb488bd2cff1ba68128b1f9e17ef0d`、全绿CI | VALID | main、合并提交或PR元数据证据变化 |
 | VID-DEC-PROVIDER-20260827-007 | 项目负责人 | 当前用户 | 2026-08-27T15:35:38Z | `VIDEO_PROVIDER=RUNWARE_RUNWAY_GEN4_5_TASKUUID_5S` | Runware/runway:1@2/5秒/1280x720/native_async；真实请求0 | VALID | Provider、模型、taskUUID恢复、价格或数据合同变化 |
 
-只读`git fetch origin main`已经自动执行并确认`origin/main=a44c9bc2...`，无需人工授权；该决定不授权本地commit、push、PR或merge。
+合并后只读`git fetch origin main`确认`origin/main=f9aff4d2...`。本记录中的VID-G0 Git授权已消费完毕，不延续为VID-G1的commit、push、PR或merge授权。
 
 ## 15. 人工决定记录与剩余问题包
 
@@ -592,16 +592,19 @@ BLOCKER_ID=VID-BLK-010
 负责人=产品+安全+法务
 ```
 
-### 15.4 已批准Git动作与待批准merge
+### 15.4 已完成Git交付与merge
 
 ```text
 DECISION_ID=VID-DEC-GIT-20260827-005
-BLOCKER_ID=VID-BLK-011
-已批准=本地commit,push,创建PR,等待CI
-仍缺失=产品经理执行merge的明确授权
+MERGE_DECISION_ID=VID-DEC-MERGE-20260827-006
+BLOCKER_ID=VID-BLK-011,VID-BLK-012
+已完成=本地commit,push,PR #416,CI,产品经理合并授权,squash merge
+合并结果=main@f9aff4d2aace3d9bf862a88f0ed6304e2953dacc
+合并执行者=skillixx
+验收内容证明=源HEAD 02f9984与merge commit f9aff4d的tree均为2a46804609ad882e813ea70b047b030bd058ccd5
+仍缺失=NONE
 当前范围=仅VID-G0文档、OpenAPI、Fake探针、测试和低敏回执
-Codex推荐项=完成commit/push/PR和CI后，由产品经理提交merge授权
-影响范围=最终PR、CI、产品经理合并和MAIN_CONTAINS_ACCEPTED_COMMIT
+影响范围=VID-G0仓库交付闭环；不授权部署、真实Provider调用、生产或VID-G1 Git远程动作
 费用上限=CNY 0
 负责人=项目负责人
 ```
@@ -610,29 +613,29 @@ Codex推荐项=完成commit/push/PR和CI后，由产品经理提交merge授权
 
 ```text
 GATE=VID-G0
-SOURCE_COMMIT=WORKTREE
+SOURCE_COMMIT=f9aff4d2aace3d9bf862a88f0ed6304e2953dacc
 BASE_COMMIT=a44c9bc2c0b25b2e106a5d65f7276d73fa932f75
-HEAD_COMMIT=a44c9bc2c0b25b2e106a5d65f7276d73fa932f75
-ORIGIN_MAIN_COMMIT=a44c9bc2c0b25b2e106a5d65f7276d73fa932f75
+HEAD_COMMIT=02f9984b2dbb488bd2cff1ba68128b1f9e17ef0d
+ORIGIN_MAIN_COMMIT=f9aff4d2aace3d9bf862a88f0ed6304e2953dacc
 ORIGIN_MAIN_REMOTE_URL=github.com/<owner>/-molin.git
 ORIGIN_MAIN_PROVENANCE=FRESH_FETCH
-ORIGIN_MAIN_OBSERVED_AT=见docs/evidence/video-gateway-vid-g0-source-state.json
-TRACKED_PATCH_SHA256=见docs/evidence/video-gateway-vid-g0-source-state.json
-UNTRACKED_MANIFEST_SHA256=见docs/evidence/video-gateway-vid-g0-source-state.json
-SOURCE_STATE_ID=见docs/evidence/video-gateway-vid-g0-source-state.json
-EVIDENCE_CAPTURED_AT=见docs/evidence/video-gateway-vid-g0-source-state.json
-DECISION=HUMAN_REQUIRED
-CODE_STATE=branch codex/video-gateway-goal-doc；WORKTREE；PUSHED=NO
+ORIGIN_MAIN_OBSERVED_AT=2026-08-27T16:10:57Z
+TRACKED_PATCH_SHA256=EMPTY
+UNTRACKED_MANIFEST_SHA256=EMPTY
+SOURCE_STATE_ID=ec4239eafbaa48ad0bf5f216296c679eaa6b337b282fd5b41f6ed8df0facb1ec
+EVIDENCE_CAPTURED_AT=2026-08-27T15:58:13Z
+DECISION=AUTO_PASS
+CODE_STATE=PR #416 squash merged；origin/main已更新；验收源HEAD与merge commit tree等价
 SCOPE_COMPLETED=G0-A关闭态工程合同已形成；Runware/runway:1@2/taskUUID恢复与5秒规格已冻结；G0-B锁定Bifrost v2.0.0+Fake实际预探针；Bifrost隐藏重试根因和native_async裁决；OpenAPI快照；状态/计费/安全/容量/留存/权限矩阵
 OPERATION_RESULTS=text_to_video合同通过；image_to_video合同和input_reference通过；ACK丢失出现4次上游提交，Bifrost视频数据面关闭
 TEST_EVIDENCE=Python单测23/23；Runware T2V/I2V/taskUUID恢复和Prompt 1000/1001边界合同通过；Bifrost动态合同断言42/43，唯一失败为ACK丢失重复提交墓碑；图生参考图长度和SHA-256一致；Bifrost+Fake create/retrieve/content/delete/list实际探针；Redocly和Go全量测试通过
 TEST_MATRIX=VID-G0-PY-001..023；VID-G0-RUNWARE-T2V；VID-G0-RUNWARE-I2V；VID-G0-RUNWARE-ACK-RECOVERY；VID-G0-RUNWARE-PROMPT-LIMIT；VID-G0-B-T2V；VID-G0-B-I2V；VID-G0-B-LIST；VID-G0-B-500；VID-G0-B-TIMEOUT；VID-G0-B-ACK-DROP；VID-G0-OAS；VID-G0-GO-REGRESSION
-CODEX_BLOCKER_AUDIT=HUMAN_REQUIRED
-BLOCKER_SUMMARY=VID-BLK-001..011已解决；VID-BLK-012 merge授权仍需人工
-AUTO_RESOLVED_BLOCKERS=VID-BLK-001..011
+CODEX_BLOCKER_AUDIT=PASS
+BLOCKER_SUMMARY=VID-BLK-001..012全部关闭
+AUTO_RESOLVED_BLOCKERS=VID-BLK-001..012
 AUTO_CONFIRMED_OPEN_BLOCKERS=NONE
-HUMAN_REQUIRED_BLOCKERS=VID-BLK-012
-BLOCKER_VERIFY_EVIDENCE=第2节G0-B回执、第12节阻塞表、第13节缺陷台账、Python/Redocly/Go命令输出
+HUMAN_REQUIRED_BLOCKERS=NONE
+BLOCKER_VERIFY_EVIDENCE=第2节G0-B回执、第12节阻塞表、第13节缺陷台账、Python/Redocly/Go命令输出、PR #416与GitHub合并元数据
 INDEPENDENT_AGENT_REVIEWS=工程PASS(P0=0/P1=0/P2=0)；QA PASS(覆盖率估计86%，P0=0/P1=0/P2=1非阻断测试债)；产品PASS(P0=0/P1=0/P2=0)；最终复核绑定当前工作树精确REVIEWED_SOURCE_STATE
 DECISION_LEDGER=第14节VID-DEC-ENGINEERING/DRIVER/PROVIDER/COMMERCIAL/LEGAL/GIT/MERGE
 DEFECT_LEDGER=第13节DEF-VID-G0-001..008
@@ -660,18 +663,19 @@ P2=1（非阻断测试债：服务启动/健康失败、少数HTTP/Handler异常
 QA_ACCEPTANCE=PASS
 PM_CONFIRMATION=PASS
 DEV_CODE_REVIEW=PASS
-CI_STATUS=PENDING
+CI_STATUS=PASS
 REVIEW_THREADS_RESOLVED=YES
 BRANCH_POLICY=PASS
-PR_STATE=NOT_CREATED
-PR_NUMBER=NOT_APPLICABLE
-MERGE_COMMIT=NOT_APPLICABLE
-PR_MERGED_BY=NOT_APPLICABLE
-PR_METADATA_EVIDENCE=NOT_APPLICABLE
-PM_MERGE_POLICY=PENDING
-MAIN_CONTAINS_ACCEPTED_COMMIT=NO
-EXTERNAL_ACTION_AUTHORIZED=YES(commit,push,PR only)
-NEXT_GOAL_ALLOWED=NO
+PR_STATE=MERGED
+PR_NUMBER=416
+MERGE_COMMIT=f9aff4d2aace3d9bf862a88f0ed6304e2953dacc
+PR_MERGED_BY=skillixx
+PR_METADATA_EVIDENCE=https://github.com/skillixx/-molin/pull/416
+PM_MERGE_POLICY=PASS
+MAIN_CONTAINS_ACCEPTED_COMMIT=YES
+MAIN_CONTAINS_EVIDENCE=SQUASH_TREE_EQUIVALENCE；source HEAD和merge commit tree均为2a46804609ad882e813ea70b047b030bd058ccd5
+EXTERNAL_ACTION_AUTHORIZED=YES(VID-G0 commit,push,PR,merge均已消费；不延续至VID-G1)
+NEXT_GOAL_ALLOWED=YES
 EVIDENCE_BOUNDARY=Runware/runway:1@2/taskUUID恢复已冻结但未证明真实Provider、DPA、实际成本、测试服务器、真实人民币结算、生产或商业验收
-HUMAN_QUESTIONS=VID-DEC-MERGE-20260827-006；仅在PR/CI完成后询问
+HUMAN_QUESTIONS=NONE
 ```

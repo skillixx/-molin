@@ -522,6 +522,34 @@ IMG-G7同样不新增migration。RabbitMQ消息只保存request_id，Prompt留�
 
 IMG-G8不新增Migration。用户模型目录在既有发布快照、可见性和活动价格约束下同时聚合 `chat` 与 `image`：文字模型仍要求健康Bifrost路由，图片模型由独立图片运行时装配。页面读写继续使用 `000068～000071` 事实；前端不得直接修改钱包、Quote、Usage、任务或资产状态。详细合同见 [`image-gateway-img-g8-frontends.md`](./image-gateway-img-g8-frontends.md)。
 
+#### 3.5.13 视频网关 VID-G1 Expand Schema
+
+Migration `000072_expand_video_gateway_schema`以Expand-only方式把既有Chat/Image共享事实扩展到视频：
+
+- `ai_requests`增加可空`operation`，允许`modality=video + capability=video.generate`；视频operation固定为`text_to_video/image_to_video`，旧Chat/Image保持`operation=NULL`。
+- `ai_gateway_quotes`、`ai_gateway_tasks`和`ai_usage_items`分别持久化operation；禁止从JSON、输入数量或资产是否已删除反推。
+- `ai_gateway_tasks`增加`bifrost_provider/bifrost_task_id/bifrost_compound_id`，但外部`video_id`只使用既有全局唯一`public_id`，内部和上游ID不公开。
+- `ai_gateway_assets`增加`modality/duration_seconds/frame_rate/container/video_codec/audio_codec/has_audio/media_deleted_at`；Image继续只允许既有`primary_output`根角色，Video使用`content`根角色和`preview/thumbnail`派生物，媒体正文删除后继续保留财务、审计和低敏资产元数据。
+- 价格版本/SKU只扩大`video_seconds/video_megapixel_seconds`模板、同名meter及variant JSON表达，不在VID-G1增加价格operation列；正式选价和Quote属于VID-G2。
+- 新增`ai_upload_sessions`、`ai_gateway_input_assets`和`ai_gateway_task_inputs`，通过用户/Project/Key组合外键建立来源到不可变规范化快照的血缘；上传只接受`purpose=video_reference_image`和JPEG/PNG，并记录创建、上传、核验及四类终态。
+- 新增`ai_gateway_task_events`、`ai_gateway_provider_callback_events`和`ai_gateway_task_payloads`，分别承载具有全局唯一`event_id`的追加式任务事件、按`(provider_code,provider_task_id,external_event_id)`去重的回调验签结果，以及按`(task_id,payload_kind)`唯一且不含密钥的密文信封。
+
+`text_to_video`零输入、`image_to_video`恰好一张`reference_image`由Service在创建请求/任务/绑定的同一事务内校验；数据库`(task_id,role,ordinal)`唯一键只阻止重复序号，不伪称能够统计跨行数量。
+
+VID-G1唯一写入边界为`CreateVideoSchemaFacts`：事务前完成纯校验，随后在一次事务中按Request→Task→图生唯一TaskInput顺序写入；任一写入或commit失败均不得留下部分事实。该接口只冻结事务合同，不实现Repository、CAS、Quote、钱包或Provider编排。
+
+上传完成由`CompleteVideoUploadSession`在同一事务锁定会话、校验归属、`verifying`状态、未过期、ETag/VersionID和未完成事实，再插入snapshot并用回填ID完成会话；数据库额外要求`completed_at<=expires_at`。输入租约由`ReleaseVideoInputLeases`锁定Task、Request和TaskInput，只有任务进入安全终态且账单为`settled/released`的允许组合后才一次释放；`pending_reconcile`和非终态继续持有租约。
+
+输入删除申请复用另一窄域事务守卫`RequestVideoInputPendingDelete`：按输入ID、用户和Project加锁读取并再次核对归属，限定`ready/rejected/quarantined`、拒绝legal hold、加锁确认活动租约为0后，才同时写入两个删除时间。TaskEvent通过BEFORE UPDATE/DELETE触发器保持追加式。所有视频operation、SKU JSON operation、ready输入和可用视频媒体字段在CHECK中显式`IS NOT NULL`；上传版本、对象定位、策略版本和视频Codec还必须trim后非空，禁止利用MySQL `UNKNOWN`或空白字符串绕过约束。
+
+未释放TaskInput且任务非终态或处于`pending_reconcile`时构成输入执行租约。清理查询必须排除活动租约、legal hold和未到删除时间的输入资产；安全终结并完成对账后只允许写入一次`lease_released_at`。
+
+Migration `000073_seed_video_gateway_permissions`幂等创建`video:view/model/price/task/safety/reconcile/resource/retention/secret/release`十类权限，并只自动映射全局`admin`角色。两个down均为事实保留式no-op，不删除列、表、权限、财务、任务、回调、资产或审计事实。
+
+VID-G1没有HTTP路由、页面、Provider Adapter、Worker或钱包运行逻辑。Schema存在不表示`/v1/videos`或平台视频接口可调用。完整字段、不变量、回滚与验收矩阵见[`video-gateway-vid-g1-schema.md`](./video-gateway-vid-g1-schema.md)。
+
+由于`ai_gateway_tasks/ai_gateway_assets`从图片专用事实扩展为共享媒体事实，既有图片Repository和Service必须显式限定任务`capability=image.generate AND operation IS NULL`、资产`modality=image`，请求关联同时限定`modality=image + capability=image.generate`。图片列表、取消、Provider领取、恢复、结算、清理和观测均不得依赖“当前尚无视频运行时”而省略过滤。
+
 ## 4. 关键状态
 
 用户状态：

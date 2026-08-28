@@ -1084,6 +1084,42 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - 011 已消费且暂存保持 `UNKNOWN`。012 只读取证必须独立冻结固定端点的唯一 ED25519 known_hosts、客户端密钥对、五文件、manifest 和回执；远端以目录描述符锚定部署根、暂存和文件，严格输出九键三态，并覆盖路径/文件集/元数据/内容/manifest/回执/读取错误、同名替换竞态、64 KiB 有界双流、单 SSH、零重试、local-check 不联网和消费门禁。Windows 测试及 Linux `--network none` 必须通过；CI 不得传正式参数或连接测试服。
 - 本地身份材料诊断必须与远端 ChangeId 生命周期拆分。本地诊断器无 ChangeId、可重复且源码不得包含 SSH/SFTP/远端访问能力；它必须覆盖绝对路径、链接/reparse、fd/目录项竞态、known_hosts 明文/哈希 ED25519 唯一性、允许的其他算法共存、公私钥配对、有界本地工具输出和固定低敏失败。Windows 最小环境必须显式保留 `SystemRoot` 与 `PROGRAMDATA` 且拒绝继承其他变量。一次性远端包装器不提供 `--local-check`，只允许一次固定 SSH、九键三态、六行低敏结果和消费门禁。Windows 与 Linux `--network none` 必须同时通过，CI 不得读取真实身份材料或连接测试服；任一冻结脚本摘要变化均使旧授权清单失效。
 
+## 视频网关 VID-G1 Expand Schema验收
+
+- 前置门禁必须证明VID-G0经PR #416合并到`main@f9aff4d2aace3d9bf862a88f0ed6304e2953dacc`，QA、产品、工程和CI均PASS。
+- `000072`必须允许`ai_requests.modality=video + capability=video.generate`，并显式持久化`operation=text_to_video/image_to_video`；旧Chat/Image默认值和写入合同保持不变。
+- 文生视频必须在Service事务内强制零TaskInput；图生视频必须强制恰好一个`role=reference_image,ordinal=0`。数据库唯一键只验证重复序号，不能替代跨行数量测试。
+- `CreateVideoSchemaFacts`必须先完成operation、能力、ID、Quote、模型、owner和输入快照纯校验，再在唯一事务内按Request→Task→可选I2V TaskInput顺序写入；任一写入或commit失败都必须零部分提交，VID-G1不实现Repository/CAS。
+- `RequestVideoInputPendingDelete`必须按输入ID、用户和Project在同一事务加锁读取并再次核对归属，限定`ready/rejected/quarantined`、拒绝legal hold、加锁统计活动租约为0，再同时写`delete_requested_at/pending_delete_at`；跨用户/Project或任一步失败零提交，本阶段不实现Repository/ObjectStore/Worker。
+- `CompleteVideoUploadSession`必须在同一事务锁定会话，拒绝非`verifying`、过期、缺ETag/VersionID、重复完成、跨归属和snapshot来源漂移；插入snapshot或完成会话任一步失败均零提交。数据库还必须拒绝`completed_at>expires_at`。
+- `ReleaseVideoInputLeases`必须锁定Task、Request和TaskInput：`succeeded`只允许`settled`，`failed/cancelled/expired`只允许`released/settled`，非终态和`pending_reconcile`拒绝；已释放输入与T2V零输入幂等，任一步失败零提交。
+- Quote、任务、Usage均保存operation；任务外部ID只使用Molin `public_id`，Provider/Bifrost/内部ID不进入公开JSON。
+- 共享Quote/Task/Asset及六个视频新模型的内部自增ID必须`json:"-"`；旧图片PublicID保持兼容，未来只能由专用DTO将Task.PublicID映射为`video_id`。
+- `ai_upload_sessions`必须覆盖`created/uploading/verifying/completed/rejected/cancelled/expired`，验证过期、拒绝、重复完成、跨用户完成、同对象重复绑定、取消终态和完成后唯一input asset；purpose固定`video_reference_image`，MIME只接受JPEG/PNG。
+- 上传和已有图片资产两种来源都必须形成独立`ai_gateway_input_assets`规范化快照，验证source二选一、原始/规范化hash、策略版本、版本号、私有对象边界及`pending/normalizing/moderating/ready/rejected/quarantined/pending_delete/expiring/deleting/deleted/delete_failed`完整生命周期；源图片后续隔离不得改变snapshot hash/version，FK必须阻止源事实删除。
+- 上传会话、输入资产和TaskInput的`(user_id,project_id)`组合归属必须拒绝跨用户/Project绑定；上传会话存在SK时，`(api_key_id,project_id,user_id)`组合外键还必须拒绝跨Key绑定。
+- 活动任务与`pending_reconcile`必须持有输入租约；清理不得越过未释放租约或legal hold；安全终结并完成对账后`lease_released_at`只写一次。
+- 任务事件必须追加式且`event_id`全局唯一；Provider回调必须按Provider外部事件唯一去重，原始回调正文不得落库；密文payload表不得保存密钥或明文。
+- TaskEvent必须通过BEFORE UPDATE/DELETE触发器在数据库层拒绝覆盖和删除；动态测试分别尝试两种操作并确认原行不变。
+- 视频资产必须覆盖时长、帧率、容器、视频/音频Codec和音频标识；Image角色仍限既有`primary_output/thumbnail/moderation_copy/derived`，Video才允许`content/preview`，不得用视频扩展放宽旧图片约束；`media_deleted_at`只能表示媒体正文删除，不能删除或伪装删除账单与审计事实。
+- 可用视频资产的MIME、大小、宽高、hash、时长、帧率、容器、视频Codec和`has_audio`必须逐项显式非空；动态测试至少覆盖缺MIME、时长、帧率和音频标记均失败，不能让SQL UNKNOWN放行。
+- 价格表只扩`video_seconds/video_megapixel_seconds`模板、同名meter和variant JSON表达；视频meter的variant必须显式包含`$.operation=text_to_video/image_to_video`，缺失或非法operation失败；VID-G1不得实现视频选价、Quote或钱包运行逻辑。
+- MySQL CHECK必须显式处理三值逻辑：视频Request/Quote/Task/Usage operation要求`IS NOT NULL`，视频SKU拒绝JSON缺字段、JSON null和错误值；input asset进入ready时规范化hash、MIME、大小、宽高、策略版本及对象定位逐项非空，不能让SQL UNKNOWN绕过。
+- 上传ETag/VersionID、上传对象、ready输入对象和可用视频对象/Codec必须trim后非空；隔离测试必须覆盖空白ETag+Version、bucket和object key被拒绝，不能用非NULL空串冒充完整事实。
+- `000073`必须幂等创建`video:view/model/price/task/safety/reconcile/resource/retention/secret/release`，仅自动映射`admin`；down不得删除历史授权。
+- migration静态扫描必须拒绝`raw_body/provider_response_body/signed_url/prompt_plaintext/api_key_plaintext/secret_plaintext`等敏感字段。
+- down/re-up不得包含`DROP TABLE`、`DROP COLUMN`、`DELETE`或`TRUNCATE`，并显式声明保留Expand Schema和权限事实。
+- 隔离MySQL必须使用本机已有镜像、`--pull=never`、内部无出口网络、无宿主端口和tmpfs；先写入完整旧Chat/Image事实，再验证`000001→000073`首次up、重复up、down/re-up及旧金额/hash/状态不漂移。
+- 本地必须运行VID-G1模型/migration/Service定向测试、Go全量、vet、目标包race、旧Chat/Image回归、敏感扫描和`git diff --check`。
+- 动态回执必须明确`provider_calls=0`、`wallet_writes=0`且清理本轮容器/网络；不得连接项目库、测试服务器或真实Provider。
+- 本阶段没有HTTP和页面验收；Schema、权限和OpenAPI规划均不能证明视频接口可调用。
+- 共享表扩展后必须回归图片运行链隔离：图片Task的创建、读取、状态推进、取消、Provider领取、恢复和结算只允许`capability=image.generate AND operation IS NULL`；图片Asset的读取、状态推进、清理、引用和观测只允许`modality=image`。同一owner同时存在Image与Video事实时，图片路径对Video增量必须为0。
+- 最终必须由独立测试工程师、产品经理和工程Agent复核；P0或P1不为0、CI/PR/merge未完成时不得`AUTO_PASS`。
+
+完整字段、状态、回滚和统一门禁见[`video-gateway-vid-g1-schema.md`](./video-gateway-vid-g1-schema.md)。
+
+当前本地证据（2026-08-28）：隔离MySQL已通过`000001→000073`首次up、重复up、保留式down/re-up，以及`preexisting_chat_image/upload_expiry/expired_complete_rejected/duplicate_complete/cross_owner_complete/source_snapshot/price_operation_variant/safe_lease_release/null_fail_closed/empty_string_fail_closed/pending_delete_guard/task_event_append_only/video_asset_null_fail_closed`、T2V/I2V、归属、唯一、租约和回调重放矩阵；`provider_calls=0`、`wallet_writes=0`。Go定向测试已覆盖创建事实、上传完成、输入删除申请和租约释放四类事务的纯校验、原子提交、任一步失败回滚及内部ID隐藏。DEF-VID-G1-001～015已在同一源码快照完成QA、产品、工程与规范复核并全部`CLOSED_VERIFIED`，当前`P0=0/P1=0/P2=0`；但commit、push、PR、CI与合并仍未完成，因此阶段保持`HUMAN_REQUIRED`，该记录不能单独支撑VID-G1 `AUTO_PASS`。
+
 ## 图片网关 IMG-G1 Expand Schema 验收
 
 - `000068` 必须把 `ai_requests.modality` 从仅 Chat 扩展为 `chat/image`，同时以 `capability + delivery_status` 组合约束确保旧 Chat 固定为 `chat.completions/not_applicable`、图片固定为 `image.generate`。
