@@ -1,6 +1,6 @@
 # VID-G2 视频价格variant、快照与Quote
 
-> 阶段状态：AUTO_READY_FOR_HUMAN_REVIEW
+> 阶段状态：AUTO_PASS（PR #418已合并）
 >
 > 基线：`origin/main@d57afd6ec30861ebaadd0faf7775e1ff27a5ecee`
 >
@@ -175,7 +175,7 @@ $env:VIDEO_GATEWAY_G2_MYSQL_MIGRATION_APPROVED='YES'
 
 ```text
 GATE=VID-G2
-DECISION=AUTO_READY_FOR_HUMAN_REVIEW
+DECISION=AUTO_PASS
 BASE_COMMIT=d57afd6ec30861ebaadd0faf7775e1ff27a5ecee
 SOURCE_COMMIT=THIS_COMMIT
 IMPLEMENTATION_STATE=0a9db2f6924a86c1bff60df54e4626eec4de2b67bc7cd5790b004f2300a636e1
@@ -188,8 +188,8 @@ PM_CONFIRMATION=PASS
 DEV_CODE_REVIEW=PASS
 STANDARDS_REVIEW=PASS
 CI_STATUS=PASS
-CI_RUN_IMPLEMENTATION=33146195681
-CI_EVIDENCE_HEAD=3428ff324964ba01321bbac20a10d6ad3e842fa2
+CI_RUN_IMPLEMENTATION=33148554156
+CI_EVIDENCE_HEAD=17d9f6145a31e92b22964e5be9d5bc7e19134db6
 FINAL_PR_HEAD_CI_SOURCE=GitHub PR #418 statusCheckRollup（外部权威状态，避免提交内自引用）
 P0=0
 P1=0
@@ -199,15 +199,19 @@ REAL_WALLET_WRITES=0
 MAX_COST_CNY=0
 TEST_SERVER_WRITES=0
 PRODUCTION_OPERATIONS=0
-PR_STATE=OPEN
+PR_STATE=MERGED
 PR_NUMBER=418
 PR_URL=https://github.com/skillixx/-molin/pull/418
 NEXT_GOAL_ALLOWED=NO
+MERGE_COMMIT=036427603ed5580caf031ca0a9becdd7e8ac83f3
+MERGED_AT=2026-08-28T06:46:55Z
+DEPLOYMENT=NOT_EXECUTED
 ```
 
-QA、产品、独立工程审查、全量Go回归、vet、敏感扫描、隔离MySQL race和PR必选CI均已通过。PR #418 当前达到冻结枚举`AUTO_READY_FOR_HUMAN_REVIEW`；合并由独立外部授权控制。VID-G2停止于开放PR，不进入VID-G3。
+QA、产品、独立工程审查、全量Go回归、vet、敏感扫描、隔离MySQL race和PR必选CI均已通过。PR #418 已按独立授权合并为`036427603ed5580caf031ca0a9becdd7e8ac83f3`，fresh fetch确认`origin/main`包含且当前正指向该提交；没有执行部署。VID-G2已关闭，允许从该基线开始VID-G3。
 
 证据文件：
 
 - [`evidence/video-gateway-vid-g2-source-state.json`](./evidence/video-gateway-vid-g2-source-state.json)
 - [`evidence/video-gateway-vid-g2-mysql-contract.json`](./evidence/video-gateway-vid-g2-mysql-contract.json)
+- [`evidence/video-gateway-vid-g2-final-merge.json`](./evidence/video-gateway-vid-g2-final-merge.json)

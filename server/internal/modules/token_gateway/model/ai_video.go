@@ -41,6 +41,18 @@ const (
 	AIInputAssetDeleteFailed  = "delete_failed"
 
 	AITaskInputReferenceImage = "reference_image"
+
+	AIProviderCallbackSignatureValid      = "valid"
+	AIProviderCallbackSignatureInvalid    = "invalid"
+	AIProviderCallbackSignatureUnverified = "unverified"
+	AIProviderCallbackReceived            = "received"
+	AIProviderCallbackApplied             = "applied"
+	AIProviderCallbackIgnored             = "ignored"
+	AIProviderCallbackFailed              = "failed"
+
+	AITaskPayloadPrompt          = "prompt"
+	AITaskPayloadProviderRequest = "provider_request"
+	AITaskPayloadProviderResult  = "provider_result"
 )
 
 // AIUploadSession 保存上传入口的归属和完成事实；对象位置及上游版本标识只供内部校验使用。

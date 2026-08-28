@@ -113,9 +113,10 @@ assert_scalar "SELECT COUNT(*) FROM information_schema.columns WHERE table_schem
 apply_file "$(basename "${up_file}")" >/dev/null
 assert_scalar "SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema=DATABASE() AND table_name='ai_usage_items' AND constraint_name='chk_ai_usage_adjustment_audit'" "1" "reup_adjustment_check"
 
-# 阶段回滚断言仍停在000071；运行当前HEAD服务测试前补装共享媒体与VID-G2 Quote兼容层。
+# 阶段回滚断言仍停在000071；运行当前HEAD服务测试前补装共享媒体、VID-G2 Quote与VID-G3资产兼容层。
 apply_file "000072_expand_video_gateway_schema.up.sql" >/dev/null
 apply_file "000074_expand_video_pricing_quotes.up.sql" >/dev/null
+apply_file "000075_enforce_video_task_asset_events.up.sql" >/dev/null
 
 # 测试进程只连接同一内部网络中的临时MySQL，图片、钱包和Provider均使用测试夹具。
 race_flag="-race"

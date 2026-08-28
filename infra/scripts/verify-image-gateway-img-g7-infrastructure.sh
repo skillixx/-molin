@@ -85,8 +85,8 @@ for path in "${repo_root}"/server/migrations/*.up.sql; do
   base="$(basename "${path}")"
   version_text="${base%%_*}"
   version=$((10#${version_text}))
-  # G7运行当前HEAD，需装配000072共享媒体与000074 Quote兼容层；000073权限seed不属于基础设施夹具。
-  if [[ "${version}" -le 72 || "${version}" -eq 74 ]]; then
+  # G7运行当前HEAD，需装配000072共享媒体、000074 Quote与000075资产兼容层；000073权限seed不属于基础设施夹具。
+  if [[ "${version}" -le 72 || "${version}" -eq 74 || "${version}" -eq 75 ]]; then
     docker exec -e "MYSQL_PWD=${mysql_password}" "${mysql_name}" sh -c \
       "mysql --protocol=socket --default-character-set=utf8mb4 -uroot --database='${database_name}' < '/migrations/${base}'"
   fi

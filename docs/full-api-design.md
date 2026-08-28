@@ -2306,6 +2306,24 @@ VID-G2冻结两个共享Service门面：`CreateTokenQuote`对应未来`POST /api
 
 共享表扩展不能改变既有图片接口语义：全部图片Task查询/更新显式要求`image.generate + operation IS NULL`，全部图片Asset查询/清理显式要求`modality=image`。即使同一用户和Project未来同时存在视频事实，图片接口、图片Worker、图片清理器和图片观测指标也不得返回或推进视频行。
 
+### 14.0V3 视频网关VID-G3 Repository合同（HTTP仍关闭）
+
+> VID-G3实现共享Task、InputAsset、TaskInput、OutputAsset、TaskEvent、ProviderCallbackEvent与TaskPayload Repository。它没有注册Handler或路由，不得把`/v1/videos`或`/api/token/videos/*`描述为当前可调用。
+
+内部任务查询必须同时匹配`video.generate + text_to_video|image_to_video + user_id + project_id + api_key_id`。UploadSession、InputAsset、TaskInput和Task任一归属不匹配都映射相同404式不存在语义。GeneratedImageAsset来源还必须为`image.generate + operation IS NULL + modality=image`，并在Quote、Reserve、TaskInput和Provider前每次复核available、审核、双标识、过期、删除、争议与来源Key；不能把另一Project、Key、JWT输入或失效源图伪装成参考图。
+
+执行、计费和交付是三个独立CAS轴。执行轴以Task `version_no`推进并在同事务追加TaskEvent；计费和交付以Request `version_no`推进。`pending_reconcile`只能收敛到安全终态，不能交付或释放租约；`available`必须同时满足Task succeeded与Request settled/adjusted。
+
+Provider回调只接收内部验签器传入的验签结论和短暂原始字节，Repository立即计算SHA-256且不持久化原文。同三元事件同hash幂等ACK，不同hash冲突；未知任务、错绑、乱序和相反终态只保存低敏ignored/failed结果，不推进Task。
+
+回调应用结果只能从`received`写入一次`applied/ignored/failed`，之后UPDATE和DELETE均由数据库拒绝。TaskEvent详情只允许`reason/attempt/status/result`及冻结值，不接受`message/data`、嵌套对象或自由文本。
+
+Prompt和Provider受保护载荷只能通过AES-GCM密文信封持久化。TaskPayload Repository强制重算AAD/密文摘要并调用持钥Protector认证解密，未注入验证器、任意字节、伪造摘要或认证失败都拒绝。普通DTO、Task `input_json/result_json`、RabbitMQ、Outbox和日志不得包含Prompt明文、Provider正文、Base64、密钥、bucket/object_key或长期签名URL。I2V低敏Task JSON只允许规范化规格，图片引用由TaskInput承载。
+
+视频Task `input_json`数据库白名单固定为operation、resolution、duration_seconds、aspect_ratio、frame_rate、audio六键；VID-G3的`result_json/error_message_safe`必须为空。
+
+输出资产命令不提供bucket、object_key、URL或签名参数；服务端`VideoObjectLocationFactory`生成位置。根`content`与`cover/preview/thumbnail/moderation_copy/derived`使用同request/task父子约束。VID-G3只验证已有审核和双标识结果，不写入VID-G4事实。详细合同见[`video-gateway-vid-g3-task-asset-events.md`](./video-gateway-vid-g3-task-asset-events.md)。
+
 ### 14.0A 图片网关IMG-G6本地HTTP合同
 
 > IMG-G6已实现独立关闭态路由注册函数，但未接入bootstrap，当前运行时仍不可达。以下合同只由本地httptest、Fake ImageGateway和隔离MySQL证明，不代表测试环境或生产开放。

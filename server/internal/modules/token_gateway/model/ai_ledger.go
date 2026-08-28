@@ -21,10 +21,12 @@ const (
 	AIExecutionUnknown   = "unknown"
 
 	AIBillingUnquoted          = "unquoted"
+	AIBillingQuoted            = "quoted"
 	AIBillingHeld              = "held"
 	AIBillingSettlementPending = "settlement_pending"
 	AIBillingSettled           = "settled"
 	AIBillingReleased          = "released"
+	AIBillingAdjusted          = "adjusted"
 	AIBillingException         = "exception"
 
 	AIDeliveryNotApplicable = "not_applicable"

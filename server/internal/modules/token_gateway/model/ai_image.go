@@ -28,6 +28,7 @@ const (
 
 	AIImageAssetPrimaryOutput  = "primary_output"
 	AIImageAssetContent        = "content"
+	AIImageAssetCover          = "cover"
 	AIImageAssetPreview        = "preview"
 	AIImageAssetThumbnail      = "thumbnail"
 	AIImageAssetModerationCopy = "moderation_copy"

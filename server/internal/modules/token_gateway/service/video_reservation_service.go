@@ -212,6 +212,20 @@ func (s *VideoReservationService) reserveAndCreateTx(tx *gorm.DB, command VideoR
 	if err != nil {
 		return nil, err
 	}
+	// G3三轴状态机要求计费轴完整经过quoted；即使quoted与held处于同一原子预占事务，也不得跳过中间事实。
+	if result := tx.Model(&model.AIRequest{}).Where("id=? AND billing_status=?", request.ID, model.AIBillingUnquoted).Updates(map[string]interface{}{
+		"price_snapshot_json": consumed.PriceSnapshotJSON, "quoted_amount": consumed.QuotedAmount,
+		"billing_status": model.AIBillingQuoted, "version_no": gorm.Expr("version_no+1"), "updated_at": now,
+	}); result.Error != nil || result.RowsAffected != 1 {
+		return nil, ErrVideoReservationState
+	}
+	quotedFrom, quotedTo := model.AIBillingUnquoted, model.AIBillingQuoted
+	if err := tx.Create(&model.AIGatewayTaskEvent{
+		EventID: task.PublicID + ":billing:quoted", TaskID: task.ID, UserID: trusted.UserID, ProjectID: projectID,
+		EventType: "billing_status_changed", FromStatus: &quotedFrom, ToStatus: &quotedTo, Source: "api", CreatedAt: now,
+	}).Error; err != nil {
+		return nil, err
+	}
 	hold, err := s.holds.CreateHoldTx(tx, trusted.UserID, consumed.QuotedAmount, request.RequestID+":reserve", "视频生成预占")
 	if err != nil {
 		return nil, err
@@ -223,11 +237,28 @@ func (s *VideoReservationService) reserveAndCreateTx(tx *gorm.DB, command VideoR
 	if err := tx.Model(&model.AIGatewayQuote{}).Where("id=?", consumed.ID).Update("held_amount", consumed.QuotedAmount).Error; err != nil {
 		return nil, err
 	}
-	if result := tx.Model(&model.AIRequest{}).Where("id=? AND billing_status=?", request.ID, model.AIBillingUnquoted).Updates(map[string]interface{}{"price_snapshot_json": consumed.PriceSnapshotJSON, "quoted_amount": consumed.QuotedAmount, "held_amount": consumed.QuotedAmount, "billing_status": model.AIBillingHeld}); result.Error != nil || result.RowsAffected != 1 {
+	if result := tx.Model(&model.AIRequest{}).Where("id=? AND billing_status=?", request.ID, model.AIBillingQuoted).Updates(map[string]interface{}{
+		"held_amount": consumed.QuotedAmount, "billing_status": model.AIBillingHeld,
+		"version_no": gorm.Expr("version_no+1"), "updated_at": now,
+	}); result.Error != nil || result.RowsAffected != 1 {
 		return nil, ErrVideoReservationState
+	}
+	heldFrom, heldTo := model.AIBillingQuoted, model.AIBillingHeld
+	if err := tx.Create(&model.AIGatewayTaskEvent{
+		EventID: task.PublicID + ":billing:held", TaskID: task.ID, UserID: trusted.UserID, ProjectID: projectID,
+		EventType: "billing_status_changed", FromStatus: &heldFrom, ToStatus: &heldTo, Source: "api", CreatedAt: now,
+	}).Error; err != nil {
+		return nil, err
 	}
 	if result := tx.Model(&model.AIImageTask{}).Where("id=? AND status=?", task.ID, model.AIImageTaskCreated).Updates(map[string]interface{}{"status": model.AIImageTaskReserved, "version_no": gorm.Expr("version_no+1")}); result.Error != nil || result.RowsAffected != 1 {
 		return nil, ErrVideoReservationState
+	}
+	executionFrom, executionTo := model.AIImageTaskCreated, model.AIImageTaskReserved
+	if err := tx.Create(&model.AIGatewayTaskEvent{
+		EventID: task.PublicID + ":execution:reserved", TaskID: task.ID, UserID: trusted.UserID, ProjectID: projectID,
+		EventType: "execution_status_changed", FromStatus: &executionFrom, ToStatus: &executionTo, Source: "api", CreatedAt: now,
+	}).Error; err != nil {
+		return nil, err
 	}
 	copyQuote := *consumed
 	copyQuote.HeldAmount = &consumed.QuotedAmount
@@ -272,8 +303,11 @@ func revalidateVideoInputTx(tx *gorm.DB, input VideoQuoteFingerprintInput, now t
 		return ErrVideoInputMismatch
 	}
 	var asset model.AIGatewayInputAsset
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND public_id=? AND user_id=? AND project_id=? AND lifecycle_state=? AND moderation_status=? AND expires_at>?",
-		input.Input.InternalID, input.Input.InputAssetID, input.UserID, input.ProjectID, model.AIInputAssetReady, model.AIModerationPassed, now).First(&asset).Error; err != nil {
+	query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table("ai_gateway_input_assets AS inputs").Select("inputs.*").
+		Where("inputs.id=? AND inputs.public_id=? AND inputs.user_id=? AND inputs.project_id=? AND inputs.lifecycle_state=? AND inputs.moderation_status=? AND inputs.expires_at>? AND inputs.delete_requested_at IS NULL AND inputs.pending_delete_at IS NULL AND inputs.deleted_at IS NULL",
+			input.Input.InternalID, input.Input.InputAssetID, input.UserID, input.ProjectID, model.AIInputAssetReady, model.AIModerationPassed, now)
+	query = scopeTrustedVideoInputSource(query, input.APIKeyID, now)
+	if err := query.First(&asset).Error; err != nil {
 		return ErrVideoInputMismatch
 	}
 	if asset.NormalizedSHA256 == nil || *asset.NormalizedSHA256 != input.Input.NormalizedSHA256 || asset.VersionNo != input.Input.Version {

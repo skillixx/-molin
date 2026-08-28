@@ -34,6 +34,8 @@ SOURCE_STATE_EXCLUDES = {
     "docs/evidence/video-gateway-vid-g0-source-state.json",
     "docs/evidence/video-gateway-vid-g1-mysql-contract.json",
     "docs/evidence/video-gateway-vid-g1-source-state.json",
+    "docs/evidence/video-gateway-vid-g2-source-state.json",
+    "docs/evidence/video-gateway-vid-g3-source-state.json",
 }
 PNG_1X1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nH0AAAAASUVORK5CYII="
 REFERENCE_PNG_BYTES = base64.b64decode(PNG_1X1, validate=True)

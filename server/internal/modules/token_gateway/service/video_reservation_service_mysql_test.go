@@ -31,17 +31,23 @@ func TestVideoReservationServiceMySQLAtomicQuoteHoldAndTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	const fixtureID = uint64(94001)
 	const modelCode = "molin/video-g2-reservation"
-	cleanupVideoReservationFixture(t, db, fixtureID, modelCode)
-	t.Cleanup(func() { cleanupVideoReservationFixture(t, db, fixtureID, modelCode) })
+	// 本测试只允许运行在脚本创建的一次性数据库；G3开始TaskEvent和TaskInput均为不可删除事实，禁止清理式验收。
 	if err := db.Exec("INSERT INTO users(id,password_hash,real_name_status,status) VALUES(?,'fixture','verified','active')", fixtureID).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec("INSERT INTO ai_projects(id,user_id,name,status,budget_mode,timezone) VALUES(?,?,?,'active','disabled','Asia/Shanghai')", fixtureID, fixtureID, "视频G2原子预占项目").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("INSERT INTO api_keys(id,user_id,project_id,key_prefix,key_hash,name,billing_mode,model_scope,scope_mode,status) VALUES(?,?,?,'fixture','vid-g2-reserve-hash','视频G2预占密钥','postpaid','','allowlist','active')", fixtureID, fixtureID, fixtureID).Error; err != nil {
+	if err := db.Exec(`INSERT INTO api_keys(id,user_id,project_id,key_prefix,key_hash,name,billing_mode,model_scope,scope_mode,status) VALUES
+(?,?,?,'fixture','vid-g2-reserve-hash','视频G2预占密钥','postpaid','','allowlist','active'),
+(?,?,?,'fixture-b','vid-g2-reserve-hash-b','视频G2第二密钥','postpaid','','allowlist','active')`, fixtureID, fixtureID, fixtureID, fixtureID+1, fixtureID, fixtureID).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec("INSERT INTO token_models(id,logical_model_code,display_name,modality,status) VALUES(?,?,?,?,?)", fixtureID, modelCode, "视频G2预占模型", "video", "inactive").Error; err != nil {
@@ -81,6 +87,18 @@ VALUES(?, 'vin_asset_reservation', ?, ?, 'platform_presigned', ?, ?, ?, 'vid-g2-
 	if err := db.Exec("UPDATE ai_upload_sessions SET status='completed',final_input_asset_id=?,source_etag='fixture-etag',completed_at=? WHERE id=?", fixtureID, now, fixtureID).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec(`INSERT INTO ai_upload_sessions(id,public_id,user_id,project_id,api_key_id,purpose,source_type,mime_type,size_bytes,bucket,object_key,status,expires_at)
+VALUES(?, 'vid_upload_reservation_key_b', ?, ?, ?, 'video_reference_image','platform_presigned','image/png',1024,'vid-g2-input','source-b.png','verifying',?)`, fixtureID+1, fixtureID, fixtureID, fixtureID+1, now.Add(time.Hour)).Error; err != nil {
+		t.Fatal(err)
+	}
+	otherKeyHash := "edededededededededededededededededededededededededededededededed"
+	if err := db.Exec(`INSERT INTO ai_gateway_input_assets(id,public_id,user_id,project_id,source_type,upload_session_id,original_sha256,normalized_sha256,bucket,object_key,mime_type,size_bytes,width,height,moderation_policy_version,moderation_status,version_no,lifecycle_state,expires_at,legal_hold)
+VALUES(?, 'vin_asset_reservation_key_b', ?, ?, 'platform_presigned', ?, ?, ?, 'vid-g2-input','normalized-b.png','image/png',1024,1280,720,'vid-g2-policy','passed',1,'ready',?,0)`, fixtureID+1, fixtureID, fixtureID, fixtureID+1, otherKeyHash, otherKeyHash, now.Add(time.Hour)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("UPDATE ai_upload_sessions SET status='completed',final_input_asset_id=?,source_etag='fixture-etag-b',completed_at=? WHERE id=?", fixtureID+1, now, fixtureID+1).Error; err != nil {
+		t.Fatal(err)
+	}
 	pricing := NewVideoPricingService(repository.NewG3PricingRepository(db))
 	pricing.now = func() time.Time { return now }
 	quoteService := NewVideoQuoteService(pricing, repository.NewVideoQuoteRepository(db), []byte("vid-g2-quote-fingerprint-secret-32bytes"))
@@ -100,6 +118,14 @@ VALUES(?, 'vin_asset_reservation', ?, ?, 'platform_presigned', ?, ?, ?, 'vid-g2-
 	}
 	reservation.now = func() time.Time { return now }
 	facade := NewVideoQuoteFacade(quoteService, reservation)
+	for _, denied := range []VideoFacadeRequest{
+		{IdempotencyKey: "vid-g3-cross-key-quote", RequestID: "vid_req_cross_key", TaskID: "vid_task_cross_key", FingerprintInput: VideoQuoteFingerprintInput{UserID: fixtureID, ProjectID: fixtureID, APIKeyID: fixtureID, LogicalModelCode: modelCode, PromptHash: "bdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbdbd", Variant: variants[1], Input: &VideoQuoteInputBinding{InputAssetID: "vin_asset_reservation_key_b", NormalizedSHA256: otherKeyHash, Version: 1}}},
+		{IdempotencyKey: "vid-g3-jwt-key-quote", RequestID: "vid_req_jwt_key", TaskID: "vid_task_jwt_key", FingerprintInput: VideoQuoteFingerprintInput{UserID: fixtureID, ProjectID: fixtureID, APIKeyID: 0, LogicalModelCode: modelCode, PromptHash: "bebebebebebebebebebebebebebebebebebebebebebebebebebebebebebebebe", Variant: variants[1], Input: &VideoQuoteInputBinding{InputAssetID: "vin_asset_reservation", NormalizedSHA256: normalizedHash, Version: 1}}},
+	} {
+		if _, err := facade.CreateTokenQuote(context.Background(), denied); !errors.Is(err, ErrVideoInputMismatch) {
+			t.Fatalf("跨API Key或JWT引用输入必须在Quote主链失败关闭: key=%d err=%v", denied.FingerprintInput.APIKeyID, err)
+		}
+	}
 	request := VideoFacadeRequest{IdempotencyKey: "vid-g2-reserve-idem", RequestID: "vid_req_reservation", TaskID: "vid_task_reservation", FingerprintInput: VideoQuoteFingerprintInput{UserID: fixtureID, ProjectID: fixtureID, APIKeyID: fixtureID, LogicalModelCode: modelCode, PromptHash: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", Variant: variants[0]}}
 	explicit, err := facade.CreateTokenQuote(context.Background(), request)
 	if err != nil {
@@ -149,6 +175,41 @@ VALUES(?, 'vin_asset_reservation', ?, ?, 'platform_presigned', ?, ?, ?, 'vid-g2-
 		t.Fatalf("图生视频原子预占失败: prepared=%+v err=%v", imagePrepared, err)
 	}
 	assertVideoG2Count(t, db, "ai_gateway_task_inputs", "input_asset_id=?", fixtureID, 1)
+	var persistedTask model.AIImageTask
+	if err := db.Where("public_id=?", imagePrepared.TaskID).First(&persistedTask).Error; err != nil {
+		t.Fatal(err)
+	}
+	protector, err := NewVideoTaskPayloadProtector("vid-g3-key-v1", []byte("0123456789abcdef0123456789abcdef"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := protector.Seal(persistedTask.ID, fixtureID, fixtureID, "prompt", []byte("VID-G3隔离测试Prompt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	payloadRepo := repository.NewVideoTaskPayloadRepository(db, protector)
+	payloadOwner := repository.VideoOwner{UserID: fixtureID, ProjectID: fixtureID, APIKeyID: uint64PointerForVideoSchemaTest(fixtureID)}
+	if err := payloadRepo.Create(context.Background(), persistedTask.PublicID, payloadOwner, payload); err != nil {
+		t.Fatalf("Protector认证信封应可持久化: %v", err)
+	}
+	if _, err := payloadRepo.FindForOwner(context.Background(), persistedTask.PublicID, "prompt", payloadOwner); err != nil {
+		t.Fatalf("认证密文应可按归属读取: %v", err)
+	}
+	forged, err := protector.Seal(persistedTask.ID, fixtureID, fixtureID, "provider_request", []byte("受保护Provider请求"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	forged.Ciphertext[0] ^= 0xff
+	forged.CiphertextSHA256 = videoPayloadSHA256(forged.Ciphertext)
+	if err := payloadRepo.Create(context.Background(), persistedTask.PublicID, payloadOwner, forged); !errors.Is(err, repository.ErrVideoPayloadNotFound) {
+		t.Fatalf("摘要自洽但GCM认证失败的伪造信封必须拒绝: %v", err)
+	}
+	if err := db.Model(&model.AIGatewayTaskPayload{}).Where("id=?", payload.ID).Update("key_version", "tampered").Error; err == nil {
+		t.Fatal("TaskPayload UPDATE必须被触发器拒绝")
+	}
+	if err := db.Delete(&model.AIGatewayTaskPayload{}, payload.ID).Error; err == nil {
+		t.Fatal("TaskPayload DELETE必须被触发器拒绝")
+	}
 	staleRequest := VideoFacadeRequest{IdempotencyKey: "vid-g2-input-stale", RequestID: "vid_req_input_stale", TaskID: "vid_task_input_stale", FingerprintInput: VideoQuoteFingerprintInput{UserID: fixtureID, ProjectID: fixtureID, APIKeyID: fixtureID, LogicalModelCode: modelCode, PromptHash: "cececececececececececececececececececececececececececececececece", Variant: variants[1], Input: &VideoQuoteInputBinding{InputAssetID: "vin_asset_reservation", NormalizedSHA256: normalizedHash, Version: 1}}}
 	staleQuote, err := facade.CreateTokenQuote(context.Background(), staleRequest)
 	if err != nil {

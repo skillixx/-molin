@@ -84,8 +84,8 @@ for path in "${repo_root}"/server/migrations/*.up.sql; do
   base="$(basename "${path}")"
   version_text="${base%%_*}"
   version=$((10#${version_text}))
-  # G6运行当前HEAD，需装配000072共享媒体与000074 Quote兼容层；000073权限seed不属于HTTP隔离夹具。
-  if [[ "${version}" -le 72 || "${version}" -eq 74 ]]; then
+  # G6运行当前HEAD，需装配000072共享媒体、000074 Quote与000075资产兼容层；000073权限seed不属于HTTP隔离夹具。
+  if [[ "${version}" -le 72 || "${version}" -eq 74 || "${version}" -eq 75 ]]; then
     apply_file "${base}"
   fi
 done
