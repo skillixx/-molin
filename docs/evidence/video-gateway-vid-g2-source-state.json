@@ -1,6 +1,6 @@
 {
   "gate": "VID-G2",
-  "decision": "AUTO_READY_FOR_PUSH_AUTH",
+  "decision": "AUTO_READY_FOR_PR_AUTH",
   "base_commit": "d57afd6ec30861ebaadd0faf7775e1ff27a5ecee",
   "branch": "feature/video-gateway-vid-g2-pricing-quote",
   "source_commit": "THIS_COMMIT",
@@ -14,9 +14,9 @@
   "p0": 0,
   "p1": 0,
   "p2": 0,
-  "git_mode": "COMMIT_AUTHORIZED_PUSH_NOT_AUTHORIZED",
+  "git_mode": "COMMIT_AND_PUSH_AUTHORIZED_PR_NOT_AUTHORIZED",
   "commit_created": true,
-  "push_executed": false,
+  "push_executed": true,
   "pr_created": false,
   "vid_g3_started": false
 }
