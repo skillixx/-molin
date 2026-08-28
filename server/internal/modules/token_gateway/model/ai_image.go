@@ -54,12 +54,14 @@ const (
 type AIGatewayQuote struct {
 	ID                 uint64           `gorm:"primaryKey;autoIncrement;uniqueIndex:uk_ai_gateway_quotes_owner,priority:1" json:"-"`
 	PublicID           string           `gorm:"size:128;not null;uniqueIndex:uk_ai_gateway_quotes_public_id" json:"quote_id"`
-	UserID             uint64           `gorm:"not null;uniqueIndex:uk_ai_gateway_quotes_owner,priority:2;index:idx_ai_gateway_quotes_owner_expiry,priority:1" json:"user_id"`
-	ProjectID          uint64           `gorm:"not null;uniqueIndex:uk_ai_gateway_quotes_owner,priority:3;index:idx_ai_gateway_quotes_owner_expiry,priority:2" json:"project_id"`
+	UserID             uint64           `gorm:"not null;uniqueIndex:uk_ai_gateway_quotes_owner,priority:2;uniqueIndex:uk_ai_gateway_quotes_idempotency,priority:1;index:idx_ai_gateway_quotes_owner_expiry,priority:1" json:"user_id"`
+	ProjectID          uint64           `gorm:"not null;uniqueIndex:uk_ai_gateway_quotes_owner,priority:3;uniqueIndex:uk_ai_gateway_quotes_idempotency,priority:2;index:idx_ai_gateway_quotes_owner_expiry,priority:2" json:"project_id"`
 	APIKeyID           *uint64          `json:"api_key_id,omitempty"`
 	LogicalModelCode   string           `gorm:"size:128;not null" json:"logical_model_code"`
 	Capability         string           `gorm:"size:64;not null;default:image.generate" json:"capability"`
 	Operation          *string          `gorm:"size:32" json:"operation,omitempty"`
+	CommandKind        *string          `gorm:"size:32;uniqueIndex:uk_ai_gateway_quotes_idempotency,priority:3" json:"command_kind,omitempty"`
+	IdempotencyKey     *string          `gorm:"size:128;uniqueIndex:uk_ai_gateway_quotes_idempotency,priority:4" json:"-"`
 	RequestFingerprint string           `gorm:"size:64;not null" json:"-"`
 	RequestVariantHash string           `gorm:"size:64;not null" json:"variant_hash"`
 	PriceVersionID     uint64           `gorm:"not null;index:idx_ai_gateway_quotes_price_version" json:"price_version_id"`

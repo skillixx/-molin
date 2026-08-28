@@ -37,7 +37,7 @@ type AIPriceVersion struct {
 	MinimumCharge       decimal.Decimal `gorm:"type:decimal(20,8);not null;default:0.00000100" json:"minimum_charge"`
 	CostSource          string          `gorm:"size:64;not null;default:manual_cny" json:"cost_source"`
 	CostSourceVersion   string          `gorm:"size:128;not null;default:legacy" json:"cost_source_version"`
-	PricePurpose        string          `gorm:"size:16;not null;default:commercial" json:"price_purpose"`
+	PricePurpose        string          `gorm:"size:32;not null;default:commercial" json:"price_purpose"`
 	FailureChargePolicy string          `gorm:"size:32;not null;default:confirmed_usage" json:"failure_charge_policy"`
 	RoundingMode        string          `gorm:"size:16;not null;default:ceil_8" json:"rounding_mode"`
 	CostUpdatedAt       time.Time       `json:"cost_updated_at"`
