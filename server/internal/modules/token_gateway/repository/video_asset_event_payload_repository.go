@@ -172,6 +172,137 @@ AND requests.modality='video' AND requests.capability=? AND requests.billing_sta
 	return &asset, nil
 }
 
+// MoveObjectLocation 只允许服务端把同一对象键从临时区晋级到结果区或迁入隔离区。
+func (r *VideoOutputAssetRepository) MoveObjectLocation(ctx context.Context, publicID string, owner VideoOwner, expectedVersion uint64, from, to VideoObjectLocation, now time.Time) (*model.AIImageAsset, error) {
+	if from.ObjectKey == "" || from.ObjectKey != to.ObjectKey || from.Bucket != "video-temp" ||
+		(to.Bucket != "video-result" && to.Bucket != "video-quarantine") || now.IsZero() {
+		return nil, ErrVideoAssetTransition
+	}
+	asset, err := r.FindOwnedForInternal(ctx, publicID, owner)
+	if err != nil {
+		return nil, err
+	}
+	if asset.VersionNo != expectedVersion || asset.Bucket == nil || asset.ObjectKey == nil ||
+		*asset.Bucket != from.Bucket || *asset.ObjectKey != from.ObjectKey {
+		return nil, ErrVideoAssetConflict
+	}
+	result := r.db.WithContext(ctx).Model(&model.AIImageAsset{}).
+		Where("id=? AND user_id=? AND project_id=? AND modality='video' AND version_no=? AND bucket=? AND object_key=?",
+			asset.ID, owner.UserID, owner.ProjectID, expectedVersion, from.Bucket, from.ObjectKey).
+		Updates(map[string]interface{}{"bucket": to.Bucket, "object_key": to.ObjectKey, "version_no": gorm.Expr("version_no + 1"), "updated_at": now})
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return nil, ErrVideoAssetConflict
+	}
+	return r.FindOwnedForInternal(ctx, publicID, owner)
+}
+
+// ApplyModerationResult 以CAS写入本地Fake审核结论和策略版本，不保存任何审核正文。
+func (r *VideoOutputAssetRepository) ApplyModerationResult(ctx context.Context, publicID string, owner VideoOwner, expectedVersion uint64, status, policyVersion string, now time.Time) (*model.AIImageAsset, error) {
+	if status != model.AIModerationPassed && status != model.AIModerationRejected && status != model.AIModerationError {
+		return nil, ErrVideoAssetTransition
+	}
+	policyVersion = strings.TrimSpace(policyVersion)
+	if policyVersion == "" || len(policyVersion) > 64 || now.IsZero() {
+		return nil, ErrVideoAssetTransition
+	}
+	asset, err := r.FindOwnedForInternal(ctx, publicID, owner)
+	if err != nil {
+		return nil, err
+	}
+	if asset.VersionNo != expectedVersion || asset.ModerationStatus != model.AIModerationPending || asset.LifecycleState != model.AIImageAssetTemporary {
+		return nil, ErrVideoAssetConflict
+	}
+	result := r.db.WithContext(ctx).Model(&model.AIImageAsset{}).
+		Where("id=? AND user_id=? AND project_id=? AND modality='video' AND version_no=? AND moderation_status='pending' AND lifecycle_state='temporary'",
+			asset.ID, owner.UserID, owner.ProjectID, expectedVersion).
+		Updates(map[string]interface{}{
+			"moderation_status": status, "moderation_policy_version": policyVersion,
+			"version_no": gorm.Expr("version_no + 1"), "updated_at": now,
+		})
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return nil, ErrVideoAssetConflict
+	}
+	return r.FindOwnedForInternal(ctx, publicID, owner)
+}
+
+// ApplyLabelResult 只在审核通过后写入显式和隐式标识状态及版本，任一失败都不能进入available。
+func (r *VideoOutputAssetRepository) ApplyLabelResult(ctx context.Context, publicID string, owner VideoOwner, expectedVersion uint64, explicitStatus, implicitStatus, version string, now time.Time) (*model.AIImageAsset, error) {
+	if !validVideoLabelStatus(explicitStatus) || !validVideoLabelStatus(implicitStatus) {
+		return nil, ErrVideoAssetTransition
+	}
+	version = strings.TrimSpace(version)
+	if version == "" || len(version) > 64 || now.IsZero() {
+		return nil, ErrVideoAssetTransition
+	}
+	asset, err := r.FindOwnedForInternal(ctx, publicID, owner)
+	if err != nil {
+		return nil, err
+	}
+	if asset.VersionNo != expectedVersion || asset.ModerationStatus != model.AIModerationPassed ||
+		asset.ExplicitLabelStatus != model.AIImageLabelPending || asset.ImplicitLabelStatus != model.AIImageLabelPending ||
+		asset.LifecycleState != model.AIImageAssetTemporary {
+		return nil, ErrVideoAssetConflict
+	}
+	result := r.db.WithContext(ctx).Model(&model.AIImageAsset{}).
+		Where("id=? AND user_id=? AND project_id=? AND modality='video' AND version_no=? AND moderation_status='passed' AND explicit_label_status='pending' AND implicit_label_status='pending' AND lifecycle_state='temporary'",
+			asset.ID, owner.UserID, owner.ProjectID, expectedVersion).
+		Updates(map[string]interface{}{
+			"explicit_label_status": explicitStatus, "implicit_label_status": implicitStatus,
+			"explicit_label_version": version, "implicit_label_version": version,
+			"version_no": gorm.Expr("version_no + 1"), "updated_at": now,
+		})
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return nil, ErrVideoAssetConflict
+	}
+	return r.FindOwnedForInternal(ctx, publicID, owner)
+}
+
+// MarkMediaDeleted 只记录正文已删除事实，保留对象定位、hash、规格、归属和审计链。
+func (r *VideoOutputAssetRepository) MarkMediaDeleted(ctx context.Context, publicID string, owner VideoOwner, expectedVersion uint64, now time.Time) (*model.AIImageAsset, error) {
+	if now.IsZero() {
+		return nil, ErrVideoAssetTransition
+	}
+	asset, err := r.FindOwnedForInternal(ctx, publicID, owner)
+	if err != nil {
+		return nil, err
+	}
+	if asset.VersionNo != expectedVersion {
+		return nil, ErrVideoAssetConflict
+	}
+	if asset.MediaDeletedAt != nil {
+		return asset, nil
+	}
+	for asset.LifecycleState != model.AIImageAssetDeleted {
+		var next string
+		switch asset.LifecycleState {
+		case model.AIImageAssetAvailable:
+			next = model.AIImageAssetExpiring
+		case model.AIImageAssetTemporary, model.AIImageAssetQuarantined, model.AIImageAssetDeleteFailed:
+			next = model.AIImageAssetDeleting
+		case model.AIImageAssetExpiring:
+			next = model.AIImageAssetDeleting
+		case model.AIImageAssetDeleting:
+			next = model.AIImageAssetDeleted
+		default:
+			return nil, ErrVideoAssetTransition
+		}
+		asset, err = r.TransitionLifecycle(ctx, publicID, owner, asset.VersionNo, next, now)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return asset, nil
+}
+
 // TransitionLifecycle 以version_no CAS推进资产生命周期，并受legal hold和争议状态保护。
 func (r *VideoOutputAssetRepository) TransitionLifecycle(ctx context.Context, publicID string, owner VideoOwner, expectedVersion uint64, toState string, now time.Time) (*model.AIImageAsset, error) {
 	asset, err := r.FindOwnedForInternal(ctx, publicID, owner)
@@ -184,7 +315,8 @@ func (r *VideoOutputAssetRepository) TransitionLifecycle(ctx context.Context, pu
 	if toState == model.AIImageAssetAvailable && !videoAssetReadyForAvailable(asset) {
 		return nil, ErrVideoAssetTransition
 	}
-	if toState == model.AIImageAssetQuarantined && asset.ModerationStatus != model.AIModerationRejected && asset.ModerationStatus != model.AIModerationError {
+	if toState == model.AIImageAssetQuarantined && asset.ModerationStatus != model.AIModerationRejected && asset.ModerationStatus != model.AIModerationError &&
+		asset.ExplicitLabelStatus != model.AIImageLabelFailed && asset.ImplicitLabelStatus != model.AIImageLabelFailed {
 		return nil, ErrVideoAssetTransition
 	}
 	updates := map[string]interface{}{"lifecycle_state": toState, "version_no": gorm.Expr("version_no + 1"), "updated_at": now}
@@ -290,9 +422,16 @@ func videoAssetRequiresParent(role string) bool {
 func videoAssetReadyForAvailable(asset *model.AIImageAsset) bool {
 	return asset != nil && asset.ModerationStatus == model.AIModerationPassed &&
 		asset.ExplicitLabelStatus == model.AIImageLabelApplied && asset.ImplicitLabelStatus == model.AIImageLabelApplied &&
+		asset.ModerationPolicyVersion != nil && strings.TrimSpace(*asset.ModerationPolicyVersion) != "" &&
+		asset.ExplicitLabelVersion != nil && strings.TrimSpace(*asset.ExplicitLabelVersion) != "" &&
+		asset.ImplicitLabelVersion != nil && strings.TrimSpace(*asset.ImplicitLabelVersion) != "" &&
 		asset.Bucket != nil && strings.TrimSpace(*asset.Bucket) != "" && asset.ObjectKey != nil && strings.TrimSpace(*asset.ObjectKey) != "" &&
 		asset.MIMEType != nil && asset.SizeBytes != nil && *asset.SizeBytes > 0 && asset.SHA256 != nil && len(*asset.SHA256) == 64 &&
 		asset.Width != nil && *asset.Width > 0 && asset.Height != nil && *asset.Height > 0
+}
+
+func validVideoLabelStatus(status string) bool {
+	return status == model.AIImageLabelApplied || status == model.AIImageLabelFailed
 }
 
 func videoAssetDestructiveState(state string) bool {

@@ -67,6 +67,11 @@ class ProbeBifrostVideoContractTest(unittest.TestCase):
                 "docs/evidence/video-gateway-vid-g0-source-state.json",
                 "docs/evidence/video-gateway-vid-g1-mysql-contract.json",
                 "docs/evidence/video-gateway-vid-g1-source-state.json",
+                "docs/evidence/video-gateway-vid-g2-source-state.json",
+                "docs/evidence/video-gateway-vid-g3-source-state.json",
+                "docs/evidence/video-gateway-vid-g4-source-state.json",
+                "docs/evidence/video-gateway-vid-g4-acceptance.json",
+                "docs/evidence/video-gateway-vid-g4-independent-reviews.md",
             },
         )
 

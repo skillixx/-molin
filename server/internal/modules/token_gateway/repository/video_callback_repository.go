@@ -21,17 +21,20 @@ var (
 	ErrVideoCallbackBodyConflict = errors.New("同一Provider事件正文不一致")
 )
 
-// VideoProviderCallbackCommand 只在内存中短暂携带原始正文以计算SHA-256，持久化模型没有原文列。
+// VideoProviderCallbackCommand 接受短暂原文或验签器给出的SHA-256二选一；持久化模型没有原文列。
 type VideoProviderCallbackCommand struct {
-	ProviderCode    string
-	ProviderTaskID  string
-	ExternalEventID string
-	RawBody         []byte
-	SignatureStatus string
-	ToStatus        string
-	EventID         string
-	SafeResultJSON  json.RawMessage
-	ReceivedAt      time.Time
+	ProviderCode         string
+	ProviderTaskID       string
+	ExternalEventID      string
+	RawBody              []byte
+	BodySHA256           string
+	ExpectedTaskPublicID string
+	ExpectedOwner        VideoOwner
+	SignatureStatus      string
+	ToStatus             string
+	EventID              string
+	SafeResultJSON       json.RawMessage
+	ReceivedAt           time.Time
 }
 
 // VideoProviderCallbackOutcome 描述回调是否重放、是否安全应用及其低敏事实。
@@ -53,7 +56,10 @@ func (r *VideoProviderCallbackEventRepository) RecordAndApply(ctx context.Contex
 	if r == nil || r.db == nil || !validVideoCallbackCommand(command) {
 		return nil, ErrVideoCallbackInvalid
 	}
-	bodyHash := videoCallbackSHA256(command.RawBody)
+	bodyHash := command.BodySHA256
+	if bodyHash == "" {
+		bodyHash = videoCallbackSHA256(command.RawBody)
+	}
 	var outcome *VideoProviderCallbackOutcome
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		existing, found, err := findVideoCallbackByIdentity(tx, command)
@@ -71,6 +77,15 @@ func (r *VideoProviderCallbackEventRepository) RecordAndApply(ctx context.Contex
 		task, taskFound, err := findVideoTaskByProviderRef(tx, command.ProviderCode, command.ProviderTaskID)
 		if err != nil {
 			return err
+		}
+		taskBindingMismatch := false
+		if strings.TrimSpace(command.ExpectedTaskPublicID) != "" {
+			if !taskFound || task.PublicID != strings.TrimSpace(command.ExpectedTaskPublicID) ||
+				task.UserID != command.ExpectedOwner.UserID || task.ProjectID != command.ExpectedOwner.ProjectID ||
+				!sameVideoAPIKey(task.APIKeyID, command.ExpectedOwner.APIKeyID) {
+				taskFound = false
+				taskBindingMismatch = true
+			}
 		}
 		event := &model.AIGatewayProviderCallbackEvent{
 			ProviderCode: command.ProviderCode, ProviderTaskID: command.ProviderTaskID,
@@ -101,6 +116,8 @@ func (r *VideoProviderCallbackEventRepository) RecordAndApply(ctx context.Contex
 		if command.SignatureStatus != model.AIProviderCallbackSignatureValid {
 			processStatus = model.AIProviderCallbackFailed
 			result["reason"] = "signature_invalid"
+		} else if taskBindingMismatch {
+			result["reason"] = "provider_task_mismatch"
 		} else if !taskFound {
 			result["reason"] = "task_not_found"
 		} else if !videoExecutionTransitionAllowed(task.Status, command.ToStatus) {
@@ -171,7 +188,10 @@ func findVideoTaskByProviderRef(tx *gorm.DB, providerCode, providerTaskID string
 }
 
 func validVideoCallbackCommand(command VideoProviderCallbackCommand) bool {
-	if strings.TrimSpace(command.ProviderCode) == "" || strings.TrimSpace(command.ProviderTaskID) == "" || strings.TrimSpace(command.ExternalEventID) == "" || len(command.RawBody) == 0 || command.ReceivedAt.IsZero() {
+	hasRawBody := len(command.RawBody) > 0
+	decodedHash, hashErr := hex.DecodeString(command.BodySHA256)
+	hasVerifiedHash := len(command.BodySHA256) == 64 && len(decodedHash) == 32 && hashErr == nil && strings.ToLower(command.BodySHA256) == command.BodySHA256
+	if strings.TrimSpace(command.ProviderCode) == "" || strings.TrimSpace(command.ProviderTaskID) == "" || strings.TrimSpace(command.ExternalEventID) == "" || hasRawBody == hasVerifiedHash || command.ReceivedAt.IsZero() {
 		return false
 	}
 	if command.SignatureStatus != model.AIProviderCallbackSignatureValid && command.SignatureStatus != model.AIProviderCallbackSignatureInvalid && command.SignatureStatus != model.AIProviderCallbackSignatureUnverified {
@@ -180,7 +200,17 @@ func validVideoCallbackCommand(command VideoProviderCallbackCommand) bool {
 	if command.SignatureStatus == model.AIProviderCallbackSignatureValid && (strings.TrimSpace(command.EventID) == "" || strings.TrimSpace(command.ToStatus) == "") {
 		return false
 	}
+	if strings.TrimSpace(command.ExpectedTaskPublicID) != "" && !validVideoOwner(command.ExpectedOwner) {
+		return false
+	}
 	return validateVideoSafeJSON(command.SafeResultJSON) == nil
+}
+
+func sameVideoAPIKey(left, right *uint64) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func isVideoCallbackDuplicateError(err error) bool {

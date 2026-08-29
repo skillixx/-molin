@@ -1152,6 +1152,25 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - 必须回归VID-G2 000074脚本、Chat与Image全量Go测试、`go vet`、敏感信息扫描和`git diff --check`。
 - 独立QA、产品、Standards与Spec审查必须绑定同一源码状态，最终P0/P1/P2均为0；VID-G4必须保持未开始。
 
+## 视频网关 VID-G4 Fake异步、媒体安全与AI标识验收
+
+- VideoGateway必须覆盖Submit、Query/Poll、Cancel、Callback、Content和Delete；T2V与I2V复用同一执行体系。
+- ACK丢失已知taskUUID只能Query恢复；ACK未知、Submit/Query结果未知必须进入pending_reconcile，禁止重提、交付或释放租约。
+- Poll、Callback和Cancel 100并发不得状态回退或覆盖相反终态；真实Task CAS、Provider绑定CAS和输入租约均只允许一次有效写入。
+- 确定性Fake队列必须覆盖100次重复投递、单消费者领取、崩溃租约到期恢复和ACK终结。
+- 参考图必须覆盖PNG/JPEG成功、EXIF方向、SVG/HTML/GIF/APNG/polyglot、截断、MIME冲突、像素炸弹、GPS、异常ICC、超大元数据、取消和资源上限。
+- 视频Probe必须覆盖正常MP4、MIME伪造、损坏HTTP 200、大小/时长/宽高/帧率/Codec越界、Range异常、中途断流和超时。
+- LocalOnlyMediaFetchPolicy必须覆盖外部URL、重定向、loopback/metadata目标和DNS重绑定，外部HTTP请求固定为0。
+- T2V必须执行Prompt、四类帧和音轨审核；I2V额外执行OCR、视觉、二维码、文字和元数据审核。
+- content及cover/preview/thumbnail/moderation_copy/derived必须具有正确父子关系、审核版本、显式/隐式标识版本和available事实。
+- Fake ObjectStore必须覆盖服务端位置、临时/结果/隔离区、Range、有界Put、hash、幂等、冲突、隔离迁移和删除不存在对象。
+- 删除六类媒体正文后必须保留Request、Quote、Task、Asset、hash、规格、父子、生命周期和审计事实。
+- 普通JSON不得包含Prompt、参考图/回调/媒体正文、Provider task ID、bucket、object_key或签名参数。
+- 必须运行verify-video-gateway-migration-000076.sh，证明完整000001→000076、重复up、保留down/re-up、四包Linux race及T2V/I2V真实Repository闭环。
+- 必须通过go test ./...、go vet ./...、go mod verify、git diff --check、敏感扫描和Chat/Image全量兼容回归。
+- 必须证明真实Provider、Provider Key、真实钱包、外部HTTP、测试服写入、生产操作和费用全部为0。
+- 独立QA、产品、Standards与Spec审查必须绑定同一SOURCE_STATE_ID，最终P0/P1/P2均为0；VID-G5不得开始。
+
 ## 图片网关 IMG-G1 Expand Schema 验收
 
 - `000068` 必须把 `ai_requests.modality` 从仅 Chat 扩展为 `chat/image`，同时以 `capability + delivery_status` 组合约束确保旧 Chat 固定为 `chat.completions/not_applicable`、图片固定为 `image.generate`。

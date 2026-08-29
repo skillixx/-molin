@@ -2324,6 +2324,18 @@ Prompt和Provider受保护载荷只能通过AES-GCM密文信封持久化。TaskP
 
 输出资产命令不提供bucket、object_key、URL或签名参数；服务端`VideoObjectLocationFactory`生成位置。根`content`与`cover/preview/thumbnail/moderation_copy/derived`使用同request/task父子约束。VID-G3只验证已有审核和双标识结果，不写入VID-G4事实。详细合同见[`video-gateway-vid-g3-task-asset-events.md`](./video-gateway-vid-g3-task-asset-events.md)。
 
+### 14.0V4 视频网关VID-G4 Fake执行合同（HTTP仍关闭）
+
+VID-G4新增Go内部VideoGateway、FakeAsyncVideoAdapter、ProviderCallbackVerifier、Submit/Poll/Asset Fetch Worker和确定性进程内队列。它没有注册Handler、路由或前端页面，不能把内部Go方法解释为已开放HTTP接口。
+
+T2V必须零输入；I2V必须读取唯一冻结TaskInput并在每次Provider提交前复核ready InputAsset。Provider只接收ControlledInputRef，不读取用户URL。相同request_id最多Submit一次；ACK丢失且已知taskUUID时只Query，无法证明提交结果时进入pending_reconcile。
+
+媒体内容只通过ControlledContentRef和ReaderAt流式读取。LocalOnlyMediaFetchPolicy拒绝外部URL、重定向、SSRF和DNS重绑定。MP4 Probe验证ftyp/moov/mdat、尺寸、时长、帧率、视频/音频Codec、音轨、Range、大小和SHA-256。
+
+审核覆盖Prompt、I2V参考图OCR/视觉/二维码/文字/元数据、输出首尾/间隔/场景切换帧和音轨。content及五类派生资产只有审核通过且显式/隐式AI标识及版本完成后才能available。
+
+完整内部接口、故障矩阵和边界见[VID-G4 Fake异步与媒体安全](./video-gateway-vid-g4-fake-async-media-safety.md)。当前真实Provider、Bifrost视频数据面、RabbitMQ、Redis、MinIO、钱包结算、测试服和生产均未启用。
+
 ### 14.0A 图片网关IMG-G6本地HTTP合同
 
 > IMG-G6已实现独立关闭态路由注册函数，但未接入bootstrap，当前运行时仍不可达。以下合同只由本地httptest、Fake ImageGateway和隔离MySQL证明，不代表测试环境或生产开放。

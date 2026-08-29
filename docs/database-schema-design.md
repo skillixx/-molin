@@ -579,6 +579,21 @@ Migration `000075_enforce_video_task_asset_events`在VID-G1共享表上增加可
 
 由于`ai_gateway_tasks/ai_gateway_assets`从图片专用事实扩展为共享媒体事实，既有图片Repository和Service必须显式限定任务`capability=image.generate AND operation IS NULL`、资产`modality=image`，请求关联同时限定`modality=image + capability=image.generate`。图片列表、取消、Provider领取、恢复、结算、清理和观测均不得依赖“当前尚无视频运行时”而省略过滤。
 
+#### 3.5.16 视频网关 VID-G4 Fake异步与媒体安全
+
+Migration 000076不创建新表，只向共享ai_gateway_assets增加moderation_policy_version、explicit_label_version和implicit_label_version。
+
+- 新形成的视频审核或标识结果必须携带版本。
+- 从非available进入available时，审核必须passed，显式和隐式标识必须applied，三个版本字段必须非空。
+- TaskEvent详情继续使用四键结构白名单，并加入G4固定低敏原因。
+- Provider绑定在submitting→submitted事务内写provider_code/provider_task_id、递增Task和Request版本并追加TaskEvent。
+- 媒体正文删除必须走available→expiring→deleting→deleted；只写media_deleted_at绕过生命周期会被CHECK拒绝。
+- down为保留式回滚，不删除审核、标识、任务、回调、资产或媒体删除事实。
+
+VideoRepositoryTaskLedger把Fake Worker桥回VID-G3 Repository。Prompt只从AES-GCM TaskPayload临时解密；Provider Content句柄只根据已绑定taskUUID在内存重建，不进入普通JSON或MySQL普通字段。
+
+完整设计见[VID-G4 Fake异步与媒体安全](./video-gateway-vid-g4-fake-async-media-safety.md)。本阶段没有项目数据库、真实MinIO、RabbitMQ、Redis或远端部署。
+
 ## 4. 关键状态
 
 用户状态：

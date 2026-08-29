@@ -372,10 +372,20 @@ func TestVideoG3RepositoryMySQLTaskInputCallbackAsset(t *testing.T) {
 	if _, err := assetRepo.TransitionLifecycle(context.Background(), content.PublicID, owner, 1, model.AIImageAssetAvailable, now); !errors.Is(err, ErrVideoAssetTransition) {
 		t.Fatalf("VID-G3不得伪造审核与标识后直接available: %v", err)
 	}
-	if err := db.Model(&model.AIImageAsset{}).Where("id=?", content.ID).Updates(map[string]interface{}{
+	safetyUpdates := map[string]interface{}{
 		"moderation_status": model.AIModerationPassed, "explicit_label_status": model.AIImageLabelApplied,
 		"implicit_label_status": model.AIImageLabelApplied,
-	}).Error; err != nil {
+	}
+	var safetyVersionColumnCount int64
+	if err := db.Raw("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='ai_gateway_assets' AND column_name IN ('moderation_policy_version','explicit_label_version','implicit_label_version')").Scan(&safetyVersionColumnCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if safetyVersionColumnCount == 3 {
+		safetyUpdates["moderation_policy_version"] = "vid-g3-imported-v1"
+		safetyUpdates["explicit_label_version"] = "vid-g3-imported-v1"
+		safetyUpdates["implicit_label_version"] = "vid-g3-imported-v1"
+	}
+	if err := db.Model(&model.AIImageAsset{}).Where("id=?", content.ID).Updates(safetyUpdates).Error; err != nil {
 		t.Fatal(err)
 	}
 	content, err = assetRepo.FindOwnedForInternal(context.Background(), content.PublicID, owner)
@@ -440,7 +450,11 @@ func TestVideoG3RepositoryMySQLTaskInputCallbackAsset(t *testing.T) {
 
 	for _, next := range []string{model.AIImageAssetQuarantined, model.AIImageAssetDeleting, model.AIImageAssetDeleteFailed, model.AIImageAssetDeleting, model.AIImageAssetDeleted} {
 		if next == model.AIImageAssetQuarantined {
-			if err := db.Model(&model.AIImageAsset{}).Where("id=?", cleanupAsset.ID).Update("moderation_status", model.AIModerationRejected).Error; err != nil {
+			rejectionUpdates := map[string]interface{}{"moderation_status": model.AIModerationRejected}
+			if safetyVersionColumnCount == 3 {
+				rejectionUpdates["moderation_policy_version"] = "vid-g3-imported-v1"
+			}
+			if err := db.Model(&model.AIImageAsset{}).Where("id=?", cleanupAsset.ID).Updates(rejectionUpdates).Error; err != nil {
 				t.Fatal(err)
 			}
 			cleanupAsset, err = assetRepo.FindOwnedForInternal(context.Background(), cleanupAsset.PublicID, owner)
@@ -472,7 +486,10 @@ func seedVideoG3Principals(t *testing.T, db *gorm.DB, userID, otherUserID, proje
 	if err := db.Exec("INSERT INTO ai_projects(id,user_id,name,status,budget_mode,timezone) VALUES(?,?,?,'active','disabled','Asia/Shanghai'),(?,?,?,'active','disabled','Asia/Shanghai'),(?,?,?,'active','disabled','Asia/Shanghai')", projectID, userID, "视频G3项目", otherProject, otherUserID, "其他视频项目", secondProject, userID, "同用户第二视频项目").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("INSERT INTO api_keys(id,user_id,project_id,key_prefix,key_hash,name,billing_mode,model_scope,scope_mode,status) VALUES(?,?,?,'g3','g3-hash','视频G3密钥','postpaid','','allowlist','active'),(?,?,?,'g3-other','g3-other-hash','其他视频密钥','postpaid','','allowlist','active'),(?,?,?,'g3-second','g3-second-hash','同用户第二Project密钥','postpaid','','allowlist','active')", apiKeyID, userID, projectID, otherKeyID, otherUserID, otherProject, secondKeyID, userID, secondProject).Error; err != nil {
+	if err := db.Exec("INSERT INTO api_keys(id,user_id,project_id,key_prefix,key_hash,name,billing_mode,model_scope,scope_mode,status) VALUES(?,?,?,?,?,'视频G3密钥','postpaid','','allowlist','active'),(?,?,?,?,?,'其他视频密钥','postpaid','','allowlist','active'),(?,?,?,?,?,'同用户第二Project密钥','postpaid','','allowlist','active')",
+		apiKeyID, userID, projectID, fmt.Sprintf("g3-%d", apiKeyID), fmt.Sprintf("g3-hash-%d", apiKeyID),
+		otherKeyID, otherUserID, otherProject, fmt.Sprintf("g3-other-%d", otherKeyID), fmt.Sprintf("g3-other-hash-%d", otherKeyID),
+		secondKeyID, userID, secondProject, fmt.Sprintf("g3-second-%d", secondKeyID), fmt.Sprintf("g3-second-hash-%d", secondKeyID)).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec("INSERT INTO token_models(id,logical_model_code,display_name,modality,status) VALUES(?,?,?,?,?)", priceID, modelCode, "视频G3模型", "video", "inactive").Error; err != nil {

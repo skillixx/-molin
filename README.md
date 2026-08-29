@@ -196,6 +196,7 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | [Git 工作流](docs/git-workflow.md) | 分支策略、开发者分支对应表、PR 规范 |
 | [测试计划](docs/test-plan.md) | 接口测试用例、并发安全测试、验收 Checklist |
 | [视频网关 VID-G3 任务、资产与事件](docs/video-gateway-vid-g3-task-asset-events.md) | 三轴状态机、输入租约、回调、AES-GCM、媒体资产和隔离MySQL验收 |
+| [视频网关 VID-G4 Fake异步与媒体安全](docs/video-gateway-vid-g4-fake-async-media-safety.md) | Fake原生异步、Worker、参考图规范化、MP4探测、审核、AI标识和对象存储 |
 | [产品和 MVP 规划](docs/cloud-resource-app-marketplace-mvp.md) | 三阶段交付计划 |
 | [开发执行计划](docs/development-execution-plan.md) | Week 1–12 节奏 |
 | [短信阶段 5 验收报告](docs/sms-phase5-acceptance-report.md) | 灰度发布门禁、测试服运行证据、剩余授权与最终验收状态 |
