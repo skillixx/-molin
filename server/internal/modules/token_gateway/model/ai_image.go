@@ -116,46 +116,49 @@ func (AIImageTask) TableName() string { return "ai_gateway_tasks" }
 
 // AIImageAsset 保留旧图片类型名并扩展为共享媒体资产，只保存对象元数据和归属，不保存正文、Base64、Prompt或长期签名地址。
 type AIImageAsset struct {
-	ID                  uint64           `gorm:"primaryKey;autoIncrement;uniqueIndex:uk_ai_gateway_assets_parent_owner,priority:1" json:"-"`
-	PublicID            string           `gorm:"size:128;not null;uniqueIndex:uk_ai_gateway_assets_public_id" json:"asset_id"`
-	UserID              uint64           `gorm:"not null;index:idx_ai_gateway_assets_owner_state,priority:1" json:"user_id"`
-	ProjectID           uint64           `gorm:"not null;index:idx_ai_gateway_assets_owner_state,priority:2" json:"project_id"`
-	RequestID           string           `gorm:"size:128;not null;uniqueIndex:uk_ai_gateway_assets_request_result_role,priority:1;uniqueIndex:uk_ai_gateway_assets_parent_owner,priority:2" json:"request_id"`
-	TaskID              uint64           `gorm:"not null;index:idx_ai_gateway_assets_task" json:"task_id"`
-	ResultIndex         uint32           `gorm:"not null;uniqueIndex:uk_ai_gateway_assets_request_result_role,priority:2" json:"result_index"`
-	AssetRole           string           `gorm:"size:32;not null;uniqueIndex:uk_ai_gateway_assets_request_result_role,priority:3" json:"asset_role"`
-	ParentAssetID       *uint64          `json:"parent_asset_id,omitempty"`
-	IsBillableOutput    bool             `gorm:"not null;default:0" json:"is_billable_output"`
-	Bucket              *string          `gorm:"size:128" json:"-"`
-	ObjectKey           *string          `gorm:"size:512" json:"-"`
-	MIMEType            *string          `gorm:"size:64" json:"mime_type,omitempty"`
-	SizeBytes           *uint64          `json:"size_bytes,omitempty"`
-	SHA256              *string          `gorm:"size:64" json:"sha256,omitempty"`
-	Width               *uint32          `json:"width,omitempty"`
-	Height              *uint32          `json:"height,omitempty"`
-	Modality            string           `gorm:"size:16;not null;default:image" json:"modality"`
-	DurationSeconds     *decimal.Decimal `gorm:"type:decimal(10,3)" json:"duration_seconds,omitempty"`
-	FrameRate           *decimal.Decimal `gorm:"type:decimal(10,3)" json:"frame_rate,omitempty"`
-	Container           *string          `gorm:"size:32" json:"container,omitempty"`
-	VideoCodec          *string          `gorm:"size:32" json:"video_codec,omitempty"`
-	AudioCodec          *string          `gorm:"size:32" json:"audio_codec,omitempty"`
-	HasAudio            *bool            `json:"has_audio,omitempty"`
-	Source              string           `gorm:"size:32;not null" json:"source"`
-	ModerationStatus    string           `gorm:"size:32;not null;default:pending" json:"moderation_status"`
-	ExplicitLabelStatus string           `gorm:"size:16;not null;default:pending" json:"explicit_label_status"`
-	ImplicitLabelStatus string           `gorm:"size:16;not null;default:pending" json:"implicit_label_status"`
-	LifecycleState      string           `gorm:"size:32;not null;default:temporary;index:idx_ai_gateway_assets_owner_state,priority:3;index:idx_ai_gateway_assets_cleanup,priority:1" json:"lifecycle_state"`
-	RetentionPolicyID   string           `gorm:"size:64;not null" json:"retention_policy_id"`
-	ExpiresAt           time.Time        `gorm:"index:idx_ai_gateway_assets_cleanup,priority:3" json:"expires_at"`
-	LegalHold           bool             `gorm:"not null;default:0;index:idx_ai_gateway_assets_cleanup,priority:2" json:"legal_hold"`
-	VersionNo           uint64           `gorm:"not null;default:1" json:"version_no"`
-	DisputeStatus       string           `gorm:"size:16;not null;default:none;index:idx_ai_gateway_assets_dispute,priority:1" json:"dispute_status"`
-	DisputeOpenedAt     *time.Time       `json:"dispute_opened_at,omitempty"`
-	DisputeResolvedAt   *time.Time       `json:"dispute_resolved_at,omitempty"`
-	DeletedAt           *time.Time       `json:"deleted_at,omitempty"`
-	MediaDeletedAt      *time.Time       `json:"media_deleted_at,omitempty"`
-	CreatedAt           time.Time        `gorm:"index:idx_ai_gateway_assets_owner_state,priority:4" json:"created_at"`
-	UpdatedAt           time.Time        `json:"updated_at"`
+	ID                      uint64           `gorm:"primaryKey;autoIncrement;uniqueIndex:uk_ai_gateway_assets_parent_owner,priority:1" json:"-"`
+	PublicID                string           `gorm:"size:128;not null;uniqueIndex:uk_ai_gateway_assets_public_id" json:"asset_id"`
+	UserID                  uint64           `gorm:"not null;index:idx_ai_gateway_assets_owner_state,priority:1" json:"user_id"`
+	ProjectID               uint64           `gorm:"not null;index:idx_ai_gateway_assets_owner_state,priority:2" json:"project_id"`
+	RequestID               string           `gorm:"size:128;not null;uniqueIndex:uk_ai_gateway_assets_request_result_role,priority:1;uniqueIndex:uk_ai_gateway_assets_parent_owner,priority:2" json:"request_id"`
+	TaskID                  uint64           `gorm:"not null;index:idx_ai_gateway_assets_task" json:"task_id"`
+	ResultIndex             uint32           `gorm:"not null;uniqueIndex:uk_ai_gateway_assets_request_result_role,priority:2" json:"result_index"`
+	AssetRole               string           `gorm:"size:32;not null;uniqueIndex:uk_ai_gateway_assets_request_result_role,priority:3" json:"asset_role"`
+	ParentAssetID           *uint64          `json:"parent_asset_id,omitempty"`
+	IsBillableOutput        bool             `gorm:"not null;default:0" json:"is_billable_output"`
+	Bucket                  *string          `gorm:"size:128" json:"-"`
+	ObjectKey               *string          `gorm:"size:512" json:"-"`
+	MIMEType                *string          `gorm:"size:64" json:"mime_type,omitempty"`
+	SizeBytes               *uint64          `json:"size_bytes,omitempty"`
+	SHA256                  *string          `gorm:"size:64" json:"sha256,omitempty"`
+	Width                   *uint32          `json:"width,omitempty"`
+	Height                  *uint32          `json:"height,omitempty"`
+	Modality                string           `gorm:"size:16;not null;default:image" json:"modality"`
+	DurationSeconds         *decimal.Decimal `gorm:"type:decimal(10,3)" json:"duration_seconds,omitempty"`
+	FrameRate               *decimal.Decimal `gorm:"type:decimal(10,3)" json:"frame_rate,omitempty"`
+	Container               *string          `gorm:"size:32" json:"container,omitempty"`
+	VideoCodec              *string          `gorm:"size:32" json:"video_codec,omitempty"`
+	AudioCodec              *string          `gorm:"size:32" json:"audio_codec,omitempty"`
+	HasAudio                *bool            `json:"has_audio,omitempty"`
+	Source                  string           `gorm:"size:32;not null" json:"source"`
+	ModerationStatus        string           `gorm:"size:32;not null;default:pending" json:"moderation_status"`
+	ModerationPolicyVersion *string          `gorm:"size:64" json:"moderation_policy_version,omitempty"`
+	ExplicitLabelStatus     string           `gorm:"size:16;not null;default:pending" json:"explicit_label_status"`
+	ExplicitLabelVersion    *string          `gorm:"size:64" json:"explicit_label_version,omitempty"`
+	ImplicitLabelStatus     string           `gorm:"size:16;not null;default:pending" json:"implicit_label_status"`
+	ImplicitLabelVersion    *string          `gorm:"size:64" json:"implicit_label_version,omitempty"`
+	LifecycleState          string           `gorm:"size:32;not null;default:temporary;index:idx_ai_gateway_assets_owner_state,priority:3;index:idx_ai_gateway_assets_cleanup,priority:1" json:"lifecycle_state"`
+	RetentionPolicyID       string           `gorm:"size:64;not null" json:"retention_policy_id"`
+	ExpiresAt               time.Time        `gorm:"index:idx_ai_gateway_assets_cleanup,priority:3" json:"expires_at"`
+	LegalHold               bool             `gorm:"not null;default:0;index:idx_ai_gateway_assets_cleanup,priority:2" json:"legal_hold"`
+	VersionNo               uint64           `gorm:"not null;default:1" json:"version_no"`
+	DisputeStatus           string           `gorm:"size:16;not null;default:none;index:idx_ai_gateway_assets_dispute,priority:1" json:"dispute_status"`
+	DisputeOpenedAt         *time.Time       `json:"dispute_opened_at,omitempty"`
+	DisputeResolvedAt       *time.Time       `json:"dispute_resolved_at,omitempty"`
+	DeletedAt               *time.Time       `json:"deleted_at,omitempty"`
+	MediaDeletedAt          *time.Time       `json:"media_deleted_at,omitempty"`
+	CreatedAt               time.Time        `gorm:"index:idx_ai_gateway_assets_owner_state,priority:4" json:"created_at"`
+	UpdatedAt               time.Time        `json:"updated_at"`
 }
 
 // TableName 指定共享媒体资产元数据表名。

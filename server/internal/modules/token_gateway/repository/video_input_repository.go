@@ -185,6 +185,15 @@ func (r *VideoInputAssetRepository) ReleaseTaskLeases(ctx context.Context, taskP
 		if err != nil {
 			return err
 		}
+		var leaseCount int64
+		if err := tx.Model(&model.AIGatewayTaskInput{}).
+			Where("task_id=? AND user_id=? AND project_id=? AND lease_released_at IS NULL", record.ID, owner.UserID, owner.ProjectID).
+			Count(&leaseCount).Error; err != nil {
+			return err
+		}
+		if leaseCount == 0 {
+			return nil
+		}
 		if !videoExecutionTerminal(record.Status) || (record.BillingStatus != model.AIBillingSettled && record.BillingStatus != model.AIBillingReleased && record.BillingStatus != model.AIBillingAdjusted) {
 			return ErrVideoInputLeaseActive
 		}

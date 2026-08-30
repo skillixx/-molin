@@ -1,0 +1,60 @@
+{
+  "gate": "VID-G4",
+  "reference_image": {
+    "execution_boundary": "VID-G3_READY_NORMALIZED_PRIVATE_ASSET",
+    "raw_to_gateway_integration": true,
+    "allowed": ["png", "jpeg", "exif_orientation_1_to_8"],
+    "rejected": ["svg", "html", "gif", "apng", "polyglot", "tail_with_fake_eoi", "truncated", "corrupt", "mime_extension_magic_mismatch", "oversized_file", "pixel_bomb", "aspect_ratio", "gps", "aggregate_exif", "aggregate_icc", "malformed_icc", "cancelled_or_timeout"],
+    "normalized_mime": "image/png",
+    "original_sha256": true,
+    "normalized_sha256": true,
+    "metadata_removed": ["exif", "gps", "xmp", "text", "icc"],
+    "temp_disk_bytes": 0,
+    "read_worker_limit": 4,
+    "non_cooperative_reader_bounded": true,
+    "background_decode_goroutine": false,
+    "decode_process_isolated": true,
+    "decode_process_deadline_kill": true,
+    "decode_process_recovery_test": true
+  },
+  "video_probe": {
+    "allowed_container": "mp4",
+    "required_boxes": ["ftyp", "moov", "mdat"],
+    "validated": ["mime", "width", "height", "duration", "frame_rate", "video_codec", "audio_codec", "has_audio", "size", "range", "sha256"],
+    "rejected": ["mime_spoof", "corrupt_http_200", "oversized", "over_duration", "invalid_dimensions", "invalid_frame_rate", "codec_denied", "range_missing", "range_invalid", "range_over_1mib", "interrupted_stream", "timeout"],
+    "full_video_loaded_in_memory": false,
+    "hash_chunk_bytes": 65536,
+    "max_single_range_bytes": 1048576,
+    "read_worker_limit": 4,
+    "non_cooperative_reader_at_bounded": true,
+    "base64_saved": false
+  },
+  "derived_assets": {
+    "roles": ["cover", "preview", "thumbnail", "moderation_copy", "derived"],
+    "per_asset_probe_moderation_labels": true,
+    "temporary_before_result": true,
+    "partial_failure_cleanup": true,
+    "orphan_in_temp_or_result_after_failure": false
+  },
+  "network_policy": {
+    "external_url": "REJECTED",
+    "redirect": "REJECTED",
+    "loopback": "REJECTED",
+    "metadata_ip": "REJECTED",
+    "dns_rebinding": "REJECTED",
+    "external_http_requests": 0
+  },
+  "moderation": {
+    "t2v": ["prompt", "first_frame", "last_frame", "interval_frame", "scene_change_frame", "audio"],
+    "i2v_extra": ["reference_ocr", "reference_visual", "reference_qr", "reference_text", "reference_metadata"],
+    "external_api_calls": 0
+  },
+  "labels": {
+    "explicit": true,
+    "implicit": true,
+    "versioned": true,
+    "assets_labeled_per_success_task": 6,
+    "failure_blocks_delivery": true
+  },
+  "result": "PASS"
+}

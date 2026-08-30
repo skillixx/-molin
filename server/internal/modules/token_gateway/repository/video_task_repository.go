@@ -23,6 +23,17 @@ var (
 	ErrVideoUnsafeDetail       = errors.New("视频事件包含敏感字段")
 )
 
+// VideoProviderBinding 把一次已确认的Provider提交结果与共享任务原子绑定。
+type VideoProviderBinding struct {
+	TaskPublicID    string
+	Owner           VideoOwner
+	ExpectedVersion uint64
+	ProviderCode    string
+	ProviderTaskID  string
+	EventID         string
+	Now             time.Time
+}
+
 // VideoOwner 是视频任务、输入和产物统一使用的横向归属边界。
 type VideoOwner struct {
 	UserID    uint64
@@ -63,6 +74,49 @@ func (r *VideoTaskRepository) FindForOwner(ctx context.Context, publicID string,
 		return nil, ErrVideoTaskNotFound
 	}
 	return findVideoTaskRecord(r.db.WithContext(ctx), publicID, owner, false)
+}
+
+// BindProviderTask 只允许submitting任务绑定一次Provider任务ID，并在同一事务推进submitted和追加事件。
+func (r *VideoTaskRepository) BindProviderTask(ctx context.Context, command VideoProviderBinding) (*VideoTaskRecord, error) {
+	if err := validateVideoProviderBinding(command); err != nil {
+		return nil, err
+	}
+	var updated *VideoTaskRecord
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		record, err := findVideoTaskRecord(tx, command.TaskPublicID, command.Owner, true)
+		if err != nil {
+			return err
+		}
+		if record.VersionNo != command.ExpectedVersion || record.Status != model.AIImageTaskSubmitting || record.ProviderTaskID != nil || record.ProviderCode != nil {
+			return ErrVideoTaskConflict
+		}
+		result := tx.Model(&model.AIImageTask{}).
+			Where("id=? AND user_id=? AND project_id=? AND status=? AND version_no=? AND provider_task_id IS NULL AND provider_code IS NULL",
+				record.ID, command.Owner.UserID, command.Owner.ProjectID, model.AIImageTaskSubmitting, command.ExpectedVersion).
+			Updates(map[string]interface{}{
+				"status": model.AIImageTaskSubmitted, "provider_code": command.ProviderCode,
+				"provider_task_id": command.ProviderTaskID, "attempt_count": gorm.Expr("attempt_count + 1"),
+				"version_no": gorm.Expr("version_no + 1"), "updated_at": command.Now,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrVideoTaskConflict
+		}
+		if err := tx.Model(&model.AIRequest{}).
+			Where("request_id=? AND user_id=? AND project_id=? AND modality='video' AND capability=?", record.RequestID, command.Owner.UserID, command.Owner.ProjectID, model.AIVideoCapability).
+			Updates(map[string]interface{}{"execution_status": model.AIExecutionRunning, "version_no": gorm.Expr("version_no + 1"), "updated_at": command.Now}).Error; err != nil {
+			return err
+		}
+		detail := json.RawMessage("{\"reason\":\"provider_bound\"}")
+		if err := appendVideoTaskEventTx(tx, record.ID, command.Owner, command.EventID, "provider_task_bound", record.Status, model.AIImageTaskSubmitted, "worker", detail, command.Now); err != nil {
+			return err
+		}
+		updated, err = findVideoTaskRecord(tx, command.TaskPublicID, command.Owner, false)
+		return err
+	})
+	return updated, err
 }
 
 // TransitionExecution 以任务version_no执行CAS，并在同一事务追加不可变TaskEvent。
@@ -235,6 +289,9 @@ func validateVideoSafeJSON(raw json.RawMessage) error {
 	allowedReasons := map[string]bool{
 		"cas_test": true, "state_advanced": true, "signature_invalid": true,
 		"task_not_found": true, "out_of_order_or_terminal": true, "cas_conflict": true,
+		"provider_bound": true, "input_validated": true, "media_probed": true,
+		"moderation_passed": true, "label_applied": true, "lease_released": true,
+		"provider_task_mismatch": true,
 	}
 	allowedStatuses := map[string]bool{
 		model.AIImageTaskCreated: true, model.AIImageTaskReserved: true, model.AIImageTaskQueued: true,
@@ -306,3 +363,13 @@ func videoRequestExecutionStatus(taskStatus string) string {
 }
 
 func validVideoOwner(owner VideoOwner) bool { return owner.UserID != 0 && owner.ProjectID != 0 }
+
+func validateVideoProviderBinding(command VideoProviderBinding) error {
+	if !validVideoOwner(command.Owner) || strings.TrimSpace(command.TaskPublicID) == "" || command.ExpectedVersion == 0 ||
+		command.ProviderCode != "fake-native-async" || !strings.HasPrefix(command.ProviderTaskID, "taskUUID-") ||
+		strings.Contains(command.ProviderTaskID, "://") || len(command.ProviderTaskID) > 191 ||
+		strings.TrimSpace(command.EventID) == "" || command.Now.IsZero() {
+		return ErrVideoTaskTransition
+	}
+	return nil
+}
