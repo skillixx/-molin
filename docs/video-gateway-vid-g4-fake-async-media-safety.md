@@ -12,6 +12,8 @@
 
 VID-G4让文生视频和图生视频在本地Fake环境中走完整异步执行、媒体探测、审核、双标识和对象存储闭环。它复用VID-G3的Task、InputAsset、TaskInput、OutputAsset、TaskEvent、ProviderCallbackEvent和TaskPayload Repository，不创建平行视频账本。
 
+2026-08-30 CI复核更正：PR #420 的 `77d0be6` 在旧图片隔离门禁暴露了缺少 `000076` 兼容迁移的问题。下方原验收回执属于历史源码快照，不能据此宣称该 PR 的 CI 已通过；本地修复范围、复现和后续验证见[CI兼容修复记录](./video-gateway-vid-g4-ci-compat-fix.md)。
+
 ## 1. 当前能做什么
 
 - 后端开发可以通过VideoGateway、Fake Adapter和三个Worker验证原生异步视频协议。
@@ -279,8 +281,9 @@ VIDEO_G4_MYSQL=PASS ... full_chain_1_to_76=true ... external_http_requests=0 pro
 | VID-G4-022 | P1 | CLOSED_VERIFIED | 000076只校验首次形成安全事实，允许后续回退或清空版本；UPDATE触发器冻结三类非pending状态及版本 | 六种直接SQL篡改全部失败且原值不变 |
 | VID-G4-023 | P2 | CLOSED_VERIFIED | 三个Go文件机械格式未统一 | 全量gofmt后`gofmt -d`与git diff检查为空 |
 | VID-G4-024 | P2 | CLOSED_VERIFIED | 000076保留式down脚本末尾存在多余空行，导致提交前`git diff --check`告警；删除空行且不改变SQL语义 | `git diff --check`重新执行无输出，Migration静态测试与全量Go回归通过 |
+| VID-G4-025 | P2 | CLOSED_LOCAL_VERIFIED | 当前共享资产模型包含三类安全版本字段，但五份旧图片隔离脚本漏装000076；补齐兼容层并将MySQL非1062错误独立报告 | 原MySQL1054红灯与修复后100并发绿灯、六个图片门禁及VID-G4四包race均已验证；未推送，远程CI待复验 |
 
-最终开放缺陷：`P0=0、P1=0、P2=0`。
+VID-G4-001至024的原验收开放缺陷为`P0=0、P1=0、P2=0`；新增VID-G4-025的当前状态以上表及CI兼容修复记录为准，不能用原快照覆盖新发现。
 
 ## 14. 明确未完成
 

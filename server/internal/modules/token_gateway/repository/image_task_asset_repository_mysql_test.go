@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/shopspring/decimal"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -148,6 +149,9 @@ VALUES(?,?,?,?,?,'image','image.generate','pending',0)`, requestID, userID, proj
 	}
 	var assetWinners atomic.Int64
 	var assetDuplicates atomic.Int64
+	var assetUnexpected atomic.Int64
+	var firstAssetError error
+	var firstAssetErrorOnce sync.Once
 	wg = sync.WaitGroup{}
 	for index := 0; index < 100; index++ {
 		wg.Add(1)
@@ -155,14 +159,23 @@ VALUES(?,?,?,?,?,'image','image.generate','pending',0)`, requestID, userID, proj
 			defer wg.Done()
 			candidate := assetTemplate
 			createErr := assetRepo.Create(context.Background(), &candidate)
-			if createErr == nil {
+			var mysqlErr *mysqldriver.MySQLError
+			// 只有重复键1062才计入唯一键竞争，缺列等真实写入故障必须单独报告。
+			switch {
+			case createErr == nil:
 				assetWinners.Add(1)
-			} else {
+			case errors.As(createErr, &mysqlErr) && mysqlErr.Number == 1062:
 				assetDuplicates.Add(1)
+			default:
+				assetUnexpected.Add(1)
+				firstAssetErrorOnce.Do(func() { firstAssetError = createErr })
 			}
 		}()
 	}
 	wg.Wait()
+	if assetUnexpected.Load() != 0 {
+		t.Fatalf("主图并发写入遇到非重复键错误: count=%d first=%v", assetUnexpected.Load(), firstAssetError)
+	}
 	if assetWinners.Load() != 1 || assetDuplicates.Load() != 99 {
 		t.Fatalf("重复主图必须只有一个写入胜者: winners=%d duplicates=%d", assetWinners.Load(), assetDuplicates.Load())
 	}

@@ -113,10 +113,11 @@ assert_scalar "SELECT COUNT(*) FROM information_schema.columns WHERE table_schem
 apply_file "$(basename "${up_file}")" >/dev/null
 assert_scalar "SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_schema=DATABASE() AND table_name='ai_usage_items' AND constraint_name='chk_ai_usage_adjustment_audit'" "1" "reup_adjustment_check"
 
-# 阶段回滚断言仍停在000071；运行当前HEAD服务测试前补装共享媒体、VID-G2 Quote与VID-G3资产兼容层。
+# 阶段回滚断言仍停在000071；运行当前HEAD服务测试前补装共享媒体、VID-G2 Quote、VID-G3资产与VID-G4安全版本兼容层。
 apply_file "000072_expand_video_gateway_schema.up.sql" >/dev/null
 apply_file "000074_expand_video_pricing_quotes.up.sql" >/dev/null
 apply_file "000075_enforce_video_task_asset_events.up.sql" >/dev/null
+apply_file "000076_video_fake_async_media_safety.up.sql" >/dev/null
 
 # 测试进程只连接同一内部网络中的临时MySQL，图片、钱包和Provider均使用测试夹具。
 race_flag="-race"
@@ -138,4 +139,4 @@ MSYS_NO_PATHCONV=1 docker run --rm --pull=never --network "${network_name}" \
 
 docker volume rm "${build_cache_volume}" >/dev/null
 
-echo "IMAGE_G5_MYSQL_MIGRATION=PASS mysql=8.0.46 full_chain_1_to_71=true current_head_compat_72_74=true up_down_reup=true down_facts_retained=true quote_hold_atomic=true settle_release=true partial_golden=true rejected_zero_sale=true explicit_failure_release=true timeout_disconnect_pending=true unknown_zero_retry=true compensation_once=true storage_failure_closed=true idempotent_request_100=true wallet_concurrency_100=true wallet_facts_zero=true cost_facts_zero=true outbox_facts_zero=true reconciliation_zero=true adjustment_maker_checker=true project_database=false provider_calls=0 real_wallet_writes=0"
+echo "IMAGE_G5_MYSQL_MIGRATION=PASS mysql=8.0.46 full_chain_1_to_71=true current_head_compat_72_74_75_76=true up_down_reup=true down_facts_retained=true quote_hold_atomic=true settle_release=true partial_golden=true rejected_zero_sale=true explicit_failure_release=true timeout_disconnect_pending=true unknown_zero_retry=true compensation_once=true storage_failure_closed=true idempotent_request_100=true wallet_concurrency_100=true wallet_facts_zero=true cost_facts_zero=true outbox_facts_zero=true reconciliation_zero=true adjustment_maker_checker=true project_database=false provider_calls=0 real_wallet_writes=0"

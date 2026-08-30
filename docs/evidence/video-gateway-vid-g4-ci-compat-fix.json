@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "gate": "VID-G4-CI-COMPAT-FIX",
+  "defect": "VID-G4-025",
+  "severity": "P2",
+  "status": "LOCAL_VERIFIED_REMOTE_CI_PENDING",
+  "captured_at": "2026-08-30T02:34:47.4723051Z",
+  "base_commit": "77d0be6fe594062bcad9dbf2952b4867d1742cb5",
+  "fix_source_state_id": "fa2a321015d51c8008234a5d403413084b9c15ce8ba4bbc93a284a3b3983b36a",
+  "files": [
+    {
+      "path": "docs/video-gateway-vid-g4-ci-compat-fix.md",
+      "sha256": "64579b1fd9923afbd42cf78dfbe15427f451025a1ec325e5ba116ce43fa65b6b"
+    },
+    {
+      "path": "docs/video-gateway-vid-g4-fake-async-media-safety.md",
+      "sha256": "3312aab6438ee2fb6c0df8b819018e67a20f3d27c2b3a8d038d6e3ec0f1a0578"
+    },
+    {
+      "path": "infra/scripts/verify-image-gateway-img-g6-http.sh",
+      "sha256": "b9caae600ac28535e791cb56e5bf543cd9cb073d209427304c04490141778f3b"
+    },
+    {
+      "path": "infra/scripts/verify-image-gateway-img-g7-infrastructure.sh",
+      "sha256": "681c1d0220830255461cb9c90216034600791170b444e4bcc1c7fcb8a0033761"
+    },
+    {
+      "path": "infra/scripts/verify-image-gateway-migration-000069.sh",
+      "sha256": "21c8cdbdba3f8002b8c69ec8b0317301bf4fe01a78f45d5b1c9e647389e76a0c"
+    },
+    {
+      "path": "infra/scripts/verify-image-gateway-migration-000070.sh",
+      "sha256": "42b7f7281a0c573054f6780635615eb351aa57b23c99b3d6e3adc33ec12e18ce"
+    },
+    {
+      "path": "infra/scripts/verify-image-gateway-migration-000071.sh",
+      "sha256": "5ada0f9d0a20017e66b7bc3a1f8c17bd3c9386250ee82276d22e2c08e4cfe3cc"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/image_task_asset_repository_mysql_test.go",
+      "sha256": "495be79d2591c6a2783d3806fc71c916b0e31ff8fa574220335f789070c88983"
+    },
+    {
+      "path": "server/migrations/ai_gateway_video_g4_migration_test.go",
+      "sha256": "89509e4ef59d9186dbce0c4ba655ef1f6c5a61397a80d21262952292c9fdbb63"
+    }
+  ],
+  "fingerprint_algorithm": "SHA256_UTF8_LF_BASE_COMMIT_AND_SORTED_PATH_SHA256_NO_TRAILING_LF",
+  "excluded_self": "docs/evidence/video-gateway-vid-g4-ci-compat-fix.json",
+  "red_reproduction": {
+    "test": "TestImageTaskAssetRepositoryMySQLIsolationAndStates",
+    "unexpected_errors": 100,
+    "mysql_error": 1054,
+    "missing_column": "moderation_policy_version",
+    "static_contract_failures": 5
+  },
+  "green": {
+    "original_asset_concurrency": 100,
+    "asset_successes": 1,
+    "duplicate_key_1062": 99,
+    "unexpected_errors": 0,
+    "script_contract_subtests": 5,
+    "default_closed_scripts": 5,
+    "default_closed_exit_code": 3,
+    "bash_syntax": "PASS",
+    "go_test_all": "PASS",
+    "go_vet": "PASS",
+    "go_mod_verify": "PASS",
+    "go_build_all": "PASS",
+    "python_tests": "24/24 PASS",
+    "linux_race": "PASS",
+    "git_diff_check": "PASS",
+    "ci_sensitive_scanner": "PASS",
+    "secret_findings": 0
+  },
+  "isolated_test_summaries": [
+    "IMAGE_G3_MYSQL_MIGRATION=PASS mysql=8.0.46 full_chain_1_to_70=true current_head_compat_72_74_75_76=true task_cas=100_one_winner asset_primary_unique=100_one_winner dispute_cas=100_one_winner horizontal_isolation=true quarantine_blocked=true dispute_blocked=true legal_hold_cleanup_blocked=true deleted_blocked=true fake_object_store=true down_retained=true reup=true project_database=false provider_calls=0 wallet_writes=0",
+    "IMAGE_G1_MYSQL_MIGRATION=PASS mysql=8.0 isolated=true project_database=false first_up=true legacy_chat=true image_constraints=true labels_fail_closed=true down_retained=true reup=true",
+    "IMAGE_G2_MYSQL_MIGRATION=PASS mysql=8.0.46 full_chain_1_to_69=true current_head_compat_72_74_75_76=true legacy_chat=true image_checks=true down_retained=true reup=true quote_concurrency=100_one_winner project_database=false provider_calls=0 wallet_writes=0",
+    "IMAGE_G5_MYSQL_MIGRATION=PASS mysql=8.0.46 full_chain_1_to_71=true current_head_compat_72_74_75_76=true up_down_reup=true down_facts_retained=true quote_hold_atomic=true settle_release=true partial_golden=true rejected_zero_sale=true explicit_failure_release=true timeout_disconnect_pending=true unknown_zero_retry=true compensation_once=true storage_failure_closed=true idempotent_request_100=true wallet_concurrency_100=true wallet_facts_zero=true cost_facts_zero=true outbox_facts_zero=true reconciliation_zero=true adjustment_maker_checker=true project_database=false provider_calls=0 real_wallet_writes=0",
+    "IMAGE_G6_HTTP=PASS mysql=8.0.46 full_chain_1_to_71=true current_head_compat_72_74_75_76=true new_migration=false openai_sync=true platform_task_202=true quote_required=true project_sk=true jwt_project=true explicit_image_scope=true legacy_all_denied=true model_visibility_fail_closed=true strict_idempotency=true first_concurrency_100=true replay_100=true horizontal_isolation=true cancellation_release=true cancellation_reconcile_zero=true unknown_safe_query=true signed_url_fake=true admin_d95=true quarantine_cas=true prompt_not_persisted=true image_price_fixture_create=true image_price_publish_closed=true insufficient_rollback=true provider_calls_fake_only=true real_wallet_writes=0 external_http_calls=0 project_database=false",
+    "IMAGE_G7_INFRA=PASS mysql=8.0.46 full_chain_1_to_71=true current_head_compat_72_74_75_76=true network_internal=true host_ports=0 provider=fake real_provider_calls=0 minio_private_buckets=3 signed_url=true rabbit_durable_queue=true rabbit_dlq=true prompt_in_rabbit=false async_once=true missing_prompt_release=true cleanup_worker=true legal_hold_preserved=true compensation_worker=true image_metrics=true reconciliation_difference_zero=true prometheus_rules=true traffic_default_closed=true test_server=false real_credentials=0",
+    "VIDEO_G4_MYSQL=PASS mysql=8 full_chain_1_to_76=true repeat_up=true down_retained=true reup=true shared_repository=true linux_race_four_packages=true provider_binding_cas=100 callback_replay=100 worker_cas=100 object_store=fake_only external_http_requests=0 provider_calls=0 provider_keys=0 real_wallet_writes=0 cost_cny=0 test_server_writes=0 production_operations=0"
+  ],
+  "cleanup": {
+    "temporary_containers_removed": true,
+    "temporary_networks_removed": true,
+    "temporary_build_volumes_removed": true,
+    "existing_services_unchanged": true
+  },
+  "boundaries": {
+    "real_provider_requests": 0,
+    "real_provider_keys": 0,
+    "real_wallet_writes": 0,
+    "provider_cost_cny": "0",
+    "test_server_writes": 0,
+    "production_operations": 0,
+    "container_pull": false,
+    "video_external_data_plane_enabled": false,
+    "legacy_image_temporary_rabbitmq_minio_tested": true,
+    "formal_migration_changes": 0,
+    "business_implementation_changes": 0,
+    "workflow_changes": 0,
+    "commit": false,
+    "push": false,
+    "pr_mutations": false,
+    "merge": false,
+    "vid_g5_started": false
+  },
+  "remote": {
+    "pr_number": 420,
+    "head_commit": "77d0be6fe594062bcad9dbf2952b4867d1742cb5",
+    "ci_run_id": 33287030342,
+    "ci_result": "failure",
+    "new_fix_ci_run": "NOT_STARTED",
+    "merge_allowed": false
+  },
+  "review_note": "仅本地修复验证；原阶段独立验收回执保留历史快照，未伪造当前修复的独立审查签字。"
+}
