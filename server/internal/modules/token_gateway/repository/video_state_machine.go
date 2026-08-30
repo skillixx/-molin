@@ -2,6 +2,19 @@ package repository
 
 import "molin/server/internal/modules/token_gateway/model"
 
+// VideoExecutionTransitionAllowed 供只读对账复用同一迁移矩阵，不另造执行状态权威。
+func VideoExecutionTransitionAllowed(from, to string) bool {
+	return videoExecutionTransitionAllowed(from, to)
+}
+
+// VideoBillingTransitionAllowed 与 VideoDeliveryTransitionAllowed 供对账复核三轴追加历史。
+func VideoBillingTransitionAllowed(from, to string) bool {
+	return videoBillingTransitionAllowed(from, to)
+}
+func VideoDeliveryTransitionAllowed(from, to string) bool {
+	return videoDeliveryTransitionAllowed(from, to)
+}
+
 // videoExecutionTransitionAllowed 固化视频执行轴的单向迁移；pending_reconcile只能进入安全终态，
 // 不能回到某个无法证明先后关系的执行中状态，从而避免乱序回调制造隐式状态回退。
 func videoExecutionTransitionAllowed(from, to string) bool {

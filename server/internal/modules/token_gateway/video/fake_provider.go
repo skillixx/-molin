@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"github.com/shopspring/decimal"
 	"regexp"
 	"strings"
 	"sync"
@@ -16,6 +17,8 @@ const (
 	FakeVideoSuccess            FakeVideoMode = "success"
 	FakeVideoExplicitFailure    FakeVideoMode = "explicit_failure"
 	FakeVideoProviderCancelled  FakeVideoMode = "provider_cancelled"
+	FakeVideoCancelRejected     FakeVideoMode = "cancel_rejected"
+	FakeVideoCancelUnsupported  FakeVideoMode = "cancel_unsupported"
 	FakeVideoSubmitTimeout      FakeVideoMode = "submit_timeout"
 	FakeVideoQueryTimeout       FakeVideoMode = "query_timeout"
 	FakeVideoFetchTimeout       FakeVideoMode = "fetch_timeout"
@@ -92,7 +95,7 @@ func (a *FakeAsyncVideoAdapter) Query(ctx context.Context, request QueryRequest)
 		return QueryResult{}, ErrProviderTaskNotFound
 	}
 	if task.status == ProviderTaskCancelled {
-		return QueryResult{ProviderTaskID: task.result.ProviderTaskID, Status: ProviderTaskCancelled}, nil
+		return QueryResult{ProviderTaskID: task.result.ProviderTaskID, Status: ProviderTaskCancelled, Confirmation: fakeVideoCostConfirmation(task)}, nil
 	}
 	task.queries++
 	if a.mode == FakeVideoQueryTimeout {
@@ -105,10 +108,10 @@ func (a *FakeAsyncVideoAdapter) Query(ctx context.Context, request QueryRequest)
 	switch a.mode {
 	case FakeVideoExplicitFailure:
 		task.status = ProviderTaskFailed
-		return QueryResult{ProviderTaskID: task.result.ProviderTaskID, Status: ProviderTaskFailed, ErrorCode: "fake_failed"}, ErrProviderExplicitFailure
+		return QueryResult{ProviderTaskID: task.result.ProviderTaskID, Status: ProviderTaskFailed, ErrorCode: "fake_failed", Confirmation: fakeVideoCostConfirmation(task)}, ErrProviderExplicitFailure
 	case FakeVideoProviderCancelled:
 		task.status = ProviderTaskCancelled
-		return QueryResult{ProviderTaskID: task.result.ProviderTaskID, Status: ProviderTaskCancelled}, nil
+		return QueryResult{ProviderTaskID: task.result.ProviderTaskID, Status: ProviderTaskCancelled, Confirmation: fakeVideoCostConfirmation(task)}, nil
 	case FakeVideoResultUnknown, FakeVideoAckLostUnknownTask:
 		task.status = ProviderTaskUnknown
 		return QueryResult{ProviderTaskID: task.result.ProviderTaskID, Status: ProviderTaskUnknown}, ErrProviderResultUnknown
@@ -119,7 +122,24 @@ func (a *FakeAsyncVideoAdapter) Query(ctx context.Context, request QueryRequest)
 		task.status = ProviderTaskSucceeded
 	}
 	ref := &ControlledContentRef{ProviderTaskID: task.result.ProviderTaskID, ContentID: "content-" + task.result.ProviderTaskID, MediaType: "video/mp4"}
-	return QueryResult{ProviderTaskID: task.result.ProviderTaskID, Status: ProviderTaskSucceeded, Progress: 100, Content: ref}, nil
+	return QueryResult{ProviderTaskID: task.result.ProviderTaskID, Status: ProviderTaskSucceeded, Progress: 100, Content: ref, Confirmation: fakeVideoCostConfirmation(task)}, nil
+}
+
+// fakeVideoCostConfirmation 的价格只是非商业测试夹具，与钱包销售价或冻结Quote没有依赖关系。
+func fakeVideoCostConfirmation(task *fakeProviderTask) *ProviderCostConfirmation {
+	if task.status != ProviderTaskSucceeded && task.status != ProviderTaskFailed && task.status != ProviderTaskCancelled {
+		return nil
+	}
+	price := decimal.RequireFromString("0.04")
+	if task.request.Operation == OperationImageToVideo {
+		price = decimal.RequireFromString("0.06")
+	}
+	quantity := decimal.NewFromInt(int64(task.request.Spec.DurationSeconds))
+	// 本地夹具明确确认失败或取消没有产物且未产生费用；超时路径不会进入此分支。
+	if task.status != ProviderTaskSucceeded {
+		quantity, price = decimal.Zero, decimal.Zero
+	}
+	return &ProviderCostConfirmation{ProviderCode: "fake-native-async", ProviderTaskID: task.result.ProviderTaskID, ExternalEventID: "final-" + task.result.ProviderTaskID, Operation: task.request.Operation, Outcome: task.status, Quantity: quantity, UnitPrice: price, Amount: quantity.Mul(price), Currency: "CNY"}
 }
 
 func (a *FakeAsyncVideoAdapter) Cancel(ctx context.Context, request CancelRequest) (QueryResult, error) {
@@ -132,10 +152,19 @@ func (a *FakeAsyncVideoAdapter) Cancel(ctx context.Context, request CancelReques
 	if !ok {
 		return QueryResult{}, ErrProviderTaskNotFound
 	}
+	if task.status != ProviderTaskSucceeded && task.status != ProviderTaskFailed && task.status != ProviderTaskCancelled {
+		// 取消能力是独立结果；拒绝/不支持时不篡改原任务状态，也不生成零成本确认。
+		if a.mode == FakeVideoCancelRejected {
+			return QueryResult{ProviderTaskID: task.result.ProviderTaskID, Status: task.status}, ErrProviderCancelRejected
+		}
+		if a.mode == FakeVideoCancelUnsupported {
+			return QueryResult{ProviderTaskID: task.result.ProviderTaskID, Status: task.status}, ErrProviderCancelUnsupported
+		}
+	}
 	if task.status != ProviderTaskSucceeded && task.status != ProviderTaskFailed {
 		task.status = ProviderTaskCancelled
 	}
-	return QueryResult{ProviderTaskID: task.result.ProviderTaskID, Status: task.status}, nil
+	return QueryResult{ProviderTaskID: task.result.ProviderTaskID, Status: task.status, Confirmation: fakeVideoCostConfirmation(task)}, nil
 }
 
 func (a *FakeAsyncVideoAdapter) OpenContent(ctx context.Context, ref ControlledContentRef) (StreamContent, error) {

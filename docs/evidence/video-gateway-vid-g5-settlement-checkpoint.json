@@ -1,0 +1,305 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G5",
+  "checkpoint": "NORMAL_SETTLEMENT_FINANCIAL_SLICE",
+  "stage_status": "IN_PROGRESS",
+  "stage_acceptance": false,
+  "base_commit": "36b6a5c5f9e60a4ef182ae434337bb05e165477c",
+  "branch": "feature/video-gateway-vid-g5-billing-outbox-reconcile",
+  "code_state_id": "4246e655db9f1195e60ff3f3eaf5613adebe12244599d5af4f01662cfab83f79",
+  "gofmt_files": 25,
+  "manifest": [
+    {
+      "path": "infra/scripts/verify-video-gateway-migration-000077.sh",
+      "sha256": "86505922d9ed19cba20d86f75736b28c671a72ca0b5d1e2c31e5340a331bcb89"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/model/ai_video_billing.go",
+      "sha256": "2f53a78b2bf4c3c998fcf0a330dd9caca5de4905dbd394fe8185dcb07397a8f5"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/g3_outbox_repository.go",
+      "sha256": "e518ebee73bbde4f9f2d247cbc2ae21a2191d3ed0cb5c800acec573ccb5f2402"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_input_repository.go",
+      "sha256": "15c1a212cdf79345939193308e57e18e4c27e5b2f99426ed4511740fd0f47f5d"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_submission_proof.go",
+      "sha256": "43aa7adbb5de8d9618da9b03a080782a4628bfc28f0613a49e313366960aef4f"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_task_repository.go",
+      "sha256": "07d2524893f9393791c12f8f3705e912784b0dba2a782cfe488f54f590f8680b"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_usage_repository.go",
+      "sha256": "00cbaeb1d9e51b5be81b14d750210ca2085b6ea5891d25e5633b12622eea912f"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_cancel.go",
+      "sha256": "e04688d3f3987ffcc5643c292e04e78a24308aeadf23bbda26ee1e66bc6601f9"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_cancel_mysql_test.go",
+      "sha256": "50cfb815ed90dabfe6435f51d4efa5dd153c94da416a7f306b9941c45c393ba6"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_media_mysql_test.go",
+      "sha256": "329ec5a4a8121a3dbb6e3f3e2fc037b33ac71171a3384532cdd5a34ca2a17fb1"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_reservation.go",
+      "sha256": "5e78710fcfbaccc3861f896af08edd790e90425520a7aa431852e9aa9785a0bc"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_reservation_mysql_test.go",
+      "sha256": "fda6f61e7d86cf39773def1cf33710e99e042007c5bc174667b0cca35e21e515"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_settle.go",
+      "sha256": "9cf560747a1470cec8b8f564a7d150aa18be9988e918bade0ab8c84f99509ff7"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_settle_mysql_test.go",
+      "sha256": "cd25836c6158752e9c22552f9cc1875003d8318cace3e6189f1c8c13f09a3ff2"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_usage_mysql_test.go",
+      "sha256": "b211b90a4dc65e46c65bb169cc0e0184c218c4931e09634ed373347b394cb523"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_g4_repository_ledger.go",
+      "sha256": "d97076adec8c6c3d00563287b6d7fb68f8a1d56b82f294743f7bd63609ccef1c"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_generation_intent.go",
+      "sha256": "0ab112bb9971a8f02c1e559738d29cd807878e0616a3d4a71d8ddb14df484f9b"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_generation_intent_test.go",
+      "sha256": "d23ae8fe503d06bf3318504e2981b9a697fee3aa038128e82e2766c5789ac067"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_provider_cost.go",
+      "sha256": "99c1d98a668eff8afcf4a72d78d1b0c0b75698e1609138dc0225a7a6aa8d627f"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_quote_facade.go",
+      "sha256": "2aba6de563d98e8355d591b49e9443076b3ef4e1c53815fc43ece423def18558"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/cost_confirmation.go",
+      "sha256": "55919d0ac98d68de617c2c9220ef1ea0f29e20f47164be8b9df3f7e0a948eb53"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/fake_provider.go",
+      "sha256": "d03d6b451911ca2681764b3e64e460991fa6a6df52f6a02d7bbf913b7b10a165"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/gateway.go",
+      "sha256": "e8685234a8385ba183b4625e90a4bd6af0f2fd0b134e69a584e3b1e5f0fb0866"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/ledger.go",
+      "sha256": "add5f3794dfea972bbfe3b55df07b58b52897649905ebdd5a849bb16bdd05720"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/provider.go",
+      "sha256": "fb9e91fbea95d8b4cc185ac032588250b88f3e133c80d06ba9749fbe038d422e"
+    },
+    {
+      "path": "server/migrations/000077_video_billing_outbox_reconcile.down.sql",
+      "sha256": "50517bc603dd5e24d3dd822ffbf86dd3ee8656b7c1a010c23158a66735f97e28"
+    },
+    {
+      "path": "server/migrations/000077_video_billing_outbox_reconcile.up.sql",
+      "sha256": "4ec461c3e9b3db452532ec4b883bef05002da0e8b0181ad8dee2c195a916ab31"
+    },
+    {
+      "path": "server/migrations/ai_gateway_video_g5_migration_test.go",
+      "sha256": "53aec166024d848e3669330b83a4b1e7551a715172d26340111bf0c14e5376a0"
+    }
+  ],
+  "source_commit": "36b6a5c5f9e60a4ef182ae434337bb05e165477c",
+  "source_changes": "UNCOMMITTED_LOCAL_ONLY",
+  "code_state_algorithm": "manifest按path字典序排列，LF拼接BASE_COMMIT=<base_commit>及path|sha256，无末尾换行，以UTF-8取SHA-256。仅为本次server/infra切片清单，不是G5最终验收。",
+  "checks": {
+    "isolated_mysql": {
+      "status": "PASS",
+      "filter": "^TestVideoG5(Reserve|Usage|Cancel|Media|Settle)",
+      "command": "VIDEO_GATEWAY_G5_ISOLATED_MYSQL_APPROVED=YES bash infra/scripts/verify-video-gateway-migration-000077.sh",
+      "migration_chain": "1..77",
+      "repeat_up": true,
+      "retained_down_reup": true,
+      "race": true,
+      "result": "ok molin/server/internal/modules/token_gateway/service 40.710s",
+      "marker": "VIDEO_G5_MYSQL_SLICE=PASS scope=implemented_video_g5_tests full_stage=false"
+    },
+    "native_go_test": {
+      "status": "PASS",
+      "command": "go test ./... -count=1",
+      "boundary": "未设置DSN的其他集成测试会跳过；不是完整Chat/Image基础设施回归。"
+    },
+    "go_vet": {
+      "status": "PASS",
+      "command": "go vet ./..."
+    },
+    "go_mod_verify": {
+      "status": "PASS",
+      "command": "go mod verify",
+      "result": "all modules verified"
+    },
+    "gofmt": {
+      "status": "PASS",
+      "files": 25
+    },
+    "sensitive_scan": {
+      "status": "PASS",
+      "command": "python scripts/verify-sms-phase5-sensitive-data.py --repo-root . --base-ref origin/main",
+      "files_scanned": 211,
+      "findings": 0
+    },
+    "diff_check": {
+      "status": "PASS",
+      "command": "git diff --check"
+    }
+  },
+  "verified_behaviors": [
+    "G5 Fake媒体处理完成后六资产仍temporary、delivery pending；未结算时I2V租约仍活跃。",
+    "Fake成功查询将独立确认成本、Provider计量及不可变事件摘要同事务保存。",
+    "T2V/I2V各100并发结算：1次生效、99次重放、只有一笔消费，Fake Submit各1次。",
+    "结算仅追加用户计量与销售，不使用Quote成本覆写Provider已确认成本；结算后资产仍未交付。",
+    "8个结算写入点失败：余额/冻结额保持原Hold状态，确认成本与Provider计量保留，用户计量/销售/消费及settled Outbox回滚，重试不再Submit。",
+    "公开状态仓储不能将无实际Hold消费的请求推进settled；直接INSERT终态G5请求也被拒绝。",
+    "结算重放拒绝被篡改的held金额、settled版本及相反released事件。",
+    "事务期间媒体过期，在提交前整体回滚结算。",
+    "错误摘要、正确摘要但分母100均被仓储和直接SQL拒绝；正确摘要且分母1对照通过。",
+    "之前预占、Usage、未提交取消及其故障/并发测试继续通过。"
+  ],
+  "financial_goldens": [
+    {
+      "case": "F01_FINANCIAL_ONLY",
+      "operation": "text_to_video",
+      "status": "PARTIAL_FINANCIAL_PASS",
+      "price_purpose": "non_commercial_test_fixture",
+      "quote": "0.50000000",
+      "hold": "0.50000000",
+      "user_quantity_seconds": "5",
+      "provider_quantity_seconds": "5",
+      "sale": "0.50000000",
+      "confirmed_provider_cost": "0.20000000",
+      "settled": "0.50000000",
+      "net_released": "0.00000000",
+      "unfreeze_transaction_amount": "0.50000000",
+      "consume_transaction_amount": "0.50000000",
+      "wallet_initial": "10.00000000",
+      "wallet_after_hold": "9.50000000",
+      "wallet_final": "9.50000000",
+      "frozen_after_hold": "0.50000000",
+      "frozen_final": "0.00000000",
+      "execution": "succeeded",
+      "billing": "settled",
+      "delivery": "pending",
+      "assets": "6 temporary",
+      "outbox": [
+        "video_billing_held",
+        "video_billing_settled"
+      ],
+      "fake_submit_count": 1,
+      "full_reconciliation": "NOT_IMPLEMENTED",
+      "full_f01_case_pass": false
+    },
+    {
+      "case": "F02_FINANCIAL_ONLY",
+      "operation": "image_to_video",
+      "status": "PARTIAL_FINANCIAL_PASS",
+      "price_purpose": "non_commercial_test_fixture",
+      "quote": "0.75000000",
+      "hold": "0.75000000",
+      "user_quantity_seconds": "5",
+      "provider_quantity_seconds": "5",
+      "sale": "0.75000000",
+      "confirmed_provider_cost": "0.30000000",
+      "settled": "0.75000000",
+      "net_released": "0.00000000",
+      "unfreeze_transaction_amount": "0.75000000",
+      "consume_transaction_amount": "0.75000000",
+      "wallet_initial": "10.00000000",
+      "wallet_after_hold": "9.25000000",
+      "wallet_final": "9.25000000",
+      "frozen_after_hold": "0.75000000",
+      "frozen_final": "0.00000000",
+      "execution": "succeeded",
+      "billing": "settled",
+      "delivery": "pending",
+      "assets": "6 temporary",
+      "input_lease": "released after settlement",
+      "outbox": [
+        "video_billing_held",
+        "video_billing_settled"
+      ],
+      "fake_submit_count": 1,
+      "full_reconciliation": "NOT_IMPLEMENTED",
+      "full_f02_case_pass": false
+    }
+  ],
+  "independent_slice_review": {
+    "task": "vid_g5_cancel_slice_qa",
+    "role": "测试工程师",
+    "scope": "只读源码/测试设计核查；运行由主任务完成，非完整G5验收",
+    "receipt": "docs/evidence/video-gateway-vid-g5-settlement-review.md",
+    "findings": [
+      {
+        "id": "G5-SETTLE-001",
+        "severity": "P1",
+        "status": "FIXED_AND_REGRESSION_PASSED"
+      },
+      {
+        "id": "G5-SETTLE-002",
+        "severity": "P1",
+        "status": "FIXED_AND_REGRESSION_PASSED"
+      },
+      {
+        "id": "G5-SETTLE-003",
+        "severity": "P1",
+        "status": "FIXED_AND_REGRESSION_PASSED"
+      },
+      {
+        "id": "G5-SETTLE-004",
+        "severity": "P2",
+        "status": "FIXED_AND_REGRESSION_PASSED"
+      }
+    ]
+  },
+  "remaining": [
+    "正常成功后的独立交付事务与完整17类事实对账",
+    "Provider失败/取消/审核拒绝/标识失败及其确认成本释放",
+    "未知、归档失败、Usage冲突的pending_reconcile与唯一补偿编排",
+    "补偿CAS、租约、重试8次、dead/manual_review与恢复",
+    "调账maker/checker及钱包动作闭合",
+    "全部Quote/协议门面/归属/确认重放与错价矩阵",
+    "全量Chat/Image隔离基础设施回归、Python证据测试",
+    "完整QA/PM/Standards/Spec验收与缺陷归零"
+  ],
+  "full_stage_defect_counts": "NOT_ASSESSED",
+  "qa_acceptance": "NOT_RUN_FULL_STAGE",
+  "pm_confirmation": "NOT_RUN",
+  "standards_review": "NOT_RUN_FULL_STAGE",
+  "spec_review": "NOT_RUN_FULL_STAGE",
+  "finance_contract_approval": "APPROVED_LOCAL_FIXTURE_ONLY",
+  "git_mode": "LOCAL_ONLY",
+  "pr_state": "NOT_CREATED",
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": "0",
+  "external_business_http_requests": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": false,
+  "vid_g6_started": false
+}

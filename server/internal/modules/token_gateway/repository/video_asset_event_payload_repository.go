@@ -458,6 +458,10 @@ func NewVideoTaskEventRepository(db *gorm.DB) *VideoTaskEventRepository {
 }
 
 func (r *VideoTaskEventRepository) Append(ctx context.Context, taskPublicID string, owner VideoOwner, event model.AIGatewayTaskEvent) error {
+	// 释放证据必须来自原执行CAS，通用追加入口不接受旧式或伪造的财务释放标记。
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(event.EventType)), "video_release_") || strings.EqualFold(strings.TrimSpace(event.EventType), "cancel_requested") || strings.EqualFold(strings.TrimSpace(event.EventType), "provider_no_product_confirmed") || strings.EqualFold(strings.TrimSpace(event.EventType), "provider_result_conflict") || strings.EqualFold(strings.TrimSpace(event.EventType), "submission_receipt_rejected") || strings.EqualFold(strings.TrimSpace(event.EventType), "submission_receipt_accepted") || strings.EqualFold(strings.TrimSpace(event.EventType), "provider_task_bound_pending") {
+		return ErrVideoUnsafeDetail
+	}
 	if err := validateVideoSafeJSON(event.SafeDetailJSON); err != nil {
 		return err
 	}

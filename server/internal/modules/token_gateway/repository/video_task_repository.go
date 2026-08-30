@@ -60,6 +60,7 @@ type VideoStateTransition struct {
 	EventID         string
 	Source          string
 	SafeDetailJSON  json.RawMessage
+	FailureOrigin   string `json:"-"`
 	Now             time.Time
 }
 
@@ -67,6 +68,14 @@ type VideoStateTransition struct {
 type VideoTaskRepository struct{ db *gorm.DB }
 
 func NewVideoTaskRepository(db *gorm.DB) *VideoTaskRepository { return &VideoTaskRepository{db: db} }
+
+// LockForOwnerTx 供财务协调器沿用同一Task/Request锁顺序，不能在结算期间被Worker推进或换绑。
+func (r *VideoTaskRepository) LockForOwnerTx(tx *gorm.DB, publicID string, owner VideoOwner) (*VideoTaskRecord, error) {
+	if tx == nil || !validVideoOwner(owner) || strings.TrimSpace(publicID) == "" {
+		return nil, ErrVideoTaskNotFound
+	}
+	return findVideoTaskRecord(tx, publicID, owner, true)
+}
 
 // FindForOwner 对任一归属维度不匹配均返回相同不存在语义，避免泄露任务是否存在。
 func (r *VideoTaskRepository) FindForOwner(ctx context.Context, publicID string, owner VideoOwner) (*VideoTaskRecord, error) {
@@ -136,6 +145,10 @@ func (r *VideoTaskRepository) TransitionExecution(ctx context.Context, command V
 		if !videoExecutionTransitionAllowed(record.Status, command.ToStatus) || command.Progress < record.Progress || command.Progress > 100 {
 			return ErrVideoTaskTransition
 		}
+		// 取消意图先取得Task锁时，不允许后来的Worker再取得提交权；已有submitting仍跟踪同一次提交。
+		if record.CancelRequestedAt != nil && (record.Status == model.AIImageTaskReserved || record.Status == model.AIImageTaskQueued) && (command.ToStatus == model.AIImageTaskQueued || command.ToStatus == model.AIImageTaskSubmitting) {
+			return ErrVideoTaskTransition
+		}
 		updates := map[string]interface{}{
 			"status": command.ToStatus, "progress": command.Progress,
 			"version_no": gorm.Expr("version_no + 1"), "updated_at": command.Now,
@@ -158,7 +171,7 @@ func (r *VideoTaskRepository) TransitionExecution(ctx context.Context, command V
 			Updates(map[string]interface{}{"execution_status": videoRequestExecutionStatus(command.ToStatus), "version_no": gorm.Expr("version_no + 1"), "updated_at": command.Now}).Error; err != nil {
 			return err
 		}
-		if err := appendVideoTaskEventTx(tx, record.ID, command.Owner, command.EventID, "execution_status_changed", record.Status, command.ToStatus, command.Source, command.SafeDetailJSON, command.Now); err != nil {
+		if err := appendVideoTaskEventTx(tx, record.ID, command.Owner, command.EventID, "execution_status_changed", record.Status, command.ToStatus, command.Source, command.SafeDetailJSON, command.Now, command.FailureOrigin); err != nil {
 			return err
 		}
 		updated, err = findVideoTaskRecord(tx, command.TaskPublicID, command.Owner, false)
@@ -330,12 +343,31 @@ func validateVideoSafeJSON(raw json.RawMessage) error {
 	return nil
 }
 
-func appendVideoTaskEventTx(tx *gorm.DB, taskID uint64, owner VideoOwner, eventID, eventType, from, to, source string, detail json.RawMessage, now time.Time) error {
+func appendVideoTaskEventTx(tx *gorm.DB, taskID uint64, owner VideoOwner, eventID, eventType, from, to, source string, detail json.RawMessage, now time.Time, failureOrigin ...string) error {
 	fromCopy, toCopy := from, to
 	event := model.AIGatewayTaskEvent{
 		EventID: strings.TrimSpace(eventID), TaskID: taskID, UserID: owner.UserID, ProjectID: owner.ProjectID,
 		EventType: eventType, FromStatus: &fromCopy, ToStatus: &toCopy, Source: source,
 		SafeDetailJSON: detail, CreatedAt: now,
+	}
+	if len(failureOrigin) > 0 && failureOrigin[0] != "" {
+		// 只有原失败迁移能使用专用视图；普通Append及旧版本事件没有该列写入能力。
+		if eventType != "execution_status_changed" || to != model.AIImageTaskFailed || source != "worker" {
+			return ErrVideoTaskTransition
+		}
+		valid := false
+		switch failureOrigin[0] {
+		case "provider_failed", "other_failed":
+			valid = true
+		case "moderation_rejected", "moderation_unknown":
+			valid = from == model.AIImageTaskModerating
+		case "label_failed", "label_unknown", "derived_failed":
+			valid = from == model.AIImageTaskLabeling
+		}
+		if !valid {
+			return ErrVideoTaskTransition
+		}
+		return tx.Create(&model.VideoExecutionFailureEvent{AIGatewayTaskEvent: event, FailureOrigin: failureOrigin[0]}).Error
 	}
 	if err := tx.Create(&event).Error; err != nil {
 		return fmt.Errorf("追加视频任务事件失败: %w", err)

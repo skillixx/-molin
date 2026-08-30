@@ -1,0 +1,552 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G5",
+  "checkpoint": "DEFINITE_FAILURE_AND_SAFETY_RELEASE",
+  "stage_status": "IN_PROGRESS",
+  "stage_acceptance": false,
+  "base_commit": "36b6a5c5f9e60a4ef182ae434337bb05e165477c",
+  "branch": "feature/video-gateway-vid-g5-billing-outbox-reconcile",
+  "code_state_id": "904e93225cc4f81f7617bbb255ac79f2ecf0171f0ce828778e48c39080c5a453",
+  "manifest": [
+    {
+      "path": "infra/scripts/verify-video-gateway-migration-000077.sh",
+      "sha256": "386e571efaf75c360aeb7394c080cd336a9abf664eedee0c4d7ccdaec90e1e7c"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/model/ai_video_billing.go",
+      "sha256": "f2b6cbe0cff1038affe75f7ba4c31fca58cdf40c01454b0fe75fb545fc6a86a8"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/g3_outbox_repository.go",
+      "sha256": "e518ebee73bbde4f9f2d247cbc2ae21a2191d3ed0cb5c800acec573ccb5f2402"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_asset_event_payload_repository.go",
+      "sha256": "f2c68b56e31737b2cf995ee7b4bde6ead69b2ad4e3460717a692620b69ef90d1"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_compensation_repository.go",
+      "sha256": "4ca066a35c06d10f60d9c5ecff89f45d56d51f7245448bacb14e023a11a06dd8"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_input_repository.go",
+      "sha256": "15c1a212cdf79345939193308e57e18e4c27e5b2f99426ed4511740fd0f47f5d"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_state_machine.go",
+      "sha256": "b1c5d3041ef5d2d272da50bf2638e966bf0f9a44dad2f7551eed7628ceebf4d5"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_submission_proof.go",
+      "sha256": "43aa7adbb5de8d9618da9b03a080782a4628bfc28f0613a49e313366960aef4f"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_task_repository.go",
+      "sha256": "1430804bcb7518c22b3002f0f685e044c99164f095e2a708b0f8c61b4deefcb6"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_usage_repository.go",
+      "sha256": "00cbaeb1d9e51b5be81b14d750210ca2085b6ea5891d25e5633b12622eea912f"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_cancel.go",
+      "sha256": "58485edaef1fd48913bd77399e21361c6f99684113495a2773d87235aa540296"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_cancel_mysql_test.go",
+      "sha256": "50cfb815ed90dabfe6435f51d4efa5dd153c94da416a7f306b9941c45c393ba6"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_media_mysql_test.go",
+      "sha256": "329ec5a4a8121a3dbb6e3f3e2fc037b33ac71171a3384532cdd5a34ca2a17fb1"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_release.go",
+      "sha256": "848475b72a0fa1607d0596dfafe44ea23f1f3a366272cb88df68a5a2a997d952"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_release_mysql_test.go",
+      "sha256": "190d5b1f3a140bbedbebb9e1c057a51a992ffd6eeb100992eeebc25810c27a8d"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_release_safety_mysql_test.go",
+      "sha256": "8c8f59db9bbda35e87cc2811438875c2bf23cf3d52dfdb07a2eaf6eeb428f212"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_reservation.go",
+      "sha256": "5e78710fcfbaccc3861f896af08edd790e90425520a7aa431852e9aa9785a0bc"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_reservation_mysql_test.go",
+      "sha256": "fda6f61e7d86cf39773def1cf33710e99e042007c5bc174667b0cca35e21e515"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_settle.go",
+      "sha256": "b8f51de1bb64d0ce1c69083a537fcba5f04121ad309ffb2170f1175a884db878"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_settle_mysql_test.go",
+      "sha256": "3c6b491ba4bb2f90b3b711c926045d98750686f0c33c739e2f0da08a72dcdaeb"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_usage_mysql_test.go",
+      "sha256": "b211b90a4dc65e46c65bb169cc0e0184c218c4931e09634ed373347b394cb523"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_compensation_mysql_test.go",
+      "sha256": "e822cfdcf9e09af2d55ca2d26bb5c39d6df6bc634464fe176afb83545e157d7d"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_compensation_worker.go",
+      "sha256": "f44adae0134fd7c6539b0e1e88e2ea31232ef04a115c4bb482f97f317822e385"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_delivery.go",
+      "sha256": "fc839cd038dc38c6a90bd53584237db12205729fc0689602a982a5d531c9b877"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_delivery_compensation_mysql_test.go",
+      "sha256": "771a16fe8bcdb9b63eda86fc8c1433a404a7b73b38d9b30b03c8e07e2bac8283"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_delivery_mysql_test.go",
+      "sha256": "60d0ef3a0353792302a3d395a5a50a640a57faacd76d1e13560e85a32fd44521"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_delivery_safety_mysql_test.go",
+      "sha256": "b622557b618e151d90206b611e2e6853e1f9a91e350aa9faf1f479fbadcaf64a"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_g4_repository_ledger.go",
+      "sha256": "b465f479a7dc80e6880fff9d8028762e5666ce9f8ca541785276b3f33b8b52ff"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_generation_intent.go",
+      "sha256": "0ab112bb9971a8f02c1e559738d29cd807878e0616a3d4a71d8ddb14df484f9b"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_generation_intent_test.go",
+      "sha256": "d23ae8fe503d06bf3318504e2981b9a697fee3aa038128e82e2766c5789ac067"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_provider_cost.go",
+      "sha256": "99c1d98a668eff8afcf4a72d78d1b0c0b75698e1609138dc0225a7a6aa8d627f"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_quote_facade.go",
+      "sha256": "2aba6de563d98e8355d591b49e9443076b3ef4e1c53815fc43ece423def18558"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_reconciliation.go",
+      "sha256": "d5461e6655b504f3e642c1725f2633762020ba79130d96e2c929a54c49b1221c"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/cost_confirmation.go",
+      "sha256": "55919d0ac98d68de617c2c9220ef1ea0f29e20f47164be8b9df3f7e0a948eb53"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/cost_confirmation_test.go",
+      "sha256": "f8d8425dc5203ba4dbcf84ae9d3c9f8bed64fb524a3c73f33efc8981b7e58d29"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/fake_provider.go",
+      "sha256": "0893d21986ddeed31d5288cec23a3fa2c08feed684fa78b789246975f0160501"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/gateway.go",
+      "sha256": "78e4cd74e024c7977f76a04ebe828d90ea6a4394a92feb93bea142070d9d4080"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/ledger.go",
+      "sha256": "add5f3794dfea972bbfe3b55df07b58b52897649905ebdd5a849bb16bdd05720"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/provider.go",
+      "sha256": "fb9e91fbea95d8b4cc185ac032588250b88f3e133c80d06ba9749fbe038d422e"
+    },
+    {
+      "path": "server/migrations/000077_video_billing_outbox_reconcile.down.sql",
+      "sha256": "50517bc603dd5e24d3dd822ffbf86dd3ee8656b7c1a010c23158a66735f97e28"
+    },
+    {
+      "path": "server/migrations/000077_video_billing_outbox_reconcile.up.sql",
+      "sha256": "e71976eca3ffb46a95aa6629708ff212ee75601cccc2a996d3c6095265cac542"
+    },
+    {
+      "path": "server/migrations/ai_gateway_video_g5_migration_test.go",
+      "sha256": "53aec166024d848e3669330b83a4b1e7551a715172d26340111bf0c14e5376a0"
+    }
+  ],
+  "gofmt_files": 39,
+  "source_commit": "36b6a5c5f9e60a4ef182ae434337bb05e165477c",
+  "source_changes": "UNCOMMITTED_LOCAL_ONLY",
+  "code_state_algorithm": "manifest按path字典序排列，LF拼接BASE_COMMIT=<base_commit>与path|sha256，无末尾换行，UTF-8后SHA-256；本切片server/infra清单，不是G5最终验收。",
+  "checks": {
+    "isolated_mysql": {
+      "status": "PASS",
+      "command": "VIDEO_GATEWAY_G5_ISOLATED_MYSQL_APPROVED=YES bash infra/scripts/verify-video-gateway-migration-000077.sh",
+      "filter": "^TestVideoG5(Reserve|Usage|Cancel|Media|Settle|Release|Compensation|Delivery|Reconciliation)",
+      "result": "ok molin/server/internal/modules/token_gateway/service 178.263s",
+      "migration_chain": "1..77",
+      "repeat_up": true,
+      "retained_down_reup": true,
+      "race": true,
+      "full_stage": false
+    },
+    "native_go_test": {
+      "status": "PASS",
+      "command": "go test ./... -count=1",
+      "boundary": "未配置DSN的其他集成测试仍跳过，不等于Chat/Image全基础设施验收。"
+    },
+    "go_vet": {
+      "status": "PASS"
+    },
+    "go_mod_verify": {
+      "status": "PASS",
+      "result": "all modules verified"
+    },
+    "gofmt": {
+      "status": "PASS",
+      "files": 39
+    },
+    "diff_check": {
+      "status": "PASS"
+    },
+    "sensitive_scan": {
+      "status": "PASS",
+      "files_scanned": 233,
+      "findings": 0,
+      "boundary": "生成本检查点和核查回执后再次扫描，233文件、0发现。"
+    }
+  },
+  "verified_behaviors": [
+    "Provider明确失败/审核拒绝/显式标识失败/隐式标识失败，分别T2V/I2V各100次释放，仅1次新释放、99次重放。",
+    "8个释放终态均17项检查通过、差异为空，用户销售为0，已确认Provider成本原样保留。",
+    "明确无产物成本确认与未知结果区分；未知不能冒充确认成本0。",
+    "label_unknown、derived_failed、archive_failed保持原Hold及两条Provider事实，不生成用户销售或释放输入租约。",
+    "通用Append拒绝专用释放标记，直接SQL补记旧marker也不能替换原失败原因；原因更新、NULL和错误前状态被拒绝。",
+    "10个释放写入点故障整体回滚，原Provider事实和输入租约保留；唯一补偿由Worker恢复为released/rejected/completed。",
+    "已完成补偿重复执行仅对账，不重复解冻；释放后SettleReady不得覆盖相反终态。",
+    "旧G4事实共存、既有预占/取消/结算/交付/补偿回归在同次隔离运行通过。"
+  ],
+  "synthetic_cases": [
+    {
+      "operation": "text_to_video",
+      "outcome": "provider_failed",
+      "purpose": "non_commercial_test_fixture",
+      "quote": "0.50000000",
+      "hold": "0.50000000",
+      "user_quantity_seconds": "0",
+      "provider_quantity_seconds": "0",
+      "sale": "0.00000000",
+      "provider_cost": "0.00000000",
+      "settled": "0.00000000",
+      "net_released": "0.50000000",
+      "wallet_initial": "10.00000000",
+      "wallet_final": "10.00000000",
+      "frozen_final": "0.00000000",
+      "delivery": "rejected",
+      "asset_lifecycle": "NO_ASSET",
+      "available_assets": 0,
+      "compensation": "NONE",
+      "outbox": [
+        "video_billing_held",
+        "video_billing_released",
+        "video_delivery_rejected"
+      ],
+      "concurrent_release_calls": 100,
+      "new_release_count": 1,
+      "replays": 99,
+      "reconciliation_checks": 17,
+      "differences": [],
+      "fake_submit_count": 1
+    },
+    {
+      "operation": "text_to_video",
+      "outcome": "moderation_rejected",
+      "purpose": "non_commercial_test_fixture",
+      "quote": "0.50000000",
+      "hold": "0.50000000",
+      "user_quantity_seconds": "0",
+      "provider_quantity_seconds": "5",
+      "sale": "0.00000000",
+      "provider_cost": "0.20000000",
+      "settled": "0.00000000",
+      "net_released": "0.50000000",
+      "wallet_initial": "10.00000000",
+      "wallet_final": "10.00000000",
+      "frozen_final": "0.00000000",
+      "delivery": "rejected",
+      "asset_lifecycle": "quarantined",
+      "available_assets": 0,
+      "compensation": "NONE",
+      "outbox": [
+        "video_billing_held",
+        "video_billing_released",
+        "video_delivery_rejected"
+      ],
+      "concurrent_release_calls": 100,
+      "new_release_count": 1,
+      "replays": 99,
+      "reconciliation_checks": 17,
+      "differences": [],
+      "fake_submit_count": 1
+    },
+    {
+      "operation": "text_to_video",
+      "outcome": "explicit_label_failed",
+      "purpose": "non_commercial_test_fixture",
+      "quote": "0.50000000",
+      "hold": "0.50000000",
+      "user_quantity_seconds": "0",
+      "provider_quantity_seconds": "5",
+      "sale": "0.00000000",
+      "provider_cost": "0.20000000",
+      "settled": "0.00000000",
+      "net_released": "0.50000000",
+      "wallet_initial": "10.00000000",
+      "wallet_final": "10.00000000",
+      "frozen_final": "0.00000000",
+      "delivery": "rejected",
+      "asset_lifecycle": "quarantined",
+      "available_assets": 0,
+      "compensation": "NONE",
+      "outbox": [
+        "video_billing_held",
+        "video_billing_released",
+        "video_delivery_rejected"
+      ],
+      "concurrent_release_calls": 100,
+      "new_release_count": 1,
+      "replays": 99,
+      "reconciliation_checks": 17,
+      "differences": [],
+      "fake_submit_count": 1
+    },
+    {
+      "operation": "text_to_video",
+      "outcome": "implicit_label_failed",
+      "purpose": "non_commercial_test_fixture",
+      "quote": "0.50000000",
+      "hold": "0.50000000",
+      "user_quantity_seconds": "0",
+      "provider_quantity_seconds": "5",
+      "sale": "0.00000000",
+      "provider_cost": "0.20000000",
+      "settled": "0.00000000",
+      "net_released": "0.50000000",
+      "wallet_initial": "10.00000000",
+      "wallet_final": "10.00000000",
+      "frozen_final": "0.00000000",
+      "delivery": "rejected",
+      "asset_lifecycle": "quarantined",
+      "available_assets": 0,
+      "compensation": "NONE",
+      "outbox": [
+        "video_billing_held",
+        "video_billing_released",
+        "video_delivery_rejected"
+      ],
+      "concurrent_release_calls": 100,
+      "new_release_count": 1,
+      "replays": 99,
+      "reconciliation_checks": 17,
+      "differences": [],
+      "fake_submit_count": 1
+    },
+    {
+      "operation": "image_to_video",
+      "outcome": "provider_failed",
+      "purpose": "non_commercial_test_fixture",
+      "quote": "0.75000000",
+      "hold": "0.75000000",
+      "user_quantity_seconds": "0",
+      "provider_quantity_seconds": "0",
+      "sale": "0.00000000",
+      "provider_cost": "0.00000000",
+      "settled": "0.00000000",
+      "net_released": "0.75000000",
+      "wallet_initial": "10.00000000",
+      "wallet_final": "10.00000000",
+      "frozen_final": "0.00000000",
+      "delivery": "rejected",
+      "asset_lifecycle": "NO_ASSET",
+      "available_assets": 0,
+      "compensation": "NONE",
+      "outbox": [
+        "video_billing_held",
+        "video_billing_released",
+        "video_delivery_rejected"
+      ],
+      "concurrent_release_calls": 100,
+      "new_release_count": 1,
+      "replays": 99,
+      "reconciliation_checks": 17,
+      "differences": [],
+      "fake_submit_count": 1
+    },
+    {
+      "operation": "image_to_video",
+      "outcome": "moderation_rejected",
+      "purpose": "non_commercial_test_fixture",
+      "quote": "0.75000000",
+      "hold": "0.75000000",
+      "user_quantity_seconds": "0",
+      "provider_quantity_seconds": "5",
+      "sale": "0.00000000",
+      "provider_cost": "0.30000000",
+      "settled": "0.00000000",
+      "net_released": "0.75000000",
+      "wallet_initial": "10.00000000",
+      "wallet_final": "10.00000000",
+      "frozen_final": "0.00000000",
+      "delivery": "rejected",
+      "asset_lifecycle": "quarantined",
+      "available_assets": 0,
+      "compensation": "NONE",
+      "outbox": [
+        "video_billing_held",
+        "video_billing_released",
+        "video_delivery_rejected"
+      ],
+      "concurrent_release_calls": 100,
+      "new_release_count": 1,
+      "replays": 99,
+      "reconciliation_checks": 17,
+      "differences": [],
+      "fake_submit_count": 1
+    },
+    {
+      "operation": "image_to_video",
+      "outcome": "explicit_label_failed",
+      "purpose": "non_commercial_test_fixture",
+      "quote": "0.75000000",
+      "hold": "0.75000000",
+      "user_quantity_seconds": "0",
+      "provider_quantity_seconds": "5",
+      "sale": "0.00000000",
+      "provider_cost": "0.30000000",
+      "settled": "0.00000000",
+      "net_released": "0.75000000",
+      "wallet_initial": "10.00000000",
+      "wallet_final": "10.00000000",
+      "frozen_final": "0.00000000",
+      "delivery": "rejected",
+      "asset_lifecycle": "quarantined",
+      "available_assets": 0,
+      "compensation": "NONE",
+      "outbox": [
+        "video_billing_held",
+        "video_billing_released",
+        "video_delivery_rejected"
+      ],
+      "concurrent_release_calls": 100,
+      "new_release_count": 1,
+      "replays": 99,
+      "reconciliation_checks": 17,
+      "differences": [],
+      "fake_submit_count": 1
+    },
+    {
+      "operation": "image_to_video",
+      "outcome": "implicit_label_failed",
+      "purpose": "non_commercial_test_fixture",
+      "quote": "0.75000000",
+      "hold": "0.75000000",
+      "user_quantity_seconds": "0",
+      "provider_quantity_seconds": "5",
+      "sale": "0.00000000",
+      "provider_cost": "0.30000000",
+      "settled": "0.00000000",
+      "net_released": "0.75000000",
+      "wallet_initial": "10.00000000",
+      "wallet_final": "10.00000000",
+      "frozen_final": "0.00000000",
+      "delivery": "rejected",
+      "asset_lifecycle": "quarantined",
+      "available_assets": 0,
+      "compensation": "NONE",
+      "outbox": [
+        "video_billing_held",
+        "video_billing_released",
+        "video_delivery_rejected"
+      ],
+      "concurrent_release_calls": 100,
+      "new_release_count": 1,
+      "replays": 99,
+      "reconciliation_checks": 17,
+      "differences": [],
+      "fake_submit_count": 1
+    }
+  ],
+  "release_fault_points": [
+    "release_pending",
+    "release_hold",
+    "release_link",
+    "release_usage_fact",
+    "release_sale_line",
+    "release_state",
+    "release_lease",
+    "release_outbox",
+    "release_rejected_outbox",
+    "release_checked"
+  ],
+  "recovered_release": {
+    "outbox": [
+      "video_billing_held",
+      "video_settlement_pending",
+      "video_compensation_required",
+      "video_billing_released",
+      "video_delivery_rejected"
+    ],
+    "billing": "released",
+    "delivery": "rejected",
+    "compensation": "completed",
+    "fake_submit_count": 1
+  },
+  "independent_slice_review": {
+    "role": "测试工程师",
+    "task": "vid_g5_cancel_slice_qa",
+    "scope": "只读源码与测试设计；运行由主任务完成，非全G5验收",
+    "receipt": "docs/evidence/video-gateway-vid-g5-release-review.md",
+    "findings": [
+      {
+        "id": "G5-RELEASE-001",
+        "severity": "P1",
+        "status": "FIXED_AND_REGRESSION_PASSED"
+      },
+      {
+        "id": "G5-RELEASE-002",
+        "severity": "P1",
+        "status": "FIXED_AND_REGRESSION_PASSED"
+      }
+    ]
+  },
+  "remaining": [
+    "主动Provider取消确认接入、拒绝/不支持取消与迟到成功完整矩阵",
+    "未知、归档失败和Usage冲突的pending/补偿编排；本轮只证明不能被误释放",
+    "释放补偿release_completed/release_checked之后期限和回滚反例，以及完整settle/release竞争",
+    "合法调账、双主体及对应钱包动作；当前任何调整仍失败关闭",
+    "完整跨门面幂等、跨域归属与确认/回调矩阵",
+    "Chat/Image全量隔离回归、Python证据验证器与全目标独立QA/PM/Standards/Spec"
+  ],
+  "full_stage_defect_counts": "NOT_ASSESSED",
+  "qa_acceptance": "NOT_RUN_FULL_STAGE",
+  "pm_confirmation": "NOT_RUN",
+  "standards_review": "NOT_RUN_FULL_STAGE",
+  "spec_review": "NOT_RUN_FULL_STAGE",
+  "finance_contract_approval": "APPROVED_LOCAL_FIXTURE_ONLY",
+  "git_mode": "LOCAL_ONLY",
+  "pr_state": "NOT_CREATED",
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": "0",
+  "external_business_http_requests": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": false,
+  "vid_g6_started": false
+}

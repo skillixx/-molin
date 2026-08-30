@@ -56,6 +56,21 @@ func NewVideoInputAssetRepository(db *gorm.DB) *VideoInputAssetRepository {
 	return &VideoInputAssetRepository{db: db}
 }
 
+// FindReadyForBindingTx 在调用方事务内锁定输入并复核，供Quote/Hold/Task同事务创建使用。
+func (r *VideoInputAssetRepository) FindReadyForBindingTx(tx *gorm.DB, publicID string, owner VideoOwner, now time.Time) (*model.AIGatewayInputAsset, error) {
+	if tx == nil || !validVideoOwner(owner) || now.IsZero() {
+		return nil, ErrVideoInputUnavailable
+	}
+	asset, err := findVideoInputForOwner(tx, publicID, owner, true)
+	if err != nil {
+		return nil, err
+	}
+	if asset.LifecycleState != model.AIInputAssetReady || asset.ModerationStatus != model.AIModerationPassed || asset.NormalizedSHA256 == nil || !asset.ExpiresAt.After(now) || asset.DeleteRequestedAt != nil || asset.PendingDeleteAt != nil || asset.DeletedAt != nil {
+		return nil, ErrVideoInputUnavailable
+	}
+	return asset, nil
+}
+
 // FindForOwner 同时验证User、Project与来源API Key；任一越权都返回统一不存在语义。
 func (r *VideoInputAssetRepository) FindForOwner(ctx context.Context, publicID string, owner VideoOwner) (*model.AIGatewayInputAsset, error) {
 	if r == nil || r.db == nil || !validVideoOwner(owner) || strings.TrimSpace(publicID) == "" {

@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G5",
+  "phase": "PREFLIGHT_AND_FINANCE_REVIEW_PACKAGE",
+  "decision": "HUMAN_REQUIRED",
+  "blocker": "FINANCE_CONTRACT_REVIEW_PENDING",
+  "base_commit": "36b6a5c5f9e60a4ef182ae434337bb05e165477c",
+  "captured_at": "2026-08-30T03:14:54.6904601Z",
+  "document_state_id": "8f925a3cbd6afffa7758c908b9f38f25ef07a58d35bd81c23eb1e8b902f4967b",
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "59b8774a0b02cc18a375c2c15be8d54de6ca687fe535e6591e7747f7836b82ae"
+    },
+    {
+      "path": "docs/database-schema-design.md",
+      "sha256": "0eb7a8a054dfbe4a240a8dccb5b3bb8e1f3b8a877e1584d1822e27f32036814c"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g4-final-merge.json",
+      "sha256": "f4e1e88e353568d7dd5fe3ab4f191374e5e677db65518c3cadac39da114b16a2"
+    },
+    {
+      "path": "docs/full-api-design.md",
+      "sha256": "0b6be66ec39b392c42602d7210b7a56cc3361015713875db7636b28e58f602b8"
+    },
+    {
+      "path": "docs/test-plan.md",
+      "sha256": "ad5dff2403b0eedd1310b4406b9c420c642a04303ba9cd0c652f156ab972923b"
+    },
+    {
+      "path": "docs/video-gateway-vid-g5-billing-outbox-reconcile.md",
+      "sha256": "4e013be9d0ddb48eea8b7a54e40aeb341761211f54a9fe582f03f863c5a8e557"
+    },
+    {
+      "path": "docs/video-gateway-vid-g5-finance-review.md",
+      "sha256": "66543e9b03404d1813ab1645abd5fe7243baaa1e320a18a1c7d6fda0954a0a0e"
+    }
+  ],
+  "branch": "feature/video-gateway-vid-g5-billing-outbox-reconcile",
+  "vid_g4_pr_number": 420,
+  "vid_g4_merge_commit": "36b6a5c5f9e60a4ef182ae434337bb05e165477c",
+  "g4_preflight": "PASS",
+  "finance_review": "PENDING",
+  "implementation_started": false,
+  "goal_scope_unchanged": true,
+  "qa_acceptance": "NOT_RUN",
+  "pm_confirmation": "NOT_RUN",
+  "dev_code_review": "NOT_RUN",
+  "standards_review": "NOT_RUN",
+  "spec_review": "NOT_RUN",
+  "defect_counts": null,
+  "document_checks": {
+    "links": "PASS",
+    "json": "PASS",
+    "draft_golden_arithmetic": "12 cases consistent; not executed billing tests",
+    "sensitive_scan": "PASS",
+    "sensitive_findings": 0
+  },
+  "g5_tests": "NOT_RUN",
+  "new_migration_files": 0,
+  "database_operations": 0,
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": "0",
+  "business_external_http_requests": 0,
+  "github_metadata_read_checks": true,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "committed": false,
+  "pushed": false,
+  "pr_state": "NOT_CREATED",
+  "next_goal_allowed": false,
+  "vid_g6_started": false,
+  "hash_algorithm": "SHA256 over UTF-8 LF-joined BASE_COMMIT=<base>, then ordered path|sha256, without trailing LF; this receipt excluded",
+  "pending_goal_tasks": [
+    "G5-01",
+    "G5-02",
+    "G5-03",
+    "G5-04",
+    "G5-05",
+    "G5-06",
+    "G5-07",
+    "G5-08"
+  ]
+}

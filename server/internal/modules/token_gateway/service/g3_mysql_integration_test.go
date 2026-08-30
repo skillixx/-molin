@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -406,7 +407,30 @@ func TestG3MySQLBillingIntegration(t *testing.T) {
 		if err := db.Raw("SELECT COALESCE(SUM(amount),0) FROM ai_usage_items WHERE request_id = ? AND source = 'provider_cost'", request.RequestID).Row().Scan(&providerCost); err != nil {
 			t.Fatal(err)
 		}
-		if !providerCost.Equal(decimal.RequireFromString("0.000015")) {
+		// 本用例同时复用于G3和G4夹具，完整迁移会启用旧G3脚本原先跳过的provider_cost分支。
+		// 只识别两套已冻结的测试单价并比较独立字面金样，不调用业务成本计算器生成预期。
+		var persisted model.AIRequest
+		if err := db.Where("request_id=?", request.RequestID).First(&persisted).Error; err != nil {
+			t.Fatal(err)
+		}
+		var frozen PriceSnapshot
+		if err := json.Unmarshal(persisted.PriceSnapshotJSON, &frozen); err != nil {
+			t.Fatal(err)
+		}
+		inputCost, inputErr := decimal.NewFromString(frozen.SKUs["input_tokens"].CostUnitPrice)
+		outputCost, outputErr := decimal.NewFromString(frozen.SKUs["output_tokens"].CostUnitPrice)
+		inputScale, inputScaleErr := decimal.NewFromString(frozen.SKUs["input_tokens"].Scale)
+		outputScale, outputScaleErr := decimal.NewFromString(frozen.SKUs["output_tokens"].Scale)
+		if inputErr != nil || outputErr != nil || inputScaleErr != nil || outputScaleErr != nil || !inputScale.Equal(decimal.NewFromInt(1000000)) || !outputScale.Equal(decimal.NewFromInt(1000000)) {
+			t.Fatal("成本断言要求已知的百万token夹具")
+		}
+		wantCost := decimal.RequireFromString("0.000015")
+		if inputCost.Equal(decimal.NewFromInt(5)) && outputCost.Equal(decimal.NewFromInt(10)) {
+			wantCost = decimal.RequireFromString("0.00010000")
+		} else if !inputCost.Equal(decimal.NewFromInt(1)) || !outputCost.Equal(decimal.NewFromInt(1)) {
+			t.Fatal("未知成本夹具不能自动生成预期")
+		}
+		if !providerCost.Equal(wantCost) {
 			t.Fatalf("平台成本金额必须按冻结成本价保存: %s", providerCost)
 		}
 		assertCount(t, db, "ai_outbox_events", "aggregate_id = ? AND event_type = 'billing_content_policy_waived'", request.RequestID, 1)

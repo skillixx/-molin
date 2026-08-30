@@ -2336,6 +2336,38 @@ T2V必须零输入；I2V必须读取唯一冻结TaskInput并在每次Provider提
 
 完整内部接口、故障矩阵和边界见[VID-G4 Fake异步与媒体安全](./video-gateway-vid-g4-fake-async-media-safety.md)。当前真实Provider、Bifrost视频数据面、RabbitMQ、Redis、MinIO、钱包结算、测试服和生产均未启用。
 
+### 14.0V5 视频网关VID-G5财务内部合同（仅本地工程，HTTP关闭）
+
+VID-G5已实现既有VideoReservationCoordinator的原子预占及Fake执行、结算/释放、Outbox、补偿和request_id对账内部边界，验收状态以VID-G5统一回执为准。本段不新增或开放Handler、路由、下载URL或前端，不能将内部Go方法解释为可调用HTTP API。
+
+当前新增的内部边界：`VideoBillingService.CancelBeforeSubmit(ctx, taskID, owner)`只处理reserved/queued且可证明从未提交的任务，原子取消、全额释放并写零计量/销售/网关零成本及Outbox；`VideoUsageRepository.AppendTx`与`ListForTask`复用共享Usage，自动从锁定任务及Quote补全归属，拒绝同键异值。前者不接受客户端金额或Provider结果，后者没有UPDATE/DELETE入口；两者仍在切片验证中，不能调用真实钱包。
+
+正常成功路径提供内部`RecordProviderConfirmation`、`SettleReady(ctx, taskID, owner)`和`NewVideoBillingTaskLedger`。确认只能来自已绑定Fake Adapter，结算金额由冻结Quote与实际安全媒体计算，不能由HTTP客户端提交；正常结算与交付拆开，结算后资产仍为temporary/pending。缺少确认、媒体规格/时长冲突或过期均不允许扣费；异常标记、补偿及交付边界见下文，当前仍没有正式视频HTTP入口。
+
+未来 `/v1/videos` 与 `/api/token/videos/generations` 共用用户/Project/create_video/幂等键命名空间；规范化生成意图不含quote_id、input_asset_id或门面差异。G2 Quote原指纹和冻结快照不改写，生成意图另行版本化。任何幂等重放仍须重新鉴权，不能借另一身份读取原任务。
+
+成功交付前必须先提交settle及对应流水、Usage、Outbox，再验证媒体安全、六类资产、无活动补偿与零差异。未知结果保持Hold，补偿不持有Provider调用能力。Outbox只保存低敏标识、状态、Decimal金额字符串、币种、operation及必要版本。
+
+完整矩阵与财务规则见[VID-G5开发合同](./video-gateway-vid-g5-billing-outbox-reconcile.md)；[人工财务合同](./video-gateway-vid-g5-finance-review.md)已批准，但财务批准不能替代软件验收，阶段结论见统一回执。当前没有可调用的VID-G5正式HTTP接口。
+
+正常成功后的结算失败补记pending与唯一补偿。内部`RecoverSettlement(ctx, taskID, owner, lease)`校验本请求/job围栏；`VideoCompensationWorker.RunOne(ctx, requestID)`只从数据库恢复，不调用Provider。财务已恢复但交付未完成时保持retry/delivery_pending，不是completed；统一交付入口见下文。本段不注册任何正式视频HTTP路由。
+
+内部交付现提供`DeliverReady`、租约化`RecoverDelivery`及只读`VideoReconciliationService.Reconcile`。统一发布前后核验17类持久化事实，补偿完成与六资产available同事务；纯交付失败不回退已结算状态。最终读取再次对账，拒绝新协议身份使用旧Ledger绕过。报告只含低敏检查项和差异代码，仍没有正式视频HTTP接口或下载URL。
+
+明确失败/安全拒绝提供内部`ReleaseUnserviceable(ctx, taskID, owner)`与租约化`RecoverRelease`。不接收调用方金额或退款原因；仅从原始失败事件、资产与Provider确认成本证明可全额释放。用户销售为0，原Provider成本保留，R/J Outbox与释放同事务；恢复路径同时completed并最终对账。未知、归档和派生失败不能据failed/quarantined状态退款。原始`failure_origin`不是公开写入参数，没有新增HTTP路由。主动取消、未知恢复及调账入口已实现并在下文说明，最终阶段验收仍待完成。
+
+取消扩展仍是内部Go调用，不是正式HTTP：`VideoGateway.Cancel`记录唯一取消意图后区分接受、拒绝、不支持、未知和迟到成功。`RequestCancellation`不退款；预提交取消使用`CancelBeforeSubmit`；有Provider的已确认无产物取消使用`ReleaseUnserviceable`。Poll/Cancel共用确认校验，`RecordNoProductOutcome`保存同任务证明；矛盾观察保留为追加事件并阻断财务/读取，不修改旧终态。这里不接收客户端金额、无产物声明或Provider正文。
+
+内部`ReconcileExecution(ctx, taskID, owner)`返回created、existing_active、review_required、not_required或release_ready等低敏安排结果，不代表财务已完成。未知/归档/计量冲突与状态、补偿、P/C同事务，终态不回退；断连补记仅使用有界数据库操作。completed/dead上的review_required只是新核对请求，实际人工审核仍须不同有效主体。未新增HTTP或前端。
+
+提交租期内部接口：`ValidateSubmissionClaim`在取锁后校验原claim并返回deadline；`RecoverExpiredSubmission`只安排过期任务核对；`RecordSubmissionReceipt`补记原返回身份，过期后不把pending改回submitted。正常绑定在事务尾部重检时限，跨期整体回滚且只重试数据库回执。首次回执冻结摘要，同ID异状态或异ID追加拒绝摘要后返回冲突；原回执可跨财务终态只读重放，不变更钱包。无法验证归属/claim/协议形状时直接拒绝，不泄露或污染别的任务。均无正式HTTP路由，不接收真实Key，不授权新的Provider调用。
+
+调账内部接口：`ApplyAdjustment(ctx, taskID, owner, command)`接受方向credit/debit、低敏原因billing_correction/service_credit、正Decimal金额、两名不同有效maker/checker及大于0的sequence_no。在原请求已闭合的前提下，同事务CAS可用余额、追加资金流水、共享Usage adjustment和按序号区分的video_adjustment_recorded Outbox；不修改原销售、成本、Hold或原财务终态。相同请求及序号的同内容重放返回原Usage/资金流水ID，异内容冲突，资金不足或未闭合事实拒绝。此入口仅本地合成合同，不装配HTTP、管理页面或补偿自动调账能力。
+
+生成幂等内部边界：`LookupVideoGeneration`使用共享生成指纹和当前权限返回原Task/Quote/三轴，不调用Provider或读取输入正文；`ReserveAndCreate`的普通与竞争重放复用该边界。G5自动门面委托`CreateWithAutomaticQuote`，在Project归属围栏和当前权限保护下，把SQL Quote创建及预占放在同一事务；失败整体回滚。输入别名必须独立验证持久化user/project/key和hash/version，原TaskInput不变。这些均为内部Go合同，不是新增OpenAI Videos HTTP接口。
+
+三轴最终使用同一条Task/Request JOIN返回，避免自动入口外层RC下嵌套savepoint混读。仅暴露旧Reserve接口的包装器缺少自动协调能力时直接配置错误，不先写Quote；旧G2协调器须显式支持其legacy自动合同，不自动降级。
+
 ### 14.0A 图片网关IMG-G6本地HTTP合同
 
 > IMG-G6已实现独立关闭态路由注册函数，但未接入bootstrap，当前运行时仍不可达。以下合同只由本地httptest、Fake ImageGateway和隔离MySQL证明，不代表测试环境或生产开放。

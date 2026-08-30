@@ -1,0 +1,294 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G5",
+  "source_state_id": "1d61c1b94af6a7ac3db6b8d63aca4d7759fba7135a99cb448b7e838001d6fe09",
+  "goal_objective_sha256": "8a7ecaa2ca0d0be210007ff31c46e852dc2c7013b145bc4368fca2765c630b86",
+  "scope": "原Goal21节逐组完成审计，结合每组源码/测试/角色证据，不以无缺陷发现替代功能证明。",
+  "sections": [
+    {
+      "section": 1,
+      "title": "前置与基线",
+      "status": "PROVEN",
+      "coverage": [
+        "PR420已合并、source/merge tree相同、原CI与QA/PM/工程门禁",
+        "最终fresh fetch origin/main=HEAD=36b6a5c...，独立G5分支，原G4证据可复算"
+      ],
+      "evidence": [
+        "video-gateway-vid-g4-final-merge.json",
+        "video-gateway-vid-g5-source-state.json"
+      ]
+    },
+    {
+      "section": 2,
+      "title": "阶段配置",
+      "status": "PROVEN",
+      "coverage": [
+        "LOCAL_ONLY；仅非商业合成钱包/Fake",
+        "独立临时MySQL、无拉取/公网/真实运行时/正式HTTP/前端",
+        "F1-F5后续用户审批只覆盖本地合同"
+      ],
+      "evidence": [
+        "video-gateway-vid-g5-finance-approval.json",
+        "video-gateway-vid-g5-isolated-integration.json"
+      ]
+    },
+    {
+      "section": 3,
+      "title": "完整工程链",
+      "status": "PROVEN",
+      "coverage": [
+        "创建、一次Hold、一次Submit、媒体安全、settle/release、交付、Outbox、补偿、逐请求对账",
+        "未知不猜测收费，未结算不交付，补偿不重调Provider"
+      ],
+      "evidence": [
+        "video-gateway-vid-g5-isolated-integration.json",
+        "video-gateway-vid-g5-reconciliation.json"
+      ]
+    },
+    {
+      "section": 4,
+      "title": "共享事实复用",
+      "status": "PROVEN",
+      "coverage": [
+        "Quote/Task/Input/Asset/Event/Payload与既有wallet/hold/transactions/usage/outbox/compensation复用",
+        "无平行视频账本；原Quote、Usage、资金事实不可覆盖"
+      ],
+      "evidence": [
+        "video-gateway-vid-g5-source-state.json"
+      ]
+    },
+    {
+      "section": 5,
+      "title": "Quote与原子Hold",
+      "status": "PROVEN",
+      "coverage": [
+        "消费单次/过期/归属/operation/输入hash-version/Decimal",
+        "Quote、Hold、流水、关联、Task/Input租约及held Outbox同事务，故障整体回滚",
+        "余额不足及安全拒绝前置；有界重试整事务，不调用Provider"
+      ],
+      "evidence": [
+        "video-gateway-vid-g5-reservation-checkpoint.json",
+        "video-gateway-vid-g5-isolated-integration.json"
+      ]
+    },
+    {
+      "section": 6,
+      "title": "生成意图",
+      "status": "PROVEN",
+      "coverage": [
+        "冻结所有指定capability/operation/model/Prompt HMAC/规格/rights/input hash-version",
+        "排除Quote/输入别名/上传session/门面/Provider/存储URL等字段",
+        "同键重放、异指纹冲突、撤权拒绝、跨User/Project/Key不可改归属"
+      ],
+      "evidence": [
+        "video-gateway-vid-g5-facade-replay-checkpoint.json",
+        "video-gateway-vid-g5-isolated-integration.json"
+      ]
+    },
+    {
+      "section": 7,
+      "title": "Usage与调账",
+      "status": "PROVEN",
+      "coverage": [
+        "四类追加事实完整归属；Decimal，T2V/I2V独立销售和确认成本",
+        "审核拒绝零销售、保留安全成本；未知成本不是零",
+        "不同maker/checker，追加匹配钱包动作，不改原账，无动作不通过对账"
+      ],
+      "evidence": [
+        "video-gateway-vid-g5-adjustment-integrity-checkpoint.json",
+        "video-gateway-vid-g5-golden-amounts.json"
+      ]
+    },
+    {
+      "section": 8,
+      "title": "十二结果矩阵",
+      "status": "PROVEN",
+      "coverage": [
+        "成功、明确失败、审核拒绝、双标识失败、归档失败、结算故障、未知、queued取消、接受/拒绝取消、迟到成功、Usage冲突",
+        "相反终态互斥且各自前置事实决定结果"
+      ],
+      "evidence": [
+        "video-gateway-vid-g5-golden-amounts.json",
+        "video-gateway-vid-g5-terminal-race-checkpoint.json"
+      ]
+    },
+    {
+      "section": 9,
+      "title": "Outbox",
+      "status": "PROVEN",
+      "coverage": [
+        "八类事件同事务、唯一/低敏payload、无真实派发",
+        "额外/替换坏聚合事实阻断对账；重放不重复财务或交付"
+      ],
+      "evidence": [
+        "video-gateway-vid-g5-legacy-chat-outbox-checkpoint.json"
+      ]
+    },
+    {
+      "section": 10,
+      "title": "补偿",
+      "status": "PROVEN",
+      "coverage": [
+        "六状态、CAS、locked_at/by、尝试/退避/完成/安全错误字段、唯一任务",
+        "两分钟租约、最多八次、dead不自动续跑、人工不抢活跃租约",
+        "只读持久化依据恢复，幂等且不持有Provider客户端"
+      ],
+      "evidence": [
+        "video-gateway-vid-g5-compensation-checkpoint.json",
+        "video-gateway-vid-g5-execution-reconcile-checkpoint.json"
+      ]
+    },
+    {
+      "section": 11,
+      "title": "交付门禁",
+      "status": "PROVEN",
+      "coverage": [
+        "执行/计费/交付与审核、双标识、版本、六资产、争议/保全/删除、补偿、零差异全部满足",
+        "发布前后/读取再对账，末尾期限校验，任何列明禁止态拒绝；无下载URL"
+      ],
+      "evidence": [
+        "video-gateway-vid-g5-delivery-reconciliation-checkpoint.json",
+        "video-gateway-vid-g5-isolated-integration.json"
+      ]
+    },
+    {
+      "section": 12,
+      "title": "逐请求零差异",
+      "status": "PROVEN",
+      "coverage": [
+        "17组事实逐项，原销售=Hold消费=消费流水，H=S+R+F及流水余额链",
+        "用量、确认成本、T2V/I2V分项合计、资产树、Outbox全集、调账/补偿/Submit约束",
+        "不把预期未闭合请求伪装为零差异"
+      ],
+      "evidence": [
+        "video-gateway-vid-g5-reconciliation.json"
+      ]
+    },
+    {
+      "section": 13,
+      "title": "数据库",
+      "status": "PROVEN",
+      "coverage": [
+        "连续000077、共享表最小增量、唯一/FK/CHECK/版本/索引",
+        "财务状态防回退，事实只追加，保留式down/re-up",
+        "只操作临时隔离库"
+      ],
+      "evidence": [
+        "video-gateway-vid-g5-source-state.json",
+        "video-gateway-vid-g5-isolated-integration.json"
+      ]
+    },
+    {
+      "section": 14,
+      "title": "并发与故障",
+      "status": "PROVEN",
+      "coverage": [
+        "各100预占/结算/释放/钱包竞争、相反入口竞争",
+        "Quote/输入/权限/余额/写点/Outbox故障、媒体安全、补偿租约/八次、未知/ACK/取消/冲突、调账不闭合",
+        "允许范围内Chat/Image纯Go、MySQL、Fake兼容"
+      ],
+      "evidence": [
+        "video-gateway-vid-g5-isolated-integration.json",
+        "video-gateway-vid-g5-legacy-chat-outbox-checkpoint.json"
+      ]
+    },
+    {
+      "section": 15,
+      "title": "金额金样",
+      "status": "PROVEN",
+      "coverage": [
+        "12最终案例+2中间快照，Quote/Hold/Usage/销售/成本/资金/状态/Outbox/补偿/差异完整",
+        "固定非商业字面金额，8闭合/4预期失败关闭"
+      ],
+      "evidence": [
+        "video-gateway-vid-g5-golden-amounts.json",
+        "video-gateway-vid-g5-reconciliation.json"
+      ]
+    },
+    {
+      "section": 16,
+      "title": "测试证据",
+      "status": "PROVEN",
+      "coverage": [
+        "Billing/Hold/Usage/Outbox/Compensation/Reconcile、完整隔离迁移/up/down/re-up/并发故障",
+        "Linux race、go test ./...、vet、mod verify、gofmt、diff、Python/敏感扫描",
+        "真实Provider/Key/钱包/资金/调账/费用/外部业务HTTP/测试服/生产均零"
+      ],
+      "evidence": [
+        "video-gateway-vid-g5-isolated-integration.json"
+      ]
+    },
+    {
+      "section": 17,
+      "title": "中文文档与交付",
+      "status": "PROVEN",
+      "coverage": [
+        "源码、数据库、API、测试计划、README、G4合并及G5源码/MySQL/金样/对账/独立回执",
+        "中文功能/开发入口、财务补偿矩阵、回滚、完整缺陷台账、最小财务审查包",
+        "无正式HTTP、真实Provider/Bifrost/队列/缓存/对象存储/资金/部署/商业证明"
+      ],
+      "evidence": [
+        "video-gateway-vid-g5-source-state.json",
+        "video-gateway-vid-g5-independent-reviews.md"
+      ]
+    },
+    {
+      "section": 18,
+      "title": "独立验收与财务批准",
+      "status": "PROVEN",
+      "coverage": [
+        "QA独立all实际执行、PM/Standards/Spec同源复核",
+        "全部已知开放P0/P1/P2为零；用户F1-F5批准记录，不由AI代签"
+      ],
+      "evidence": [
+        "video-gateway-vid-g5-acceptance.json",
+        "video-gateway-vid-g5-independent-reviews.md",
+        "video-gateway-vid-g5-finance-approval.json"
+      ]
+    },
+    {
+      "section": 19,
+      "title": "停止边界",
+      "status": "PROVEN",
+      "coverage": [
+        "完成G5即停止；无真实业务/共享迁移/部署/G6内容",
+        "结果未知保持冻结、原财务/Usage/审计不覆盖、敏感载荷保护"
+      ],
+      "evidence": [
+        "video-gateway-vid-g5-acceptance.json"
+      ]
+    },
+    {
+      "section": 20,
+      "title": "Git分级授权",
+      "status": "PROVEN",
+      "coverage": [
+        "仅本地未提交；未推送、未建PR、未合并G5",
+        "后续commit/push/PR/merge分别等待用户授权"
+      ],
+      "evidence": [
+        "video-gateway-vid-g5-source-state.json",
+        "video-gateway-vid-g5-acceptance.json"
+      ]
+    },
+    {
+      "section": 21,
+      "title": "最终报告",
+      "status": "PROVEN",
+      "coverage": [
+        "绑定实际base/source/源码状态、全部角色/财务/缺陷/零操作计数",
+        "LOCAL_READY_FOR_GIT_AUTH、PR未创建、NEXT_GOAL_ALLOWED=NO、VID_G6_STARTED=NO"
+      ],
+      "evidence": [
+        "video-gateway-vid-g5-acceptance.json"
+      ]
+    }
+  ],
+  "exceptions": [
+    {
+      "scope": "真实Provider/资金/Redis/RabbitMQ/MinIO/部署/G6",
+      "status": "NOT_AUTHORIZED_NOT_RUN",
+      "reason": "原Goal明确OFF/0边界；不是要求执行的省略项。"
+    }
+  ]
+}

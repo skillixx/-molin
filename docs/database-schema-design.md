@@ -594,6 +594,34 @@ VideoRepositoryTaskLedger把Fake Worker桥回VID-G3 Repository。Prompt只从AES
 
 完整设计见[VID-G4 Fake异步与媒体安全](./video-gateway-vid-g4-fake-async-media-safety.md)。本阶段没有项目数据库、真实MinIO、RabbitMQ、Redis或远端部署。
 
+#### 3.5.17 视频网关 VID-G5 财务实现（仅隔离验证）
+
+VID-G4已通过PR #420合并。VID-G5已新增000077的共享请求幂等、Usage归属与追加约束、视频关联流水保护、Hold终态、补偿和交付约束；完整矩阵与隔离验证见开发合同，阶段结论以同源验收回执为准。人工财务合同已批准，本阶段未操作共享数据库或生产。
+
+- 复用wallets、wallet_holds、wallet_transactions、ai_request_wallet_links、ai_requests、ai_usage_items、ai_outbox_events、ai_compensation_tasks与既有Task/Asset/Event，不新建平行视频账本。
+- 保留现有user_id/idempotency_key请求唯一键；新增可空命令/键摘要及视频组合唯一约束，实现user_id/project_id/create_video/idempotency_key作用域，Chat/Image原索引和原数据语义不变。
+- ai_usage_items新增可空task_id、quote_id、user_id、project_id、api_key_id、logical_model_code、capability；G5新行由Task/Request/Quote交叉校验完整归属，历史记录保持NULL，不伪造回填。Task、Quote、用户、Project和Key使用外键；视频Usage禁止UPDATE/DELETE。
+- 视频请求钱包关联、原冻结/消费/解冻流水及Hold身份禁止修改或删除；Hold不能由released回到holding或settled，相反终态不能覆盖。保护范围通过既有请求钱包关联识别，不另建钱包表。
+- 共享TaskEvent新增可空fact_sha256，Usage新增可空evidence_event_id外键；Provider确认成本必须与同任务事件摘要对应，分母为1，不能把只有事件ID的任意数值冒充确认成本。
+- 共享TaskEvent新增可空failure_origin，仅G5原始execution_status_changed到failed时使用；来源、前状态、归属和原因封闭枚举由SQL校验。普通后补事件不能成为审核/标识失败退款证明；UPDATE/DELETE继续禁止。
+- quarantine CHECK保留旧图片条件，仅video允许审核passed且任一标识failed进入隔离；不改写真实审核结论，也不因此自动退款，释放仍需确认成本及原执行原因。
+- 复用Task已有cancel_requested_at，与唯一cancel_requested事件同事务CAS；时间不能清除/覆盖，意图先落库后不得再取得提交权。共享TaskEvent增加provider_no_product_confirmed及provider_result_conflict保留事件类型，仍使用既有fact_sha256，不新增表；无产物证明需同任务零成本终态确认，pending或已有矛盾观察不得补证。
+- G5请求必须从unquoted/pending/pending建立；settled/released需实际Hold、请求关联、冻结/解冻/消费流水匹配。available还需独立交付Outbox且不存在未完成视频补偿；服务层在六资产交付事务前后执行完整对账。
+- ai_compensation_tasks新增视频专用可空version_no、attempt_count、locked_by、lease_mode、last_safe_error_code、completed_at、review_maker_id、review_checker_id，旧类型不写新列。视频类型使用CAS、2分钟租约、8次上限与低敏错误枚举；原retry_count/locked_at继续保留并校验一致性。
+- initial_billing_status在首次创建视频补偿时从当前请求冻结，SQL校验与请求一致且不可更新；它决定历史P事件是否必需，不能通过后改origin把缺失P伪装为合法终态补偿。执行未知、状态及P/C同事务；旧完成/耗尽任务保留，仅追加人工核对请求。
+- 人工核对在共享TaskEvent追加review_maker_id/review_checker_id；人工租约需同版本不可变事件。completed需财务、交付及输入租约闭合，RecoverDelivery把正常交付与补偿complete放在同一事务，RecoverRelease把释放闭合与complete放在同一事务。
+
+统一发布新增冻结的origin_error_code及仅供当前租约使用的delivery_request_version/delivery_prepared_at。Prepare只允许有效租约、已结算请求和匹配目标版本，升version_no但不增加attempt_count；重领清理旧标记。请求available的内部中间态仅允许匹配且未过期的发布标记，六资产发布与completed由同一事务闭合；外部读取仍要求无活动补偿及最终对账通过。
+- 追加事实、相反终态互斥、Outbox低敏白名单和财务/交付门禁需数据库与服务双重验证。down必须保留已形成事实。
+
+提交回执继续复用共享TaskEvent的`fact_sha256`：`submission_receipt_accepted`按请求固定唯一键保存首次规范化回执摘要，`submission_receipt_rejected`按请求与候选摘要去重。两类均要求已绑定的G5任务、唯一原queued→submitting证据、worker来源、空from/to及固定低敏原因；不保存原回执正文，不推进状态。拒绝记录必须有原接受记录。既有UPDATE/DELETE保护继续有效，down不删除审计。pending身份、接受与拒绝记录的通用Append入口均关闭。
+
+视频调账复用已有adjustment方向、原因、maker/checker字段；000077仅追加可空的`ai_usage_items.adjustment_wallet_transaction_id`及唯一外键，旧图片模型不写入此列。非空引用要求同用户、同钱包、同金额和正确方向类型的新资金流水，禁止借用任何请求原冻结/消费/解冻。NULL表示没有资金闭合证明，不得通过对账。被引用流水与Usage只追加，不可改删。原Hold、Quote、sale_line、cost_line保持不变，调账的资金与按序号Outbox独立核验。
+
+调账对账按request_id取得完整调整事件集合后再核aggregate_type，额外错误类型不能被查询过滤隐藏。共享Outbox领取器保留聚合类型隔离，并以字面量video_事件前缀拒绝坏聚合类型的视频事实；pending和过期publishing均适用，旧Chat/Image事件及前序顺序规则不变。
+
+已经实现的列和约束以000077源码为准，其余合同见[VID-G5开发合同](./video-gateway-vid-g5-billing-outbox-reconcile.md)和[财务人审包](./video-gateway-vid-g5-finance-review.md)。部分数据库验证不能视为完整G5能力验收。
+
 ## 4. 关键状态
 
 用户状态：

@@ -93,6 +93,8 @@ type GatewayAsset struct {
 }
 
 type GatewayTask struct {
+	// DeferDelivery由财务仓储装配，不接受客户端字段；媒体成功后仍等待独立结算和交付事务。
+	DeferDelivery     bool `json:"-"`
 	TaskID            string
 	RequestID         string
 	Operation         string
@@ -102,6 +104,7 @@ type GatewayTask struct {
 	Spec              VideoSpec
 	Status            TaskStatus
 	Version           uint64
+	CancelRequestedAt *time.Time
 	ProviderCode      string                `json:"-"`
 	ProviderTaskID    string                `json:"-"`
 	Content           *ControlledContentRef `json:"-"`
@@ -175,6 +178,9 @@ func (l *InMemoryVideoTaskLedger) Advance(ctx context.Context, taskID string, ex
 		return GatewayTask{}, ErrGatewayTaskConflict
 	}
 	if !taskTransitionAllowed(task.Status, to) {
+		return GatewayTask{}, ErrGatewayTaskTransition
+	}
+	if task.CancelRequestedAt != nil && (task.Status == TaskCreated || task.Status == TaskReserved || task.Status == TaskQueued) && (to == TaskReserved || to == TaskQueued || to == TaskSubmitting) {
 		return GatewayTask{}, ErrGatewayTaskTransition
 	}
 	from := task.Status
@@ -328,6 +334,10 @@ func taskStatusRank(status TaskStatus) int {
 
 func cloneGatewayTask(task GatewayTask) GatewayTask {
 	result := task
+	if task.CancelRequestedAt != nil {
+		value := *task.CancelRequestedAt
+		result.CancelRequestedAt = &value
+	}
 	if task.Input != nil {
 		value := *task.Input
 		result.Input = &value
