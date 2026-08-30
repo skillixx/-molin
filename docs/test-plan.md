@@ -1171,6 +1171,65 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - 必须证明真实Provider、Provider Key、真实钱包、外部HTTP、测试服写入、生产操作和费用全部为0。
 - 独立QA、产品、Standards与Spec审查必须绑定同一SOURCE_STATE_ID，最终P0/P1/P2均为0；VID-G5不得开始。
 
+## 视频网关 VID-G5 财务、Outbox、补偿与对账本地验收
+
+当前入口以`verify-video-gateway-migration-000077.sh`为准：默认all包括Reserve/Usage/Cancel/Media/Settle/Release/Compensation/Delivery/Reconciliation/Unknown/Submission/Adjustment/Golden/Compatibility。下文较小的筛选表达式描述各历史检查点，不是当前全量筛选。直接财务终态竞争的六组100并发与旧Chat G7本机Fake性能已通过，见[终态竞争证据](./evidence/video-gateway-vid-g5-terminal-race-checkpoint.json)。
+
+旧Chat兼容新增`compatibility_chat_g4/g5/g6/g7`，每次启动独立临时MySQL，安装完整1—77，执行原有预算、管理、用户及可靠性测试；不与G5金样共库，不启动Redis/RabbitMQ/MinIO。是否通过以实际运行证据为准，不能用普通Go测试中的环境Skip代替；上述OFF基础设施段明确NOT_RUN。
+
+上述四组已在主代理隔离运行中通过，具体时长及范围见[兼容与Outbox检查点](./evidence/video-gateway-vid-g5-legacy-chat-outbox-checkpoint.json)。额外财务Outbox反例为T2V/I2V×settled/released×held/final×additional/replaced共16组：8个additional先红，修复全集读取/类型校验后全部通过；重放拒绝且钱包不变。独立默认all会再次验证该用例及既有读取门禁，未返回前不登记全阶段PASS。
+
+金额金样增加Golden筛选及可选focus=golden：十二案例、F06/F12两个中间快照、T2V/I2V及合计守恒，保留成本未知和未入账null。使用精确事实类型/行数防止开放案例掩盖重复Usage与零金额流水；独立Python校验与27种篡改测试见[金样文档](./video-gateway-vid-g5-golden-amounts.md)。完整G5验收状态仍独立于金样结果。
+
+本轮默认all隔离MySQL/race通过（320.199秒），源码`55dd5e43872be73434fd87275c9761ff6747ecb3b914a67ad46a4410cd4ad1bf`，见[金样检查点](./evidence/video-gateway-vid-g5-goldens-checkpoint.json)。独立JSON校验不替代完整阶段兼容或验收。
+
+提交恢复增加`Submission`筛选及VIDEO_GATEWAY_G5_TEST_FOCUS=submission定位模式：原事件租期、过期恢复、迟到ID不回退、期限前/等于/后各100回执、取消增版本、错误claim/请求/Provider、回滚/断连、空ID失败关闭。基础结果见[提交恢复检查点](./evidence/video-gateway-vid-g5-submission-checkpoint.json)。新增真实MySQL行锁等待跨期限、事务尾部跨期回滚、T2V/I2V×三种RPC回执/恢复顺序、拒绝审计幂等与不可改删、同ID异状态、SQL非法审计和合法对照、已settled/released后的重放与拒绝。每次新增用例后须重跑默认all；局部通过不等于全G5验收。
+
+本轮默认all隔离MySQL/race、完整1..77迁移与重复up/保留down/re-up通过（248.789秒），源码清单及边界见[提交回执补强检查点](./evidence/video-gateway-vid-g5-submission-hardening-checkpoint.json)。
+
+追加调账用例纳入默认all及可选`VIDEO_GATEWAY_G5_TEST_FOCUS=adjustment`：取消返还后10→10.25→10.15的独立金额样例；同序号100并发只修正一次；四个写点故障整体回滚；同序号异值、同人复核、跨Project、缺钱包动作拒绝；T2V/I2V已结算调整保留原价与成本；原消费流水不能冒充调整；历史复核主体停用不改变已有事实；不同序号100次0.2元扣减10元只成功50次，不透支或动冻结额。定向已通过基础两组用例；扩展矩阵与默认all的结果须以最新检查点为准，不能引用前一源码测试当作本轮通过。
+
+上述已建立调账用例及默认all在源码`da22d30db5c30e19a8b0979a3aa0bcfdef32ccefa03ff2bb45e479908f9d79e1`通过（296.912秒），见[调账检查点](./evidence/video-gateway-vid-g5-adjustment-checkpoint.json)。未建立的金额溢出、跨钱包/重复资金引用及等行数缺关联反例仍为待验收。
+
+调账后续边界已新增：最大合法余额999999999999.99999999成功、溢出及非法金额拒绝；跨User/Project/Key、未引用的外部钱包新流水和重复资金引用拒绝；Usage/资金/Outbox各一条且余额链正确时NULL关联仍失败；Outbox字段污染含数字version/sequence_no错误值及同类型金额错误。额外foreign aggregate漏检先红后修复，共享领取器也按video_字面前缀保护pending及过期publishing，含状态/租约不变及Chat/Image可领取对照。按最新完整性检查点核验，不回填旧检查点为已覆盖。
+
+上述后续边界在默认all隔离MySQL/race通过（310.805秒），源码`6c40acb08a2bafd163662a1aa9de836b3d7d52b8dfc3611267ba5b395598e894`，见[完整性检查点](./evidence/video-gateway-vid-g5-adjustment-integrity-checkpoint.json)。领取器对照不是Chat/Image完整业务回归；完整G5验收仍待完成。
+
+跨门面生成幂等用例纳入默认all及可选`VIDEO_GATEWAY_G5_TEST_FOCUS=facade`：显式创建后自动重放不新增Quote；权限已撤销不先写Quote；原输入pending_delete且报价resolver不可用时返回原三轴；同归属别名成功但不替换原绑定；跨User/Project/Key、缺失别名和伪造SHA拒绝；双别名与混合门面各100并发只创建一个生成请求；自动Quote遇到Key过期、余额不足、Hold写点故障整体回滚。旧G2门面单元测试继续执行；结果必须以本轮源码检查点为准。
+
+独立审查追加反例：在Request读取后由另一事务完整提交pending/HPC，自动重放不得返回混合三轴；只转发Reserve的包装器不得静默降级并先写自动Quote。二者已在隔离MySQL先红，随后以单条JOIN和显式自动协调合同修复，最终默认all结果单独记录。
+
+跨门面及上述追加反例已在默认all隔离MySQL/race通过（306.021秒），源码`5677e594100b0430580992629a8bfe9dc550715b2dced8332f24fc0f57828ad9`，见[本轮检查点](./evidence/video-gateway-vid-g5-facade-replay-checkpoint.json)。不等于完整G5验收。
+
+执行待核对扩展筛选新增`Unknown`，定位可用VIDEO_GATEWAY_G5_TEST_FOCUS=unknown，最终仍需默认all。覆盖12个T2V/I2V异常组合各8次重试、四处事务故障、100重复安排、completed晚到冲突不重开、Callback原子性、断连与版本/输入读取竞争、6秒/5秒冲突及正常未提交取消不产生副作用。实际证据见[执行待核对检查点](./evidence/video-gateway-vid-g5-execution-reconcile-checkpoint.json)，不是完整G5验收。
+
+取消扩展实际结果见[取消检查点](./evidence/video-gateway-vid-g5-cancellation-checkpoint.json)。增加8个T2V/I2V接受/拒绝/不支持/迟到成功组合、100取消意图CAS、完整Gateway与先退款竞争、原RPC在途重试/取消后绑定、14种Cancel/Poll确认反例、零成本不能单独退款、双取消回复两种顺序、相反成功回执与旧终态保护、冲突后不得扣费或继续读取、释放completed/checked后租约过期回滚。定位可设置VIDEO_GATEWAY_G5_TEST_FOCUS=cancel，但最终本切片回归使用默认all，不能用聚焦运行代替全量。
+
+最新释放扩展筛选为`^TestVideoG5(Reserve|Usage|Cancel|Media|Settle|Release|Compensation|Delivery|Reconciliation)`，以下旧筛选描述仅对应各历史检查点。新增明确失败/审核拒绝/显隐标识失败×T2V/I2V×100并发，未知标识/派生/归档失败禁止释放，通用事件与原始原因篡改反例，以及10个释放事务故障和Worker恢复重放。实际结果见[释放检查点](./evidence/video-gateway-vid-g5-release-checkpoint.json)，不能解释为12种矩阵或完整G5已经验收。
+
+交付扩展后的实际筛选增加`Delivery|Reconciliation`。本轮正常T2V/I2V各100交付、统一补偿发布/完成、11个发布故障点、读取/发布末尾过期、子资产保全、三轴矛盾历史、额外Attempt、回调错绑、旧Ledger降级以及旧G4事实共存回归均有测试。检查点见[交付/对账证据](./evidence/video-gateway-vid-g5-delivery-reconciliation-checkpoint.json)；不代替未完成的其他结果矩阵、调账及全阶段验收。
+
+补偿扩展后的实际筛选为`^TestVideoG5(Reserve|Usage|Cancel|Media|Settle|Compensation)`。新增100认领唯一租约、8次失败/崩溃回收、旧围栏和跨请求拒绝、人工有效双主体/追加审核及SQL旁路、未闭合completed拒绝、租约中途过期回滚、P/C Outbox原子补记及Worker财务恢复；见[补偿检查点](./evidence/video-gateway-vid-g5-compensation-checkpoint.json)。统一交付/complete、其余矩阵及完整对账仍未完成。
+
+前置：VID-G4最终合并证据已回填，VID-G5五项本地人审合同已批准。预占、Usage、结算/释放、补偿、交付/对账、金额金样和旧Chat四组MySQL兼容均已有切片执行证据；完整阶段仍待当前源码独立QA与最终SOURCE_STATE绑定。本节不是阶段PASS报告。
+
+历史Usage/取消与结算检查点当时使用筛选`^TestVideoG5(Reserve|Usage|Cancel|Media|Settle)`及Linux race，覆盖两类任务各100次取消、11个释放写入点故障、取消/提交权竞争、追加事实与终态保护，以及额外Usage、错误Outbox、已有Attempt/submitting历史不得伪记零成本。正常结算切片另覆盖两类任务各100并发、8处写入点回滚、媒体中途过期、无实际消费的伪终态、完整Outbox重放、确认摘要及独立分母对照。见[Usage/取消检查点](./evidence/video-gateway-vid-g5-usage-cancel-checkpoint.json)和[正常结算检查点](./evidence/video-gateway-vid-g5-settlement-checkpoint.json)；它们仅为历史增量证据，当前运行器筛选与完整回归入口以本节顶部说明为准。
+
+- Quote消费、Hold、冻结流水、请求关联、Task/Input租约及held Outbox同事务；每个写入点注入故障均整体回滚。
+- 同请求100预占、100结算、100释放、settle/release相反终态竞争；同钱包100不同请求无负余额/冻结额。
+- Quote重复/过期/越权、I2V输入hash/version漂移、输入审核拒绝前置零Hold/Queue/Provider、余额不足均失败关闭。
+- 生成指纹与Quote原指纹分离；跨用户/Project/Key和两类门面幂等不改写归属，权限失效不泄露旧结果。
+- 逐项验证12种结算/释放结果：成功、明确失败、审核拒绝、双标识失败、归档失败、结算失败、未知、queued取消、Provider接受/拒绝取消、迟到成功及Usage冲突。
+- Outbox与对应事务共同提交、每项事实唯一且低敏，dispatcher关闭，重放不重复扣费/释放/交付。
+- 补偿唯一、六态、version_no CAS、租约、8次上限、dead停止、人工核对不抢占活跃Worker；只能用持久化事实，不重新调用Provider。
+- 未settled、安全版本不完整、活动补偿、争议/保全/删除态、非零差异、未闭合adjustment全部不得交付。
+- 对账覆盖17类事实；验证请求/Sale/Hold/消费金额一致、净释放H-S，以及现有“全额解冻H再消费S”的真实流水顺序，不误把解冻H当净释放。
+- maker/checker不同主体，adjustment缺钱包动作时仍失败；T2V/I2V各自和合计零差异。
+- 运行完整隔离MySQL迁移、重复up、保留down/re-up、单元/Repository、故障注入、金额金样、Linux race、全量Go/vet/mod verify/gofmt、Python证据、敏感扫描与Chat/Image兼容回归。
+- 独立QA/PM/Standards/Spec通过且P0/P1/P2=0；人工FINANCE_REVIEW不能由AI代签，VID-G6始终未开始。
+
+详细矩阵见[开发合同](./video-gateway-vid-g5-billing-outbox-reconcile.md)，12个候选金额金样及五项已批准的本地合同见[人工财务审查包](./video-gateway-vid-g5-finance-review.md)。未执行的候选金样不能标记PASS。
+
 ## 图片网关 IMG-G1 Expand Schema 验收
 
 - `000068` 必须把 `ai_requests.modality` 从仅 Chat 扩展为 `chat/image`，同时以 `capability + delivery_status` 组合约束确保旧 Chat 固定为 `chat.completions/not_applicable`、图片固定为 `image.generate`。

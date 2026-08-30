@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G5",
+  "approval": "APPROVED",
+  "authority": "PROJECT_OWNER_ACTING_AS_FINANCE",
+  "approval_text": "FINANCE=APPROVE_VID_G5_QUOTE_HOLD_SETTLE_RELEASE_OUTBOX_COMPENSATION_RECONCILIATION",
+  "approved_contracts": ["F1", "F2", "F3", "F4", "F5"],
+  "approved_document_state_id": "8f925a3cbd6afffa7758c908b9f38f25ef07a58d35bd81c23eb1e8b902f4967b",
+  "base_commit": "36b6a5c5f9e60a4ef182ae434337bb05e165477c",
+  "scope": "仅批准本地非商业合成夹具的财务开发合同，不代表实现或验收通过。",
+  "real_wallet_authorized": false,
+  "real_provider_authorized": false,
+  "real_adjustments_authorized": false,
+  "deployment_authorized": false,
+  "git_mode": "LOCAL_ONLY",
+  "next_goal_allowed": false
+}

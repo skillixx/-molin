@@ -1,0 +1,628 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G5",
+  "checkpoint": "PROVIDER_CANCELLATION_AND_SUBMISSION_FENCING",
+  "stage_status": "IN_PROGRESS",
+  "stage_acceptance": false,
+  "base_commit": "36b6a5c5f9e60a4ef182ae434337bb05e165477c",
+  "branch": "feature/video-gateway-vid-g5-billing-outbox-reconcile",
+  "code_state_id": "ba742a7eca4ce45f73fbd9756bf4f722b20cd5719135b680335624a83b4f1c4b",
+  "manifest": [
+    {
+      "path": "infra/scripts/verify-video-gateway-migration-000077.sh",
+      "sha256": "1d1f95fc3481863d4b821a9d85c5adb6b428b02917a0c5344872c447851f766f"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/model/ai_video_billing.go",
+      "sha256": "f2b6cbe0cff1038affe75f7ba4c31fca58cdf40c01454b0fe75fb545fc6a86a8"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/g3_outbox_repository.go",
+      "sha256": "e518ebee73bbde4f9f2d247cbc2ae21a2191d3ed0cb5c800acec573ccb5f2402"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_asset_event_payload_repository.go",
+      "sha256": "f85aa405c9d17c49f17496f47cf1b784e195f31a2093a85646642b5b2d9932e1"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_cancellation_repository.go",
+      "sha256": "ea8b470f098d60c2b92275902f873a2b2141dc3ad389459987940837dc8fb9c7"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_compensation_repository.go",
+      "sha256": "4ca066a35c06d10f60d9c5ecff89f45d56d51f7245448bacb14e023a11a06dd8"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_input_repository.go",
+      "sha256": "15c1a212cdf79345939193308e57e18e4c27e5b2f99426ed4511740fd0f47f5d"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_state_machine.go",
+      "sha256": "b1c5d3041ef5d2d272da50bf2638e966bf0f9a44dad2f7551eed7628ceebf4d5"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_submission_proof.go",
+      "sha256": "43aa7adbb5de8d9618da9b03a080782a4628bfc28f0613a49e313366960aef4f"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_task_repository.go",
+      "sha256": "20ba445c1c30f965a085eadf43be2a69cb5a4e0ebf75291cc1309ba5853d44fd"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_usage_repository.go",
+      "sha256": "00cbaeb1d9e51b5be81b14d750210ca2085b6ea5891d25e5633b12622eea912f"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_cancel.go",
+      "sha256": "65c0665c8819edba1ebe2e007f45698386b3c124fe31121dbe607e2ed61a8cd2"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_cancel_mysql_test.go",
+      "sha256": "50cfb815ed90dabfe6435f51d4efa5dd153c94da416a7f306b9941c45c393ba6"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_media_mysql_test.go",
+      "sha256": "329ec5a4a8121a3dbb6e3f3e2fc037b33ac71171a3384532cdd5a34ca2a17fb1"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_release.go",
+      "sha256": "3a325f52932e9ebf22ffb110977525632c5e483a3a05ada3ade6c23f3e8c04eb"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_release_lease_mysql_test.go",
+      "sha256": "27bbd2ea53a55d2473a9394790b0d9a69b13dbf2025c7e9d138ded03d3454216"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_release_mysql_test.go",
+      "sha256": "190d5b1f3a140bbedbebb9e1c057a51a992ffd6eeb100992eeebc25810c27a8d"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_release_safety_mysql_test.go",
+      "sha256": "8c8f59db9bbda35e87cc2811438875c2bf23cf3d52dfdb07a2eaf6eeb428f212"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_reservation.go",
+      "sha256": "5e78710fcfbaccc3861f896af08edd790e90425520a7aa431852e9aa9785a0bc"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_reservation_mysql_test.go",
+      "sha256": "fda6f61e7d86cf39773def1cf33710e99e042007c5bc174667b0cca35e21e515"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_settle.go",
+      "sha256": "e8d7dc4b138bcdfa4b9970047bfdda9f15985192df72cd7e23a245cc3efe2310"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_settle_mysql_test.go",
+      "sha256": "3c6b491ba4bb2f90b3b711c926045d98750686f0c33c739e2f0da08a72dcdaeb"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_usage_mysql_test.go",
+      "sha256": "b211b90a4dc65e46c65bb169cc0e0184c218c4931e09634ed373347b394cb523"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_cancel_response_mysql_test.go",
+      "sha256": "c5c92880795e0281655548483e19c42d02e2d618604c5192f4973470ee9330f8"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_cancel_success_race_mysql_test.go",
+      "sha256": "85566d48f608c39074e9396aa4b015c77b865769f14b1db08d767ebc3de1b65d"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_cancellation_race_mysql_test.go",
+      "sha256": "2a90f92cee9274ca3e5194821273bc2f94434bc73de0dfab25eced04d94c83b9"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_compensation_mysql_test.go",
+      "sha256": "e822cfdcf9e09af2d55ca2d26bb5c39d6df6bc634464fe176afb83545e157d7d"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_compensation_worker.go",
+      "sha256": "f44adae0134fd7c6539b0e1e88e2ea31232ef04a115c4bb482f97f317822e385"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_delivery.go",
+      "sha256": "fc839cd038dc38c6a90bd53584237db12205729fc0689602a982a5d531c9b877"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_delivery_compensation_mysql_test.go",
+      "sha256": "771a16fe8bcdb9b63eda86fc8c1433a404a7b73b38d9b30b03c8e07e2bac8283"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_delivery_mysql_test.go",
+      "sha256": "60d0ef3a0353792302a3d395a5a50a640a57faacd76d1e13560e85a32fd44521"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_delivery_safety_mysql_test.go",
+      "sha256": "b622557b618e151d90206b611e2e6853e1f9a91e350aa9faf1f479fbadcaf64a"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_g4_repository_ledger.go",
+      "sha256": "37bb5eb04c506519fc9774ee8be87d3787d172cb8eab64afc72980448692ab46"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_generation_intent.go",
+      "sha256": "0ab112bb9971a8f02c1e559738d29cd807878e0616a3d4a71d8ddb14df484f9b"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_generation_intent_test.go",
+      "sha256": "d23ae8fe503d06bf3318504e2981b9a697fee3aa038128e82e2766c5789ac067"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_no_product.go",
+      "sha256": "887ddf1bcee5014a1441b64cbedac56dd1649fac99676aa5d90c49d02bc05e70"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_provider_cancel_mysql_test.go",
+      "sha256": "cac84e65ab12b807e74a21169a5c9db24b841e2af30b339755d42525b21f1df2"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_provider_conflict.go",
+      "sha256": "8e33e7bdfac36fbae4d797eb0b8d1364f8cfdfd00eb0cb6390dcf6b8735cb644"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_provider_cost.go",
+      "sha256": "59ca4c678936bce0c530eae9332820dfcc48e485303b6ad25c1c7e02f45674b6"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_quote_facade.go",
+      "sha256": "2aba6de563d98e8355d591b49e9443076b3ef4e1c53815fc43ece423def18558"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_reconciliation.go",
+      "sha256": "71319cfc7acaf7905e647e6b8197e76e40a615934bb64408d630c0a5494de47b"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/cancellation.go",
+      "sha256": "023c90f2bbfeff547c1cbfa910fce05d8f9f8870541183bcb784ad99b6673b6a"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/cancellation_test.go",
+      "sha256": "0660b7d25c904041dda5b7f154775faff5f0a975267e8b83a8f1dea875f91692"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/cost_confirmation.go",
+      "sha256": "55919d0ac98d68de617c2c9220ef1ea0f29e20f47164be8b9df3f7e0a948eb53"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/cost_confirmation_test.go",
+      "sha256": "f8d8425dc5203ba4dbcf84ae9d3c9f8bed64fb524a3c73f33efc8981b7e58d29"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/fake_provider.go",
+      "sha256": "23a9ea7855d548be35bb5279955e8fb61c10f2ee077e280cdc4079d07449d664"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/gateway.go",
+      "sha256": "2e1049ede703bb40c89f43dd840ac3c281ae38c8411136fff239b937549dbccf"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/gateway_test.go",
+      "sha256": "15a034632cd16b71365a218655749c37d244309e2c2b677a635993de96bd0b71"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/ledger.go",
+      "sha256": "80bedb46edebac8691f8c43790af9cb1af0eae4724d92eb3520c523ca658de72"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/provider.go",
+      "sha256": "eee5e7ca26f765c022e5ebe75a7687a0110b83d9d946ad537b1b444c5f439763"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/provider_result.go",
+      "sha256": "ddb62e51c2b858dd068526fa6aaca9d89fd2a79e1fd5e9c2bd3d888bc8906187"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/submission_claim_test.go",
+      "sha256": "ade8a035fc9854abad26b3749b7eac3b69113907ec36fb3226e649be5522ac8d"
+    },
+    {
+      "path": "server/migrations/000077_video_billing_outbox_reconcile.down.sql",
+      "sha256": "50517bc603dd5e24d3dd822ffbf86dd3ee8656b7c1a010c23158a66735f97e28"
+    },
+    {
+      "path": "server/migrations/000077_video_billing_outbox_reconcile.up.sql",
+      "sha256": "44b941af0a58f15ed07225b0ae5ca9d7cb0b16e9d4fe0c8d00168193370f1d68"
+    },
+    {
+      "path": "server/migrations/ai_gateway_video_g5_migration_test.go",
+      "sha256": "53aec166024d848e3669330b83a4b1e7551a715172d26340111bf0c14e5376a0"
+    }
+  ],
+  "gofmt_files": 52,
+  "source_commit": "36b6a5c5f9e60a4ef182ae434337bb05e165477c",
+  "source_changes": "UNCOMMITTED_LOCAL_ONLY",
+  "code_state_algorithm": "manifest按path字典序排列，LF拼接BASE_COMMIT=<base_commit>与path|sha256，无末尾换行，UTF-8后SHA-256；server/infra局部开发清单，不是完整G5验收。",
+  "checks": {
+    "isolated_mysql": {
+      "status": "PASS",
+      "command": "VIDEO_GATEWAY_G5_ISOLATED_MYSQL_APPROVED=YES bash infra/scripts/verify-video-gateway-migration-000077.sh",
+      "focus": "all",
+      "filter": "^TestVideoG5(Reserve|Usage|Cancel|Media|Settle|Release|Compensation|Delivery|Reconciliation)",
+      "result": "ok molin/server/internal/modules/token_gateway/service 214.292s",
+      "migration_chain": "1..77",
+      "repeat_up": true,
+      "retained_down_reup": true,
+      "race": true,
+      "full_stage": false
+    },
+    "native_go_test": {
+      "status": "PASS",
+      "command": "go test ./... -count=1",
+      "boundary": "未配置DSN的其他集成测试仍跳过，不等于完整Chat/Image基础设施验收。一次此前运行因Windows临时exe清理权限失败，最终重跑exit=0。"
+    },
+    "go_vet": {
+      "status": "PASS"
+    },
+    "go_mod_verify": {
+      "status": "PASS",
+      "result": "all modules verified"
+    },
+    "linux_video_race": {
+      "status": "PASS",
+      "command": "docker run --rm --pull=never --network none ... golang:1.25-bookworm go test -race -count=1 ./internal/modules/token_gateway/video",
+      "result": "ok molin/server/internal/modules/token_gateway/video 7.165s",
+      "boundary": "视频子包在最后服务层确认事务调整前测试；此后视频子包无修改，最终服务层由本次MySQL race覆盖。"
+    },
+    "gofmt": {
+      "status": "PASS",
+      "files": 52
+    },
+    "diff_check": {
+      "status": "PASS"
+    },
+    "sensitive_scan": {
+      "status": "PASS",
+      "files_scanned": 248,
+      "findings": 0,
+      "boundary": "生成本检查点和核查回执后已复扫248文件，0发现；55文件源码摘要复算一致。"
+    }
+  },
+  "verified_behaviors": [
+    "T2V/I2V接受取消、拒绝后原任务成功、不支持后原任务成功、取消时迟到成功共8个组合；最终17项检查全通过。",
+    "100并发取消意图只有一次Task CAS和一条意图事件；跨用户/Project/API Key返回同一不存在语义，取消时间禁止清除。",
+    "提交CAS输家不进入Provider；Fake去重前计数由2降到1，完整Gateway被退款抢先时Provider入口计数为0。",
+    "原RPC在途时后续Submit只读；取消只留意图，原返回任务ID成功绑定后再确认取消并释放。",
+    "缺确认/有产物/非零取消成本/错Provider、operation、Task或空状态，Cancel与Poll共14个反例失败关闭。",
+    "成本确认与无产物证明同事务，普通Append与SQL不能在矛盾下伪造证明；零成本加后补终态不足以退款。",
+    "同成本摘要但产物存在性矛盾的两种到达顺序均保存冲突、阻断退款。",
+    "相反在途Poll成功回执：同event异body/新event Usage冲突 × holding/already_released四例均持久化观察，阻断错误退款或对账PASS，不倒写原终态。",
+    "冲突阻断新扣费和已交付资产继续读取；旧Usage、钱包和终态保持不变。",
+    "释放completed/checked之后租约过期仍整体回滚，后续新围栏仅释放一次。",
+    "Provider仍queued不误判failed，不回退本地已推进状态。"
+  ],
+  "known_cases": [
+    {
+      "operation": "text_to_video",
+      "outcome": "accepted",
+      "purpose": "non_commercial_test_fixture",
+      "quote": "0.50000000",
+      "hold": "0.50000000",
+      "user_quantity_seconds": "0",
+      "sale": "0.00000000",
+      "provider_cost": "0.00000000",
+      "settled": "0.00000000",
+      "net_released": "0.50000000",
+      "wallet_initial": "10.00000000",
+      "wallet_final": "10.00000000",
+      "frozen_final": "0.00000000",
+      "cancel_intent_retained": true,
+      "delivery": "rejected",
+      "available_assets": 0,
+      "compensation": "NONE",
+      "outbox": [
+        "video_billing_held",
+        "video_billing_released",
+        "video_delivery_rejected"
+      ],
+      "reconciliation_checks": 17,
+      "differences": [],
+      "fake_submit_count": 1
+    },
+    {
+      "operation": "text_to_video",
+      "outcome": "rejected_then_success",
+      "purpose": "non_commercial_test_fixture",
+      "quote": "0.50000000",
+      "hold": "0.50000000",
+      "user_quantity_seconds": "5",
+      "sale": "0.50000000",
+      "provider_cost": "0.20000000",
+      "settled": "0.50000000",
+      "net_released": "0.00000000",
+      "wallet_initial": "10.00000000",
+      "wallet_final": "9.50000000",
+      "frozen_final": "0.00000000",
+      "cancel_intent_retained": true,
+      "delivery": "available",
+      "available_assets": 6,
+      "compensation": "NONE",
+      "outbox": [
+        "video_billing_held",
+        "video_billing_settled",
+        "video_delivery_available"
+      ],
+      "reconciliation_checks": 17,
+      "differences": [],
+      "fake_submit_count": 1
+    },
+    {
+      "operation": "text_to_video",
+      "outcome": "unsupported_then_success",
+      "purpose": "non_commercial_test_fixture",
+      "quote": "0.50000000",
+      "hold": "0.50000000",
+      "user_quantity_seconds": "5",
+      "sale": "0.50000000",
+      "provider_cost": "0.20000000",
+      "settled": "0.50000000",
+      "net_released": "0.00000000",
+      "wallet_initial": "10.00000000",
+      "wallet_final": "9.50000000",
+      "frozen_final": "0.00000000",
+      "cancel_intent_retained": true,
+      "delivery": "available",
+      "available_assets": 6,
+      "compensation": "NONE",
+      "outbox": [
+        "video_billing_held",
+        "video_billing_settled",
+        "video_delivery_available"
+      ],
+      "reconciliation_checks": 17,
+      "differences": [],
+      "fake_submit_count": 1
+    },
+    {
+      "operation": "text_to_video",
+      "outcome": "late_success",
+      "purpose": "non_commercial_test_fixture",
+      "quote": "0.50000000",
+      "hold": "0.50000000",
+      "user_quantity_seconds": "5",
+      "sale": "0.50000000",
+      "provider_cost": "0.20000000",
+      "settled": "0.50000000",
+      "net_released": "0.00000000",
+      "wallet_initial": "10.00000000",
+      "wallet_final": "9.50000000",
+      "frozen_final": "0.00000000",
+      "cancel_intent_retained": true,
+      "delivery": "available",
+      "available_assets": 6,
+      "compensation": "NONE",
+      "outbox": [
+        "video_billing_held",
+        "video_billing_settled",
+        "video_delivery_available"
+      ],
+      "reconciliation_checks": 17,
+      "differences": [],
+      "fake_submit_count": 1
+    },
+    {
+      "operation": "image_to_video",
+      "outcome": "accepted",
+      "purpose": "non_commercial_test_fixture",
+      "quote": "0.75000000",
+      "hold": "0.75000000",
+      "user_quantity_seconds": "0",
+      "sale": "0.00000000",
+      "provider_cost": "0.00000000",
+      "settled": "0.00000000",
+      "net_released": "0.75000000",
+      "wallet_initial": "10.00000000",
+      "wallet_final": "10.00000000",
+      "frozen_final": "0.00000000",
+      "cancel_intent_retained": true,
+      "delivery": "rejected",
+      "available_assets": 0,
+      "compensation": "NONE",
+      "outbox": [
+        "video_billing_held",
+        "video_billing_released",
+        "video_delivery_rejected"
+      ],
+      "reconciliation_checks": 17,
+      "differences": [],
+      "fake_submit_count": 1
+    },
+    {
+      "operation": "image_to_video",
+      "outcome": "rejected_then_success",
+      "purpose": "non_commercial_test_fixture",
+      "quote": "0.75000000",
+      "hold": "0.75000000",
+      "user_quantity_seconds": "5",
+      "sale": "0.75000000",
+      "provider_cost": "0.30000000",
+      "settled": "0.75000000",
+      "net_released": "0.00000000",
+      "wallet_initial": "10.00000000",
+      "wallet_final": "9.25000000",
+      "frozen_final": "0.00000000",
+      "cancel_intent_retained": true,
+      "delivery": "available",
+      "available_assets": 6,
+      "compensation": "NONE",
+      "outbox": [
+        "video_billing_held",
+        "video_billing_settled",
+        "video_delivery_available"
+      ],
+      "reconciliation_checks": 17,
+      "differences": [],
+      "fake_submit_count": 1
+    },
+    {
+      "operation": "image_to_video",
+      "outcome": "unsupported_then_success",
+      "purpose": "non_commercial_test_fixture",
+      "quote": "0.75000000",
+      "hold": "0.75000000",
+      "user_quantity_seconds": "5",
+      "sale": "0.75000000",
+      "provider_cost": "0.30000000",
+      "settled": "0.75000000",
+      "net_released": "0.00000000",
+      "wallet_initial": "10.00000000",
+      "wallet_final": "9.25000000",
+      "frozen_final": "0.00000000",
+      "cancel_intent_retained": true,
+      "delivery": "available",
+      "available_assets": 6,
+      "compensation": "NONE",
+      "outbox": [
+        "video_billing_held",
+        "video_billing_settled",
+        "video_delivery_available"
+      ],
+      "reconciliation_checks": 17,
+      "differences": [],
+      "fake_submit_count": 1
+    },
+    {
+      "operation": "image_to_video",
+      "outcome": "late_success",
+      "purpose": "non_commercial_test_fixture",
+      "quote": "0.75000000",
+      "hold": "0.75000000",
+      "user_quantity_seconds": "5",
+      "sale": "0.75000000",
+      "provider_cost": "0.30000000",
+      "settled": "0.75000000",
+      "net_released": "0.00000000",
+      "wallet_initial": "10.00000000",
+      "wallet_final": "9.25000000",
+      "frozen_final": "0.00000000",
+      "cancel_intent_retained": true,
+      "delivery": "available",
+      "available_assets": 6,
+      "compensation": "NONE",
+      "outbox": [
+        "video_billing_held",
+        "video_billing_settled",
+        "video_delivery_available"
+      ],
+      "reconciliation_checks": 17,
+      "differences": [],
+      "fake_submit_count": 1
+    }
+  ],
+  "red_evidence": [
+    {
+      "scope": "取消确认缺失接口",
+      "result": "8个MySQL取消组合返回结果未知，181.258s"
+    },
+    {
+      "scope": "无成本确认的取消",
+      "result": "原native反例错误进入cancelled且无错误"
+    },
+    {
+      "scope": "提交权",
+      "result": "native双Worker Provider入口计数2；在途重试导致pending_reconcile且bound=false"
+    },
+    {
+      "scope": "非零取消",
+      "result": "MySQL聚焦nonzero错误进入cancelled，25.056s"
+    },
+    {
+      "scope": "Poll旁路及零成本伪证明",
+      "result": "7个Poll反例及后补终态退款错误，29.453s"
+    },
+    {
+      "scope": "双取消产物矛盾",
+      "result": "两种顺序均可错误退款，31.256s"
+    },
+    {
+      "scope": "晚到冲突仍扣费/读取",
+      "result": "两例失败，33.561s"
+    },
+    {
+      "scope": "相反Poll观察回滚",
+      "result": "4个真实入口反例失败，37.070s"
+    },
+    {
+      "scope": "queued轮询",
+      "result": "native反例错误进入failed"
+    }
+  ],
+  "independent_slice_review": {
+    "role": "测试工程师",
+    "task": "vid_g5_cancel_slice_qa",
+    "scope": "只读源码与测试设计；运行由主任务完成，非完整G5验收",
+    "receipt": "docs/evidence/video-gateway-vid-g5-cancellation-review.md",
+    "verdict": "已报告缺口源码闭合；最终主任务同版MySQL回归确认通过",
+    "findings": [
+      {
+        "id": "G5-SUBMIT-001",
+        "severity": "P1",
+        "origin": "INDEPENDENT_REVIEW",
+        "status": "FIXED_AND_REGRESSION_PASSED"
+      },
+      {
+        "id": "G5-SUBMIT-002",
+        "severity": "P1",
+        "origin": "INDEPENDENT_REVIEW",
+        "status": "FIXED_AND_REGRESSION_PASSED"
+      },
+      {
+        "id": "G5-CANCEL-002",
+        "severity": "P1",
+        "origin": "INDEPENDENT_REVIEW",
+        "status": "FIXED_AND_REGRESSION_PASSED"
+      },
+      {
+        "id": "G5-CANCEL-003",
+        "severity": "P1",
+        "origin": "INDEPENDENT_REVIEW",
+        "status": "FIXED_AND_REGRESSION_PASSED"
+      },
+      {
+        "id": "G5-CANCEL-004",
+        "severity": "P1",
+        "origin": "INDEPENDENT_REVIEW",
+        "status": "FIXED_AND_REGRESSION_PASSED"
+      },
+      {
+        "id": "G5-CANCEL-005",
+        "severity": "P1",
+        "origin": "INDEPENDENT_REVIEW",
+        "status": "FIXED_AND_REGRESSION_PASSED"
+      },
+      {
+        "id": "G5-POLL-001",
+        "severity": "P2",
+        "origin": "MAIN_TEST",
+        "status": "FIXED_AND_REGRESSION_PASSED"
+      }
+    ]
+  },
+  "remaining": [
+    "统一未知/超时/断连/归档失败/Usage冲突的billing pending、Outbox和唯一补偿编排；本轮负向证明阻断不等于此编排完成。",
+    "明确过期或中断提交的恢复依据，不可用再次Submit冒充Worker已死亡。",
+    "完整settle/release竞争及跨门面幂等、权限失效/跨域引用矩阵。",
+    "追加调账、不同maker/checker及对应合成钱包动作；不修改原Usage/流水。",
+    "完整12金额金样与逐request对账证据、Chat/Image全量隔离回归、Python证据脚本。",
+    "全目标逐项审计及独立QA/PM/Standards/Spec，最终P0/P1/P2归零。"
+  ],
+  "full_stage_defect_counts": "NOT_ASSESSED",
+  "qa_acceptance": "NOT_RUN_FULL_STAGE",
+  "pm_confirmation": "NOT_RUN",
+  "standards_review": "NOT_RUN_FULL_STAGE",
+  "spec_review": "NOT_RUN_FULL_STAGE",
+  "finance_contract_approval": "APPROVED_LOCAL_FIXTURE_ONLY",
+  "git_mode": "LOCAL_ONLY",
+  "pr_state": "NOT_CREATED",
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": "0",
+  "external_business_http_requests": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": false,
+  "vid_g6_started": false
+}

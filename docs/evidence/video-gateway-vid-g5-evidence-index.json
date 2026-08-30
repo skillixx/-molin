@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G5",
+  "source_state_id": "1d61c1b94af6a7ac3db6b8d63aca4d7759fba7135a99cb448b7e838001d6fe09",
+  "hash_algorithm": "各证据文件原始字节SHA256；本索引自身排除，源码回执与生成证据分层以避免循环。",
+  "evidence_manifest": [
+    {
+      "path": "docs/evidence/video-gateway-vid-g4-final-merge.json",
+      "sha256": "f4e1e88e353568d7dd5fe3ab4f191374e5e677db65518c3cadac39da114b16a2"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-acceptance.json",
+      "sha256": "e0603a73d8034e1c6dba3e1c49bf4aa3ec84626ea1398ea099e7024d4c9e0d75"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-adjustment-checkpoint.json",
+      "sha256": "8ce357c26a635fc6ce5880f6bcac36c7dc6dc6413d9d55cf9d5ff87bc2f2ada9"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-adjustment-integrity-checkpoint.json",
+      "sha256": "1c450c477577b7a25eb98752cf9ffd439e53130ee329d0c5dc77aeb4f158448a"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-adjustment-integrity-review.md",
+      "sha256": "4f4e98eb565dd6ef66a3199833960d99c14eab20f5c54db3bf9f9809f95d2542"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-adjustment-review.md",
+      "sha256": "f22a711f0857ca1c440aca9ac6a583b2390a9848e5530105aea88b2d17434486"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-approved-documents.json",
+      "sha256": "a4c6ec3bcb7fbe2bb745fca34bc6df3c13fdf660c3b247cfca08fa7196b26d6f"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-cancellation-checkpoint.json",
+      "sha256": "f8f44e2ae0ea9ef34f71d38d504ca2a0e53d483323f7f9d17b9cadce8e857888"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-cancellation-review.md",
+      "sha256": "79205b43074108d263d96d2087333f3fd70fdb0619bc9fcddd9e515d4d93b3b8"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-compatibility-checkpoint.json",
+      "sha256": "f8010d3b21dc718bf3bf99e17df19ca30e354c15b15b2ef24baacad829e853b4"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-compatibility-review.md",
+      "sha256": "009440b848ed51966c27459cba14ce9308d14dd40b24fedf3e229415ed5ea0b5"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-compensation-checkpoint.json",
+      "sha256": "8042f278ef4a19af0a7810cce54eb794ba0aae3b578dea7f864e8eb5a5f0bdc8"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-compensation-review.md",
+      "sha256": "21bb52d00628c9c4abd7b638a11448bfc1001bc296899f8c6607d78cfe56932f"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-delivery-reconciliation-checkpoint.json",
+      "sha256": "d964f7bd98f106b6f8c3b4ef4c8e460233a9add5e2d58f10e02166d41b2210fd"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-delivery-reconciliation-review.md",
+      "sha256": "cb0dd1c6f0c24274b3987e9878d76c5e43f061397a9653f250fa54c60ed2417e"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-execution-reconcile-checkpoint.json",
+      "sha256": "3755d48d4989519f9e4225281d7bde740ccc5c76d738ab3a7f208ca6962bbee1"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-execution-reconcile-review.md",
+      "sha256": "ac17cc9f3093664dd74197f890ef11c55237d500ad6d5b67ec7d2c1afc33733f"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-facade-replay-checkpoint.json",
+      "sha256": "8babeca3cc2246bc3edb23215f5e71df9cbe853b5dd5a8d5a28dafb681889554"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-facade-replay-review.md",
+      "sha256": "0448620fd59ed1a697351eadc62a8091b8d2dae7e4c4d392367ed3aa85d5c5fe"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-finance-approval.json",
+      "sha256": "4610e9144dde69d90ff11bd5e31e757b427785d620a1009a8ab3ca952037df7f"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-golden-amounts.json",
+      "sha256": "f83b7ddbf1de06c0d936e78cec2580461fbe49d56390588d0b674f1e03ed5cf6"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-goldens-checkpoint.json",
+      "sha256": "3f0d0b9f64f3d22b0436688a82f44334442b9d70c74e88e23ed07946fb862439"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-goldens-review.md",
+      "sha256": "83a47925edc3ccf6ba0ceeb90f5fa4ff951ed97fbb71c24472e1839d8379bb53"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-independent-code-review.md",
+      "sha256": "c54912c2cca566f075cfc649ab86179b087166630f7ece7c49f10a8f367781c4"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-independent-reviews.md",
+      "sha256": "0a645b98052df9fd2a3ac8f37eb9141e08638932c389066d25c921deefa10cdc"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-isolated-integration.json",
+      "sha256": "69fcae71824a40ceb5dabba36ede656387ce61832484d28418a0b0f477f34a85"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-legacy-chat-outbox-checkpoint.json",
+      "sha256": "95b5f38af8c952b5af995e279fc8d3eb5ddb20d0a589ec695b90c21a474e291a"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-preflight.json",
+      "sha256": "0f5d0ff1cee9afe422196e9dbba73f0b462bfc523ff36a3307fc426aacf52baa"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-reconciliation.json",
+      "sha256": "d004c1b422958244054f8dca37076b6f9da8c9cd5700641169d853711e74e978"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-release-checkpoint.json",
+      "sha256": "8e35cc1a635c2f93703b78fd453bf1b385f2e9cee02c81632310f5f99d154423"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-release-review.md",
+      "sha256": "b1fd0406618e7cbcfba1b6ae25a6f3f7c2266d3e7569d067ecb92c912fbea41f"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-requirements.json",
+      "sha256": "34f400aa73f99003aa0bb6ee883ca70279be81b9b6c65528caa78a3f266ca998"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-reservation-checkpoint.json",
+      "sha256": "e56f37f1594356f7736663490a4c3d40460ff17cf130637f1682c5321c4b1dcb"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-settlement-checkpoint.json",
+      "sha256": "6ad679669af6290be857d34135369d0f8a6d46f6cdd694f0fdeb09ff6768a3c0"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-settlement-review.md",
+      "sha256": "2d0da8f2ba2eca65f7fae560c3415e7ed341971243f1c2f122d13b9492897a7d"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-source-state.json",
+      "sha256": "ca0d9d90d01abf2cc764b3131cf0ed2047c871b93811644525d51425b0283d7b"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-spec-coverage-audit.md",
+      "sha256": "e529fcc909c1785844f757b99edd5f8512b2227088badb7f37634c6fd8203e61"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-submission-checkpoint.json",
+      "sha256": "9568f90b3ddaf6faea92e920e183ebfa6782301b48930e83e803c7ce29e2cf97"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-submission-hardening-checkpoint.json",
+      "sha256": "4ad9ac850e38b62c0a1e0ac79e54df6193801d125efabbc45cbd84c7882246f9"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-submission-hardening-review.md",
+      "sha256": "4720ada34b5dbad7e1a3bfe86fbcc3d223ea377994d6cb605f133ccb89e92479"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-terminal-race-checkpoint.json",
+      "sha256": "4251e9b360abdd081e37c363cba43dba15712d876290d48d864ff84a12dc1b76"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-usage-cancel-checkpoint.json",
+      "sha256": "e76085dbcfee816e6e653b629d416b5cc79018477df7b5eb70a9dca5b8fb7049"
+    },
+    {
+      "path": "docs/evidence/video-gateway-vid-g5-usage-cancel-review.md",
+      "sha256": "195dab6ad1b9bad89491c94af7bb5295eb71dde74c14da7da1a1a4e00d14b49e"
+    }
+  ],
+  "scope_note": "历史切片保留原状态与哈希语义，最终判定仅使用acceptance、最终independent-reviews及其同源核验；不把旧失败或旧pending改写成当时通过。"
+}

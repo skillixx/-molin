@@ -30,6 +30,10 @@ func (r *G3OutboxRepository) ClaimBatch(ctx context.Context, now, lockBefore tim
 	var events []model.AIOutboxEvent
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Table("ai_outbox_events AS current").Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).
+			// VID-G5仅形成MySQL事实，尚未授权视频发布器；旧Chat/Image事件仍按原顺序领取。
+			Where("current.aggregate_type <> ?", "video_request").
+			// 错误聚合类型也不能让视频事实绕过关闭边界；LEFT按字面前缀匹配，不把下划线当通配符。
+			Where("LEFT(current.event_type, 6) <> ?", "video_").
 			Where("((current.status = ? AND current.next_retry_at <= ?) OR (current.status = ? AND current.locked_at < ?))", model.AIOutboxPending, now, model.AIOutboxPublishing, lockBefore).
 			Where(`NOT EXISTS (
 				SELECT 1 FROM ai_outbox_events AS predecessor

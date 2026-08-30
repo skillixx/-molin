@@ -442,6 +442,11 @@ type fakeVideoReservation struct {
 	calls  atomic.Int32
 }
 
+// 旧G2夹具显式声明自动协调能力，不依赖生产门面在能力缺失时降级。
+func (r *fakeVideoReservation) CreateWithAutomaticQuote(ctx context.Context, request VideoFacadeRequest, quotes *VideoQuoteService) (*VideoPreparedGeneration, error) {
+	return createLegacyAutomaticVideo(ctx, request, quotes, r)
+}
+
 func (r *fakeVideoReservation) ReserveAndCreate(ctx context.Context, command VideoReservationCommand) (*VideoPreparedGeneration, error) {
 	r.calls.Add(1)
 	quote, replay, err := r.quotes.ConsumeQuote(ctx, command.QuotePublicID, command.FingerprintInput, command.RequestID)

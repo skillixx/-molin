@@ -34,6 +34,15 @@ type VideoRepositoryTaskLedger struct {
 	locator         repository.VideoObjectLocationFactory
 	referenceLoader VideoReferenceLoader
 	now             func() time.Time
+	deferDelivery   bool
+	financialFault  func(string) error
+}
+
+// NewVideoBillingTaskLedger 在同一G3/G4仓储上启用G5财务交付门禁，不创建第二套任务或资产账本。
+func NewVideoBillingTaskLedger(db *gorm.DB, owner repository.VideoOwner, protector *VideoTaskPayloadProtector, locator repository.VideoObjectLocationFactory, loader VideoReferenceLoader) *VideoRepositoryTaskLedger {
+	ledger := NewVideoRepositoryTaskLedger(db, owner, protector, locator, loader)
+	ledger.deferDelivery = true
+	return ledger
 }
 
 func NewVideoRepositoryTaskLedger(db *gorm.DB, owner repository.VideoOwner, protector *VideoTaskPayloadProtector, locator repository.VideoObjectLocationFactory, referenceLoader VideoReferenceLoader) *VideoRepositoryTaskLedger {
@@ -54,6 +63,28 @@ func (l *VideoRepositoryTaskLedger) Load(ctx context.Context, taskID string) (vi
 	record, err := l.taskRepo.FindForOwner(ctx, taskID, l.owner)
 	if err != nil {
 		return videogateway.GatewayTask{}, mapVideoRepositoryError(err)
+	}
+	if !l.deferDelivery {
+		// 持久化G5身份不能由换构造器降级。显式SELECT *兼容旧库没有command_kind列的情况。
+		var identity struct {
+			CommandKind *string `gorm:"column:command_kind"`
+		}
+		if err := l.db.WithContext(ctx).Table("ai_requests").Select("*").Where("request_id=?", record.RequestID).Take(&identity).Error; err != nil {
+			return videogateway.GatewayTask{}, err
+		}
+		// 非NULL命令代表新协议身份；不以Go大小写比较复刻数据库排序规则，避免别名降级。
+		if identity.CommandKind != nil {
+			return videogateway.GatewayTask{}, ErrVideoReconciliation
+		}
+	}
+	if l.deferDelivery && (record.Status == model.AIImageTaskCreated || record.Status == model.AIImageTaskReserved || record.Status == model.AIImageTaskQueued || record.Status == model.AIImageTaskSubmitting) {
+		var attempts int64
+		if err := l.db.WithContext(ctx).Model(&model.AIExecutionAttempt{}).Where("request_id=?", record.RequestID).Count(&attempts).Error; err != nil {
+			return videogateway.GatewayTask{}, err
+		}
+		if attempts != 0 {
+			return videogateway.GatewayTask{}, ErrVideoReconciliation
+		}
 	}
 	operation := ""
 	if record.Operation != nil {
@@ -76,8 +107,10 @@ func (l *VideoRepositoryTaskLedger) Load(ctx context.Context, taskID string) (vi
 		plaintext[index] = 0
 	}
 	task := videogateway.GatewayTask{
-		TaskID: record.PublicID, RequestID: record.RequestID, Operation: operation, Prompt: prompt,
+		DeferDelivery: l.deferDelivery,
+		TaskID:        record.PublicID, RequestID: record.RequestID, Operation: operation, Prompt: prompt,
 		Spec: spec, Status: videogateway.TaskStatus(record.Status), Version: record.VersionNo,
+		CancelRequestedAt: record.CancelRequestedAt,
 	}
 	if record.ProviderCode != nil {
 		task.ProviderCode = *record.ProviderCode
@@ -152,10 +185,24 @@ func (l *VideoRepositoryTaskLedger) Load(ctx context.Context, taskID string) (vi
 			task.Events = append(task.Events, videogateway.GatewayTaskEvent{EventID: event.EventID, FromStatus: videogateway.TaskStatus(from), ToStatus: videogateway.TaskStatus(to), Source: event.Source, CreatedAt: event.CreatedAt})
 		}
 	}
+	if l.deferDelivery && task.Asset != nil && task.Asset.Lifecycle == videogateway.AssetAvailable {
+		reconciler := NewVideoReconciliationService(l.db)
+		reconciler.now = l.now
+		report, err := reconciler.Reconcile(ctx, taskID, l.owner)
+		if err != nil {
+			return videogateway.GatewayTask{}, err
+		}
+		if !report.Passed {
+			return videogateway.GatewayTask{}, ErrVideoReconciliation
+		}
+	}
 	return task, nil
 }
 
 func (l *VideoRepositoryTaskLedger) Advance(ctx context.Context, taskID string, expectedVersion uint64, to videogateway.TaskStatus, source, reason string, mutate videogateway.TaskMutation) (videogateway.GatewayTask, error) {
+	if l.deferDelivery && to == videogateway.TaskPendingReconcile && mutate == nil {
+		return l.advanceUncertainMetadata(ctx, taskID, expectedVersion, source)
+	}
 	err := l.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		_, advanceErr := l.withDB(tx).advanceOnce(ctx, taskID, expectedVersion, to, source, reason, mutate)
 		return advanceErr
@@ -166,7 +213,7 @@ func (l *VideoRepositoryTaskLedger) Advance(ctx context.Context, taskID string, 
 	return l.Load(ctx, taskID)
 }
 
-func (l *VideoRepositoryTaskLedger) advanceOnce(ctx context.Context, taskID string, expectedVersion uint64, to videogateway.TaskStatus, source, _ string, mutate videogateway.TaskMutation) (videogateway.GatewayTask, error) {
+func (l *VideoRepositoryTaskLedger) advanceOnce(ctx context.Context, taskID string, expectedVersion uint64, to videogateway.TaskStatus, source, reason string, mutate videogateway.TaskMutation) (videogateway.GatewayTask, error) {
 	current, err := l.Load(ctx, taskID)
 	if err != nil {
 		return videogateway.GatewayTask{}, err
@@ -186,6 +233,21 @@ func (l *VideoRepositoryTaskLedger) advanceOnce(ctx context.Context, taskID stri
 		}
 	}
 	now := l.now().UTC()
+	if l.deferDelivery && to == videogateway.TaskSucceeded {
+		// 成功前核对Provider计量与已探测媒体，冲突时仍保存完整安全资产，但不先进入不可回退的成功态。
+		record, e := l.taskRepo.LockForOwnerTx(l.db, taskID, l.owner)
+		if e != nil {
+			return videogateway.GatewayTask{}, e
+		}
+		var quote model.AIGatewayQuote
+		if e := l.db.First(&quote, record.QuoteID).Error; e != nil {
+			return videogateway.GatewayTask{}, e
+		}
+		cost, e := loadVideoConfirmedCostTx(l.db, record, &quote)
+		if e != nil || next.Asset == nil || !cost.Quantity.Equal(decimal.NewFromInt(int64(next.Asset.DurationMillis)).Div(decimal.NewFromInt(1000))) {
+			to = videogateway.TaskPendingReconcile
+		}
+	}
 	eventID := fmt.Sprintf("vid_g4_%s_%s_%d", taskID, to, expectedVersion)
 	if to == videogateway.TaskSubmitted && next.ProviderTaskID != "" {
 		_, err = l.taskRepo.BindProviderTask(ctx, repository.VideoProviderBinding{
@@ -193,10 +255,27 @@ func (l *VideoRepositoryTaskLedger) advanceOnce(ctx context.Context, taskID stri
 			ProviderCode: next.ProviderCode, ProviderTaskID: next.ProviderTaskID, EventID: eventID, Now: now,
 		})
 	} else {
+		failureOrigin := ""
+		if l.deferDelivery && to == videogateway.TaskFailed {
+			failureOrigin = "other_failed"
+			switch reason {
+			case "provider_failed":
+				failureOrigin = "provider_failed"
+			case "moderation_failed":
+				failureOrigin = "moderation_unknown"
+				if next.Asset != nil && next.Asset.ModerationStatus == videogateway.AssetModerationRejected {
+					failureOrigin = "moderation_rejected"
+				}
+			case "label_failed", "label_unknown":
+				failureOrigin = reason
+			case "derived_failed", "derived_source_failed":
+				failureOrigin = "derived_failed"
+			}
+		}
 		_, err = l.taskRepo.TransitionExecution(ctx, repository.VideoStateTransition{
 			TaskPublicID: taskID, Owner: l.owner, ExpectedVersion: expectedVersion,
 			ToStatus: string(to), Progress: videoG4Progress(to), EventID: eventID,
-			Source: normalizeVideoG4EventSource(source), SafeDetailJSON: json.RawMessage("{\"reason\":\"state_advanced\"}"), Now: now,
+			Source: normalizeVideoG4EventSource(source), SafeDetailJSON: json.RawMessage("{\"reason\":\"state_advanced\"}"), Now: now, FailureOrigin: failureOrigin,
 		})
 	}
 	if err != nil {
@@ -205,16 +284,52 @@ func (l *VideoRepositoryTaskLedger) advanceOnce(ctx context.Context, taskID stri
 	if err := l.persistAssetMutation(ctx, current, next, now); err != nil {
 		return videogateway.GatewayTask{}, err
 	}
+	if l.deferDelivery && (to == videogateway.TaskPendingReconcile || to == videogateway.TaskFailed) {
+		record, err := l.taskRepo.LockForOwnerTx(l.db, taskID, l.owner)
+		if err != nil {
+			return videogateway.GatewayTask{}, err
+		}
+		billing := &VideoBillingService{db: l.db, now: l.now, fault: l.financialFault}
+		if _, err := billing.reconcileVideoExecutionTx(ctx, l.db, record, l.owner); err != nil {
+			return videogateway.GatewayTask{}, err
+		}
+	}
 	return l.Load(ctx, taskID)
 }
 
 func (l *VideoRepositoryTaskLedger) withDB(db *gorm.DB) *VideoRepositoryTaskLedger {
 	scoped := NewVideoRepositoryTaskLedger(db, l.owner, l.protector, l.locator, l.referenceLoader)
 	scoped.now = l.now
+	scoped.deferDelivery = l.deferDelivery
+	scoped.financialFault = l.financialFault
 	return scoped
 }
 
+func (l *VideoRepositoryTaskLedger) RequestCancellation(ctx context.Context, taskID string) (videogateway.GatewayTask, error) {
+	if _, err := l.Load(ctx, taskID); err != nil {
+		return videogateway.GatewayTask{}, err
+	}
+	err := retryVideoBillingTransaction(ctx, func() error {
+		_, err := l.taskRepo.RequestCancellation(ctx, taskID, l.owner, l.now().UTC())
+		return err
+	})
+	if err != nil {
+		return videogateway.GatewayTask{}, mapVideoRepositoryError(err)
+	}
+	return l.Load(ctx, taskID)
+}
+
 func (l *VideoRepositoryTaskLedger) ReleaseLeaseOnce(ctx context.Context, taskID string) (videogateway.GatewayTask, error) {
+	if l.deferDelivery {
+		record, err := l.taskRepo.FindForOwner(ctx, taskID, l.owner)
+		if err != nil {
+			return videogateway.GatewayTask{}, err
+		}
+		// 执行终态与财务终态相互独立，held/pending期间仍保护输入，不把等待结算当作执行错误。
+		if record.BillingStatus != model.AIBillingSettled && record.BillingStatus != model.AIBillingReleased && record.BillingStatus != model.AIBillingAdjusted {
+			return l.Load(ctx, taskID)
+		}
+	}
 	if err := l.inputRepo.ReleaseTaskLeases(ctx, taskID, l.owner, l.now().UTC()); err != nil {
 		return videogateway.GatewayTask{}, err
 	}
@@ -223,13 +338,31 @@ func (l *VideoRepositoryTaskLedger) ReleaseLeaseOnce(ctx context.Context, taskID
 
 func (l *VideoRepositoryTaskLedger) RecordCallback(ctx context.Context, taskID string, callback videogateway.VerifiedCallback) (bool, error) {
 	toStatus := mapVideoG4ProviderStatus(callback.Status)
-	outcome, err := l.callbackRepo.RecordAndApply(ctx, repository.VideoProviderCallbackCommand{
-		ProviderCode: callback.ProviderCode, ProviderTaskID: callback.ProviderTaskID,
-		ExternalEventID: callback.ExternalEventID, BodySHA256: callback.BodySHA256,
-		ExpectedTaskPublicID: taskID, ExpectedOwner: l.owner,
-		SignatureStatus: model.AIProviderCallbackSignatureValid, ToStatus: string(toStatus),
-		EventID:        "vid_g4_callback_" + callback.ExternalEventID,
-		SafeResultJSON: json.RawMessage("{\"result\":\"applied\"}"), ReceivedAt: l.now().UTC(),
+	var replayed bool
+	err := l.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		outcome, err := repository.NewVideoProviderCallbackEventRepository(tx).RecordAndApply(ctx, repository.VideoProviderCallbackCommand{
+			ProviderCode: callback.ProviderCode, ProviderTaskID: callback.ProviderTaskID,
+			ExternalEventID: callback.ExternalEventID, BodySHA256: callback.BodySHA256,
+			ExpectedTaskPublicID: taskID, ExpectedOwner: l.owner,
+			SignatureStatus: model.AIProviderCallbackSignatureValid, ToStatus: string(toStatus),
+			EventID:        "vid_g4_callback_" + callback.ExternalEventID,
+			SafeResultJSON: json.RawMessage("{\"result\":\"applied\"}"), ReceivedAt: l.now().UTC(),
+		})
+		if err != nil {
+			return err
+		}
+		replayed = outcome.Replayed
+		if l.deferDelivery && outcome.Applied {
+			record, err := repository.NewVideoTaskRepository(tx).LockForOwnerTx(tx, taskID, l.owner)
+			if err != nil {
+				return err
+			}
+			billing := &VideoBillingService{db: tx, now: l.now, fault: l.financialFault}
+			if _, err := billing.reconcileVideoExecutionTx(ctx, tx, record, l.owner); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if errors.Is(err, repository.ErrVideoCallbackBodyConflict) {
 		return false, videogateway.ErrCallbackBodyConflict
@@ -237,7 +370,7 @@ func (l *VideoRepositoryTaskLedger) RecordCallback(ctx context.Context, taskID s
 	if err != nil {
 		return false, err
 	}
-	return outcome.Replayed, nil
+	return replayed, nil
 }
 
 // PrepareMediaDelete 在删除对象正文前原子推进全部父子资产到deleting。
@@ -413,6 +546,9 @@ func (l *VideoRepositoryTaskLedger) persistDerivedAsset(ctx context.Context, tas
 	created, err = l.assetRepo.ApplyLabelResult(ctx, created.PublicID, l.owner, created.VersionNo, string(child.ExplicitLabelStatus), string(child.ImplicitLabelStatus), child.LabelVersion, now)
 	if err != nil {
 		return err
+	}
+	if l.deferDelivery {
+		return nil
 	}
 	_, err = l.assetRepo.TransitionLifecycle(ctx, created.PublicID, l.owner, created.VersionNo, model.AIImageAssetAvailable, now)
 	return err

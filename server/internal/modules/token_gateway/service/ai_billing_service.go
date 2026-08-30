@@ -86,6 +86,9 @@ func (s *AIBillingService) PrepareRequest(ctx context.Context, request *model.AI
 	if s == nil || s.db == nil || s.pricing == nil || s.walletHolds == nil {
 		return nil, ErrPriceUnavailable
 	}
+	if err := normalizeChatBillingRequest(request); err != nil {
+		return nil, err
+	}
 	quote, err := s.pricing.Quote(ctx, request.LogicalModelCode, body)
 	if err != nil {
 		return nil, err
@@ -97,6 +100,9 @@ func (s *AIBillingService) PrepareRequest(ctx context.Context, request *model.AI
 func (s *AIBillingService) PrepareQuotedRequest(ctx context.Context, request *model.AIRequest, quote *PriceQuote) (*BillingPreparation, error) {
 	if s == nil || s.db == nil || s.walletHolds == nil || quote == nil {
 		return nil, ErrPriceUnavailable
+	}
+	if err := normalizeChatBillingRequest(request); err != nil {
+		return nil, err
 	}
 	err := retryFinancialTransaction(ctx, func() error {
 		// 回滚后 GORM 仍可能保留已分配的自增 ID，重试前必须清空，避免误用未提交主键。
@@ -115,8 +121,11 @@ func (s *AIBillingService) PrepareQuotedRequest(ctx context.Context, request *mo
 
 // PrepareRetryRequest 只允许明确未写出上游的失败请求复用幂等键；旧事实与新请求在同一事务中切换归属。
 func (s *AIBillingService) PrepareRetryRequest(ctx context.Context, previousRequestID string, request *model.AIRequest, body map[string]interface{}) (*BillingPreparation, error) {
-	if s == nil || s.db == nil || s.pricing == nil || s.walletHolds == nil || request.IdempotencyKey == nil {
+	if s == nil || s.db == nil || s.pricing == nil || s.walletHolds == nil || request == nil || request.IdempotencyKey == nil {
 		return nil, ErrBillingException
+	}
+	if err := normalizeChatBillingRequest(request); err != nil {
+		return nil, err
 	}
 	quote, err := s.pricing.Quote(ctx, request.LogicalModelCode, body)
 	if err != nil {
@@ -127,14 +136,17 @@ func (s *AIBillingService) PrepareRetryRequest(ctx context.Context, previousRequ
 
 // PrepareRetryQuotedRequest 复用治理阶段的价格快照执行明确未送达请求的安全重试。
 func (s *AIBillingService) PrepareRetryQuotedRequest(ctx context.Context, previousRequestID string, request *model.AIRequest, quote *PriceQuote) (*BillingPreparation, error) {
-	if s == nil || s.db == nil || s.walletHolds == nil || request.IdempotencyKey == nil || quote == nil {
+	if s == nil || s.db == nil || s.walletHolds == nil || request == nil || request.IdempotencyKey == nil || quote == nil {
 		return nil, ErrBillingException
+	}
+	if err := normalizeChatBillingRequest(request); err != nil {
+		return nil, err
 	}
 	err := retryFinancialTransaction(ctx, func() error {
 		request.ID = 0
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			var previous model.AIRequest
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id = ?", previousRequestID).First(&previous).Error; err != nil {
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id = ? AND modality = ? AND capability = ?", previousRequestID, "chat", "chat.completions").First(&previous).Error; err != nil {
 				return err
 			}
 			if previous.IdempotencyKey == nil || *previous.IdempotencyKey != *request.IdempotencyKey ||
@@ -160,6 +172,9 @@ func (s *AIBillingService) PrepareRetryQuotedRequest(ctx context.Context, previo
 }
 
 func (s *AIBillingService) prepareQuotedRequestTx(tx *gorm.DB, request *model.AIRequest, quote *PriceQuote) error {
+	if err := normalizeChatBillingRequest(request); err != nil {
+		return err
+	}
 	request.BillingStatus = model.AIBillingHeld
 	request.PriceSnapshotJSON = quote.SnapshotJSON
 	request.QuotedAmount = decimalPointer(quote.QuotedAmount)
@@ -445,6 +460,8 @@ func (s *AIBillingService) ReconcileInterrupted(ctx context.Context, limit int) 
 	now := s.now()
 	var requestIDs []string
 	err := s.db.WithContext(ctx).Model(&model.AIRequest{}).
+		// Token对账只能处理Chat合同；图片/视频拥有各自的财务恢复，不能被旧扫描器改成异常或释放。
+		Where("modality = ? AND capability = ?", "chat", "chat.completions").
 		Where("billing_status IN ? AND updated_at < ?", []string{model.AIBillingHeld, model.AIBillingSettlementPending}, now.Add(-time.Minute)).
 		Order("updated_at ASC").Limit(limit).Pluck("request_id", &requestIDs).Error
 	if err != nil {
@@ -697,7 +714,7 @@ func (s *AIBillingService) manualSettlementMatchesTx(tx *gorm.DB, request *model
 
 func (s *AIBillingService) reconcileOne(ctx context.Context, requestID string, now time.Time) (bool, error) {
 	var request model.AIRequest
-	if err := s.db.WithContext(ctx).Where("request_id = ?", requestID).First(&request).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("request_id = ? AND modality = ? AND capability = ?", requestID, "chat", "chat.completions").First(&request).Error; err != nil {
 		return false, err
 	}
 	if request.BillingStatus == model.AIBillingHeld && request.ExecutionStatus == model.AIExecutionPending {
@@ -846,9 +863,29 @@ func pointerValue(value *string) string {
 	return *value
 }
 
+// 旧构造器省略的两个字段沿用Chat默认值，显式非Chat或视频operation必须在任何写入前拒绝。
+func normalizeChatBillingRequest(request *model.AIRequest) error {
+	if request == nil {
+		return ErrUnquotableRequest
+	}
+	modality, capability := request.Modality, request.Capability
+	if modality == "" {
+		modality = "chat"
+	}
+	if capability == "" {
+		capability = "chat.completions"
+	}
+	if modality != "chat" || capability != "chat.completions" || request.Operation != nil {
+		return ErrUnquotableRequest
+	}
+	request.Modality, request.Capability = modality, capability
+	return nil
+}
+
 func lockRequestAndLink(tx *gorm.DB, requestID string) (*model.AIRequest, *model.AIRequestWalletLink, error) {
 	var request model.AIRequest
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id = ?", requestID).First(&request).Error; err != nil {
+	// 包括人工核对及直接终结入口，均不得通过已知request_id绕过模态隔离。
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id = ? AND modality = ? AND capability = ?", requestID, "chat", "chat.completions").First(&request).Error; err != nil {
 		return nil, nil, err
 	}
 	var link model.AIRequestWalletLink

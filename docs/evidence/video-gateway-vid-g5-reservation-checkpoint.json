@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G5",
+  "checkpoint": "RESERVATION_ONLY",
+  "stage_status": "IN_PROGRESS",
+  "stage_acceptance": false,
+  "base_commit": "36b6a5c5f9e60a4ef182ae434337bb05e165477c",
+  "branch": "feature/video-gateway-vid-g5-billing-outbox-reconcile",
+  "code_state_id": "b1c06d1fabd35b771f633ff0806cce87e1227476e5cb5a2bd1abe10593c06708",
+  "manifest": [
+    {
+      "path": "infra/scripts/verify-video-gateway-migration-000077.sh",
+      "sha256": "4d768d7df75a7983a8a66cda29ef775f27c4b70536c29ee88a193a9ad6a760cf"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/model/ai_video_billing.go",
+      "sha256": "0832d02281266f0d5014cb36004af5325eddcbeb7a55610f4a2ad47e7ce066d0"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/g3_outbox_repository.go",
+      "sha256": "e518ebee73bbde4f9f2d247cbc2ae21a2191d3ed0cb5c800acec573ccb5f2402"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_input_repository.go",
+      "sha256": "15c1a212cdf79345939193308e57e18e4c27e5b2f99426ed4511740fd0f47f5d"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_reservation.go",
+      "sha256": "5e78710fcfbaccc3861f896af08edd790e90425520a7aa431852e9aa9785a0bc"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_reservation_mysql_test.go",
+      "sha256": "fda6f61e7d86cf39773def1cf33710e99e042007c5bc174667b0cca35e21e515"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_generation_intent.go",
+      "sha256": "0ab112bb9971a8f02c1e559738d29cd807878e0616a3d4a71d8ddb14df484f9b"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_generation_intent_test.go",
+      "sha256": "d23ae8fe503d06bf3318504e2981b9a697fee3aa038128e82e2766c5789ac067"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_quote_facade.go",
+      "sha256": "2aba6de563d98e8355d591b49e9443076b3ef4e1c53815fc43ece423def18558"
+    },
+    {
+      "path": "server/migrations/000077_video_billing_outbox_reconcile.down.sql",
+      "sha256": "50517bc603dd5e24d3dd822ffbf86dd3ee8656b7c1a010c23158a66735f97e28"
+    },
+    {
+      "path": "server/migrations/000077_video_billing_outbox_reconcile.up.sql",
+      "sha256": "1f24863eb14c898ad50b8ad2a97ff9833208338e8b39dc1a2d7f6a74055d6073"
+    },
+    {
+      "path": "server/migrations/ai_gateway_video_g5_migration_test.go",
+      "sha256": "53aec166024d848e3669330b83a4b1e7551a715172d26340111bf0c14e5376a0"
+    }
+  ],
+  "code_state_algorithm": "对manifest按path字典序排列，以LF拼接BASE_COMMIT=<base_commit>及每项path|sha256，无末尾换行，UTF-8后取SHA-256。仅覆盖本切片server/infra修改，不是G5最终源码验收。",
+  "finance_contract_approval": "APPROVED_LOCAL_FIXTURE_ONLY",
+  "git_mode": "LOCAL_ONLY",
+  "pr_state": "NOT_CREATED",
+  "checks": {
+    "isolated_mysql_reservation": {
+      "status": "PASS",
+      "command": "VIDEO_GATEWAY_G5_ISOLATED_MYSQL_APPROVED=YES bash infra/scripts/verify-video-gateway-migration-000077.sh",
+      "go_test_filter": "^TestVideoG5Reserve",
+      "race": true,
+      "full_migration_chain": "1..77",
+      "repeat_up": true,
+      "retained_down_reup": true,
+      "result": "ok molin/server/internal/modules/token_gateway/service 6.397s"
+    },
+    "native_go_test": {
+      "status": "PASS",
+      "command": "go test ./... -count=1",
+      "boundary": "Windows本机；未设置DSN的其他集成测试会跳过，不能视为Chat/Image全量基础设施验收。"
+    },
+    "go_vet": {
+      "status": "PASS",
+      "command": "go vet ./..."
+    },
+    "go_mod_verify": {
+      "status": "PASS",
+      "command": "go mod verify",
+      "result": "all modules verified"
+    },
+    "gofmt": {
+      "status": "PASS",
+      "boundary": "本manifest中的9个Go源码/测试文件，gofmt -l无输出。"
+    },
+    "diff_check": {
+      "status": "PASS",
+      "command": "git diff --check"
+    },
+    "sensitive_scan": {
+      "status": "PASS",
+      "command": "python scripts/verify-sms-phase5-sensitive-data.py --repo-root . --base-ref origin/main",
+      "files_scanned": 192,
+      "findings": 0,
+      "boundary": "本次工作树扫描，非最终G5验收或历史全量秘密扫描。"
+    }
+  },
+  "verified_behaviors": [
+    "相同生成键100并发：1次创建，99次幂等重放，1个Hold/Task/请求。",
+    "同钱包100个不同请求：100次成功，可用100→50，冻结0→50。",
+    "T2V Hold=0.50000000且无TaskInput；I2V Hold=0.75000000且仅一个冻结输入与活跃租约。",
+    "跨Project相同键独立；同Project JWT不能接管SK请求；撤销SK后不可读取原幂等结果。",
+    "输入过期、隔离、pending_delete、版本漂移或审核拒绝时不留下Hold/Task/TaskInput；活跃租约阻止删除。",
+    "请求、Quote、Hold、关联、Task、Input、密文、held状态及Outbox写入点故障整体回滚。",
+    "余额不足拒绝；Prompt密文可解密且普通请求JSON/Outbox不含Prompt明文。",
+    "事务四个等待/写入时点跨过Quote有效期，必须整体回滚。",
+    "通用Outbox领取器不领取video_request，旧ai_request对照事件仍可领取。"
+  ],
+  "red_green_evidence": [
+    {
+      "case": "Quote事务中途过期",
+      "red": "四个反例均错误返回nil，隔离测试失败。",
+      "fix": "取Quote锁后与事务提交前使用新时钟复核；请求CAS必须恰好更新一行。",
+      "green": "最终隔离race测试全部通过。"
+    },
+    {
+      "case": "视频Outbox被通用发布器误领取",
+      "red": "TestVideoG5ReserveMySQLOutboxDispatcherOff失败。",
+      "fix": "ClaimBatch排除video_request，不改变旧事件排序与租约。",
+      "green": "视频事件保留pending且无locked_at，旧事件对照仍可领取。"
+    }
+  ],
+  "not_yet_accepted": [
+    "完整两协议门面重放矩阵",
+    "Usage四类追加事实与确认成本",
+    "settle/release及12种结果矩阵",
+    "补偿租约与8次边界",
+    "结算后交付和逐request_id零差异对账",
+    "完整Chat/Image隔离基础设施回归",
+    "独立QA/PM/Standards/Spec最终验收"
+  ],
+  "qa_acceptance": "NOT_RUN",
+  "pm_confirmation": "NOT_RUN",
+  "standards_review": "NOT_RUN",
+  "spec_review": "NOT_RUN",
+  "defect_counts": "NOT_ASSESSED_FOR_FULL_STAGE",
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": "0",
+  "external_business_http_requests": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": false,
+  "vid_g6_started": false
+}

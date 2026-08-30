@@ -1,0 +1,378 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G5",
+  "checkpoint": "EXECUTION_UNCERTAINTY_AND_RECOVERY",
+  "stage_status": "IN_PROGRESS",
+  "stage_acceptance": false,
+  "base_commit": "36b6a5c5f9e60a4ef182ae434337bb05e165477c",
+  "branch": "feature/video-gateway-vid-g5-billing-outbox-reconcile",
+  "code_state_id": "0473d4fa7ee911ac0cabec0e44a29e828b5c3f34b1cc696b7d04aa4e31ddc99f",
+  "manifest": [
+    {
+      "path": "infra/scripts/verify-video-gateway-migration-000077.sh",
+      "sha256": "ecd9c487dff17cfef894eb9d3e53feb184269d7b38fe169af810d4832a90dcae"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/model/ai_video_billing.go",
+      "sha256": "20f1e24bba5e7866e9cb77491cf6523c054e5ec1de4d7839b88c6286418892fc"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/g3_outbox_repository.go",
+      "sha256": "e518ebee73bbde4f9f2d247cbc2ae21a2191d3ed0cb5c800acec573ccb5f2402"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_asset_event_payload_repository.go",
+      "sha256": "f85aa405c9d17c49f17496f47cf1b784e195f31a2093a85646642b5b2d9932e1"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_cancellation_repository.go",
+      "sha256": "ea8b470f098d60c2b92275902f873a2b2141dc3ad389459987940837dc8fb9c7"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_compensation_repository.go",
+      "sha256": "05174e90c5e781e48a510e897bbdbf3ef5576cf8522060c4887095c48b68dd3f"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_input_repository.go",
+      "sha256": "15c1a212cdf79345939193308e57e18e4c27e5b2f99426ed4511740fd0f47f5d"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_state_machine.go",
+      "sha256": "b1c5d3041ef5d2d272da50bf2638e966bf0f9a44dad2f7551eed7628ceebf4d5"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_submission_proof.go",
+      "sha256": "43aa7adbb5de8d9618da9b03a080782a4628bfc28f0613a49e313366960aef4f"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_task_repository.go",
+      "sha256": "20ba445c1c30f965a085eadf43be2a69cb5a4e0ebf75291cc1309ba5853d44fd"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_usage_repository.go",
+      "sha256": "00cbaeb1d9e51b5be81b14d750210ca2085b6ea5891d25e5633b12622eea912f"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_cancel.go",
+      "sha256": "ea65094a16a6f47ce9bca3a6709ba436df346ef44d005ce8fa4e137f17fe9a43"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_cancel_mysql_test.go",
+      "sha256": "50cfb815ed90dabfe6435f51d4efa5dd153c94da416a7f306b9941c45c393ba6"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_media_mysql_test.go",
+      "sha256": "329ec5a4a8121a3dbb6e3f3e2fc037b33ac71171a3384532cdd5a34ca2a17fb1"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_release.go",
+      "sha256": "3a325f52932e9ebf22ffb110977525632c5e483a3a05ada3ade6c23f3e8c04eb"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_release_lease_mysql_test.go",
+      "sha256": "27bbd2ea53a55d2473a9394790b0d9a69b13dbf2025c7e9d138ded03d3454216"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_release_mysql_test.go",
+      "sha256": "190d5b1f3a140bbedbebb9e1c057a51a992ffd6eeb100992eeebc25810c27a8d"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_release_safety_mysql_test.go",
+      "sha256": "8c8f59db9bbda35e87cc2811438875c2bf23cf3d52dfdb07a2eaf6eeb428f212"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_reservation.go",
+      "sha256": "5e78710fcfbaccc3861f896af08edd790e90425520a7aa431852e9aa9785a0bc"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_reservation_mysql_test.go",
+      "sha256": "fda6f61e7d86cf39773def1cf33710e99e042007c5bc174667b0cca35e21e515"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_settle.go",
+      "sha256": "fad78e3b5434c1fff9f845c0a640ace7d1a89ed081bc178348f7f9ad6a64ae44"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_settle_mysql_test.go",
+      "sha256": "3c6b491ba4bb2f90b3b711c926045d98750686f0c33c739e2f0da08a72dcdaeb"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_usage_mysql_test.go",
+      "sha256": "b211b90a4dc65e46c65bb169cc0e0184c218c4931e09634ed373347b394cb523"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_cancel_response_mysql_test.go",
+      "sha256": "2007fe51b4ff4dd08b94bf4366ba494ce4efd29183a144c35c69884f771475b1"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_cancel_success_race_mysql_test.go",
+      "sha256": "c9139fba276a4b41f831460a000a36f1e71b2160e2b8d1d0cc7d0c02a90ac93c"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_cancellation_race_mysql_test.go",
+      "sha256": "2a90f92cee9274ca3e5194821273bc2f94434bc73de0dfab25eced04d94c83b9"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_compensation_mysql_test.go",
+      "sha256": "e822cfdcf9e09af2d55ca2d26bb5c39d6df6bc634464fe176afb83545e157d7d"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_compensation_worker.go",
+      "sha256": "872cc02330e9f4d6c5d4b14f6ffb0a57c9ef8a5ef1cda2b5018b29d6c7944158"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_delivery.go",
+      "sha256": "fc839cd038dc38c6a90bd53584237db12205729fc0689602a982a5d531c9b877"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_delivery_compensation_mysql_test.go",
+      "sha256": "771a16fe8bcdb9b63eda86fc8c1433a404a7b73b38d9b30b03c8e07e2bac8283"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_delivery_mysql_test.go",
+      "sha256": "60d0ef3a0353792302a3d395a5a50a640a57faacd76d1e13560e85a32fd44521"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_delivery_safety_mysql_test.go",
+      "sha256": "b622557b618e151d90206b611e2e6853e1f9a91e350aa9faf1f479fbadcaf64a"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_execution_reconcile.go",
+      "sha256": "8e5961581d05089b7016b82c40bfd9a2eea2efbd61772f0a42899a144bad6789"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_execution_reconcile_edges_mysql_test.go",
+      "sha256": "978f36d1d0df5fe973b7f78d157b49cd99db1e33ea05b52ffab74182fce39321"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_execution_reconcile_mysql_test.go",
+      "sha256": "2f4f9d1beb789903eb26114f3fcb6d5c70a61b644a56ae2c45ad378d3a969fad"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_g4_repository_ledger.go",
+      "sha256": "4d3c759b84d1d7917782f910fb4202e6188b36cc9c113c94dc08ac21c9d66f93"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_generation_intent.go",
+      "sha256": "0ab112bb9971a8f02c1e559738d29cd807878e0616a3d4a71d8ddb14df484f9b"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_generation_intent_test.go",
+      "sha256": "d23ae8fe503d06bf3318504e2981b9a697fee3aa038128e82e2766c5789ac067"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_no_product.go",
+      "sha256": "887ddf1bcee5014a1441b64cbedac56dd1649fac99676aa5d90c49d02bc05e70"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_provider_cancel_mysql_test.go",
+      "sha256": "cac84e65ab12b807e74a21169a5c9db24b841e2af30b339755d42525b21f1df2"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_provider_conflict.go",
+      "sha256": "e949c32cffd68a9ceac3b5898218b67061d4637dd5eb23d22ee3e8eb22145e7a"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_provider_cost.go",
+      "sha256": "59ca4c678936bce0c530eae9332820dfcc48e485303b6ad25c1c7e02f45674b6"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_quote_facade.go",
+      "sha256": "2aba6de563d98e8355d591b49e9443076b3ef4e1c53815fc43ece423def18558"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_reconciliation.go",
+      "sha256": "71319cfc7acaf7905e647e6b8197e76e40a615934bb64408d630c0a5494de47b"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_uncertain_metadata.go",
+      "sha256": "85e6596b31cd471673f9f37d07c70c1a80b24f7ca10896e2d0eeb5430e97549c"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/cancellation.go",
+      "sha256": "023c90f2bbfeff547c1cbfa910fce05d8f9f8870541183bcb784ad99b6673b6a"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/cancellation_test.go",
+      "sha256": "0660b7d25c904041dda5b7f154775faff5f0a975267e8b83a8f1dea875f91692"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/cost_confirmation.go",
+      "sha256": "55919d0ac98d68de617c2c9220ef1ea0f29e20f47164be8b9df3f7e0a948eb53"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/cost_confirmation_test.go",
+      "sha256": "f8d8425dc5203ba4dbcf84ae9d3c9f8bed64fb524a3c73f33efc8981b7e58d29"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/fake_provider.go",
+      "sha256": "23a9ea7855d548be35bb5279955e8fb61c10f2ee077e280cdc4079d07449d664"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/gateway.go",
+      "sha256": "db5275b10089f96b41301e4cd9b4a094f72225f025ab0eeeb8aa35e257f01cf2"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/gateway_test.go",
+      "sha256": "15a034632cd16b71365a218655749c37d244309e2c2b677a635993de96bd0b71"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/ledger.go",
+      "sha256": "80bedb46edebac8691f8c43790af9cb1af0eae4724d92eb3520c523ca658de72"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/provider.go",
+      "sha256": "eee5e7ca26f765c022e5ebe75a7687a0110b83d9d946ad537b1b444c5f439763"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/provider_result.go",
+      "sha256": "ddb62e51c2b858dd068526fa6aaca9d89fd2a79e1fd5e9c2bd3d888bc8906187"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/submission_claim_test.go",
+      "sha256": "ade8a035fc9854abad26b3749b7eac3b69113907ec36fb3226e649be5522ac8d"
+    },
+    {
+      "path": "server/migrations/000077_video_billing_outbox_reconcile.down.sql",
+      "sha256": "50517bc603dd5e24d3dd822ffbf86dd3ee8656b7c1a010c23158a66735f97e28"
+    },
+    {
+      "path": "server/migrations/000077_video_billing_outbox_reconcile.up.sql",
+      "sha256": "2f39204799271b7c2776c6078159b986cd27f5fac0a46ee5046f508de787081f"
+    },
+    {
+      "path": "server/migrations/ai_gateway_video_g5_migration_test.go",
+      "sha256": "53aec166024d848e3669330b83a4b1e7551a715172d26340111bf0c14e5376a0"
+    }
+  ],
+  "gofmt_files": 56,
+  "source_commit": "36b6a5c5f9e60a4ef182ae434337bb05e165477c",
+  "source_changes": "UNCOMMITTED_LOCAL_ONLY",
+  "code_state_algorithm": "按manifest的path字典序，LF拼接BASE_COMMIT=<base_commit>及path|sha256，无末尾换行，UTF-8后SHA256；server/infra局部检查点，不是全G5验收。",
+  "checks": {
+    "isolated_mysql": {
+      "status": "PASS",
+      "focus": "all",
+      "command": "VIDEO_GATEWAY_G5_ISOLATED_MYSQL_APPROVED=YES bash infra/scripts/verify-video-gateway-migration-000077.sh",
+      "filter": "^TestVideoG5(Reserve|Usage|Cancel|Media|Settle|Release|Compensation|Delivery|Reconciliation|Unknown)",
+      "result": "ok molin/server/internal/modules/token_gateway/service 238.429s",
+      "migration_chain": "1..77",
+      "repeat_up": true,
+      "retained_down_reup": true,
+      "race": true
+    },
+    "native_go_test": {
+      "status": "PASS",
+      "command": "go test ./... -count=1",
+      "boundary": "其他未配置DSN的集成测试仍跳过，不是完整Chat/Image基础设施验收。"
+    },
+    "go_vet": "PASS",
+    "go_mod_verify": "PASS",
+    "gofmt": {
+      "status": "PASS",
+      "files": 56
+    },
+    "linux_video_race": {
+      "status": "PASS",
+      "result": "ok molin/server/internal/modules/token_gateway/video 7.061s",
+      "boundary": "此后仅服务层变更；最终服务层由本次MySQL race覆盖。"
+    },
+    "diff_check": "PASS",
+    "sensitive_scan": {
+      "status": "PASS",
+      "files_scanned": 254,
+      "findings": 0,
+      "boundary": "证据生成后复扫254文件、0发现；59文件源码摘要复算一致。"
+    }
+  },
+  "verified_behaviors": [
+    "12个T2V/I2V提交超时、ACK未知、查询超时、结果未知、抓取超时及损坏媒体组合都持久化待核对，已确认成本保留、未知不伪记0。",
+    "每个异常组合8次补偿后dead，第9次自动执行拒绝，输入租约不释放、Provider提交仍为1。",
+    "执行/计费/job/P/C四个写入故障点整体回滚，移除故障后无Provider重调即可重试元数据；100重复编排不重建job、不重置版本与次数。",
+    "补偿initial_billing_status在首次推进前冻结；终态不倒写，P事件按原状态判定，不按当前状态猜测。",
+    "completed后新冲突仅追加幂等人工核对请求并返回review_required，旧job版本/次数/终态不变，不伪造maker/checker。",
+    "未知Callback状态与补偿/P/C同事务；缺成本证明的cancelled Callback也安排恢复。",
+    "断连、断连+取消意图版本竞争、断连+参考图读取错误均通过纯数据库有界入口保留pending/job/P/C，不读Prompt或参考图，不调用Provider。",
+    "Provider6秒、实际5秒媒体在succeeded之前进入pending，保存原确认及未交付媒体，没有用户销售。",
+    "已正确闭合的未提交取消反复ReconcileExecution保持not_required、没有新增job/C、原17项对账继续通过。"
+  ],
+  "red_evidence": [
+    {
+      "case": "unknown_missing_finance",
+      "result": "0.711s：执行pending但计费/job缺失"
+    },
+    {
+      "case": "callback_disconnect_usage",
+      "result": "21.666s：Callback非原子、断连丢补记、规格冲突先成功"
+    },
+    {
+      "case": "disconnect_combinations_cancelled_callback",
+      "result": "23.502s：版本竞争/loader故障阻断补记，cancelled缺补偿"
+    },
+    {
+      "case": "closed_cancel_noop",
+      "result": "23.317s：已闭合取消错误created补偿"
+    }
+  ],
+  "independent_slice_review": {
+    "role": "测试工程师",
+    "task": "vid_g5_cancel_slice_qa",
+    "scope": "只读源码与测试设计；运行由主任务完成，非全G5验收",
+    "receipt": "docs/evidence/video-gateway-vid-g5-execution-reconcile-review.md",
+    "verdict": "报告中的问题源码闭合，最终同版MySQL回归通过",
+    "findings": [
+      {
+        "id": "G5-UNKNOWN-001",
+        "severity": "P1",
+        "status": "FIXED_AND_REGRESSION_PASSED"
+      },
+      {
+        "id": "G5-UNKNOWN-002",
+        "severity": "P1",
+        "status": "FIXED_AND_REGRESSION_PASSED"
+      },
+      {
+        "id": "G5-UNKNOWN-003",
+        "severity": "P1",
+        "status": "FIXED_AND_REGRESSION_PASSED"
+      },
+      {
+        "id": "G5-UNKNOWN-004",
+        "severity": "P1",
+        "status": "FIXED_AND_REGRESSION_PASSED"
+      },
+      {
+        "id": "G5-UNKNOWN-005",
+        "severity": "P2",
+        "status": "FIXED_AND_REGRESSION_PASSED"
+      }
+    ]
+  },
+  "remaining": [
+    "明确过期/崩溃提交恢复及迟到绑定策略，不能凭再一次Submit臆断失联。",
+    "dead/manual_review后新异常、terminal首次冲突等对称场景的完整验收与人工核对周期。",
+    "合法追加调账、不同maker/checker及对应合成钱包动作。",
+    "完整跨门面幂等/权限失效/跨域矩阵与全部settle/release竞争。",
+    "12金额金样完整证据、Chat/Image全部隔离回归、Python证据验证器及全目标逐项审计。",
+    "全阶段独立QA/PM/Standards/Spec与最终P0/P1/P2归零。"
+  ],
+  "full_stage_defect_counts": "NOT_ASSESSED",
+  "qa_acceptance": "NOT_RUN_FULL_STAGE",
+  "pm_confirmation": "NOT_RUN",
+  "standards_review": "NOT_RUN_FULL_STAGE",
+  "spec_review": "NOT_RUN_FULL_STAGE",
+  "finance_contract_approval": "APPROVED_LOCAL_FIXTURE_ONLY",
+  "git_mode": "LOCAL_ONLY",
+  "pr_state": "NOT_CREATED",
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": "0",
+  "external_business_http_requests": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": false,
+  "vid_g6_started": false
+}

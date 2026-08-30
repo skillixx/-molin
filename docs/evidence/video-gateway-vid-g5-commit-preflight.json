@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G5",
+  "authorization": "GIT=AUTHORIZE_COMMIT_VID_G5",
+  "operation_scope": "LOCAL_COMMIT_ONLY",
+  "accepted_source_state_id": "1d61c1b94af6a7ac3db6b8d63aca4d7759fba7135a99cb448b7e838001d6fe09",
+  "accepted_code_state_id": "aabb9c5993766708567c80a24c4962e3372be43a1f947b89842caa3bcda03790",
+  "commit_source_state_id": "1316456852826649ceb8f9c99c85f69890c4e4f2011357e15b5d8638c0647e88",
+  "commit_code_state_id": "f08ffd7deed57fd2541cb2312ef0b1fc62f261397dd72d6ba7c9b7ec6bc3e65c",
+  "base_commit": "36b6a5c5f9e60a4ef182ae434337bb05e165477c",
+  "normalization_deltas": [
+    {
+      "path": "infra/scripts/fixtures/video-g5-legacy-chat-g4-governance.sql",
+      "before_sha256": "8429ca316c9aa29a0656fdde2977f13aac34c2b4d0f8d2e2a1054ed26474539b",
+      "after_sha256": "2af72651f2bf1d5465423610f96f517cf33d2fbd2b8d00743cb2c0b9bd27c972",
+      "body_sha256": "f62dab0da4dece754631f82c9dc16a4776e4c57238f214808fa5bb0f0a626418",
+      "trailing_newline_bytes": 1
+    },
+    {
+      "path": "infra/scripts/fixtures/video-g5-legacy-chat-g6-customer.sql",
+      "before_sha256": "965649a753faf03335a5ad02433ce556aa423eca9788609becc162d395dc315b",
+      "after_sha256": "f570b712d5a811cdda8a6a4749aad97a00d864259388c0c359f49544a81467c8",
+      "body_sha256": "0ac08dc971e30ff74a798c89f1c88d304f8d27e5767c1ae199d7003608fb1a07",
+      "trailing_newline_bytes": 1
+    },
+    {
+      "path": "infra/scripts/fixtures/video-g5-legacy-chat-g7-reliability.sql",
+      "before_sha256": "e41f240793deb6bfde09bbbc367acdd9e30cea1ae258b85ee27bd7a7ca2658a1",
+      "after_sha256": "602f1fecb60d8669b81b3161627d397a326c8094467a26bcb1a08a36d69ad9f2",
+      "body_sha256": "e58d1cf20dcc0a07ddabb5862568859ad71edf0bd6ea10b815f5d213af2ff80d",
+      "trailing_newline_bytes": 1
+    }
+  ],
+  "proof": "三文件只移除一个末尾LF；去除末尾CR/LF后的原始字节SHA256首尾相等，其余101项源码/文档及既有证据不变。原验收文件保留原时间点语义，不改写为新哈希或伪造新独立验收。",
+  "recompute": "在原source-state.json的104项manifest中仅替换这三项sha256，按原BASE_COMMIT+LF+path|sha256算法复算commit_source_state_id；其代码子集复算commit_code_state_id。本提交前回执为生成证据，不参与源清单哈希。",
+  "checks": {
+    "source_inventory": "PASS",
+    "sql_body_bytes_unchanged": "PASS",
+    "go_test_all": "PASS",
+    "go_vet": "PASS",
+    "go_mod_verify": "PASS",
+    "python_golden_tests": "PASS",
+    "python_golden_verifier": "PASS",
+    "isolated_mysql": "NOT_RERUN_FORMAT_ONLY",
+    "prior_independent_reviews": "PRESERVED_FOR_ACCEPTED_SNAPSHOT"
+  },
+  "remaining_authorizations": [
+    "GIT=AUTHORIZE_PUSH_VID_G5",
+    "GIT=AUTHORIZE_CREATE_PR_VID_G5",
+    "独立PR编号合并授权"
+  ],
+  "push_performed": false,
+  "pr_created": false,
+  "real_provider_requests": 0,
+  "real_wallet_writes": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "vid_g6_started": false
+}

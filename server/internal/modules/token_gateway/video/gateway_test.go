@@ -124,8 +124,9 @@ func TestSubmitWorkerResumesWithoutStateRegressionOrResubmit(t *testing.T) {
 	ledger.tasks[fixture.taskID] = task
 	ledger.mu.Unlock()
 	result, err := fixture.submit.Run(context.Background(), fixture.taskID)
-	if err != nil || result.Status != TaskPendingReconcile || fixture.adapter.SubmitCalls() != 0 {
-		t.Fatalf("submitting恢复无法证明是否提交，必须对账且不重提: task=%+v err=%v calls=%d", result, err, fixture.adapter.SubmitCalls())
+	// 仅看到submitting不能证明原Worker已停止；此重试只读，真实RPC未知响应仍由下一用例进入待对账。
+	if err != nil || result.Status != TaskSubmitting || fixture.adapter.SubmitCalls() != 0 {
+		t.Fatalf("submitting重试不能抢先终结原RPC或重新提交: task=%+v err=%v calls=%d", result, err, fixture.adapter.SubmitCalls())
 	}
 }
 
