@@ -1,11 +1,11 @@
 {
   "schema_version": 2,
   "target_goal": "VID-G6",
-  "status": "PASS_INDEPENDENT_REVIEWS_READY_FOR_GIT_CI",
+  "status": "PASS_REVIEWS_SOURCE_COMMITTED_READY_FOR_PUSH",
   "source_state_id": "7e03bb3ef60c2eb61bdec03854467262065221da2535174635a1f41b23a49a20",
   "copy_tree_sha256": "b9593d3d3d9a42b8e07844ec6ab838f37dc06e5eee1909f79efe2215759193c2",
   "base_commit": "52563ba450c6d488456137162580022deb06acc8",
-  "source_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "bf4a84ffdbccfa77112efc1736689508c794f9c6",
   "runs": {
     "vid_g6_mysql_all": {
       "status": "PASS",
@@ -78,5 +78,5 @@
     "vid_g7_started": false
   },
   "boundary": "真实Provider、MinIO、RabbitMQ、Redis、Bifrost视频数据面、共享测试服与生产均未运行；SDK和浏览器证据不能扩写为这些能力。",
-  "next_gate": "EXACT_STAGE_COMMIT_PUSH_PR_READY_CI_MERGE"
+  "next_gate": "PUSH_PR_READY_CI_MERGE"
 }
