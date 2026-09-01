@@ -1,0 +1,27 @@
+{
+  "target_goal":"VID-G6",
+  "scope":"mysql-queued-capacity-admission",
+  "stage_status":"IN_PROGRESS",
+  "source_state_id":"501b16fd6e843b865014f4c1c59bf183e5b8d7812073ea1f9371ee0ce1c77529",
+  "source_manifest":"video-gateway-vid-g6-queue-admission-source.json",
+  "git_state":"UNCOMMITTED_UNPUSHED_NO_G6_PR",
+  "test_run":{"session_id":17532,"status":"PASS","schema":109,"copy_tree_sha256":"55d70c4d27750ed4ddf6718a70e6c0bfd019955dc81facc7115bbad346b3f4ec","required":5,"passed":5,"skipped":0},
+  "verified":[
+    "user queued上限2，第3个拒绝且Request/Task/Hold零部分新增",
+    "100个不同意图同时起跑精确2个赢家、98个user范围拒绝",
+    "自动Quote随拒绝事务整体回滚，未消费Quote总数前后不变",
+    "未知、过期、跨Key Quote原404/409语义不被队列掩盖",
+    "平台42922与OpenAI兼容429均带Retry-After 1",
+    "门闩只序列化原Task账本计数，不实现running、Provider、Redis或RabbitMQ租约"
+  ],
+  "independent_review":{"agent":"vid_g6_cancel_standards","initial_p0":0,"initial_p1":0,"initial_p2":2,"recheck":"ALL_FOUND_DEFECTS_CLOSED","p0":0,"p1":0,"p2":0,"full_stage_acceptance":false},
+  "remaining":["Project10与global100独立多主体矩阵","门闩故障和COMMIT未知","Project与SK日/月预算事务接入","完整VID-G6验收"],
+  "real_provider_requests":0,
+  "real_provider_keys":0,
+  "real_wallet_writes":0,
+  "provider_cost_cny":0,
+  "test_server_writes":0,
+  "production_operations":0,
+  "next_goal_allowed":"NO",
+  "vid_g7_started":"NO"
+}

@@ -1,0 +1,29 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "project-key-idempotency-semantic-binding",
+  "generated_at": "2026-08-31T23:29:48.4612484Z",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_state_id": "59732b2a81034abefc8060ba57bce01365c494a4d3b3748bfaac7981cc074b07",
+  "status": "UNCOMMITTED_PARTIAL_STAGE",
+  "algorithm": "按path字典序，以LF拼接BASE_COMMIT=<base_commit>与path|sha256，无末尾换行，UTF-8 SHA-256；仅本专项16文件，不是完整VID-G6 SOURCE_STATE_ID。",
+  "file_count": 16,
+  "files": [
+    {"path":"docs/database-schema-design.md","sha256":"00b2aab9c7a6b888f7ed47abf1fcd1cf655223dc45152ecbe963b9b33f58047b"},
+    {"path":"docs/full-api-design.md","sha256":"e6f3db4fc79f0a296a2ef91645996b11f213be799cd5c121e5b7244f0fab9e90"},
+    {"path":"docs/test-plan.md","sha256":"8e05dc4c67767b773ff988b93665d1d3f525ddfef36ba87dae16db75cfad536f"},
+    {"path":"docs/video-gateway-vid-g6-http-project-sk-contract.md","sha256":"536f7340a6157ce532356c754f4a1fb53f9f560ad71e93fe055bff992c7e5475"},
+    {"path":"docs/video-gateway-vid-g6-project-key-idempotency-contract.md","sha256":"0e242607e900aa8c732b4285ac890c154460d9fa9f2702bf08ee41c1ec617556"},
+    {"path":"infra/scripts/verify-video-gateway-vid-g6.sh","sha256":"326f0c8f94fb4b735a5645258b3fc6cc7c9fb9386d372281fdd161b53b79151e"},
+    {"path":"server/internal/modules/audit/service/audit_service.go","sha256":"1f91df10307ba81253d5a0f6561818d69aa9026810126ae38ea2cafd560d23dd"},
+    {"path":"server/internal/modules/token_gateway/handler/project_handler.go","sha256":"d24a1a58651cbbae4ad3bbdb1d81dd3e295f54f384536d94203e8043332800d9"},
+    {"path":"server/internal/modules/token_gateway/repository/g2_repository.go","sha256":"9c71c5988f9f0f008505f26888a1ac55a728b2a92475bd89ac7d4f01e3765f2d"},
+    {"path":"server/internal/modules/token_gateway/repository/g6_user_repository_mysql_test.go","sha256":"edb3d4484996858ee9bb3aec34155e624e80bec0abdabed021766b4c25aa68a4"},
+    {"path":"server/internal/modules/token_gateway/repository/project_key_idempotency.go","sha256":"c4d63c05670c20e29334951a4933c129d65b9d4b243acedb82a557da11d1120b"},
+    {"path":"server/internal/modules/token_gateway/service/project_service.go","sha256":"8d48121e1f87b208c8aa51dd16bd762d3e24da83d7b9c2daefeaf9971f289098"},
+    {"path":"server/internal/modules/token_gateway/service/project_service_test.go","sha256":"8033154820e696ba844c288c82bc13d23749719c4759c2f09841c0ca1ce1ee25"},
+    {"path":"server/internal/modules/token_gateway/service/video_project_key_http_mysql_test.go","sha256":"6b6c9aeb3715096edb463103ea8f09d7fbdb5b8e3047f1366b3a024bf9ae3b4d"},
+    {"path":"server/migrations/000107_video_project_key_commands.down.sql","sha256":"71da4322288df751958d29aa05e1570f32aea0e2efbb80fa640188ebb7a1d4a7"},
+    {"path":"server/migrations/000107_video_project_key_commands.up.sql","sha256":"b58a10bf3bb6d18c589bdf39b726f1524499fe01e2de79a1fe95200f4c532ac6"}
+  ]
+}

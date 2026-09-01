@@ -31,6 +31,28 @@ func NewG4GovernanceRepository(db *gorm.DB) *G4GovernanceRepository {
 	return &G4GovernanceRepository{db: db, now: time.Now}
 }
 
+// ReserveBudgetTx在调用方事务的同一连接上复用原预算实现；嵌套Transaction只建立SAVEPOINT，
+// 外层视频事务回滚时预算预留、阈值事实和钱包/任务事实一起回滚，不能提前独立提交。
+func (r *G4GovernanceRepository) ReserveBudgetTx(ctx context.Context, tx *gorm.DB, req BudgetReservationRequest) (*model.AIBudgetReservation, error) {
+	if r == nil || tx == nil {
+		return nil, errors.New("预算事务不可用")
+	}
+	nested := &G4GovernanceRepository{db: tx, now: r.now}
+	if nested.now == nil {
+		nested.now = time.Now
+	}
+	return nested.ReserveBudget(ctx, req)
+}
+
+// SyncBudgetFromRequestTx在视频财务终态事务内同步预算，避免钱包已结算/释放而预算仍held。
+func (r *G4GovernanceRepository) SyncBudgetFromRequestTx(ctx context.Context, tx *gorm.DB, requestID string, clock func() time.Time) (bool, error) {
+	if r == nil || tx == nil || clock == nil {
+		return false, errors.New("预算事务不可用")
+	}
+	nested := &G4GovernanceRepository{db: tx, now: clock}
+	return nested.SyncBudgetFromRequest(ctx, requestID)
+}
+
 // RecordGatewayRejection 幂等记录前置治理拒绝，只保存统计所需的脱敏元数据。
 func (r *G4GovernanceRepository) RecordGatewayRejection(ctx context.Context, event *model.AIGatewayRejectionEvent) error {
 	if event == nil {
@@ -109,6 +131,8 @@ type BudgetReservationRequest struct {
 	DailyPeriodStart   time.Time
 	MonthlyPeriodStart time.Time
 	ExpiresAt          time.Time
+	PeriodTimezone     string
+	Now                func() time.Time
 }
 
 // ReserveBudget 在同一事务中锁定 Project 与 SK 策略，累计已结算金额和 held 预留，防止多 SK 并发超卖。
@@ -133,10 +157,31 @@ func (r *G4GovernanceRepository) ReserveBudget(ctx context.Context, req BudgetRe
 		}
 		activePolicy := false
 		for _, policy := range policies {
+			activePolicy = activePolicy || policy.Mode != model.AIBudgetDisabled
+		}
+		if !activePolicy {
+			return nil
+		}
+		lockedNow := r.now()
+		if req.Now != nil {
+			lockedNow = req.Now()
+		}
+		// MySQL DATETIME按UTC事实写入；宿主Location只能用于表示同一瞬时，不能改变墙钟含义。
+		lockedNow = lockedNow.UTC()
+		if strings.TrimSpace(req.PeriodTimezone) != "" {
+			location, err := time.LoadLocation(strings.TrimSpace(req.PeriodTimezone))
+			if err != nil {
+				return err
+			}
+			local := lockedNow.In(location)
+			req.DailyPeriodStart = time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, location).UTC()
+			req.MonthlyPeriodStart = time.Date(local.Year(), local.Month(), 1, 0, 0, 0, 0, location).UTC()
+			req.ExpiresAt = lockedNow.Add(24 * time.Hour)
+		}
+		for _, policy := range policies {
 			if policy.Mode == model.AIBudgetDisabled {
 				continue
 			}
-			activePolicy = true
 			periods := []struct {
 				kind  string
 				start time.Time
@@ -150,7 +195,7 @@ func (r *G4GovernanceRepository) ReserveBudget(ctx context.Context, req BudgetRe
 					continue
 				}
 				limit := *period.limit
-				override, err := r.activeOverrideAmount(tx, policy.ScopeType, policy.ScopeID, r.now())
+				override, err := r.activeOverrideAmount(tx, policy.ScopeType, policy.ScopeID, lockedNow)
 				if err != nil {
 					return err
 				}
@@ -170,9 +215,6 @@ func (r *G4GovernanceRepository) ReserveBudget(ctx context.Context, req BudgetRe
 		}
 		if hardExceeded {
 			// 阈值事件需要提交，因此不在事务内部返回错误。
-			return nil
-		}
-		if !activePolicy {
 			return nil
 		}
 		reservation = model.AIBudgetReservation{
@@ -262,7 +304,7 @@ func (r *G4GovernanceRepository) createThresholdAlerts(tx *gorm.DB, policy model
 
 // ReleaseBudget 用于安全、限流或钱包 hold 失败路径，重复释放保持幂等。
 func (r *G4GovernanceRepository) ReleaseBudget(ctx context.Context, requestID string) error {
-	now := r.now()
+	now := r.now().UTC()
 	return r.db.WithContext(ctx).Model(&model.AIBudgetReservation{}).
 		Where("request_id = ? AND status = ?", requestID, model.AIBudgetHeld).
 		Updates(map[string]interface{}{"status": model.AIBudgetReleased, "released_at": now}).Error
@@ -288,12 +330,12 @@ func (r *G4GovernanceRepository) SyncBudgetFromRequest(ctx context.Context, requ
 		hasTask := taskErr == nil
 		if reservation.Status != model.AIBudgetHeld {
 			returnStatus = true
-			return completeBudgetCompensationTx(tx, hasTask, task.ID, r.now())
+			return completeBudgetCompensationTx(tx, hasTask, task.ID, r.now().UTC())
 		}
 		var request model.AIRequest
 		if err := tx.Where("request_id = ?", requestID).First(&request).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				now := r.now()
+				now := r.now().UTC()
 				explicitRelease := hasTask && task.LastErrorClass != nil && *task.LastErrorClass == "budget_release_failed"
 				// 预算预留发生在钱包预占之前；只有明确的释放补偿事实或预留自然过期，才能证明原准入链不再继续。
 				if explicitRelease || !reservation.ExpiresAt.After(now) {
@@ -311,7 +353,7 @@ func (r *G4GovernanceRepository) SyncBudgetFromRequest(ctx context.Context, requ
 			}
 			return err
 		}
-		now := r.now()
+		now := r.now().UTC()
 		switch request.BillingStatus {
 		case model.AIBillingSettled:
 			amount := decimal.Zero

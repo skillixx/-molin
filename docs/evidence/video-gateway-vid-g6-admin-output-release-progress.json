@@ -1,0 +1,85 @@
+{
+  "target_goal": "VID-G6",
+  "status": "IN_PROGRESS",
+  "scope": "admin-output-release",
+  "source_state_id": "184bb37f1c30dd2f4cc58f8ce0b15b01499a84835fb56b9848a29a1ba45f72da",
+  "source_manifest": "video-gateway-vid-g6-admin-output-release-source.json",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "local_routes_registered": 43,
+  "total_routes": 46,
+  "runs": [
+    {
+      "session_id": 9508,
+      "status": "FAIL",
+      "schema": 97,
+      "required": 7,
+      "passed": 6,
+      "copy_tree_sha256": "7549713f363193c931f5fbe352876eb590e883ce20b6936e2f6cc3dabe5abe03",
+      "failed_test": "TestVideoG6AdminOutputReleaseHTTPMySQL",
+      "failure": "初始隔离夹具缺少JWT认证credential，未进入release流程",
+      "output_quarantine_strengthened_assertions": "PASS"
+    },
+    {
+      "session_id": 97944,
+      "status": "PASS",
+      "schema": 97,
+      "required": 8,
+      "passed": 8,
+      "skipped": 0,
+      "linux_race": true,
+      "copy_tree_sha256": "3f7082a3ef73f3dcac9056d4274fd474e045f7adc29c9d9a7709cc1d36dc200e",
+      "service_seconds": 40.679,
+      "root_seconds": 1.093,
+      "release_http_seconds": 8.13,
+      "covers": [
+        "真实不同管理员JWT申请和复核",
+        "申请不改变资产和申请重放",
+        "同人审批及伪造checker字段拒绝",
+        "独立复核和完成重放",
+        "最后checker查询跨maker有效期限整事务回滚",
+        "原六资产安全事实、财务、Provider和Store不变",
+        "隔离保存额度/全行与跨期屏障补强",
+        "解除专用原因AAD用途及操作者隔离"
+      ],
+      "current_source_full_match": false
+    },
+    {
+      "session_id": 67086,
+      "status": "NATIVE_COMPILE_AND_REASON_TESTS_PASS",
+      "mysql": "NOT_RUN",
+      "note": "MySQL测试本机跳过，不能代替新断言数据库执行"
+    }
+  ],
+  "changes_after_test_copy": [
+    "maker资格截止拆分权限与MFA错误码40003/40031",
+    "精确九字段及值断言",
+    "唯一request/completed execution及四审计全行重放不变断言",
+    "文档和源码清单"
+  ],
+  "independent_reviews": {
+    "standards": "两项P1/P2修复位置静态复核通过，完整运行与最终源码审查待完成",
+    "qa": "未见确定单人绕过；补强响应字段、DB错误处理和审计事实断言已写入，待实际运行",
+    "pm": "前轮确认双人申请复核工程合同，不代表完整验收"
+  },
+  "remaining": [
+    "解除隔离全状态/角色/100并发/原子故障/SQL旁路/时效矩阵",
+    "隔离保留与清理闭环",
+    "管理poll/archive-retry/adjustments",
+    "G6完整SDK/准入预算/兼容回归和独立验收/精确CI/Git闭环"
+  ],
+  "git": {
+    "committed": false,
+    "pushed": false,
+    "pr": "NONE"
+  },
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": "NO",
+  "vid_g7_started": "NO"
+}

@@ -1,0 +1,26 @@
+{
+  "target_goal":"VID-G6",
+  "scope":"locked-python-typescript-sdk-real-loopback-http",
+  "generated_at":"2026-09-01T03:12:36.8415621Z",
+  "base_commit":"52563ba450c6d488456137162580022deb06acc8",
+  "source_commit":"52563ba450c6d488456137162580022deb06acc8",
+  "source_state_id":"a7365b8e7e253d5b447a7b85f0a4843edf16bc747aaa5b1d4aca64c10fb6d771",
+  "status":"UNCOMMITTED_PARTIAL_STAGE",
+  "algorithm":"按path字典序，以LF拼接BASE_COMMIT=<base_commit>与path|sha256，无末尾换行，UTF-8 SHA-256；仅本专项13文件，不是完整VID-G6 SOURCE_STATE_ID。",
+  "file_count":13,
+  "files":[
+    {"path":"docs/test-plan.md","sha256":"eb26f32f93f82b2d45188937ec492fa1cab9f8ab8f1070078cf66df77551b22e"},
+    {"path":"docs/video-gateway-vid-g6-http-project-sk-contract.md","sha256":"6b1f400584e4093e39da4373fbb76e79199876c84c8b083c069d19e6db3da9b2"},
+    {"path":"infra/scripts/verify-video-gateway-vid-g6-sdk.ps1","sha256":"4340287a808e6652622cdb94a1209cf62e68d0cf85ff7d39ee2b626affe16c9f"},
+    {"path":"server/internal/modules/token_gateway/service/export_video_content_http_test.go","sha256":"6161a9c741a0b56ca1d29168997e294de3bd8472441eb4190290e3ad38b34508"},
+    {"path":"server/internal/modules/token_gateway/service/export_video_import_http_test.go","sha256":"534677372058ae3cadef5b069f14b2ff63f9febe020fc1eee05c52499a04be50"},
+    {"path":"server/internal/modules/token_gateway/service/video_access_mysql_test.go","sha256":"5d0c6a5f15fc7b46828cb2cc89f24c7861aa74fed52f81335ec322237aa2a9be"},
+    {"path":"server/internal/modules/token_gateway/service/video_sdk_http_mysql_test.go","sha256":"99230aa66e7bb058fa903ebf525b5d918eec204ebd1e9e1233bc0d0a92988898"},
+    {"path":"tests/api/video-gateway-vid-g6-sdk/package-lock.json","sha256":"fde58e5006cefee805394b9892278b117da7f2676e88345f02a6b1da5a82ba19"},
+    {"path":"tests/api/video-gateway-vid-g6-sdk/README.md","sha256":"61eb6e3b098a201381c5e151ab15c3bb3690e13d335aca978f793f062f66d22c"},
+    {"path":"tests/api/video-gateway-vid-g6-sdk/requirements.lock.txt","sha256":"a97efbbaadbade3184ec31fabd37eea29fcfe1472f02c392c0beb1b1c460aa04"},
+    {"path":"tests/api/video-gateway-vid-g6-sdk/sdk_python.py","sha256":"e0214d1d523e03044421a00e736cfb92a7e07a872e69fc8ce7017d8532ad0dc8"},
+    {"path":"tests/api/video-gateway-vid-g6-sdk/sdk_typescript.ts","sha256":"50cf125866893da058dc4d237a850592ff4f4e3e4f68b4e775369953dcad542e"},
+    {"path":"tests/api/video-gateway-vid-g6-sdk/validation.json","sha256":"6b17f68c5fc6dd5cce3bb32f84f9fd00ca381ed69905d582e31408d7c95fbc1b"}
+  ]
+}

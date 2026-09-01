@@ -1347,12 +1347,25 @@ func (s *AuthService) UpdateEmail(ctx context.Context, userID uint64, req dto.Up
 // IsAdminVerified 实现 middleware.AdminVerifiedChecker 接口。
 // 返回 true 当且仅当该用户的手机+邮箱双重认证均在有效期内。
 func (s *AuthService) IsAdminVerified(ctx context.Context, userID uint64) bool {
+	valid, err := s.CheckAdminVerified(ctx, userID)
+	return err == nil && valid
+}
+
+// CheckAdminVerified复用同一MFA规则但保留读取错误，供需要区分403与依赖故障503的管理入口使用。
+// 旧bool接口仍在任意失败时返回false，不改变已有管理中间件的语义。
+func (s *AuthService) CheckAdminVerified(ctx context.Context, userID uint64) (bool, error) {
+	if s == nil || s.userRepo == nil {
+		return false, errors.New("管理员认证检查未就绪")
+	}
 	user, err := s.userRepo.FindByID(ctx, userID)
-	if err != nil || user == nil {
-		return false
+	if err != nil {
+		return false, err
+	}
+	if user == nil {
+		return false, repository.ErrUserNotFound
 	}
 	return isAdminVerifyValid(user.AdminPhoneVerifiedAt, s.cfg.AdminVerifyExpireHours) &&
-		isAdminVerifyValid(user.AdminEmailVerifiedAt, s.cfg.AdminVerifyExpireHours)
+		isAdminVerifyValid(user.AdminEmailVerifiedAt, s.cfg.AdminVerifyExpireHours), nil
 }
 
 // IsAdminPhoneVerified 只校验管理员手机 MFA，供首次配置邮箱认证通道使用。

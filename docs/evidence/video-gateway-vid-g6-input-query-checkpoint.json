@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G6",
+  "status": "PARTIAL_INPUT_QUERY_CHECKPOINT_NOT_STAGE_ACCEPTANCE",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "head_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "UNCOMMITTED",
+  "source_manifest": "video-gateway-vid-g6-input-query-source.json",
+  "source_state_id": "0c8dab4fac631d37968bedf0d060b3361bf2ae9f444f3b3eb68c5539702377e4",
+  "code_state_id": "b7cbe0638a8d566dc643e4a30a00bac535aad716823e166f54f0d4b7fbda5f5f",
+  "runtime_copy_tree_sha256": "dd401c75c82a3cf2882ed1643aa2ae3e8de9921cddaa2333cd0fd17348900566",
+  "source_provenance": {
+    "changed_files": 79,
+    "code_files": 62,
+    "copy_files": 1644,
+    "copy_hash_match": true,
+    "independent_manifest_recomputed": true
+  },
+  "routes": [
+    "GET /api/token/video-inputs",
+    "GET /api/token/video-inputs/{input_asset_id}"
+  ],
+  "registered_local_routes": 14,
+  "bootstrap_assembled": false,
+  "runs": [
+    {
+      "session": 62771,
+      "exit_code": 1,
+      "result": "两个输入查询路由缺失，关闭态实际404而非503"
+    },
+    {
+      "session": 81879,
+      "exit_code": 1,
+      "copy_tree_sha256": "f3f4e9bb94c258e0ef4e1710c378e0294088c1eada411fa0747320d7dbeb363f",
+      "result": "真实HTTP正向查询返回404，原25项范围回归不能证明新增路由"
+    },
+    {
+      "session": 18293,
+      "exit_code": 0,
+      "result": "注册路由后两个GET关闭态503"
+    },
+    {
+      "session": 41837,
+      "exit_code": 1,
+      "copy_tree_sha256": "f9f33ff1b44e8adf0bc47254656026e39538a52151f41151e0aa3fa76b3f19ff",
+      "result": "Count投影造成列表503；保全输入未阻止Quote，两个反例实际失败"
+    },
+    {
+      "session": 15240,
+      "exit_code": 0,
+      "required_tests": 27,
+      "copy_tree_sha256": "a4f718d76b894b8b304c112aa8c95c927742c60270ee664d1e61098acf49d7e7",
+      "result": "计数及共享前置条件修复后27顶层RUN/PASS"
+    },
+    {
+      "session": 50429,
+      "exit_code": 0,
+      "required_tests": 27,
+      "copy_tree_sha256": "dd401c75c82a3cf2882ed1643aa2ae3e8de9921cddaa2333cd0fd17348900566",
+      "result": "27项实际RUN/PASS、Linux race；新增驱动故障及预检后保全竞争通过，必需项无SKIP"
+    }
+  ],
+  "verified": {
+    "http": "真实回环SK上传完成后查询详情与D-95分页；JWT自己上传、完成、派生Project查询及受限total；JWT/SK互读来源统一404，非法page_size稳定400",
+    "metadata": "十键低敏DTO、四规格字段显式null；空页items=[]，未知/越权同错误，隔离历史可查但can_reference=false",
+    "authorization": "Get/List都复验当前主体，撤销Key视频能力后拒绝旧ID与列表；列表total使用与items同一可信来源条件",
+    "errors": "一次性驱动读取故障实际命中，列表不伪装空页、详情不伪装404；均返回Unavailable",
+    "shared_guard": "G6查询提示、报价预检、Quote事务复验及预占前/锁内共用完整快照前置条件；未启用G6的原G5协调器保持旧合同",
+    "hold_race": "第二轮外部审核才提交独立legal_hold/version，事务内返回InputUnavailable；Request/Task/Hold/TaskInput零新增，独立保全事实保留",
+    "null_fixture_boundary": "真实MySQL旧schema可保存的未规范化来源防御夹具，不表示G6 complete允许发布不完整输入",
+    "source_visibility": "沿用scopeTrustedVideoInputSource，不扩宽原生成图片来源的可见性；完整来源图运行矩阵仍未完成",
+    "schema": "无新增迁移；当前完整1至81及78-81重复up/down/up通过"
+  },
+  "host_checks": {
+    "full_go_vet_mod": {
+      "session": 86741,
+      "result": "PASS；在新增保全竞争测试前执行，包含缓存结果；主机无DSN跳过不能算数据库验收"
+    },
+    "latest_modules_and_vet": {
+      "session": 84661,
+      "result": "PASS；service/handler/root以count=1执行，主机集成跳过不计通过"
+    },
+    "format": "变更与未跟踪Go文件gofmt检查无输出，git diff --check通过"
+  },
+  "independent_subreviews": {
+    "qa": "确认Count修复、Quote基线修正、NULL夹具与隔离断言；验证第二轮审核反例覆盖锁内守卫，复算79个源码及62个代码文件摘要一致",
+    "pm": "确认低敏历史查询与使用许可分离、JWT先限定user/无Key派生Project及D-95同scope计数；不批准新法律/财务/保留政策",
+    "full_stage_qa_pm_standards_spec": "NOT_RUN"
+  },
+  "defects": [
+    {
+      "id": "G6-INPUT-001",
+      "severity": "P1",
+      "description": "Count继承inputs.*投影导致输入列表503",
+      "status": "CLOSED_INCREMENTAL",
+      "red": 41837,
+      "green": [
+        15240,
+        50429
+      ]
+    },
+    {
+      "id": "G6-INPUT-002",
+      "severity": "P1",
+      "description": "输入提示不可引用但保全输入仍可Quote",
+      "status": "CLOSED_INCREMENTAL",
+      "red": 41837,
+      "green": [
+        15240,
+        50429
+      ]
+    },
+    {
+      "id": "G6-INPUT-TEST-001",
+      "severity": "P2",
+      "description": "旧夹具已有T2V Quote，错误要求用户Quote总数为0",
+      "status": "CLOSED_INCREMENTAL",
+      "verification": "保留夹具，比较调用前后计数相同；独立静态确认与50429动态通过"
+    }
+  ],
+  "remaining": [
+    "完整生命周期与来源图片的正负/并发矩阵，from-image-asset及source-images接口",
+    "输入删除申请与G3执行租约语义对齐、清理与容量回收",
+    "v1 multipart、媒体授权/播放/删除、任务/事件/请求查询",
+    "回调、管理接口、预算队列及模型/Key控制面",
+    "SDK与浏览器实际互操作、G0-G5/Chat-Image完整隔离兼容",
+    "最终同源四类独立验收与Git/Ready CI/普通合并"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "vid_g7_started": false,
+  "pr_state": "NOT_CREATED"
+}

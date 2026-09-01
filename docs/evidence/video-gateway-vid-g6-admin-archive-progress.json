@@ -1,0 +1,106 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "admin-archive-http",
+  "stage_status": "IN_PROGRESS",
+  "source_state_id": "e4a19ef4ff549eee851f3315c1710aaeb97b5a88604e8707d166946d6f8a86b5",
+  "source_manifest": "video-gateway-vid-g6-admin-archive-source.json",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "registered_local_routes": 45,
+  "total_routes": 46,
+  "runs": [
+    {
+      "session_id": 28140,
+      "status": "PASS",
+      "schema": 100,
+      "required": 7,
+      "passed": 7,
+      "service_seconds": 53.731,
+      "copy_tree_sha256": "e04fc5433905a002f0f1d5b4ef84aa613ed65bdc557d0b0b6e301007d68d4930",
+      "note": "准备重试对象/审计锁读修复前历史快照"
+    },
+    {
+      "session_id": 35281,
+      "status": "PASS",
+      "schema": 100,
+      "required": 7,
+      "passed": 7,
+      "service_seconds": 55.465,
+      "linux_race": true,
+      "copy_tree_sha256": "bbdbfbca3a1a0d54e8098ecbf4ff235c47b39413962f36b853e43c01523b2731",
+      "covers": [
+        "真实T2V/I2V管理HTTP",
+        "停用用户/Key仍追踪原任务",
+        "同key完成或unknown重放不重复媒体IO",
+        "I2V Head失败unknown/pending与新key恢复",
+        "唯一命令和前后审计",
+        "原资金事实保留"
+      ]
+    },
+    {
+      "session_id": 92020,
+      "status": "PASS",
+      "schema": 100,
+      "required": 3,
+      "passed": 3,
+      "skipped": 0,
+      "linux_race": true,
+      "service_seconds": 28.677,
+      "safety_failure_seconds": 7.89,
+      "http_seconds": 12.92,
+      "final_auth_seconds": 6.77,
+      "copy_tree_sha256": "204a534bdc8034fb4b28aa22251126f73fa93443b3ce3d6fa9539e73da7a4c8f",
+      "covers": [
+        "正常和pending真实审核拒绝及隔离事实",
+        "仅真实moderating产生原G5拒绝来源",
+        "pending不伪造退款依据",
+        "归档HTTP成功和确认失败恢复兼容",
+        "成功末尾权限到期原子回滚"
+      ]
+    }
+  ],
+  "defects": [
+    {
+      "id": "G6-ADMIN-ARCHIVE-001",
+      "priority": "P2",
+      "fix": "每轮准备事务清空ORM命令对象；poll同类点同步处理",
+      "verification": "静态复核通过；插入后真实死锁和同键竞争反例待补"
+    },
+    {
+      "id": "G6-ADMIN-ARCHIVE-002",
+      "priority": "P2",
+      "fix": "成功事务内FOR SHARE锁读并核验完整前后审计",
+      "verification": "静态复核通过；审计篡改高强度动态反例待补"
+    }
+  ],
+  "boundaries": [
+    "completed仅指归档管理操作，不证明已结算或可交付",
+    "失败复用原G5待核对及Outbox事实，不在HTTP退款/扣费/释放输入",
+    "原unknown命令和所有资产/安全/财务事实保留",
+    "库映射导出别名不是公开DTO"
+  ],
+  "reviews": {
+    "standards": "两处P2修复静态复核；安全失败收口未发现新增确定P0/P1/P2，不签完整G6"
+  },
+  "remaining": [
+    "调账HTTP及独立maker/checker批准事实",
+    "完整权限/MFA/时效/100并发/死锁/提交未知/审计异常矩阵",
+    "标识失败、未知审核与部分资产恢复或明确拒绝矩阵",
+    "完整SDK互操作、Chat/Image/G0-G5回归",
+    "精确源码独立验收、Ready CI、Git闭环"
+  ],
+  "git": {
+    "committed": false,
+    "pushed": false,
+    "pr": "NONE"
+  },
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": "NO",
+  "vid_g7_started": "NO"
+}

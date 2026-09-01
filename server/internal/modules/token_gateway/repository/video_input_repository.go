@@ -106,7 +106,7 @@ func (r *VideoInputAssetRepository) RequestDelete(ctx context.Context, publicID 
 			return ErrVideoInputConflict
 		}
 		var active int64
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Model(&model.AIGatewayTaskInput{}).
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Model(&model.AIGatewayTaskInput{}).
 			Where("input_asset_id=? AND user_id=? AND project_id=? AND lease_released_at IS NULL", asset.ID, owner.UserID, owner.ProjectID).Count(&active).Error; err != nil {
 			return err
 		}
@@ -137,8 +137,16 @@ func (r *VideoInputAssetRepository) TransitionLifecycle(ctx context.Context, pub
 	if err != nil {
 		return nil, err
 	}
+	if err := r.transitionLifecycleCAS(ctx, asset, owner, expectedVersion, toState, now); err != nil {
+		return nil, err
+	}
+	return r.FindForOwner(ctx, publicID, owner)
+}
+
+// 复用原状态矩阵与CAS；管理隔离不会改写原审核结论、规范化快照、期限或输入租约。
+func (r *VideoInputAssetRepository) transitionLifecycleCAS(ctx context.Context, asset *model.AIGatewayInputAsset, owner VideoOwner, expectedVersion uint64, toState string, now time.Time) error {
 	if asset.VersionNo != expectedVersion || !videoInputTransitionAllowed(asset.LifecycleState, toState) || (asset.LegalHold && videoInputDestructiveState(toState)) {
-		return nil, ErrVideoInputConflict
+		return ErrVideoInputConflict
 	}
 	updates := map[string]interface{}{"lifecycle_state": toState, "version_no": gorm.Expr("version_no + 1"), "updated_at": now}
 	if toState == model.AIInputAssetDeleted {
@@ -148,22 +156,59 @@ func (r *VideoInputAssetRepository) TransitionLifecycle(ctx context.Context, pub
 		Where("id=? AND user_id=? AND project_id=? AND lifecycle_state=? AND version_no=?", asset.ID, owner.UserID, owner.ProjectID, asset.LifecycleState, expectedVersion).
 		Updates(updates)
 	if result.Error != nil {
-		return nil, result.Error
+		return result.Error
 	}
 	if result.RowsAffected != 1 {
-		return nil, ErrVideoInputConflict
+		return ErrVideoInputConflict
 	}
-	return r.FindForOwner(ctx, publicID, owner)
+	return nil
+}
+
+// 仅供已完成管理员鉴权及原来源Key证明的事务使用；只增加隔离，不提供使用授权或解除隔离。
+func (r *VideoInputAssetRepository) QuarantineForManagementTx(ctx context.Context, tx *gorm.DB, publicID string, owner VideoOwner, expectedVersion uint64, now time.Time) (*model.AIGatewayInputAsset, error) {
+	if tx == nil || owner.UserID == 0 || owner.ProjectID == 0 {
+		return nil, ErrVideoInputNotFound
+	}
+	var asset model.AIGatewayInputAsset
+	q := tx.WithContext(ctx)
+	if err := q.Clauses(clause.Locking{Strength: "UPDATE"}).Where("public_id=? AND user_id=? AND project_id=?", publicID, owner.UserID, owner.ProjectID).Take(&asset).Error; err != nil {
+		return nil, err
+	}
+	local := NewVideoInputAssetRepository(q)
+	if err := local.transitionLifecycleCAS(ctx, &asset, owner, expectedVersion, model.AIInputAssetQuarantined, now); err != nil {
+		return nil, err
+	}
+	if err := q.Where("id=? AND user_id=? AND project_id=?", asset.ID, owner.UserID, owner.ProjectID).Take(&asset).Error; err != nil {
+		return nil, err
+	}
+	return &asset, nil
 }
 
 // ValidateTaskInputForProvider 在提交Provider前重读TaskInput和InputAsset，验证数量、归属、状态、hash与version快照。
 func (r *VideoInputAssetRepository) ValidateTaskInputForProvider(ctx context.Context, taskPublicID string, owner VideoOwner, now time.Time) (*model.AIGatewayTaskInput, error) {
-	task, err := NewVideoTaskRepository(r.db).FindForOwner(ctx, taskPublicID, owner)
+	if r == nil || r.db == nil {
+		return nil, ErrVideoInputUnavailable
+	}
+	var binding *model.AIGatewayTaskInput
+	// 复用调用方事务；所有实体使用当前锁读，避免RR旧快照漏掉撤销、删除版本变化或租约释放。
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+		binding, err = NewVideoInputAssetRepository(tx).validateTaskInputForProviderTx(ctx, taskPublicID, owner, now)
+		return err
+	})
+	return binding, err
+}
+
+func (r *VideoInputAssetRepository) validateTaskInputForProviderTx(ctx context.Context, taskPublicID string, owner VideoOwner, now time.Time) (*model.AIGatewayTaskInput, error) {
+	task, err := NewVideoTaskRepository(r.db).LockForOwnerTx(r.db, taskPublicID, owner)
 	if err != nil {
-		return nil, ErrVideoInputNotFound
+		if errors.Is(err, ErrVideoTaskNotFound) {
+			return nil, ErrVideoInputNotFound
+		}
+		return nil, err
 	}
 	var inputs []model.AIGatewayTaskInput
-	if err := r.db.WithContext(ctx).Where("task_id=? AND user_id=? AND project_id=?", task.ID, owner.UserID, owner.ProjectID).Order("ordinal ASC").Find(&inputs).Error; err != nil {
+	if err := r.db.WithContext(ctx).Clauses(clause.Locking{Strength: "SHARE"}).Where("task_id=? AND user_id=? AND project_id=?", task.ID, owner.UserID, owner.ProjectID).Order("ordinal ASC").Find(&inputs).Error; err != nil {
 		return nil, err
 	}
 	if task.Operation == nil {
@@ -179,15 +224,25 @@ func (r *VideoInputAssetRepository) ValidateTaskInputForProvider(ctx context.Con
 		return nil, ErrVideoInputSnapshotDrift
 	}
 	var asset model.AIGatewayInputAsset
-	if err := r.db.WithContext(ctx).Where("id=? AND user_id=? AND project_id=?", inputs[0].InputAssetID, owner.UserID, owner.ProjectID).First(&asset).Error; err != nil {
-		return nil, ErrVideoInputSnapshotDrift
+	if err := r.db.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND user_id=? AND project_id=?", inputs[0].InputAssetID, owner.UserID, owner.ProjectID).First(&asset).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrVideoInputSnapshotDrift
+		}
+		return nil, err
 	}
-	trustedAsset, err := findVideoInputForOwner(r.db.WithContext(ctx), asset.PublicID, owner, false)
+	trustedAsset, err := findVideoInputForOwner(r.db.WithContext(ctx), asset.PublicID, owner, true)
 	if err != nil {
-		return nil, ErrVideoInputSnapshotDrift
+		if errors.Is(err, ErrVideoInputNotFound) {
+			return nil, ErrVideoInputSnapshotDrift
+		}
+		return nil, err
 	}
 	asset = *trustedAsset
-	if asset.LifecycleState != model.AIInputAssetReady || asset.ModerationStatus != model.AIModerationPassed || asset.NormalizedSHA256 == nil || *asset.NormalizedSHA256 != inputs[0].NormalizedSHA256 || asset.VersionNo != inputs[0].InputVersion || !asset.ExpiresAt.After(now) || asset.DeleteRequestedAt != nil || asset.PendingDeleteAt != nil || asset.DeletedAt != nil {
+	valid, err := videoBoundInputSnapshotValid(r.db.WithContext(ctx), &asset, &inputs[0], owner, now)
+	if err != nil {
+		return nil, err
+	}
+	if !valid {
 		return nil, ErrVideoInputSnapshotDrift
 	}
 	return &inputs[0], nil

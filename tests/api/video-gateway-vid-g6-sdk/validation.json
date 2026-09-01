@@ -1,0 +1,49 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "锁定SDK真实本机HTTP与临时MySQL互操作；Provider和Store为合成边界，不是阶段或生产验收",
+  "python_sdk": "openai==2.45.0",
+  "typescript_sdk": "openai@6.39.0",
+  "python_runtime_checked": "3.13",
+  "node_runtime_checked": "24.16.0",
+  "python_syntax": "PASS",
+  "typescript_node_syntax": "PASS",
+  "python_dependencies": "PASS",
+  "node_dependencies": "PASS",
+  "independent_static_review": "PASS_FOR_STATIC_AND_REAL_HTTP_INCREMENT",
+  "static_review_closed_issues": [
+    "Node24全局环境代理：改为proxyEnv为空的专用Agent",
+    "I2V业务追踪头缺失假通过：非空/格式/trace分离断言",
+    "字段类型缺口：model/error及分页首尾ID完整校验",
+    "删除后仅查第一页假通过：删除前后完整单页且目标预先可见"
+  ],
+  "reviewed_source_sha256": {
+    "sdk_python.py": "e0214d1d523e03044421a00e736cfb92a7e07a872e69fc8ce7017d8532ad0dc8",
+    "sdk_typescript.ts": "50cf125866893da058dc4d237a850592ff4f4e3e4f68b4e775369953dcad542e",
+    "README.md": "61eb6e3b098a201381c5e151ab15c3bb3690e13d335aca978f793f062f66d22c",
+    "video_sdk_http_mysql_test.go": "99230aa66e7bb058fa903ebf525b5d918eec204ebd1e9e1233bc0d0a92988898",
+    "verify-video-gateway-vid-g6-sdk.ps1": "4340287a808e6652622cdb94a1209cf62e68d0cf85ff7d39ee2b626affe16c9f"
+  },
+  "real_http_contract": "PASS",
+  "browser_playback": "NOT_RUN",
+  "mysql_integration": "PASS_ISOLATED_TEMPORARY",
+  "actual_http_run": {
+    "test": "TestVideoG6LockedSDKHTTPMySQL",
+    "status": "PASS",
+    "seconds": 36.11,
+    "python_cases": 5,
+    "typescript_cases": 5,
+    "parent_runner": "infra/scripts/verify-video-gateway-vid-g6-sdk.ps1",
+    "parent_runner_replay": "PASS"
+  },
+  "real_provider_requests": 0,
+  "real_wallet_writes": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "verified_execution_boundary": [
+    "Molin真实loopback HTTP、真实SK HMAC与临时MySQL",
+    "显式视频能力、Project权利接受与合成参考图",
+    "Python和TypeScript两个独立completed媒体删除夹具",
+    "T2V/I2V、retrieve/list、200/206/416、delete与双向账单保留",
+    "真实Provider、MinIO、测试服、生产和浏览器播放未执行"
+  ]
+}

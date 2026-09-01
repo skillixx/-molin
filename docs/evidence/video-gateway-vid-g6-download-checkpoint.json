@@ -1,0 +1,63 @@
+{
+  "target_goal": "VID-G6",
+  "status": "PARTIAL_LOCAL_DOWNLOAD_LIMITS_VERIFIED",
+  "full_stage": false,
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "UNCOMMITTED",
+  "source_manifest": "video-gateway-vid-g6-download-current-source.json",
+  "source_state_id": "25d71549f6cba032efad983585f260cfbc2f4d4e6e0baefb84d1ebb128877872",
+  "code_state_id": "f92e83357ae04965304210ab49c7b165acec387855ec4e66f6bca203282f1a40",
+  "copy_tree_sha256": "30a3079e3f455458541cd226692c96eb027ccdea26bbbb27aba1e675aa1d29c4",
+  "source_mismatch_count": 0,
+  "full_current_g6_regression": {
+    "session_id": 24652,
+    "exit_code": 0,
+    "required_top_level_tests": 47,
+    "required_skips": 0,
+    "linux_race": true,
+    "schema_latest": 85,
+    "service_seconds": 175.079,
+    "source_manifest": "video-gateway-vid-g6-download-source.json",
+    "source_state_id": "0f94beffd6822d43dc4b3fe2a9937a0952b193168a1516fbc0ffe09327a132f1",
+    "copy_tree_sha256": "6e100eeae65bf6ca2762d9e3e98d23f45bf041fced0053c036d341393247ee82",
+    "current_difference": "仅video_content_http_mysql_test.go新增服务端完成信号及未释放总数断言；受影响用例旧结果STALE，由15246重新验证。其他生产代码与迁移未变化。"
+  },
+  "current_download_regression": {"session_id": 15246, "exit_code": 0, "required_top_level_tests": 6, "actual_top_level_tests": 11, "required_skips": 0, "linux_race": true, "schema_latest": 85, "service_seconds": 32.122},
+  "native_run": {"session_id": 79808, "exit_code": 0, "commands": ["go -C server test -count=1 ./...", "go -C server vet ./...", "go -C server mod verify"], "mysql_proof_from_isolated_runs_only": true},
+  "red_green": [
+    {"test": "缺少下载额度与释放合同", "red_chunk": "95ff9e", "green_session": 44261},
+    {"test": "带宽和租约写期限", "red_chunk": "675aca", "green_chunk": "8c90e8", "current_green_session": 15246},
+    {"defect": "G6-DOWNLOAD-001", "severity": "P1", "red_session": 77066, "red_exit_code": 1, "red_copy_sha256": "27560f9fdcde44352533f0388da7bdc200af4124faebc92ff93206de629d457b", "green_session": 59779, "current_green_session": 15246, "status": "CLOSED_THIS_SLICE"}
+  ],
+  "verified_scope": [
+    "MySQL操作性租约，User2/Project4代码上限，所有Key共享用户额度",
+    "两个Task、两个App对象100申请，2成功/98限流；不是多进程部署证据",
+    "续约未提交跨旧TTL固定窗口，DB时钟及真实scope锁等待，最终有效租约为2",
+    "真实HTTP另一有效Key读取自有已交付任务也返回429，超限Store Head增量为0",
+    "显式释放/重复释放/过期令牌不得释放或复活新名额",
+    "真实HTTP Head失败、读后租约过期、成功退出；等待服务端defer Close后未释放总数为0",
+    "真实回环4MiB连接限速20MiB/s加1MiB突发；设置写期限不超租约，取消后不打开第二片"
+  ],
+  "remaining": [
+    "默认User2先触发，Project4第五路独立边界未验证",
+    "实际慢TCP写超时与及时释放、COMMIT未知、完整财务字段不变",
+    "大于2MiB真实可播放MP4的多片撤权/删除/断流",
+    "浏览器播放拖动与锁定双SDK",
+    "v1 multipart I2V、取消/媒体删除、资产保存和生命周期、回调、管理接口及控制面预算",
+    "完整G6独立QA/PM/Standards/Spec、Ready CI与Git闭环"
+  ],
+  "independent_review": "video-gateway-vid-g6-download-independent-review.md",
+  "registered_local_routes": 23,
+  "pr_state": "NOT_CREATED",
+  "production_bootstrap_enabled": false,
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": "NO",
+  "vid_g7_started": "NO"
+}

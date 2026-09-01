@@ -1230,6 +1230,160 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 
 详细矩阵见[开发合同](./video-gateway-vid-g5-billing-outbox-reconcile.md)，12个候选金额金样及五项已批准的本地合同见[人工财务审查包](./video-gateway-vid-g5-finance-review.md)。未执行的候选金样不能标记PASS。
 
+## 视频网关 VID-G6 HTTP与显式准入验收（开发中）
+
+`project-key-idempotency`专项验证视频Key签发/轮换/吊销重放、Secret只一次、同键异意图、严格结果Key/scope/audit完整性，并回归Project grant和旧Chat审计。schema107新增审计摘要SHA-256和严格双字段结果约束；真实MySQL还覆盖首写错误摘要整体回滚、issue结果已吊销、rotate结果错绑来源、revoke结果仍active四类损坏事实。COMMIT未知和全部写点故障仍是后续门禁。
+
+`inline-i2v`专项在schema108真实临时MySQL和loopback HTTP上验证：无文件T2V、唯一PNG/JPEG的I2V、项目权利接受、服务端Target、规范化/审核、G5 Quote/Hold/TaskInput、同键同文件重放、同键异文件409、100并发唯一事实、空文件/伪扩展/外部URL字段/重复文件拒绝，并回归原I2V事务、平台上传和T2V门面。无权利与T2V→I2V同键均在任何inline会话前拒绝；Handler在读取前按用户请求字节预算限流且只保留一份正文。读取中断、Store未知结果、生成失败后的输入清理及COMMIT未知仍须补齐。
+
+`queue-admission`专项在schema109验证G6关闭态queued容量：同用户第1/2成功、第3个429且只形成两套Request/Task/Hold；100个不同意图同起跑精确2个赢家、98个user拒绝。Quote/输入/权利复核后，同一事务先形成不可见的Hold/Task/事件/Outbox暂态事实，再在提交前执行末尾门闩；拒绝时全部回滚为零事实，旧Quote错误不被掩盖。平台/OpenAI错误Envelope、Retry-After、Project10、global100、门闩故障及末尾写失败全快照均进入最终all。
+
+`running-admission`专项使用同一schema109门闩和原Task账本验证本地Fake执行名额：用户1、Project2、逻辑模型2，容量满保持queued、Provider调用0且Hold不释放；两个Worker同起跑用户名额唯一。真实Provider hard cap、分布式TTL和幽灵租约仍属G7。当前专项通过不替代其余终审缺陷或完整G6验收。
+
+`budget-admission`专项复用G4预算表并参与G5同连接事务，验证Project hard低于/等于0.50、disabled、API Key hard/soft、重放唯一、非UTC注入时钟的UTC expiry、取消后released、平台/OpenAI 42920/50321映射，以及100并发精确1个预算赢家。成功settled、Provider失败release、后置故障/COMMIT未知、跨日/月真实锁等待和补偿仍须补齐。
+
+`project-grant`专项验证100并发首次授权、CAS、revoke/regrant、停用态撤销、未知字段/Project SK/撤权重放拒绝、加密审计及零财务变化，并回归Key、准入和目录。终审增量还逐项覆盖MFA失效、空/控制字符reason、前置/事后审计写失败及整笔零事实回滚；Key生命周期幂等由独立Project Key专项覆盖。
+
+`project-key`专项要求真实JWT、HMAC及临时MySQL，验证显式true、allowlist、发布快照七键及生效时间、Project grant锁定、列表回显/Secret不泄露、轮换从数据库重建全部配置、事务外篡改/非Project Key拒绝、撤权竞争和旧Key false；同时运行原Key三个单测、目录回归和视频准入完整矩阵。Key写幂等和grant管理API仍是后续门禁。
+
+`model-publication`专项必须验证发布/下架/回滚、原键重放、历史无native版本拒绝、当前价格/native摘要、Provider Submit=0、财务不变及旧G5旁路关闭；随后强制在独立77号库运行原Chat发布。父子源码副本hash必须相同。默认模型并发和提交未知仍是后续必测项。
+
+草稿详情与接管专项增加实际版本读取、历史URL脱敏、缺摘要400、旧摘要409、读取后变化、原ID/发布/财务保持、源摘要持久化、接管重放、重复接管拒绝、撤权读取/重放拒绝，以及有/无视频handler×有/无无关query的旧Chat详情兼容。跨管理员竞争、全部读取故障和完整发布仍须单独补齐。
+
+受控模型草稿`model-draft`专项验证真实JWT/MFA、创建及100并发重放、更新/CAS、严格完整定义、撤权、原因AAD、旧视频删除拒绝及财务事实不变。还须补原应用装配、详情、历史接管和发布管理矩阵；局部通过不算完整G6验收。
+
+模型合同基础专项`model-contract`包括快照七键保留/非法合同拒绝、原服务解析器、真实MySQL持久化与CHECK、公开目录真实HTTP及4项历史列表回归，共9项必测。102迁移须在同一源码副本完成up/down/up；不以仓储基础验证替代管理员发布、CAS、MFA、审计或完整阶段验收。
+
+模型公开目录专项：`TestVideoG6CatalogPublishedHTTPMySQL`必须在真实临时MySQL和loopback HTTP运行，验证发布快照、公开能力/操作、草稿隔离、失效快照、SK资格撤销、缺依赖关闭及图片字段兼容。`catalog`焦点同时要求原`/v1/models`四项测试实际RUN/PASS。源码与证据尚须统一冻结，局部通过不得替代完整VID-G6或Chat/Image回归。详见[目录合同](./video-gateway-vid-g6-model-catalog-contract.md)。
+
+调账`admin-adjustments`包含实际双JWT/MFA、冻结金额、两个待审批序号、100并发唯一执行、资金追加及原账不变/全对账、三种原因密钥变化重放503。G5兼容不共用G6库名：该范围强制运行`legacy-adjustments`临时专用库子阶段，保留原DSN隔离守卫；两部分均RUN/PASS才算整批通过，SKIP不能替代兼容。debit/余额边界、全时效/撤权、各写点回滚、提交确认丢失和审批篡改仍须完整证据。
+
+归档HTTP `admin-archive`专项覆盖严格关闭/映射、T2V/I2V实际请求、停用主体追踪、原完成回执重放不再OpenContent、唯一命令/前后审计、I2V Head失败unknown/pending及新键从原事实恢复。`admin-archive-safety`另验正常/pending审核拒绝真实入库、普通真实moderating失败来源与pending不得伪造来源、围栏与失败回执原子收口、原钱包/Hold/Quote/Usage不变。完整100并发、死锁竞争及审计篡改等证据仍待，不能将局部PASS当成全阶段验收。
+
+归档私有执行器`archive-executor`专项覆盖普通/待核对×T2V/I2V四种恢复，使用真实仓储、原G4媒体安全链和实际Fake私有对象；原主体停用仍可由认证管理员恢复，Provider Submit计数不增加，最终仅执行succeeded且billing=held/delivery=pending，I2V租约未释放。成功断言同时检查六角色对象/hash、Request精确状态/版本变化及其余资金事实不变。还须覆盖最终释放围栏后权限自然到期、整个成功事务回滚，以及存储读体期间接管/旧代次写入移动删除拒绝。当前不是HTTP命令验收，安全失败、确认丢失、部分资产及重放收口仍待完成。
+
+归档共享围栏使用`archive-fence`专项：原Task认领100并发唯一、旧Worker和仅知新version的无证明写入拒绝、pending下技术phase不回退Task、不可跳级、接管代次及退让追加事件。虚拟时钟验证代次不等于真实等待；另用100ms实际租约和独立持锁事务验证锁等待跨期必须冲突且Task完整不变。无活动围栏/nil证明释放也必须冲突而非panic。该批同时回归管理轮询、回调及原G4 Fake流程；尚不能证明完整归档HTTP、成本/媒体成功门禁或所有资产IO围栏。
+
+管理轮询`admin-poll`专项：T2V/I2V实际回环HTTP，原用户和Key停用后仅查询原已提交Provider；同key不重复Query，超时保留pending_reconcile，后续成功/明确失败观察追加原事实而不回退状态或Submit。需要验证前后审计唯一、运行中命令CAS、晚到冲突和输入租约保护；数据库重试只在最外层，内部保存点保留1213/1205错误链而不重试Provider。真实死锁/提交未知/过期命令善后/权限时效/100并发尚待专项证据，见[管理轮询合同](./video-gateway-vid-g6-admin-poll-contract.md)。
+
+输出解除隔离采用`admin-output-release`受影响专项：两个不同合成管理员实际JWT认证、申请仅202不改隔离、同人403、客户端伪造checker字段400、错资产404、复核200及唯一消费、原状态/六资产元数据/财务和Store不变；同时包含上批隔离保存/额度快照与自然跨期屏障补强。必须覆盖最后checker等待跨maker资格期限后的整事务回滚，不能伪造无JWT的maker调用者代替持久化资格复验。SQL97、故障/竞争和独立回执未完成前不得签完整解除或G6通过。详见[解除隔离合同](./video-gateway-vid-g6-admin-output-release-contract.md)。
+
+输出行政隔离增量采用`admin-output-quarantine`专项，11个必选RUN/PASS且无SKIP才算该批通过。必须验证原六角色安全事实不改写、窄SQL凭据/旧CHECK保护、单资产CAS、同键重放、目标停用后合法管理及旧临时/长期签名失效。保存重放需对同键和新键复验当前隔离且在Store Head前拒绝；最终详情查询等待至动态权限自然到期须回滚资产、prepared/completed及两份审计。93502已复现保存重放漏洞，不是PASS；缺陷与当前边界见[输出隔离合同](./video-gateway-vid-g6-admin-output-quarantine-contract.md)。完整六角色/保护组合、保存额度快照、SQL篡改、100并发和隔离清理仍须补齐，不能由该专项替代全G6验收。
+
+平台资产删除增量使用`asset-delete`专项：实际JWT/SK路由、严格版本JSON、根组/单子粒度、父/兄弟/审核副本不受单删影响、根后续收敛、长期副本与原财务/容量不变、v1隐藏和平台部分删除投影。必须分别验证错误计划在SQL写入侧和合法失败记录读回侧被拒绝，后者不能由SQL保护替代；计划ref/hash/size漂移时Delete调用不得增加。52412写入侧及基础HTTP已过，增强读回与完整竞争/故障矩阵待验收。
+
+历史迁移必须另跑`save-migration`：运行器装配89版，`TestVideoMigration91HistoryMySQL`执行90/91；四种旧保存、19表原列、9次ALTER后中断、结构定义、合法后继回滚及错身份拒绝需全部实际RUN/PASS。普通最新结构回归不能替代该测试，native环境的SKIP不能算通过。30701对应增强范围通过；37162进一步证明旧NULL未完成计划的新旧键恢复拒绝均为零业务写入。九个ALTER后SIGNAL不等价于所有触发器空窗或真实网络中断。
+
+保存新尝试增量：`save-reattempt`专项验证schema91、旧键终止事实不漂移、新键独立计划、旧清理重放、100新键唯一后继/五次复制/一次容量及原生成财务不变。39166基础4项通过；100竞争和更完整故障矩阵验证中，带历史数据和DDL中断重入仍待实现。
+
+内容故障夹具修正：46587原97回归的`TestVideoG6ContentMySQLFinancialGate`失败，49021定向复现7种故障均未影响已创建cap。原因是测试替换app字段，而cap已绑定原Store。现GetContent前装配固定指针wrapper，之后仅用atomic切故障，保留原cap/OpenRange及全部断言，每例增加恰好命中一次的检查。修复后须重新验证，不用忽略失败或重建cap规避。
+
+长期副本读取增量：执行`verify-video-gateway-vid-g6.sh`的`saved-read`范围，要求schema90及真实临时MySQL/Linux race。覆盖原临时资产自然到期和删除后五角色仍可读、v1保持404、原Key归属、无Key JWT及吊销、长短期共享2/4租约、签名/角色/存储权益拒绝前零Store、独立Store与影子对象不可替代。读取不改变原生成财务和保存容量；下载租约的运行写入单独核算。当前测试在补齐中，精确源码回执前不能宣称PASS；详见[长期读取合同](./video-gateway-vid-g6-saved-read-contract.md)。
+
+未发布保存清理：88698的8项MySQL/Linux race专项通过。覆盖源/权益到期、五目标标记含未创建目标、原视频/审核副本保留、删除/确认失败、删完后数据库写失败、过期权益精确释放一次、保全/匹配用户资产/completed/错误归属拒绝，以及旧复制取消后迟到Background写被标记拒绝。69727两种伪过去资格SQL被错误接受，修正首次意图必须关联真实到期实体后反例要求1644通过。COMMIT未知测试先调用真实sql.Tx.Commit成功再返回确认错误，重放读取aborted；后续增加重放后额度、事件数和事务次数的强化断言，须纳入最新整体验证。
+
+用户资产保存：43262的12项保存专项通过Linux race，HTTP首次201/重放200/源删除后保留长期资产，100个不同幂等键同视频只能创建一份用户资产与一次容量结转；用户/Project/全局/权益余额分别拒绝且不触发复制。独立Store及“源侧同名影子不能掩盖长期目标丢失”均测试；部分复制失败保留reserved并阻止源删除，恢复沿原计划；八表完整财务行不变。73869在asset_event写入屏障实际跨source/entitlement/JWT期限仍提交完成，6710提交前复核修复后三者均回滚UserAsset/Event/quota结转/completed，保留第一阶段计划。完整跨Task容量竞争、真实保存/删除并发、所有写点/COMMIT未知和cleanup/abort尚未完成。
+
+平台短效下载：69646的9项必选专项及Linux race通过，覆盖JWT/SK正例、五个用户角色真实字节/hash/MIME、Range、无认证/跨Key/来源隔离、签名/期限篡改、旧版本拒绝，以及首片后吊销JWT仅返回1MiB并断流、租约回收。95714修复前同一吊销反例完整返回4054453字节，禁止将旧JWT仅转UserID后沿用。初次与逐片吊销查询均需受30秒/JWT到期上界约束，内存credential不得进入JSON。新增JWT自然到期、吊销依赖故障、六资产最早到期导致合法签名自然到期、HEAD与跨路径篡改测试待97564加强验证；不能以改expires但不重签替代自然到期证据。
+
+生命周期增量：29308实际隔离MySQL及Linux race全3项通过。`TestVideoG6AssetLifecycleHTTPMySQL`经真实loopback HTTP核对21个精确字段名、根/父关系、null、跨Key/JWT/图片资产404、审核副本隐藏、保全、争议开启/解决、原G4拒绝形成隔离、撤权、真实delete_failed及原命令恢复。每次GET对比16张关键表完整行快照及Store调用计数。`TestVideoG6AssetLifecycleExpiryMySQL`使用数据库读回期限在G5初始对账后注入末段延迟，要求真实跨越thumbnail期限、content仍有效而can_download=false；未触发屏障或初次就已过期均不得算通过。24757负向对照去除修复后该测试FAIL，修复版PASS。原生Go的SKIP不是SQL证据，未覆盖的父关系损坏、数据库故障和完整生命周期矩阵仍需补齐。
+
+媒体删除增量：73704的6项专项与73883的62项当时完整G6测试均通过Linux race，后者不包含新生命周期。测试验证五个用户对象删除、审核副本原hash保留、确认失败恢复、删除误伤副本失败关闭、完成状态数据库写失败后恢复、prepare内部30秒期限。数据库写失败不是COMMIT响应不明的等价证明；全保存/删除/下载竞争仍待验收。
+
+取消增量：`TestVideoG6TaskCancelMySQL`覆盖T2V/I2V各100请求，要求1首次/99重放并通过原G5对账；同键异任务冲突且不改变第二任务。`TestVideoG6TaskCancelHTTPMySQL`覆盖两别名重放、严格无正文/query、JWT无Key任务正例、跨Key/JWT404、撤权后重放403、提交后202保留Hold及终态200 already_terminal无操作。两个关闭态入口由`TestVideoG6CancelHTTPClosedRoutes`实际HTTP验证。
+
+`TestVideoG6TaskCancelRollbackMySQL`注入原G5最后Outbox写失败，要求任务、回执、Usage和冻结资金一起回滚，原键恢复及回执不可修改/删除；错Key直接SQL必须1644。钱包balance为可用余额，10元预占0.5后应9.5可用/0.5冻结，不能把总额当balance。`TestVideoG6TaskCancelSubmittingMySQL`在真实Fake Submit RPC屏障期间取消，要求仅意图及原绑定保留。
+
+`TestVideoG6TaskCancelDatabaseRetryMySQL`以当前连接ROLLBACK加1213错误注入复现整笔事务失效；另覆盖1205。25398旧实现出现返回成功却回执0条，修复后86729要求两次回执创建尝试、最终1条且完整对账通过。这是实际MySQL事务回滚结合故障注入，不冒称自然死锁复现。G5共用函数变更须额外运行隔离`legacy-cancel`，不得以原生Go中的SKIP代替兼容证据。
+
+真实媒体增量：`TestVideoG6PlayableMP4Probe`验证锁定FFmpeg合成MP4的hash和5秒/24fps/1280×720，原探测器9168b9实际误报1fps；修复改用轨道mdhd时基。`TestVideoG6MediaClockMatrix`覆盖不同电影/媒体时基、0/1版本、64位时长高位非零、未知/缺失/零/截断时钟、完整CFR表、采样累计时长、零时长及空首视频轨道。cbcf11额外复现三项缺口，修复后59227d视频单测通过。
+
+`TestVideoG6PlayableContentHTTPMySQL`通过原Fake/G5生成、归档、结算、交付实际4054453字节可播放媒体；第二片Store失败必须200头后UnexpectedEOF，正文恰好原首个1MiB，无JSON尾部，租约显式释放且全财务行快照不变。55397初版专项通过，后续解析器收紧须重跑。静态回环浏览器已实际解码、拖到3秒并播放到5秒结束，390px无横溢出；该证据不是带SK业务浏览器/SDK端到端，也不等于慢连接或撤权/删除竞争全部完成。
+
+下载限额新增`TestVideoG6DownloadLimitsMySQL`：两个App对象、两个已交付Task共100申请，要求2成功/98限流；释放、重复释放、过期旧连接不得影响新名额。`TestVideoG6DownloadRenewalRaceMySQL`必须覆盖有效续约UPDATE暂停提交、DB时钟跨旧TTL、新申请等待实际scope锁、最后active=2；77066旧实现复现第三名额，59779修复后通过增强窗口。只验证申请100并发不足以关闭续约竞态。
+
+`TestVideoG6ContentHTTPMySQL`扩展为另一有效Key下载自己的已交付任务也受用户共享上限；429时Store Head次数不增加，释放一个名额后可下载。新增读取后人为到期应503，且普通成功、Head失败、写前到期后active租约均为0。`TestVideoG6ContentHTTPBandwidth`以真实回环4MiB测20MiB/s加1MiB突发；`TestVideoG6ContentHTTPLeaseDeadlineAndCancel`仅验证设置租约约束的deadline和取消后不读第二片，不冒充实际慢TCP写超时。COMMIT未知、Project第五路独立边界、真实慢连接和大对象全业务断流仍待补。
+
+内容业务新增`TestVideoG6ContentMySQLFinancialGate`及`TestVideoG6ContentHTTPMySQL`：真实G5生成、归档、结算、交付逐阶段校验，未闭合404；通过真实Project SK HTTP测试MP4 hash/长度、200/206/416、If-Range、跨Key/JWT拒绝、子资产保全。服务分片覆盖撤权、对账破坏、Head hash/大小/位置不符、对象缺失、短读/超读/关闭失败、取消及范围上限；每项须由隔离运行实际RUN/PASS，不把本地MySQL SKIP当通过。`TestVideoG6ContentHTTPApplicationErrorSingleEnvelope`复现并防止503追加默认500双JSON，实际HTTP故障也必须第二次解码EOF。大于1MiB中途失败/撤权、固定删除竞争、完整财务不变、下载并发/带宽、浏览器及SDK仍待完成。
+
+留存清理新增3项与原用例一起由77875跑完39项必选顶层测试，零必选SKIP：`TestVideoG6ImportReadyRetentionMySQL`证明ready起算7天及重放不续期；`TestVideoG6InputCleanupMySQLImportHTTP`证明保全拒绝后正文仍在、仅删副本、源过期后的严格六字段200及全财务行摘要不变；`TestVideoG6InputCleanupMySQLBoundTasks`证明两个真实I2V分别结算且以更晚安全截止保护，前1秒拒绝。该源码冻结在新增content之前，不可用作后续content通过证据。
+
+实际输入清理：`TestVideoG6InputCleanupMySQLUpload`通过真实受控上传/complete、删除申请和虚拟时钟推进，验证原到期前原件/封存/规范化三类正文存在；到期后Fake对象实际清除、墓碑阻止迟到写、唯一000084完成事实和原容量控制cleaned_at。内部清理不启动后台进程，不测试真实存储。19359整轮36项通过，随后增强确认写失败窗口：必须先断言三类正文均存在，在清理事实INSERT钩子中确认三类正文已消失，再注入写失败并验证DB仍pending、容量未释放和无完成事实。之后确认读取错误/报告未清理仍不得成功，最终同目标恢复。不要将多个故障共享对象的旧结果表述为各自独立首次删除场景。
+
+还须验证pending_reconcile/缺失安全时间、Input及来源保全/争议/隔离固定窗口、100并发、COMMIT响应未知、实际容量重新准入，以及历史回执完整当前权限/缺少完成事实矩阵。多绑定最晚截止、前1秒、导入只删副本和历史HTTP200已见上方77875子集证据，不等于异步存储围栏或完整G6通过。
+
+输入删除HTTP扩展`TestVideoG6ImportHTTPMySQL`：真实SK来源导入并形成I2V预占后，测试跨Key/JWT404、空/null/零/负数/小数/重复/大小写别名/未知字段拒绝、保全409、六字段202及media_deleted=false、同键同CAS重放不续期、同键不同CAS409、原输入期限与TaskInput不变、财务/Usage/Outbox/Provider零新增。65545复现VERSION_NO接受及额外版本漂移后原键成功；须核验修复后两个反例都通过。JWT自有无Key输入、跨输入同键、缺失/重复幂等头、来源变更固定窗口与实际清理仍需后续矩阵，不登记完整DELETE通过。
+
+任务参考图专项82150通过读取中取消后任务/冻结资金/租约不变，以及MaxOpenConns=1的完整Fake I2V Submit/Poll/归档/结算/交付。上下文取消由测试Store协作响应，不声称硬中断任意实现。后续HTTP删除代码变化后仍须完整回归，不能只引用此专项。
+
+`TestVideoG6TaskReferenceAfterDeleteMySQL`使用真实G6权利接受/G5 I2V预占、原规范化PNG和Fake私有Store，先申请pending_delete再通过NewTaskLedger执行原Fake异步链、结算与交付。必须证明冻结InputVersion/hash不变、Provider Submit一次、仅安全终态释放租约、正文仍保留。20491先缺入口失败，99398整轮35项通过；随后新增“发布新版本移除I2V后Load拒绝且Store读取增量0”的反例，结果独立记录。还须补导入来源、单连接嵌套Advance、IO跨到期/取消、pending_reconcile及固定读取/清理竞争，不把一次成功链当成完整矩阵。
+
+运行器执行期间不得编辑`verify-video-gateway-vid-g6.sh`；Bash会继续从该文件读取后续语句。42810实际34项通过，但宿主脚本被修改导致后续`ts.up.sql`误执行，整轮exit1，必须保留失败并完整重跑；99398冻结脚本后exit0，不用源码测试通过掩盖运行器失败。
+
+延迟删除基础：`TestVideoG6InputDeferredDeleteMySQL`从真实G6 I2V权利接受和G5预占形成TaskInput，验证pending_delete只递增资产版本、原键重放不续期、同键不同CAS冲突、新Quote拒绝、原绑定未改写、SQL清理被活跃租约阻止。`TestVideoG6InputDeleteReplayRRMySQL`先建立RR快照，再由独立连接提交删除赢家，原键须读到同一凭据。另以独立连接追加版本漂移验证当前执行读，并注入凭据读取错误验证原错误保留。33908缺入口红例，85658首项通过，51907三个增强反例失败；修复后需重跑。完整执行参考图读取、HTTP、并发绑定/删除、保留窗、实际对象清理和回滚兼容仍未验收。
+
+平台任务/事件查询增量：`TestVideoG6TaskReadHTTPClosedRoutes`覆盖五条GET默认关闭503；`TestVideoG6ImportHTTPMySQL`在真实导入I2V预占后验证三种ID查询一致、原reserved/held/pending及0.75元预占、跨Key/JWT404、D-95列表、事件公开ID及轴、过滤后的total、大小写/未知/错误轴事件隐藏与原事件不变。数据库必须先拒绝任意诊断JSON，不能为测试过滤而关闭SQL白名单。
+
+`TestVideoG6TaskReadMySQLSettlementSnapshot`在身份读取后由独立连接真实执行G5结算与交付，查询须返回succeeded/settled/available、0.50元结算/零当前冻结且can_deliver=true。3079曾复现旧RR拼接，42412该例通过；该轮整体仍因事件测试夹具错误FAIL，不作整轮PASS。`TestVideoG6TaskReadMySQLFinancialLifecycle`验证held的settled_amount=null、实际取消后的零结算和0.50净释放、真实完成交付、媒体删除元数据后的账单保留和v1隐藏；它不证明对象正文删除。`TestVideoG6CompletedListsMySQLConcurrency`还须以独立期限执行平台详情列表100并发、共享钱包对账和越过末页total=2/items=[]。新增项结果以实际运行回执为准。
+
+39711四项专项已通过。随后新增事件查询100并发与真实取消竞争，以及仅在数据库读取边界注入缺Link、错Hold身份、Hold/Link结算不一致、settled缺金额、未知Hold状态和holding含结算额，不改写原资金事实。89610及52429分别复现损坏结算与四项Hold拒绝缺口；52429也复现历史exception进入视频事件total。修复后须重跑全部，HTTP另检查精确23键、显式null、未知/重复/越界query与Task/request公开ID混用404。不能用Go测试在无隔离DSN时的SKIP证明这些MySQL用例通过。
+
+`TestVideoG6ImportHTTPMySQL`使用测试专用导出夹具及真实路由/认证：来源候选七字段，其他Key空页；导入储存读取暂停时同键返回202，释放后首次201及重放200，五字段中仅input_asset_id允许null、处理期限非零且不续期。检查导入前后八类事实数量、全库Outbox和钱包余额/冻结额不变；后续0.75合成I2V报价/预占需新增唯一Request/Quote/Task/Hold/冻结流水/钱包关联/held Outbox，不提前创建Usage。直接读关联行验证holding、freeze/out金额及held载荷。测试导出文件必须只出现在TestGoFiles，不能进入生产GoFiles。
+
+`exerciseVideoImportScopeRevocation`确认真实RR，在目标Put后且发布首个api_keys一致性读完成时，由独立连接删除精确scope；断言RowsAffected=1、已撤权、404、目标rejected/墓碑及清理完成，最后只恢复合成夹具授权。不允许以顺序撤权或模拟鉴权失败替代旧快照场景。
+
+来源导入增量由`exerciseVideoInputImport`在真实IMG-G5来源生成/结算后执行：首次100并发只创建一条导入回执和一个独立规范化InputAsset，不伪造UploadSession；原键重放、异源冲突、跨Key拒绝、目标Put写成后响应未知恢复、源版本漂移清理目标且原图可读、财务/任务计数零新增。检查目标墓碑及cleaned_at、成功后实际字节占用，不能只看返回码。还须补全目标保全解除后的原命令清理、旧租约/提交未知、源撤权当前读、上传混合额度和完整HTTP矩阵；未执行项不得登记PASS。
+
+来源图片增量：`TestVideoG6SourceImagesMySQL`使用Fake640px图片和真实IMG-G5处理、归档、Reserve/Execute/Reconcile，必须证明媒体已入库但未结算时候选为空、结算后只返回主图、JWT不能读SK来源、allowlist/all均不能绕过撤销的图片模型scope、保全图片隐藏且查询不增加Provider调用。回环HTTP用例验证D-95空列表，关闭态503。不得以手工写settled或仅模型对象测试代替该链。from-image-asset、完整来源生命周期/规格/并发和正向HTTP候选矩阵仍待补齐。
+
+输入元数据增量：`TestVideoG6InputReadHTTPClosedRoutes`必须验证两个GET默认503；真实上传HTTP用例增加SK详情与D-95列表、JWT无Key上传/查询、互相跨Key404及total隔离。`TestVideoG6InputMetadataMySQL`覆盖十键DTO、真实NULL规格夹具、分页空数组、跨User/Project/Key、隔离历史、撤权后拒绝、读取驱动故障不可伪装空页/404、legal hold与到期不可引用。旧夹具已有T2V Quote，零副作用须比较调用前后总数，不删旧事实。41837复现Count投影导致503及保全输入报价未拒绝，修复后需重新验证原反例。完整来源图、全生命周期与竞态矩阵仍待后续补齐。
+
+上传增量使用真实临时MySQL和G4规范化，Store/Safety为外部边界Fake。`TestVideoG6UploadMySQLSealCompleteReplay`验证不可变封存、能力失效、唯一输入和跨Key404；`TestVideoG6UploadMySQLRejectAndCancelRace`验证hash不匹配及取消抢先；`TestVideoG6UploadMySQLInterruptedRetryAndConcurrency`验证取消/超时恢复、100并发和发布鉴权驱动故障。56971复现临时故障误转rejected；修复后必须观察verifying、同键完成、原对象保留和一条InputAsset。`TestVideoG6UploadMySQLRecoveryFences`新增发布INSERT的1213/1205驱动故障及租约接管后迟到旧执行者，不可将驱动注入写成真实死锁复现。
+
+`TestVideoG6UploadHTTPMySQLRoundtripAndI2V`使用两个实际回环HTTP服务（Molin和Fake对象存储），执行真实SK/JWT、签名PUT、complete/重放/取消、权利接受及I2V Quote/G5 Hold；断言上传阶段财务/任务零写入，生成后恰好一组请求/Quote/Task/Hold。每次从空DTO解码，核对八个必需键/null，负例同时断言HTTP、平台数字码、error、request_id和data:null，防止残留字段假PASS。该场景不调用Provider；v1 multipart与双SDK现由独立专项覆盖，浏览器与全阶段验收仍需另证。运行器在测试开始前输出不含证据目录的复制源码树SHA256；事后源码摘要必须单独标注，不冒充运行摘要。
+
+I2V事务增量：真实G4规范化640px PNG、G3输入事实及G5钱包；缺项目接受拒绝，合法声明形成原Quote/Hold/Task、唯一TaskInput租约及两条权利声明；预检后政策退役拒绝第二个请求。部分G6装配不能降级、同owner错Quote声明按1644拒绝、安全终态原输入删除后纯账本重放均须真实MySQL反例。73397先失败，20067默认19项通过。该检查点不包含I2V实际HTTP、v1 multipart、输入上传与完整日期/故障/100并发矩阵，不能代替完整阶段验收。
+
+权利增量使用000079空schema及显式合成条款：全局政策、Project接受GET/POST必须真实loopback JWT/SK验证；首次接受/原键重放、SK代签、伪造accepted_by、跨Project拒绝不写第二条事实。MySQL100首次接受唯一且原期限相同，回执UPDATE/DELETE禁止，合法退役与合法迁移中正文/标题替换拒绝分别验证。接受过期、政策自身过期、无active及版本升级须保留历史回执valid=false；新版本新键明确接受。政策损坏/DB故障仍失败关闭，不能把无授权历史当有效声明。生成事务关联和I2V完整权利矩阵未执行前不得登记完整I2V通过。
+
+新增报价复验：真实HTTP同键异报价意图、未知/跨Key/已消费/过期Quote，断言HTTP、平台数字码及error类型；首次100并发显式Quote使用统一起跑，不预先创建赢家；双连接固定RR旧快照必须返回同一已提交Quote且只有一条事实。72073已复现两项缺陷，修复后必须重新执行，不能引用19132的旧13项通过。
+
+新增列表复验：真实loopback HTTP五字段VideoList、asc/desc稳定游标、同秒公开ID排序、空数组及null首尾、严格limit/order/after、跨Key游标不泄露；关闭态必须503。锁定双SDK进一步覆盖创建任务/完成夹具在单页可见及删除后隐藏；跨Project、并发新增/删除全矩阵仍待最终阶段验收。
+
+完成态不能用queued替代：`TestVideoG6CompletedListsMySQLConcurrency`通过真实G5预占、Fake异步执行、结算和交付形成同钱包两个completed任务，再以asc/desc混合100并发查询。39496复现异常；32697探针记录52次1213后移除探针。固定页内Task锁顺序后必须让全部100次仍返回两个completed，不容忍偷偷降为in_progress、少项或吞错。空grant＋未实名的HTTP负例同时断言400与error.code=70001。
+
+以原Goal和阶段规划完整G6清单验收，不以当前已实现用例缩小范围。运行器`infra/scripts/verify-video-gateway-vid-g6.sh`只建立临时MySQL，使用固定镜像ID、无宿主端口与内部网络，拒绝缺失隔离授权；源码先复制到容器再编译。必须核对指定顶层RUN/PASS和容器退出码，SKIP或零匹配不能通过。
+
+内部回调增量：`callbacks`范围必须覆盖固定HMAC向量、签名域/时间/nonce/严格五字段、关闭503、真实回环HTTP原G5 Task绑定、首次100并发唯一与既有100重放、无效签名不抢占、同事件异body及同nonce异请求409、跨任务同外部事件号及128字符事件号、首个成功回调合法双步、fetching与pending_reconcile迟到终态忽略、人工核对阶段旧事件重放无新事件。`CallbackAtomicHTTPMySQL`验证nonce写入后失败回滚及真实COMMIT成功但确认丢失的原ACK恢复；新用例必须实际RUN/PASS，不能以编译跳过证明。详见[回调合同](./video-gateway-vid-g6-callback-contract.md)。
+
+管理员只读增量：`admin-read`范围验证真实JWT、ai_gateway:view、AuthService双MFA、28字段、停用目标可读但不可冒用目标身份、业务整行/事件/补偿/租约/Store及Provider不变。必须拒绝把普通JWT证明配上管理员UserID，并区分MFA缺失403/40031与MFA仓储故障503。原bool认证接口保持兼容。末尾权限/MFA跨期、吊销及完整管理面矩阵仍须补齐，详见[管理只读合同](./video-gateway-vid-g6-admin-read-contract.md)。
+
+管理任务列表新增必测：D-95/严格AND过滤、分页空页total、与用户列表混合100并发、成员SELECT后另一连接取消的整页重试、两用户四任务两不重叠页的跨钱包锁序。跨钱包绿灯必须两个HTTP200、全部原任务及CanDeliver=true、财务不变且无真实1213；夹具政策唯一冲突或短幂等键失败不算钱包缺陷复现。
+
+管理输入列表新增必测：21字段/null、原UploadSession或图片Task/Request来源Key、严禁对象位置/使用许可、停用目标及隔离历史可读、组合过滤和空页、无权限/MFA负例、零财务或外部调用。真实JWT-null、已删除/过期来源、未规范化null、RR并发一致性和损坏/故障503尚需补齐，当前不能签署完整验收。
+
+管理输出列表新增必测：28字段/null、六角色包含审核副本、公开父ID同Task/Request/owner、严格AND过滤、实际原删除后五个普通资产及审核副本历史保留、目标停用可读、MFA拒绝及资产/财务不变。错父关系/Key、真实JWT-null、SQL故障与完整隔离争议矩阵仍待补齐。
+
+输入隔离新增必测：四允许状态与全部禁止状态，22字段、来源/Key完整归属、当前safety_review/MFA、原因领域隔离、版本/CAS/幂等、保全与原审核/hash/规格/期限不变；在途TaskInput和资金不变、隔离后Provider前复验拒绝、上传/导入发布竞争、审计及回执原子回滚。当前ready/保全/权限/重放/原绑定及Provider前失败关闭已有局部验证，其余矩阵不得预标PASS。使用admin-mutations受影响批次，I2V原G5夹具预占为0.75（0.15×5），T2V为0.50，禁止为适配断言修改计费规则。
+
+管理员取消新增必测：停用目标仍由真实task_manage/MFA管理员安全取消，用户入口不能获得管理grant；reason/version_no严格JSON、CAS与同键意图冻结、31字段与原业务request_id；两条原审计、加密原因可在原AAD下审阅、回执不可修改；已提交只记意图且资金/租约不变，原终态不退款；审计/命令写失败及COMMIT未知、100并发、I2V与提交竞争。原因组件覆盖随机nonce、Actor/Task/版本/命令错绑及密文/nonce/版本/摘要篡改；普通JSON不序列化信封。原G5 CancelBeforeSubmit兼容测试必须另跑，不能仅依赖管理入口绿灯。
+
+运行汇总新增必测：独立reconcile_manage权限、JWT/MFA、无query/body、六字段及八位金额，真实预占增加0.50与一条Outbox、原取消释放冻结额且三条Outbox仍保留，读取不执行任务/补偿/派发。聚合读取故障返回503/data:null；未知Hold状态不得漏计为零。补偿及死信非零分类、两连接快照与完整异常关联矩阵须单独验证，不能以计数全零代替G5逐任务核查。
+
+当前新增矩阵包括：IAM真实授权/deny/过期/直接角色/100并发，Project/Key视频显式授权与模型发布范围，RR旧快照下另一连接提交deny后拒绝，七键模型合同与null/缺项区别，仅资产商品、精确权益类型、reserved耗尽、父资产和会员时间，以及父资产撤销旧快照。HTTP首次纵向切片测试使用真实SK解析和MySQL，验证T2V multipart创建/查询、100次同键重放、异意图409、唯一Quote/Hold/Task和固定0.50元合成预占。当前运行结果以逐轮证据为准，不能把未执行的新矩阵标为通过。
+
+历史待办已由2026-09-01最终本地候选统一收口：平台JWT/SK与202门面、跨门面幂等、完整路由及管理负向矩阵、I2V不可变上传、预算/queued生命周期、双SDK、浏览器seek、Chat/Image与G5兼容均纳入当前测试与证据。历史增量段落保留原红绿过程，不能覆盖最终同源结果。
+
+最终本地候选门禁：VID-G6默认`all`在一次性MySQL 8、内部网络、Linux race和000001→000109迁移上通过，所有必选顶层测试均由执行器确认RUN/PASS；锁定SDK另以真实loopback HTTP执行并通过。`go test ./...`、`go vet ./...`、`go mod verify`、`go mod tidy -diff`、四个核心包Linux race、289个本阶段Go文件gofmt、`git diff --check`及562个文本文件敏感扫描通过。IMG-G6临时MySQL/race兼容和VID-G5完整财务/Legacy Chat 1→77兼容回归通过。真实Provider/Key/钱包/用户资金/调账/共享测试服/生产操作均为0。
+
+上述仅表示本地软件候选满足进入独立QA、产品和工程终审的条件。四类独立回执、精确提交、Ready CI、PR合并及main包含性未完成前不得标记VID-G6 `AUTO_PASS`；VID-G7仍禁止开始。
+
+### VID-G6 终审整改覆盖（取代本节历史待办状态）
+
+独立QA/PM/Standards/Spec初审失败后，已新增并通过以下真实临时MySQL/Linux race整改：本地running用户1/Project2/模型2；inline近10MiB TCP429、读取与Complete后断连、跨用户/Project/Key、生成COMMIT未知；下载Project第5路、租约COMMIT未知、真实慢TCP、首片后撤权/删除；queue guard故障与拒绝全账本零变化；预算Asia/Shanghai日/月边界与生成COMMIT未知；模型发布默认并发、权限/MFA、SQL回滚和COMMIT未知；调账credit/debit、余额不足、过期审批、maker撤权、防篡改和COMMIT未知；poll/archive/release/quarantine的100并发、MFA/撤权及COMMIT未知。每项copy-tree SHA见`docs/evidence/video-gateway-vid-g6-review-remediation-progress.json`。
+
+上述切片仍不是最终阶段PASS。必须在不再修改源码和主文档后重跑锁定双SDK、默认`all`隔离MySQL/race、Go全量/vet/mod/tidy、Chat/Image/G0—G5兼容、格式及敏感扫描，生成新SOURCE_STATE和证据索引，再重新执行四轴独立验收。Git/CI/PR/merge只在P0/P1/P2全清后执行；真实Provider/Key/用户资金/调账、测试服、生产和VID-G7仍为0。
+
 ## 图片网关 IMG-G1 Expand Schema 验收
 
 - `000068` 必须把 `ai_requests.modality` 从仅 Chat 扩展为 `chat/image`，同时以 `capability + delivery_status` 组合约束确保旧 Chat 固定为 `chat.completions/not_applicable`、图片固定为 `image.generate`。
@@ -1370,3 +1524,14 @@ Migration 真实语法和约束使用 `infra/scripts/verify-ai-gateway-migration
 - 无论成功失败均关闭traffic/OpenRouter、停止消费者、恢复原API与环境、删除临时Project SK和Key文件，并由用户从OpenRouter控制台撤销短效Key。
 - 最终必须复验Chat、Bifrost、用户端、管理端和共享监控；不得进入生产或IMG-G10。
 - 2026-08-27验收结果：`d97baf1400840d5e707b5ed2c9bfc4237885353c`在测试服务器以Seedream/seed完成唯一真实调用，图片交付、0.50元结算、0.035美元费用增量、私有MinIO、三条Outbox、0差异对账、Key撤销和实际回滚全部PASS；生产与商业证据仍为NO。
+
+## VID-G6 最终同源本地验收候选（2026-09-01）
+
+本节取代本文件较早VID-G6条目中的“待补、局部、运行中、未完成”过程状态；历史反例仍保留用于说明缺陷发现和关闭过程。
+
+- 冻结源码副本SHA-256与SOURCE_STATE：统一读取最终`docs/evidence/video-gateway-vid-g6-local-verification.json`和`video-gateway-vid-g6-source-state.json`，本计划不重复硬编码易漂移值。
+- `verify-video-gateway-vid-g6.sh`默认`all`：一次性MySQL 8、迁移000001→000109、Linux race、真实loopback HTTP和必需测试RUN/PASS审计全部通过；精确耗时见最终本地验证回执。
+- 独立专项：锁定Python/TypeScript SDK通过；VID-G5完整迁移、财务与Chat兼容通过；IMG-G6 HTTP兼容通过；callback、model-default、cancel修复后均专项通过并在最终all中再次通过。
+- 通用门禁：`go test ./...`、`go vet ./...`、`go mod verify`、`go mod tidy -diff`、G6变更Go文件gofmt、Bash语法、diff与高风险凭据模式扫描通过。
+- 安全边界：真实Provider请求/Key、真实钱包写入、真实用户资金、真实调账、测试服写入、生产操作均为0；Outbox Dispatcher、RabbitMQ、Redis、MinIO和Bifrost视频数据面关闭。
+- 最终结论须等待新SOURCE_STATE绑定的QA、PM、Standards、Spec四轴独立复核；之后才允许提交、PR、Ready CI和普通合并。VID-G7不得开始。

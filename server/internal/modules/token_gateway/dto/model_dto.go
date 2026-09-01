@@ -68,6 +68,9 @@ type UpdateModelReq struct {
 
 // ModelResp 对外模型目录响应体。
 type ModelResp struct {
+	// 视频可见目录投影只使用已发布快照，后台工作副本不会自动获得此能力声明。
+	Capability                string          `json:"capability,omitempty"`
+	SupportedOperations       []string        `json:"supported_operations,omitempty"`
 	ID                        uint64          `json:"id"`
 	LogicalModelCode          string          `json:"logical_model_code"`
 	DisplayName               string          `json:"display_name"`
@@ -98,13 +101,16 @@ type ModelResp struct {
 
 // PublicModelResp 用户端可见的模型目录精简视图（不含渠道/上游/商品等内部路由字段）。
 type PublicModelResp struct {
-	LogicalModelCode string  `json:"logical_model_code"`
-	DisplayName      string  `json:"display_name"`
-	Modality         string  `json:"modality"`
-	ProviderName     string  `json:"provider_name"`
-	Description      *string `json:"description,omitempty"`
-	ContextWindow    uint64  `json:"context_window"`
-	IntroURL         *string `json:"intro_url,omitempty"`
-	DocsURL          *string `json:"docs_url,omitempty"`
-	QuickStartURL    *string `json:"quick_start_url,omitempty"`
+	// 仅视频显式增加能力合同；其他模态保留既有字段集合，不通过modality猜测操作。
+	Capability          string   `json:"capability,omitempty"`
+	SupportedOperations []string `json:"supported_operations,omitempty"`
+	LogicalModelCode    string   `json:"logical_model_code"`
+	DisplayName         string   `json:"display_name"`
+	Modality            string   `json:"modality"`
+	ProviderName        string   `json:"provider_name"`
+	Description         *string  `json:"description,omitempty"`
+	ContextWindow       uint64   `json:"context_window"`
+	IntroURL            *string  `json:"intro_url,omitempty"`
+	DocsURL             *string  `json:"docs_url,omitempty"`
+	QuickStartURL       *string  `json:"quick_start_url,omitempty"`
 }

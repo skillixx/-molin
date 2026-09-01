@@ -2,15 +2,21 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"molin/server/internal/modules/token_gateway/model"
 )
 
 // ErrTokenModelNotFound 模型目录记录不存在（RowsAffected==0 守卫）。
 var ErrTokenModelNotFound = errors.New("模型不存在")
+
+// 视频模型的写入必须经过专用幂等、CAS与加密审计命令，旧CRUD不能作为旁路。
+var ErrTokenVideoModelManaged = errors.New("视频模型需要受控管理")
 
 // TokenModelRepository 对外模型目录数据访问层。
 type TokenModelRepository struct {
@@ -82,6 +88,29 @@ func (r *TokenModelRepository) ListActiveCandidates(ctx context.Context, modalit
 	return items, nil
 }
 
+// PublicModelCandidate把视频工作副本与当前发布快照一起读取，避免目录读取过程中跨版本拼接。
+// 非视频继续使用既有目录语义；快照原文只在服务层内解析，不作为HTTP响应。
+type PublicModelCandidate struct {
+	model.TokenModel
+	PublishedVideoSnapshot json.RawMessage `gorm:"column:published_video_snapshot" json:"-"`
+	PublishedModality      string          `gorm:"column:published_modality" json:"-"`
+}
+
+func (r *TokenModelRepository) ListPublicCandidates(ctx context.Context, modality string) ([]PublicModelCandidate, error) {
+	now := time.Now().UTC()
+	query := r.db.WithContext(ctx).Table("token_models AS m").
+		// 即使草稿被改成Chat/Image也读取发布身份，禁止借模态修改绕过视频快照保护。
+		Select("m.*, COALESCE(JSON_UNQUOTE(JSON_EXTRACT(published.snapshot_json,'$.modality')),'') AS published_modality, CASE WHEN m.release_version_no>0 AND m.published_at<=? AND published.status='active' AND published.published_at<=? THEN published.snapshot_json ELSE NULL END AS published_video_snapshot", now, now).
+		Joins("LEFT JOIN ai_model_release_versions AS published ON published.model_id=m.id AND published.version_no=m.release_version_no").
+		Where("m.status='active'")
+	if modality != "" {
+		query = query.Where("m.modality=?", modality)
+	}
+	var items []PublicModelCandidate
+	err := query.Order("m.sort_order ASC, m.id ASC").Scan(&items).Error
+	return items, err
+}
+
 // Update 更新模型字段（map 方式支持零值更新）。
 func (r *TokenModelRepository) Update(ctx context.Context, id uint64, updates map[string]interface{}) error {
 	result := r.db.WithContext(ctx).Model(&model.TokenModel{}).Where("id = ?", id).Updates(updates)
@@ -96,12 +125,31 @@ func (r *TokenModelRepository) Update(ctx context.Context, id uint64, updates ma
 
 // Delete 删除模型目录记录。
 func (r *TokenModelRepository) Delete(ctx context.Context, id uint64) error {
-	result := r.db.WithContext(ctx).Delete(&model.TokenModel{}, id)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return ErrTokenModelNotFound
-	}
-	return nil
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var item model.TokenModel
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", id).Take(&item).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrTokenModelNotFound
+			}
+			return err
+		}
+		if item.Modality == "video" || len(item.VideoContractJSON) > 0 {
+			return ErrTokenVideoModelManaged
+		}
+		var videoRelease int64
+		if err := tx.Table("ai_model_release_versions").Where("model_id=? AND version_no=? AND JSON_UNQUOTE(JSON_EXTRACT(snapshot_json,'$.modality'))='video'", id, item.ReleaseVersionNo).Count(&videoRelease).Error; err != nil {
+			return err
+		}
+		if videoRelease != 0 {
+			return ErrTokenVideoModelManaged
+		}
+		result := tx.Delete(&item)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrTokenModelNotFound
+		}
+		return nil
+	})
 }

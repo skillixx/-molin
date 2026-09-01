@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -14,11 +15,12 @@ import (
 )
 
 var (
-	ErrProjectNotFound      = errors.New("Project 不存在")
-	ErrProjectNameExists    = errors.New("Project 名称已存在")
-	ErrProjectKeyNotFound   = errors.New("Project SK 不存在")
-	ErrRequestNotFound      = errors.New("AI 请求不存在")
-	ErrRequestStateConflict = errors.New("AI 请求状态冲突")
+	ErrProjectNotFound        = errors.New("Project 不存在")
+	ErrProjectNameExists      = errors.New("Project 名称已存在")
+	ErrProjectKeyNotFound     = errors.New("Project SK 不存在")
+	ErrRequestNotFound        = errors.New("AI 请求不存在")
+	ErrRequestStateConflict   = errors.New("AI 请求状态冲突")
+	ErrProjectKeyScopeInvalid = errors.New("Project SK 模型范围无效")
 )
 
 // G2Repository 集中承载 Project、Project SK 和正式请求账本事务，确保跨表状态一次提交。
@@ -26,8 +28,9 @@ type G2Repository struct {
 	db *gorm.DB
 }
 
-// ProjectKeyAudit 在 Project SK 事务中写入审计事实；返回错误时业务变更必须一起回滚。
-type ProjectKeyAudit func(tx *gorm.DB, keyID uint64) error
+// ProjectKeyAudit 在 Project SK 事务中写入审计事实；幂等生命周期命令必须把命令身份一并冻结进摘要。
+// 返回错误时业务变更必须一起回滚；普通 Chat/Image Key 路径传 nil，保持旧合同不变。
+type ProjectKeyAudit func(tx *gorm.DB, keyID uint64, scopes []string, idempotency *ProjectKeyIdempotency) (uint64, error)
 
 func NewG2Repository(db *gorm.DB) *G2Repository { return &G2Repository{db: db} }
 
@@ -88,7 +91,17 @@ func IsDuplicateKeyForHandler(err error) bool { return isDuplicateKey(err) }
 // CreateProjectKey 在一个事务内创建哈希密钥和 allowlist，避免出现可用密钥但权限未落库的窗口。
 func (r *G2Repository) CreateProjectKey(ctx context.Context, key *authmodel.APIKey, scopes []authmodel.APIKeyModelScope, audit ProjectKeyAudit) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(key).Error; err != nil {
+		if _, err := validateProjectKeyModelsTx(tx, key, scopes); err != nil {
+			return err
+		}
+		writer := tx
+		if !tx.Migrator().HasColumn(&authmodel.APIKey{}, "video_generate_allowed") {
+			if key.VideoGenerateAllowed {
+				return ErrProjectKeyScopeInvalid
+			}
+			writer = tx.Omit("VideoGenerateAllowed")
+		}
+		if err := writer.Create(key).Error; err != nil {
 			return err
 		}
 		for i := range scopes {
@@ -99,7 +112,12 @@ func (r *G2Repository) CreateProjectKey(ctx context.Context, key *authmodel.APIK
 				return err
 			}
 		}
-		return audit(tx, key.ID)
+		codes := make([]string, len(scopes))
+		for i, scope := range scopes {
+			codes[i] = scope.LogicalModelCode
+		}
+		_, err := audit(tx, key.ID, codes, nil)
+		return err
 	})
 }
 
@@ -150,12 +168,16 @@ func (r *G2Repository) RevokeProjectKey(ctx context.Context, userID, projectID, 
 				return ErrProjectKeyNotFound
 			}
 		}
-		return audit(tx, keyID)
+		_, err := audit(tx, keyID, nil, nil)
+		return err
 	})
 }
 
 // RotateProjectKey 把新密钥写入和旧密钥吊销放进同一事务，保证轮换不存在双活窗口。
 func (r *G2Repository) RotateProjectKey(ctx context.Context, oldKey *authmodel.APIKey, newKey *authmodel.APIKey, scopes []authmodel.APIKeyModelScope, audit ProjectKeyAudit) error {
+	if oldKey == nil || newKey == nil || oldKey.ProjectID == nil || *oldKey.ProjectID == 0 {
+		return ErrProjectKeyNotFound
+	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var locked authmodel.APIKey
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -163,10 +185,32 @@ func (r *G2Repository) RotateProjectKey(ctx context.Context, oldKey *authmodel.A
 			First(&locked).Error; err != nil {
 			return ErrProjectKeyNotFound
 		}
-		if locked.Status != "active" {
+		if locked.Status != "active" || locked.ProjectID == nil || *locked.ProjectID != *oldKey.ProjectID {
 			return ErrProjectKeyNotFound
 		}
-		if err := tx.Create(newKey).Error; err != nil {
+		var lockedScopes []authmodel.APIKeyModelScope
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("api_key_id=?", locked.ID).Order("logical_model_code").Find(&lockedScopes).Error; err != nil {
+			return err
+		}
+		// 仅保留新生成的不可逆凭据字段；名称、计费、scope、期限和能力全部取锁定数据库事实。
+		newKey.UserID, newKey.ProjectID, newKey.Name = locked.UserID, locked.ProjectID, locked.Name
+		newKey.BillingMode, newKey.SourceID, newKey.ModelScope, newKey.ScopeMode = locked.BillingMode, locked.SourceID, locked.ModelScope, locked.ScopeMode
+		newKey.Status, newKey.ExpiresAt, newKey.RotatedFromID, newKey.VideoGenerateAllowed = "active", locked.ExpiresAt, &locked.ID, locked.VideoGenerateAllowed
+		scopes = make([]authmodel.APIKeyModelScope, len(lockedScopes))
+		for i, scope := range lockedScopes {
+			scopes[i] = authmodel.APIKeyModelScope{UserID: locked.UserID, ProjectID: *locked.ProjectID, LogicalModelCode: scope.LogicalModelCode}
+		}
+		if _, err := validateProjectKeyModelsTx(tx, newKey, scopes); err != nil {
+			return err
+		}
+		writer := tx
+		if !tx.Migrator().HasColumn(&authmodel.APIKey{}, "video_generate_allowed") {
+			if newKey.VideoGenerateAllowed {
+				return ErrProjectKeyScopeInvalid
+			}
+			writer = tx.Omit("VideoGenerateAllowed")
+		}
+		if err := writer.Create(newKey).Error; err != nil {
 			return err
 		}
 		for i := range scopes {
@@ -181,21 +225,130 @@ func (r *G2Repository) RotateProjectKey(ctx context.Context, oldKey *authmodel.A
 			Update("status", "revoked").Error; err != nil {
 			return err
 		}
-		return audit(tx, newKey.ID)
+		codes := make([]string, len(scopes))
+		for i, scope := range scopes {
+			codes[i] = scope.LogicalModelCode
+		}
+		_, err := audit(tx, newKey.ID, codes, nil)
+		return err
 	})
 }
 
 // ActiveScopedModelsExist 只允许已激活且已发布的Chat或图片模型进入Project SK显式allowlist。
 // 图片模型仍必须在调用时通过独立的api_key_model_scopes能力门禁，all/legacy_all不会自动获得图片权限。
+func (r *G2Repository) ValidateScopedModels(ctx context.Context, userID, projectID uint64, codes []string, allowVideo bool) (bool, error) {
+	projectIDCopy := projectID
+	key := &authmodel.APIKey{UserID: userID, ProjectID: &projectIDCopy, ScopeMode: "allowlist", VideoGenerateAllowed: allowVideo}
+	scopes := make([]authmodel.APIKeyModelScope, len(codes))
+	for i, code := range codes {
+		scopes[i] = authmodel.APIKeyModelScope{UserID: userID, ProjectID: projectID, LogicalModelCode: code}
+	}
+	returnValue := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		hasVideo, err := validateProjectKeyModelsTx(tx, key, scopes)
+		returnValue = hasVideo
+		return err
+	})
+	return returnValue, err
+}
+
+// 保留旧Chat/Image预检入口；实际签发事务仍执行含Project视频授权的完整校验。
 func (r *G2Repository) ActiveScopedModelsExist(ctx context.Context, codes []string) (bool, error) {
 	if len(codes) == 0 {
 		return true, nil
 	}
 	var count int64
-	err := r.db.WithContext(ctx).Model(&model.TokenModel{}).
-		Where("logical_model_code IN ? AND status = 'active' AND modality IN ('chat','image') AND release_version_no > 0 AND published_at IS NOT NULL", codes).
-		Distinct("logical_model_code").Count(&count).Error
+	err := r.db.WithContext(ctx).Model(&model.TokenModel{}).Where("logical_model_code IN ? AND status='active' AND modality IN ('chat','image') AND release_version_no>0 AND published_at IS NOT NULL", codes).Distinct("logical_model_code").Count(&count).Error
 	return count == int64(len(codes)), err
+}
+
+type projectKeyModelCandidate struct {
+	model.TokenModel
+	SnapshotJSON       json.RawMessage `gorm:"column:snapshot_json"`
+	ReleasePublishedAt time.Time       `gorm:"column:release_published_at"`
+}
+
+func validateProjectKeyModelsTx(tx *gorm.DB, key *authmodel.APIKey, scopes []authmodel.APIKeyModelScope) (bool, error) {
+	if key == nil || key.ProjectID == nil || key.UserID == 0 || key.ScopeMode != "allowlist" {
+		if key != nil && key.ScopeMode == "all" && !key.VideoGenerateAllowed && len(scopes) == 0 {
+			return false, nil
+		}
+		return false, ErrProjectKeyScopeInvalid
+	}
+	if len(scopes) == 0 {
+		return false, nil
+	}
+	codes := make([]string, len(scopes))
+	for i, s := range scopes {
+		if s.UserID != key.UserID || s.ProjectID != *key.ProjectID || s.LogicalModelCode == "" {
+			return false, ErrProjectKeyScopeInvalid
+		}
+		codes[i] = s.LogicalModelCode
+	}
+	var items []projectKeyModelCandidate
+	err := tx.Table("token_models AS m").Clauses(clause.Locking{Strength: "SHARE"}).Select("m.*,r.snapshot_json,r.published_at AS release_published_at").Joins("JOIN ai_model_release_versions r ON r.model_id=m.id AND r.version_no=m.release_version_no AND r.status='active'").Where("m.logical_model_code IN ? AND m.status='active' AND m.release_version_no>0 AND m.published_at IS NOT NULL", codes).Find(&items).Error
+	if err != nil {
+		return false, err
+	}
+	if len(items) != len(codes) {
+		return false, ErrProjectKeyScopeInvalid
+	}
+	hasVideo := false
+	videoCodes := []string{}
+	for _, item := range items {
+		switch item.Modality {
+		case "chat", "image":
+		case "video":
+			if !key.VideoGenerateAllowed {
+				return false, ErrProjectKeyScopeInvalid
+			}
+			now := time.Now().UTC()
+			if item.PublishedAt == nil || item.PublishedAt.After(now) || item.ReleasePublishedAt.After(now) {
+				return false, ErrProjectKeyScopeInvalid
+			}
+			var snapshot struct {
+				model.TokenModelReleaseSnapshot
+				VideoContract json.RawMessage `json:"video_contract"`
+			}
+			if json.Unmarshal(item.SnapshotJSON, &snapshot) != nil || snapshot.Modality != "video" || snapshot.LogicalModelCode != item.LogicalModelCode {
+				return false, ErrProjectKeyScopeInvalid
+			}
+			var caps []string
+			if json.Unmarshal(snapshot.Capabilities, &caps) != nil {
+				return false, ErrProjectKeyScopeInvalid
+			}
+			found := false
+			for _, capability := range caps {
+				if capability == model.AIVideoCapability {
+					found = true
+				}
+			}
+			if !found {
+				return false, ErrProjectKeyScopeInvalid
+			}
+			if _, err := model.ParseVideoModelContract(snapshot.VideoContract, snapshot.ProductID); err != nil {
+				return false, ErrProjectKeyScopeInvalid
+			}
+			hasVideo = true
+			videoCodes = append(videoCodes, item.LogicalModelCode)
+		default:
+			return false, ErrProjectKeyScopeInvalid
+		}
+	}
+	if len(videoCodes) > 0 {
+		var grants []struct{ LogicalModelCode string }
+		if err := tx.Table("ai_project_model_capability_grants").Clauses(clause.Locking{Strength: "SHARE"}).Select("logical_model_code").Where("user_id=? AND project_id=? AND logical_model_code IN ? AND capability=? AND status='active'", key.UserID, *key.ProjectID, videoCodes, model.AIVideoCapability).Find(&grants).Error; err != nil {
+			return false, err
+		}
+		seen := map[string]bool{}
+		for _, grant := range grants {
+			seen[grant.LogicalModelCode] = true
+		}
+		if len(seen) != len(videoCodes) {
+			return false, ErrProjectKeyScopeInvalid
+		}
+	}
+	return hasVideo, nil
 }
 
 // G2AccessSnapshot 是上游调用前在数据库重新确认的授权快照。

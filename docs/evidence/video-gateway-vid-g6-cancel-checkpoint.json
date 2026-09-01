@@ -1,0 +1,53 @@
+{
+  "target_goal": "VID-G6",
+  "status": "PARTIAL_CANCEL_ROUTES_VERIFIED",
+  "full_stage": false,
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "UNCOMMITTED",
+  "source_manifest": "video-gateway-vid-g6-cancel-source.json",
+  "source_state_id": "61ef6103b795438482c02c0f4ed43f0f473880d10f446db5d1808fd1f40a3c41",
+  "code_state_id": "92b426a2b9f8f3d6eaa32cef2c96475c5f09aae4eff38f63168f53db973f1592",
+  "copy_tree_sha256": "53e1dc54e6e40ed71e88cf83897c900fa02aa65c4f0948d1809895a33fe18818",
+  "source_mismatch_count": 0,
+  "g6_regression": {"session_id": 46460, "exit_code": 0, "required_top_level_tests": 56, "required_skips": 0, "linux_race": true, "schema_latest": 86, "service_seconds": 209.235},
+  "legacy_cancel_regression": {"session_id": 83580, "exit_code": 0, "required_top_level_tests": 14, "required_skips": 0, "linux_race": true, "schema_latest": 86, "database": "molin_video_g5_contract", "service_seconds": 39.644, "scope": "G5取消兼容，非全部G5/Chat/Image兼容"},
+  "native_regression": {"session_id": 78308, "exit_code": 0, "commands": ["go -C server test -count=1 ./...", "go -C server vet ./...", "go -C server mod verify"], "mysql_evidence_from_isolated_runs_only": true},
+  "routes": ["DELETE /api/token/video-tasks/{task_id}", "DELETE /api/token/video-tasks/by-video/{video_id}"],
+  "verified": [
+    "T2V/I2V各100取消，1首次/99幂等重放，原G5对账通过",
+    "别名共用取消命令域，同键异Task409，JWT/SK与来源Key隔离，撤权后重放拒绝",
+    "无正文/query，固定26字段、金额和null语义；X-Molin-Request-ID保留原业务追踪",
+    "未提交200/cancelled真实释放；已提交/在途202只记意图、保留Hold和原绑定",
+    "既有成功终态200/already_terminal明确无操作，不能退款或改状态",
+    "原G5末尾写失败回滚取消回执、任务、Usage、事件和资金；原键可恢复",
+    "回执不可UPDATE/DELETE，错Key直接SQL必须1644",
+    "当前连接整笔ROLLBACK加1213及1205注入后，外层创建尝试2次，最终1回执且金融对账通过"
+  ],
+  "red_green": [
+    {"red_chunk": "72c4f6", "issue": "缺少取消服务", "first_green_session": 7473},
+    {"red_chunk": "8a0869", "issue": "取消路由未注册返回405", "green_chunk": "674c89"},
+    {"failed_session": 58201, "issue": "回滚测试把可用余额误作总额，已依据现有钱包契约修正9.5可用/0.5冻结；非生产代码缺陷"},
+    {"defect": "G6-CANCEL-001", "red_session": 25398, "observed": "1213后返回成功但回执0条；1205仍只重试内层", "green_session": 86729, "frozen_recheck": 46460, "status": "CLOSED_THIS_SLICE", "limit": "实际MySQL事务回滚加错误注入，不冒称自然死锁复现"}
+  ],
+  "independent_review": "video-gateway-vid-g6-cancel-independent-review.md",
+  "registered_local_routes": 25,
+  "pr_state": "NOT_CREATED",
+  "production_bootstrap_enabled": false,
+  "remaining": [
+    "v1媒体DELETE及平台资产保存/删除/生命周期，取消更完整的HTTP终态/故障矩阵",
+    "v1 multipart I2V、Provider签名回调、全部管理接口、控制面与预算准入",
+    "下载真实慢TCP/撤权删除固定窗口、Project第五路、COMMIT未知",
+    "锁定双SDK与Project SK浏览器端到端",
+    "G0-G5完整隔离兼容、最终独立QA/PM/Standards/Spec、Ready CI及Git闭环"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": "NO",
+  "vid_g7_started": "NO"
+}

@@ -10,11 +10,12 @@ import (
 )
 
 var (
-	ErrGatewayTaskNotFound   = errors.New("视频网关任务不存在")
-	ErrGatewayTaskConflict   = errors.New("视频网关任务CAS冲突")
-	ErrGatewayTaskTransition = errors.New("视频网关任务状态流转不允许")
-	ErrCallbackBodyConflict  = errors.New("同一回调事件正文哈希冲突")
-	ErrCallbackTaskMismatch  = errors.New("Provider任务标识错绑")
+	ErrGatewayTaskNotFound    = errors.New("视频网关任务不存在")
+	ErrGatewayTaskConflict    = errors.New("视频网关任务CAS冲突")
+	ErrGatewayTaskTransition  = errors.New("视频网关任务状态流转不允许")
+	ErrGatewayRunningCapacity = errors.New("视频网关运行容量已满")
+	ErrCallbackBodyConflict   = errors.New("同一回调事件正文哈希冲突")
+	ErrCallbackTaskMismatch   = errors.New("Provider任务标识错绑")
 )
 
 type TaskStatus string
@@ -124,6 +125,11 @@ type VideoTaskLedger interface {
 	RecordCallback(ctx context.Context, taskID string, callback VerifiedCallback) (duplicate bool, err error)
 	PrepareMediaDelete(ctx context.Context, taskID string) (GatewayTask, error)
 	CompleteMediaDelete(ctx context.Context, taskID string, succeeded bool) (GatewayTask, error)
+}
+
+// VideoRunningAdmissionLedger 在queued取得submitting权时执行原子运行容量裁决；未实现者保持旧G4/G5合同。
+type VideoRunningAdmissionLedger interface {
+	ClaimRunning(ctx context.Context, taskID string, expectedVersion uint64) (GatewayTask, error)
 }
 
 // InMemoryVideoTaskLedger 仅用于Fake合同测试，生产路径必须使用VID-G3 Repository适配器。

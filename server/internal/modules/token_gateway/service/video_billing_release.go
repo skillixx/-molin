@@ -128,6 +128,14 @@ func (s *VideoBillingService) releaseUnserviceable(ctx context.Context, taskID s
 				if err := videoBillingCASResult(tx.Model(&model.VideoBillingRequest{}).Where("request_id=? AND version_no=? AND settled_amount IS NULL", task.RequestID, task.RequestVersionNo).Updates(map[string]interface{}{"settled_amount": zero, "version_no": gorm.Expr("version_no+1"), "updated_at": now})); err != nil {
 					return err
 				}
+				if s.budget != nil {
+					if err := s.budget.SyncTx(ctx, tx, task.RequestID, s.now); err != nil {
+						return err
+					}
+					if err := s.injectVideoFault("release_budget"); err != nil {
+						return err
+					}
+				}
 				task.RequestVersionNo++
 				task, err = tasks.TransitionDelivery(ctx, videoCancelTransition(task, owner, model.AIDeliveryRejected, "delivery_rejected", now))
 				if err != nil {

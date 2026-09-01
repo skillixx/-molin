@@ -1,0 +1,25 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "输入首次ready七天留存、多绑定最晚安全终态、导入副本清理与HTTP完成回执",
+  "full_stage": false,
+  "source_manifest": "video-gateway-vid-g6-input-cleanup-retention-source.json",
+  "source_state_id": "f4a12c9c6076c016b7567aa487001c8c465fda5369a0d92a4b23e2e8da5131dc",
+  "code_state_id": "4aa0e34dead778c3f6a15b0147bbf8f1a5321513b7b22866308d6642f840090a",
+  "copy_tree_sha256": "e00dd66e55aa81d7620c505d7e590c84455919dcba023230e38425e8f723a77b",
+  "isolated_run": {"session_id": 77875, "exit_code": 0, "required_top_level_tests": 39, "required_skips": 0, "schema_latest": 84, "linux_race": true, "service_seconds": 139.347},
+  "native_run": {"session_id": 99739, "exit_code": 0, "commands": ["go -C server test -count=1 ./...", "go -C server vet ./...", "go -C server mod verify"], "mysql_not_proven_by_native_run": true},
+  "claims": [
+    "导入首次发布ready才起算7天；原处理24小时截止不变、重放不续期",
+    "两个真实合成I2V结算后，以更晚租约释放加7天为截止；前1秒仍保护输入",
+    "来源legal_hold拒绝后目标与来源正文均存在且hash匹配",
+    "实际清理只删除独立输入，保留来源；原命令HTTP200严格六字段、原归属/时间与CAS版本",
+    "合成主体钱包、请求、Quote、Hold、流水、Usage、钱包关联与Outbox完整行摘要前后不变"
+  ],
+  "limits": ["仅Fake对象与虚拟留存时钟，不是实际等待7天", "不覆盖后新增content源码", "完整G6验收仍未完成"],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0
+}

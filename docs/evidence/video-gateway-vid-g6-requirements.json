@@ -1,0 +1,546 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G6",
+  "status": "INDEPENDENT_REVIEWS_PASS_PENDING_GIT_READY_CI",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "goal_sha256": "e8a0c9a365f7f0b7039d2707150598770b72c4159868a510b0e7ad25aec98470",
+  "ssot": "docs/video-gateway-goal-stage-execution-prompt.md#vid-g6httpproject-sk回调与查询合同",
+  "route_count": 47,
+  "original_explicit_route_count": 43,
+  "routes": [
+    {
+      "group": "platform_support",
+      "route": "GET /api/token/video-saved-assets/{user_asset_id}/{role}/download-url",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_saved_read_service.go"
+    },
+    {
+      "group": "platform_support",
+      "route": "GET /api/token/video-saved-assets/{user_asset_id}/{role}/content",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_saved_read_service.go"
+    },
+    {
+      "group": "v1",
+      "route": "POST /v1/videos",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/handler/video_handler.go"
+    },
+    {
+      "group": "v1",
+      "route": "GET /v1/videos",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_list_service.go"
+    },
+    {
+      "group": "v1",
+      "route": "GET /v1/videos/{video_id}",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_http_service.go"
+    },
+    {
+      "group": "v1",
+      "route": "GET /v1/videos/{video_id}/content",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_content_service.go"
+    },
+    {
+      "group": "v1",
+      "route": "DELETE /v1/videos/{video_id}",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_media_delete_service.go"
+    },
+    {
+      "group": "platform",
+      "route": "POST /api/token/videos/quotes",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/handler/video_platform_handler.go"
+    },
+    {
+      "group": "platform",
+      "route": "POST /api/token/videos/generations",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/handler/video_platform_handler.go"
+    },
+    {
+      "group": "platform",
+      "route": "GET /api/token/video-rights-policy",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/handler/video_rights_handler.go"
+    },
+    {
+      "group": "platform",
+      "route": "GET /api/token/projects/{project_id}/video-rights-acceptance",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_rights_service.go"
+    },
+    {
+      "group": "platform",
+      "route": "POST /api/token/projects/{project_id}/video-rights-acceptance",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_rights_service.go"
+    },
+    {
+      "group": "platform",
+      "route": "POST /api/token/video-inputs/upload-sessions",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/handler/video_upload_handler.go"
+    },
+    {
+      "group": "platform",
+      "route": "GET /api/token/video-inputs/upload-sessions/{session_id}",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/handler/video_upload_handler.go"
+    },
+    {
+      "group": "platform",
+      "route": "POST /api/token/video-inputs/upload-sessions/{session_id}/complete",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/handler/video_upload_handler.go"
+    },
+    {
+      "group": "platform",
+      "route": "DELETE /api/token/video-inputs/upload-sessions/{session_id}",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/handler/video_upload_handler.go"
+    },
+    {
+      "group": "platform",
+      "route": "POST /api/token/video-inputs/from-image-asset",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_input_import_service.go",
+      "evidence": "docs/evidence/video-gateway-vid-g6-import-http-checkpoint.json"
+    },
+    {
+      "group": "platform",
+      "route": "GET /api/token/video-inputs",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_input_query_service.go",
+      "evidence": "docs/evidence/video-gateway-vid-g6-input-query-checkpoint.json"
+    },
+    {
+      "group": "platform",
+      "route": "GET /api/token/video-input-source-images",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_source_image_service.go",
+      "evidence": "docs/evidence/video-gateway-vid-g6-source-images-checkpoint.json"
+    },
+    {
+      "group": "platform",
+      "route": "GET /api/token/video-inputs/{input_asset_id}",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_input_query_service.go",
+      "evidence": "docs/evidence/video-gateway-vid-g6-input-query-checkpoint.json"
+    },
+    {
+      "group": "platform",
+      "route": "DELETE /api/token/video-inputs/{input_asset_id}",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_input_delete_service.go",
+      "evidence": "docs/evidence/video-gateway-vid-g6-input-cleanup-checkpoint.json"
+    },
+    {
+      "group": "platform",
+      "route": "GET /api/token/video-tasks",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_task_query_service.go",
+      "evidence": "docs/evidence/video-gateway-vid-g6-task-query-checkpoint.json"
+    },
+    {
+      "group": "platform",
+      "route": "GET /api/token/video-tasks/{task_id}",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_task_query_service.go",
+      "evidence": "docs/evidence/video-gateway-vid-g6-task-query-checkpoint.json"
+    },
+    {
+      "group": "platform",
+      "route": "GET /api/token/video-tasks/{task_id}/events",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_task_event_query.go",
+      "evidence": "docs/evidence/video-gateway-vid-g6-task-query-checkpoint.json"
+    },
+    {
+      "group": "platform",
+      "route": "DELETE /api/token/video-tasks/{task_id}",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_task_cancel_service.go"
+    },
+    {
+      "group": "platform",
+      "route": "DELETE /api/token/video-tasks/by-video/{video_id}",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/handler/video_task_cancel_handler.go"
+    },
+    {
+      "group": "platform",
+      "route": "GET /api/token/video-assets/{asset_id}/download-url",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_asset_download_service.go"
+    },
+    {
+      "group": "platform_supporting_route",
+      "route": "GET /api/token/video-assets/{asset_id}/content",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/handler/video_asset_download_handler.go"
+    },
+    {
+      "group": "platform",
+      "route": "GET /api/token/video-assets/{asset_id}/lifecycle",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_asset_lifecycle_service.go"
+    },
+    {
+      "group": "platform",
+      "route": "POST /api/token/video-assets/{asset_id}/save",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_asset_save_service.go"
+    },
+    {
+      "group": "platform",
+      "route": "DELETE /api/token/video-assets/{asset_id}",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_asset_delete_service.go"
+    },
+    {
+      "group": "platform",
+      "route": "GET /api/token/videos/requests/{request_id}",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_task_query_service.go",
+      "evidence": "docs/evidence/video-gateway-vid-g6-task-query-checkpoint.json"
+    },
+    {
+      "group": "platform",
+      "route": "GET /api/token/videos/requests/by-video/{video_id}",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_task_query_service.go",
+      "evidence": "docs/evidence/video-gateway-vid-g6-task-query-checkpoint.json"
+    },
+    {
+      "group": "internal",
+      "route": "POST /api/internal/ai/provider-callbacks/{provider_code}",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。"
+    },
+    {
+      "group": "admin",
+      "route": "GET /api/admin/token/video-tasks",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_admin_task_list.go"
+    },
+    {
+      "group": "admin",
+      "route": "GET /api/admin/token/video-tasks/{task_id}",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_admin_service.go"
+    },
+    {
+      "group": "admin",
+      "route": "POST /api/admin/token/video-tasks/{task_id}/cancel",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_admin_cancel.go"
+    },
+    {
+      "group": "admin",
+      "route": "POST /api/admin/token/video-tasks/{task_id}/poll",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。"
+    },
+    {
+      "group": "admin",
+      "route": "POST /api/admin/token/video-tasks/{task_id}/archive-retry",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。"
+    },
+    {
+      "group": "admin",
+      "route": "GET /api/admin/token/video-input-assets",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_admin_input_list.go"
+    },
+    {
+      "group": "admin",
+      "route": "POST /api/admin/token/video-input-assets/{input_asset_id}/quarantine",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_admin_input_quarantine.go"
+    },
+    {
+      "group": "admin",
+      "route": "GET /api/admin/token/video-assets",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_admin_output_list.go"
+    },
+    {
+      "group": "admin",
+      "route": "POST /api/admin/token/video-assets/{asset_id}/quarantine",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。"
+    },
+    {
+      "group": "admin",
+      "route": "POST /api/admin/token/video-assets/{asset_id}/release",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。"
+    },
+    {
+      "group": "admin",
+      "route": "GET /api/admin/token/video-reconciliation/summary",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/service/video_admin_summary.go"
+    },
+    {
+      "group": "admin",
+      "route": "POST /api/admin/token/video-adjustments",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。"
+    },
+    {
+      "group": "admin",
+      "route": "POST /api/admin/token/video-project-grants",
+      "implementation": "PASS_LOCAL_FINAL_CANDIDATE",
+      "tests": "最终同源all、专项HTTP/MySQL/race及47路由默认关闭矩阵通过。",
+      "source": "server/internal/modules/token_gateway/handler/video_project_grant_handler.go"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "G6-R01",
+      "description": "原Goal全部14节与G6完整SSOT逐项核验；43条路由不是全部验收范围",
+      "status": "PASS_LOCAL_FINAL_CANDIDATE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    },
+    {
+      "id": "G6-R02",
+      "description": "冻结Video Job完整字段及null、公开四态、prompt=null、200/202门面差异",
+      "status": "PASS_LOCAL_FINAL_CANDIDATE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    },
+    {
+      "id": "G6-R03",
+      "description": "严格JSON/multipart/query/header、错误信封、HTTP与业务request_id区分",
+      "status": "PASS_LOCAL_FINAL_CANDIDATE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    },
+    {
+      "id": "G6-R04",
+      "description": "真实JWT与SK、active/实名70001、IAM deny/grant/角色、模型发布可见、显式video:generate和scope",
+      "status": "PASS_LOCAL_FINAL_CANDIDATE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    },
+    {
+      "id": "G6-R05",
+      "description": "商品会员资产权益、预算并发排队钱包准入；原幂等结果读取前重新鉴权",
+      "status": "PASS_LOCAL_FINAL_CANDIDATE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    },
+    {
+      "id": "G6-R06",
+      "description": "两门面共享VideoCommand和G5事务；同键100并发唯一、异意图409、AES-GCM敏感载荷",
+      "status": "PASS_LOCAL_FINAL_CANDIDATE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    },
+    {
+      "id": "G6-R07",
+      "description": "T2V零输入、I2V唯一ready、Quote/生成hash版本一致、权利接受版本与attestation",
+      "status": "PASS_LOCAL_FINAL_CANDIDATE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    },
+    {
+      "id": "G6-R08",
+      "description": "上传会话全部状态、不可变ETag/version封存、覆盖攻击、断连重放清理",
+      "status": "PASS_LOCAL_FINAL_CANDIDATE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    },
+    {
+      "id": "G6-R09",
+      "description": "来源图片真实已结算可交付、user/project/key范围与隔离删除争议拒绝",
+      "status": "PASS_LOCAL_FINAL_CANDIDATE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    },
+    {
+      "id": "G6-R10",
+      "description": "Molin游标列表after/limit/order、稳定复合排序、跨Project游标拒绝",
+      "status": "PASS_LOCAL_FINAL_CANDIDATE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    },
+    {
+      "id": "G6-R11",
+      "description": "200/206/416、ETag/If-Range、下载并发带宽慢连接、真实MP4浏览器播放seek",
+      "status": "PASS_LOCAL_FINAL_CANDIDATE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    },
+    {
+      "id": "G6-R12",
+      "description": "平台取消与v1终态媒体删除分离，保留请求Quote财务hash审计事实和分级留存",
+      "status": "PASS_LOCAL_FINAL_CANDIDATE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    },
+    {
+      "id": "G6-R13",
+      "description": "保存唯一长期资产、容量权益安全复验、保存清理竞争与输入租约保护",
+      "status": "PASS_LOCAL_FINAL_CANDIDATE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    },
+    {
+      "id": "G6-R14",
+      "description": "回调完整身份签名、时间nonce/event唯一、篡改重放乱序迟到相反终态与低敏事实",
+      "status": "PASS_LOCAL_FINAL_CANDIDATE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    },
+    {
+      "id": "G6-R15",
+      "description": "管理逐路由权限MFA/reason/CAS/前后审计、双主体有效审批、poll/archive-retry不重Submit",
+      "status": "PASS_LOCAL_FINAL_CANDIDATE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    },
+    {
+      "id": "G6-R16",
+      "description": "模型目录capability/supported_operations与Key能力配置，权限seed及角色映射",
+      "status": "PASS_LOCAL_FINAL_CANDIDATE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    },
+    {
+      "id": "G6-R17",
+      "description": "Python2.45.0/TypeScript6.39.0锁定SDK真实认证业务链互操作",
+      "status": "PASS_LOCAL_FINAL_CANDIDATE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    },
+    {
+      "id": "G6-R18",
+      "description": "真实临时MySQL、实际RUN/PASS/SKIP、Linux race、Go全量/vet/modverify和Chat/Image/G0-G5回归",
+      "status": "PASS_LOCAL_FINAL_CANDIDATE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    },
+    {
+      "id": "G6-R19",
+      "description": "默认视频关闭、缺依赖拒绝且不降级Fake、禁止真实Provider/资金/共享环境/G7",
+      "status": "PASS_LOCAL_FINAL_CANDIDATE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    },
+    {
+      "id": "G6-R20",
+      "description": "中文功能开发文档、全部指定SSOT同步、回滚边界、缺陷台账、源码及证据索引",
+      "status": "PASS_LOCAL_FINAL_CANDIDATE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    },
+    {
+      "id": "G6-R21",
+      "description": "四类独立验收、精确源码绑定、P0/P1/P2清零后授权Git闭环与Ready完整CI",
+      "status": "INDEPENDENT_REVIEWS_PASS_PENDING_GIT_READY_CI",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json",
+        "docs/evidence/video-gateway-vid-g6-independent-reviews-final-v3.md"
+      ]
+    },
+    {
+      "id": "G6-R22",
+      "description": "锁定已验收HEAD普通合并、fresh fetch/main包含性/树追溯、最终完整报告并停止G6",
+      "status": "PENDING_GIT_CI_MERGE",
+      "evidence": [
+        "docs/evidence/video-gateway-vid-g6-local-verification.json",
+        "docs/evidence/video-gateway-vid-g6-source-state.json"
+      ]
+    }
+  ]
+}

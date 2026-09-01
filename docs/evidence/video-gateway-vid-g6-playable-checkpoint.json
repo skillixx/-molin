@@ -1,0 +1,52 @@
+{
+  "target_goal": "VID-G6",
+  "status": "PARTIAL_PLAYABLE_MEDIA_VERIFIED",
+  "full_stage": false,
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "UNCOMMITTED",
+  "source_manifest": "video-gateway-vid-g6-playable-current-source.json",
+  "source_state_id": "72f699225cd56ec5c6f2c823fd7d14152871be807fcae7f2a524d74fc9f9fd30",
+  "code_state_id": "ff43b87eeffb8848e2acfdd07331abcb350ebc3532033b5fff9c67ea45c78cae",
+  "isolated_regression": {
+    "session_id": 15609, "exit_code": 0, "required_top_level_tests": 50, "required_skips": 0,
+    "linux_race": true, "schema_latest": 85, "service_seconds": 173.659,
+    "source_manifest": "video-gateway-vid-g6-playable-source.json",
+    "source_state_id": "08f1a20ebc9d17670a4480aece99a27f11875af7808ce57ed374978324ad5575",
+    "copy_tree_sha256": "f1fe3c43743d685dc0ac2dcad523aa1dfa702fb663aa80852d844ca5562eef52",
+    "current_difference": "仅media_clock_test.go收紧fractional分支；原该用例证据STALE，由当前原生video全包89cded重新验证，生产代码/SQL及其余测试未变化。"
+  },
+  "native_regression": {"session_id": 16007, "exit_code": 0, "source_manifest": "video-gateway-vid-g6-playable-source.json", "commands": ["go -C server test -count=1 ./...", "go -C server vet ./...", "go -C server mod verify"]},
+  "current_affected_test": {"chunk": "89cded", "command": "go -C server test ./internal/modules/token_gateway/video -count=1", "exit_code": 0, "assertion": "mdhd时长61560匹配120*513，单独要求非整数fps的ErrMediaResourceLimit"},
+  "verified": [
+    "FFmpeg7.1本地合成4054453字节、5秒、120帧、1280x720、24fps、H.264无音频MP4，完整解码到null成功",
+    "原G5真实创建/执行/归档/结算/交付后HTTP完整正文逐字节等于夹具",
+    "第二片Store失败仅发送首1MiB，HTTP200之后UnexpectedEOF且无JSON尾部",
+    "服务端回收后下载租约released_at全部非空，钱包/请求/Quote/Hold/流水/Usage/关联/Outbox整行快照不变",
+    "电影/轨道独立时基、0/1版本及64位高位、正整数CFR完整采样表、累计媒体时长与单视频轨道校验"
+  ],
+  "browser_evidence": "video-gateway-vid-g6-browser-playability.json",
+  "browser_scope": "同一合成MP4的静态回环解码、实际鼠标拖动到3秒、继续至5秒结束及390px布局；非Project SK业务端到端",
+  "independent_review": "video-gateway-vid-g6-playable-independent-review.md",
+  "red_green": [
+    {"defect": "电影时基误用于轨道帧率", "red_chunk": "9168b9", "observed_fps": 1, "green_chunk": "cafbdb"},
+    {"defect": "零媒体时长、采样总时长错配和空首视频轨道", "red_chunk": "cbcf11", "green_chunk": "59227d", "isolated_recheck": 15609}
+  ],
+  "remaining": [
+    "真实慢TCP、下载中撤权/删除固定窗口、Project第五路独立限额、COMMIT未知",
+    "Project SK网关浏览器端到端与锁定双SDK",
+    "v1 multipart I2V、任务取消/媒体删除、资产保存/生命周期、回调、管理及预算控制面",
+    "完整G6与G0-G5隔离兼容、最终独立QA/PM/Standards/Spec、Ready CI和Git闭环"
+  ],
+  "registered_local_routes": 23,
+  "pr_state": "NOT_CREATED",
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": "NO",
+  "vid_g7_started": "NO"
+}

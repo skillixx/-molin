@@ -1,0 +1,64 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "报价错误、首次报价竞争及基础列表；完整阶段仍未验收",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_manifest": "video-gateway-vid-g6-quote-list-source.json",
+  "source_state_id": "1cedbf75477058183a35a4b3904a278ee26f8fec3a10f36363139ce8f5a67801",
+  "code_state_id": "b917ba6b3afbb14dd14383580e838d772ef9b9132c6495d0404709111ecfe164",
+  "container_snapshot_verification": {
+    "container": "6b7f96596275",
+    "manifest_files": 43,
+    "matched_files": 43,
+    "mismatches": 0,
+    "method": "运行中对容器内对应文件执行sha256sum，与源码清单逐项对账"
+  },
+  "red": {
+    "session": 72073,
+    "exit_code": 1,
+    "quote_http_errors": "五类真实业务拒绝均错误返回500/50000",
+    "first_quote_100": "FAIL，多条HTTP500",
+    "repeatable_read_two_connections": "FAIL_0.05s，record not found",
+    "list_route_session": 19090,
+    "list_route_result": "FAIL_HTTP405，缺依赖时冻结合同要求503"
+  },
+  "green": {
+    "session": 7100,
+    "exit_code": 0,
+    "required_top_level_run_pass": 15,
+    "required_top_level_skipped": 0,
+    "linux_race": "PASS",
+    "schema": "1至78及78重复up/down/up通过",
+    "http_root_seconds": 10.70,
+    "quote_error_http_numeric_type": "PASS",
+    "first_generation_100_and_replay_100": "PASS",
+    "first_explicit_quote_100": "PASS",
+    "repeatable_read_two_connections": "PASS_0.05s，返回同一赢家且唯一一条Quote",
+    "list_cursor_key_isolation": "PASS_0.38s",
+    "list_closed_dependencies": "PASS",
+    "single_connection_automatic_quote": "PASS_0.22s"
+  },
+  "host_checks": {
+    "session": 67932,
+    "exit_code": 0,
+    "go_test_all": "PASS，本机无临时DSN的集成用例SKIP不作为MySQL验收",
+    "go_vet_all": "PASS",
+    "go_mod_verify": "PASS"
+  },
+  "independent_review": {
+    "quote_fix": "符合已复现根因；共享当前读及双层精确错误映射，不改金额或连接池",
+    "list_findings": [
+      {"severity": "P2", "status": "OPEN", "issue": "无候选模型授权时跳过主体准入，未实名返回403而非400"},
+      {"severity": "P2_RISK", "status": "AWAITING_REPRODUCTION", "issue": "相反排序完成态列表可能形成Task与共同Wallet锁顺序环"}
+    ],
+    "full_stage_qa": "NOT_RUN"
+  },
+  "later_changes": "此后新增列表准入/完成态并发反例及运行器同源SQL、专用编译缓存；39496单独验证，不复用本检查点作为当前源码PASS",
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "pr_state": "NOT_CREATED",
+  "full_stage": false
+}

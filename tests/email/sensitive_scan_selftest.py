@@ -68,6 +68,20 @@ class SensitiveScanSelfTest(unittest.TestCase):
         self.assertIn("category=protected_env", output)
         self.assertNotIn(secret, output)
 
+    def test_hex_digest_phone_shape_is_not_a_phone(self) -> None:
+        phone_shape = "159" + "1234" + "5678"
+        digest = "ae" + phone_shape + "cf61df20e54eec1ba3da67bea03e2ef6a0a5638d811e8339f32"
+        code, output = self.run_scan({"evidence.json": '{"sha256":"' + digest + '"}'})
+        self.assertEqual(0, code)
+        self.assertNotIn("phone", output)
+
+    def test_standalone_phone_shape_remains_detected(self) -> None:
+        phone = "159" + "1234" + "5678"
+        code, output = self.run_scan({"config.json": '{"phone":"' + phone + '"}'})
+        self.assertEqual(0, code)
+        self.assertIn("category=complete_phone_literal", output)
+        self.assertNotIn(phone, output)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

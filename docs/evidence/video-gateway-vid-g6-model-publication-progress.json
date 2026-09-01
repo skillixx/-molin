@@ -1,0 +1,108 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "controlled-video-model-publication-rollback-unpublish",
+  "stage_status": "IN_PROGRESS",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_state_id": "b501381a96deda1a711b06f6d77f16d5646716459c2ea4fe6c440fd8090ef295",
+  "source_manifest": "video-gateway-vid-g6-model-publication-source.json",
+  "source_file_count": 359,
+  "git_state": "UNCOMMITTED_UNPUSHED_NO_G6_PR",
+  "runs": [
+    {
+      "session_id": 24092,
+      "status": "FAIL_EXPECTED_GUARD",
+      "schema": 105,
+      "copy_tree_sha256": "0c7b40d983cbc59868d001476784d38089d9ac1d5adc8fa756766e46501a7e31",
+      "video_current": {
+        "required": 3,
+        "passed": 3,
+        "skipped": 0
+      },
+      "legacy": {
+        "test": "TestG5MySQLIntegration",
+        "run": 1,
+        "passed": 0,
+        "skipped": 1
+      },
+      "reason": "旧G5用例在105号库按自身隔离边界SKIP，runner正确拒绝，不能算兼容通过"
+    },
+    {
+      "session_id": 30449,
+      "status": "PASS",
+      "linux_race": true,
+      "current": {
+        "schema": 105,
+        "required": 3,
+        "passed": 3,
+        "skipped": 0,
+        "copy_tree_sha256": "643ed6eff5a3e4172e81a4f82e1f633779c9ae3c7358af419b7ba6f8d59b52b5",
+        "service_seconds": 10.722
+      },
+      "legacy": {
+        "schema": 77,
+        "required": 1,
+        "passed": 1,
+        "skipped": 0,
+        "subtests": 6,
+        "copy_tree_sha256": "643ed6eff5a3e4172e81a4f82e1f633779c9ae3c7358af419b7ba6f8d59b52b5",
+        "repository_seconds": 1.283
+      },
+      "same_source_copy_hash": true,
+      "tests": [
+        "TestVideoG6ModelPublicationHTTPMySQL",
+        "TestVideoG6ModelDraftAdoptionHTTPMySQL",
+        "TestVideoG6CatalogPublishedHTTPMySQL",
+        "TestG5MySQLIntegration"
+      ]
+    }
+  ],
+  "verified": [
+    "发布/下架/回滚复用原模型及发布版本表",
+    "草稿CAS、命令幂等、加密原因、前后审计同事务",
+    "Fake native、Runware runway:1@2、当前唯一active价格及operation摘要冻结",
+    "发布快照无ChannelID/UpstreamModel，不依赖Bifrost健康路由",
+    "旧无native证明版本回滚拒绝；当前受控版本回滚产生新版本",
+    "默认模型决策使用全局发布锁",
+    "Provider Submit=0；Quote/Hold/钱包/Usage/Outbox和原财务事实不变",
+    "旧G5 handler/service/repository视频写旁路关闭",
+    "旧Chat G5发布及6子用例在77号库保持"
+  ],
+  "review": {
+    "agent": "vid_g6_cancel_standards",
+    "type": "READ_ONLY_SOURCE_REVIEW",
+    "p0": 0,
+    "p1": 0,
+    "p2": 0,
+    "decision": "NO_DEFINITE_SCOPE_DEFECT",
+    "full_stage_acceptance": false,
+    "suggestions": [
+      "两模型default=true并发",
+      "提交确认未知后的同键重放",
+      "runner未来自动强制父子copy hash；本轮两条hash实际相同"
+    ]
+  },
+  "checks": {
+    "focused_go_vet": "PASS",
+    "git_diff_check": "PASS",
+    "whole_stage_qa": "NOT_RUN",
+    "whole_stage_ci": "NOT_RUN"
+  },
+  "documentation_note": "通过后仅同步当前进度文档；未改变30449已测试的Go、SQL或测试源码。",
+  "remaining": [
+    "默认模型100并发及COMMIT未知/写点故障/密文审计篡改完整矩阵",
+    "完整原应用装配、权限/MFA期限",
+    "Key能力配置、multipart I2V、预算并发排队准入",
+    "双SDK、全量兼容、独立阶段验收及Git闭环"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": "NO",
+  "vid_g7_started": "NO"
+}

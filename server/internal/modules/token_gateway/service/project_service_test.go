@@ -51,6 +51,8 @@ type memoryProjectStore struct {
 	scopes         map[uint64][]string
 	nextID         uint64
 	modelsOK       bool
+	videoGrant     bool
+	idempotent     map[string]uint64
 	realNameStatus string
 }
 
@@ -60,20 +62,58 @@ type memoryProjectAudit struct {
 	err       error
 }
 
-func (a *memoryProjectAudit) RecordWithTx(_ context.Context, _ *gorm.DB, _ *uint64, _, action string, _, _ *string, _ string, summary any) error {
+func (a *memoryProjectAudit) RecordWithTxID(_ context.Context, _ *gorm.DB, _ *uint64, _, action string, _, _ *string, _ string, summary any) (uint64, error) {
 	if a.err != nil {
-		return a.err
+		return 0, a.err
 	}
 	a.actions = append(a.actions, action)
 	a.summaries = append(a.summaries, summary)
-	return nil
+	return uint64(len(a.actions)), nil
 }
 
 func newMemoryProjectStore() *memoryProjectStore {
 	return &memoryProjectStore{
 		project: model.AIProject{ID: 9, UserID: 5, Name: "演示项目", Status: ProjectStatusActive},
-		keys:    map[uint64]authmodel.APIKey{}, scopes: map[uint64][]string{}, nextID: 10, modelsOK: true, realNameStatus: "verified",
+		keys:    map[uint64]authmodel.APIKey{}, scopes: map[uint64][]string{}, idempotent: map[string]uint64{}, nextID: 10, modelsOK: true, realNameStatus: "verified",
 	}
+}
+
+func (s *memoryProjectStore) CreateProjectKeyIdempotent(ctx context.Context, key *authmodel.APIKey, scopes []authmodel.APIKeyModelScope, audit repository.ProjectKeyAudit, i repository.ProjectKeyIdempotency) (*authmodel.APIKey, []string, bool, error) {
+	token := i.Action + ":" + i.CommandKeyHash
+	if id := s.idempotent[token]; id != 0 {
+		k := s.keys[id]
+		return &k, append([]string(nil), s.scopes[id]...), true, nil
+	}
+	if err := s.CreateProjectKey(ctx, key, scopes, audit); err != nil {
+		return nil, nil, false, err
+	}
+	s.idempotent[token] = key.ID
+	k := s.keys[key.ID]
+	return &k, append([]string(nil), s.scopes[key.ID]...), false, nil
+}
+func (s *memoryProjectStore) RotateProjectKeyIdempotent(ctx context.Context, oldKey, newKey *authmodel.APIKey, audit repository.ProjectKeyAudit, i repository.ProjectKeyIdempotency) (*authmodel.APIKey, []string, bool, error) {
+	token := i.Action + ":" + i.CommandKeyHash
+	if id := s.idempotent[token]; id != 0 {
+		k := s.keys[id]
+		return &k, append([]string(nil), s.scopes[id]...), true, nil
+	}
+	if err := s.RotateProjectKey(ctx, oldKey, newKey, nil, audit); err != nil {
+		return nil, nil, false, err
+	}
+	s.idempotent[token] = newKey.ID
+	k := s.keys[newKey.ID]
+	return &k, append([]string(nil), s.scopes[newKey.ID]...), false, nil
+}
+func (s *memoryProjectStore) RevokeProjectKeyIdempotent(ctx context.Context, userID, projectID, keyID uint64, audit repository.ProjectKeyAudit, i repository.ProjectKeyIdempotency) (bool, error) {
+	token := i.Action + ":" + i.CommandKeyHash
+	if s.idempotent[token] != 0 {
+		return true, nil
+	}
+	if err := s.RevokeProjectKey(ctx, userID, projectID, keyID, audit); err != nil {
+		return false, err
+	}
+	s.idempotent[token] = keyID
+	return false, nil
 }
 func (s *memoryProjectStore) CreateProject(_ context.Context, project *model.AIProject) error {
 	project.ID = s.project.ID
@@ -107,7 +147,7 @@ func (s *memoryProjectStore) UpdateProject(_ context.Context, userID, projectID 
 }
 func (s *memoryProjectStore) CreateProjectKey(_ context.Context, key *authmodel.APIKey, scopes []authmodel.APIKeyModelScope, audit repository.ProjectKeyAudit) error {
 	key.ID = s.nextID
-	if err := audit(nil, key.ID); err != nil {
+	if _, err := audit(nil, key.ID, nil, nil); err != nil {
 		return err
 	}
 	s.nextID++
@@ -143,7 +183,7 @@ func (s *memoryProjectStore) RevokeProjectKey(_ context.Context, userID, project
 	if err != nil {
 		return err
 	}
-	if err := audit(nil, keyID); err != nil {
+	if _, err := audit(nil, keyID, nil, nil); err != nil {
 		return err
 	}
 	key.Status = "revoked"
@@ -156,7 +196,7 @@ func (s *memoryProjectStore) RotateProjectKey(_ context.Context, oldKey *authmod
 		return repository.ErrProjectKeyNotFound
 	}
 	newKey.ID = s.nextID
-	if err := audit(nil, newKey.ID); err != nil {
+	if _, err := audit(nil, newKey.ID, nil, nil); err != nil {
 		return err
 	}
 	s.nextID++
@@ -169,8 +209,14 @@ func (s *memoryProjectStore) RotateProjectKey(_ context.Context, oldKey *authmod
 	s.keys[oldKey.ID] = current
 	return nil
 }
-func (s *memoryProjectStore) ActiveScopedModelsExist(_ context.Context, _ []string) (bool, error) {
-	return s.modelsOK, nil
+func (s *memoryProjectStore) ValidateScopedModels(_ context.Context, _, _ uint64, _ []string, allowVideo bool) (bool, error) {
+	if !s.modelsOK {
+		return false, repository.ErrProjectKeyScopeInvalid
+	}
+	if allowVideo && !s.videoGrant {
+		return false, nil
+	}
+	return allowVideo, nil
 }
 func (s *memoryProjectStore) UserRealNameStatus(_ context.Context, _ uint64) (string, error) {
 	return s.realNameStatus, nil

@@ -83,10 +83,7 @@ func (p *VideoSafetyPipeline) Assess(ctx context.Context, request VideoSafetyReq
 
 // Preflight 在Provider Submit前完成Prompt和I2V参考图全部输入审核。
 func (p *VideoSafetyPipeline) Preflight(ctx context.Context, request VideoSafetyRequest) error {
-	if p == nil || p.moderator == nil || request.Prompt == "" {
-		return ErrVideoModerationFailed
-	}
-	if err := p.moderator.ModeratePrompt(ctx, request.Prompt); err != nil {
+	if err := p.AssessPrompt(ctx, request.Prompt); err != nil {
 		return err
 	}
 	switch request.Operation {
@@ -98,16 +95,30 @@ func (p *VideoSafetyPipeline) Preflight(ctx context.Context, request VideoSafety
 		if request.Reference == nil {
 			return ErrVideoModerationFailed
 		}
-		for _, check := range []func(context.Context, NormalizedReferenceImage) error{
-			p.moderator.ReferenceOCR, p.moderator.ReferenceVisual, p.moderator.ReferenceQRCode,
-			p.moderator.ReferenceText, p.moderator.ReferenceMetadata,
-		} {
-			if err := check(ctx, *request.Reference); err != nil {
-				return err
-			}
-		}
+		return p.AssessReference(ctx, *request.Reference)
 	default:
 		return ErrVideoModerationFailed
+	}
+	return nil
+}
+
+// AssessPrompt供inline上传前的只读准入使用；最终生成仍会连同规范化参考图再次执行完整Preflight。
+func (p *VideoSafetyPipeline) AssessPrompt(ctx context.Context, prompt string) error {
+	if p == nil || p.moderator == nil || prompt == "" {
+		return ErrVideoModerationFailed
+	}
+	return p.moderator.ModeratePrompt(ctx, prompt)
+}
+
+// AssessReference供受控上传执行相同的五类输入审核，不伪造Prompt来借用生成预检。
+func (p *VideoSafetyPipeline) AssessReference(ctx context.Context, reference NormalizedReferenceImage) error {
+	if p == nil || p.moderator == nil {
+		return ErrVideoModerationFailed
+	}
+	for _, check := range []func(context.Context, NormalizedReferenceImage) error{p.moderator.ReferenceOCR, p.moderator.ReferenceVisual, p.moderator.ReferenceQRCode, p.moderator.ReferenceText, p.moderator.ReferenceMetadata} {
+		if err := check(ctx, reference); err != nil {
+			return err
+		}
 	}
 	return nil
 }

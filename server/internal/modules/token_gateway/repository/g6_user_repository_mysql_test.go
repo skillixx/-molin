@@ -67,7 +67,9 @@ func TestG6UserRepositoryMySQLIsolation(t *testing.T) {
 
 	// Project SK 高风险动作与审计共用事务，审计失败时不得留下密钥或吊销事实。
 	g2 := NewG2Repository(db)
-	auditFailure := func(*gorm.DB, uint64) error { return errors.New("模拟审计写入失败") }
+	auditFailure := func(*gorm.DB, uint64, []string, *ProjectKeyIdempotency) (uint64, error) {
+		return 0, errors.New("模拟审计写入失败")
+	}
 	projectID := uint64(965)
 	failedKey := &authmodel.APIKey{UserID: 965, ProjectID: &projectID, KeyPrefix: "sk-g6-fail", KeyHash: "g6-failed-audit-hash", Name: "审计失败密钥", BillingMode: "postpaid", ScopeMode: "allowlist", Status: "active"}
 	if err := g2.CreateProjectKey(ctx, failedKey, nil, auditFailure); err == nil {

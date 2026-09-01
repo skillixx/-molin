@@ -1,5 +1,11 @@
 # 前端接口参考文档
 
+> VID-G6平台资产删除（本地验证中）：向`DELETE /api/token/video-assets/{asset_id}`提交原`version_no`与幂等键。根资产删除联动普通派生物；封面/缩略图等只删自身，不能用子ID代替整视频删除。平台任务增加`media_deletion_pending`和`media_partially_deleted`，确认前不得显示“已删除”；根`media_deleted=false`不代表仍可下载。部分删除后v1隐藏表示交付不完整，原生成三轴与账单仍保留。失败用原键/原版本恢复，不自动扩大删除范围。详见[删除合同](./video-gateway-vid-g6-asset-delete-contract.md)，不提前开放产品页面。
+
+> VID-G6保存重放增量（本地验证中）：旧保存尝试已清理为aborted时，原幂等键返回原终止事实，data保持7字段，`status=aborted/user_asset_id=0/idempotent=true`。0不能用于下载，也不表示已保存成功；不得自动换新键重新保存。新键是否能重新保存由当前源、权益、容量及历史清理证明决定。缺少历史冻结权益类型时不能用当前配置补证，必须展示后端拒绝而不是猜测成功。本阶段仅同步对接文档，不修改产品页面。
+
+> VID-G6长期副本读取增量（仅本地验证，未开放业务）：保存结果的`user_asset_id`用于`GET /api/token/video-saved-assets/{user_asset_id}/{role}/download-url`，返回平台data三字段`asset_id/download_url/expires_at`。`role`仅content/cover/preview/thumbnail/derived；兑换`download_url`时仍需原有效Bearer，不得把URL作为匿名链接。原临时结果删除后v1继续404，不能通过重试复活。原Key/Project、当前存储权益、保全与完整性仍是读取门禁；错误需明确展示，不切换身份。详情见[长期读取合同](./video-gateway-vid-g6-saved-read-contract.md)。本阶段不修改产品前端页面。
+
 > Token 文字模型执行层：前端继续调用既有 `/api/token/chat/completions` 或 `/v1/chat/completions`，无需感知 Native/Bifrost。公开响应不包含 Bifrost `extra_fields`、路由信息、供应商响应头或内部 Key 名称。成功响应缺少 Usage 时，后台记录为 `settlement_pending`，前端不得自行使用 `max_tokens` 估算已扣金额。
 
 > G4/G8 前端处理：40310 显示后端稳定拒绝文案；该文案不可由策略编辑器修改。40311 提示联系管理员；42920 提示预算达到上限；42921/42922 读取 `Retry-After` 后允许倒计时重试；50320/50321 显示服务暂不可用；50330 显示“AI 网关商业流量暂未开放”，不得自动重试。SSE 收到 `molin.content_policy` 后显示其 message 并以随后 `[DONE]` 正常结束，不展示已经缓冲但未通过审核的内容；该请求用户消费为 0，上游成本只供平台财务对账。
@@ -2158,7 +2164,7 @@ Wechatpay-Nonce: <随机串>
 
 ### VID-G1 视频Schema状态（前端不可对接）
 
-VID-G1只建立视频Expand Schema、Go模型和本地约束验证。当前没有视频HTTP Handler、运行时路由或Vue页面，前端不得调用或探测`/v1/videos`、`/api/token/videos/*`、`/api/admin/token/video-*`，也不得把OpenAPI规划快照当成已上线接口。
+VID-G1当时只建立视频Expand Schema、Go模型和本地约束验证，没有视频HTTP Handler、运行时路由或Vue页面。后续VID-G6的本地开发增量见下节；视频尚未部署开放，前端不得把OpenAPI规划快照当成已上线接口。
 
 后续前端合同会复用同一任务体系并区分：
 
@@ -2169,6 +2175,76 @@ VID-G1只建立视频Expand Schema、Go模型和本地约束验证。当前没�
 - 前端不得直接写任务、Usage、钱包、回调、资产生命周期或输入租约状态。
 
 十类`video:*`权限在VID-G1仅作为后续管理能力的数据库seed，权限存在不表示按钮、页面或接口已实现。正式页面必须在对应后续Goal中重新对账API、加载/错误/空状态、按钮反馈和桌面/平板/手机适配。Schema字段和证据边界见[`video-gateway-vid-g1-schema.md`](./video-gateway-vid-g1-schema.md)。
+
+### VID-G6 视频本地接口增量（开发中，非页面交付）
+
+输入隔离（本地验证中）：向`POST /api/admin/token/video-input-assets/{input_asset_id}/quarantine`提交reason、原version_no及幂等头，使用管理员JWT、safety_review和双MFA。返回管理输入21字段加idempotent，不提供媒体地址或引用权限；quarantined不表示原审核结论已改为rejected。409不允许前端回退删除状态或自动换新key；当前未开放产品页面。详见[输入隔离合同](./video-gateway-vid-g6-admin-input-quarantine-contract.md)。
+
+输出隔离（本地验证中）：`POST /api/admin/token/video-assets/{asset_id}/quarantine`采用相同管理员认证、原因和CAS合同，HTTP200返回管理输出28字段加idempotent。只改变选定资产的行政生命周期，原审核/双标识不变；任一角色隔离阻断整条视频的临时及长期副本访问。不能使用旧签名或已保存成功回执恢复访问；没有产品页面。解除隔离不在本接口内隐式执行，详见[输出隔离合同](./video-gateway-vid-g6-admin-output-quarantine-contract.md)。
+
+输出解除（本地验证中，无产品页面）：`POST /api/admin/token/video-assets/{asset_id}/release`先由管理员以action=request申请，HTTP202返回approval_id；必须另一名管理员用action=approve独立复核，不提交maker_id/checker_id。两步均提交reason、冻结version_no及幂等头，approve另有approval_id。HTTP200 released只是原审批执行事实，不代表当前视频一定可下载；仍需重新走原内容门禁。详见[双人解除合同](./video-gateway-vid-g6-admin-output-release-contract.md)。
+
+管理轮询（本地验证中，无产品页面）：`POST /api/admin/token/video-tasks/{task_id}/poll`只提交reason/version_no及幂等头，不提交Provider ID或URL。202 running表示已存在执行中的管理命令；200 completed/unknown是原查询处理回执，不是视频completed。刷新必须有当前管理JWT/MFA，不能自动换新key重做Query；完整使用边界见[管理轮询合同](./video-gateway-vid-g6-admin-poll-contract.md)。
+
+归档重试（本地验证中，无产品页面）：`POST /api/admin/token/video-tasks/{task_id}/archive-retry`提交reason、当前version_no及单值幂等头，需管理员JWT/MFA/task_manage。status=completed只是归档管理命令完成，视频仍可能held或settlement_pending，不能直接开放播放。unknown回执及原失败事实保留；重复旧键不重新媒体IO，新尝试需明确新键和最新版本。详见[归档HTTP合同](./video-gateway-vid-g6-admin-archive-contract.md)。
+
+调账双人审批（合成测试专用，无产品页面）：`POST /api/admin/token/video-adjustments`的request提交task_id、原Task version_no、amount字符串、direction、adjustment_reason及reason；202返回审批号/版本1。另一名管理员approve提交approval_id、版本1及reason，执行后200/版本2。不提交maker/checker/sequence_no，不将回执版本2替换原重放body。原结算与业务资产不改写，金额只是G5追加修正；独立开关默认关闭，见[调账合同](./video-gateway-vid-g6-admin-adjustment-contract.md)。
+
+管理员取消（本地验证中）：`POST /api/admin/token/video-tasks/{task_id}/cancel`只接收reason与原Task version_no，并传单值Idempotency-Key。使用管理员JWT、task_manage及双MFA，不可用目标SK代替。200结果需区分cancelled与already_terminal；202 cancel_requested只表示已记录意图，不能显示已退款或Provider已取消。重放保留原版本与key，不自行换新key；409刷新原任务再决定是否发起新命令。原因不回显，未配置专用原因加密器503。本阶段不开发产品页面，完整31字段及错误见[管理员取消合同](./video-gateway-vid-g6-admin-cancel-contract.md)。
+
+管理输出与运行汇总（验证中）：`GET /api/admin/token/video-assets`固定28字段D-95，审核副本只读元数据不等于可下载；`parent_asset_id`为公开字符串，根为null。`GET /api/admin/token/video-reconciliation/summary`是非列表六字段，使用独立reconcile_manage权限，禁止query/body；冻结金额保持八位字符串，五个计数全零不能展示为“对账通过”。二者仅本地显式注册，当前未接产品前端或bootstrap，完整类型及错误见[管理查询合同](./video-gateway-vid-g6-admin-read-contract.md)。
+
+管理只读增量（仅本地验证）：`GET /api/admin/token/video-tasks`为28字段项D-95；`GET /api/admin/token/video-input-assets`为21字段项D-95。必须使用管理员JWT、`ai_gateway:view`及有效双MFA，不能用Project SK。输入`upload_session_id/source_asset_id`是公开字符串ID且二选一，`api_key_id=null`表示已证明的JWT来源；来源损坏503不能显示成“无来源”。两列表均不授予下载或引用权限，`can_deliver`也不是管理员下载授权。字段、严格过滤和null见[管理查询合同](./video-gateway-vid-g6-admin-read-contract.md)。本阶段不实现或开放产品管理页面。
+
+新增任务列表、详情、事件及request_id/video_id双向请求查询五个GET，见[任务查询完整字段与空值参考](./video-gateway-vid-g6-http-project-sk-contract.md#平台任务事件与请求查询增量验证中)。三个详情入口返回相同DTO；task_id/video_id是同一公开ID，不能按数值内部ID使用。展示原三轴状态，不能把reserved误认作兼容v1的queued。金额为CNY字符串，settled_amount=null表示尚无结算，不能展示成已结算0元；held_amount原预占与current_frozen_amount当前冻结分开，net_released_amount不是包含调账的净退款。media_deleted保留账单历史，can_deliver才表示当次交付门禁通过。
+
+任务列表/事件列表采用D-95，page/page_size边界为10000/100，默认1/20。JWT任务列表必须提供project_id；详情和事件不能覆盖归属。事件仅展示白名单类型、axis及可空from/to，原Provider或诊断事件不可见；不要依赖事件ID格式反解内部序号。这些入口未部署，不构成产品页面接入授权。
+
+当前二十九条局部路由未接bootstrap，仅用于隔离测试，不允许据此上线用户页面。新增媒体删除、生命周期和认证式短效下载的完整字段、错误语义见full-api-design第14.0V6节。生命周期21字段不含存储位置或审核正文，moderation_copy不可见，can_download不是长期下载能力。显式装配专用签名key后，JWT及缩略图可走平台download-url与配套content；地址必须携带当前Bearer，不可直接当匿名分享链接，最长15分钟且受媒体/JWT期限约束：
+
+| 方法/路径 | 认证与输入 | 成功响应 |
+|---|---|---|
+| POST `/v1/videos` | Project SK、Idempotency-Key、multipart；当前T2V | 200，标准Video Job |
+| GET `/v1/videos` | Project SK；after/limit/order，默认20/desc | 200，兼容游标VideoList，不是D-95 |
+| GET `/v1/videos/{video_id}` | Project SK | 200，原Job；内部ID、Prompt和Provider字段不返回 |
+| GET `/v1/videos/{video_id}/content` | 当前Project SK；仅默认或`variant=video`；可选单Range/If-Range | 200/206私有MP4；416范围错误；未交付或不可见404，缺私有存储或租约失效503；用户/Project共享下载名额超限429；浏览器/SDK及资源完整边界验收待完成 |
+| POST `/api/token/videos/quotes` | JWT或SK、Idempotency-Key、严格JSON | 201，平台data中的客户报价 |
+| POST `/api/token/videos/generations` | JWT或SK、Idempotency-Key、严格JSON及quote_id | 202，平台data中的request_id/quote_id/held_amount/idempotent/video |
+| GET `/api/token/video-rights-policy` | 有效JWT或SK；无Project/model参数 | 200，明确非商业合成政策及有效期，不代表生成授权 |
+| GET `/api/token/projects/{project_id}/video-rights-acceptance` | 当前Project归属及基础准入 | 200，历史接受字段、当前valid与invalid_reason |
+| POST `/api/token/projects/{project_id}/video-rights-acceptance` | 仅所有者JWT、Idempotency-Key、rights_policy_version及rights_confirmed=true | 首次201、重放200，原回执与原有效期 |
+| POST `/api/token/video-inputs/upload-sessions` | JWT或SK、Idempotency-Key、filename/mime_type/size_bytes/sha256；JWT另传project_id | 首次201、重放200，session_id及可空upload能力 |
+| GET `/api/token/video-inputs/upload-sessions/{session_id}` | 原上传主体，不传附加查询参数 | 200，当前状态，upload=null |
+| POST `/api/token/video-inputs/upload-sessions/{session_id}/complete` | 原主体、Idempotency-Key、空JSON对象 | 完成200/处理中202，Retry-After:1 |
+| DELETE `/api/token/video-inputs/upload-sessions/{session_id}` | 原主体、Idempotency-Key、无正文 | 200取消结果；已完成409 |
+| GET `/api/token/video-inputs` | JWT或SK；page/page_size，JWT必需project_id | 200，D-95 items/page/page_size/total |
+| GET `/api/token/video-inputs/{input_asset_id}` | 原主体；无query | 200，低敏输入元数据；未知或越权404 |
+| DELETE `/api/token/video-inputs/{input_asset_id}` | JWT或SK、Idempotency-Key、严格JSON version_no；无query | 未确认清理202；存在匹配完成事实才200/deleted，六字段不省略 |
+| GET `/api/token/video-input-source-images` | JWT或SK；与输入列表相同分页，JWT必需project_id | 200，D-95安全有效且已结算的来源图片候选，不含下载地址 |
+| POST `/api/token/video-inputs/from-image-asset` | JWT或SK、Idempotency-Key、source_asset_id；JWT必需project_id | 201首次完成/200已有完成/202处理中；未完成input_asset_id=null |
+| GET `/api/token/video-tasks` | JWT或SK、page/page_size；JWT必需project_id | 200，D-95与25字段任务详情 |
+| GET `/api/token/video-tasks/{task_id}` | 原主体，无query | 200，原三轴、客户金额及可交付判断 |
+| DELETE `/api/token/video-tasks/{task_id}` | 原JWT/SK、Idempotency-Key；无body/query | 200/cancelled或already_terminal，202/cancel_requested；28字段，不能把202当退款 |
+| DELETE `/api/token/video-tasks/by-video/{video_id}` | 与上行同一任务及取消幂等域 | 同上；别名重放不重复取消或释放 |
+| GET `/api/token/video-tasks/{task_id}/events` | 原主体，page/page_size | 200，D-95低敏白名单事件，含axis及可空from/to |
+| GET `/api/token/videos/requests/{request_id}` | 原主体，无query | 200，与Task详情一致的原请求事实 |
+| GET `/api/token/videos/requests/by-video/{video_id}` | 原主体，无query | 200，按视频公开ID关联同一请求 |
+
+来源导入返回import_id/status/input_asset_id/processing_expires_at/idempotent。只有completed且input_asset_id非null才可继续报价，仍需Quote/Generation各自权利声明。202按Retry-After用原键及原source_asset_id重试，503或断连不能自动换键；409说明原命令或来源漂移，不能沿用原源的新版本偷偷重试。processing_expires_at仅为处理期限，不能显示为已绑定输入的删除倒计时。当前入口为本地增量，完整正向HTTP及故障矩阵仍待验收，不据此上线产品页面。
+
+输入列表/详情仅展示仍获授权的元数据，不带预览或下载URL。详情固定十键input_asset_id/source_type/lifecycle_state/mime_type/size_bytes/width/height/expires_at/version_no/can_reference；未规范化的四个规格字段为null。不得把can_reference=true显示为所有生成门禁已通过；false也不代表数据已删除。上传来源的隔离/失效历史可以显示状态，生成图片来源失效仍可能404或列表隐藏。JWT与SK来源互不借权，列表total也不能包含其他Key输入。页码默认1、最大10000，每页默认20、最大100，越界拒绝而非静默修正。
+
+上传步骤：创建会话取得15分钟固定能力→按upload.method/headers向upload.url上传→以同一完成键提交complete；仅completed且input_asset_id非null时才可报价。普通查询不续签，创建重放也不延长能力。DTO八键完整保留，未发布input_asset_id为null，取消后input_asset_id/upload均null。客户端不得传bucket/object_key/签名参数给完成接口；只上传PNG/JPEG至10MiB，由服务端完成解码、审核和规范化。503或断连先GET，再用原complete键恢复；verifying不等于被拒绝，禁止自动换键再建资产。cleanup_pending表示清理尚未完成，不得显示为正文已删除。完整错误码见[HTTP合同](./full-api-design.md#140v6-视频网关vid-g6本地http合同开发中)。当前受控上传与SK图生只完成局部回环HTTP测试，v1文件图生及完整SDK仍未完成。
+
+平台JSON包含model、prompt、operation；JWT必须指定project_id。当前规格固定seconds="5"、size="1280x720"，省略可用默认值，显式空值或null拒绝。T2V不得携带input_asset_id。I2V增强源码已接既有ready输入与权利原子校验：JWT携带rights_confirmed=true及rights_policy_version，SK携带rights_attestation=true且项目已接受；只提交单个input_asset_id，不提交hash/version或内部证明。当前应用服务验证不能代替HTTP/上传/SDK验收，不得据此上线页面。
+
+Quote仅展示quote_id、model、operation、quoted_amount、currency、expires_at和idempotent；不返回成本快照。金额是字符串且仅为合成测试夹具。JWT过期/吊销返回401，吊销依赖不可用返回503，未实名400/70001，余额不足402/60001。两门面共用生成意图，同键同意图返回原业务request_id；客户端不能更换幂等键自动重试未知结果。X-Request-ID是本次HTTP追踪，X-Molin-Request-ID是原业务请求，两者不要混用。
+
+平台报价错误：404/40420/quote_not_found表示不存在或无权引用；409/40920/quote_expired要求重新获取报价；409/40901/idempotency_conflict表示幂等意图冲突或报价被另一生成消费，不能自动另建任务。列表按创建时间和公开ID稳定排序；合法格式但无权使用的cursor统一404。删除媒体后的原Task仅能作为有权主体的分页锚点，不代表被删除Job仍公开。
+
+权利回执不得只根据acceptance_id展示“已授权”，必须检查valid。无当前政策时rights_policy_version为null；无历史时acceptance_id/accepted_policy_version/accepted_at/expires_at为null。政策失效仍可返回历史回执，但valid=false且原期限不延长；重新接受必须明确阅读新条款并使用新键。SK不能代签真实用户，合成政策不能显示为正式法律协议。该接口存在不代表I2V上传与生成事务已接通。
+
+完整I2V、列表完成态/删除竞争、下载/保存/删除、回调、管理、SDK及验收仍未完成。本阶段不修改产品前端。最新进度与证据见[VID-G6开发合同](./video-gateway-vid-g6-http-project-sk-contract.md)。
 
 ### G4 管理页面接口规划
 
@@ -2620,6 +2696,26 @@ DELETE /api/token/projects/{id}/keys/{key_id}
 - 路由编辑必须回传当前 `version_no`；收到 409 时提示刷新，禁止静默覆盖。
 - 发布、审批、暂停、退役、下架均需二次确认；按钮在请求中进入 loading，失败后恢复可操作。
 - 价格固定展示 `input_tokens/output_tokens/cached_tokens/reasoning_tokens` 四项，不在 G5 页面伪造图片或视频计量。
+
+## VID-G6 视频模型目录增量（工程开发中）
+
+video=true的Key签发、轮换、吊销需要Idempotency-Key。首次签发/轮换`secret_available=true`；重放200且secret_key=null、secret_available=false、idempotent=true。界面不能把重放的null当作后端丢失Secret，应提示用户如未保存则执行新的受控轮换。产品前端本阶段不修改。
+
+管理员Project视频授权入口为`POST /api/admin/token/video-project-grants`，提交action/project_id/model/version_no/reason及Idempotency-Key。响应status/version_no/idempotent；不回显原因或owner。revoke在Project/模型停用时仍应可用。产品前端本阶段不修改。
+
+Project SK签发请求和Key列表增加`video_generate_allowed`。只有用户明确勾选、scope_mode=allowlist且选中当前获授权视频模型时提交true；后端仍会原子复验Project grant。轮换响应继承原布尔位，列表绝不返回Secret。Idempotency-Key命令和Project grant管理接口已进入VID-G6最终本地候选；产品前端本阶段仍不修改，路由默认关闭且未部署。
+
+### VID-G6前端对接状态（2026-09-01）
+
+本文较早VID-G6段落中的“局部、尚未完成”是开发过程记录。最终证据目录绑定的冻结副本已完成47条本地路由、锁定SDK、MySQL/Linux race及兼容回归；前端产品变更仍为0，后端路由未接bootstrap。前端只能把这些合同作为未来对接SSOT，不能据此显示真实Provider、真实媒体存储、测试服、生产或商业可用。
+
+视频发布/下架提交`{version_no,reason}`，回滚增加`target_version_no`，均带Idempotency-Key；reason不回显。响应包含model_id、version_no、release_version_no、publication_status、idempotent。草稿保存、发布和流量开放是三个不同状态，前端不可把HTTP成功标成真实Provider或商业可用。详见[发布合同](./video-gateway-vid-g6-model-publication-contract.md)。
+
+管理编辑视图使用`GET /api/admin/token/models/{id}?view=video_draft`。managed=false时version0和source_sha256表示尚未受控的历史草稿，接管PATCH必须携带该摘要及完整定义；managed=true时按当前版本更新，不带源摘要。redacted_fields表示遗留不安全值未回显，不能把null当作已批准配置。保存/接管仍不等于发布，产品前端本阶段不修改。
+
+管理草稿写入复用POST/PATCH `/api/admin/token/models[/id]`，显式提交`{version_no,reason,video_definition}`及Idempotency-Key；video_definition需完整15字段，空值不可通过字段遗漏表达。需当前ai_gateway:model_manage和管理员JWT/MFA，保存不等于发布。产品前端本阶段不修改，完整字段及关闭边界见[受控草稿合同](./video-gateway-vid-g6-model-draft-contract.md)。
+
+`GET /api/token/models?modality=video`沿用D-95分页。视频条目明确返回`capability="video.generate"`和`supported_operations=["text_to_video","image_to_video"]`（实际数组由已发布合同决定，可能仅含一个操作）。客户端按数组决定是否显示图生视频入口，不能从模态猜测。展示信息取已发布快照；Project SK还需当前视频资格，缺依赖或撤权后不显示该视频模型。响应不包含`video_contract`或内部路由字段。非视频模型保持旧字段，`/v1/models`仍只列Chat；本阶段不修改产品前端。详见[目录功能与开发合同](./video-gateway-vid-g6-model-catalog-contract.md)。
 
 ## AI 网关 G6 用户控制台
 

@@ -1,0 +1,53 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "I2V应用服务的权利、可信输入、原G5报价/预占事务与安全终态重放；不是完整HTTP或阶段验收",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_manifest": "video-gateway-vid-g6-i2v-source.json",
+  "source_state_id": "638c4a4072ba98c9507e85264a0f607169bcec6c8b8e95bb56a0d8e9bed499a5",
+  "code_state_id": "b02edd990097677a98870eab50c6b10f05e16ca027953bf46beb373ec5ad6e1a",
+  "provenance": "本清单在执行后采集；20067启动后没有修改Go/SQL/运行器，仅回填文档。运行器复制源码后测试，但本轮未额外做运行中容器逐文件哈希核对，最终Git验收须重新冻结并验证精确源码，不能把本检查点当作完整合并凭证。",
+  "runs": [
+    {"session": 48797, "focus": "i2v", "exit_code": 0, "result": "首次I2V Quote/Hold/Task/声明正例与政策退役拒绝通过"},
+    {"session": 73397, "focus": "i2v", "exit_code": 1, "result": "三个独立审查反例复现：部分装配放行、同owner错Quote声明成功、原输入删除后重放被挡"},
+    {"session": 20067, "focus": "all", "exit_code": 0, "result": "19个指定顶层用例实际RUN/PASS，Linux race通过，必需用例无SKIP"}
+  ],
+  "verified": {
+    "migration": "1至80及78/79/80重复up/down/up，均使用同一容器快照",
+    "i2v_price": "真实SQL价格、规范化640px PNG、合成钱包；0.75000000报价与原G5预占，不改变价格合同",
+    "i2v_facts": "唯一原Request/Task/Hold与冻结TaskInput租约；Quote与Generation各一条权利声明",
+    "rights_race": "审核边界在预检后退役政策，写入前拒绝第二个Request/Hold/Task",
+    "partial_assembly": "仅access/rights均未启用才保留G5历史合同，G6缺rights不得重放放行",
+    "declaration_binding": "新Request和另一未消费Quote的错绑按1644拒绝；反例无唯一键混杂",
+    "deleted_input_replay": "真实Fake执行、结算、交付后删除原输入，原Job/request保持completed；正文读取0次，Fake Submit仍为1",
+    "regression": "既有T2V HTTP、报价/列表100并发、权利接受、权限、Range等指定G6局部回归通过"
+  },
+  "host_checks": {
+    "full_go_run": "1246全量Go/vet/mod校验通过，位于三项修复前，不作为修复后全量证明",
+    "post_fix_modules": "26056 token_gateway全包测试通过，主机无DSN的集成SKIP不计通过",
+    "post_fix_go_vet": "PASS",
+    "sensitive_scan": "PASS_253_FILES_ZERO_FINDINGS",
+    "diff_check": "PASS"
+  },
+  "independent_subreviews": {
+    "pm": "确认声明为授权审计事实、保留报价HMAC、来源不进生成指纹和原时间不续期；不是法律批准",
+    "qa": "确认三个修复与原反例对应，冻结提示后仍复核当前权限/权利、完整指纹和原声明；尚缺专项负向矩阵",
+    "full_stage_qa_pm_standards_spec": "NOT_RUN"
+  },
+  "remaining": [
+    "真实HTTP I2V/JWT与SK三种来源、v1 multipart及受控上传链",
+    "I2V单连接、首次100并发、完整写入故障与日期/政策升级/接受过期矩阵",
+    "冻结重放的不同Prompt/模型、跨Key、pending_reconcile、未释放租约、别名与Quote负向矩阵",
+    "来源图片、媒体content、取消/删除、资产保存/容量/生命周期与回调/管理接口",
+    "Fake异步宿主与锁定SDK/浏览器实际互操作；G0至G5及Chat/Image完整隔离回归",
+    "最终同源独立验收、全部缺陷关闭与Git/Ready CI/合并闭环"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "pr_state": "NOT_CREATED",
+  "next_goal_allowed": false,
+  "vid_g7_started": false
+}

@@ -1,0 +1,65 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "openai-inline-multipart-i2v",
+  "stage_status": "IN_PROGRESS_REVIEW_REMEDIATION",
+  "source_state_id": "21d11e8db121c3cf6d128a2180453bf1a3f98899adcdb9b016910b40c6cc0575",
+  "source_manifest": "video-gateway-vid-g6-inline-i2v-source.json",
+  "git_state": "UNCOMMITTED_UNPUSHED_NO_G6_PR",
+  "test_run": {
+    "session_id": 16196,
+    "status": "PASS",
+    "schema": 108,
+    "copy_tree_sha256": "ae766c92f8075ac5568196b01ee7de92af67bf696d2283359265fa51a5d39b21",
+    "required": 10,
+    "passed": 10,
+    "skipped": 0,
+    "tests": [
+      "TestVideoG6OpenAIInlineMultipartI2VMySQL",
+      "TestVideoG6OpenAIInlineFailureRecoveryMySQL",
+      "TestVideoG6OpenAIInlineFailureRecoveryMySQL/原件写入结果未知",
+      "TestVideoG6OpenAIInlineFailureRecoveryMySQL/Seal临时失败后接管",
+      "TestVideoG6OpenAIInlineFailureRecoveryMySQL/Seal成功回包丢失",
+      "TestVideoG6OpenAIInlineFinalAdmissionCleanupMySQL",
+      "TestVideoG6OpenAIInlineTCPReadLimitAndDisconnectMySQL",
+      "TestVideoG6I2VMySQLRightsQuoteHold",
+      "TestVideoG6UploadMySQLSealCompleteReplay",
+      "TestVideoG6HTTPMySQLCreateRetrieveReplay"
+    ]
+  },
+  "verified": [
+    "无文件走T2V，唯一上传文件走I2V",
+    "服务端生成Target且未向预签URL自调用",
+    "inline复用原UploadSession、InputAsset、规范化、审核及G5财务任务链",
+    "同键同文件重放与100并发形成唯一session、input、binding、Quote、Hold和Task",
+    "同键异文件、image_url、重复文件、空文件和伪扩展稳定拒绝",
+    "无Project权利和T2V到I2V同键在任何inline session前拒绝",
+    "读取前按用户64MiB预算限流，正文只保留一份",
+    "真实TCP六个近10MiB阻塞请求占用用户预算，第七个在读正文前429",
+    "六个multipart读取中断后Handler退出且Session/Input/Task为0"
+  ],
+  "independent_review": {
+    "agent": "vid_g6_cancel_standards",
+    "initial_p0": 0,
+    "initial_p1": 1,
+    "initial_p2": 2,
+    "recheck": "ALL_FOUND_DEFECTS_CLOSED",
+    "p0": 0,
+    "p1": 0,
+    "p2": 0,
+    "full_stage_acceptance": false
+  },
+  "remaining": [
+    "跨用户、Project、Key完整矩阵",
+    "Complete后到生成事务前断连与恢复",
+    "发布死锁、生成COMMIT确认未知及更完整清理竞争",
+    "最终同源双SDK与完整VID-G6验收"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": "NO",
+  "vid_g7_started": "NO"
+}

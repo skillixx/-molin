@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G6",
+  "status": "PARTIAL_INPUT_DELETE_HTTP_35_TESTS_PASS",
+  "source_manifest": "video-gateway-vid-g6-input-delete-http-source.json",
+  "source_state_id": "1564e9d5179c947c731d6862c3c779a0f9064acc62174598542dfdd6b3f36fb3",
+  "code_state_id": "02d53dce41f8664b921d92f197d0896835c0adc0d970f8e6a375d56a821d9924",
+  "runtime_copy_tree_sha256": "203d9ac12b069da04894010dd4ba1d93f3012a5b16289fedc4c6c62a5a53a575",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "head_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "UNCOMMITTED",
+  "registered_local_routes": 22,
+  "bootstrap_assembled": false,
+  "runs": [
+    {
+      "session": 82150,
+      "exit_code": 0,
+      "copy_tree_sha256": "ef66e28f224ce5e7da23a6581b4252d8211eb17e5b2b968728bf5b81f55e6736",
+      "result": "专用读取中取消不改任务/资金/租约，单连接原I2V执行/结算/交付通过"
+    },
+    {
+      "session": 91600,
+      "exit_code": 0,
+      "required_top_level_tests": 35,
+      "copy_tree_sha256": "504173a9cbfbbdec43807d7bac6deb0447daba05a2ba3361fefe22ddddfd6a54",
+      "result": "首版HTTP删除申请全局部用例通过，未含大小写与额外漂移反例"
+    },
+    {
+      "session": 65545,
+      "exit_code": 1,
+      "copy_tree_sha256": "a074708776e793c146e6a8b75d7374d0c9ab4da7b283793a4ebcf1a0863df08d",
+      "result": "实际HTTP接受VERSION_NO返回202；额外Input版本后原删除键仍成功，两项红例"
+    },
+    {
+      "session": 67128,
+      "exit_code": 0,
+      "required_top_level_tests": 35,
+      "copy_tree_sha256": "203d9ac12b069da04894010dd4ba1d93f3012a5b16289fedc4c6c62a5a53a575",
+      "source_state_id": "1564e9d5179c947c731d6862c3c779a0f9064acc62174598542dfdd6b3f36fb3",
+      "result": "35项指定RUN/PASS、Linux race与1—83迁移/保留式回退复验通过，含两个删除反例"
+    },
+    {
+      "session": 50083,
+      "exit_code": 0,
+      "source_state_id": "1564e9d5179c947c731d6862c3c779a0f9064acc62174598542dfdd6b3f36fb3",
+      "commands": [
+        "go test -count=1 ./...",
+        "go vet ./...",
+        "go mod verify"
+      ],
+      "result": "Windows原生全量检查通过；隔离MySQL以67128为准"
+    }
+  ],
+  "defects": [
+    {
+      "id": "G6-INPUT-DELETE-JSON-CASE",
+      "severity": "P2",
+      "status": "CLOSED_VERIFIED",
+      "root_cause": "Go结构体JSON匹配大小写别名，可覆盖CAS版本",
+      "fix": "先严格解析原始JSON对象，再精确限定唯一version_no键",
+      "evidence": "65545红例；67128绿；vid_g6_contract_audit独立复算103文件摘要一致并确认局部关闭",
+      "closed_at": "2026-08-31T10:26:23.8875367+08:00",
+      "tested_source_state": "1564e9d5179c947c731d6862c3c779a0f9064acc62174598542dfdd6b3f36fb3",
+      "reviewed_source_state": "1564e9d5179c947c731d6862c3c779a0f9064acc62174598542dfdd6b3f36fb3",
+      "scope": "仅此项已复现P2，不代表完整DELETE或G6验收"
+    },
+    {
+      "id": "G6-INPUT-DELETE-REPLAY-DRIFT",
+      "severity": "P2",
+      "status": "CLOSED_VERIFIED",
+      "root_cause": "旧凭据存在时直接返回当前InputAsset，额外版本漂移被当原键重放成功",
+      "fix": "pending_delete须完整匹配原删除版本、hash、审核、期限与申请时间",
+      "evidence": "65545红例；67128绿；vid_g6_contract_audit独立复算103文件摘要一致并确认局部关闭",
+      "closed_at": "2026-08-31T10:26:23.8875367+08:00",
+      "tested_source_state": "1564e9d5179c947c731d6862c3c779a0f9064acc62174598542dfdd6b3f36fb3",
+      "reviewed_source_state": "1564e9d5179c947c731d6862c3c779a0f9064acc62174598542dfdd6b3f36fb3",
+      "scope": "仅此项已复现P2，不代表完整DELETE或G6验收"
+    }
+  ],
+  "product_decision": {
+    "agent": "vid_g6_g5_gate",
+    "scope": "G6接口工程细化，非法律/财务批准",
+    "decision": "严格JSON版本与幂等键；六字段202只确认删除申请；主动删除不覆盖原未绑定7天与任务安全终态后7天留存，不从删除时间重新计时"
+  },
+  "scope_completed": [
+    "新增DELETE /api/token/video-inputs/{input_asset_id}本地显式路由",
+    "JWT/SK归属与当前主体准入、严格单键CAS及原键重放",
+    "保全拒绝、六字段202/media_deleted=false、原期限及TaskInput保持",
+    "原任务/Quote/钱包/Usage/Outbox/Provider事实无新增副作用"
+  ],
+  "not_completed": [
+    "实际对象清理、留存执行、容量回收及清理完成回执",
+    "JWT自有无Key输入正向和跨输入同键等完整HTTP矩阵",
+    "来源变化固定窗口、归属与可引用资格分离的历史删除回执",
+    "固定读取/清理竞争、导入来源专用读取矩阵",
+    "其他未实现G6路由、SDK、浏览器、独立全阶段验收与Git闭环"
+  ],
+  "next_actions": [
+    "实现实际输入清理及已确认的完成回执，严格保留原留存、全部租约、保全及争议防线",
+    "补来源变化固定窗口与完整删除矩阵，继续其余G6范围",
+    "任何源码变化使受影响证据STALE，冻结新状态后复验"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": "0",
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "pr_state": "NOT_CREATED",
+  "next_goal_allowed": false,
+  "vid_g7_started": false,
+  "independent_review": {
+    "agent": "vid_g6_contract_audit",
+    "role": "测试工程师",
+    "read_only": true,
+    "implementation_owner": false,
+    "source_manifest_files_verified": 103,
+    "reviewed_source_state": "1564e9d5179c947c731d6862c3c779a0f9064acc62174598542dfdd6b3f36fb3",
+    "result": "两项P2局部CLOSED_VERIFIED；未重跑数据库，不签完整DELETE/清理/G6"
+  }
+}

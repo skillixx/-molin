@@ -1,0 +1,17 @@
+{
+  "purpose": "非商业本地合成MP4测试夹具，禁止用于真实Provider验证",
+  "package": "imageio-ffmpeg",
+  "version": "0.6.0",
+  "metadata_source": "https://pypi.org/pypi/imageio-ffmpeg/0.6.0/json",
+  "wheel": "imageio_ffmpeg-0.6.0-py3-none-win_amd64.whl",
+  "wheel_url": "https://files.pythonhosted.org/packages/2c/c6/fa760e12a2483469e2bf5058c5faff664acf66cadb4df2ad6205b016a73d/imageio_ffmpeg-0.6.0-py3-none-win_amd64.whl",
+  "wheel_sha256": "02fa47c83703c37df6bfe4896aab339013f62bf02c5ebf2dce6da56af04ffc0a",
+  "wheel_bytes": 31246824,
+  "ffmpeg_version": "7.1",
+  "ffmpeg_binary_sha256": "2ce797a0f88d7f067180338fb227f7b1928ea727bd9a4d7a1d022f7c52af71a3",
+  "installation_scope": "一次性本地工具目录，无全局安装，无额外依赖",
+  "fixture": "server/internal/modules/token_gateway/service/testdata/vid_g6_playable.mp4",
+  "fixture_sha256": "17983e00fd03ae81974ea6e38f3c8d7c73b3518c5e02325e7c9e32fb564c7f0a",
+  "fixture_bytes": 4054453,
+  "playwright_cli_version": "0.1.18"
+}

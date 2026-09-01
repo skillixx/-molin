@@ -1,0 +1,44 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "本地合成MP4静态字节可播放性；不是Project SK网关端到端",
+  "status": "PASS_BROWSER_PLAYBACK_STATIC_FIXTURE",
+  "fixture_sha256": "17983e00fd03ae81974ea6e38f3c8d7c73b3518c5e02325e7c9e32fb564c7f0a",
+  "fixture_bytes": 4054453,
+  "ffmpeg": {"package": "imageio-ffmpeg==0.6.0", "binary_version": "7.1", "decoded_frames": 120, "duration_seconds": 5, "width": 1280, "height": 720, "frame_rate": 24, "audio": false, "decode_exit_code": 0},
+  "browser": {"name": "Chrome", "version": "NOT_CAPTURED", "cli_version": "0.1.18", "node_version": "24.19.0", "session": "vid-g6-playable", "session_closed": true},
+  "observations": {
+    "loaded": {"ready_state": 4, "duration": 5, "width": 1280, "height": 720, "media_error": null},
+    "actual_mouse_drag": {"from": [201,707], "to": [866,707], "current_time": 3, "seeking": false, "media_error": null, "decoded_frame_counter": 80},
+    "continued_playback": {"current_time": 5, "ended": true, "paused": true, "media_error": null, "decoded_frame_counter": 124},
+    "mobile": {"viewport_width": 390, "scroll_width": 390, "horizontal_overflow": false}
+  },
+  "screenshots": [
+    {"path": "output/playwright/vid-g6-playable-desktop.png", "sha256": "e3f86de6a60b3ba830454c06e1e487e1e11d477ad44b5f86ddb52b188bcc3896"},
+    {"path": "output/playwright/vid-g6-playable-mobile.png", "sha256": "9d96b50a3a85680acdfd22db395a5d014975cdfc317ee1dbb6d1599936141ad9"}
+  ],
+  "console": "初次Playwright仅favicon.ico 404；本次gstack browse复验为零控制台错误，两次均无媒体错误",
+  "latest_recheck": {
+    "tool": "gstack browse",
+    "ready_state": 4,
+    "duration_seconds": 5,
+    "width": 1280,
+    "height": 720,
+    "seek_seconds": 3,
+    "continued_playback_seconds": 4.857059,
+    "media_error": null,
+    "mobile_viewport": 390,
+    "mobile_scroll_width": 390,
+    "console_errors": 0,
+    "preview_server_stopped": true,
+    "browser_daemon_stopped": true
+  },
+  "temporary_server": {"bind": "127.0.0.1", "port": 57036, "stopped": true, "authentication": "NONE_SYNTHETIC_STATIC_FIXTURE_ONLY"},
+  "business_browser_e2e": "NOT_RUN",
+  "sdk_interop": "PASS_REAL_LOOPBACK_HTTP_SYNTHETIC_PROVIDER_STORE",
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0
+}

@@ -18,6 +18,7 @@ type videoReservationIntent struct {
 	prompt      string
 	fingerprint string
 	keyHash     string
+	rights      *videoRightsProof
 }
 
 func (s *VideoBillingService) prepareVideoReservationIntent(c VideoReservationCommand) (*videoReservationIntent, error) {
@@ -47,7 +48,10 @@ func (s *VideoBillingService) prepareVideoReservationIntent(c VideoReservationCo
 	if err != nil {
 		return nil, err
 	}
-	return &videoReservationIntent{input: input, owner: repository.VideoOwner{UserID: input.UserID, ProjectID: input.ProjectID, APIKeyID: optionalUint64(input.APIKeyID)}, prompt: prompt, fingerprint: fingerprint, keyHash: videoBillingDigest("create_video\x00" + c.IdempotencyKey)}, nil
+	if s.rights != nil && input.Variant.Operation == model.AIVideoOperationImageToVideo && (c.Rights == nil || c.Rights.version != c.RightsPolicyVersion) {
+		return nil, ErrVideoRightsRequired
+	}
+	return &videoReservationIntent{input: input, owner: repository.VideoOwner{UserID: input.UserID, ProjectID: input.ProjectID, APIKeyID: optionalUint64(input.APIKeyID)}, prompt: prompt, fingerprint: fingerprint, keyHash: videoBillingDigest("create_video\x00" + c.IdempotencyKey), rights: c.Rights}, nil
 }
 
 // LookupVideoGeneration 在报价前验证当前权限并查原生成意图；不读取媒体或重新绑定输入。
@@ -55,7 +59,7 @@ func (s *VideoBillingService) LookupVideoGeneration(ctx context.Context, r Video
 	if s == nil || s.db == nil {
 		return nil, false, ErrVideoBillingState
 	}
-	p, err := s.prepareVideoReservationIntent(VideoReservationCommand{Prompt: r.Prompt, RightsPolicyVersion: r.RightsPolicyVersion, IdempotencyKey: r.IdempotencyKey, RequestID: r.RequestID, TaskID: r.TaskID, FingerprintInput: r.FingerprintInput, QuoteCommandKind: VideoQuoteCommandKindCreate})
+	p, err := s.prepareVideoReservationIntent(VideoReservationCommand{Rights: r.Rights, Prompt: r.Prompt, RightsPolicyVersion: r.RightsPolicyVersion, IdempotencyKey: r.IdempotencyKey, RequestID: r.RequestID, TaskID: r.TaskID, FingerprintInput: r.FingerprintInput, QuoteCommandKind: VideoQuoteCommandKindCreate})
 	if err != nil {
 		return nil, false, err
 	}
@@ -67,7 +71,10 @@ func (s *VideoBillingService) lookupVideoReservation(ctx context.Context, p *vid
 	var found bool
 	// 只读一致快照避免在多次查询之间拼出两个时刻的Task与Request；权限共享锁保持到查询结束。
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := s.authorizeVideo(ctx, tx, p.owner, p.input.LogicalModelCode, s.now().UTC()); err != nil {
+		if err := s.authorizeVideo(ctx, tx, p.owner, p.input.LogicalModelCode, s.now().UTC(), p.input.Variant.Operation); err != nil {
+			return err
+		}
+		if err := s.revalidateGenerationRightsTx(tx, p, s.now().UTC()); err != nil {
 			return err
 		}
 		var err error
@@ -76,11 +83,22 @@ func (s *VideoBillingService) lookupVideoReservation(ctx context.Context, p *vid
 			return err
 		}
 		if found {
+			if s.rights != nil && p.input.Variant.Operation == model.AIVideoOperationImageToVideo {
+				if err := checkVideoRightsDeclarationTx(tx, "quote", result.Quote.ID, "", p.rights); err != nil {
+					return err
+				}
+				if err := checkVideoRightsDeclarationTx(tx, "generation", result.Quote.ID, result.RequestID, p.rights); err != nil {
+					return err
+				}
+			}
 			if err := s.validateVideoReplayInput(tx, p, result); err != nil {
 				return err
 			}
 		}
-		return s.authorizeVideo(ctx, tx, p.owner, p.input.LogicalModelCode, s.now().UTC())
+		if err := s.authorizeVideo(ctx, tx, p.owner, p.input.LogicalModelCode, s.now().UTC(), p.input.Variant.Operation); err != nil {
+			return err
+		}
+		return s.revalidateGenerationRightsTx(tx, p, s.now().UTC())
 	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead})
 	if err != nil {
 		return nil, found, err

@@ -1,0 +1,6 @@
+.venv/
+node_modules/
+__pycache__/
+fixture.local.json
+*.local.png
+*.local.jpg

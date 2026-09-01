@@ -1,0 +1,32 @@
+{
+  "purpose": "isolated_synthetic_fixture",
+  "disposable": true,
+  "origin": "http://127.0.0.1:18086",
+  "run_id": "replace_fixture_run",
+  "model": "molin/video-sdk-fixture",
+  "reference_image": "reference.local.png",
+  "python": {
+    "completed_video_id": "video_replace_python_fixture",
+    "request_id": "vid_req_replace_python_fixture",
+    "media_size_bytes": 1024,
+    "media_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "billing_facts": {
+      "request_id": "vid_req_replace_python_fixture",
+      "quote_id": "vid_quote_replace_python_fixture",
+      "billing_status": "settled",
+      "settled_amount": "0.50000000"
+    }
+  },
+  "typescript": {
+    "completed_video_id": "video_replace_typescript_fixture",
+    "request_id": "vid_req_replace_typescript_fixture",
+    "media_size_bytes": 1024,
+    "media_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "billing_facts": {
+      "request_id": "vid_req_replace_typescript_fixture",
+      "quote_id": "vid_quote_replace_typescript_fixture",
+      "billing_status": "settled",
+      "settled_amount": "0.50000000"
+    }
+  }
+}

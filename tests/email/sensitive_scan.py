@@ -28,7 +28,7 @@ SAFE_VALUE_WORDS = {
 
 
 EMAIL_RE = re.compile(r"(?i)(?<![\w.*])(?:[a-z0-9.!#$%&'+/=?^_`{|}~-]+)@(?:[a-z0-9-]+\.)+[a-z]{2,}")
-PHONE_RE = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
+PHONE_RE = re.compile(r"(?<![A-Za-z0-9])1[3-9]\d{9}(?![A-Za-z0-9])")
 PRIVATE_KEY_RE = re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")
 JWT_RE = re.compile(r"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?![A-Za-z0-9_-])")
 CREDENTIAL_RE = re.compile(

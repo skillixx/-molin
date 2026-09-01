@@ -67,7 +67,9 @@ func (r *VideoQuoteRepository) CreateIdempotent(ctx context.Context, quote *mode
 				return createErr
 			}
 			var item model.AIGatewayQuote
-			if err := videoQuoteIdempotencyQuery(tx, quote).First(&item).Error; err != nil {
+			// 外层事务可能已在FindIdempotent建立“不存在”的RR快照；savepoint不会刷新该快照。
+			// 唯一键冲突已证明赢家提交，使用共享当前读获取原事实，不升级排他锁制造竞争死锁。
+			if err := videoQuoteIdempotencyQuery(tx, quote).Clauses(clause.Locking{Strength: "SHARE"}).First(&item).Error; err != nil {
 				return err
 			}
 			if subtle.ConstantTimeCompare([]byte(item.RequestFingerprint), []byte(quote.RequestFingerprint)) != 1 {

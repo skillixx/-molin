@@ -1,0 +1,13 @@
+# VID-G6 取消入口独立增量复核
+
+本回执不代表完整G6验收。产品角色`vid_g6_g5_gate`和测试角色`vid_g6_contract_audit`独立只读核对；动态测试由主代理执行。
+
+产品确认两条DELETE路径已冻结，body/DTO可最小工程细化：无正文/query，强制幂等键，不新增客户端reason或CAS字段；两个别名共享用户/Project/cancel/key域，精确来源Key单独鉴权。200/cancelled只代表原G5已取消释放；202/cancel_requested不等于Provider接受或退款；原终态200/already_terminal明确无操作，不改变资金政策。
+
+测试角色确认回执与原G5动作共用事务、别名和Key不拆幂等域、原成功终态不会被覆盖，并指出嵌套重试边界风险。25398实测当前连接ROLLBACK加1213后旧代码返回成功却丢失回执，1205没有重启外层。修复把原金融apply提为单次内部执行，G6由最外层重试，errors.Join保留可识别MySQL原因。忽略缩进的diff确认原G5金融apply内容不变，公开入口仍有自己的事务/重试。86729、46460重验通过；83580旧G5取消14项通过。它们是主代理动态证据，非独立角色自行重跑。
+
+000086 INSERT守卫补充Task/Request精确Key、视频身份及首次动作状态，UPDATE/DELETE禁令保持；错Key直接SQL1644反例已通过。测试角色据上述限定确认此次重试与回执一致性缺陷可关闭，不等于整个G6缺陷已清零。
+
+独立复算139文件均一致：SOURCE `61ef6103b795438482c02c0f4ed43f0f473880d10f446db5d1808fd1f40a3c41`，CODE `92b426a2b9f8f3d6eaa32cef2c96475c5f09aae4eff38f63168f53db973f1592`。运行器legacy-cancel仅切换本次专用临时库与环境标记，保留internal网络、无宿主端口、固定digest、只读依赖、源码副本、-race/-count=1和精确ID清理；14个指定测试必须RUN/PASS，不能零匹配或SKIP通过。
+
+当前仍缺媒体删除、完整终态HTTP/故障矩阵、管理/回调/SDK及完整G6验收。没有签署最终QA、PM、Standards或Spec PASS，也未授权任何真实Provider、钱包、测试服或生产操作。

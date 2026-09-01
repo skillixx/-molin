@@ -1,0 +1,125 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "controlled-video-model-draft-create-update",
+  "stage_status": "IN_PROGRESS",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_state_id": "aaf1fdbff1d12f363572ff3186c7cddf25dd96a60b4b4e50fa152ae63a9b0547",
+  "source_manifest": "video-gateway-vid-g6-model-draft-source.json",
+  "source_file_count": 346,
+  "routes": [
+    "POST /api/admin/token/models",
+    "PATCH /api/admin/token/models/{id}"
+  ],
+  "route_note": "原管理路径的显式video_definition分派；测试真实JWT及核心服务，完整bootstrap/外层权限矩阵仍待完成",
+  "git_state": "UNCOMMITTED_UNPUSHED_NO_G6_PR",
+  "runs": [
+    {
+      "session_id": 83406,
+      "status": "PASS_OLDER_SLICE",
+      "schema": 103,
+      "required": 5,
+      "passed": 5,
+      "skipped": 0,
+      "linux_race": true,
+      "copy_tree_sha256": "0368a0385a56888dcc61e956522a8b659dbfcbfba50e9f8842a48f1c19484c61",
+      "http_mysql_seconds": 5.47,
+      "note": "不覆盖随后完整定义必填修复"
+    },
+    {
+      "session_id": 12606,
+      "status": "PASS",
+      "schema": 103,
+      "required": 5,
+      "passed": 5,
+      "skipped": 0,
+      "linux_race": true,
+      "copy_tree_sha256": "511150b3983d251e9adddfa16e9ff81eb4c97762c8b7512fc795e4d97b9a62bd",
+      "service_seconds": 9.808,
+      "handler_seconds": 1.08,
+      "http_mysql_seconds": 5.53,
+      "tests": [
+        "TestVideoG6ModelDraftReasonBinding",
+        "TestVideoG6CatalogPublishedHTTPMySQL",
+        "TestVideoG6ModelDraftHTTPMySQL",
+        "TestDeleteModelAuditFailurePreventsWrite",
+        "TestUpdateModelRejectsUnknownFieldBeforeWrite"
+      ]
+    }
+  ],
+  "verified": [
+    "真实JWT/MFA及model_manage创建草稿，inactive、release_version_no=0",
+    "100并发同键重放唯一模型/命令，原ID与version1不变",
+    "异定义409、update版本递增、同键update重放、旧CAS409",
+    "15字段完整定义及大小写/重复/未知字段拒绝",
+    "遗漏scope/三目标数组400，version与命令数不变",
+    "Project SK拒绝、撤权后重放拒绝",
+    "原请求及财务快照整行不变",
+    "模型原因AAD隔离及大整数规范摘要",
+    "新/历史video拒绝旧仓储删除，Chat删除保持"
+  ],
+  "independent_review": {
+    "agent": "vid_g6_cancel_standards",
+    "type": "READ_ONLY_SOURCE_REVIEW",
+    "initial_p0": 0,
+    "initial_p1": 0,
+    "initial_p2": 4,
+    "source_recheck": "FOUR_SOURCE_FIXES_CONFIRMED",
+    "full_stage_acceptance": false,
+    "defects": [
+      {
+        "id": "G6-MODEL-DRAFT-001",
+        "level": "P2",
+        "finding": "锁查询及审计错误链被丢弃",
+        "fix": "仅NotFound映射，其余保留errors.Join，重放不压平审计错误",
+        "validation": "源码复核通过；精确1213/1205注入仍待补"
+      },
+      {
+        "id": "G6-MODEL-DRAFT-002",
+        "level": "P2",
+        "finding": "审计uint64转float64损失精度",
+        "fix": "UseNumber规范摘要",
+        "validation": "相邻大整数摘要单测通过；完整审计篡改矩阵待补"
+      },
+      {
+        "id": "G6-MODEL-DRAFT-003",
+        "level": "P2",
+        "finding": "旧DELETE未封闭视频模型",
+        "fix": "仓储事务锁行拒绝video/合同/当前视频发布身份，Handler稳定409",
+        "validation": "新/历史video仓储拒绝、Chat删除正例通过；完整旧HTTP权限矩阵待补"
+      },
+      {
+        "id": "G6-MODEL-DRAFT-004",
+        "level": "P2",
+        "finding": "完整定义缺字段时默认all扩大草稿可见性",
+        "fix": "15精确必填字段、明确null/空数组/范围及配套目标校验",
+        "validation": "12606缺scope/三个数组400且版本及命令不变；定向groups/roles全矩阵待补"
+      }
+    ]
+  },
+  "checks": {
+    "focused_go_tests": "PASS",
+    "focused_go_vet": "PASS",
+    "git_diff_check": "PASS",
+    "whole_stage_qa": "NOT_RUN",
+    "whole_stage_ci": "NOT_RUN"
+  },
+  "remaining": [
+    "完整原应用装配权限矩阵",
+    "草稿详情读取和历史草稿受控接管",
+    "native发布/回滚/下架及默认模型唯一性",
+    "多管理员CAS、权限/MFA到期、所有写点/COMMIT未知及密文审计篡改矩阵",
+    "Key能力配置、multipart I2V、生成资源准入",
+    "双SDK与全量回归、独立阶段验收、Git闭环"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": "NO",
+  "vid_g7_started": "NO"
+}

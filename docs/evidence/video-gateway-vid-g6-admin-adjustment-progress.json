@@ -1,0 +1,94 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "admin-adjustment-http",
+  "stage_status": "IN_PROGRESS",
+  "source_state_id": "7a8c26c6ef9f1d74d74a53c44b883a8c694f4a1fdb5da4d59c415e4a37a87a69",
+  "source_manifest": "video-gateway-vid-g6-admin-adjustment-source.json",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "registered_local_routes": 46,
+  "total_routes": 46,
+  "runs": [
+    {
+      "session_id": 48966,
+      "status": "FAIL",
+      "schema": 101,
+      "copy_tree_sha256": "7ce106da47a61709f19769ac153bf65a8ff0c1a8a8a05307dd26a8631efa31f6",
+      "note": "G6 HTTP/100并发已过；两项G5专用DSN未配置而SKIP，未算兼容通过"
+    },
+    {
+      "session_id": 23395,
+      "status": "PASS",
+      "schema": 101,
+      "linux_race": true,
+      "copy_tree_sha256": "69e9227809bc601a127934dece0b5366cd50f5beaee99b63ea0f1985fdbd4cb9",
+      "g6": {
+        "required": 3,
+        "passed": 3,
+        "skipped": 0,
+        "service_seconds": 25.553,
+        "root_seconds": 1.09,
+        "adjustment_http_seconds": 16
+      },
+      "g5_required_substage": {
+        "scope": "legacy-adjustments",
+        "database": "molin_video_g5_contract",
+        "required": 2,
+        "passed": 2,
+        "skipped": 0,
+        "service_seconds": 11.496,
+        "copy_tree_sha256": "69e9227809bc601a127934dece0b5366cd50f5beaee99b63ea0f1985fdbd4cb9"
+      },
+      "covers": [
+        "两个真实合成管理员JWT/MFA与原G5资金协调器",
+        "金额冻结及approve未知字段拒绝",
+        "两个待审批序号不同",
+        "100并发approve恰好一次资金动作/Usage",
+        "原Task/Request/Quote/Hold关联不改写，调账后对账PASS",
+        "三种原因密钥变化请求重放503且无新审批或资金",
+        "G5 credit/debit、100并发、四写点回滚和缺钱包动作对账拒绝"
+      ],
+      "full_stage": false
+    }
+  ],
+  "decisions": [
+    "独立AdjustmentsEnabled默认关闭",
+    "申请与复核分离，操作者来自各自认证而非客户端checker_id",
+    "序号考虑所有历史审批及已有Usage",
+    "Task先锁，双主体UPDATE按ID顺序，避免共享锁升级",
+    "资金/Usage/Outbox/审批执行/审计同一外层事务，内部不重复重试",
+    "金额和原settled/released规则沿用G5"
+  ],
+  "defects": [
+    {
+      "id": "G6-ADMIN-ADJUSTMENT-001",
+      "priority": "P2",
+      "fix": "申请重放先验证原信封，再比较原因HMAC",
+      "verification": "独立源码发现；23395三种密钥变化反例通过"
+    }
+  ],
+  "reviews": {
+    "pm": "双阶段body/服务端序号/15min操作审批工程合同确认；非真实调账授权",
+    "standards": "一项P2已修；完整HTTP故障与最终精确源码审查尚待"
+  },
+  "remaining": [
+    "完整G6未完成能力和覆盖核对",
+    "HTTP debit/余额/过期/MFA撤销/全部写点故障/COMMIT确认丢失",
+    "全阶段SDK互操作、并发/安全矩阵及Chat/Image/G0-G5兼容",
+    "精确源码独立QA/PM/Standards/Spec、Ready CI及Git闭环"
+  ],
+  "git": {
+    "committed": false,
+    "pushed": false,
+    "pr": "NONE"
+  },
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": "NO",
+  "vid_g7_started": "NO"
+}

@@ -1,0 +1,49 @@
+{
+  "target_goal": "VID-G6",
+  "status": "IN_PROGRESS_NOT_ACCEPTED",
+  "source_commit": "UNCOMMITTED",
+  "prior_snapshot_regression": {
+    "session": 30405,
+    "exit_code": 0,
+    "source_manifest": "video-gateway-vid-g6-admin-read-source.json",
+    "source_state_id": "d908cef17a3c4fcb99c06cf1f82a3c682c2219f03f553c650561174f2832385f",
+    "copy_tree_sha256": "c9b1c60d7aeb2360cd787072047542532d8840f3e7e8d750fedd8c477d67f5df",
+    "required_tests": 123,
+    "service_seconds": 798.381,
+    "scope": "旧239文件快照的已列出测试通过；不覆盖新增管理列表或完整G6"
+  },
+  "status_race_red": {
+    "session": 24610,
+    "exit_code": 1,
+    "copy_tree_sha256": "c35259e0680a7869ffa165b82b4167054c1a105d6dad33a7ebc28554ad27acd2",
+    "test": "TestVideoG6AdminListStatusRaceMySQL",
+    "result": "FAIL",
+    "actual": "真实连接取消后reserved筛选仍返回total=1/items=1",
+    "expected": "整页重新读取，total=0/items=0",
+    "other_tests": "管理员详情和管理员列表HTTP/100并发通过；整个执行仍失败",
+    "fixture_id_collision": "同一执行中已验证共享编号分配器不再与下一个G5合成用户冲突"
+  },
+  "defects": [
+    {"id": "G6-ADMIN-LIST-001", "severity": "P2", "status": "CLOSED_LOCAL_SCENARIO_NOT_FULL_STAGE", "summary": "24610真实红例；13255/3201/21198/42727整页重试复验通过，最多三次完整事务重试，独立QA同意本反例局部关闭"},
+    {"id": "G6-ADMIN-LIST-002", "severity": "P1", "status": "CLOSED_LOCAL_SCENARIO_NOT_FULL_STAGE", "summary": "21198两页已各自持有不同钱包，真实MySQL1213一次且第2页交付断言失败；42727统一用户锁序后两页均200、可交付且财务不变，死锁0，独立QA同意本反例局部关闭"}
+  ],
+  "wallet_race_red": {"session":21198,"exit_code":1,"copy_tree_sha256":"c379e21f21b0fdf8682dd2cc7a37191e1c7db7ee79ddec72897360201368ce7e","distinct_first_wallet_locks_acquired":2,"mysql_1213":1,"test":"TestVideoG6AdminListDisjointWalletsHTTPMySQL","result":"FAIL"},
+  "input_list_focused": {"session":21198,"test":"TestVideoG6AdminInputListHTTPMySQL","result":"PASS","seconds":4.70,"full_scope_pass":false},
+  "latest_source_manifest":"video-gateway-vid-g6-admin-list-source.json",
+  "latest_source_state_id":"ed27aeae6e4d4ef89d2958b8e5e9dcffdd1b9280f4657791a3fe683b71adc2be",
+  "latest_source_file_count":246,
+  "expanded_regression":{"session":60929,"status":"PASS_PRIOR_246_FILE_SNAPSHOT_NOT_FULL_G6","exit_code":0,"scope":"all","required_tests":129,"required_skip":0,"service_seconds":847.077,"copy_tree_sha256":"66694e46d6a7c4e9cd57ee5dbb24f91fbc6c5dd510d78bc40a51d2756ad8c862","source_manifest":"video-gateway-vid-g6-admin-list-source.json","note":"已列129项通过，不覆盖随后新增的输出列表及运行汇总，不等于完整G6范围"},
+  "green_retest":{"session":42727,"status":"PASS_ADMIN_READ_NOT_FULL_G6","exit_code":0,"required_tests":10,"required_run_pass":10,"required_skip":0,"schema":93,"linux_race":true,"service_seconds":44.957,"copy_tree_sha256":"66694e46d6a7c4e9cd57ee5dbb24f91fbc6c5dd510d78bc40a51d2756ad8c862","wallet_deadlocks":0,"both_pages_deliverable":true},
+  "native":{"session":79396,"exit_code":0,"checks":["go test ./...","go vet ./...","go mod verify"],"mysql_proof":false},
+  "scoped_scan":{"secret_patterns":"PASS_4_ADMIN_FILES","forbidden_dto_fields":"PASS","local_doc_links":"PASS","gofmt_dirty_and_untracked":"PASS","git_diff_check":"PASS","full_stage_sensitive_scan":"NOT_RUN_FOR_CURRENT_SOURCE"},
+  "observed_warning":"混合100并发中原APIKeyService异步last_used_at更新存在3秒超时告警；请求均通过，不能据此宣称无Key操作性写入或无性能问题",
+  "independent_qa": "vid_g6_contract_audit独立源码审查并复算246文件ed27摘要无漂移，结合主执行者42727同快照动态结果同意两具体缺陷局部关闭；QA未另跑数据库，未签完整G6。连续三次抖动、更多并发写流程、末尾管理员权限/MFA/JWT时效及输入来源矩阵仍保留",
+  "full_stage_pass": false,
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "vid_g7_started": false
+}

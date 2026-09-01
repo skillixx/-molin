@@ -19,11 +19,21 @@ suffix="${RANDOM}-$$"
 container="molin-g6-mysql-${suffix}"
 database="molin_g6_contract"
 password="$(openssl rand -hex 24)"
+test_output=""
 
 cleanup() {
   docker container rm -f "${container}" >/dev/null 2>&1 || true
+  [[ -z "${test_output}" ]] || rm -f "${test_output}"
 }
 trap cleanup EXIT
+
+report_unexpected_error() {
+  local exit_code="$?"
+  local line_no="$1"
+  echo "G6_VERIFY=FAILED reason=unexpected_error line=${line_no} exit_code=${exit_code}"
+  exit "${exit_code}"
+}
+trap 'report_unexpected_error "${LINENO}"' ERR
 
 echo "G6_PREFLIGHT target=temporary_docker_mysql impact=isolated_only rollback=remove_container"
 docker run -d --pull="${G6_DOCKER_PULL_POLICY:-never}" --name "${container}" \
@@ -59,9 +69,18 @@ if [[ "${ready_streak}" -lt 3 ]]; then
   exit 2
 fi
 
-# 空库先应用到 G5，再显式验证 64 -> 65 的版本流转。
+# 空库只应用到 G5（000064），再显式验证 64 -> 65 -> 66 的版本流转。
+# 后续迁移可能依赖 G6 新增的列和约束，不能在跳过 65/66 时提前执行。
 for migration in "${repo_root}"/server/migrations/*.up.sql; do
-  [[ "${migration}" == "${up65}" || "${migration}" == "${up66}" ]] && continue
+  migration_name="$(basename "${migration}")"
+  if [[ ! "${migration_name}" =~ ^([0-9]{6})_.*\.up\.sql$ ]]; then
+    echo "G6_VERIFY=FAILED reason=invalid_migration_filename file=${migration_name}"
+    exit 2
+  fi
+  migration_version=$((10#${BASH_REMATCH[1]}))
+  if (( migration_version > 64 )); then
+    break
+  fi
   docker exec -i -e "MYSQL_PWD=${password}" "${container}" \
     mysql -uroot --database="${database}" < "${migration}" >/dev/null
 done
@@ -135,11 +154,12 @@ VALUES ('project',965,'hard',100,965),('project',966,'hard',999,965);
 INSERT INTO ai_budget_overrides(scope_type,scope_id,extra_amount,reason,operator_id,expires_at)
 VALUES ('project',965,5,'G6 有效临时增额',965,'2026-08-09 00:00:00'),
        ('project',965,50,'G6 已过期临时增额',965,'2026-08-07 00:00:00');
-INSERT INTO ai_requests(request_id,user_id,project_id,api_key_id,logical_model_code,modality,moderation_status,execution_status,billing_status,price_snapshot_json,quoted_amount,settled_amount)
+-- 固定请求时间，避免专项验收随执行日期漂出 2026-08 汇总窗口。
+INSERT INTO ai_requests(request_id,user_id,project_id,api_key_id,logical_model_code,modality,moderation_status,execution_status,billing_status,price_snapshot_json,quoted_amount,settled_amount,created_at,completed_at)
 VALUES ('req_g6_isolated_965',965,965,965,'molin/g6-test','chat','passed','succeeded','settled',
         '{"price_version_id":965,"logical_model_code":"molin/g6-test","version_no":1,"currency":"CNY","rounding_mode":"ceil_8","failure_charge_policy":"confirmed_usage","minimum_charge":"0.000001","skus":{"input_tokens":{"meter_type":"input_tokens","sale_unit_price":"0.8","scale":"1000000","currency":"CNY"},"output_tokens":{"meter_type":"output_tokens","sale_unit_price":"2","scale":"1000000","currency":"CNY"}}}',
-        0.00002600,0.00002600),
-       ('req_g6_no_budget_967',965,967,967,'molin/g6-test','chat','passed','succeeded','settled',NULL,500,500);
+        0.00002600,0.00002600,'2026-08-08 00:00:00','2026-08-08 00:00:01'),
+       ('req_g6_no_budget_967',965,967,967,'molin/g6-test','chat','passed','succeeded','settled',NULL,500,500,'2026-08-08 00:00:00','2026-08-08 00:00:01');
 INSERT INTO ai_usage_items(request_id,meter_type,source,sequence_no,quantity,unit_price,amount)
 VALUES ('req_g6_isolated_965','input_tokens','provider',0,12,NULL,NULL),
        ('req_g6_isolated_965','output_tokens','provider',0,4,NULL,NULL),
@@ -156,11 +176,17 @@ SQL
 
 # 使用真实 GORM/MySQL 查询验证请求账本的本人隔离、详情和重复申诉错误映射。
 host_port="$(docker port "${container}" 3306/tcp | sed -E 's/.*:([0-9]+)$/\1/' | head -n 1)"
-(
+test_output="$(mktemp)"
+if ! (
   cd "${repo_root}/server"
   AI_GATEWAY_G6_MYSQL_DSN="root:${password}@tcp(127.0.0.1:${host_port})/${database}?parseTime=true&charset=utf8mb4" \
-    go test -count=1 ./internal/modules/token_gateway/repository ./internal/modules/token_gateway/service -run '^TestG6User(RepositoryMySQLIsolation|ServiceMySQLReconciledDetail)$' >/dev/null
-)
+    go test -count=1 ./internal/modules/token_gateway/repository ./internal/modules/token_gateway/service -run '^TestG6User(RepositoryMySQLIsolation|ServiceMySQLReconciledDetail)$' >"${test_output}" 2>&1
+); then
+  # 失败时输出测试诊断，但必须先遮蔽一次性数据库口令。
+  sed "s/${password}/[REDACTED]/g" "${test_output}"
+  echo "G6_VERIFY=FAILED reason=g6_mysql_go_test_failed"
+  exit 2
+fi
 
 # 重复执行 up 不得覆盖文档健康状态或删除申诉事实。
 mysql_exec -e "UPDATE token_models SET docs_url_health_status='unhealthy' WHERE id=965"

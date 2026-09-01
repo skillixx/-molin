@@ -35,7 +35,7 @@ func TestActiveScopedModelsExistAllowsPublishedChatAndImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	query := "SELECT COUNT(DISTINCT(`logical_model_code`)) FROM `token_models` WHERE logical_model_code IN (?,?) AND status = 'active' AND modality IN ('chat','image') AND release_version_no > 0 AND published_at IS NOT NULL"
+	query := "SELECT COUNT(DISTINCT(`logical_model_code`)) FROM `token_models` WHERE logical_model_code IN (?,?) AND status='active' AND modality IN ('chat','image') AND release_version_no>0 AND published_at IS NOT NULL"
 	mock.ExpectQuery(regexp.QuoteMeta(query)).
 		WithArgs("molin/qwen-turbo", "bytedance-seed/seedream-5-0-lite").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))

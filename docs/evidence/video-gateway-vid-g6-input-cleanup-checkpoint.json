@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G6",
+  "status": "PARTIAL_SYNCHRONOUS_UPLOAD_CLEANUP_36_TESTS_PASS",
+  "source_manifest": "video-gateway-vid-g6-input-cleanup-source.json",
+  "source_state_id": "0c139210b6bb2c9e5acdbf08309351c6fbf611a7901f543be2309091560b475d",
+  "code_state_id": "82bcb59bad092746c74d7b982a1ba635ade40795aacde3a307c7fb0674b434e2",
+  "runtime_copy_tree_sha256": "3ab608ae57849a91989c6a0a35dc1f75455b3b48045ca5d8ebf70a5aed985b2e",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "head_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "UNCOMMITTED",
+  "registered_local_routes": 22,
+  "bootstrap_assembled": false,
+  "runs": [
+    {
+      "session": 65828,
+      "exit_code": 1,
+      "copy_tree_sha256": "bee704d72b69f52d04e0b12bc12d1d9007d082d9548c8cae1a2a0cf5e6f58030",
+      "result": "真实上传及删除申请后缺少清理/独立确认入口"
+    },
+    {
+      "session": 5609,
+      "exit_code": 0,
+      "copy_tree_sha256": "d157fd8977cdf7a50212b6891275accd456515e9de1066fbdd02e8ca7489463a",
+      "result": "上传三类Fake正文真实清理、围栏、唯一事实、容量标记专项通过"
+    },
+    {
+      "session": 71087,
+      "exit_code": 0,
+      "copy_tree_sha256": "81483e99830ccfc5e9a6710be0abc9ea8ae4c7358f8195180379eb07731fdf0b",
+      "result": "不支持同步/Discard失败/Verify错误或false/事实INSERT错误和原目标重试通过；共享对象使首次删除窗口证明不足，保留此限制"
+    },
+    {
+      "session": 19359,
+      "exit_code": 0,
+      "required_top_level_tests": 36,
+      "copy_tree_sha256": "3c6884ccd5b56865d7bd45bdd52db9102c44bc7fc0b43b33befad6aa21f9a125",
+      "result": "加入服务层完成回执的36项通过，尚未增强首次删除窗口断言"
+    },
+    {
+      "session": 96565,
+      "exit_code": 0,
+      "required_top_level_tests": 36,
+      "copy_tree_sha256": "3ab608ae57849a91989c6a0a35dc1f75455b3b48045ca5d8ebf70a5aed985b2e",
+      "source_state_id": "0c139210b6bb2c9e5acdbf08309351c6fbf611a7901f543be2309091560b475d",
+      "result": "36项指定RUN/PASS及Linux race，1—84迁移与保留式回退通过；首次Discard前实际三类正文存在、完成事实INSERT前已消失、失败后DB仍pending和容量未释放、同目标恢复通过"
+    },
+    {
+      "session": 22826,
+      "exit_code": 0,
+      "source_state_id": "0c139210b6bb2c9e5acdbf08309351c6fbf611a7901f543be2309091560b475d",
+      "commands": [
+        "go -C server test -count=1 ./...",
+        "go -C server vet ./...",
+        "go -C server mod verify"
+      ],
+      "result": "原生Go全包检查通过，隔离MySQL以96565为准"
+    }
+  ],
+  "limited_secret_scan": {
+    "files": 104,
+    "matches": 0,
+    "boundary": "有限高风险凭据格式扫描，不替代完整信息流审查"
+  },
+  "engineering_decision": {
+    "confirmed_by": "vid_g6_g5_gate",
+    "scope": "已有删除请求清理工程边界，非新增法律/财务授权",
+    "rules": [
+      "原input.expires_at与全部绑定安全终态后7天取最晚；未释放/不安全任务拒绝",
+      "已有命令后台清理不要求原Key继续具备生成权限；用户回执仍复验当前主体",
+      "来源过期/已删除不阻止删除独立副本，来源身份或安全状态不明失败关闭",
+      "不删除来源图片、输入元数据、请求或财务事实"
+    ]
+  },
+  "independent_review": {
+    "agent": "vid_g6_contract_audit",
+    "role": "测试工程师",
+    "read_only": true,
+    "implementation_owner": false,
+    "conclusion": "静态未发现确定P1/P2绕过；要求首次删除窗口独立证据，测试已增加并经静态确认；动态96565由主代理执行，不构成完整清理或G6验收"
+  },
+  "scope_completed": [
+    "显式非商业同步存储清理能力及独立VerifyDiscarded确认",
+    "原输入/任务保护期检查，Task→Input→绑定/控制锁序",
+    "上传原件/封存/规范化正文清除与不可复活墓碑",
+    "Input deleted、原容量控制cleaned_at和不可变000084完成事实同数据库事务",
+    "历史删除回执按原归属和当前主体权限读取，完成事实必需；Handler映射200"
+  ],
+  "evidence_boundary": [
+    "虚拟时钟推进留存，不代表真实等待7天",
+    "对象删除与数据库不是跨系统原子提交；错误不返回完成",
+    "只证明同步Fake上传存储，异步真实存储必须另有可靠围栏"
+  ],
+  "not_completed": [
+    "导入Store删除验证能力与只删独立副本正负矩阵",
+    "真实绑定/多绑定最晚安全期限、边界秒和财务不变",
+    "保全/争议/隔离与清理固定窗口、100并发及旧执行者竞态",
+    "COMMIT响应未知与独立故障矩阵",
+    "实际容量重新准入及历史回执真实HTTP200/跨Key/源失效/缺少事实负例",
+    "自动到期无删除申请输入、拒绝/隔离输入生命周期完整闭环",
+    "其余G6路由、SDK、浏览器、独立全阶段验收与Git闭环"
+  ],
+  "next_actions": [
+    "实现导入来源VerifyDiscarded并验证仅清理独立目标；核对输入ready时刻的原留存起算不早于已冻结合同",
+    "补真实绑定/多绑定清理期限与财务守恒",
+    "完成历史回执真实HTTP矩阵和保全/100并发/提交未知恢复",
+    "继续所有其余G6需求，不缩小为当前清理子项"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": "0",
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "pr_state": "NOT_CREATED",
+  "next_goal_allowed": false,
+  "vid_g7_started": false
+}

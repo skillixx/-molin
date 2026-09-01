@@ -101,15 +101,26 @@ func (h *ProjectHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 type issueProjectKeyRequest struct {
-	Name       string     `json:"name"`
-	ScopeMode  string     `json:"scope_mode"`
-	ModelCodes []string   `json:"model_codes"`
-	ExpiresAt  *time.Time `json:"expires_at"`
+	Name                 string     `json:"name"`
+	ScopeMode            string     `json:"scope_mode"`
+	ModelCodes           []string   `json:"model_codes"`
+	ExpiresAt            *time.Time `json:"expires_at"`
+	VideoGenerateAllowed bool       `json:"video_generate_allowed"`
 }
 
 type issuedProjectKeyResponse struct {
 	service.ProjectKeyView
-	SecretKey string `json:"secret_key"`
+	SecretKey       *string `json:"secret_key"`
+	SecretAvailable bool    `json:"secret_available"`
+	Idempotent      bool    `json:"idempotent"`
+}
+
+func projectIdempotencyHeader(r *http.Request) string {
+	values := r.Header.Values("Idempotency-Key")
+	if len(values) == 1 {
+		return values[0]
+	}
+	return ""
 }
 
 func (h *ProjectHandler) IssueKey(w http.ResponseWriter, r *http.Request) {
@@ -118,20 +129,27 @@ func (h *ProjectHandler) IssueKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request issueProjectKeyRequest
-	if json.NewDecoder(r.Body).Decode(&request) != nil {
-		response.Error(w, http.StatusBadRequest, 40000, "请求参数错误")
+	if !decodeGovernanceJSON(w, r, &request) {
 		return
 	}
 	plaintext, view, err := h.service.IssueKey(r.Context(), service.IssueProjectKeyInput{
 		UserID: middleware.UserIDFromContext(r.Context()), ProjectID: projectID,
-		Name: request.Name, ScopeMode: request.ScopeMode, ModelCodes: request.ModelCodes, ExpiresAt: request.ExpiresAt, IP: httputil.ClientIP(r),
+		Name: request.Name, ScopeMode: request.ScopeMode, ModelCodes: request.ModelCodes, ExpiresAt: request.ExpiresAt, VideoGenerateAllowed: request.VideoGenerateAllowed, IdempotencyKey: projectIdempotencyHeader(r), IP: httputil.ClientIP(r),
 	})
 	if err != nil {
 		h.writeError(w, err)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	response.JSON(w, http.StatusCreated, issuedProjectKeyResponse{ProjectKeyView: view, SecretKey: plaintext})
+	var secret *string
+	if plaintext != "" {
+		secret = &plaintext
+	}
+	status := http.StatusCreated
+	if view.Idempotent {
+		status = http.StatusOK
+	}
+	response.JSON(w, status, issuedProjectKeyResponse{ProjectKeyView: view, SecretKey: secret, SecretAvailable: secret != nil, Idempotent: view.Idempotent})
 }
 
 func (h *ProjectHandler) ListKeys(w http.ResponseWriter, r *http.Request) {
@@ -156,13 +174,21 @@ func (h *ProjectHandler) RotateKey(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	plaintext, view, err := h.service.RotateKey(r.Context(), middleware.UserIDFromContext(r.Context()), projectID, keyID, httputil.ClientIP(r))
+	plaintext, view, err := h.service.RotateKey(r.Context(), middleware.UserIDFromContext(r.Context()), projectID, keyID, httputil.ClientIP(r), projectIdempotencyHeader(r))
 	if err != nil {
 		h.writeError(w, err)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	response.JSON(w, http.StatusCreated, issuedProjectKeyResponse{ProjectKeyView: view, SecretKey: plaintext})
+	var secret *string
+	if plaintext != "" {
+		secret = &plaintext
+	}
+	status := http.StatusCreated
+	if view.Idempotent {
+		status = http.StatusOK
+	}
+	response.JSON(w, status, issuedProjectKeyResponse{ProjectKeyView: view, SecretKey: secret, SecretAvailable: secret != nil, Idempotent: view.Idempotent})
 }
 
 func (h *ProjectHandler) RevokeKey(w http.ResponseWriter, r *http.Request) {
@@ -174,7 +200,7 @@ func (h *ProjectHandler) RevokeKey(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := h.service.RevokeKey(r.Context(), middleware.UserIDFromContext(r.Context()), projectID, keyID, httputil.ClientIP(r)); err != nil {
+	if err := h.service.RevokeKey(r.Context(), middleware.UserIDFromContext(r.Context()), projectID, keyID, httputil.ClientIP(r), projectIdempotencyHeader(r)); err != nil {
 		h.writeError(w, err)
 		return
 	}
@@ -204,6 +230,12 @@ func (h *ProjectHandler) writeError(w http.ResponseWriter, err error) {
 		response.Error(w, http.StatusConflict, 40900, "Project 已停用")
 	case errors.Is(err, service.ErrSecurityAuditUnavailable):
 		response.Error(w, http.StatusServiceUnavailable, 50300, "安全审计服务暂不可用，请稍后重试")
+	case errors.Is(err, service.ErrVideoAdminCommandInvalid):
+		response.Error(w, 400, 40000, "Idempotency-Key无效")
+	case errors.Is(err, service.ErrVideoAdminCommandConflict):
+		response.Error(w, 409, 40900, "Key幂等意图冲突")
+	case errors.Is(err, service.ErrVideoAccessUnavailable):
+		response.Error(w, 503, 50300, "视频Key幂等服务不可用")
 	default:
 		response.Error(w, http.StatusInternalServerError, 50000, "Project 操作失败")
 	}

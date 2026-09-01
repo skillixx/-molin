@@ -1,0 +1,28 @@
+{
+  "target_goal":"VID-G6",
+  "scope":"mysql-queued-capacity-admission",
+  "generated_at":"2026-09-01T00:56:55.9417232Z",
+  "base_commit":"52563ba450c6d488456137162580022deb06acc8",
+  "source_commit":"52563ba450c6d488456137162580022deb06acc8",
+  "source_state_id":"501b16fd6e843b865014f4c1c59bf183e5b8d7812073ea1f9371ee0ce1c77529",
+  "status":"UNCOMMITTED_PARTIAL_STAGE",
+  "algorithm":"按path字典序，以LF拼接BASE_COMMIT=<base_commit>与path|sha256，无末尾换行，UTF-8 SHA-256；仅本专项15文件，不是完整VID-G6 SOURCE_STATE_ID。",
+  "file_count":15,
+  "files":[
+    {"path":"docs/database-schema-design.md","sha256":"e5482ef352de925a0d520d8cfadfd5d3c2414be3cc2d2c4f04cc5b1a94eb86fc"},
+    {"path":"docs/full-api-design.md","sha256":"316fc388299228bf60fcd7662112d32986d30330ba60f55d66c1a6db69345737"},
+    {"path":"docs/test-plan.md","sha256":"20e2582b32c5520408bb9181f91e90e08028c7e0a3cbaf5452b555335d1a3b3e"},
+    {"path":"docs/video-gateway-vid-g6-queue-admission-contract.md","sha256":"fff72b87483febf236039a9f0e46330f7a04655d6959fe7dfd0256299606ccbb"},
+    {"path":"infra/scripts/verify-video-gateway-vid-g6.sh","sha256":"751c817f945d5f7064e5031493bf1f8e15ba1a767696a43714cbed4cfe108d30"},
+    {"path":"server/internal/modules/token_gateway/handler/video_content.go","sha256":"25b3a13d9e52d1a64e5257b35a9fac0348ddf9d51571410295a245ec8471a798"},
+    {"path":"server/internal/modules/token_gateway/handler/video_handler.go","sha256":"6332c0e89766cb4f0fa9846ae052e451cfc79f8fb5b352f63c3d52d7b406bd26"},
+    {"path":"server/internal/modules/token_gateway/handler/video_queue_error_test.go","sha256":"651d0ab88c9281facdd1916d098e0e11edde0acdbf6fad67b52052aca31dcc2d"},
+    {"path":"server/internal/modules/token_gateway/service/video_billing_reservation.go","sha256":"b082669f2f4d97cfdbaa1be9ec133a75f07f1c6a293ce25f6ae80f0793cab038"},
+    {"path":"server/internal/modules/token_gateway/service/video_http_service.go","sha256":"11ad8d7809b3146b985083ef5421b2653015f5be5774a3bdb2cabb3f64917468"},
+    {"path":"server/internal/modules/token_gateway/service/video_queue_admission.go","sha256":"a658929183f3eecfe822298a6bad4cb27c49929be58ed11bc4dc79527c277c00"},
+    {"path":"server/internal/modules/token_gateway/service/video_queue_admission_mysql_test.go","sha256":"a7d1717a034b846f8ed0fd3a09388c095aee94daabb4d1cd726bbc4dc50fdd88"},
+    {"path":"server/internal/modules/token_gateway/video_http_mysql_test.go","sha256":"328a9dc49484e24f83d0b7fa4fb9ca8f18eab3007d323808a1500bb7f51efcee"},
+    {"path":"server/migrations/000109_video_queue_admission_guard.down.sql","sha256":"8e311ecfe835795e164348d7f4b50d28610da4c9a0064ae04e1518dacf3a8c5f"},
+    {"path":"server/migrations/000109_video_queue_admission_guard.up.sql","sha256":"579bae4e8af4b91d506a88a13f3bc49bc89517236e1c86459af04df9afbed800"}
+  ]
+}

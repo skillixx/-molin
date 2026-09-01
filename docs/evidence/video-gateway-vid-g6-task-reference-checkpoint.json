@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G6",
+  "status": "PARTIAL_TASK_REFERENCE_OPERATION_35_TESTS_PASS",
+  "source_manifest": "video-gateway-vid-g6-task-reference-current-source.json",
+  "source_state_id": "7a141db0ed9886629a47de0d480136c347859c5c66ffa29d37e443383d3634fe",
+  "code_state_id": "7daa38ec0b07fbc0b3c84951d2583ba21776f25f21a29d4ef753bc98869eae84",
+  "expected_runtime_copy_tree_sha256": "ef785e38c9aa291c1d9384d520ee364d4b5f0b42776fdf41c241ba10460eb913",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "head_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "UNCOMMITTED",
+  "registered_local_routes": 21,
+  "bootstrap_assembled": false,
+  "active_run": {
+    "session": 87391,
+    "focus": "all",
+    "required_top_level_tests": 35,
+    "status": "COMPLETED",
+    "exit_code": 0,
+    "result": "PASS"
+  },
+  "runs": [
+    {
+      "session": 20491,
+      "exit_code": 1,
+      "copy_tree_sha256": "814e5ece42fc122e538f22e017c7391c86efffefbe8b1b5aa7cc5cc0587f3357",
+      "result": "缺少G6专用账本装配入口红例"
+    },
+    {
+      "session": 99398,
+      "exit_code": 0,
+      "required_top_level_tests": 35,
+      "source_state_id": "a0f455afe4d13d6b2afc2ac752bb765bfb35841390212b2cdee239585bd38769",
+      "copy_tree_sha256": "c8ca0aac4b9e3939035de21aeba9aba879adc77808b16e8c58921341cd87c790",
+      "result": "35项指定RUN/PASS及Linux race完整运行通过；删除后原I2V Fake链、结算、交付和单次Submit通过，不含后增操作撤销反例"
+    },
+    {
+      "session": 53246,
+      "exit_code": 1,
+      "copy_tree_sha256": "37602a5a167191d6ca25b37fc47fad93955fa576bdb7db2536665416dc0623d0",
+      "result": "实际发布撤下I2V后Load仍err=nil且正文读取增量1"
+    },
+    {
+      "session": 84303,
+      "exit_code": 0,
+      "source_state_id": "7a141db0ed9886629a47de0d480136c347859c5c66ffa29d37e443383d3634fe",
+      "commands": [
+        "go test -count=1 ./...",
+        "go vet ./...",
+        "go mod verify"
+      ],
+      "result": "原生Go全包/依赖检查通过，隔离DSN用例仍以87391为准"
+    },
+    {
+      "session": 87391,
+      "exit_code": 0,
+      "required_top_level_tests": 35,
+      "copy_tree_sha256": "ef785e38c9aa291c1d9384d520ee364d4b5f0b42776fdf41c241ba10460eb913",
+      "result": "包括操作撤销反例的35项MySQL/race通过"
+    },
+    {
+      "session": 82150,
+      "exit_code": 0,
+      "copy_tree_sha256": "ef66e28f224ce5e7da23a6581b4252d8211eb17e5b2b968728bf5b81f55e6736",
+      "result": "增加单连接完整I2V链及读取中取消资金/租约不变，专项通过；不等于固定读取/清理竞争"
+    }
+  ],
+  "defects": [
+    {
+      "id": "G6-TASK-REFERENCE-OPERATION",
+      "severity": "P1",
+      "status": "FIXED_PENDING_VERIFY",
+      "root_cause": "专用读取两次AuthorizeTx漏传原任务operation，未执行supported_operations检查",
+      "fix": "IO前后均传原task.Operation；原发布撤销反例保留，正文读取增量要求0",
+      "evidence": "53246红例；87391待复验；87391反例PASS",
+      "independent_review": "vid_g6_contract_audit静态确认修复、断言和完整成功链未弱化"
+    }
+  ],
+  "independent_review": {
+    "agent": "vid_g6_contract_audit",
+    "role": "测试工程师",
+    "read_only": true,
+    "implementation_owner": false,
+    "conclusion": "专用分支覆盖全部非终态，withDB沿用事务；当前SHARE锁不适用旧UPDATE等待环风险。完整固定窗口、导入和单连接矩阵仍未证明"
+  },
+  "limited_secret_scan": {
+    "files": 99,
+    "matches": 0,
+    "boundary": "有限高风险凭据格式，不代替信息流审查"
+  },
+  "scope_completed": [
+    "NewTaskLedger装配既有G5账本与包内按TaskInput授权读取",
+    "当前锁读绑定/删除凭据，沿同事务覆盖有界私有对象IO",
+    "上传来源删除后原Fake任务完成并安全结算交付，原输入版本不变",
+    "普通ready读取与专用已有任务读取分离，无客户端放行布尔值"
+  ],
+  "not_completed": [
+    "导入来源与源scope撤销/跨Key矩阵",
+    "IO跨到期、取消/超时及固定读取/清理窗口",
+    "pending_reconcile与旧构造器负向矩阵",
+    "输入删除HTTP、实际留存清理与容量回收",
+    "完整其余G6路由、SDK、浏览器、独立验收与Git闭环"
+  ],
+  "next_actions": [
+    "核验87391真实终态与复制树摘要，不编辑执行中的运行器",
+    "补单连接及固定IO/取消/清理窗口，导入来源和权限负向矩阵",
+    "完成输入删除HTTP与实际清理，继续完整G6范围"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": "0",
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "pr_state": "NOT_CREATED",
+  "next_goal_allowed": false,
+  "vid_g7_started": false
+}

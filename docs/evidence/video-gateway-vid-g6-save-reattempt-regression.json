@@ -1,0 +1,617 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "IMPLEMENTED_G6_REGRESSION_NOT_FULL_STAGE_ACCEPTANCE",
+  "session": 11387,
+  "exit_code": 0,
+  "source_state_id": "dab68c71ff4e4660d27ed3bc6bbd3b1e2765df0081fbaf860dbc437489a3e59e",
+  "copy_tree_sha256": "f0bce37a24211271e6d8a8c4865b383e2ad1384918b2ca854c19ac2e82135137",
+  "schema_latest": 91,
+  "linux_race": true,
+  "service_seconds": 589.145,
+  "required_tests": 99,
+  "tests": [
+    {
+      "name": "TestVideoG6IAMMySQLFreshPermissions",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6HTTPMySQLCreateRetrieveReplay",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6HTTPServiceRequiresRealDependencies",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AccessMySQLMatrix",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6ModelContractExplicitRequirements",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6EntitlementMySQLMatrix",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6JobJSONSnapshot",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6ContentHTTPFullAndSingleRange",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6ContentHTTPRangeAndValidatorMatrix",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6ContentHTTPRecoveryNeverAppendsJSON",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6ContentHTTPStoreFailureIsLowSensitivity",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AutoQuoteSingleConnectionMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6JWTAuthenticationFailsClosed",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6QuoteRepeatableReadWinnerMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6ListHTTPRequiresDependencies",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6CompletedListsMySQLConcurrency",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6RightsMySQLAcceptanceAndInvalidation",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6I2VMySQLRightsQuoteHold",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6I2VMySQLReplayAfterInputDeletion",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6UploadMySQLSealCompleteReplay",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6UploadMySQLRejectAndCancelRace",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6UploadMySQLInterruptedRetryAndConcurrency",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6UploadHTTPClosedRoutes",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6UploadHTTPMySQLRoundtripAndI2V",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6UploadMySQLRecoveryFences",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6InputReadHTTPClosedRoutes",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6InputMetadataMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6SourceImagesMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6ImportHTTPMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6TaskReadHTTPClosedRoutes",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6TaskReadMySQLSettlementSnapshot",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6TaskReadMySQLFinancialLifecycle",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6InputDeferredDeleteMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6InputDeleteReplayRRMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6TaskReferenceAfterDeleteMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6InputCleanupMySQLUpload",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6ImportReadyRetentionMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6InputCleanupMySQLImportHTTP",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6InputCleanupMySQLBoundTasks",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6ContentMySQLFinancialGate",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6ContentHTTPMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6ContentHTTPClosedRoute",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6ContentHTTPApplicationErrorSingleEnvelope",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6DownloadLimitsMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6ContentHTTPBandwidth",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6ContentHTTPLeaseDeadlineAndCancel",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6DownloadRenewalRaceMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6PlayableMP4Probe",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6PlayableContentHTTPMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6MediaClockMatrix",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6TaskCancelMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6CancelHTTPClosedRoutes",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6TaskCancelHTTPMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6TaskCancelRollbackMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6TaskCancelSubmittingMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6TaskCancelDatabaseRetryMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6MediaDeleteHTTPMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6MediaDeleteClosedRoute",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6MediaDeletePlanShape",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6MediaDeleteRetainedCopyMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6MediaDeleteConfirmationRollbackMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6MediaDeletePrepareDeadlineMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetLifecycleHTTPMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetLifecycleClosedRoute",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetLifecycleExpiryMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetDownloadHTTPMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetDownloadClosedRoutes",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetDownloadJWTRevocationMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetDownloadJWTExpiryMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetDownloadJWTDependencyMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetDownloadURLExpiryMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6JWTInitialDeadline",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6SavedCopyImmutable",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6SavedCopyConcurrent",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6SavedCapacityUnits",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6SavedCoordinationMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetSaveHTTPMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetSaveClosedRoute",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetSaveSeparateStoreMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetSavePartialCopyMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetSaveConcurrentMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetSaveCapacityMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetSaveCommitExpiryMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetSaveCleanupMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetSaveCleanupRecoveryMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetSaveCleanupProtectionMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetSaveCleanupLateCopyMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetSaveCleanupIntentMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetSaveCleanupCommitUnknownMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6SavedReadHTTPMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6SavedReadClosedRoutes",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6SavedReadSharedLimitsMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6SavedReadJWTMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6SavedReadSeparateStoreMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6SavedReadPublicationClockMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6SavedReadStreamRevocationMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6SavedReadDatabaseFaultMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetSaveReattemptMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    },
+    {
+      "name": "TestVideoG6AssetSaveReattemptConcurrentMySQL",
+      "run": 1,
+      "pass": 1,
+      "skip": 0
+    }
+  ],
+  "not_covered": [
+    "迁移91历史数据及DDL中断专用测试",
+    "完整G6剩余功能和Git门禁"
+  ],
+  "real_provider_requests": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0
+}

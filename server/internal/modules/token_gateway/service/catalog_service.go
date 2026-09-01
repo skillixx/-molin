@@ -37,11 +37,27 @@ type CatalogService struct {
 	// 定向可见性解析器（bootstrap 注入）：nil 时 groups/roles 定向写入被拒、读取一律不可见（fail-safe）。
 	groupResolver GroupResolver
 	roleResolver  RoleResolver
+	videoAccess   *VideoAccessService
 }
 
 // NewCatalogService 创建模型目录服务实例。
 func NewCatalogService(repo *repository.TokenModelRepository) *CatalogService {
 	return &CatalogService{repo: repo}
+}
+
+// WithVideoAccess显式接入既有视频准入，只做当前权限读取，不开启生成流量或创建财务事实。
+func (s *CatalogService) WithVideoAccess(access *VideoAccessService) *CatalogService {
+	s.videoAccess = access
+	return s
+}
+
+// VideoModelAllowed让Project SK目录与真实视频准入一致；依赖缺失不能回落到Chat的宽松列表。
+func (s *CatalogService) VideoModelAllowed(ctx context.Context, userID, apiKeyID uint64, code string) bool {
+	if s == nil || s.videoAccess == nil || apiKeyID == 0 {
+		return false
+	}
+	_, err := s.videoAccess.Resolve(ctx, VideoCaller{UserID: userID, APIKeyID: apiKeyID}, code)
+	return err == nil
 }
 
 // WithResolvers 注入定向可见性所需的分组/角色解析器（bootstrap 装配时调用）。
@@ -68,6 +84,10 @@ func (s *CatalogService) Create(ctx context.Context, req dto.CreateModelReq) (*d
 	}
 	if !validModalities[modality] {
 		return nil, newValidation("modality 只能为 chat/image/audio/video")
+	}
+	// 视频只能经过带CAS、幂等及加密审计的专用管理命令，禁止借旧CRUD创建未受控草稿。
+	if modality == "video" {
+		return nil, ErrVideoAccessUnavailable
 	}
 	status := req.Status
 	if status == "" {
@@ -159,14 +179,20 @@ func (s *CatalogService) ListPaged(ctx context.Context, status, modality string,
 // ListVisible 用户端列出对该用户可见的 active 模型（按定向可见性过滤后在应用层分页，total 准确）。
 // 候选集已按 sort_order ASC, id ASC 排序；offset/limit<=0 时返回全部可见项。
 func (s *CatalogService) ListVisible(ctx context.Context, userID uint64, modality string, offset, limit int) ([]dto.ModelResp, int64, error) {
-	candidates, err := s.repo.ListActiveCandidates(ctx, modality)
+	candidates, err := s.repo.ListPublicCandidates(ctx, modality)
 	if err != nil {
 		return nil, 0, err
 	}
-	visible := make([]model.TokenModel, 0, len(candidates))
+	visible := make([]dto.ModelResp, 0, len(candidates))
 	for i := range candidates {
-		if modelVisibleTo(ctx, &candidates[i], userID, s.groupResolver, s.roleResolver) {
-			visible = append(visible, candidates[i])
+		item, contract, ok := publishedCatalogCandidate(candidates[i])
+		if ok && modelVisibleTo(ctx, &item, userID, s.groupResolver, s.roleResolver) {
+			resp := modelToResp(&item)
+			if contract != nil {
+				resp.Capability = model.AIVideoCapability
+				resp.SupportedOperations = append([]string(nil), contract.SupportedOperations...)
+			}
+			visible = append(visible, *resp)
 		}
 	}
 	total := int64(len(visible))
@@ -179,12 +205,7 @@ func (s *CatalogService) ListVisible(ctx context.Context, userID uint64, modalit
 	if limit <= 0 || end > len(visible) {
 		end = len(visible)
 	}
-	page := visible[start:end]
-	resp := make([]dto.ModelResp, len(page))
-	for i := range page {
-		resp[i] = *modelToResp(&page[i])
-	}
-	return resp, total, nil
+	return visible[start:end], total, nil
 }
 
 // VisibleToUser 判定逻辑模型 code 对用户是否可见（供转发前置闸调用）。
@@ -197,11 +218,30 @@ func (s *CatalogService) VisibleToUser(ctx context.Context, userID uint64, code 
 		}
 		return false, err
 	}
+	if m.Modality == "video" {
+		items, _, err := s.ListVisible(ctx, userID, "video", 0, 0)
+		if err != nil {
+			return false, err
+		}
+		for _, item := range items {
+			if item.LogicalModelCode == code {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
 	return modelVisibleTo(ctx, m, userID, s.groupResolver, s.roleResolver), nil
 }
 
 // Update 更新模型字段。指针字段 nil 表示不更新。
 func (s *CatalogService) Update(ctx context.Context, id uint64, req dto.UpdateModelReq) (*dto.ModelResp, error) {
+	current, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if current.Modality == "video" || len(current.VideoContractJSON) > 0 || (req.Modality != nil && *req.Modality == "video") {
+		return nil, ErrVideoAccessUnavailable
+	}
 	updates := map[string]interface{}{}
 	if req.DisplayName != nil {
 		if strings.TrimSpace(*req.DisplayName) == "" {

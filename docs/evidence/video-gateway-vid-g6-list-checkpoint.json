@@ -1,0 +1,64 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "列表主体准入、固定锁序及已有G6局部回归；不是完整阶段验收",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_manifest": "video-gateway-vid-g6-list-source.json",
+  "current_workspace_source_manifest": "video-gateway-vid-g6-list-current-source.json",
+  "post_run_changes": "仅阶段结果文档与SDK静态validation回执更新；37项Go/infra哈希未变。SDK HTTP仍未运行，不将静态回执并入Go通过范围。",
+  "captured_workspace_source_state_id": "ad41394aa34a648919b72ea627cdf6c985e3352aeee2270460e282caa2f8654a",
+  "tested_code_state_id": "e51e3bd48cfc283147f020c99ad451c4463e71b0934e75e325152d1875708a4d",
+  "code_snapshot_verified": {
+    "container": "c457572619d3",
+    "server_infra_files": 37,
+    "matched": 37,
+    "mismatches": 0,
+    "boundary": "运行时容器sha256sum逐项匹配Go/SQL/运行器；独立SDK目录与后续文档回执不在本次Go测试通过范围"
+  },
+  "red_runs": [
+    {"session": 39496, "exit_code": 1, "result": "无模型grant的未实名返回403；完成态相反排序100并发出现非completed结果"},
+    {"session": 32697, "exit_code": 1, "result": "主体准入修复后精确400/70001通过；仅错误号探针捕获52次MySQL1213"}
+  ],
+  "fix": {
+    "subject": "复用AuthorizeSubjectTx，空候选集合也先校验主体、实名和权限",
+    "locking": "先按公开Task ID固定顺序锁定本页全部Task，再按用户展示顺序逐项执行原G5对账",
+    "preserved": "没有减少100并发，没有移除17类对账，没有改变计费或公开completed条件",
+    "debug_cleanup": "DEBUG-g6-list-lock与g6_list_deadlock_probe均已移除"
+  },
+  "green_run": {
+    "session": 31011,
+    "focus": "all",
+    "exit_code": 0,
+    "required_top_level_actual_run_pass": 16,
+    "required_top_level_skipped": 0,
+    "linux_race": "PASS",
+    "schema": "冻结容器源码的1至78及78重复up/down/up通过",
+    "completed_lists_100": "PASS_20.83s，全部返回两个completed任务",
+    "http_root": "PASS_10.69s，含未实名70001、游标隔离、首次生成100及报价100",
+    "rr_quote_winner": "PASS_0.05s",
+    "single_connection_auto_quote": "PASS_0.22s",
+    "cache": "只复用专用Go编译缓存，-count=1关闭测试结果缓存"
+  },
+  "independent_review": {
+    "pm_list_contract": "主体准入优先、跨主体cursor404、删除Task只作原主体位置锚点已确认；不是全阶段PM通过",
+    "qa_fix_review": "独立测试角色已只读确认主体准入顺序、整页固定锁序、真实completed夹具与100并发强度及探针清理；动态31011由主代理执行并核验，本项不是完整阶段QA回执",
+    "sdk_interoperation": "NOT_RUN",
+    "full_stage_acceptance": "NOT_RUN"
+  },
+  "remaining": [
+    "列表完整跨用户/Project、删除/新增/撤权竞争、边界与SDK验证",
+    "I2V权利、受控上传和来源图片链",
+    "内容业务装配、取消/删除、资产保存/容量/生命周期",
+    "回调、管理、完整预算并发准入、控制面配置",
+    "Chat/Image及G0至G5完整隔离兼容回归",
+    "最终QA/PM/Standards/Spec与Git/CI/合并闭环"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "pr_state": "NOT_CREATED",
+  "next_goal_allowed": false,
+  "vid_g7_started": false
+}

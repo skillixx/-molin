@@ -118,13 +118,19 @@ func (s *IAMService) GetUserRoleIDs(ctx context.Context, userID uint64) ([]uint6
 	}
 
 	// 2. 组绑定角色（group_roles）：用户所在所有组绑定的角色
-	members, _ := s.groupRepo.GetUserGroups(ctx, userID)
+	members, err := s.groupRepo.GetUserGroups(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 	if len(members) > 0 {
 		groupIDs := make([]uint64, len(members))
 		for i, m := range members {
 			groupIDs[i] = m.GroupID
 		}
-		groupRoleIDs, _ := s.groupRepo.GetRoleIDsByGroups(ctx, groupIDs)
+		groupRoleIDs, err := s.groupRepo.GetRoleIDsByGroups(ctx, groupIDs)
+		if err != nil {
+			return nil, err
+		}
 		for _, id := range groupRoleIDs {
 			if _, ok := seen[id]; !ok {
 				seen[id] = struct{}{}
@@ -309,7 +315,11 @@ func (s *IAMService) getAllUserPermCodes(ctx context.Context, userID uint64) ([]
 	codes := make([]string, 0)
 
 	// 角色权限
-	rolePerms, _ := s.getUserRolePermissions(ctx, userID)
+	rolePerms, err := s.getUserRolePermissions(ctx, userID)
+	if err != nil {
+		// 缺失任何权限事实都不能返回部分授权集合，实时准入必须观察完整数据库结果。
+		return nil, err
+	}
 	for _, p := range rolePerms {
 		if _, ok := seen[p.Code]; !ok {
 			seen[p.Code] = struct{}{}
@@ -318,13 +328,19 @@ func (s *IAMService) getAllUserPermCodes(ctx context.Context, userID uint64) ([]
 	}
 
 	// 组权限（用户所在所有分组的权限码合集）
-	members, _ := s.groupRepo.GetUserGroups(ctx, userID)
+	members, err := s.groupRepo.GetUserGroups(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 	if len(members) > 0 {
 		groupIDs := make([]uint64, len(members))
 		for i, m := range members {
 			groupIDs[i] = m.GroupID
 		}
-		groupCodes, _ := s.groupRepo.GetPermissionCodesByGroups(ctx, groupIDs)
+		groupCodes, err := s.groupRepo.GetPermissionCodesByGroups(ctx, groupIDs)
+		if err != nil {
+			return nil, err
+		}
 		for _, c := range groupCodes {
 			if _, ok := seen[c]; !ok {
 				seen[c] = struct{}{}

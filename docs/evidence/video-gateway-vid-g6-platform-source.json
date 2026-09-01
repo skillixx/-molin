@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G6",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "head_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_state_id": "1a79c1a16958013db211d69bac7936b02d5d3d339ddeb2c42fd31bafc670e8ba",
+  "code_state_id": "c45cfef2bbcea2cead2b4dcc6f9d58b62173ace52ec32f9a427097cc768ce827",
+  "captured_at": "2026-08-31T04:41:53.5705699+08:00",
+  "manifest": [
+    {
+      "path": "docs/database-schema-design.md",
+      "sha256": "c15c5549fe2a6b3ca7db4793e464920579f8258d03eb37b75480b3842b19a94a"
+    },
+    {
+      "path": "docs/frontend-api-reference.md",
+      "sha256": "efc70ad5dfe44bca78cadb8d4a25b00e650ed0f015adc1125b6eae06e0b7f208"
+    },
+    {
+      "path": "docs/full-api-design.md",
+      "sha256": "a77d2f244f5d106e22198380540bf64dc2807c38957e76e5678e275c127d66f1"
+    },
+    {
+      "path": "docs/test-plan.md",
+      "sha256": "a5045a334d85285d549430fc191bd6a4bc051df4f367951796b5ccbe8974a1d4"
+    },
+    {
+      "path": "docs/video-gateway-openapi-snapshot-v1.yaml",
+      "sha256": "51f4ea6d5d459c0ae9659a352ceb989d2b95a32e217a5e6175b4ad175345acf6"
+    },
+    {
+      "path": "docs/video-gateway-vid-g6-http-project-sk-contract.md",
+      "sha256": "86e5cb7640c3c22e0262216d5cfc45d973031c71371230a7169582d181433080"
+    },
+    {
+      "path": "infra/scripts/verify-video-gateway-vid-g6.sh",
+      "sha256": "15c90dce9cf21961c36c9282a412c7f67dbbdc19077b0380048714d4935f059a"
+    },
+    {
+      "path": "README.md",
+      "sha256": "96881b26d5f0037fa163abef0d4b787db3311f284bc92d0fdc5bea5bcf98392b"
+    },
+    {
+      "path": "server/internal/middleware/recovery_test.go",
+      "sha256": "c19ce722fd72e5d0140d6c81c1069a6b14b236c58effc034a439ff95bc574c07"
+    },
+    {
+      "path": "server/internal/middleware/recovery.go",
+      "sha256": "8a5dea6bf2ec0843f7e40d1cba2ddda7b6a9d327d5cf272dc1a661eee8383bf8"
+    },
+    {
+      "path": "server/internal/modules/iam/service/iam_service.go",
+      "sha256": "7dd391a7767847c0882464bc151821aa8d796f88b574efc473390d2fdcb8a0e2"
+    },
+    {
+      "path": "server/internal/modules/iam/service/permission_fresh_mysql_test.go",
+      "sha256": "455a4f6605529e29d4642616ddcea2e4f08584cc95bfa99409d11cfe6c1aae38"
+    },
+    {
+      "path": "server/internal/modules/iam/service/permission_fresh_test.go",
+      "sha256": "f1672f79939a39796971ad27a3e97083919b81a4ab44c9e3f11a030f16d7ed94"
+    },
+    {
+      "path": "server/internal/modules/iam/service/permission_fresh.go",
+      "sha256": "0230ed939364e1e281e727dd4a45afa451db7aec1cfe30469de105a805e29536"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/dto/video_test.go",
+      "sha256": "b61d171a51f5f398ff76bc728ed75a09c2c2251d20900080cfe75beeffa26a23"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/dto/video.go",
+      "sha256": "17da7b021976e07cad652b928d2824b90bcd3bbc3274a26976a3ab2f0036657c"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_content_test.go",
+      "sha256": "048fc0629efe33862d3e5826d7d7cdea3fe00a24f59389933d4a835f0d2bce1d"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_content.go",
+      "sha256": "a98f69061ccc0fb5aaa3a00c3474b4c743fe233379d3c55126edb55d7d02191a"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_handler.go",
+      "sha256": "025c85456189d4c82a77eeb814d112401c203e885dc1315f96746567d1693dfd"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_platform_handler.go",
+      "sha256": "b3e34b566bc243361cbe09dfaaabb137c367725d86f5283e0ef05ff82b132b1c"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_access_mysql_test.go",
+      "sha256": "22410697ee33c1af592fd4b1018d86608592197b54035fa4ee12bc5b1dfc97bc"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_access_service.go",
+      "sha256": "fc9b52b3fce5260371bff27e234489eb810048229dd57e040ece246cd002e2a4"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_automatic_reservation.go",
+      "sha256": "a1fd30e979510fc140bb4d685348d49424c35e0443410f1905068ae03657f61d"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_reservation.go",
+      "sha256": "f795b032460c52ffdc68d85fe6d024f7d88057c4cbef4109ccc7913bebeb01d8"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_connection_mysql_test.go",
+      "sha256": "f44f4ef0161a43b890e7e88231a74c7b17b1533c3f4826f703f5c1aa77e82f8c"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_entitlement_mysql_test.go",
+      "sha256": "132ff07a7f1a7191b267047a3e64d4dbf4cda041c3a60013623c1a06e9712708"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_generation_lookup.go",
+      "sha256": "d0cb4de1bed68a23363f994e0e1d531b41cc7ad75fd73219141c048dd6f788d9"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_http_service_test.go",
+      "sha256": "4be41438e732fdbf834e01050f4cf0ed7c90056b835cd6bc1612fd18464f2dc5"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_http_service.go",
+      "sha256": "2dc0fef6b93e3b8771e99c8d846039763cf414f1311f016be9c491a2bd86570b"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_jwt_auth_test.go",
+      "sha256": "35b0607f4dd1cf5b22b5471a55962caca8da85a3caa972fb9852a299a7a10072"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_jwt_auth.go",
+      "sha256": "c1af715f9f3aab4ad7b2e2d54f43ae4ab013cde3c24d81de13f49c9cd339d1dd"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_membership_access.go",
+      "sha256": "2b607d3af860111bf0a2b711e01b7b9ba5a2cbcc5a4b5d7fc7c0cb776ed92b4b"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_model_contract_test.go",
+      "sha256": "2eda3a38f1928952880cf4023415216ddf403f7e75ecf35006b0fea66eeab20e"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_model_contract.go",
+      "sha256": "4d2abba72dcacefc06a5a16d2f7c1109cdb56b129db9efc298ce32b6c69af002"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video_http_mysql_test.go",
+      "sha256": "e2dae6e7eb00cd493b71ac7b55f78daefc92f741fc7403c5a44e33da12ca306a"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video_route.go",
+      "sha256": "da737db7fadaa1177bf0808cb7c44555366ef64a5ad2fe3e889df59788156131"
+    },
+    {
+      "path": "server/migrations/000078_video_http_access_contract.down.sql",
+      "sha256": "789c57d51d6d1d5f2856791043cd6f2b52ba5efdaeacd0c978bffc9d88b07832"
+    },
+    {
+      "path": "server/migrations/000078_video_http_access_contract.up.sql",
+      "sha256": "41cd24b846730ae52567919f9b94ad7d62b7ff98c18fd89a640a3b4d23b47bb4"
+    }
+  ],
+  "scope": "平台JWT与SK、报价/202生成、自动报价单连接修复；仅部分G6"
+}

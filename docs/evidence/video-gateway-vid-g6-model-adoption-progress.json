@@ -1,0 +1,104 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "video-model-draft-read-and-legacy-adoption",
+  "stage_status": "IN_PROGRESS",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_state_id": "4a1ccfd9dd10cb7895a1f568a9980d6944c1e717ef6d14e80d6c9e246791fc33",
+  "source_manifest": "video-gateway-vid-g6-model-adoption-source.json",
+  "source_file_count": 350,
+  "git_state": "UNCOMMITTED_UNPUSHED_NO_G6_PR",
+  "runs": [
+    {
+      "session_id": 7912,
+      "status": "FAIL_EXPECTED_RED",
+      "schema": 103,
+      "copy_tree_sha256": "11b7174b8556a2806df0bc82d08ec4d86e812ea666a243bce0eee2b6d8d8e7d4",
+      "reason": "新增真实HTTP详情断言发现旧DTO没有受控草稿版本"
+    },
+    {
+      "session_id": 91551,
+      "status": "PASS_OLDER_SLICE",
+      "schema": 104,
+      "required": 6,
+      "passed": 6,
+      "skipped": 0,
+      "linux_race": true,
+      "copy_tree_sha256": "be75c946f0608495c51ff45d1db677860477e0d08f0ecfbd8bfd8918f7e58825",
+      "note": "未覆盖后来查询兼容修复和更完整的源摘要绑定"
+    },
+    {
+      "session_id": 20643,
+      "status": "PASS",
+      "schema": 104,
+      "required": 7,
+      "passed": 7,
+      "skipped": 0,
+      "linux_race": true,
+      "copy_tree_sha256": "e3e71f206ba2196ac7e7cb010c2c5f5a139b199675c22915a011eed3fc3d03d2",
+      "service_seconds": 15.825,
+      "handler_seconds": 1.107,
+      "adoption_http_seconds": 3.16,
+      "legacy_query_http_seconds": 3.01,
+      "draft_http_seconds": 5.44,
+      "tests": [
+        "TestVideoG6ModelDraftReasonBinding",
+        "TestVideoG6CatalogPublishedHTTPMySQL",
+        "TestVideoG6ModelDraftAdoptionHTTPMySQL",
+        "TestVideoG6ModelDraftLegacyQueryHTTPMySQL",
+        "TestVideoG6ModelDraftHTTPMySQL",
+        "TestDeleteModelAuditFailurePreventsWrite",
+        "TestUpdateModelRejectsUnknownFieldBeforeWrite"
+      ]
+    }
+  ],
+  "verified": [
+    "显式view只读返回真实受控版本",
+    "历史草稿version0/source摘要；读取不生成状态",
+    "遗留签名文档URL不回显",
+    "接管缺摘要400、旧摘要409、拒绝不新增命令",
+    "锁内验证无state及无历史命令后接管version1",
+    "原模型ID/状态/发布指针和财务快照不变",
+    "source摘要冻结到命令和前后审计",
+    "原键重放与新键重复接管拒绝",
+    "撤权读取及重放拒绝、SK拒绝",
+    "原草稿100并发重放和严格定义回归",
+    "真实JWT/IAM验证handler无/有配置×无/有无关query的旧Chat详情"
+  ],
+  "review": {
+    "agent": "vid_g6_cancel_standards",
+    "scope": "READ_ONLY_SOURCE_REVIEW",
+    "initial_p0": 0,
+    "initial_p1": 0,
+    "initial_p2": 1,
+    "defect_id": "G6-MODEL-ADOPTION-001",
+    "finding": "RawQuery非空即进入视频视图，误截获旧Chat查询",
+    "fix": "只分派view键，保留有效无关query；四类HTTP兼容测试通过",
+    "decision": "LOCALLY_CLOSED_SOURCE_AND_REPORTED_DYNAMIC_EVIDENCE",
+    "full_stage_acceptance": false
+  },
+  "checks": {
+    "focused_go_vet": "PASS",
+    "git_diff_check": "PASS",
+    "full_stage_qa": "NOT_RUN",
+    "full_stage_ci": "NOT_RUN"
+  },
+  "documentation_note": "运行后仅更新两份当前进度说明；未在验收副本复制后变更本次最终运行的Go、SQL或测试。SOURCE_STATE与运行副本hash采用不同范围/算法，不相互冒充。",
+  "remaining": [
+    "发布/回滚/下架与native执行合同",
+    "默认模型唯一性",
+    "完整管理装配、安全读取和多管理员接管/写点故障矩阵",
+    "Key能力配置、multipart I2V、预算并发排队准入",
+    "锁定双SDK互操作、全量兼容、独立阶段验收及Git闭环"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": "NO",
+  "vid_g7_started": "NO"
+}

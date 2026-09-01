@@ -1,0 +1,69 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "非商业合成权利政策、Project接受与历史失效回执；不是完整I2V或G6验收",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_manifest": "video-gateway-vid-g6-rights-source.json",
+  "current_workspace_source_manifest": "video-gateway-vid-g6-rights-current-source.json",
+  "post_run_changes": "仅功能/API文档回填本轮结果，Go/SQL/运行器与测试哈希未变；完整G6仍未验收",
+  "source_state_id": "cb9594800b0fff599400a4ce46adff50a7c5c3c84d3ad9c91f1cb1165868797a",
+  "code_state_id": "403d95fc5cc9a74bb690b5e776b14a78f0359e18045a9562d6dd151ec7a36ac9",
+  "container_source_verification": {
+    "container": "8e3d622650af",
+    "files": 59,
+    "matched": 59,
+    "mismatches": 0,
+    "method": "运行时sha256sum逐文件对账；SQL和Go均取同一容器快照"
+  },
+  "red_green": [
+    {"stage": "RED_API_MISSING", "result": "公共权利Service类型与方法缺失，编译反例失败"},
+    {"session": 51255, "exit_code": 0, "result": "基础17项局部回归通过，不覆盖后加政策失效边界"},
+    {"session": 90629, "exit_code": 1, "result": "政策自身过期及退役无active时，历史回执错误503已复现"},
+    {"session": 89677, "exit_code": 0, "result": "分离当前有效政策与历史事实后，扩展失效和升级反例通过"},
+    {"session": 14034, "exit_code": 0, "result": "最终本轮17项实际RUN/PASS，含HTTP nullable/历史重放/新键拒绝与SQL约束反例"}
+  ],
+  "verification": {
+    "required_top_level_actual_run_pass": 17,
+    "required_tests_skipped": 0,
+    "linux_race": "PASS",
+    "migration": "000001至000079、000078及000079重复up/down/up通过；down保留事实",
+    "rights_first_accept_100": "唯一回执及相同原始接受/到期时间通过",
+    "http_rights": "全局政策GET、Project GET/POST、JWT所有者、SK代签拒绝、伪造签署人拒绝、跨Project、政策退役后null当前版本/原历史/valid=false、旧键重放、新键503均通过",
+    "t2v_policy_independence": "政策退役后T2V原生成HTTP重放200且同Job/request_id通过",
+    "sql_constraints": "商业用途3819、双active1062、替换签署人3819、Project及政策三元FK1452均明确断言通过",
+    "immutability": "合法退役正例；同样合法状态迁移中替换正文/标题拒绝；接受UPDATE/DELETE拒绝通过",
+    "scope_caveat": "未验证完整I2V实际Quote/Hold权利链、上传封存、SDK真实互操作或全部43路由"
+  },
+  "host_checks": {
+    "session": 60852,
+    "exit_code": 0,
+    "go_test_all": "PASS，主机无临时DSN的集成SKIP不能算MySQL通过",
+    "go_vet_all": "PASS",
+    "go_mod_verify": "PASS",
+    "changed_go_format": "PASS，含未跟踪文件",
+    "sensitive_scan": "PASS_243_FILES_ZERO_FINDINGS",
+    "diff_check": "PASS"
+  },
+  "independent_subreviews": {
+    "pm": "确认关闭态工程方案及认证/历史回执边界，不代替正式法律批准",
+    "qa": "确认失效回执修复及排除混杂条件的正文测试；最新HTTP和SQL扩展动态结果由主代理核验",
+    "full_stage_qa_pm_standards_spec": "NOT_RUN"
+  },
+  "remaining": [
+    "I2V逐请求权利声明与Project接受在Quote/Generation实际写入事务内复验",
+    "受控上传、封存、规范化、来源图片、输入生命周期",
+    "内容/取消/删除、资产保存/容量/生命周期、回调与管理",
+    "完整预算与并发准入、模型/Project/Key控制面",
+    "锁定SDK和浏览器实际互操作、Chat/Image及G0至G5全隔离回归",
+    "最终独立四门禁、精确提交、Ready CI及PR合并"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "real_rights_acceptances": 0,
+  "pr_state": "NOT_CREATED",
+  "next_goal_allowed": false,
+  "vid_g7_started": false
+}

@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G6",
+  "status": "PARTIAL_INPUT_DELETE_TESTS_PASS_RUNNER_FAIL",
+  "source_manifest": "video-gateway-vid-g6-input-delete-source.json",
+  "source_state_id": "19b239c000a06e80fccb80d90865aedee98caabaeed4bfb18064043635d6e76b",
+  "code_state_id": "7bf56a1f0be69e8b576952647e0c080e3a8d1c00a31cd6b4f05d8be0f7c365f7",
+  "expected_runtime_copy_tree_sha256": "9ae5905a0fc1b4814dfd5e747a6dc32e97786cd0e7311e271d965c2f0d105f49",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "head_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "UNCOMMITTED",
+  "registered_local_routes": 21,
+  "bootstrap_assembled": false,
+  "active_run": {
+    "session": 42810,
+    "focus": "all",
+    "required_top_level_tests": 34,
+    "status": "COMPLETED",
+    "exit_code": 1,
+    "go_tests": "PASS_34",
+    "runner": "FAIL_SOURCE_SCRIPT_CHANGED_DURING_EXECUTION"
+  },
+  "runs": [
+    {
+      "session": 33908,
+      "exit_code": 1,
+      "copy_tree_sha256": "8cf8253756631f8a30925fe6a929d4d39262dbf6621d9f47fd91264f653c5656",
+      "result": "真实I2V预占后缺少保留原绑定的删除申请入口"
+    },
+    {
+      "session": 85658,
+      "exit_code": 0,
+      "copy_tree_sha256": "beaed85e4a993818746cafcdaa8a5ef737b1918727c8099cf18d17d800ff125f",
+      "required_top_level_tests": 1,
+      "result": "申请/原键重放/新Quote拒绝/SQL清理拒绝/额外版本漂移通过，未包含RR和依赖反例"
+    },
+    {
+      "session": 51907,
+      "exit_code": 1,
+      "copy_tree_sha256": "1bf6edccfcb106933e1b9c88e1fc3515707cc54fd2074d1aa3c6f30f2cc6245f",
+      "result": "固定两连接复现RR漏读额外版本和删除赢家；凭据读取故障被吞成快照漂移"
+    },
+    {
+      "session": 89175,
+      "exit_code": 0,
+      "commands": [
+        "go test -count=1 ./...",
+        "go vet ./...",
+        "go mod verify"
+      ],
+      "source_state_id": "19b239c000a06e80fccb80d90865aedee98caabaeed4bfb18064043635d6e76b",
+      "result": "原生Go全包/依赖检查通过，不替代隔离MySQL及G3/G4/G5运行回归"
+    },
+    {
+      "session": 42810,
+      "exit_code": 1,
+      "copy_tree_sha256": "9ae5905a0fc1b4814dfd5e747a6dc32e97786cd0e7311e271d965c2f0d105f49",
+      "go_test_exit_code": 0,
+      "required_top_level_tests": 34,
+      "required_tests": "PASS",
+      "result": "实际34项与Go服务包通过；宿主Bash在运行期间被编辑，随后出现ts.up.sql command not found，不能记整轮PASS，须冻结脚本复验"
+    }
+  ],
+  "defects": [
+    {
+      "id": "G6-INPUT-DELETE-RR-VALIDATE",
+      "severity": "P1",
+      "status": "FIXED_PENDING_VERIFY",
+      "evidence": "51907红例，42810待复验",
+      "fix": "同调用方事务当前锁读Task/Request/绑定/InputAsset/凭据"
+    },
+    {
+      "id": "G6-INPUT-DELETE-DEPENDENCY",
+      "severity": "P2",
+      "status": "FIXED_PENDING_VERIFY",
+      "evidence": "51907红例，42810待复验",
+      "fix": "凭据缺失与DB错误分开，Repository及G4提交前调用保留依赖错误"
+    },
+    {
+      "id": "G6-INPUT-DELETE-RR-REPLAY",
+      "severity": "P2",
+      "status": "FIXED_PENDING_VERIFY",
+      "evidence": "51907红例，42810待复验",
+      "fix": "原键重放使用当前锁读凭据"
+    }
+  ],
+  "independent_review": {
+    "agent": "vid_g6_contract_audit",
+    "role": "测试工程师",
+    "read_only": true,
+    "result": "发现三项RR/依赖风险并要求反例，修复后尚未最终复核"
+  },
+  "scope_completed": [
+    "原InputAsset的不可变删除命令及原/后版本凭据",
+    "新Quote与绑定继续严格ready，原TaskInput不改写",
+    "当前执行快照复验识别唯一删除版本变化",
+    "数据库层活跃租约禁止进入实际清理"
+  ],
+  "not_completed": [
+    "专用LoadTaskReference及有界对象IO期间的读取/清理围栏",
+    "所有非终态与pending_reconcile的实际参考图读取",
+    "输入DELETE HTTP及幂等/权限负向矩阵",
+    "实际对象清理、留存、容量回收、保存清理竞争",
+    "完整G3/G4/G5兼容及G6独立验收"
+  ],
+  "next_actions": [
+    "先核验42810及源副本摘要；测试失败先修复",
+    "新增按task_id+owner的执行读取入口，复用调用方事务与私有Store读，不伪造ready状态",
+    "以真实上传/导入及Fake异步完成证明删除申请后原任务继续且不重Submit",
+    "完成输入删除HTTP、保留与清理竞争；维持其余完整G6范围"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": "0",
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "pr_state": "NOT_CREATED",
+  "next_goal_allowed": false,
+  "vid_g7_started": false
+}

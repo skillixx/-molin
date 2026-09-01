@@ -31,140 +31,170 @@ type VideoFinancialResult struct {
 // CancelBeforeSubmit 仅处理可证明尚未进入submitting的任务；它没有Provider依赖，也不猜测取消结果。
 // Task、Hold、解冻流水、Usage、租约和Outbox全部在一个事务内形成相互一致的取消终态。
 func (s *VideoBillingService) CancelBeforeSubmit(ctx context.Context, taskID string, owner repository.VideoOwner) (*VideoFinancialResult, error) {
+	return s.cancelBeforeSubmit(ctx, taskID, owner, nil)
+}
+
+// G6外层还持有取消命令回执，必须共用其事务且只让最外层重试，禁止死锁后重试失效保存点。
+func (s *VideoBillingService) cancelBeforeSubmit(ctx context.Context, taskID string, owner repository.VideoOwner, transaction *gorm.DB) (*VideoFinancialResult, error) {
+	return s.cancelBeforeSubmitAuthorized(ctx, taskID, owner, transaction, nil)
+}
+
+// 管理取消仅通过绑定本事务、操作者、目标及原版本的私有授权进入；原用户入口始终走原准入。
+func (s *VideoBillingService) cancelBeforeSubmitAuthorized(ctx context.Context, taskID string, owner repository.VideoOwner, transaction *gorm.DB, grant *videoAdminCancellationGrant) (*VideoFinancialResult, error) {
 	if s == nil || s.db == nil {
 		return nil, ErrVideoBillingState
 	}
 	var result *VideoFinancialResult
-	err := retryVideoBillingTransaction(ctx, func() error {
+	apply := func(tx *gorm.DB) error {
 		result = nil
-		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			tasks := repository.NewVideoTaskRepository(tx)
-			task, err := tasks.LockForOwnerTx(tx, taskID, owner)
-			if err != nil {
-				return err
-			}
-			now := s.now().UTC()
+		tasks := repository.NewVideoTaskRepository(tx)
+		task, err := tasks.LockForOwnerTx(tx, taskID, owner)
+		if err != nil {
+			return err
+		}
+		now := s.now().UTC()
+		if grant == nil {
 			if err := s.authorizeVideo(ctx, tx, owner, task.LogicalModelCode, now); err != nil {
 				return err
 			}
-			request, quote, link, hold, err := loadVideoFinancialFactsTx(tx, task, owner)
-			if err != nil {
+		} else {
+			if err := grant.authorize(ctx, tx, task, owner); err != nil {
 				return err
 			}
-			if task.Status == model.AIImageTaskCancelled && request.BillingStatus == model.AIBillingReleased {
-				if err := validateVideoCancelledFactsTx(tx, task, *request, *link, *hold); err != nil {
-					return err
-				}
-				result = videoCancelledResult(task, hold.HoldAmount, true)
-				return nil
-			}
-			if (task.Status != model.AIImageTaskReserved && task.Status != model.AIImageTaskQueued) || request.BillingStatus != model.AIBillingHeld || request.DeliveryStatus != model.AIDeliveryPending || hold.Status != billingmodel.HoldStatusHolding || hold.SettledAmount != nil || link.SettledAmount != nil || link.SettleTransactionID != nil || link.ReleaseTransactionID != nil {
-				return ErrVideoBillingState
-			}
-			if err := verifyVideoNeverSubmittedTx(tx, task); err != nil {
+		}
+		request, quote, link, hold, err := loadVideoFinancialFactsTx(tx, task, owner)
+		if err != nil {
+			return err
+		}
+		if task.Status == model.AIImageTaskCancelled && request.BillingStatus == model.AIBillingReleased {
+			if err := validateVideoCancelledFactsTx(tx, task, *request, *link, *hold); err != nil {
 				return err
 			}
-			task, err = tasks.RequestCancellation(ctx, taskID, owner, now)
-			if err != nil {
-				return err
-			}
-			// 先取得任务取消CAS。Worker若先进入submitting，此路径必定拒绝，不能释放可能已计费的Hold。
-			task, err = tasks.TransitionExecution(ctx, repository.VideoStateTransition{TaskPublicID: taskID, Owner: owner, ExpectedVersion: task.VersionNo, ToStatus: model.AIImageTaskCancelled, Progress: task.Progress, EventID: "vg5_" + videoBillingDigest(task.RequestID+":cancel_before_submit"), Source: "api", SafeDetailJSON: json.RawMessage(`{"reason":"state_advanced"}`), Now: now})
-			if err != nil {
-				return err
-			}
-			if err := s.injectVideoFault("cancel_task"); err != nil {
-				return err
-			}
-			task, err = tasks.TransitionBilling(ctx, videoCancelTransition(task, owner, model.AIBillingSettlementPending, "release_pending", now))
-			if err != nil {
-				return err
-			}
-			if err := s.injectVideoFault("cancel_pending"); err != nil {
-				return err
-			}
-			released, err := s.holds.ReleaseHoldTx(tx, hold.ID, task.RequestID+":video-release")
-			if err != nil {
-				return err
-			}
-			if released == nil || released.Status != billingmodel.HoldStatusReleased || !released.SettledAmount.IsZero() || released.SettleTransaction != nil || released.ReleaseTransaction == 0 {
-				return ErrVideoBillingState
-			}
-			if err := s.injectVideoFault("cancel_hold"); err != nil {
-				return err
-			}
-			zero := decimal.Zero
-			if err := videoBillingCASResult(tx.Model(&model.AIRequestWalletLink{}).Where("id=? AND settled_amount IS NULL AND settle_transaction_id IS NULL AND release_transaction_id IS NULL", link.ID).Updates(map[string]interface{}{"settled_amount": zero, "release_transaction_id": released.ReleaseTransaction, "updated_at": now})); err != nil {
-				return err
-			}
-			if err := s.injectVideoFault("cancel_link"); err != nil {
-				return err
-			}
-			pricing, err := NewVideoPricingService(nil).CalculateVideoFinal(task.RequestID, quote.PriceSnapshotJSON, zero)
-			if err != nil {
-				return err
-			}
-			// G2快照计算仅提供销售规格，不把快照成本伪装为Provider已确认成本。零成本源于“从未提交”证明。
-			currency := "CNY"
-			usage := pricing.UsageFact
-			usage.PriceVersionID, usage.UnitPrice, usage.Amount, usage.Currency = &quote.PriceVersionID, &zero, &zero, &currency
-			cost := usage
-			cost.RecordKind = model.AIUsageCostLine
-			for _, fact := range []model.AIUsageItem{usage, pricing.SaleLine, cost} {
-				if _, old, err := repository.NewVideoUsageRepository(tx).AppendTx(tx, taskID, owner, fact, now); err != nil {
-					return err
-				} else if old {
-					return ErrVideoBillingState
-				}
-				if err := s.injectVideoFault("cancel_" + fact.RecordKind); err != nil {
-					return err
-				}
-			}
-			task, err = tasks.TransitionBilling(ctx, videoCancelTransition(task, owner, model.AIBillingReleased, "released", now))
-			if err != nil {
-				return err
-			}
-			if err := videoBillingCASResult(tx.Model(&model.VideoBillingRequest{}).Where("request_id=? AND version_no=? AND settled_amount IS NULL", task.RequestID, task.RequestVersionNo).Updates(map[string]interface{}{"settled_amount": zero, "version_no": gorm.Expr("version_no+1"), "updated_at": now})); err != nil {
-				return err
-			}
-			task.RequestVersionNo++
-			task, err = tasks.TransitionDelivery(ctx, videoCancelTransition(task, owner, model.AIDeliveryRejected, "delivery_rejected", now))
-			if err != nil {
-				return err
-			}
-			if err := s.injectVideoFault("cancel_final_state"); err != nil {
-				return err
-			}
-			if err := repository.NewVideoInputAssetRepository(tx).ReleaseTaskLeases(ctx, taskID, owner, now); err != nil {
-				return err
-			}
-			if err := s.injectVideoFault("cancel_lease"); err != nil {
-				return err
-			}
-			if err := createVideoBillingOutboxTx(tx, task.RequestID, "video_billing_released", model.AIBillingReleased, *task.Operation, hold.HoldAmount, now); err != nil {
-				return err
-			}
-			if err := s.injectVideoFault("cancel_released_outbox"); err != nil {
-				return err
-			}
-			if err := createVideoBillingOutboxTx(tx, task.RequestID, "video_delivery_rejected", model.AIDeliveryRejected, *task.Operation, zero, now); err != nil {
-				return err
-			}
-			if err := s.injectVideoFault("cancel_rejected_outbox"); err != nil {
-				return err
-			}
-			// 首次提交与幂等重放执行相同的局部一致性核验，禁止只在重放时发现半成品事实。
-			finalRequest, _, finalLink, finalHold, err := loadVideoFinancialFactsTx(tx, task, owner)
-			if err != nil {
-				return err
-			}
-			if err := validateVideoCancelledFactsTx(tx, task, *finalRequest, *finalLink, *finalHold); err != nil {
-				return err
-			}
-			result = videoCancelledResult(task, hold.HoldAmount, false)
+			result = videoCancelledResult(task, hold.HoldAmount, true)
 			return nil
-		}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
-	})
+		}
+		if (task.Status != model.AIImageTaskReserved && task.Status != model.AIImageTaskQueued) || request.BillingStatus != model.AIBillingHeld || request.DeliveryStatus != model.AIDeliveryPending || hold.Status != billingmodel.HoldStatusHolding || hold.SettledAmount != nil || link.SettledAmount != nil || link.SettleTransactionID != nil || link.ReleaseTransactionID != nil {
+			return ErrVideoBillingState
+		}
+		if err := verifyVideoNeverSubmittedTx(tx, task); err != nil {
+			return err
+		}
+		task, err = tasks.RequestCancellation(ctx, taskID, owner, now)
+		if err != nil {
+			return err
+		}
+		// 先取得任务取消CAS。Worker若先进入submitting，此路径必定拒绝，不能释放可能已计费的Hold。
+		task, err = tasks.TransitionExecution(ctx, repository.VideoStateTransition{TaskPublicID: taskID, Owner: owner, ExpectedVersion: task.VersionNo, ToStatus: model.AIImageTaskCancelled, Progress: task.Progress, EventID: "vg5_" + videoBillingDigest(task.RequestID+":cancel_before_submit"), Source: "api", SafeDetailJSON: json.RawMessage(`{"reason":"state_advanced"}`), Now: now})
+		if err != nil {
+			return err
+		}
+		if err := s.injectVideoFault("cancel_task"); err != nil {
+			return err
+		}
+		task, err = tasks.TransitionBilling(ctx, videoCancelTransition(task, owner, model.AIBillingSettlementPending, "release_pending", now))
+		if err != nil {
+			return err
+		}
+		if err := s.injectVideoFault("cancel_pending"); err != nil {
+			return err
+		}
+		released, err := s.holds.ReleaseHoldTx(tx, hold.ID, task.RequestID+":video-release")
+		if err != nil {
+			return err
+		}
+		if released == nil || released.Status != billingmodel.HoldStatusReleased || !released.SettledAmount.IsZero() || released.SettleTransaction != nil || released.ReleaseTransaction == 0 {
+			return ErrVideoBillingState
+		}
+		if err := s.injectVideoFault("cancel_hold"); err != nil {
+			return err
+		}
+		zero := decimal.Zero
+		if err := videoBillingCASResult(tx.Model(&model.AIRequestWalletLink{}).Where("id=? AND settled_amount IS NULL AND settle_transaction_id IS NULL AND release_transaction_id IS NULL", link.ID).Updates(map[string]interface{}{"settled_amount": zero, "release_transaction_id": released.ReleaseTransaction, "updated_at": now})); err != nil {
+			return err
+		}
+		if err := s.injectVideoFault("cancel_link"); err != nil {
+			return err
+		}
+		pricing, err := NewVideoPricingService(nil).CalculateVideoFinal(task.RequestID, quote.PriceSnapshotJSON, zero)
+		if err != nil {
+			return err
+		}
+		// G2快照计算仅提供销售规格，不把快照成本伪装为Provider已确认成本。零成本源于“从未提交”证明。
+		currency := "CNY"
+		usage := pricing.UsageFact
+		usage.PriceVersionID, usage.UnitPrice, usage.Amount, usage.Currency = &quote.PriceVersionID, &zero, &zero, &currency
+		cost := usage
+		cost.RecordKind = model.AIUsageCostLine
+		for _, fact := range []model.AIUsageItem{usage, pricing.SaleLine, cost} {
+			if _, old, err := repository.NewVideoUsageRepository(tx).AppendTx(tx, taskID, owner, fact, now); err != nil {
+				return err
+			} else if old {
+				return ErrVideoBillingState
+			}
+			if err := s.injectVideoFault("cancel_" + fact.RecordKind); err != nil {
+				return err
+			}
+		}
+		task, err = tasks.TransitionBilling(ctx, videoCancelTransition(task, owner, model.AIBillingReleased, "released", now))
+		if err != nil {
+			return err
+		}
+		if err := videoBillingCASResult(tx.Model(&model.VideoBillingRequest{}).Where("request_id=? AND version_no=? AND settled_amount IS NULL", task.RequestID, task.RequestVersionNo).Updates(map[string]interface{}{"settled_amount": zero, "version_no": gorm.Expr("version_no+1"), "updated_at": now})); err != nil {
+			return err
+		}
+		task.RequestVersionNo++
+		task, err = tasks.TransitionDelivery(ctx, videoCancelTransition(task, owner, model.AIDeliveryRejected, "delivery_rejected", now))
+		if err != nil {
+			return err
+		}
+		if err := s.injectVideoFault("cancel_final_state"); err != nil {
+			return err
+		}
+		if s.budget != nil {
+			if err := s.budget.SyncTx(ctx, tx, task.RequestID, s.now); err != nil {
+				return err
+			}
+			if err := s.injectVideoFault("cancel_budget"); err != nil {
+				return err
+			}
+		}
+		if err := repository.NewVideoInputAssetRepository(tx).ReleaseTaskLeases(ctx, taskID, owner, now); err != nil {
+			return err
+		}
+		if err := s.injectVideoFault("cancel_lease"); err != nil {
+			return err
+		}
+		if err := createVideoBillingOutboxTx(tx, task.RequestID, "video_billing_released", model.AIBillingReleased, *task.Operation, hold.HoldAmount, now); err != nil {
+			return err
+		}
+		if err := s.injectVideoFault("cancel_released_outbox"); err != nil {
+			return err
+		}
+		if err := createVideoBillingOutboxTx(tx, task.RequestID, "video_delivery_rejected", model.AIDeliveryRejected, *task.Operation, zero, now); err != nil {
+			return err
+		}
+		if err := s.injectVideoFault("cancel_rejected_outbox"); err != nil {
+			return err
+		}
+		// 首次提交与幂等重放执行相同的局部一致性核验，禁止只在重放时发现半成品事实。
+		finalRequest, _, finalLink, finalHold, err := loadVideoFinancialFactsTx(tx, task, owner)
+		if err != nil {
+			return err
+		}
+		if err := validateVideoCancelledFactsTx(tx, task, *finalRequest, *finalLink, *finalHold); err != nil {
+			return err
+		}
+		result = videoCancelledResult(task, hold.HoldAmount, false)
+		return nil
+	}
+	var err error
+	if transaction != nil {
+		err = apply(transaction)
+	} else {
+		err = retryVideoBillingTransaction(ctx, func() error {
+			return s.db.WithContext(ctx).Transaction(apply, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+		})
+	}
 	if err != nil {
 		return nil, err
 	}
