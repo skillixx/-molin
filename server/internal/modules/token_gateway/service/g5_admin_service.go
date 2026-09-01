@@ -62,6 +62,13 @@ func (s *G5AdminService) ListModelReleases(ctx context.Context, modelID uint64) 
 	return s.repo.ListModelReleases(ctx, modelID)
 }
 
+func (s *G5AdminService) IsVideoModel(ctx context.Context, id uint64) (bool, error) {
+	if s == nil || s.repo == nil {
+		return false, repository.ErrModelReleaseConflict
+	}
+	return s.repo.IsVideoModel(ctx, id)
+}
+
 func (s *G5AdminService) PublishModel(ctx context.Context, modelID, operatorID uint64, reason string) (*model.AIModelReleaseVersion, error) {
 	reason = strings.TrimSpace(reason)
 	if reason == "" || len(reason) > 255 {

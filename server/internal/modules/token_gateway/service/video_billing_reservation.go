@@ -57,6 +57,10 @@ type VideoBillingService struct {
 	visibility                              modelVisibilityChecker
 	safety                                  *videogateway.VideoSafetyPipeline
 	referenceLoader                         VideoReferenceLoader
+	access                                  *VideoAccessService
+	rights                                  *VideoRightsService
+	queue                                   videoQueueAdmission
+	budget                                  videoBudgetAdmission
 	now                                     func() time.Time
 	// fault仅用于包内故障注入，正常装配为nil；错误不进入Outbox或普通任务字段。
 	fault func(string) error
@@ -101,6 +105,10 @@ func (s *VideoBillingService) ReserveAndCreate(ctx context.Context, c VideoReser
 		if findErr != nil {
 			return nil, findErr
 		}
+		// 仅启用G6的协调器共用HTTP输入前置条件；旧G5合同不因查询接口增量改变。
+		if (s.access != nil || s.rights != nil) && !videoHTTPInputReferenceable(*asset, now) {
+			return nil, repository.ErrVideoInputUnavailable
+		}
 		if asset.NormalizedSHA256 == nil || *asset.NormalizedSHA256 != input.Input.NormalizedSHA256 || asset.VersionNo != input.Input.Version || s.referenceLoader == nil {
 			return nil, repository.ErrVideoInputSnapshotDrift
 		}
@@ -124,7 +132,10 @@ func (s *VideoBillingService) ReserveAndCreate(ctx context.Context, c VideoReser
 		// 隔离级别仅作用于本次G5事务，不修改全局连接配置或Chat/Image事务。
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			now := s.now().UTC()
-			if err := s.authorizeVideo(ctx, tx, owner, input.LogicalModelCode, now); err != nil {
+			if err := s.authorizeVideo(ctx, tx, owner, input.LogicalModelCode, now, input.Variant.Operation); err != nil {
+				return err
+			}
+			if err := s.revalidateGenerationRightsTx(tx, p, now); err != nil {
 				return err
 			}
 			op := input.Variant.Operation
@@ -145,6 +156,14 @@ func (s *VideoBillingService) ReserveAndCreate(ctx context.Context, c VideoReser
 			if err != nil {
 				return err
 			}
+			if s.rights != nil && op == model.AIVideoOperationImageToVideo {
+				if err := checkVideoRightsDeclarationTx(tx, "quote", quote.ID, "", p.rights); err != nil {
+					return err
+				}
+				if err := recordVideoRightsDeclarationTx(tx, "generation", quote.ID, c.RequestID, p.rights, s.now().UTC()); err != nil {
+					return err
+				}
+			}
 			// ConsumeTx可能等待Quote行锁；取得锁后用新时钟复核，不让入口时间冻结有效期。
 			if !quote.ExpiresAt.After(s.now().UTC()) {
 				return repository.ErrVideoQuoteExpired
@@ -163,8 +182,19 @@ func (s *VideoBillingService) ReserveAndCreate(ctx context.Context, c VideoReser
 				if err != nil {
 					return err
 				}
+				if (s.access != nil || s.rights != nil) && !videoHTTPInputReferenceable(*asset, s.now().UTC()) {
+					return repository.ErrVideoInputUnavailable
+				}
 				if asset.ID != input.Input.InternalID || asset.NormalizedSHA256 == nil || *asset.NormalizedSHA256 != input.Input.NormalizedSHA256 || asset.VersionNo != input.Input.Version {
 					return repository.ErrVideoInputSnapshotDrift
+				}
+			}
+			if s.budget != nil {
+				if err := s.budget.ReserveTx(ctx, tx, c.RequestID, owner, quote.QuotedAmount, s.now); err != nil {
+					return err
+				}
+				if err := s.injectVideoFault("budget_admission"); err != nil {
+					return err
 				}
 			}
 			if err := videoBillingCASResult(tx.Model(&model.VideoBillingRequest{}).Where("id=? AND version_no=1", request.ID).Updates(map[string]interface{}{"billing_status": model.AIBillingQuoted, "price_snapshot_json": quote.PriceSnapshotJSON, "quoted_amount": quote.QuotedAmount, "version_no": 2})); err != nil {
@@ -236,8 +266,21 @@ func (s *VideoBillingService) ReserveAndCreate(ctx context.Context, c VideoReser
 			if asset != nil && !asset.ExpiresAt.After(commitNow) {
 				return repository.ErrVideoInputSnapshotDrift
 			}
-			if err := s.authorizeVideo(ctx, tx, owner, input.LogicalModelCode, commitNow); err != nil {
+			if err := s.authorizeVideo(ctx, tx, owner, input.LogicalModelCode, commitNow, input.Variant.Operation); err != nil {
 				return err
+			}
+			if err := s.revalidateGenerationRightsTx(tx, p, commitNow); err != nil {
+				return err
+			}
+			// 所有写入在本事务内仍不可见；尾部门闩让计数包含当前Task，并把全局锁范围缩到立即提交。
+			// 容量拒绝会回滚暂态Quote消费、Hold、Task、Input、Payload、Event及Outbox。
+			if s.queue != nil {
+				if err := s.queue.AdmitTx(tx, owner, task.PublicID); err != nil {
+					return err
+				}
+				if err := s.injectVideoFault("queue_admission"); err != nil {
+					return err
+				}
 			}
 			prepared = &VideoPreparedGeneration{Quote: quote, RequestID: c.RequestID, TaskID: c.TaskID, HeldAmount: quote.QuotedAmount, ExecutionStatus: model.AIImageTaskReserved, BillingStatus: model.AIBillingHeld, DeliveryStatus: model.AIDeliveryPending}
 			return nil
@@ -260,7 +303,11 @@ func (s *VideoBillingService) ReserveAndCreate(ctx context.Context, c VideoReser
 }
 
 // authorizeVideo 每次重放和创建都查询当前权限；模型可见性沿用已有目录边界，不引入新权限真相源。
-func (s *VideoBillingService) authorizeVideo(ctx context.Context, db *gorm.DB, owner repository.VideoOwner, code string, now time.Time) error {
+func (s *VideoBillingService) authorizeVideo(ctx context.Context, db *gorm.DB, owner repository.VideoOwner, code string, now time.Time, operations ...string) error {
+	// G6装配在原事务内复验完整持久化权限；旧G5内部合同保持原入口，不隐式获得HTTP能力。
+	if s.access != nil {
+		return s.access.AuthorizeTx(ctx, db, owner, code, now, operations...)
+	}
 	if owner.UserID == 0 || owner.ProjectID == 0 {
 		return ErrVideoBillingAccess
 	}
@@ -369,7 +416,13 @@ func videoBillingDigest(value string) string {
 }
 
 // retryVideoBillingTransaction 只重试已回滚的完整数据库事务，最多三次且服从调用方取消。
+// 私有上下文标记仅由已有外层事务的协调器设置，避免1213整笔回滚后在失效保存点内重试。
+type videoBillingOuterTransactionKey struct{}
+
 func retryVideoBillingTransaction(ctx context.Context, fn func() error) error {
+	if active, _ := ctx.Value(videoBillingOuterTransactionKey{}).(bool); active {
+		return fn()
+	}
 	for attempt := 0; attempt < 3; attempt++ {
 		err := fn()
 		if err == nil {

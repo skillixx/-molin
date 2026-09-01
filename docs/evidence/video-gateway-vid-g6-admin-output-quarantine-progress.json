@@ -1,0 +1,76 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "admin-output-quarantine",
+  "stage_status": "IN_PROGRESS",
+  "source_state_id": "a8b8edc8a0f9c87f2c5a2655d68bb1223c06a804fd554483e2d114b6e419c289",
+  "source_manifest": "video-gateway-vid-g6-admin-output-quarantine-source.json",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "runs": [
+    {
+      "session_id": 93502,
+      "status": "FAIL",
+      "schema": 96,
+      "copy_tree_sha256": "ac635bf15f54a117229af2705d158cb2d6a25f9345e9b58d86590580cd9cfc25",
+      "required": 11,
+      "passed": 10,
+      "failed_test": "TestVideoG6AdminOutputQuarantineHTTPMySQL",
+      "failure": "行政隔离后保存已完成结果重放仍成功",
+      "linux_race": true
+    },
+    {
+      "session_id": 69856,
+      "status": "PASS",
+      "schema": 96,
+      "copy_tree_sha256": "ebbc576a4ba52955e789f6257e9d791df9ae0bde0349b44a5d2c0f8d2d9b1efe",
+      "required": 11,
+      "passed": 11,
+      "skipped": 0,
+      "service_seconds": 60.783,
+      "root_seconds": 1.105,
+      "output_quarantine_seconds": 10.37,
+      "linux_race": true,
+      "covers": [
+        "六角色原数据仅指定cover生命周期与版本变化",
+        "裸UPDATE和无效隔离指针拒绝",
+        "真实JWT/SK/权限/CAS/幂等",
+        "旧临时及长期下载拒绝",
+        "同键和新键保存拒绝且零存储Head",
+        "写后详情等待权限到期并整事务回滚",
+        "目标用户与Key停用后合法管理员重放",
+        "相关保存/下载/删除兼容"
+      ],
+      "not_current_manifest": true
+    },
+    {
+      "session_id": 3793,
+      "status": "NATIVE_COMPILE_PASS_ONLY",
+      "seconds": 0.223,
+      "mysql_evidence": "NOT_RUN",
+      "reason": "本机未设置隔离MySQL，不能以Go整体ok证明数据库断言执行"
+    }
+  ],
+  "pending_assertions": [
+    "保存命令、用户资产、权益额度、事件及容量事实完整快照",
+    "期限从数据库读回，屏障确认命中1行且有效跨期"
+  ],
+  "reviews": {
+    "standards": "发现末尾鉴权顺序P2，代码已调整，待最终源码复核",
+    "qa": "修复位置合理；要求补强保存额度及跨期屏障证据，已补源码但数据库NOT_RUN",
+    "pm": "输出隔离子合同已确认；release明确需双认证管理员持久化申请复核，尚未实现"
+  },
+  "remaining": [
+    "输出隔离完整六角色和状态矩阵、SQL故障及100并发",
+    "解除隔离与受保留政策约束的清理",
+    "poll/archive-retry/adjustments",
+    "完整G6其余合同、SDK及独立验收与Git闭环"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": "NO",
+  "vid_g7_started": "NO"
+}

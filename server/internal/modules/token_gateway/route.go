@@ -30,13 +30,20 @@ func RegisterRoutes(
 	iamChecker middleware.IAMChecker,
 	banChecker middleware.BanChecker,
 	adminChecker middleware.AdminVerifiedChecker,
+	videoDrafts ...*handler.VideoAdminHandler,
 ) {
 	ch := handler.NewChannelHandler(channelSvc).WithAudit(auditSvc)
 	mh := handler.NewModelHandler(catalogSvc).WithAudit(auditSvc)
+	if len(videoDrafts) == 1 && videoDrafts[0] != nil {
+		mh.WithVideoDrafts(videoDrafts[0], iamChecker)
+	}
 	uh := handler.NewUsageHandler(usageSvc)
 	bh := handler.NewBillingHandler(billingSvc, auditSvc)
 	gh := handler.NewGovernanceHandler(governanceSvc, auditSvc)
 	g5h := handler.NewG5AdminHandler(g5AdminSvc, auditSvc)
+	if len(videoDrafts) == 1 && videoDrafts[0] != nil {
+		g5h.WithVideoPublications(videoDrafts[0])
+	}
 
 	// 管理端中间件链：登录 + token:manage + 管理员双重认证
 	admin := func(next http.HandlerFunc) http.Handler {
@@ -53,6 +60,16 @@ func RegisterRoutes(
 		return middleware.RequireAuth(jwtSecret, banChecker,
 			middleware.RequireAnyPerm(iamChecker, []string{"ai_gateway:view", "token:manage"},
 				middleware.RequireAdminVerified(adminChecker, http.HandlerFunc(next))))
+	}
+	modelWrite := admin
+	modelRead := readAdmin
+	if len(videoDrafts) == 1 && videoDrafts[0] != nil {
+		modelRead = func(next http.HandlerFunc) http.Handler {
+			return middleware.RequireAuth(jwtSecret, banChecker, middleware.RequireAnyPerm(iamChecker, []string{"token:manage", "ai_gateway:view", "ai_gateway:model_manage"}, middleware.RequireAdminVerified(adminChecker, http.HandlerFunc(next))))
+		}
+		modelWrite = func(next http.HandlerFunc) http.Handler {
+			return middleware.RequireAuth(jwtSecret, banChecker, middleware.RequireAnyPerm(iamChecker, []string{"token:manage", "ai_gateway:model_manage"}, middleware.RequireAdminVerified(adminChecker, http.HandlerFunc(next))))
+		}
 	}
 
 	// G5 管理工作台。读取使用 view 权限，发布类写操作按模型、价格和路由拆分权限。
@@ -83,9 +100,9 @@ func RegisterRoutes(
 
 	// 对外模型目录管理
 	mux.Handle("GET /api/admin/token/models", readAdmin(mh.ListModels))
-	mux.Handle("POST /api/admin/token/models", admin(mh.CreateModel))
-	mux.Handle("GET /api/admin/token/models/{id}", readAdmin(mh.GetModel))
-	mux.Handle("PATCH /api/admin/token/models/{id}", admin(mh.UpdateModel))
+	mux.Handle("POST /api/admin/token/models", modelWrite(mh.CreateModel))
+	mux.Handle("GET /api/admin/token/models/{id}", modelRead(mh.GetModel))
+	mux.Handle("PATCH /api/admin/token/models/{id}", modelWrite(mh.UpdateModel))
 	mux.Handle("DELETE /api/admin/token/models/{id}", admin(mh.DeleteModel))
 
 	// 全量用量流水（S2-丁2，§14.7）：可按 user_id/api_key_id/model/start/end 筛选。

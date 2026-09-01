@@ -1,0 +1,114 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "admin-project-video-model-grant",
+  "stage_status": "IN_PROGRESS",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_state_id": "fef9120e5ee93385edec63dad24fd938397e49ba1dcb792497cf86924a65a497",
+  "source_manifest": "video-gateway-vid-g6-project-grant-source.json",
+  "source_file_count": 373,
+  "local_registered_video_routes": 47,
+  "git_state": "UNCOMMITTED_UNPUSHED_NO_G6_PR",
+  "runs": [
+    {
+      "session_id": 67956,
+      "status": "INTERRUPTED_KNOWN_INVALID",
+      "reason": "测试文件语法错误已本地复现并修复；主动停止其已复制旧源码的隔离运行"
+    },
+    {
+      "session_id": 78535,
+      "status": "FAIL_TEST_DECODER",
+      "schema": 106,
+      "copy_tree_sha256": "65d3fd0aae429ffec5167ea7354b0f68c955e65bc5a5c3103696d006a0505331",
+      "reason": "业务并发收敛但测试响应缺JSON标签读到零值；修复测试"
+    },
+    {
+      "session_id": 22099,
+      "status": "PASS_OLDER_SLICE",
+      "schema": 106,
+      "copy_tree_sha256": "cd85197ac043fefc6207f91eec320319e3dfe4a5cbba203384ef7bfc9965fc25",
+      "note": "未覆盖随后审计归属及首次命令重读P2修复"
+    },
+    {
+      "session_id": 24826,
+      "status": "PASS",
+      "schema": 106,
+      "required": 4,
+      "passed": 4,
+      "skipped": 0,
+      "linux_race": true,
+      "copy_tree_sha256": "5d03d70a4ff8159f15dd0ed1892e7ee7dc3ecb480d55e12026a5ba69592e5f00",
+      "service_seconds": 13.887,
+      "handler_seconds": 1.09,
+      "grant_http_seconds": 5.67,
+      "tests": [
+        "TestVideoG6ProjectGrantHTTPMySQL",
+        "TestVideoG6ProjectKeyHTTPMySQL",
+        "TestVideoG6AccessMySQLMatrix",
+        "TestVideoG6CatalogPublishedHTTPMySQL"
+      ]
+    }
+  ],
+  "verified": [
+    "单一管理接口、真实JWT/MFA/model_manage和Project SK拒绝",
+    "grant version0→1、revoke/regrant逐次CAS",
+    "同键100并发唯一授权命令及99重放",
+    "客户端actor/未知字段及同键异意图拒绝",
+    "Project owner由锁定数据库事实决定",
+    "预授权后按ID排序锁actor/owner，再锁Project/model/grant",
+    "Project/owner/模型停用后仍可撤销",
+    "加密原因、命令、授权变更及前后审计同事务",
+    "首次写后重读完整命令、审计归属、密文/原因和强类型结果",
+    "撤权后不能借旧幂等结果重放",
+    "命令/审计数量及原财务快照不变",
+    "Provider、Key Secret、钱包、Quote/Hold、Usage及Outbox均未写"
+  ],
+  "review": {
+    "agent": "vid_g6_cancel_standards",
+    "type": "READ_ONLY_SOURCE_REVIEW",
+    "initial_p0": 0,
+    "initial_p1": 0,
+    "initial_p2": 2,
+    "source_recheck": "TWO_P2_CLOSED",
+    "full_stage_acceptance": false,
+    "defects": [
+      {
+        "id": "G6-PROJECT-GRANT-001",
+        "level": "P2",
+        "finding": "审计未核module/target归属",
+        "fix": "完整绑定token_gateway/video_project_grant/model及规范摘要",
+        "validation": "源码复核，24826真实写后核验路径PASS"
+      },
+      {
+        "id": "G6-PROJECT-GRANT-002",
+        "level": "P2",
+        "finding": "首次写未重读命令，信封/结果结构约束不足",
+        "fix": "锁读逐字段身份/信封/Open/audit/result；106增加JSON/nonce/key版本/密文/原因约束",
+        "validation": "源码复核，损坏即事务回滚；24826最终专项PASS"
+      }
+    ]
+  },
+  "checks": {
+    "focused_go_vet": "PASS",
+    "git_diff_check": "PASS",
+    "whole_stage_qa": "NOT_RUN",
+    "whole_stage_ci": "NOT_RUN"
+  },
+  "documentation_note": "24826后只补充当前合同说明；未变更其覆盖的Go、SQL或测试源码。",
+  "remaining": [
+    "Project Key签发/轮换/吊销持久化Idempotency-Key及响应丢失恢复",
+    "默认模型/发布故障矩阵",
+    "multipart I2V与预算/并发/排队准入",
+    "双SDK、全量兼容、独立阶段验收及Git闭环"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": "NO",
+  "vid_g7_started": "NO"
+}

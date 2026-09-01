@@ -1,0 +1,34 @@
+{
+  "target_goal":"VID-G6",
+  "status":"ADMIN_DETAIL_FOCUSED_PASS_NOT_FULL_G6",
+  "base_commit":"52563ba450c6d488456137162580022deb06acc8",
+  "source_commit":"UNCOMMITTED",
+  "source_manifest":"video-gateway-vid-g6-admin-read-source.json",
+  "source_state_id":"d908cef17a3c4fcb99c06cf1f82a3c682c2219f03f553c650561174f2832385f",
+  "file_count":239,
+  "active_full_regression":{"session":30405,"required_tests":123,"status":"PASS_PRIOR_239_FILE_SNAPSHOT_NOT_FULL_G6","exit_code":0,"service_seconds":798.381,"copy_tree_sha256":"c9b1c60d7aeb2360cd787072047542532d8840f3e7e8d750fedd8c477d67f5df","includes_new_final_no_write_assertion":true},
+  "registered_routes":35,
+  "required_routes":46,
+  "bootstrap_mounted":false,
+  "previous_full_regression":{"session":25685,"exit_code":0,"source_manifest":"video-gateway-vid-g6-callback-compat-source.json","copy_tree_sha256":"0b674d84fcf924e0e7da1a76fc4824e00365038b1a12b93d836f5f4884ff6077","required_tests":119,"stdout_truncated":true,"service_seconds":null,"scope":"旧231文件快照，不能覆盖之后的管理功能"},
+  "callback_header_red":{"session":23688,"exit_code":1,"copy_tree_sha256":"652c10ed88350472545c684c258f3c64407e50cf9a8b451061a438fee4730d87","finding":"未知JSON内容参数和gzip声明被200接受并产生Callback/nonce"},
+  "callback_header_green":{"session":91657,"exit_code":0,"copy_tree_sha256":"e4f3d872e461b82de074c4eeb56de7e0af3b4052cf9357606165d1e6aae18771","required_tests":9,"service_seconds":22.416,"scope":"额外HTTP负向及跨Task nonce一胜一409、失败者无Callback遗留"},
+  "admin_red":[
+    {"session":18312,"exit_code":1,"copy_tree_sha256":"e4f3d872e461b82de074c4eeb56de7e0af3b4052cf9357606165d1e6aae18771","finding":"查询链污染，普通权限拒绝应403实际503"},
+    {"session":21420,"exit_code":1,"copy_tree_sha256":"ec109e471b1b3d6e19f2c370e861d082e31bcbd5cdbd8a207b1d0221f5c3efad","finding":"普通JWT证明可借给管理员UserID；MFA数据库故障误403而非503"}
+  ],
+  "admin_green":[
+    {"session":17505,"exit_code":0,"copy_tree_sha256":"4baf6830c7560a0aaacde2949b4069af9213dd0fc1d566f918b3f14a99675b4c","required_tests":2,"service_seconds":5.704},
+    {"session":65790,"exit_code":0,"copy_tree_sha256":"13866ad80cacee3bf1583a07080d9715fa9d8d1d9012a3d48f1225ea78d348b6","required_tests":4,"service_seconds":5.887,"schema":93,"linux_race":true,"scope":"40001认证码、真实JWT/IAM/双MFA、28字段、目标停用可见、主体绑定、MFA错误分类、原bool兼容"}
+  ],
+  "native":{"session":98052,"exit_code":0,"checks":["go test ./...","go vet ./...","go mod verify"],"mysql_proof":false},
+  "independent_review":"QA依据源码复核与65790动态记录同意三类已复现问题局部关闭，未另跑DB；最后两个故障反例后的无写入断言已按建议补强，等待扩大回归。",
+  "remaining":["管理员末尾JWT吊销及IAM/MFA自然跨期","更完整关联损坏/故障/无写入矩阵","其余11条管理路由与maker/checker审批事实","回调I2V及更多写点等剩余矩阵","SDK、默认关闭装配、完整兼容/独立验收与Git闭环"],
+  "real_provider_requests":0,
+  "real_provider_keys":0,
+  "real_wallet_writes":0,
+  "provider_cost_cny":0,
+  "test_server_writes":0,
+  "production_operations":0,
+  "vid_g7_started":false
+}

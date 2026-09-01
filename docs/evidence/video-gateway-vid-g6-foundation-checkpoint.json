@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G6",
+  "status": "PARTIAL_DEVELOPMENT_CHECKPOINT",
+  "source_state_id": "1fa2175de40405d4b9dd8023ef829c24ce3ff9ec6e5d9f32b24719e0905fe5c1",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_changes": "UNCOMMITTED",
+  "scope": "仅HTTP内容传输、Recovery中断语义及IAM实时权限基础，不是完整G6验收",
+  "checks": {
+    "go_test_all": {
+      "status": "PASS",
+      "session_id": 5618,
+      "command": "go test ./... -count=1",
+      "scope": "本机Go回归；缺少DSN的集成测试不能计为MySQL通过"
+    },
+    "go_vet_all": "PASS",
+    "go_mod_verify": "PASS",
+    "gofmt": "PASS",
+    "tracked_and_untracked_diff_check": "PASS",
+    "sensitive_scan": {
+      "status": "PASS",
+      "files_scanned": 182,
+      "findings": 0,
+      "scope": "既有仓库扫描器检查当前变更及现存两端dist；未重建前端，不代表本阶段运行态全表面扫描"
+    }
+  },
+  "independent_partial_qa": {
+    "agent": "vid_g6_contract_audit",
+    "source_pre_and_post_match": true,
+    "manifest_files": 9,
+    "goal_sha256_match": true,
+    "command": "go test ./internal/modules/token_gateway/handler ./internal/middleware ./internal/modules/iam/service -run '^(TestVideoG6ContentHTTP|TestRecoveryPreservesStreamingAbortAndOrdinaryFailure|TestPermissionFresh)' -count=1 -v",
+    "packages": [
+      {
+        "name": "handler",
+        "top_level_tests": 4,
+        "seconds": 1.718,
+        "status": "PASS"
+      },
+      {
+        "name": "middleware",
+        "top_level_tests": 1,
+        "seconds": 0.778,
+        "status": "PASS"
+      },
+      {
+        "name": "iam/service",
+        "top_level_tests": 2,
+        "seconds": 1.287,
+        "status": "PASS"
+      }
+    ],
+    "skip": 0,
+    "full_g6_acceptance": false
+  },
+  "defects": [
+    {
+      "id": "G6-CONTENT-001",
+      "severity": "P1",
+      "status": "CLOSED_VERIFIED",
+      "proof": "完整Recovery链先红：1MiB媒体后追加54字节JSON；修复后客户端读取失败且严格只含已发送媒体；独立复验通过。"
+    },
+    {
+      "id": "G6-CONTENT-002",
+      "severity": "P2",
+      "status": "CLOSED_VERIFIED",
+      "proof": "合法单范围越界与旧If-Range组合先红后绿；返回完整200，多范围仍416；独立复验通过。"
+    },
+    {
+      "id": "G6-CONTENT-003",
+      "severity": "P2",
+      "status": "CLOSED_VERIFIED",
+      "proof": "首片OpenRange与后续Read失败语义区分，源码注释及文档准确；独立复核通过。"
+    },
+    {
+      "id": "G6-IAM-001",
+      "severity": "P1",
+      "status": "UNIT_FIX_VERIFIED_INTEGRATION_PENDING",
+      "proof": "现有IAM仓储错误完整传播，驱动级故障测试及独立复验通过；真实MySQL和HTTP准入验证仍未运行。"
+    }
+  ],
+  "not_run": [
+    "完整43路由与HTTP身份准入",
+    "G6临时MySQL和Linux race",
+    "锁定Python/TypeScript SDK",
+    "真实可播放MP4与浏览器seek",
+    "G6预算队列权益和钱包HTTP全链路",
+    "上传封存及完整生命周期",
+    "回调及管理端有效双主体审批",
+    "本阶段完整Chat/Image隔离集成兼容",
+    "最终QA/PM/Standards/Spec",
+    "G6提交、推送、PR、Ready CI和合并"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": "0",
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "pr_state": "NOT_CREATED",
+  "next_goal_allowed": false,
+  "vid_g7_started": false
+}

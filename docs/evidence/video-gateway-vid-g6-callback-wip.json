@@ -1,0 +1,43 @@
+{
+  "target_goal":"VID-G6",
+  "status":"CALLBACK_REPRODUCED_DEFECTS_LOCALLY_CLOSED_NOT_FULL_G6",
+  "base_commit":"52563ba450c6d488456137162580022deb06acc8",
+  "source_commit":"UNCOMMITTED",
+  "latest_source_manifest":"video-gateway-vid-g6-callback-compat-source.json",
+  "latest_source_state_id":"2f44f94e100fd42ae150433ab44af649ab2ebe9d6fd4985c598b81fb23819739",
+  "latest_file_count":231,
+  "previous_full_regression":{"session":25685,"required_tests":119,"exit_code":0,"status":"PASS_HISTORICAL_231_FILES","copy_tree_sha256":"0b674d84fcf924e0e7da1a76fc4824e00365038b1a12b93d836f5f4884ff6077","service_seconds":null,"stdout_truncated":true},
+  "current_progress":"后续35路由与123项回归见video-gateway-vid-g6-admin-read-wip.json；不以旧231文件结果签当前源码。",
+  "historical_source_manifest":"video-gateway-vid-g6-callback-source.json",
+  "historical_source_state_id":"d2abeac167c414c011cbcd5af80402a0af9bb39653dee905ba2b37a4726e14ce",
+  "historical_file_count":229,
+  "historical_manifest_stale":true,
+  "registered_routes":34,
+  "required_routes":46,
+  "bootstrap_mounted":false,
+  "red":[
+    {"session":55332,"exit_code":1,"copy_tree_sha256":"be771fbda911fc253764956211095c52387031fa82f53d0ed065fbeae53cbee4","finding":"迟到failed将fetching改为失败，不能安全忽略"},
+    {"session":63201,"exit_code":1,"copy_tree_sha256":"3e41f423b441c9aa9d01b9e1df9ca6d0223bcf25dea6846bafd77877762ee24f","finding":"跨任务同外部事件号及128字符外部事件号均503"},
+    {"session":42223,"exit_code":1,"copy_tree_sha256":"ef4f041cc3f059ff917f40ccf274854286ca50c6880a7f593202866c18dbf8b6","finding":"首个回调直接成功被忽略，未形成合法双步"},
+    {"session":3542,"exit_code":1,"copy_tree_sha256":"498cd37afbd3b9900adc8d2c8de3f3549bfc70e996b27bd165b4776165411320","finding":"直接成功缺口仍在；已应用事件重放再次安排人工核对事件"},
+    {"session":50838,"exit_code":1,"copy_tree_sha256":"6c6cccf784ce247dabe2aa4a18c2488d76bfa41d52e7e031130b398401e8eddc","finding":"测试夹具复用Provider全局nonce导致409，未到达COMMIT故障点；不是生产事务失败证据"},
+    {"session":84216,"exit_code":1,"copy_tree_sha256":"d411a46ec9144643ecbc7b62e6338b5c1edaa4f61e77ac09622f76ded32e4a9c","finding":"旧RR快照漏读历史ignored，重放将submitted改为processing并新增1个事件"}
+  ],
+  "green":[
+    {"session":16000,"exit_code":0,"copy_tree_sha256":"e19e6708f90df6ded9d0179955581d5320e8c39608442a39a564373c0d334252","required_tests":3,"service_seconds":8.789,"scope":"验签/关闭态/真实HTTP，首次100并发、既有100重放、跨任务同外部ID/最大长度、合法双步、迟到终态、人工核对后重放无新事件"},
+    {"session":20299,"exit_code":0,"copy_tree_sha256":"3e7a729bbb435ff2d6fcb67be756c308a4b7ac2ed44c7287735606c99cfa88cf","required_tests":5,"service_seconds":18.764,"scope":"前述HTTP与验签、nonce写入失败完整回滚、真实COMMIT成功丢确认后原ACK恢复、旧RR历史ignored重放不改变Task/Event/财务"}
+  ],
+  "native":{"session":80184,"exit_code":0,"checks":["go test ./...","go vet ./...","go mod verify"],"scope":"历史229文件快照；非MySQL或之后源码证明"},
+  "legacy_compatibility":{"session":85483,"exit_code":0,"copy_tree_sha256":"eaf1e0063e2ca15868785edc2902b8399c3e7395d1e9b4b9a92eadb2594c1371","required_tests":9,"service_seconds":21.721,"schema":93,"linux_race":true,"finding":"旧G4 Gateway组合实际通过，已有advance冲突重读逻辑；没有为假设风险修改Gateway"},
+  "rr_red":{"session":84216,"exit_code":1,"copy_tree_sha256":"d411a46ec9144643ecbc7b62e6338b5c1edaa4f61e77ac09622f76ded32e4a9c","result":"submitted变processing，新增1个事件"},
+  "rr_green":{"session":20299,"exit_code":0,"copy_tree_sha256":"3e7a729bbb435ff2d6fcb67be756c308a4b7ac2ed44c7287735606c99cfa88cf","required_tests":5,"service_seconds":18.764},
+  "independent_review":"QA逐文件校验231清单无漂移，依据独立源码及20299/85483动态证据确认已复现的迟到终态、事件ID、直接成功、重复对账、RR历史重放缺陷局部关闭；未另跑数据库。完整回调及G6未签收。",
+  "remaining":["nonce跨Task首次竞争及全部HTTP负向、故障写点、I2V租约矩阵","更广G0-G5及Chat/Image兼容回归","完整G6管理端12路由、SDK、默认关闭装配、独立验收与Git闭环"],
+  "real_provider_requests":0,
+  "real_provider_keys":0,
+  "real_wallet_writes":0,
+  "provider_cost_cny":0,
+  "test_server_writes":0,
+  "production_operations":0,
+  "vid_g7_started":false
+}

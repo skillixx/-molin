@@ -1,0 +1,127 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "project-key-explicit-video-capability",
+  "stage_status": "IN_PROGRESS",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_state_id": "1d1280cff9391262528b299b9519637c2e384f3277bf87424fd7b233469d4954",
+  "source_manifest": "video-gateway-vid-g6-project-key-source-v2.json",
+  "source_file_count": 367,
+  "git_state": "UNCOMMITTED_UNPUSHED_NO_G6_PR",
+  "runs": [
+    {
+      "session_id": 48939,
+      "status": "FAIL_EXPECTED_TEST_CORRECTION",
+      "copy_tree_sha256": "786cbb7b94e32ec4ae3bcf279359755a7d738f3a9ce4f351f2ca6f70834eba4b",
+      "reason": "夹具误将原已显式开启Key当历史Key，且三个必测函数名不匹配；runner正确拒绝"
+    },
+    {
+      "session_id": 49650,
+      "status": "PASS_OLDER_SLICE",
+      "copy_tree_sha256": "738bfb4bec3b57a8a3d011f97759b082cd5e4e425a660051e6e89dbd5759ea15",
+      "note": "未覆盖随后三个独立审查P2"
+    },
+    {
+      "session_id": 56379,
+      "status": "PASS_OLDER_SLICE",
+      "copy_tree_sha256": "65f1b57b328fed0450200f8a3ab868ff176cefb69f564409b5a643f668d8ffb4",
+      "note": "覆盖未来发布时间，但不覆盖全部轮换权威字段及nil Project"
+    },
+    {
+      "session_id": 64903,
+      "status": "PASS_OLDER_SLICE",
+      "copy_tree_sha256": "0fbf248af6182df6fcdff71f8fa1f32cc34119ec74a21e5a170f70ccaae0d89f",
+      "note": "覆盖轮换权威字段，但不覆盖nil Project入口"
+    },
+    {
+      "session_id": 16363,
+      "status": "PASS",
+      "schema": 105,
+      "required": 7,
+      "passed": 7,
+      "skipped": 0,
+      "linux_race": true,
+      "copy_tree_sha256": "c4dc2573d63e9bb514aa0f0c02052cc5fe2e6812ddd8b97c6309022924e38678",
+      "service_seconds": 7.835,
+      "handler_seconds": 1.081,
+      "repository_seconds": 1.058,
+      "tests": [
+        "TestVideoG6ProjectKeyHTTPMySQL",
+        "TestVideoG6ProjectKeyExplicitCapabilityAndRotation",
+        "TestVideoG6AccessMySQLMatrix",
+        "TestVideoG6CatalogPublishedHTTPMySQL",
+        "TestProjectKeyRotateRevokesOldKeyAndReturnsSecretOnce",
+        "TestProjectKeyDefaultsToDenyAllAllowlistAndStoresOnlyHash",
+        "TestProjectKeyAllModeRequiresExplicitEmptyModelList"
+      ]
+    }
+  ],
+  "verified": [
+    "省略能力的历史Key为false，all/legacy_all不能获得视频",
+    "allowlist至少一个已发布合法视频模型及active Project grant",
+    "模型和release未来发布时间均拒绝且Key/scope/audit零新增",
+    "签发事务锁定模型、release及grant后写Key/scope/audit",
+    "真实JWT、HMAC鉴权、一次Secret、列表不泄露Secret",
+    "轮换从锁定旧Key及scope重建全部权威字段",
+    "grant撤销后轮换失败且无新Key，恢复后成功",
+    "事务外all/空scope/放宽期限篡改无效",
+    "非Project普通SK返回错误且无新Key/审计",
+    "原视频准入19项子矩阵及三个Chat Key单测保持"
+  ],
+  "review": {
+    "agent": "vid_g6_cancel_standards",
+    "type": "READ_ONLY_SOURCE_REVIEW",
+    "initial_p0": 0,
+    "initial_p1": 0,
+    "initial_p2": 3,
+    "source_recheck": "THREE_P2_CLOSED",
+    "full_stage_acceptance": false,
+    "defects": [
+      {
+        "id": "G6-PROJECT-KEY-001",
+        "level": "P2",
+        "finding": "未来model/release可提前签发Key",
+        "fix": "video候选同时检查两层published_at<=UTC now",
+        "dynamic": "未来两层分别400且三类事实零新增"
+      },
+      {
+        "id": "G6-PROJECT-KEY-002",
+        "level": "P2",
+        "finding": "轮换仍信事务外scope/name/expiry",
+        "fix": "事务内锁旧Key和scope并完全重建，仅保留新prefix/hash",
+        "dynamic": "恶意all/空scope/放宽期限未生效"
+      },
+      {
+        "id": "G6-PROJECT-KEY-003",
+        "level": "P2",
+        "finding": "nil Project普通SK可触发解引用",
+        "fix": "入口和锁后双重Project归属校验",
+        "dynamic": "直接仓储反例返回错误且无新Key/审计"
+      }
+    ]
+  },
+  "checks": {
+    "focused_go_vet": "PASS",
+    "git_diff_check": "PASS",
+    "whole_stage_qa": "NOT_RUN",
+    "whole_stage_ci": "NOT_RUN"
+  },
+  "documentation_note": "16363后仅同步当前合同文档；未变更其测试覆盖的Go、SQL或测试源码。",
+  "remaining": [
+    "Project视频模型grant受控管理API",
+    "Key签发/轮换/吊销Idempotency-Key命令和响应丢失恢复",
+    "默认模型/发布故障矩阵",
+    "multipart I2V、预算并发排队准入",
+    "双SDK、全量兼容、独立阶段验收及Git闭环"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": "NO",
+  "vid_g7_started": "NO"
+}

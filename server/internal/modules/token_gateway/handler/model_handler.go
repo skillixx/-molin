@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"molin/server/internal/middleware"
 	"molin/server/internal/modules/token_gateway/dto"
+	"molin/server/internal/modules/token_gateway/repository"
 	"molin/server/internal/modules/token_gateway/service"
 	"molin/server/pkg/pagination"
 	"molin/server/pkg/response"
@@ -16,9 +18,18 @@ import (
 
 // ModelHandler 处理 Token 网关对外模型目录管理（管理端，需 token:manage + 管理员双重认证）。
 type ModelHandler struct {
-	svc    *service.CatalogService
-	access ModelAccessChecker
-	audit  governanceAuditRecorder
+	svc                   *service.CatalogService
+	access                ModelAccessChecker
+	audit                 governanceAuditRecorder
+	videoDrafts           *VideoAdminHandler
+	modelWritePermissions middleware.IAMChecker
+}
+
+// 同一URL按显式video_definition分派，视频分支自行执行真实JWT/MFA和事务内权限复验。
+func (h *ModelHandler) WithVideoDrafts(video *VideoAdminHandler, permissions middleware.IAMChecker) *ModelHandler {
+	h.videoDrafts = video
+	h.modelWritePermissions = permissions
+	return h
 }
 
 // ModelAccessChecker 让模型目录复用 G2 的 Project SK 权限判定。
@@ -72,7 +83,7 @@ func (h *ModelHandler) ListPublic(w http.ResponseWriter, r *http.Request) {
 	// 按定向可见性过滤：仅返回对该用户可见的 active 模型。
 	apiKeyID := middleware.APIKeyIDFromContext(r.Context())
 	offset, limit := p.Offset(), p.PageSize
-	if apiKeyID != 0 && h.access != nil {
+	if apiKeyID != 0 {
 		offset, limit = 0, 0
 	}
 	items, total, err := h.svc.ListVisible(r.Context(), userID, modality, offset, limit)
@@ -80,8 +91,19 @@ func (h *ModelHandler) ListPublic(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusInternalServerError, 50000, "查询失败")
 		return
 	}
-	if apiKeyID != 0 && h.access != nil {
-		items = filterModelsByKeyAccess(r.Context(), h.access, userID, apiKeyID, items)
+	if apiKeyID != 0 {
+		filtered := make([]dto.ModelResp, 0, len(items))
+		for _, item := range items {
+			// 视频单独复用真实准入，不能使用只支持Chat的历史检查，也不能因未装配而放行。
+			if item.Modality == "video" {
+				if h.svc.VideoModelAllowed(r.Context(), userID, apiKeyID, item.LogicalModelCode) {
+					filtered = append(filtered, item)
+				}
+			} else if h.access == nil || h.access.ModelAllowed(r.Context(), userID, apiKeyID, item.LogicalModelCode) {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
 		total = int64(len(items))
 		start := p.Offset()
 		if start > len(items) {
@@ -96,15 +118,17 @@ func (h *ModelHandler) ListPublic(w http.ResponseWriter, r *http.Request) {
 	pub := make([]dto.PublicModelResp, len(items))
 	for i := range items {
 		pub[i] = dto.PublicModelResp{
-			LogicalModelCode: items[i].LogicalModelCode,
-			DisplayName:      items[i].DisplayName,
-			Modality:         items[i].Modality,
-			ProviderName:     items[i].ProviderName,
-			Description:      items[i].Description,
-			ContextWindow:    items[i].ContextWindow,
-			IntroURL:         items[i].IntroURL,
-			DocsURL:          items[i].DocsURL,
-			QuickStartURL:    items[i].QuickStartURL,
+			Capability:          items[i].Capability,
+			SupportedOperations: items[i].SupportedOperations,
+			LogicalModelCode:    items[i].LogicalModelCode,
+			DisplayName:         items[i].DisplayName,
+			Modality:            items[i].Modality,
+			ProviderName:        items[i].ProviderName,
+			Description:         items[i].Description,
+			ContextWindow:       items[i].ContextWindow,
+			IntroURL:            items[i].IntroURL,
+			DocsURL:             items[i].DocsURL,
+			QuickStartURL:       items[i].QuickStartURL,
 		}
 	}
 	response.JSON(w, http.StatusOK, dto.PagedResp{
@@ -190,6 +214,23 @@ func buildOpenAIModelList(items []dto.ModelResp) dto.OpenAIModelList {
 
 // GetModel GET /api/admin/token/models/{id}
 func (h *ModelHandler) GetModel(w http.ResponseWriter, r *http.Request) {
+	query, queryErr := url.ParseQuery(r.URL.RawQuery)
+	if queryErr != nil {
+		response.Error(w, 400, 40000, "模型查询参数不合法")
+		return
+	}
+	if _, draftView := query["view"]; draftView {
+		if h.videoDrafts == nil {
+			response.Error(w, 503, 50300, "视频模型草稿管理未启用")
+			return
+		}
+		h.videoDrafts.GetModelDraft(w, r)
+		return
+	}
+	if h.videoDrafts != nil && (h.modelWritePermissions == nil || (!h.modelWritePermissions.CheckPermission(r.Context(), middleware.UserIDFromContext(r.Context()), "token:manage") && !h.modelWritePermissions.CheckPermission(r.Context(), middleware.UserIDFromContext(r.Context()), "ai_gateway:view"))) {
+		response.Error(w, 403, 40003, "无操作权限")
+		return
+	}
 	id, err := pathUint64(r, "id")
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, "无效 ID")
@@ -209,6 +250,12 @@ func (h *ModelHandler) GetModel(w http.ResponseWriter, r *http.Request) {
 
 // CreateModel POST /api/admin/token/models
 func (h *ModelHandler) CreateModel(w http.ResponseWriter, r *http.Request) {
+	if h.dispatchVideoDraft(w, r) {
+		return
+	}
+	if !h.legacyModelWriteAllowed(w, r) {
+		return
+	}
 	var req dto.CreateModelReq
 	if !decodeGovernanceJSON(w, r, &req) {
 		return
@@ -218,6 +265,10 @@ func (h *ModelHandler) CreateModel(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := h.svc.Create(r.Context(), req)
 	if err != nil {
+		if errors.Is(err, service.ErrVideoAccessUnavailable) {
+			response.Error(w, 503, 50300, "视频模型必须使用受控管理入口")
+			return
+		}
 		if errors.Is(err, service.ErrModelCodeExists) {
 			response.Error(w, http.StatusConflict, 40900, err.Error())
 			return
@@ -234,6 +285,12 @@ func (h *ModelHandler) CreateModel(w http.ResponseWriter, r *http.Request) {
 
 // UpdateModel PATCH /api/admin/token/models/{id}
 func (h *ModelHandler) UpdateModel(w http.ResponseWriter, r *http.Request) {
+	if h.dispatchVideoDraft(w, r) {
+		return
+	}
+	if !h.legacyModelWriteAllowed(w, r) {
+		return
+	}
 	id, err := pathUint64(r, "id")
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, 40000, "无效 ID")
@@ -248,6 +305,10 @@ func (h *ModelHandler) UpdateModel(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := h.svc.Update(r.Context(), id, req)
 	if err != nil {
+		if errors.Is(err, service.ErrVideoAccessUnavailable) {
+			response.Error(w, 503, 50300, "视频模型必须使用受控管理入口")
+			return
+		}
 		if isNotFound(err) {
 			response.Error(w, http.StatusNotFound, 40400, "模型不存在")
 			return
@@ -274,6 +335,10 @@ func (h *ModelHandler) DeleteModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.Delete(r.Context(), id); err != nil {
+		if errors.Is(err, repository.ErrTokenVideoModelManaged) {
+			response.Error(w, 409, 40900, "视频模型事实必须保留，不支持旧删除入口")
+			return
+		}
 		if isNotFound(err) {
 			response.Error(w, http.StatusNotFound, 40400, "模型不存在")
 			return

@@ -56,6 +56,25 @@ func NewG5AdminRepository(db *gorm.DB) *G5AdminRepository {
 	return &G5AdminRepository{db: db, now: time.Now}
 }
 
+func videoModelIdentityTx(tx *gorm.DB, item model.TokenModel) (bool, error) {
+	if item.Modality == "video" || len(item.VideoContractJSON) > 0 {
+		return true, nil
+	}
+	if item.ReleaseVersionNo == 0 {
+		return false, nil
+	}
+	var count int64
+	err := tx.Model(&model.AIModelReleaseVersion{}).Where("model_id=? AND version_no=? AND JSON_UNQUOTE(JSON_EXTRACT(snapshot_json,'$.modality'))='video'", item.ID, item.ReleaseVersionNo).Count(&count).Error
+	return count > 0, err
+}
+func (r *G5AdminRepository) IsVideoModel(ctx context.Context, id uint64) (bool, error) {
+	var item model.TokenModel
+	if err := r.db.WithContext(ctx).First(&item, id).Error; err != nil {
+		return false, err
+	}
+	return videoModelIdentityTx(r.db.WithContext(ctx), item)
+}
+
 // Dashboard 返回网关关键运行事实的聚合计数，不读取请求或响应正文。
 func (r *G5AdminRepository) Dashboard(ctx context.Context) (map[string]int64, error) {
 	queries := map[string]*gorm.DB{
@@ -158,6 +177,11 @@ func (r *G5AdminRepository) PublishModel(ctx context.Context, modelID, operatorI
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&item, modelID).Error; err != nil {
 			return err
 		}
+		if video, err := videoModelIdentityTx(tx, item); err != nil {
+			return err
+		} else if video {
+			return ErrTokenVideoModelManaged
+		}
 		if err := validateModelPublishMetadata(item); err != nil {
 			return err
 		}
@@ -256,6 +280,15 @@ func releaseSnapshotsEqual(left, right json.RawMessage) bool {
 func (r *G5AdminRepository) UnpublishModel(ctx context.Context, modelID, operatorID uint64) error {
 	now := r.now().UTC()
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var item model.TokenModel
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&item, modelID).Error; err != nil {
+			return err
+		}
+		if video, err := videoModelIdentityTx(tx, item); err != nil {
+			return err
+		} else if video {
+			return ErrTokenVideoModelManaged
+		}
 		result := tx.Model(&model.TokenModel{}).Where("id = ? AND status = ?", modelID, "active").Updates(map[string]interface{}{"status": "inactive", "updated_by": operatorID})
 		if result.Error != nil {
 			return result.Error
@@ -275,9 +308,23 @@ func (r *G5AdminRepository) RollbackModel(ctx context.Context, modelID, targetVe
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&item, modelID).Error; err != nil {
 			return err
 		}
+		if video, err := videoModelIdentityTx(tx, item); err != nil {
+			return err
+		} else if video {
+			return ErrTokenVideoModelManaged
+		}
 		var target model.AIModelReleaseVersion
 		if err := tx.Where("model_id = ? AND version_no = ?", modelID, targetVersionNo).First(&target).Error; err != nil {
 			return err
+		}
+		var targetKind struct {
+			Modality string `json:"modality"`
+		}
+		if json.Unmarshal(target.SnapshotJSON, &targetKind) != nil {
+			return ErrModelReleaseConflict
+		}
+		if targetKind.Modality == "video" {
+			return ErrTokenVideoModelManaged
 		}
 		var snapshot model.TokenModelReleaseSnapshot
 		if err := json.Unmarshal(target.SnapshotJSON, &snapshot); err != nil || snapshot.LogicalModelCode == "" || snapshot.DisplayName == "" || snapshot.ChannelID == nil || snapshot.UpstreamModel == nil || snapshot.DocsURL == nil || snapshot.QuickStartURL == nil {

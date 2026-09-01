@@ -163,6 +163,14 @@ func (s *VideoBillingService) settleReady(ctx context.Context, taskID string, ow
 			if err := s.injectVideoFault("settle_state"); err != nil {
 				return err
 			}
+			if s.budget != nil {
+				if err := s.budget.SyncTx(ctx, tx, task.RequestID, s.now); err != nil {
+					return err
+				}
+				if err := s.injectVideoFault("settle_budget"); err != nil {
+					return err
+				}
+			}
 			if err := createVideoBillingOutboxTx(tx, task.RequestID, "video_billing_settled", model.AIBillingSettled, *task.Operation, price.SettledAmount, now); err != nil {
 				return err
 			}

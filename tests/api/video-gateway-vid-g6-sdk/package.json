@@ -1,0 +1,11 @@
+{
+  "name": "molin-video-g6-sdk-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check sdk_typescript.ts",
+    "contract": "node sdk_typescript.ts"
+  },
+  "engines": { "node": ">=24.0.0 <25" },
+  "dependencies": { "openai": "6.39.0" }
+}

@@ -7,7 +7,6 @@ import (
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"molin/server/internal/modules/token_gateway/repository"
 )
 
 // CreateWithAutomaticQuote 把自动报价与预占置于同一授权事务，失败不遗留未经授权的Quote。
@@ -15,7 +14,7 @@ func (s *VideoBillingService) CreateWithAutomaticQuote(ctx context.Context, r Vi
 	if s == nil || s.db == nil || quotes == nil {
 		return nil, ErrVideoBillingState
 	}
-	c := VideoReservationCommand{Prompt: r.Prompt, RightsPolicyVersion: r.RightsPolicyVersion, IdempotencyKey: r.IdempotencyKey, RequestID: r.RequestID, TaskID: r.TaskID, FingerprintInput: r.FingerprintInput, QuoteCommandKind: VideoQuoteCommandKindCreate}
+	c := VideoReservationCommand{Rights: r.Rights, Prompt: r.Prompt, RightsPolicyVersion: r.RightsPolicyVersion, IdempotencyKey: r.IdempotencyKey, RequestID: r.RequestID, TaskID: r.TaskID, FingerprintInput: r.FingerprintInput, QuoteCommandKind: VideoQuoteCommandKindCreate}
 	p, err := s.prepareVideoReservationIntent(c)
 	if err != nil {
 		return nil, err
@@ -44,15 +43,31 @@ func (s *VideoBillingService) CreateWithAutomaticQuote(ctx context.Context, r Vi
 			if err := s.injectVideoFault("automatic_quote"); err != nil {
 				return err
 			}
-			if err := local.authorizeVideo(ctx, tx, p.owner, p.input.LogicalModelCode, s.now().UTC()); err != nil {
+			if err := local.authorizeVideo(ctx, tx, p.owner, p.input.LogicalModelCode, s.now().UTC(), p.input.Variant.Operation); err != nil {
 				return err
 			}
-			// 只复制装配，不修改共享报价器；SQL仓储必须使用同一事务，不能在回滚之外写一张Quote。
-			localQuotes := *quotes
-			localQuotes.store = repository.NewVideoQuoteRepository(tx)
-			quote, _, err := localQuotes.CreateQuote(ctx, VideoCreateQuoteCommand{CommandKind: VideoQuoteCommandKindCreate, IdempotencyKey: r.IdempotencyKey, FingerprintInput: p.input})
+			if err := local.revalidateGenerationRightsTx(tx, p, s.now().UTC()); err != nil {
+				return err
+			}
+			if local.rights != nil && p.input.Variant.Operation == "image_to_video" {
+				if err := validateVideoHTTPInputTx(tx, p.owner, p.input.Input, s.now().UTC()); err != nil {
+					return err
+				}
+			}
+			localQuotes := quotes.withTransaction(tx)
+			quote, existingQuote, err := localQuotes.CreateQuote(ctx, VideoCreateQuoteCommand{CommandKind: VideoQuoteCommandKindCreate, IdempotencyKey: r.IdempotencyKey, FingerprintInput: p.input})
 			if err != nil {
 				return err
+			}
+			if local.rights != nil && p.input.Variant.Operation == "image_to_video" {
+				if existingQuote {
+					err = checkVideoRightsDeclarationTx(tx, "quote", quote.ID, "", p.rights)
+				} else {
+					err = recordVideoRightsDeclarationTx(tx, "quote", quote.ID, "", p.rights, s.now().UTC())
+				}
+				if err != nil {
+					return err
+				}
 			}
 			c.QuotePublicID = quote.PublicID
 			result, err = local.ReserveAndCreate(ctx, c)

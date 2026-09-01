@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G6",
+  "status": "DEVELOPMENT_TEST_RUNNING",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_state_id": "0165df254ed2d205d059fa5b72a498a235351077bff75aeeeefe1ef8bb63cb05",
+  "code_state_id": "a58691d7c92376d18e58dae0c10f99cabd95eb7c485ad8d83abb9ec971698873",
+  "captured_at": "2026-08-31T03:54:53.2072501+08:00",
+  "manifest": [
+    {
+      "path": "docs/video-gateway-vid-g6-http-project-sk-contract.md",
+      "sha256": "e9f7b61fc5cb59bdc938da15cfa98270017ee494c584173c9cb1568382a32f23"
+    },
+    {
+      "path": "infra/scripts/verify-video-gateway-vid-g6.sh",
+      "sha256": "e0a8fab7e0cd37c0697b569952ab1de3b2afdd2ea8992a0c077677952941582c"
+    },
+    {
+      "path": "README.md",
+      "sha256": "96881b26d5f0037fa163abef0d4b787db3311f284bc92d0fdc5bea5bcf98392b"
+    },
+    {
+      "path": "server/internal/middleware/recovery_test.go",
+      "sha256": "c19ce722fd72e5d0140d6c81c1069a6b14b236c58effc034a439ff95bc574c07"
+    },
+    {
+      "path": "server/internal/middleware/recovery.go",
+      "sha256": "8a5dea6bf2ec0843f7e40d1cba2ddda7b6a9d327d5cf272dc1a661eee8383bf8"
+    },
+    {
+      "path": "server/internal/modules/iam/service/iam_service.go",
+      "sha256": "7dd391a7767847c0882464bc151821aa8d796f88b574efc473390d2fdcb8a0e2"
+    },
+    {
+      "path": "server/internal/modules/iam/service/permission_fresh_mysql_test.go",
+      "sha256": "455a4f6605529e29d4642616ddcea2e4f08584cc95bfa99409d11cfe6c1aae38"
+    },
+    {
+      "path": "server/internal/modules/iam/service/permission_fresh_test.go",
+      "sha256": "f1672f79939a39796971ad27a3e97083919b81a4ab44c9e3f11a030f16d7ed94"
+    },
+    {
+      "path": "server/internal/modules/iam/service/permission_fresh.go",
+      "sha256": "0230ed939364e1e281e727dd4a45afa451db7aec1cfe30469de105a805e29536"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/dto/video_test.go",
+      "sha256": "b61d171a51f5f398ff76bc728ed75a09c2c2251d20900080cfe75beeffa26a23"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/dto/video.go",
+      "sha256": "17da7b021976e07cad652b928d2824b90bcd3bbc3274a26976a3ab2f0036657c"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_content_test.go",
+      "sha256": "048fc0629efe33862d3e5826d7d7cdea3fe00a24f59389933d4a835f0d2bce1d"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_content.go",
+      "sha256": "6bb72e1f127fbc5ba5396bd605c9e383dfb2610d4664f7bc16d66a544f16a31d"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_access_mysql_test.go",
+      "sha256": "1f1867f83a4586c66ca122427f35baa9b1c1ecd2e4adc99c0c8956676dfd2219"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_access_service.go",
+      "sha256": "dcff7da4ea305907687061119b9e0fcce7f7fefce7baa7f1ee9af1bfd10c9e96"
+    },
+    {
+      "path": "server/migrations/000078_video_http_access_contract.down.sql",
+      "sha256": "789c57d51d6d1d5f2856791043cd6f2b52ba5efdaeacd0c978bffc9d88b07832"
+    },
+    {
+      "path": "server/migrations/000078_video_http_access_contract.up.sql",
+      "sha256": "41cd24b846730ae52567919f9b94ad7d62b7ff98c18fd89a640a3b4d23b47bb4"
+    }
+  ],
+  "test_session": 54199,
+  "full_stage_acceptance": false,
+  "previous_foundation_source": "1fa2175de40405d4b9dd8023ef829c24ce3ff9ec6e5d9f32b24719e0905fe5c1"
+}

@@ -8,12 +8,14 @@ import (
 // TokenModel 对外模型目录，对应 token_models 表。
 // 决定上架哪些逻辑模型 + 关联 token 商品/计费；并通过 ChannelID/UpstreamModel 路由到上游渠道。
 type TokenModel struct {
-	ID                        uint64          `gorm:"primaryKey;autoIncrement" json:"id"`
-	LogicalModelCode          string          `gorm:"size:128;not null;uniqueIndex:uk_token_models_code" json:"logical_model_code"` // 对外逻辑模型名，如 gpt-4o / claude-*
-	DisplayName               string          `gorm:"size:191;not null" json:"display_name"`                                        // 展示名称
-	ProviderName              string          `gorm:"size:191;not null;default:''" json:"provider_name"`
-	Description               *string         `gorm:"type:text" json:"description,omitempty"`
-	CapabilitiesJSON          json.RawMessage `gorm:"column:capabilities_json;type:json" json:"capabilities,omitempty"`
+	ID               uint64          `gorm:"primaryKey;autoIncrement" json:"id"`
+	LogicalModelCode string          `gorm:"size:128;not null;uniqueIndex:uk_token_models_code" json:"logical_model_code"` // 对外逻辑模型名，如 gpt-4o / claude-*
+	DisplayName      string          `gorm:"size:191;not null" json:"display_name"`                                        // 展示名称
+	ProviderName     string          `gorm:"size:191;not null;default:''" json:"provider_name"`
+	Description      *string         `gorm:"type:text" json:"description,omitempty"`
+	CapabilitiesJSON json.RawMessage `gorm:"column:capabilities_json;type:json" json:"capabilities,omitempty"`
+	// 工作副本合同只有经发布事务校验并写入快照后才能影响视频准入。
+	VideoContractJSON         json.RawMessage `gorm:"column:video_contract_json;type:json" json:"video_contract,omitempty"`
 	ContextWindow             uint64          `gorm:"not null;default:0" json:"context_window"`
 	IntroURL                  *string         `gorm:"size:1024" json:"intro_url,omitempty"`
 	IntroURLHealthStatus      string          `gorm:"size:16;not null;default:unpublished" json:"intro_url_health_status"`
@@ -43,6 +45,7 @@ func (TokenModel) TableName() string { return "token_models" }
 
 // TokenModelReleaseSnapshot 描述模型发布时冻结的对外配置；回滚会基于旧快照创建新版本，而不会修改历史记录。
 type TokenModelReleaseSnapshot struct {
+	VideoContract             json.RawMessage `json:"video_contract,omitempty"`
 	LogicalModelCode          string          `json:"logical_model_code"`
 	DisplayName               string          `json:"display_name"`
 	ProviderName              string          `json:"provider_name"`
@@ -65,7 +68,21 @@ type TokenModelReleaseSnapshot struct {
 
 // MarshalReleaseSnapshot 生成不含数据库审计时间的发布快照，供回溯当时对外配置使用。
 func (m TokenModel) MarshalReleaseSnapshot() (json.RawMessage, error) {
+	// 发布不允许缺项默认授权，也不允许把视频合同附着到其他模态后绕过解析。
+	if m.Modality == "video" {
+		if _, err := ParseVideoModelContract(m.VideoContractJSON, m.ProductID); err != nil {
+			return nil, err
+		}
+	} else if len(m.VideoContractJSON) != 0 {
+		return nil, ErrVideoModelContractInvalid
+	}
+	return m.MarshalDraftSnapshot()
+}
+
+// MarshalDraftSnapshot仅用于管理员查看/接管未配置工作副本时绑定原始状态；不得作为发布校验替代。
+func (m TokenModel) MarshalDraftSnapshot() (json.RawMessage, error) {
 	return json.Marshal(TokenModelReleaseSnapshot{
+		VideoContract:    m.VideoContractJSON,
 		LogicalModelCode: m.LogicalModelCode, DisplayName: m.DisplayName, ProviderName: m.ProviderName,
 		Description: m.Description, Capabilities: m.CapabilitiesJSON, ContextWindow: m.ContextWindow,
 		IntroURL: m.IntroURL, IntroURLHealthStatus: m.IntroURLHealthStatus,

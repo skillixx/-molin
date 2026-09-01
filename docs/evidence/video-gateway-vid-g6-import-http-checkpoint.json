@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G6",
+  "status": "PARTIAL_IMPORT_HTTP_NOT_STAGE_ACCEPTANCE",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "head_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "UNCOMMITTED",
+  "source_manifest": "video-gateway-vid-g6-import-http-source.json",
+  "source_state_id": "357cfd10d6484f9892f5a9c6e034dbe4247c0c79349af8cdb83e0949f726a35b",
+  "code_state_id": "e76fc0bec079de5f5fe66b656cba82d7d691cfdd80222da3fed19855d0b9e68f",
+  "runtime_copy_tree_sha256": "74ec90ef05dd535484d8e235d6cdffb6f04c18ae0ffea319b0997dd8ff088971",
+  "source_files": 90,
+  "registered_local_routes": 16,
+  "bootstrap_assembled": false,
+  "runs": [
+    {
+      "session": 54294,
+      "exit_code": 0,
+      "copy_tree_sha256": "ddaa71e42295b93ee3e46a2bf3cceedb5b0f8406405743d0ca2d078ea0f4cafd",
+      "result": "首版真实Handler/HMAC/JWT导入HTTP至I2V预占链通过，不含后来RR与强断言"
+    },
+    {
+      "session": 49254,
+      "exit_code": 0,
+      "copy_tree_sha256": "c548a8011081c79a21c580525fd7b7278d4f29283d1cc1de552a4261e1e4047b",
+      "result": "源scope旧RR快照撤权反例与HTTP链29项通过，不含后来强NULL/行级财务断言"
+    },
+    {
+      "session": 84442,
+      "exit_code": 0,
+      "copy_tree_sha256": "7920f0522f3a46b63a77073c23f49076f2198be017b26309465c5b9c369e1369",
+      "result": "强NULL、钱包金额、七字段来源及计数增量通过"
+    },
+    {
+      "session": 88923,
+      "exit_code": 0,
+      "copy_tree_sha256": "74ec90ef05dd535484d8e235d6cdffb6f04c18ae0ffea319b0997dd8ff088971",
+      "required_top_level_tests": 29,
+      "required_tests": [
+        "TestVideoG6IAMMySQLFreshPermissions",
+        "TestVideoG6HTTPMySQLCreateRetrieveReplay",
+        "TestVideoG6HTTPServiceRequiresRealDependencies",
+        "TestVideoG6AccessMySQLMatrix",
+        "TestVideoG6ModelContractExplicitRequirements",
+        "TestVideoG6EntitlementMySQLMatrix",
+        "TestVideoG6JobJSONSnapshot",
+        "TestVideoG6ContentHTTPFullAndSingleRange",
+        "TestVideoG6ContentHTTPRangeAndValidatorMatrix",
+        "TestVideoG6ContentHTTPRecoveryNeverAppendsJSON",
+        "TestVideoG6ContentHTTPStoreFailureIsLowSensitivity",
+        "TestVideoG6AutoQuoteSingleConnectionMySQL",
+        "TestVideoG6JWTAuthenticationFailsClosed",
+        "TestVideoG6QuoteRepeatableReadWinnerMySQL",
+        "TestVideoG6ListHTTPRequiresDependencies",
+        "TestVideoG6CompletedListsMySQLConcurrency",
+        "TestVideoG6RightsMySQLAcceptanceAndInvalidation",
+        "TestVideoG6I2VMySQLRightsQuoteHold",
+        "TestVideoG6I2VMySQLReplayAfterInputDeletion",
+        "TestVideoG6UploadMySQLSealCompleteReplay",
+        "TestVideoG6UploadMySQLRejectAndCancelRace",
+        "TestVideoG6UploadMySQLInterruptedRetryAndConcurrency",
+        "TestVideoG6UploadHTTPClosedRoutes",
+        "TestVideoG6UploadHTTPMySQLRoundtripAndI2V",
+        "TestVideoG6UploadMySQLRecoveryFences",
+        "TestVideoG6InputReadHTTPClosedRoutes",
+        "TestVideoG6InputMetadataMySQL",
+        "TestVideoG6SourceImagesMySQL",
+        "TestVideoG6ImportHTTPMySQL"
+      ],
+      "result": "29项指定顶层实际RUN/PASS、Linux race；包含精确Hold/冻结流水/Outbox行级验证，无必需项SKIP"
+    }
+  ],
+  "verified": {
+    "fixture": "export_video_import_http_test.go仅在TestGoFiles，HTTP用例在XTestGoFiles，生产GoFiles不含夹具。外部service_test直接使用真实RegisterVideoUserRoutes；来源图片由IMG-G5真实处理、归档、预占、结算和对账产生",
+    "http": "回环HTTP经过真实Key HMAC/JWT与MySQL；读取已结算来源七字段和其他Key空页；暂停真实存储读取时同键202/Retry-After，随后201完成、200原键重放不续期",
+    "dto": "导入固定五键，只有input_asset_id允许null；其他字段非null、import_id非空、处理期限非零且有效，202明确idempotent=true",
+    "isolation": "同一合法用户的另一已授权Key和JWT不能导入原Key来源；伪造bucket400，同键异源409；验证稳定HTTP/数字码/error/data:null及响应header/body追踪ID一致",
+    "import_zero_financial_effect": "导入前后请求/报价/任务/Hold/钱包流水/Usage/钱包关联/归属Outbox八类计数及钱包余额/冻结额不变；全隔离Outbox总数也不变",
+    "generation": "所有者JWT接受合成政策后，导入输入以SK真实Quote和Generation，金额固定0.75000000；Request/Quote/Task/Hold/钱包流水/钱包关联/held Outbox各新增1，Usage不提前增加",
+    "ledger_rows": "读取原Request钱包关联，验证Hold为holding且同用户钱包、0.75及FreezeTxnID；流水为freeze/out、同用户钱包和0.75；Outbox为video_request/video_billing_held/pending，载荷逐字段为原request/held/0.75/CNY/image_to_video/version1",
+    "scope_race": "真实默认RR，在发布首个api_keys一致性查询结束后，另一连接删除精确源模型scope且RowsAffected=1；原导入返回404，目标rejected并清理墓碑，原命令不能用旧快照发布",
+    "repeated_cleanup": "已拒绝且清理完成的导入重放不增加Discard计数",
+    "provider": "图片Fake Provider仅生成来源一次；导入/报价/预占不再调用它；不启动真实Provider或视频执行",
+    "source_provenance": "当前90文件冻结后无变化，主机full-copy与运行副本摘要相同；独立QA复算SOURCE/CODE一致"
+  },
+  "host_checks": {
+    "session": 15792,
+    "exit_code": 0,
+    "go_test": "go test ./... PASS，含缓存和缺DSN集成跳过，不代替隔离数据库",
+    "go_vet": "PASS",
+    "go_mod_verify": "PASS",
+    "diff_check": "PASS",
+    "focused_secret_scan": "120个文本文件的私钥块/AWS AccessKey/GitHub经典Token格式零命中，仅限定扫描"
+  },
+  "independent_subreviews": {
+    "qa": "确认测试不入生产、实际路由认证链、RR撤权时序、NULL修复及行级财务断言；复算90文件摘要",
+    "full_stage_qa_pm_standards_spec": "NOT_RUN"
+  },
+  "defects": [
+    {
+      "id": "G6-IMPORT-HTTP-TEST-001",
+      "severity": "P2",
+      "description": "处理期限null或幂等null可能以Go零值通过旧HTTP测试",
+      "status": "CLOSED_INCREMENTAL_STATIC_AND_DYNAMIC",
+      "green": [
+        84442,
+        88923
+      ]
+    }
+  ],
+  "remaining": [
+    "JWT自有图片正向导入、跨用户/Project、完整源变化/内容错误/提交未知矩阵",
+    "上传与导入混合并发额度、lease接管及隔离恢复",
+    "v1 multipart、输入删除/租约/清理、媒体content/播放/保存/删除",
+    "任务/事件/请求查询、回调、管理与模型/Key控制面",
+    "双SDK真实HTTP、浏览器、G0-G5/Chat-Image完整隔离回归",
+    "最终同源四类独立验收、完整Git/Ready CI/普通合并"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "vid_g7_started": false,
+  "pr_state": "NOT_CREATED"
+}

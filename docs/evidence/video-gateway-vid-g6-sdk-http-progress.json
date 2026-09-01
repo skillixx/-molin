@@ -1,0 +1,28 @@
+{
+  "target_goal":"VID-G6",
+  "scope":"locked-python-typescript-sdk-real-loopback-http",
+  "stage_status":"IN_PROGRESS",
+  "source_state_id":"a7365b8e7e253d5b447a7b85f0a4843edf16bc747aaa5b1d4aca64c10fb6d771",
+  "source_manifest":"video-gateway-vid-g6-sdk-http-source.json",
+  "git_state":"UNCOMMITTED_UNPUSHED_NO_G6_PR",
+  "run":{"test":"TestVideoG6LockedSDKHTTPMySQL","status":"PASS","seconds":36.11,"parent_runner":"PASS","python":"openai==2.45.0","typescript":"openai@6.39.0","python_cases":5,"typescript_cases":5},
+  "verified":[
+    "真实本机loopback TCP、Molin路由、SK HMAC、Handler、Service和临时MySQL",
+    "Python与TypeScript分别创建T2V/I2V并验证缺幂等400、重放和异意图409",
+    "完整Video Job原始JSON/null与SDK反序列化",
+    "retrieve/list及两个独立completed媒体夹具",
+    "MP4 200/206/416、ETag、If-Range、Content-Length、Content-Range与SHA256",
+    "两个SDK分别删除媒体，随后retrieve/content404、列表隐藏且双向账单事实保留",
+    "合成SK仅存在于进程局部和子进程环境，临时fixture/reference为0600且退出删除"
+  ],
+  "independent_review":{"agent":"vid_g6_cancel_standards","p0":0,"p1":0,"p2":0,"full_stage_acceptance":false},
+  "not_verified":["浏览器实际播放seek","真实Provider","真实MinIO","测试服与生产","完整钱包Usage矩阵"],
+  "real_provider_requests":0,
+  "real_provider_keys":0,
+  "real_wallet_writes":0,
+  "provider_cost_cny":0,
+  "test_server_writes":0,
+  "production_operations":0,
+  "next_goal_allowed":"NO",
+  "vid_g7_started":"NO"
+}

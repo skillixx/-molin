@@ -1,0 +1,107 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "video-model-contract-persistence-foundation",
+  "stage_status": "IN_PROGRESS",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_state_id": "28d855a3115172bbe8e341d9d56b0b0bd48f24038835e1ca2c720bb5f7a5c679",
+  "source_manifest": "video-gateway-vid-g6-model-contract-source.json",
+  "file_count": 337,
+  "source_drift": 0,
+  "local_git_state": "UNCOMMITTED_UNPUSHED_NO_G6_PR",
+  "unit_red_green": [
+    {
+      "test": "TestVideoG6ModelSnapshotPreservesContract",
+      "red": "发布快照丢失七键合同",
+      "green": "PASS"
+    },
+    {
+      "test": "TestVideoG6ModelSnapshotRejectsInvalidContract",
+      "red": "缺失或不完整视频合同进入发布快照",
+      "green": "PASS"
+    }
+  ],
+  "runs": [
+    {
+      "session_id": 43395,
+      "status": "PASS_PARTIAL",
+      "schema": 102,
+      "required": 9,
+      "passed": 9,
+      "skipped": 0,
+      "linux_race": true,
+      "copy_tree_sha256": "47447fa380ae9161bb97e9c37809261d44fc4244403b99c99750211dc95a8fca",
+      "note": "首次当前schema专项，尚不覆盖后续旧Chat夹具修复及组合runner"
+    },
+    {
+      "session_id": 29927,
+      "status": "PASS",
+      "linux_race": true,
+      "copy_tree_sha256": "38339dc13f5a72289501fd962400a4bb1ffa47c110901e8247beef9fdd3ca2e1",
+      "current": {
+        "schema": 102,
+        "required": 9,
+        "passed": 9,
+        "skipped": 0,
+        "model_seconds": 1.05,
+        "service_seconds": 4.312,
+        "handler_seconds": 1.087,
+        "http_mysql_seconds": 3.15
+      },
+      "legacy": {
+        "schema": 77,
+        "required": 1,
+        "passed": 1,
+        "skipped": 0,
+        "subtests": 6,
+        "repository_seconds": 1.306,
+        "test": "TestG5MySQLIntegration",
+        "isolated_database": "molin_video_g5_contract"
+      },
+      "same_source_for_both_schemas": true,
+      "note": "固定镜像digest、内部网络、两个独立临时MySQL；未更新旧77脚本schema范围。当前专项必须等待旧77子阶段通过才报告组合成功。"
+    }
+  ],
+  "checks": {
+    "gofmt": "PASS",
+    "git_diff_check": "PASS",
+    "focused_go_vet": "PASS",
+    "full_stage_qa": "NOT_RUN",
+    "full_chat_image_regression": "NOT_RUN"
+  },
+  "independent_engineering": {
+    "agent": "vid_g6_cancel_standards",
+    "scope": "READ_ONLY_FOUNDATION_REVIEW",
+    "initial_p0": 0,
+    "initial_p1": 0,
+    "initial_p2": 1,
+    "defect_id": "G6-MODEL-CONTRACT-001",
+    "finding": "新增ORM字段导致旧77库Chat夹具Create引用不存在的视频列",
+    "fix": "仅历史Chat夹具显式Omit(VideoContractJSON)，不改变生产写入或测试断言",
+    "source_recheck": "CLOSED",
+    "dynamic_evidence": "29927强制旧77数据库TestG5MySQLIntegration与全部6子用例PASS"
+  },
+  "pm_engineering_decision": {
+    "agent": "vid_g6_g5_gate",
+    "decision": "复用原管理路径；视频专用native执行校验与Bifrost健康分离；完整权限/MFA/reason/CAS/幂等/前后审计不可省略",
+    "full_pm_confirmation": "NOT_RUN"
+  },
+  "not_completed": [
+    "HTTP视频合同创建编辑详情接入",
+    "专用native模型发布与回滚协调器",
+    "视频管理JWT/MFA、加密reason、幂等命令、CAS及前后审计",
+    "默认视频模型事务唯一性",
+    "Key能力配置、multipart I2V及生成资源准入",
+    "完整G6矩阵、SDK互操作、独立门禁和Git闭环"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "vid_g7_started": "NO",
+  "next_goal_allowed": "NO"
+}

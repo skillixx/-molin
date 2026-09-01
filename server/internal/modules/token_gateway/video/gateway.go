@@ -84,7 +84,17 @@ func (g *VideoGateway) Submit(ctx context.Context, taskID string) (GatewayTask, 
 	if task.Status != TaskQueued || task.CancelRequestedAt != nil {
 		return task, nil
 	}
-	claimed, claimErr := g.deps.Ledger.Advance(ctx, task.TaskID, task.Version, TaskSubmitting, "worker", "state_advanced", nil)
+	var claimed GatewayTask
+	var claimErr error
+	if admission, ok := g.deps.Ledger.(VideoRunningAdmissionLedger); ok {
+		claimed, claimErr = admission.ClaimRunning(ctx, task.TaskID, task.Version)
+	} else {
+		claimed, claimErr = g.deps.Ledger.Advance(ctx, task.TaskID, task.Version, TaskSubmitting, "worker", "state_advanced", nil)
+	}
+	if errors.Is(claimErr, ErrGatewayRunningCapacity) {
+		// 本地运行容量满时保持queued，不把排队视为失败，也不能调用Provider或释放Hold。
+		return g.Query(ctx, taskID)
+	}
 	if errors.Is(claimErr, ErrGatewayTaskConflict) {
 		return g.Query(ctx, taskID)
 	}
@@ -169,6 +179,41 @@ func (g *VideoGateway) Poll(ctx context.Context, taskID string) (GatewayTask, er
 		return task, nil
 	}
 	result, queryErr := g.deps.Provider.Query(ctx, QueryRequest{ProviderTaskID: task.ProviderTaskID})
+	return g.applyPolledResult(ctx, task, result, queryErr)
+}
+
+// 管理恢复将外部Query与持锁写入分开；调用者须先验证可信Adapter、管理授权与原提交身份。
+// pending_reconcile仅追加原Provider观察，不回退执行状态或自动证明可交付。
+func (g *VideoGateway) ApplyPolledResult(ctx context.Context, taskID string, result QueryResult, queryErr error) (GatewayTask, error) {
+	task, err := g.Query(ctx, taskID)
+	if err != nil {
+		return task, err
+	}
+	// Query在事务外时其他Worker可能已进入归档；晚到观察仍须校验/记账，不能被技术阶段前进吞掉。
+	if task.Status == TaskPendingReconcile || task.Status == TaskFetching || task.Status == TaskStoring || task.Status == TaskModerating || task.Status == TaskLabeling || taskSafeTerminal(task.Status) {
+		if queryErr != nil && !errors.Is(queryErr, ErrProviderExplicitFailure) {
+			return task, queryErr
+		}
+		if taskSafeTerminal(task.Status) && result.Status == ProviderTaskSucceeded && task.Status != TaskSucceeded {
+			if sink, ok := g.deps.Ledger.(VideoProviderConflictSink); ok && result.Confirmation != nil {
+				if err := sink.RecordProviderResultConflict(ctx, taskID, *result.Confirmation); err != nil {
+					return task, err
+				}
+			}
+			return task, ErrProviderResultUnknown
+		}
+		if err := g.recordProviderResult(ctx, task, result); err != nil {
+			return task, err
+		}
+		return g.Query(ctx, taskID)
+	}
+	if task.Status != TaskSubmitted && task.Status != TaskProcessing {
+		return task, ErrGatewayTaskTransition
+	}
+	return g.applyPolledResult(ctx, task, result, queryErr)
+}
+
+func (g *VideoGateway) applyPolledResult(ctx context.Context, task GatewayTask, result QueryResult, queryErr error) (GatewayTask, error) {
 	if queryErr != nil && !errors.Is(queryErr, ErrProviderExplicitFailure) {
 		if errors.Is(queryErr, ErrProviderTimeout) || errors.Is(queryErr, ErrProviderResultUnknown) || errors.Is(queryErr, context.Canceled) || errors.Is(queryErr, context.DeadlineExceeded) {
 			return g.advance(ctx, task, TaskPendingReconcile, "worker", "query_unknown", nil)

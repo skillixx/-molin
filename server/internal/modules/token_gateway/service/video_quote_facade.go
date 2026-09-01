@@ -14,8 +14,9 @@ var ErrVideoFacadeInvalid = errors.New("视频报价门面参数无效")
 
 // VideoFacadeRequest 是两个协议门面进入共享视频报价器前的规范化命令。
 type VideoFacadeRequest struct {
-	Prompt              string `json:"-"`
-	RightsPolicyVersion string `json:"-"`
+	Rights              *videoRightsProof `json:"-"`
+	Prompt              string            `json:"-"`
+	RightsPolicyVersion string            `json:"-"`
 	IdempotencyKey      string
 	RequestID           string
 	TaskID              string
@@ -30,8 +31,9 @@ type VideoExplicitQuoteResult struct {
 
 // VideoReservationCommand 把已选Quote和生成命令交给唯一原子预占边界。
 type VideoReservationCommand struct {
-	Prompt              string `json:"-"`
-	RightsPolicyVersion string `json:"-"`
+	Rights              *videoRightsProof `json:"-"`
+	Prompt              string            `json:"-"`
+	RightsPolicyVersion string            `json:"-"`
 	QuotePublicID       string
 	QuoteCommandKind    string
 	IdempotencyKey      string
@@ -88,7 +90,7 @@ func (s *VideoQuoteFacade) GenerateWithTokenQuote(ctx context.Context, request V
 	if s == nil || s.reservation == nil || strings.TrimSpace(quotePublicID) == "" || strings.TrimSpace(request.RequestID) == "" || strings.TrimSpace(request.TaskID) == "" {
 		return nil, ErrVideoFacadeInvalid
 	}
-	return s.reservation.ReserveAndCreate(ctx, VideoReservationCommand{Prompt: request.Prompt, RightsPolicyVersion: request.RightsPolicyVersion, QuotePublicID: strings.TrimSpace(quotePublicID), QuoteCommandKind: VideoQuoteCommandKindExplicit, IdempotencyKey: strings.TrimSpace(request.IdempotencyKey), RequestID: strings.TrimSpace(request.RequestID), TaskID: strings.TrimSpace(request.TaskID), FingerprintInput: request.FingerprintInput})
+	return s.reservation.ReserveAndCreate(ctx, VideoReservationCommand{Rights: request.Rights, Prompt: request.Prompt, RightsPolicyVersion: request.RightsPolicyVersion, QuotePublicID: strings.TrimSpace(quotePublicID), QuoteCommandKind: VideoQuoteCommandKindExplicit, IdempotencyKey: strings.TrimSpace(request.IdempotencyKey), RequestID: strings.TrimSpace(request.RequestID), TaskID: strings.TrimSpace(request.TaskID), FingerprintInput: request.FingerprintInput})
 }
 
 // CreateOpenAIVideo 对应POST /v1/videos，在同一服务端编排中自动Quote后进入原子Hold与Task边界。

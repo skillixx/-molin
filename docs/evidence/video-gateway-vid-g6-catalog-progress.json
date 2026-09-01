@@ -1,0 +1,99 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "published-video-model-catalog",
+  "stage_status": "IN_PROGRESS",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_state_id": "68d27d3e2746e66f64644987e35abe9b6da0105f78a021374ec27219375a6577",
+  "source_manifest": "video-gateway-vid-g6-catalog-source-v2.json",
+  "source_file_count": 329,
+  "source_drift": 0,
+  "registered_local_video_routes": 46,
+  "total_video_routes": 46,
+  "git_state": "UNCOMMITTED_UNPUSHED_NO_G6_PR",
+  "runs": [
+    {
+      "session_id": 81901,
+      "status": "FAIL",
+      "copy_tree_sha256": "5956ea90e17914b0eea872d71912564f7441e8583ede2357a147acba79498d18",
+      "reason": "新增测试的Key适配器签名未对齐中间件，编译失败；不得算业务反例通过"
+    },
+    {
+      "session_id": 9944,
+      "status": "FAIL",
+      "copy_tree_sha256": "49823f6a8c57e238a30f9dc69d22b2af50914483bbd06c45695e70043ec6a081",
+      "reason": "scope负向夹具指向不存在的模型，未完成全用例；已补真实合成模型，未关闭外键"
+    },
+    {
+      "session_id": 77305,
+      "status": "FAIL",
+      "copy_tree_sha256": "d3e52259dea23b6741a6b4bd55004ca7ee8029a6991825daade31f7ac81bf99c",
+      "reason": "图片来源夹具的模型为inactive，不能作为公开目录正例；已新增独立active图片目录夹具"
+    },
+    {
+      "session_id": 16760,
+      "status": "PASS",
+      "scope": "catalog",
+      "schema": 101,
+      "linux_race": true,
+      "copy_tree_sha256": "7dd608f969de403edb4947238da87bce20e8d2bcb063701350132c0c12d52823",
+      "required": 5,
+      "passed": 5,
+      "skipped": 0,
+      "http_mysql_seconds": 3.12,
+      "service_seconds": 4.231,
+      "handler_seconds": 1.088,
+      "tests": [
+        "TestVideoG6CatalogPublishedHTTPMySQL",
+        "TestFetchOpenAIChatModels_OnlyChat",
+        "TestBuildOpenAIModelList",
+        "TestBuildOpenAIModelList_Empty",
+        "TestFilterModelsByKeyAccess_EmptyAllowlistDeniesAll"
+      ]
+    }
+  ],
+  "covers": [
+    "已发布视频capability与supported_operations",
+    "公开字段同一发布快照及草稿隔离",
+    "缺项/未来/退役快照隐藏",
+    "Key视频位、Project授权、模型scope、实名撤销及恢复",
+    "缺视频准入依赖失败关闭",
+    "合成active图片条目字段兼容（未装配旧Chat过滤器）",
+    "已发布视频草稿改为Chat/Image后分模态及全部目录不泄露",
+    "旧v1/models四项单元回归"
+  ],
+  "local_checks": {
+    "focused_go_tests": "PASS",
+    "focused_go_vet": "PASS",
+    "git_diff_check": "PASS",
+    "full_go_test": "NOT_RUN_THIS_SLICE",
+    "full_chat_image_regression": "NOT_RUN_THIS_SLICE"
+  },
+  "independent_review": {
+    "agent": "vid_g6_cancel_standards",
+    "scope": "READ_ONLY_SOURCE_REVIEW",
+    "initial_p0": 0,
+    "initial_p1": 0,
+    "initial_p2": 1,
+    "p2_id": "G6-CATALOG-001",
+    "resolution": "源码复核确认所有模态读取发布身份，视频草稿模态漂移隐藏；16760动态反例通过。未签完整G6。"
+  },
+  "not_completed": [
+    "后台七键视频合同编辑/发布",
+    "Key显式授权/配置/轮换",
+    "multipart I2V",
+    "预算并发排队准入",
+    "真实装配的Chat/Image、多页和并发发布/撤权完整矩阵",
+    "锁定双SDK真实HTTP、完整安全回归、独立阶段验收及Git闭环"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": "NO",
+  "vid_g7_started": "NO"
+}

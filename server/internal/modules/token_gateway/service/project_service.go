@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -45,7 +47,7 @@ type ProjectService struct {
 }
 
 type projectAuditRecorder interface {
-	RecordWithTx(ctx context.Context, tx *gorm.DB, operatorID *uint64, module, action string, targetType, targetID *string, ip string, requestSummary any) error
+	RecordWithTxID(ctx context.Context, tx *gorm.DB, operatorID *uint64, module, action string, targetType, targetID *string, ip string, requestSummary any) (uint64, error)
 }
 
 type projectStore interface {
@@ -59,7 +61,7 @@ type projectStore interface {
 	ListKeyScopes(ctx context.Context, keyID uint64) ([]string, error)
 	RevokeProjectKey(ctx context.Context, userID, projectID, keyID uint64, audit repository.ProjectKeyAudit) error
 	RotateProjectKey(ctx context.Context, oldKey *authmodel.APIKey, newKey *authmodel.APIKey, scopes []authmodel.APIKeyModelScope, audit repository.ProjectKeyAudit) error
-	ActiveScopedModelsExist(ctx context.Context, codes []string) (bool, error)
+	ValidateScopedModels(ctx context.Context, userID, projectID uint64, codes []string, allowVideo bool) (bool, error)
 	UserRealNameStatus(ctx context.Context, userID uint64) (string, error)
 }
 
@@ -162,26 +164,47 @@ func normalizeProjectTimezone(value, fallback string) (string, error) {
 }
 
 type IssueProjectKeyInput struct {
-	UserID     uint64
-	ProjectID  uint64
-	Name       string
-	ScopeMode  string
-	ModelCodes []string
-	ExpiresAt  *time.Time
-	IP         string
+	UserID               uint64
+	ProjectID            uint64
+	Name                 string
+	ScopeMode            string
+	ModelCodes           []string
+	ExpiresAt            *time.Time
+	VideoGenerateAllowed bool
+	IP                   string
+	IdempotencyKey       string
 }
 
 type ProjectKeyView struct {
-	ID         uint64     `json:"id"`
-	ProjectID  uint64     `json:"project_id"`
-	Name       string     `json:"name"`
-	KeyPrefix  string     `json:"key_prefix"`
-	ScopeMode  string     `json:"scope_mode"`
-	ModelCodes []string   `json:"model_codes"`
-	Status     string     `json:"status"`
-	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
-	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
+	ID                   uint64     `json:"id"`
+	ProjectID            uint64     `json:"project_id"`
+	Name                 string     `json:"name"`
+	KeyPrefix            string     `json:"key_prefix"`
+	ScopeMode            string     `json:"scope_mode"`
+	ModelCodes           []string   `json:"model_codes"`
+	Status               string     `json:"status"`
+	ExpiresAt            *time.Time `json:"expires_at,omitempty"`
+	LastUsedAt           *time.Time `json:"last_used_at,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	VideoGenerateAllowed bool       `json:"video_generate_allowed"`
+	Idempotent           bool       `json:"-"`
+}
+
+type projectKeyIdempotentStore interface {
+	CreateProjectKeyIdempotent(context.Context, *authmodel.APIKey, []authmodel.APIKeyModelScope, repository.ProjectKeyAudit, repository.ProjectKeyIdempotency) (*authmodel.APIKey, []string, bool, error)
+	RotateProjectKeyIdempotent(context.Context, *authmodel.APIKey, *authmodel.APIKey, repository.ProjectKeyAudit, repository.ProjectKeyIdempotency) (*authmodel.APIKey, []string, bool, error)
+	RevokeProjectKeyIdempotent(context.Context, uint64, uint64, uint64, repository.ProjectKeyAudit, repository.ProjectKeyIdempotency) (bool, error)
+}
+
+func (s *ProjectService) keyIdempotency(action, key string, fingerprint any) (repository.ProjectKeyIdempotency, error) {
+	if !videoHTTPIdempotency.MatchString(key) {
+		return repository.ProjectKeyIdempotency{}, ErrVideoAdminCommandInvalid
+	}
+	raw, err := json.Marshal(fingerprint)
+	if err != nil {
+		return repository.ProjectKeyIdempotency{}, err
+	}
+	return repository.ProjectKeyIdempotency{Action: action, CommandKeyHash: crypto.HMAC256(action+"\x00"+key, s.hmacSecret), Fingerprint: crypto.HMAC256(string(raw), s.hmacSecret)}, nil
 }
 
 func (s *ProjectService) IssueKey(ctx context.Context, in IssueProjectKeyInput) (string, ProjectKeyView, error) {
@@ -199,7 +222,7 @@ func (s *ProjectService) IssueKey(ctx context.Context, in IssueProjectKeyInput) 
 	if project.Status != ProjectStatusActive {
 		return "", ProjectKeyView{}, ErrProjectInactive
 	}
-	mode, models, err := s.validateScope(ctx, in.UserID, in.ScopeMode, in.ModelCodes)
+	mode, models, err := s.validateScope(ctx, in.UserID, in.ProjectID, in.ScopeMode, in.ModelCodes, in.VideoGenerateAllowed)
 	if err != nil {
 		return "", ProjectKeyView{}, err
 	}
@@ -213,14 +236,43 @@ func (s *ProjectService) IssueKey(ctx context.Context, in IssueProjectKeyInput) 
 	key := &authmodel.APIKey{
 		UserID: in.UserID, ProjectID: &in.ProjectID, KeyPrefix: prefix, KeyHash: hash,
 		Name: name, BillingMode: "postpaid", ScopeMode: mode,
-		Status: "active", ExpiresAt: in.ExpiresAt,
+		Status: "active", ExpiresAt: in.ExpiresAt, VideoGenerateAllowed: in.VideoGenerateAllowed,
 	}
 	scopes := buildScopeModels(in.UserID, in.ProjectID, models)
-	audit, err := s.keyAudit(ctx, in.UserID, "create_project_key", in.ProjectID, in.IP, map[string]interface{}{"scope_mode": mode, "model_codes": models, "expires_at": in.ExpiresAt})
+	audit, err := s.keyAudit(ctx, in.UserID, "create_project_key", in.ProjectID, in.IP, map[string]interface{}{"scope_mode": mode, "model_codes": models, "expires_at": in.ExpiresAt, "video_generate_allowed": in.VideoGenerateAllowed})
 	if err != nil {
 		return "", ProjectKeyView{}, err
 	}
+	if in.VideoGenerateAllowed {
+		store, ok := s.repo.(projectKeyIdempotentStore)
+		if !ok {
+			return "", ProjectKeyView{}, ErrVideoAccessUnavailable
+		}
+		idem, err := s.keyIdempotency("issue", in.IdempotencyKey, []any{in.UserID, in.ProjectID, name, mode, models, in.ExpiresAt, true})
+		if err != nil {
+			return "", ProjectKeyView{}, err
+		}
+		key, actualModels, existing, err := store.CreateProjectKeyIdempotent(ctx, key, scopes, audit, idem)
+		if err != nil {
+			if errors.Is(err, repository.ErrProjectKeyScopeInvalid) {
+				err = ErrScopeModelInvalid
+			}
+			if errors.Is(err, repository.ErrRequestStateConflict) {
+				err = ErrVideoAdminCommandConflict
+			}
+			return "", ProjectKeyView{}, err
+		}
+		view := projectKeyView(key, actualModels)
+		view.Idempotent = existing
+		if existing {
+			plaintext = ""
+		}
+		return plaintext, view, nil
+	}
 	if err := s.repo.CreateProjectKey(ctx, key, scopes, audit); err != nil {
+		if errors.Is(err, repository.ErrProjectKeyScopeInvalid) {
+			err = ErrScopeModelInvalid
+		}
 		return "", ProjectKeyView{}, err
 	}
 	return plaintext, projectKeyView(key, models), nil
@@ -245,9 +297,31 @@ func (s *ProjectService) ListKeys(ctx context.Context, userID, projectID uint64)
 	return views, nil
 }
 
-func (s *ProjectService) RevokeKey(ctx context.Context, userID, projectID, keyID uint64, ip string) error {
+func (s *ProjectService) RevokeKey(ctx context.Context, userID, projectID, keyID uint64, ip string, idempotency ...string) error {
+	key, findErr := s.repo.FindProjectKey(ctx, userID, projectID, keyID)
+	if findErr != nil {
+		return findErr
+	}
 	audit, err := s.keyAudit(ctx, userID, "revoke_project_key", projectID, ip, nil)
 	if err != nil {
+		return err
+	}
+	if key.VideoGenerateAllowed {
+		if len(idempotency) != 1 {
+			return ErrVideoAdminCommandInvalid
+		}
+		store, ok := s.repo.(projectKeyIdempotentStore)
+		if !ok {
+			return ErrVideoAccessUnavailable
+		}
+		idem, err := s.keyIdempotency("revoke", idempotency[0], []any{userID, projectID, keyID})
+		if err != nil {
+			return err
+		}
+		_, err = store.RevokeProjectKeyIdempotent(ctx, userID, projectID, keyID, audit, idem)
+		if errors.Is(err, repository.ErrRequestStateConflict) {
+			return ErrVideoAdminCommandConflict
+		}
 		return err
 	}
 	if err := s.repo.RevokeProjectKey(ctx, userID, projectID, keyID, audit); err != nil {
@@ -256,7 +330,7 @@ func (s *ProjectService) RevokeKey(ctx context.Context, userID, projectID, keyID
 	return nil
 }
 
-func (s *ProjectService) RotateKey(ctx context.Context, userID, projectID, keyID uint64, ip string) (string, ProjectKeyView, error) {
+func (s *ProjectService) RotateKey(ctx context.Context, userID, projectID, keyID uint64, ip string, idempotency ...string) (string, ProjectKeyView, error) {
 	if err := s.requireVerifiedUser(ctx, userID); err != nil {
 		return "", ProjectKeyView{}, err
 	}
@@ -264,7 +338,7 @@ func (s *ProjectService) RotateKey(ctx context.Context, userID, projectID, keyID
 	if err != nil {
 		return "", ProjectKeyView{}, err
 	}
-	if oldKey.Status != "active" || (oldKey.ExpiresAt != nil && !oldKey.ExpiresAt.After(time.Now())) {
+	if !oldKey.VideoGenerateAllowed && (oldKey.Status != "active" || (oldKey.ExpiresAt != nil && !oldKey.ExpiresAt.After(time.Now()))) {
 		return "", ProjectKeyView{}, repository.ErrProjectKeyNotFound
 	}
 	models, err := s.repo.ListKeyScopes(ctx, oldKey.ID)
@@ -278,13 +352,45 @@ func (s *ProjectService) RotateKey(ctx context.Context, userID, projectID, keyID
 	newKey := &authmodel.APIKey{
 		UserID: userID, ProjectID: &projectID, KeyPrefix: prefix, KeyHash: hash,
 		Name: oldKey.Name, BillingMode: "postpaid", ScopeMode: oldKey.ScopeMode,
-		Status: "active", ExpiresAt: oldKey.ExpiresAt, RotatedFromID: &oldKey.ID,
+		Status: "active", ExpiresAt: oldKey.ExpiresAt, RotatedFromID: &oldKey.ID, VideoGenerateAllowed: oldKey.VideoGenerateAllowed,
 	}
-	audit, err := s.keyAudit(ctx, userID, "rotate_project_key", projectID, ip, map[string]interface{}{"rotated_from_id": oldKey.ID, "scope_mode": oldKey.ScopeMode, "model_codes": models})
+	audit, err := s.keyAudit(ctx, userID, "rotate_project_key", projectID, ip, map[string]interface{}{"rotated_from_id": oldKey.ID, "scope_mode": oldKey.ScopeMode, "model_codes": models, "video_generate_allowed": oldKey.VideoGenerateAllowed})
 	if err != nil {
 		return "", ProjectKeyView{}, err
 	}
+	if oldKey.VideoGenerateAllowed {
+		if len(idempotency) != 1 {
+			return "", ProjectKeyView{}, ErrVideoAdminCommandInvalid
+		}
+		store, ok := s.repo.(projectKeyIdempotentStore)
+		if !ok {
+			return "", ProjectKeyView{}, ErrVideoAccessUnavailable
+		}
+		idem, err := s.keyIdempotency("rotate", idempotency[0], []any{userID, projectID, keyID})
+		if err != nil {
+			return "", ProjectKeyView{}, err
+		}
+		key, actualModels, existing, err := store.RotateProjectKeyIdempotent(ctx, oldKey, newKey, audit, idem)
+		if err != nil {
+			if errors.Is(err, repository.ErrProjectKeyScopeInvalid) {
+				err = ErrScopeModelInvalid
+			}
+			if errors.Is(err, repository.ErrRequestStateConflict) {
+				err = ErrVideoAdminCommandConflict
+			}
+			return "", ProjectKeyView{}, err
+		}
+		view := projectKeyView(key, actualModels)
+		view.Idempotent = existing
+		if existing {
+			plaintext = ""
+		}
+		return plaintext, view, nil
+	}
 	if err := s.repo.RotateProjectKey(ctx, oldKey, newKey, buildScopeModels(userID, projectID, models), audit); err != nil {
+		if errors.Is(err, repository.ErrProjectKeyScopeInvalid) {
+			err = ErrScopeModelInvalid
+		}
 		return "", ProjectKeyView{}, err
 	}
 	return plaintext, projectKeyView(newKey, models), nil
@@ -302,7 +408,7 @@ func (s *ProjectService) requireVerifiedUser(ctx context.Context, userID uint64)
 	return nil
 }
 
-func (s *ProjectService) validateScope(ctx context.Context, userID uint64, mode string, modelCodes []string) (string, []string, error) {
+func (s *ProjectService) validateScope(ctx context.Context, userID, projectID uint64, mode string, modelCodes []string, allowVideo bool) (string, []string, error) {
 	mode = strings.TrimSpace(mode)
 	if mode == "" {
 		mode = ScopeModeAllowlist
@@ -312,16 +418,19 @@ func (s *ProjectService) validateScope(ctx context.Context, userID uint64, mode 
 	}
 	models := uniqueNonEmpty(modelCodes)
 	if mode == ScopeModeAll {
-		if len(models) != 0 {
+		if len(models) != 0 || allowVideo {
 			return "", nil, ErrScopeModeInvalid
 		}
 		return mode, nil, nil
 	}
-	ok, err := s.repo.ActiveScopedModelsExist(ctx, models)
+	hasVideo, err := s.repo.ValidateScopedModels(ctx, userID, projectID, models, allowVideo)
 	if err != nil {
+		if errors.Is(err, repository.ErrProjectKeyScopeInvalid) {
+			return "", nil, ErrScopeModelInvalid
+		}
 		return "", nil, err
 	}
-	if !ok {
+	if allowVideo && !hasVideo {
 		return "", nil, ErrScopeModelInvalid
 	}
 	if s.visibility == nil {
@@ -345,12 +454,25 @@ func (s *ProjectService) keyAudit(ctx context.Context, userID uint64, action str
 	}
 	summary["project_id"] = projectID
 	targetType := "api_key"
-	return func(tx *gorm.DB, keyID uint64) error {
+	return func(tx *gorm.DB, keyID uint64, scopeCodes []string, idempotency *repository.ProjectKeyIdempotency) (uint64, error) {
 		targetID := strconv.FormatUint(keyID, 10)
-		if err := s.auditRecorder.RecordWithTx(ctx, tx, &userID, "token_gateway", action, &targetType, &targetID, ip, summary); err != nil {
-			return ErrSecurityAuditUnavailable
+		if scopeCodes != nil {
+			// 审计与命令都使用排序后的低敏模型列表，避免同一授权因输入顺序产生不同事实。
+			normalizedScopes := append([]string(nil), scopeCodes...)
+			sort.Strings(normalizedScopes)
+			summary["model_codes"] = normalizedScopes
 		}
-		return nil
+		if idempotency != nil {
+			// 这里只记录不可逆摘要，不记录 Idempotency-Key、Secret 或 KeyHash 明文。
+			summary["idempotency_action"] = idempotency.Action
+			summary["command_key_hash"] = idempotency.CommandKeyHash
+			summary["fingerprint"] = idempotency.Fingerprint
+		}
+		id, err := s.auditRecorder.RecordWithTxID(ctx, tx, &userID, "token_gateway", action, &targetType, &targetID, ip, summary)
+		if err != nil {
+			return 0, ErrSecurityAuditUnavailable
+		}
+		return id, nil
 	}, nil
 }
 
@@ -398,6 +520,6 @@ func projectKeyView(key *authmodel.APIKey, models []string) ProjectKeyView {
 	return ProjectKeyView{
 		ID: key.ID, ProjectID: projectID, Name: key.Name, KeyPrefix: key.KeyPrefix,
 		ScopeMode: key.ScopeMode, ModelCodes: models, Status: key.Status,
-		ExpiresAt: key.ExpiresAt, LastUsedAt: key.LastUsedAt, CreatedAt: key.CreatedAt,
+		ExpiresAt: key.ExpiresAt, LastUsedAt: key.LastUsedAt, CreatedAt: key.CreatedAt, VideoGenerateAllowed: key.VideoGenerateAllowed,
 	}
 }

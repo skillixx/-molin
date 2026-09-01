@@ -55,7 +55,7 @@ func New(db *gorm.DB, redisClient redis.UniversalClient, tokenProviderKey, apiKe
 	governanceRepo := repository.NewG4GovernanceRepository(db)
 	g5AdminRepo := repository.NewG5AdminRepository(db)
 	g6UserRepo := repository.NewG6UserRepository(db)
-	catalogService := service.NewCatalogService(modelRepo)
+	catalogService := service.NewCatalogService(modelRepo).WithVideoAccess(service.NewVideoAccessService(db))
 	pricingService := service.NewPricingService(pricingRepo, defaultMaxTokens)
 	billingService := service.NewAIBillingService(db, pricingService, pricingRepo, walletHolds)
 	safetyService := service.NewSafetyService(governanceRepo, apiKeyHMACSecret)

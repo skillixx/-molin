@@ -1,0 +1,83 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "archive-private-executor",
+  "stage_status": "IN_PROGRESS",
+  "source_state_id": "18e1adf8cc8815ba3933fe2f8c6fe178699a6f1213e37613d95b0ac49fea703c",
+  "source_manifest": "video-gateway-vid-g6-archive-executor-source.json",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "local_registered_routes": 44,
+  "total_routes": 46,
+  "archive_http_implemented": false,
+  "runs": [
+    {
+      "kind": "NATIVE_VIDEO_PACKAGE",
+      "status": "PASS",
+      "seconds": 1.003
+    },
+    {
+      "session_id": 1872,
+      "status": "FAIL",
+      "schema": 99,
+      "copy_tree_sha256": "f5eaafff69301ab0e34ad32af28f82bfcbe77259bd0de339533c29613e56265c",
+      "failure": "第四个I2V/pending夹具重复全局EventID；其余三个执行恢复组合通过，未放宽事件唯一性"
+    },
+    {
+      "session_id": 39784,
+      "status": "PASS",
+      "schema": 99,
+      "required": 7,
+      "passed": 7,
+      "skipped": 0,
+      "linux_race": true,
+      "copy_tree_sha256": "877f465cecb6350ed2dc717c5ad65f7d924d617c8ed75f8ca8a346145152e5b2",
+      "service_seconds": 39.116,
+      "video_seconds": 1.133,
+      "executor_seconds": 23.65,
+      "final_authorization_seconds": 7.2,
+      "covers": [
+        "普通/待核对乘T2V/I2V四种恢复",
+        "原用户Key停用仍由真实认证管理员执行",
+        "原G4探测审核标识及六资产/对象hash核验",
+        "原G3最终成功，不回退pending技术阶段",
+        "原成本计量与视频时长一致",
+        "成功仍held/pending，不结算和不释放I2V租约",
+        "最终释放围栏读取跨权限期限后的成功事务回滚",
+        "旧存储代次写入/移动/删除拒绝及读体期间接管",
+        "原围栏并发/锁等待和G4/SavedCopy兼容"
+      ]
+    }
+  ],
+  "implementation": {
+    "executor": "service/video_archive_executor.go",
+    "storage": "video/archive_object_fence.go",
+    "secret_handling": "围栏原令牌仍只在内存证明，存储上下文仅Task和代次；不读Prompt/Input，不保存Provider正文"
+  },
+  "reviews": {
+    "standards": "最终授权顺序P2已修复并静态复核；39784对应动态反例通过，不签完整归档",
+    "remaining": [
+      "HTTP管理命令、幂等及前后审计持久化",
+      "安全失败、IO未知和确认丢失收口",
+      "部分资产恢复与全IO/权限/竞争矩阵"
+    ]
+  },
+  "remaining_goal": [
+    "完整archive-retry和调账接口",
+    "SDK互操作、完整准入/并发/安全矩阵与兼容回归",
+    "精确源码独立QA/PM/Standards/Spec、Ready CI及Git闭环"
+  ],
+  "git": {
+    "committed": false,
+    "pushed": false,
+    "pr": "NONE"
+  },
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": "NO",
+  "vid_g7_started": "NO"
+}

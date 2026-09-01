@@ -26,6 +26,7 @@ const (
 	VideoObjectTemporary  VideoObjectZone = "temporary"
 	VideoObjectResult     VideoObjectZone = "result"
 	VideoObjectQuarantine VideoObjectZone = "quarantine"
+	VideoObjectSaved      VideoObjectZone = "saved"
 )
 
 type VideoObjectRef struct {
@@ -70,13 +71,15 @@ const (
 
 // FakeVideoObjectStore 只保存本地测试字节，所有对象位置均由网关根据受控标识生成。
 type FakeVideoObjectStore struct {
-	mu      sync.RWMutex
-	objects map[VideoObjectRef]fakeVideoObject
-	now     func() time.Time
+	mu                 sync.RWMutex
+	objects            map[VideoObjectRef]fakeVideoObject
+	tombstones         map[VideoObjectRef]bool
+	now                func() time.Time
+	archiveGenerations map[string]uint64
 }
 
 func NewFakeVideoObjectStore() *FakeVideoObjectStore {
-	return &FakeVideoObjectStore{objects: make(map[VideoObjectRef]fakeVideoObject), now: time.Now}
+	return &FakeVideoObjectStore{objects: make(map[VideoObjectRef]fakeVideoObject), tombstones: make(map[VideoObjectRef]bool), now: time.Now}
 }
 
 func (s *FakeVideoObjectStore) Put(ctx context.Context, request PutVideoObjectRequest) (StoredVideoObject, error) {
@@ -86,6 +89,12 @@ func (s *FakeVideoObjectStore) Put(ctx context.Context, request PutVideoObjectRe
 	ref, err := generateVideoObjectRef(request)
 	if err != nil {
 		return StoredVideoObject{}, err
+	}
+	s.mu.RLock()
+	allowed := s.archiveWriteAllowedLocked(ctx, request.TaskID)
+	s.mu.RUnlock()
+	if !allowed {
+		return StoredVideoObject{}, ErrVideoObjectConflict
 	}
 	hasher := sha256.New()
 	chunks := make([][]byte, 0)
@@ -119,6 +128,16 @@ func (s *FakeVideoObjectStore) Put(ctx context.Context, request PutVideoObjectRe
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// 读体可能跨过接管时刻；临界区内再次检查才能拒绝迟到的旧写入。
+	if err := ctx.Err(); err != nil {
+		return StoredVideoObject{}, err
+	}
+	if !s.archiveWriteAllowedLocked(ctx, request.TaskID) {
+		return StoredVideoObject{}, ErrVideoObjectConflict
+	}
+	if s.tombstones[ref] {
+		return StoredVideoObject{}, ErrVideoObjectConflict
+	}
 	if existing, ok := s.objects[ref]; ok {
 		if existing.meta.SHA256 != meta.SHA256 || existing.meta.SizeBytes != meta.SizeBytes || !equalVideoChunks(existing.chunks, chunks) {
 			return StoredVideoObject{}, ErrVideoObjectConflict
@@ -188,15 +207,25 @@ func (s *FakeVideoObjectStore) move(ctx context.Context, ref VideoObjectRef, zon
 	if err := ctx.Err(); err != nil {
 		return StoredVideoObject{}, err
 	}
-	if ref.Bucket == bucketForVideoZone(zone) {
-		return s.Head(ctx, ref)
-	}
 	target := VideoObjectRef{Bucket: bucketForVideoZone(zone), ObjectKey: ref.ObjectKey}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	taskID, _, ok := strings.Cut(ref.ObjectKey, "/")
+	if err := ctx.Err(); err != nil {
+		return StoredVideoObject{}, err
+	}
+	if !ok || !s.archiveWriteAllowedLocked(ctx, taskID) {
+		return StoredVideoObject{}, ErrVideoObjectConflict
+	}
 	source, ok := s.objects[ref]
 	if !ok {
 		return StoredVideoObject{}, ErrVideoObjectNotFound
+	}
+	if target == ref {
+		return source.meta, nil
+	}
+	if s.tombstones[target] {
+		return StoredVideoObject{}, ErrVideoObjectConflict
 	}
 	if existing, exists := s.objects[target]; exists && (existing.meta.SHA256 != source.meta.SHA256 || !equalVideoChunks(existing.chunks, source.chunks)) {
 		return StoredVideoObject{}, ErrVideoObjectConflict
@@ -235,8 +264,31 @@ func (s *FakeVideoObjectStore) Delete(ctx context.Context, ref VideoObjectRef) e
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// 归档执行上下文不能用旧代次删除对象；普通用户删除仍由既有生命周期/财务门禁授权。
+	if _, scoped := ctx.Value(archiveWriteScopeKey{}).(archiveWriteScope); scoped {
+		taskID, _, ok := strings.Cut(ref.ObjectKey, "/")
+		if !ok || !s.archiveWriteAllowedLocked(ctx, taskID) {
+			return ErrVideoObjectConflict
+		}
+	}
 	delete(s.objects, ref)
+	if s.tombstones == nil {
+		s.tombstones = make(map[VideoObjectRef]bool)
+	}
+	s.tombstones[ref] = true
 	return nil
+}
+
+// Fake删除确认必须同时有原目标墓碑且正文不存在，不能用一般Head错误冒充已删除。
+func (s *FakeVideoObjectStore) SupportsSynchronousDeletion() bool { return true }
+func (s *FakeVideoObjectStore) VerifyDeleted(ctx context.Context, ref VideoObjectRef) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, exists := s.objects[ref]
+	return s.tombstones[ref] && !exists, nil
 }
 
 var videoObjectIDPattern = regexp.MustCompile("^[A-Za-z0-9_-]{1,128}$")
@@ -260,6 +312,8 @@ func bucketForVideoZone(zone VideoObjectZone) string {
 		return "video-result"
 	case VideoObjectQuarantine:
 		return "video-quarantine"
+	case VideoObjectSaved:
+		return "ai-user-assets"
 	default:
 		return ""
 	}
@@ -275,7 +329,7 @@ func validVideoObjectRole(role string) bool {
 }
 
 func validVideoObjectRef(ref VideoObjectRef) bool {
-	if ref.Bucket != bucketForVideoZone(VideoObjectTemporary) && ref.Bucket != bucketForVideoZone(VideoObjectResult) && ref.Bucket != bucketForVideoZone(VideoObjectQuarantine) {
+	if ref.Bucket != bucketForVideoZone(VideoObjectTemporary) && ref.Bucket != bucketForVideoZone(VideoObjectResult) && ref.Bucket != bucketForVideoZone(VideoObjectQuarantine) && ref.Bucket != bucketForVideoZone(VideoObjectSaved) {
 		return false
 	}
 	parts := strings.Split(ref.ObjectKey, "/")

@@ -38,8 +38,15 @@ func (s *AuditService) Record(ctx context.Context, operatorID *uint64, module, a
 
 // RecordWithTx 把结果审计写入调用方事务；失败必须由调用方回滚高风险业务动作。
 func (s *AuditService) RecordWithTx(ctx context.Context, tx *gorm.DB, operatorID *uint64, module, action string, targetType, targetID *string, ip string, requestSummary any) error {
+	_, err := s.RecordWithTxID(ctx, tx, operatorID, module, action, targetType, targetID, ip, requestSummary)
+	return err
+}
+
+// RecordWithTxID供需要把审计主键冻结进不可变命令的高风险事务使用。
+func (s *AuditService) RecordWithTxID(ctx context.Context, tx *gorm.DB, operatorID *uint64, module, action string, targetType, targetID *string, ip string, requestSummary any) (uint64, error) {
 	entry := buildAuditEntry(operatorID, module, action, targetType, targetID, ip, requestSummary)
-	return s.repo.CreateWithTx(ctx, tx, entry)
+	err := s.repo.CreateWithTx(ctx, tx, entry)
+	return entry.ID, err
 }
 
 func buildAuditEntry(operatorID *uint64, module, action string, targetType, targetID *string, ip string, requestSummary any) *model.AuditLog {

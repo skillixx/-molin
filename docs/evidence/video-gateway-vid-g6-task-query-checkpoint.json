@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G6",
+  "status": "PARTIAL_TASK_QUERY_32_LOCAL_TESTS_PASS_NOT_STAGE_ACCEPTANCE",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "head_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "UNCOMMITTED",
+  "source_manifest": "video-gateway-vid-g6-task-query-source.json",
+  "source_state_id": "07703f65583b93f6d1ce165d9f14424ec72d6f9f594ef20eecf0103c3a2ab967",
+  "code_state_id": "1e8653b2738678de81e8f7c17613f6454e3940e4e34a0c8b83ab0ded8199ba3d",
+  "expected_runtime_copy_tree_sha256": "3e73b7d250b2f9ae4c02b7a47072528699bbe176389b42410286f48eed7b3c94",
+  "registered_local_routes": 21,
+  "bootstrap_assembled": false,
+  "active_run": {
+    "session": 4041,
+    "focus": "all",
+    "required_top_level_tests": 32,
+    "status": "COMPLETED",
+    "result": "PASS",
+    "exit_code": 0
+  },
+  "runs": [
+    {
+      "session": 42412,
+      "exit_code": 1,
+      "copy_tree_sha256": "94f3ba5f5ce02245a72513e7ff9b881cb10502a1ecbe41a0fb9d0440d7a5ebdf",
+      "result": "结算快照反例通过；诊断JSON夹具被既有数据库白名单拒绝，整轮失败"
+    },
+    {
+      "session": 39711,
+      "exit_code": 0,
+      "copy_tree_sha256": "ae479e4746a8541df1ed355e2e9061c5cf27cb812776f5c259f3066fad533ea4",
+      "required_top_level_tests": 4,
+      "result": "平台列表100并发、实际结算一致性、释放/删除记录保留及导入HTTP通过；不含后来故障反例"
+    },
+    {
+      "session": 89610,
+      "exit_code": 1,
+      "copy_tree_sha256": "696f7d849213801ea247360d6c184bab635a81c4070ee616cbdc2d78976ba513",
+      "result": "数据库读返回Hold0.40/Link0.50，查询未失败关闭；事件/取消100竞争未报错，但不是确定性窗口证明"
+    },
+    {
+      "session": 52429,
+      "exit_code": 1,
+      "copy_tree_sha256": "3357dee50564fb764b4d36bc49b626a336edaef01abdd99407a0abc5a64a443f",
+      "result": "复现四种Hold损坏仍成功及exception事件进入total；缺Link/错Hold身份已正确拒绝"
+    },
+    {
+      "session": 46991,
+      "exit_code": 0,
+      "source_state_id": "07703f65583b93f6d1ce165d9f14424ec72d6f9f594ef20eecf0103c3a2ab967",
+      "commands": [
+        "go test -count=1 ./...",
+        "go vet ./...",
+        "go mod verify"
+      ],
+      "result": "Windows原生全包测试、vet及依赖校验通过；无隔离DSN用例的SKIP不替代MySQL运行"
+    },
+    {
+      "session": 4041,
+      "exit_code": 0,
+      "required_top_level_tests": 32,
+      "copy_tree_sha256": "3e73b7d250b2f9ae4c02b7a47072528699bbe176389b42410286f48eed7b3c94",
+      "result": "全部指定32项RUN/PASS，Linux race与迁移1—82通过；三组查询反例复验通过；全阶段未验收"
+    }
+  ],
+  "limited_secret_scan": {
+    "files": 91,
+    "matches": 0,
+    "boundary": "只检查高风险凭据格式，不代替完整信息流安全审查"
+  },
+  "defects": [
+    {
+      "id": "G6-TASKQUERY-RR",
+      "severity": "P1",
+      "status": "CLOSED_VERIFIED",
+      "root_cause": "普通RR身份读取建立旧快照，后续锁读状态与嵌套对账普通读混用",
+      "fix": "显式RC，列表总数及成员同SQL，稳定Task锁序",
+      "evidence": "3079红例、42412及39711局部绿；当前冻结源码4041待完成；4041当前冻结源码反例PASS，等待独立关闭确认",
+      "scope": "仅4041冻结源码中已复现反例，不等于完整查询或G6验收",
+      "reviewed_source_state": "07703f65583b93f6d1ce165d9f14424ec72d6f9f594ef20eecf0103c3a2ab967",
+      "independent_confirmation": "vid_g6_g5_gate：七个相关文件SHA256匹配，三个缺陷局部修复成立"
+    },
+    {
+      "id": "G6-TASKQUERY-HOLD",
+      "severity": "P1",
+      "status": "CLOSED_VERIFIED",
+      "root_cause": "Hold/Link结算金额不同或终态缺额时仍返回自相矛盾金额",
+      "fix": "nullable和金额一致性，合法Hold状态及终态非负上限校验",
+      "evidence": "89610、52429红例；4041待复验；4041当前冻结源码反例PASS，等待独立关闭确认",
+      "scope": "仅4041冻结源码中已复现反例，不等于完整查询或G6验收",
+      "reviewed_source_state": "07703f65583b93f6d1ce165d9f14424ec72d6f9f594ef20eecf0103c3a2ab967",
+      "independent_confirmation": "vid_g6_g5_gate：七个相关文件SHA256匹配，三个缺陷局部修复成立"
+    },
+    {
+      "id": "G6-TASKQUERY-EVENT-EXCEPTION",
+      "severity": "P2",
+      "status": "CLOSED_VERIFIED",
+      "root_cause": "视频公开事件混入仅为Chat/Image兼容的exception",
+      "fix": "删除该公开状态并保留原事件",
+      "evidence": "52429红例；4041待复验；4041当前冻结源码反例PASS，等待独立关闭确认",
+      "scope": "仅4041冻结源码中已复现反例，不等于完整查询或G6验收",
+      "reviewed_source_state": "07703f65583b93f6d1ce165d9f14424ec72d6f9f594ef20eecf0103c3a2ab967",
+      "independent_confirmation": "vid_g6_g5_gate：七个相关文件SHA256匹配，三个缺陷局部修复成立"
+    }
+  ],
+  "independent_incremental_reviews": [
+    {
+      "agent": "vid_g6_contract_audit",
+      "role": "测试工程师",
+      "read_only": true,
+      "implementation_owner": false,
+      "conclusion": "确认反例有效且未弱化合同；非最终验收",
+      "remaining": [
+        "同值非法Hold/Link范围反例",
+        "确定性事件分页插入窗口与完整事件集"
+      ]
+    },
+    {
+      "agent": "vid_g6_g5_gate",
+      "role": "产品经理",
+      "read_only": true,
+      "implementation_owner": false,
+      "conclusion": "23字段/原三轴/金额与删除元数据边界一致；已提出损坏Hold和exception缺口，修复后仍待重新确认"
+    },
+    {
+      "agent": "vid_g6_g5_gate",
+      "role": "产品经理",
+      "read_only": true,
+      "implementation_owner": false,
+      "reviewed_source_state": "07703f65583b93f6d1ce165d9f14424ec72d6f9f594ef20eecf0103c3a2ab967",
+      "conclusion": "独立核验7个相关实现/路由/测试文件摘要；结合4041实际RUN/PASS确认三个已复现缺陷局部关闭，仍不签完整查询或G6"
+    }
+  ],
+  "not_proven": [
+    "完整43路由与额外控制面需求",
+    "v1 multipart I2V",
+    "真实对象删除与完整输入租约/清理",
+    "内容业务授权、SDK和浏览器",
+    "回调及全部管理接口",
+    "全阶段独立QA/PM/Standards/Spec",
+    "Ready CI与Git闭环"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": "0",
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "pr_state": "NOT_CREATED",
+  "next_goal_allowed": false,
+  "vid_g7_started": false,
+  "runtime_copy_tree_sha256": "3e73b7d250b2f9ae4c02b7a47072528699bbe176389b42410286f48eed7b3c94"
+}

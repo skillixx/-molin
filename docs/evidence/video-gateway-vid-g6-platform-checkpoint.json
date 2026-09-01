@@ -1,0 +1,48 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "局部平台报价、生成、JWT及首次并发合同，不代表完整阶段",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_manifest": "video-gateway-vid-g6-platform-source.json",
+  "source_state_id": "1a79c1a16958013db211d69bac7936b02d5d3d339ddeb2c42fd31bafc670e8ba",
+  "code_state_id": "c45cfef2bbcea2cead2b4dcc6f9d58b62173ace52ec32f9a427097cc768ce827",
+  "run": {
+    "session": 19132,
+    "command": "VIDEO_GATEWAY_G6_ISOLATED_MYSQL_APPROVED=YES VIDEO_GATEWAY_G6_TEST_FOCUS=all bash infra/scripts/verify-video-gateway-vid-g6.sh",
+    "exit_code": 0,
+    "required_top_level_tests": 13,
+    "required_tests_actual_run_pass": 13,
+    "required_tests_skipped": 0,
+    "linux_race": "PASS",
+    "schema": "1至78及78重复up/down/up通过；down保留事实",
+    "http_first_100_and_replay_100": "PASS",
+    "jwt_quote_create_revoke_dependency_failure": "PASS",
+    "single_connection_automatic_quote": "PASS_0.23s",
+    "debug_instrumentation": "已移除，本次运行使用清理后源码",
+    "full_stage": false
+  },
+  "defect_history": [
+    {"run": 41327, "result": "FAIL", "symptom": "首次100并发500"},
+    {"run": 95303, "result": "FAIL", "symptom": "隔离MySQL1040，仅输出错误号诊断"},
+    {"run": 71882, "result": "FAIL", "symptom": "单连接自动报价2.05秒返回价格不可用"},
+    {"run": 78317, "result": "PASS", "scope": "绑定事务内价格读取器后13项通过，含原始100并发及单连接反例"}
+  ],
+  "independent_review": {
+    "role": "测试工程师",
+    "source_manifest_recomputed_files": 38,
+    "code_manifest_recomputed_files": 31,
+    "full_acceptance": "NOT_RUN",
+    "new_findings": [
+      {"severity": "P2", "status": "OPEN", "issue": "平台Quote错误缺少HTTP映射"},
+      {"severity": "P1_RISK", "status": "AWAITING_REPRODUCTION", "issue": "显式Quote外层RR旧快照可能漏读唯一键竞争赢家"}
+    ]
+  },
+  "current_evidence_status": "历史检查点；新增Quote反例及后续修复需独立新源码清单和运行证据，不能复用本次PASS",
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "git_state": "LOCAL_UNCOMMITTED",
+  "next_goal_allowed": false
+}

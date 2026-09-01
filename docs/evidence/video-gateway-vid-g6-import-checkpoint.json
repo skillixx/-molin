@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G6",
+  "status": "PARTIAL_INPUT_IMPORT_NOT_STAGE_ACCEPTANCE",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "head_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "UNCOMMITTED",
+  "tested_source_manifest": "video-gateway-vid-g6-import-source.json",
+  "current_source_manifest": "video-gateway-vid-g6-import-current-source.json",
+  "tested_source_state_id": "13ef3fb77841955c10ac2c81d9becb4c0b1aa8608ae74b19ad8add0a1bf986f5",
+  "current_source_state_id": "cab769101591be6fccd4b96abf0ecfa06eda0bdb9672ed9c6010ea3df0792027",
+  "code_state_id": "5ab5e073faca98c72ac3e81dd4793581dcffe47bde2c0a4db4d6bb35ff7d56b7",
+  "runtime_copy_tree_sha256": "2154dec18d36ec3a2907b5b7fc9ff5df16fc14f03a0dda68920cafecb790de19",
+  "registered_local_routes": 16,
+  "bootstrap_assembled": false,
+  "route": "POST /api/token/video-inputs/from-image-asset",
+  "runs": [
+    {
+      "session": 72068,
+      "exit_code": 1,
+      "result": "导入POST未注册，关闭态405而非503"
+    },
+    {
+      "session": 75912,
+      "exit_code": 0,
+      "result": "注册后导入关闭态503"
+    },
+    {
+      "session": 25532,
+      "exit_code": 0,
+      "copy_tree_sha256": "85f6953d94c588fba4bb4439dc32f7e11b08119ab43604b9aa8dcd83edf2286c",
+      "result": "首次导入服务、真实MySQL及既有局部28项通过；不覆盖随后scope锁和清理补丁"
+    },
+    {
+      "session": 29755,
+      "exit_code": 1,
+      "copy_tree_sha256": "ba4337cbb3d8abaf2ec206dd17f9e697643067707831f9e0c9d7b68dd994c02c",
+      "result": "目标保全解除后原拒绝命令持续不可用，清理死角真实复现"
+    },
+    {
+      "session": 48235,
+      "exit_code": 0,
+      "copy_tree_sha256": "2154dec18d36ec3a2907b5b7fc9ff5df16fc14f03a0dda68920cafecb790de19",
+      "required_top_level_tests": 28,
+      "result": "28项指定顶层实际RUN/PASS，Linux race通过，新增保全恢复和对象墓碑断言通过，无必需项SKIP"
+    }
+  ],
+  "verified": {
+    "schema": "完整1至82与78-82重复up/down/up；000082仅创建导入控制表和约束，down保留事实",
+    "identity": "同键首次100并发唯一导入控制及独立InputAsset；来源为gateway_asset_snapshot，upload_session_id为空；原键重放不另建目标",
+    "source": "实际IMG-G5生成/归档/结算后的安全640px源图，导入真实规范化及审核；同键异源409，跨Key404",
+    "put_unknown": "目标已经写入但Put响应未知，保留原Import/Input ID，重试完成且Put总数不重复增加",
+    "drift": "读出后源version变化拒绝发布；目标对象不存在、有墓碑，cleanup_pending=false且cleaned_at非空；原图仍可读且hash不变",
+    "hold_recovery": "目标保全时不Discard；解除后同一拒绝命令CAS收口未发布normalizing输入并清理目标；已发布、隔离或仍保全输入不能走此转换",
+    "capacity": "同用户锁下上传/导入共享并发及容量查询；导入完成占用从10MiB预留转实际输入字节。混合并发额度测试尚未完成",
+    "finance_count_scope": "导入前后ai_requests、ai_gateway_quotes、wallet_holds、ai_gateway_tasks数量不变；不把该四表断言扩大成所有财务故障矩阵",
+    "scope_lock": "源模型授权增加独立FOR SHARE，不能仅依赖外层EXISTS；专门撤权/RR双连接测试仍待完成",
+    "http_boundary": "本轮导入实际HTTP证据仅关闭态；正向导入/202/错误完整HTTP链仍未执行，不以应用服务替代"
+  },
+  "source_provenance": "48235整体运行摘要与主机一致；88文件源码及CODE由独立QA复算；运行后只修改文档路由数/迁移范围，CODE_STATE相同。",
+  "host_checks": {
+    "session": 27177,
+    "exit_code": 0,
+    "go_test": "go test ./...通过，含缓存结果及主机无DSN集成跳过；不替代隔离MySQL",
+    "go_vet": "PASS",
+    "go_mod_verify": "PASS",
+    "gofmt": "PASS",
+    "diff_check": "PASS"
+  },
+  "independent_subreviews": {
+    "pm": "确认source_asset_id公开ID、独立InputAsset、非财务控制、原键恢复/新源拒绝、共享额度、处理期限与绑定输入保留分离；不是法律或商业批准",
+    "qa": "发现源scope锁边界与目标保全解除清理死角；确认后续明确scope行锁、限定CAS清理修复、增强身份/墓碑/原图保留断言及88文件hash",
+    "full_stage_qa_pm_standards_spec": "NOT_RUN"
+  },
+  "defects": [
+    {
+      "id": "G6-IMPORT-001",
+      "severity": "P2",
+      "description": "目标保全解除后normalizing输入使拒绝回执永远无法清理",
+      "status": "CLOSED_INCREMENTAL",
+      "red": 29755,
+      "green": 48235
+    },
+    {
+      "id": "G6-IMPORT-SCOPE-001",
+      "description": "外层locking read不等于嵌套模型scope当前读",
+      "status": "HARDENED_EXPLICIT_LOCK_PENDING_RACE_TEST"
+    }
+  ],
+  "remaining": [
+    "正向HTTP、源四时点漂移与明确内容错误、发布提交结果未知",
+    "源scope撤销/RR双连接、旧lease与新lease竞争、目标隔离和重复清理",
+    "上传/导入混合100并发与容量边界、所有财务表及钱包金额零副作用",
+    "输入删除/租约/清理、v1 multipart、媒体交付、任务/请求、回调和管理接口",
+    "SDK与浏览器、完整G0-G5/Chat-Image兼容、最终四类验收及Git/Ready CI/普通合并"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "vid_g7_started": false,
+  "pr_state": "NOT_CREATED"
+}

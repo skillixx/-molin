@@ -1,0 +1,52 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "project-key-idempotency-semantic-binding",
+  "stage_status": "IN_PROGRESS",
+  "source_state_id": "59732b2a81034abefc8060ba57bce01365c494a4d3b3748bfaac7981cc074b07",
+  "source_manifest": "video-gateway-vid-g6-project-key-idempotency-source-v2.json",
+  "git_state": "UNCOMMITTED_UNPUSHED_NO_G6_PR",
+  "test_run": {
+    "session_id": 21812,
+    "status": "PASS",
+    "schema": 107,
+    "copy_tree_sha256": "1ac9e4d883f89db99a1968ccb0d7553e1a28c5af31a4782295745dc9eda67fd7",
+    "required": 4,
+    "passed": 4,
+    "skipped": 0,
+    "tests": [
+      "TestVideoG6ProjectKeyHTTPMySQL",
+      "TestVideoG6ProjectKeyCommandCorruptionFailsClosedMySQL",
+      "TestVideoG6ProjectGrantHTTPMySQL",
+      "TestProjectKeyLifecycleWritesAuditWithoutPlaintext"
+    ]
+  },
+  "verified": [
+    "命令结果严格只有key_id和status=completed",
+    "审计摘要冻结action、command_key_hash、fingerprint及规范化低敏意图，并由audit_sha256保护",
+    "issue只接受active且无轮换来源的结果Key",
+    "rotate要求source revoked、result active且rotated_from_id精确关联",
+    "revoke要求result等于source且状态revoked",
+    "首写完成后立即锁读复核，损坏审计使Key、scope、审计与命令整体回滚",
+    "Secret、KeyHash、原Idempotency-Key不进入命令或审计"
+  ],
+  "independent_review": {
+    "agent": "vid_g6_cancel_standards",
+    "result": "ORIGINAL_P2_CLOSED",
+    "p0": 0,
+    "p1": 0,
+    "p2": 0,
+    "full_stage_acceptance": false
+  },
+  "remaining": [
+    "Project Key COMMIT确认未知及全部写点故障注入",
+    "VID-G6 multipart I2V、资源准入、双SDK与完整阶段验收"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": "NO",
+  "vid_g7_started": "NO"
+}

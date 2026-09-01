@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G6",
+  "status": "IN_PROGRESS",
+  "source_state_id": "0165df254ed2d205d059fa5b72a498a235351077bff75aeeeefe1ef8bb63cb05",
+  "code_state_id": "a58691d7c92376d18e58dae0c10f99cabd95eb7c485ad8d83abb9ec971698873",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_changes": "UNCOMMITTED",
+  "scope": "显式Project/Key视频授权、IAM与模型基础准入、公开Job DTO；尚未接入HTTP生成或G5事务",
+  "mysql_runs": [
+    {
+      "session_id": 54845,
+      "migration_latest": 77,
+      "result": "EXPECTED_RED",
+      "failure": "TestVideoG6IAMMySQLFreshPermissions缺少video:generate seed",
+      "resources_cleaned": true
+    },
+    {
+      "session_id": 66658,
+      "migration_latest": 78,
+      "result": "RED",
+      "passed": [
+        "IAM真实MySQL授权/deny/过期/直接角色/100并发",
+        "既有内容HTTP四项"
+      ],
+      "failures": [
+        "reinstate误判为暂停",
+        "已有RR快照看不到另一连接提交的deny"
+      ],
+      "resources_cleaned": true
+    },
+    {
+      "session_id": 54199,
+      "migration_latest": 78,
+      "result": "PASS",
+      "note": "7个指定顶层测试实际RUN/PASS，Linux race通过；IAM 1.283s、DTO 1.037s、Handler 1.208s、Service 1.534s；1..78及78重复up/保留down/reup通过。17项源码首尾一致。仅基础准入切片，不是完整G6验收。",
+      "resources_cleaned": true
+    }
+  ],
+  "native_checks": {
+    "session_id": 19568,
+    "go_test_all": "PASS",
+    "go_vet_all": "PASS",
+    "go_mod_verify": "PASS",
+    "integration_without_dsn": "SKIP_NOT_ACCEPTANCE",
+    "dto_snapshot": "PASS_13_FIELDS_AND_NULLS",
+    "iam_partial_role_faults": "RED_THEN_GREEN_TWO_CASES",
+    "sensitive_scan": {
+      "files_scanned": 192,
+      "findings": 0
+    }
+  },
+  "independent_review": {
+    "agent": "vid_g6_contract_audit",
+    "source_manifest_match": true,
+    "files": 17,
+    "findings": [
+      {
+        "id": "G6-ACCESS-001",
+        "severity": "P1",
+        "description": "商品角色集合吞分组错误",
+        "status": "FIXED_UNIT_VERIFIED"
+      },
+      {
+        "id": "G6-ACCESS-002",
+        "severity": "P1",
+        "description": "旧RR快照不能感知已提交撤权",
+        "status": "FIXED_MYSQL_REVERIFY_RUNNING"
+      },
+      {
+        "id": "G6-ACCESS-003",
+        "severity": "P2",
+        "description": "解除限制被误当暂停",
+        "status": "FIXED_MYSQL_REVERIFY_RUNNING"
+      },
+      {
+        "id": "G6-ACCESS-004",
+        "severity": "P2",
+        "description": "可见性resolver数据库错误仍被布尔接口吞掉，应保留并映射Unavailable",
+        "status": "OPEN"
+      },
+      {
+        "id": "G6-ACCESS-005",
+        "severity": "P1",
+        "description": "商品关联不能推导为任意配额权益；需区分显式资产、指定权益类型、会员要求及未配置",
+        "status": "OPEN_NO_HTTP_EXPOSURE"
+      }
+    ],
+    "full_g6_qa": "NOT_RUN"
+  },
+  "product_contract_review": {
+    "agent": "vid_g6_g5_gate",
+    "result": "ENGINEERING_SCHEMA_ALLOWED_NO_COMMERCIAL_MAPPING_APPROVAL",
+    "facts": [
+      "G6要求模型所需权益有效，但没有冻结具体视频entitlement_type或会员等级",
+      "ProductID不意味着必须存在配额权益；只有带额度商品额外生成user_entitlements",
+      "会员购买价格门槛不能推导成视频调用门槛"
+    ],
+    "decision": "使用显式版本化模型准入配置表达资产/指定权益/会员要求，区分未配置与显式无需；缺配置或矛盾失败关闭。合成配置只用于测试，不填真实商业映射，不改变G5钱包计价。",
+    "not_final_pm_acceptance": true
+  },
+  "next_actions": [
+    "继续轮询session54199，读取实际RUN/PASS/FAIL并复核源清单",
+    "修复可见性查询错误传播并补测试",
+    "实现版本化模型权益配置与资产/指定权益/会员矩阵",
+    "将完整准入接入G5事务重查，再接真实SK HTTP创建/查询与幂等链",
+    "补齐43路由、SDK、生命周期、回调管理、文档和最终独立验收"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "provider_cost_cny": "0",
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "git_write_delivery_performed": false,
+  "next_goal_allowed": false,
+  "vid_g7_started": false
+}

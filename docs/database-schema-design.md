@@ -622,7 +622,165 @@ VID-G4已通过PR #420合并。VID-G5已新增000077的共享请求幂等、Usag
 
 已经实现的列和约束以000077源码为准，其余合同见[VID-G5开发合同](./video-gateway-vid-g5-billing-outbox-reconcile.md)和[财务人审包](./video-gateway-vid-g5-finance-review.md)。部分数据库验证不能视为完整G5能力验收。
 
+#### 3.5.18 视频网关 VID-G6 显式授权增量（开发中）
+
+本地000078新增`api_keys.video_generate_allowed`，非空、默认0并限制为0/1。历史Key不自动授权视频；目标模型范围仍使用`api_key_model_scopes`。新增`ai_project_model_capability_grants`，按Project/模型/capability唯一，含用户、active/revoked、version_no、操作者及时间；Project/user、模型和操作者由外键约束。六个新增权限只自动映射admin，不为真实Project或用户开通业务。
+
+视频模型要求目前使用已有发布快照JSON中的`video_contract`，显式区分未配置、无需资产、仅资产、指定权益和会员要求；不增加钱包、Usage或请求表。配置读取采用当前读，不能用旧RR快照绕过已提交撤权。000078的down保留结构和授权事实；当前只有隔离验证，没有共享库或生产迁移。完整字段与开发状态见[VID-G6合同](./video-gateway-vid-g6-http-project-sk-contract.md)。
+
+#### 3.5.19 视频网关 VID-G6 权利事实增量（开发中）
+
+`000079_video_rights_contract`新增两个非财务表，不预置条款或接受记录。`ai_video_rights_policies`保存版本、非商业用途、中文标题/正文、正文SHA256、有效期、显式合成接受TTL、状态及version_no；生成列active_slot的唯一键限制最多一个active版本。政策身份/正文/标题/期限不可变，退役/撤销必须递增版本，DELETE禁止。
+
+`ai_project_video_rights_acceptances`为追加式Project接受回执：公开ID、user/project/accepted_by、policy_id/version/body_sha256、rights_accept命令域、幂等键SHA256、请求指纹、HTTP request_id、accepted_at及expires_at。唯一键为user/project/命令域/键hash；Project所有者复合FK、accepted_by=user_id检查和政策三元FK绑定归属与版本身份，UPDATE/DELETE触发器保留原事实。不存在有效政策时历史回执仍可查询，但不能恢复有效授权。TTL仅为显式合成配置，真实政策未批准时不启用I2V。down不删除表、数据或约束。
+
+#### 3.5.20 视频网关 VID-G6 Quote/Request权利声明（开发中）
+
+000080新增`ai_video_rights_declarations`授权审计表：command_kind为quote/generation；引用原quote_id及可空request_id、user/project/key；保存政策三元身份、政策期限、可空项目接受ID、来源、HTTP trace、原confirmed_at及verified_at。quote声明与生成声明分别唯一，用户/Project/Key、原Quote/Request及政策外键均保留；触发器校验图生操作、接受归属与原确认时刻，generation还必须匹配Quote实际consumed_request_id。UPDATE/DELETE禁止，down保留事实。此表不保存Prompt、不另建钱包/Usage，也不改变G2/G5定价指纹。
+
+#### 3.5.21 视频网关 VID-G6 上传控制（开发中）
+
+000081新增`ai_video_upload_controls`，以原UploadSession为主键并复合外键绑定user/project。保存创建指纹与命令hash、预期源SHA256、规范扩展名、预分配InputAsset公开ID、服务端规范化对象位置、固定上传到期、容量预留、version_no、只写一次的complete/cancel命令hash、工作租约、cleanup_pending/cleaned_at及低敏错误分类。无Prompt、图片正文、签名URL或凭据字段，不另建资产或视频账本。
+
+000108只替换上述控制表的插入守卫，使原账本同时接受`platform_presigned`和`openai_inline_multipart` UploadSession；inline仍必须使用服务端生成的Target、相同容量/期限/版本/完整性约束和原Complete链。down恢复只允许新建platform控制记录，但保留全部既有inline会话、输入、任务和财务事实。详见[inline I2V合同](./video-gateway-vid-g6-inline-i2v-contract.md)。
+
+创建唯一键为user/project/create_key_hash；InputAsset公开ID和规范化位置分别唯一。插入要求同归属created/platform_presigned会话，固定15分钟上传期限及原件大小加10MiB预留。更新禁止身份、位置、hash、期限、预留漂移，CAS版本须恰好加一；DELETE禁止。仅有G6控制行的原会话受新增状态触发器约束，旧G3/G5会话不自动迁移。completed只能绑定同会话同归属、指定对象及hash、ready/passed的640—4096尺寸PNG资产。down保留所有结构和事实；只在临时隔离MySQL验证，未执行共享库迁移。
+
+#### 3.5.22 视频网关 VID-G6 来源导入控制增量（开发中）
+
+000082创建`ai_video_input_imports`，以原InputAsset为主键并复合FK绑定User/Project，另复合FK指向原来源图片。只记录公开命令ID、命令hash/指纹、原Key、冻结源ID/version/hash/规格/位置、服务端目标位置、工作CAS租约、处理期限和清理状态，不是第二套InputAsset或财务账本。来源资产不设全局唯一，不同命令允许生成独立快照；同user/project/命令hash唯一，跨Key不能重放。
+
+插入需对应gateway_asset_snapshot/normalizing且无规范化hash的原InputAsset和同Key源；更新保留身份及源/目标快照，版本恰好加一，终态不能互换，DELETE禁止。reserved_bytes初始10MiB，只有发布完成可改为实际InputAsset.size_bytes；待清理失败目标继续占额，cleaned_at只能首次设置。completed必须关联已规范化、审核通过且正确定位的输入。down保留结构与事实；只在临时MySQL验证，未部署。输入/上传容量检查共用两类控制记录并排除重复计入的InputAsset。
+
+#### 3.5.23 视频网关 VID-G6 输入删除申请凭据（开发中）
+
+000083创建`ai_video_input_deletion_requests`，主键指向原InputAsset，复合FK绑定User/Project，保存来源Key、命令hash、原版本、唯一删除后版本、规范化hash、审核版本、原到期时间和申请时间。插入必须对应同主体ready/passed且无保全/删除申请的输入；来源会话或图片必须匹配Key。记录禁止UPDATE/DELETE，同user/project/命令hash唯一，不是第二套资产账本。
+
+删除申请在同一事务创建凭据并将InputAsset推进pending_delete，原TaskInput版本、hash和租约不变。新增触发器以共享当前锁读观察执行租约，活跃租约禁止expiring/deleting/deleted/delete_failed；进入pending_delete须有匹配的原/后版本凭据。额外版本漂移仍使执行复验失败。新Quote与新绑定继续严格要求ready，不放宽旧INSERT约束。down保留结构和保护规则，不回退已经形成的删除事实。
+
+当前只实现申请与仓储复验基础，专用任务参考图读取、HTTP删除、保留窗和对象清理尚未闭环。不得将该迁移视为媒体删除已完成，也不得部署到共享环境。
+
+#### 3.5.24 视频网关 VID-G6 输入清理完成事实（开发中）
+
+000084创建`ai_video_input_cleanup_facts`，以原InputAsset为主键并引用原删除申请，记录归属、清理前后版本、规范化hash、策略版本、绑定保留秒数、来源种类、最早清理时刻及完成时刻。仅可追加，禁止UPDATE/DELETE；不是第二套资产账本。插入须匹配原删除版本、Input deleted/版本/hash/完成时间、原upload/import控制记录cleaned_at，并检查原输入到期和所有绑定安全终态及租约释放后的7天保护。
+
+数据库只能证明完成记录与原事实一致，不能自行证明外部对象已删除。Service必须先取得同步存储的同目标删除及围栏确认，再把Input、容量控制和完成事实一起提交。存储成功而数据库失败不能回滚正文，须保持未完成并按原目标恢复；down保留结构与完成事实，禁止让已删媒体重新显示可用。当前仅在临时MySQL与同步Fake存储验证，未部署。
+
+#### 3.5.25 视频网关 VID-G6 下载操作性租约（开发中）
+
+000085增加`ai_video_download_scopes`和`ai_video_download_leases`。前者以范围类型/ID为主键，仅串行化用户与Project的下载名额计数；后者保存随机连接令牌、原用户/Project/Task/Asset、version CAS、创建/租约截止/释放时间，并以复合外键约束原Task及Asset归属。它们不是新的任务、资产或金融账本，不保存Prompt、Key、对象位置或Provider正文。
+
+用户2、Project4的原子申请在已授权content事务、读取Store之前完成；所有Key共享用户额度。申请和续约均按User→Project锁范围，再以数据库UTC微秒时钟计数或校验租约。只锁租约行续期是不安全的：续约未提交跨旧TTL时，RC计数可能误补第三个名额；固定窗口测试覆盖该边界。60秒TTL为本阶段工程选择，不改变媒体保留政策。续约/释放均绑定原令牌、归属和version，过期令牌不得复活。释放只更新原操作性租约，不改Task、Asset、钱包或Hold；未知提交/释放失败采用期限保护，不能把未知状态认作已释放。down保留两表和历史记录，只回退应用并保持视频关闭。
+
+#### 3.5.26 视频网关 VID-G6 用户取消命令（开发中）
+
+000086创建`ai_video_cancellation_commands`，以用户/Project/固定cancel命令种类/幂等键SHA-256为主键，记录原Task、业务request_id、来源Key、首次处理结果和创建时刻。两个HTTP别名共享此命名空间，不因Key或路径创建另一套命令；精确Key访问控制独立执行。复合外键与INSERT守卫绑定原视频Task/Request、相同Key和初始状态；UPDATE/DELETE禁止，不能改写已接受意图。
+
+回执与原G5未提交取消在同一外层事务提交。G5公开入口仍自行开启并重试事务；G6传入事务时只执行一次原金融apply，由最外层统一重试，禁止1213已回滚整笔事务后仅重试保存点。所有规则只作用于合成隔离库，未部署；down保留回执及原财务、任务、事件与输入租约事实。
+
+#### 3.5.27 视频网关 VID-G6 媒体删除意图（验证中）
+
+000087增加`ai_video_media_deletions`与`ai_video_media_delete_commands`。前者关联原Task/Request/User/Project/Key，保存不可变内部目标计划及其hash、版本和deleting/delete_failed/completed状态；后者只记录用户/Project/媒体删除幂等键到原Task的映射。它们不替代原资产或财务账本。INSERT守卫约束视频身份、精确Key及安全终态；空计划completed仅允许无产物非成功任务。UPDATE只能依版本按既定删除状态迁移，不能换计划、身份或时间；禁止删除原操作事实。
+
+实际对象删除由存储边界确认，SQL记录不能单独证明正文消失。应用层必须核对真实资产树和五删一留角色、版本/hash/位置，完成前确认保留副本。确认事务失败时不撤销第一阶段隐藏意图，不恢复媒体；down只保留结构与事实。当前仅用于隔离测试，未部署；完整保存引用/清理竞争仍待后续验证。
+
+### 3.5.28 视频保存协调草稿（VID-G6，未开放）
+
+000088新增`ai_video_asset_save_scopes`范围锁、`ai_video_asset_saves`唯一Task的复制/容量协调记录和`ai_video_asset_save_commands`不可变幂等映射。长期资产仍存入原`user_assets`并写`asset_events`，协调表不是另一份视频或财务账本。保存操作固定原用户/Project/Key/Task/Request、存储商品/权益、明确单位与占用量、策略版本、五对象复制计划/hash；状态按version CAS迁移，完成时关联同用户的video_file资产，down保留事实。
+
+本迁移仍处于开发：触发器创建或schema加载成功不代表INSERT、容量事务或复制已验证。真实协调INSERT、保存HTTP、容量结转、复制恢复已有局部证据，JSON五元素检查仍不能代替实际资产树或目标字节验证。完整恢复/竞争与长期读取尚未完成，详情见`video-gateway-vid-g6-asset-save-contract.md`。
+
+### 3.5.29 未发布视频保存清理证据（VID-G6）
+
+000089只在原`ai_video_asset_saves`增加cleanup_policy_version、cleanup_reason、cleanup_eligible_at、cleanup_started_at、cleanup_finished_at、cleanup_proof_sha256，全部是内部低敏恢复元数据。首次cleanup_pending必须绑定同Task/Request/Owner的实际Source期限或原权益/父资产期限，且已经到期；匹配用户资产拒绝，接受后的资格和策略不可修改。aborted必须有完成时间与摘要，不能提前写完成字段，down保留所有事实。
+
+清理完成同时释放原存储权益reserved并在原父资产追加事件，不写生成钱包/账单。摘要和状态不是物理删除证明，服务重放及原结果删除仍核验五目标标记和唯一事件；未知Head失败不能当作不存在。仅临时MySQL与Fake边界验证，无部署或Worker运行。
+
+### 3.5.30 保存时冻结存储权益类型（VID-G6）
+
+000090在`ai_video_asset_saves`增加可空`storage_entitlement_type VARCHAR(64)`。新保存INSERT必须非空且与同用户、商品和原权益的类型逐字节一致；UPDATE禁止改变，包括大小写漂移。历史NULL不回填当前值，缺原始事实的长期读取失败关闭。down保留字段和保护触发器，不删除保存事实。
+
+长期读取不使用当前新保存配置推断旧资产资格，而使用冻结类型、原权益ID、单位、当前商品/父资产/权益和全部completed保存容量聚合复验。URL及每片读取继续校验原Task、Quote、结算、六资产安全树及五份长期对象。合同见[长期副本读取](./video-gateway-vid-g6-saved-read-contract.md)，尚未完整阶段验收。
+
+### 3.5.31 视频保存尝试身份（VID-G6，验证中）
+
+000091在原保存协调体系支持同Task多次历史尝试：`ai_video_asset_saves.public_id`成为尝试主键，`attempt_no`与`previous_save_id`保留序号和前驱；`live_task_id`生成列唯一约束保证同Task最多一个非aborted尝试，completed也占位。原Task复合外键、计划、清理证明、用户资产和财务事实保留。
+
+命令新增不可变`save_public_id`。迁移先在旧Task唯一关系仍成立时，按Task/User/Project/NULL安全Key确定性回填；孤儿或歧义拒绝，不猜latest。复合外键和触发器约束精确尝试，前驱必须同Task相邻已清理终态且最多一个后继。旧NULL权益类型不因本迁移回填。
+
+39166证明隔离空库、重复up/down/up及基础新旧尝试服务流程。后续30701从89版真实旧列夹具验证四种保存状态、19表原列保留、九个ALTER后中断重入、最终索引/FK定义及身份拒绝，不代表旧二进制或所有触发器空窗验收。旧NULL权益类型不回填，未完成恢复必须失败关闭。迁移和回滚须关闭保存及依赖它的媒体DELETE/清理，或使用理解多尝试的兼容版本；down不丢弃历史结构。详见[保存新尝试合同](./video-gateway-vid-g6-save-reattempt-contract.md)。
+
+### 3.5.32 平台单资产删除协调（VID-G6，验证中）
+
+000092新增`ai_video_asset_deletions`（选定普通子资产唯一的删除见证）与`ai_video_asset_delete_commands`（用户/Project/幂等键对应原资产、版本及video/asset作用域）。根组复用000087媒体删除，不新增Task、钱包或资产账本。输入版本、目标计划/hash及归属不可变；状态按CAS迁移，completed必须对应真实资产deleted标记和版本。
+
+INSERT将计划中的asset_id/public_id/role/bucket/object_key/hash/size/prepared_version绑定到当前资产；服务同样显式比较，不能用不含内部位置的普通元数据摘要替代目标检查。根组计划的PreDeleted为可选字段，旧计划省略它保持原摘要，新计划只能用已验证的单删见证跳过已删除子资产的版本推进。
+
+down保留全部事实。回滚旧代码前关闭相关读取、保存与删除能力，或使用兼容单删见证的版本；详见[平台资产删除合同](./video-gateway-vid-g6-asset-delete-contract.md)。当前仅隔离验证，无共享库或生产迁移。
+
+### 3.5.33 内部回调nonce事实（VID-G6，验证中）
+
+000093新增`ai_video_callback_nonces`，主键为provider_code + nonce_sha256；保存完整规范签名请求的request_sha256、原callback_event_id、signed_at和created_at，不保存nonce原值、签名、密钥或正文。外键指向共享`ai_gateway_provider_callback_events`。INSERT守卫要求同Provider、valid验签、applied/ignored处理结果和完整任务归属；UPDATE/DELETE均拒绝。
+
+回调原三元唯一键不变，nonce只是接收请求防重放事实，不建立第二套事件或财务账本。Task/Event、原Callback处理及nonce同事务，nonce写入失败必须一并回滚；提交结果未知只能按原事实重试。down保留全部事实并要求关闭内部接收入口，见[内部回调合同](./video-gateway-vid-g6-callback-contract.md)。
+
+### 3.5.34 管理任务与输入查询（VID-G6，验证中）
+
+输出管理与运行汇总也不新增表：输出读取原Asset→Task→Request/Key及同任务content父关联；汇总读取原视频请求、video_reconcile补偿、video_request Outbox及WalletLink/Hold/Wallet。均同RR一致性快照及当前管理员前后复验。汇总只展示运行事实，不领取补偿、不派发Outbox、不改变钱包；不能因不完整Hold关联而用聚合零值冒充正常。
+
+管理列表不增加表或复制视频账本。任务列表复用原Task/Request/Quote/Hold/资产与对账事实；输入列表复用`ai_gateway_input_assets`、`ai_upload_sessions`以及原图片Asset/Task/Request，API Key从来源解析而非给InputAsset新增影子Key字段。
+
+任务列表选页及当前锁定状态不一致时整页有界重试；跨用户钱包锁序已进入最终同源并发回归。输入管理查询在RR快照读取计数、条目与来源，并在管理员权限/MFA前后复验。查询不修改财务、业务事件或审批事实，不隐去停用/删除历史、不授予对象读取能力。完整字段及历史缺陷关闭矩阵见[管理查询合同](./video-gateway-vid-g6-admin-read-contract.md)。
+
+### VID-G6最终本地Schema状态（2026-09-01）
+
+本文较早VID-G6段落中的“开发中、局部、尚未完成”保留为历史过程。最终证据目录绑定的冻结副本已在一次性MySQL 8完成000001→000109、G6迁移up/down/re-up、事务/锁/CAS/100并发和Linux race全量验证；原请求、Quote、Hold、Usage、Task、资产、回调、审计与财务事实保持单一账本。未执行共享测试库或生产migration，应用回滚仍必须保留全部业务和财务事实。
+
+### 3.5.35 管理员取消回执（VID-G6，验证中）
+
+000094新增`ai_video_admin_cancellation_commands`，主键为actor_user_id+command_key_hash，引用原Task/Request/owner/Key和前后audit_logs。记录初始及最终Task版本、低敏初始结果、原因HMAC/长度、key version、nonce、AES-GCM密文、AAD SHA-256及密文SHA-256。没有原因明文列，不复用Task.prompt载荷类型，不新增钱包或任务账本。
+
+INSERT核对审计操作者/动作/目标/摘要及当前原任务结果；执行状态从Task读取，计费与交付状态仍从原Request读取。回执UPDATE/DELETE拒绝。G5取消、审计及回执共用外层事务，任一失败全部回滚；down保留事实，只能关闭管理写入口，不能撤销已完成退款或删除原审计。详见[管理员取消合同](./video-gateway-vid-g6-admin-cancel-contract.md)。
+
+### 3.5.36 管理员输入隔离回执（VID-G6，验证中）
+
+000095新增`ai_video_admin_input_quarantines`。主键为actor_user_id+command_key_hash，引用原InputAsset归属、原Key及前后audit_logs；冻结initial_state、initial/final_version、原因AES-GCM信封/HMAC/长度及隔离发生时间created_at。初态只允许原矩阵四态，final_version=initial_version+1。INSERT校验原来源关系及隔离结果、操作者和审计摘要，UPDATE/DELETE禁止。
+
+不新增输入账本，不修改原InputAsset的审核结论、规范化快照、来源、保全或expires_at；不修改TaskInput、任务或财务。旧取消原因AAD保持兼容，输入隔离采用独立领域。down仅保留事实并要求关闭入口，不能自动解除隔离。详见[输入隔离合同](./video-gateway-vid-g6-admin-input-quarantine-contract.md)。
+
+### 3.5.37 管理员输出隔离凭据（VID-G6，验证中）
+
+000096增加`ai_video_admin_output_quarantines`及原资产的可空`admin_quarantine_command_id`。命令prepared/version1→completed/version2，冻结原资产/Task/Request/owner/Key、初态及版本、安全快照SHA256、专用原因AES-GCM信封和前后审计。完成回执不可UPDATE/DELETE。资产首次指针绑定必须匹配prepared命令和完整OLD/NEW快照，完成必须证明实际隔离CAS及后审计。
+
+不覆盖原成功审核和标识，不移除原隔离CHECK的普通路径；仅增加受凭据与触发器约束的video行政隔离例外。指针不能由普通UPDATE清除/替换或退出隔离。解除及到期隔离清理仍待独立凭据路径集成，不能解释为无限保留；down保留所有事实。详见[输出隔离合同](./video-gateway-vid-g6-admin-output-quarantine-contract.md)。
+
 ## 4. 关键状态
+
+VID-G6 000107新增不可变`ai_project_key_commands`，保存视频Key issue/rotate/revoke的主体、HMAC命令键、意图指纹、源/结果Key、严格`{key_id,status=completed}`结果、审计ID及审计摘要SHA-256。没有Secret、KeyHash或可恢复密文；服务逐次验证完整低敏审计摘要和issue/rotate/revoke状态关系，命令禁止UPDATE/DELETE，down保留事实。详见[Key幂等合同](./video-gateway-vid-g6-project-key-idempotency-contract.md)。
+
+VID-G6 000109新增单行`ai_video_queue_admission_guard`，只序列化原Task账本的queued容量读取，不保存第二套队列深度、任务或运行租约。down保留门闩，代码回滚即停止使用；G7不得把该行误作Redis/Provider并发事实。详见[排队容量合同](./video-gateway-vid-g6-queue-admission-contract.md)。
+
+VID-G6 HTTP预算不新增表：复用G4策略、override与reservation表，通过同连接SAVEPOINT参与原G5事务。策略锁后按Project timezone和UTC时钟冻结账期/到期，cancel/settle/release在原财务终态事务内同步预算。详见[预算准入合同](./video-gateway-vid-g6-budget-admission-contract.md)。
+
+VID-G6 000106新增不可变`ai_video_project_grant_commands`，冻结actor、owner、Project、模型、动作、初始/结果版本、意图摘要、原因信封、结果及前后审计。SQL约束JSON结果、摘要、key版本、nonce/密文及原因长度；服务首次写后重读核验原审计归属、密文和结果。授权本体仍为`ai_project_model_capability_grants`；命令禁止UPDATE/DELETE，down保留全部事实。详见[Project授权合同](./video-gateway-vid-g6-project-grant-contract.md)。
+
+VID-G6 000105将原`ai_video_model_draft_commands.action`扩展为create/update/publish/unpublish/rollback，并增加单行`ai_video_model_publication_guard`串行默认模型决策。模型和发布事实仍在原表；down保留所有命令、版本和协调事实。详见[受控发布合同](./video-gateway-vid-g6-model-publication-contract.md)。
+
+VID-G6 000104为`ai_video_model_draft_commands`增加可空`source_sha256`。仅历史接管（update、initial_version=0）必须提供64位小写SHA256，普通创建/更新为NULL。摘要绑定接管前的模型ID、配置、排序、发布及修改事实，并进入前后审计；down保留列及事实，不删除模型或重建历史。
+
+VID-G6 000103新增原模型的`ai_video_model_draft_states`版本/摘要围栏，以及不可变`ai_video_model_draft_commands`。创建version0→1、受控更新n→n+1；按actor/action/key唯一，与模型变更、加密原因及前后审计同事务。命令禁止UPDATE/DELETE，down保留全部事实。详见[受控草稿合同](./video-gateway-vid-g6-model-draft-contract.md)。
+
+VID-G6 000102为原`token_models`增加`video_contract_json JSON NULL`，作为视频七键合同工作副本。历史记录保持NULL，不从旧能力自动推断授权；非NULL时要求模型为video且JSON类型为OBJECT。严格七键及商品/权益组合由共享领域解析器校验，发布快照保存`video_contract`；down保留列及已有值，不改历史发布、任务或财务事实。完整管理写链仍在开发，详见[模型管理开发文档](./video-gateway-vid-g6-model-management-development.md)。
+
+VID-G6 000101新增不可变`ai_video_adjustment_approvals`及`ai_video_adjustment_approval_executions`。申请冻结原Task/owner/Key、Task版本、CNY金额/方向/低敏原因码、不可复用序号、计划SHA256、专用原因信封、前后审计及15分钟操作期限。独立checker的prepared/version1→executed/version2与原G5 Usage、钱包流水、Outbox同事务，资金引用唯一且SQL核对原金额/方向/双主体。down保留全部事实，不改原settled/released。详见[调账双人审批合同](./video-gateway-vid-g6-admin-adjustment-contract.md)。
+
+VID-G6 000100增加`ai_video_admin_archive_commands`，保存原Task/Request/owner/Key、Provider绑定摘要、原Task版本、归档代次/起始phase、原因专用AES-GCM信封、前后审计及期限。每任务一个running操作，running/version1→completed或unknown/version2；completed须对应同代次真实succeeded及围栏已清。归档成功、后审计和完成回执同事务；原unknown不被后续成功覆盖，down保留事实。参见[归档HTTP合同](./video-gateway-vid-g6-admin-archive-contract.md)。
+
+VID-G6 000099仅扩展原Task归档围栏：archive_generation单调代次、archive_token_hash（原始32字节令牌不落库）、archive_lease_until、私有archive_phase。认领、phase推进和退让均增加原version_no并追加TaskEvent；Task执行轴不随技术phase回退。仓储使用锁后及提交前租约时钟，不把调用前的事件Now当有效租约证明。普通Worker/回调已识别围栏；上层管理员审计、实际IO与资产直写统一围栏仍待接入，见[归档恢复开发记录](./video-gateway-vid-g6-archive-recovery-development.md)。
+
+VID-G6 000098增加`ai_video_admin_poll_commands`：原Task/Request/owner/Key外键、原版本、Provider绑定SHA256、原因专用AES-GCM、前后审计、30秒执行期限。running/version1只能变为completed或unknown/version2；生成列active_task_id唯一限制每任务一个运行中查询。完成后不可改写/删除，回退保留命令与已有业务事实。不复制原任务、Provider正文、Prompt或财务表，见[管理轮询合同](./video-gateway-vid-g6-admin-poll-contract.md)。
+
+VID-G6新增000097解除输出隔离申请/复核：`ai_video_output_release_requests`保存不可变maker申请、原隔离命令/资产版本/安全摘要、原因信封、前后审计及15分钟操作审批期限；`ai_video_output_release_executions`保存独立checker的prepared→completed原子执行，原quarantine_id唯一消费。资产清指针及恢复原temporary/available必须有有效独立复核凭据；保留000096其他守卫及全部原事实，不改媒体保留期限。完整合同及未验证边界见[解除隔离合同](./video-gateway-vid-g6-admin-output-release-contract.md)。
 
 用户状态：
 

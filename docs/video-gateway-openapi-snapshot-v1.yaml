@@ -14,6 +14,16 @@ servers:
     description: 文档占位地址，禁止直接用于环境配置
 security:
   - projectSkAuth: []
+x-molin-platform-saved-read:
+  description: >-
+    平台长期副本读取不改变v1 Videos冻结合同。原临时媒体删除后v1仍404；
+    长期读取需要原JWT或Project SK及当前存储资格，未开放业务，不是匿名媒体地址。
+  contract: ./video-gateway-vid-g6-saved-read-contract.md
+  issue: GET /api/token/video-saved-assets/{user_asset_id}/{role}/download-url
+  redeem: GET /api/token/video-saved-assets/{user_asset_id}/{role}/content
+  roles: [content, cover, preview, thumbnail, derived]
+  max-ttl-seconds: 900
+  same-current-bearer-required: true
 paths:
   /v1/videos:
     post:
@@ -50,6 +60,15 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '402':
+          description: 钱包余额不足，未创建任务或预占
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
         '409':
@@ -100,7 +119,7 @@ paths:
           in: query
           schema:
             type: string
-          description: 上一页最后一个公开video_id
+          description: 上一页最后一个公开video_id；仅当前有权主体可使用。媒体删除后保留任务位置锚点，不返回已删除Job。
         - name: limit
           in: query
           schema:
@@ -124,10 +143,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VideoList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          description: 视频流量关闭或依赖不可用，不得伪装空列表成功
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /v1/videos/{video_id}:
     parameters:
       - $ref: '#/components/parameters/VideoId'
@@ -156,6 +188,8 @@ paths:
       description: >-
         删除只影响媒体正文和兼容接口可见性，不删除请求、Quote、钱包、Usage、成本、
         Outbox和审计事实。在途任务需要通过平台增强取消接口处理。
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '200':
           description: 媒体正文已删除
@@ -452,7 +486,7 @@ components:
               maxLength: 128
   responses:
     BadRequest:
-      description: 请求格式错误或缺少Idempotency-Key
+      description: 请求参数错误、缺少Idempotency-Key或未实名；未实名固定HTTP400/code70001
       headers:
         X-Request-ID:
           $ref: '#/components/headers/RequestId'
@@ -470,7 +504,7 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
     Forbidden:
-      description: 实名、Project、Key、模型、资产或权限门禁拒绝
+      description: Project、Key、模型、资产或权限门禁拒绝；未实名使用400/code70001
       headers:
         X-Request-ID:
           $ref: '#/components/headers/RequestId'

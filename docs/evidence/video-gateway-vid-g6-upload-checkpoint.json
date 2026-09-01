@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G6",
+  "status": "PARTIAL_UPLOAD_CHECKPOINT_NOT_STAGE_ACCEPTANCE",
+  "current_source_manifest": "video-gateway-vid-g6-upload-current-source.json",
+  "current_source_state_id": "0972b0cca687606b61551724bd29297df9364fcebe996a578752f1aa5bbe9042",
+  "post_run_change": "仅中文G6文档回填结果与缺陷；CODE_STATE保持一致，运行源码清单单独保留。",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "UNCOMMITTED",
+  "source_manifest": "video-gateway-vid-g6-upload-recovery-source.json",
+  "source_state_id": "5afdef4a8eea70dc05f04d1da18f34d095a2382934ad6a0baedb3207157ac227",
+  "code_state_id": "dfb56fdac08cde7c5e8f680975976d4138a6f1a52da6b3d777e0a5106402ff66",
+  "runtime_copy_tree_sha256": "efa67dee36d41719992636775be34b1f2f57b31b07f7978e29526a01463f4c26",
+  "source_verification": {
+    "runtime_files": 1641,
+    "missing": 0,
+    "byte_mismatches": 0,
+    "comparison_session": "292eb9",
+    "ordinal_host_recomputation_session": "3fe060",
+    "changed_file_hashes_independently_verified": 76
+  },
+  "runs": [
+    {
+      "session": 56971,
+      "focus": "upload",
+      "exit_code": 1,
+      "copy_tree_sha256": "fd428e7594020ac17af1646e700840d7410c7a1f0e5e51c07f79194c9c911e6b",
+      "result": "发布鉴权读一次性注入1213后会话rejected，复现临时故障误清理；其余原上传用例通过"
+    },
+    {
+      "session": 94572,
+      "focus": "all",
+      "exit_code": 0,
+      "required_top_level_tests": 24,
+      "copy_tree_sha256": "4e98c2b73899eb0341e1924583ac0ad1de61108b5dd208de8326dcaad57364d6",
+      "result": "修复读取错误分类及HTTP空DTO/必需键/错误码断言后，24项实际RUN/PASS"
+    },
+    {
+      "session": 67720,
+      "focus": "all",
+      "exit_code": 0,
+      "required_top_level_tests": 25,
+      "copy_tree_sha256": "efa67dee36d41719992636775be34b1f2f57b31b07f7978e29526a01463f4c26",
+      "result": "25项实际RUN/PASS，无必需项SKIP；Linux race通过，包含全部四个RecoveryFences子例"
+    }
+  ],
+  "verified": {
+    "schema": "真实临时MySQL应用1至81，78/79/80/81重复up/down/up；同一复制源码读取SQL并编译Go",
+    "http": "实际回环Molin及Fake对象存储：真实JWT/SK、上传签名PUT、封存完成、重放、取消、旧能力失效、跨Key404、伪造bucket400；权利接受后SK I2V报价0.50000000及原G5 Hold",
+    "core": "上传不写Request/Quote/Task/Hold，平台I2V后各一条；使用真实规范化及数据库，Store和审核为外部Fake",
+    "transient_faults": "发布鉴权读的ErrVideoAccessUnavailable及INSERT原始MySQL1213/1205保留verifying；失败无InputAsset，同键恢复后唯一输入，Seal/Put各一次。驱动故障注入不是实际数据库死锁复现",
+    "fences": "A旧租约过期/B接管；分别验证B已completed和仍verifying时A迟到失败均不改写状态/version或安排清理，B最终可完成",
+    "http_assertions": "每次UploadReply清零，固定八键及null语义；错误请求同时断言HTTP、数字码、error、request_id及data:null",
+    "concurrency": "上传首次Complete100并发唯一；此前T2V/Quote/权利接受与completed列表100并发仍通过"
+  },
+  "host_checks": {
+    "session": 27733,
+    "exit_code": 0,
+    "go_test": "go test ./... PASS；含缓存结果，主机无DSN的集成跳过不作MySQL通过证据",
+    "go_vet": "PASS",
+    "go_mod_verify": "PASS",
+    "gofmt": "全部变更及未跟踪Go文件无格式输出",
+    "diff_check": "PASS",
+    "focused_secret_scan": "97个变更及未跟踪文本文件：私钥块、AWS AccessKey和GitHub经典Token格式零命中；不是完整安全审查"
+  },
+  "independent_review": {
+    "role": "vid_g6_contract_audit",
+    "scope": "只读增量复核，非全阶段验收",
+    "result": "确认两个P2修复精确、三个数据库故障路径与两类租约围栏反例有效，76文件源码hash一致",
+    "full_stage": "NOT_RUN"
+  },
+  "defects": [
+    {
+      "id": "G6-UPLOAD-001",
+      "severity": "P2",
+      "description": "发布数据库临时故障误转rejected并Discard",
+      "status": "CLOSED_INCREMENTAL_TEST_AND_REVIEW",
+      "red": 56971,
+      "green": [
+        94572,
+        67720
+      ]
+    },
+    {
+      "id": "G6-UPLOAD-TEST-001",
+      "severity": "P2",
+      "description": "HTTP解码复用DTO可能残留缺失字段",
+      "status": "CLOSED_INCREMENTAL_TEST_AND_REVIEW",
+      "green": [
+        94572,
+        67720
+      ]
+    }
+  ],
+  "remaining": [
+    "上传完整MIME/大小/日期/能力/容量/清理失败矩阵及JWT正向图生",
+    "v1 multipart受控输入及幂等别名清理",
+    "输入查询/来源图片/删除、执行租约和容量回收",
+    "媒体授权传输、可播放MP4浏览器、生命周期及任务/请求查询",
+    "回调、管理权限/MFA/审计/双主体、预算/队列及控制面",
+    "双SDK真实HTTP、G0-G5/Chat-Image完整隔离回归",
+    "最终四类独立验收及Git/精确Ready CI/普通合并"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "vid_g7_started": false,
+  "pr_state": "NOT_CREATED"
+}

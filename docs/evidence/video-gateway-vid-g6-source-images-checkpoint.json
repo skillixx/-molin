@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G6",
+  "status": "PARTIAL_SOURCE_IMAGES_NOT_STAGE_ACCEPTANCE",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "head_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "UNCOMMITTED",
+  "source_manifest": "video-gateway-vid-g6-source-images-current-source.json",
+  "source_state_id": "1c419c4ba24910b3f617de539358adfe82cb5559645b63cbbd155496ff0ee1e4",
+  "code_state_id": "2d7c471dfafd0f11bf9748026212dc9c0195ad55b29ee25ed2ad8904e9f50629",
+  "runtime_copy_tree_sha256": "fe2fbd9b625d4d7cebfb93e1323bb04a78c07fd02d4468d75e18a5ae70815bc7",
+  "registered_local_routes": 15,
+  "route": "GET /api/token/video-input-source-images",
+  "bootstrap_assembled": false,
+  "runs": [
+    {
+      "session": 64514,
+      "exit_code": 1,
+      "result": "未注册来源列表，关闭态返回404"
+    },
+    {
+      "session": 77580,
+      "exit_code": 0,
+      "result": "来源列表注册后关闭态503"
+    },
+    {
+      "session": 78129,
+      "exit_code": 1,
+      "copy_tree_sha256": "f0e0af89a91c535008f45fd0413e08c3de723543dfedac4f5dc80373d160c190",
+      "result": "来源查询误读Task不存在的计费/交付列，HTTP及MySQL反例失败"
+    },
+    {
+      "session": 90395,
+      "exit_code": 1,
+      "copy_tree_sha256": "4ac75a0d123d093875aeb949de9fe1756198f598ac2fda32b9b26854bb585120",
+      "result": "SQL已修正，窗口夹具误要求结算前available；afterAssetCommit的断言错误被既有资产恢复路径吸收，observed断言阻止假PASS"
+    },
+    {
+      "session": 54528,
+      "exit_code": 1,
+      "copy_tree_sha256": "551795d25175e6d4accbb850ea86620a0f31a7669a4f100661b2bc784cedc690",
+      "result": "改为beforeFinalize后明确复现available主图0，证明旧窗口状态断言错误"
+    },
+    {
+      "session": 15286,
+      "exit_code": 0,
+      "copy_tree_sha256": "fe2fbd9b625d4d7cebfb93e1323bb04a78c07fd02d4468d75e18a5ae70815bc7",
+      "required_top_level_tests": 28,
+      "required_tests": [
+        "TestVideoG6IAMMySQLFreshPermissions",
+        "TestVideoG6HTTPMySQLCreateRetrieveReplay",
+        "TestVideoG6HTTPServiceRequiresRealDependencies",
+        "TestVideoG6AccessMySQLMatrix",
+        "TestVideoG6ModelContractExplicitRequirements",
+        "TestVideoG6EntitlementMySQLMatrix",
+        "TestVideoG6JobJSONSnapshot",
+        "TestVideoG6ContentHTTPFullAndSingleRange",
+        "TestVideoG6ContentHTTPRangeAndValidatorMatrix",
+        "TestVideoG6ContentHTTPRecoveryNeverAppendsJSON",
+        "TestVideoG6ContentHTTPStoreFailureIsLowSensitivity",
+        "TestVideoG6AutoQuoteSingleConnectionMySQL",
+        "TestVideoG6JWTAuthenticationFailsClosed",
+        "TestVideoG6QuoteRepeatableReadWinnerMySQL",
+        "TestVideoG6ListHTTPRequiresDependencies",
+        "TestVideoG6CompletedListsMySQLConcurrency",
+        "TestVideoG6RightsMySQLAcceptanceAndInvalidation",
+        "TestVideoG6I2VMySQLRightsQuoteHold",
+        "TestVideoG6I2VMySQLReplayAfterInputDeletion",
+        "TestVideoG6UploadMySQLSealCompleteReplay",
+        "TestVideoG6UploadMySQLRejectAndCancelRace",
+        "TestVideoG6UploadMySQLInterruptedRetryAndConcurrency",
+        "TestVideoG6UploadHTTPClosedRoutes",
+        "TestVideoG6UploadHTTPMySQLRoundtripAndI2V",
+        "TestVideoG6UploadMySQLRecoveryFences",
+        "TestVideoG6InputReadHTTPClosedRoutes",
+        "TestVideoG6InputMetadataMySQL",
+        "TestVideoG6SourceImagesMySQL"
+      ],
+      "result": "全部指定顶层实际RUN/PASS，Linux race通过，无必需项SKIP"
+    }
+  ],
+  "verified": {
+    "source": "运行树摘要与本机冻结树相同；81变更文件冻结后无变化。旧12fd快照仍保留，对应失败轮次，不作为当前源码。",
+    "financial_chain": "Fake640px图片及外部审核/存储边界；真实IMG-G5处理、归档、Reserve、Execute、Reconcile。未手工填写settled。结算后零差异、唯一可引用主图。",
+    "unsettled_window": "beforeFinalize实际观察temporary主图1、Request held/pending且候选0；随后原事务推进available/settled才候选1。不是available主图先于结算，也不宣称旧窗口断言通过。",
+    "scope": "同User/Project及Task-Request-Asset精确Key与模型关联；JWT看不到SK来源；allowlist/all均不能绕过被撤销的图片模型显式scope；保全隐藏。",
+    "output": "候选DTO只定义asset_id/mime_type/size_bytes/width/height/version_no/expires_at，不生成下载URL；实际HTTP空页D-95通过。正向七字段HTTP矩阵仍待补充。",
+    "provider": "测试Fake图片调用一次，后续列表/撤权/保全查询没有增加调用；真实Provider为0。",
+    "schema": "无新增迁移；1至81及78-81重复up/down/up在隔离MySQL通过"
+  },
+  "host_checks": {
+    "full_go_vet_mod": {
+      "session": 88910,
+      "result": "PASS，位于窗口夹具最后修正前；有缓存与主机集成跳过，不代替MySQL"
+    },
+    "latest_module_vet": {
+      "session": 86400,
+      "result": "当前service/root count=1及token_gateway vet通过；主机集成跳过不计验收"
+    },
+    "format": "gofmt及git diff --check通过",
+    "focused_secret_scan": "105个文本文件的私钥块/AWS AccessKey/GitHub经典Token格式零命中，仅限定扫描"
+  },
+  "independent_subreviews": {
+    "qa": "确认财务轴修复、显式scope、真实IMG-G5夹具；后续独立纠正窗口应temporary/held/pending并明确作废旧结论",
+    "pm": "确认可计费primary_output候选与既有图片对外交付合同一致，不包括缩略图、派生或审核副本；不代表导入再收费或新政策批准",
+    "full_stage_qa_pm_standards_spec": "NOT_RUN"
+  },
+  "defects": [
+    {
+      "id": "G6-SOURCE-001",
+      "severity": "P1",
+      "description": "来源列表引用Task不存在的财务列",
+      "status": "CLOSED_INCREMENTAL",
+      "red": 78129,
+      "green": 15286
+    },
+    {
+      "id": "G6-SOURCE-002",
+      "severity": "P2",
+      "description": "all模式绕过图片模型显式scope的合同差异",
+      "status": "CLOSED_INCREMENTAL_STATIC_AND_REGRESSION",
+      "green": 15286
+    },
+    {
+      "id": "G6-SOURCE-TEST-001",
+      "severity": "P2",
+      "description": "结算前窗口错误要求available且钩子错误被恢复路径吸收",
+      "status": "CLOSED_INCREMENTAL",
+      "red": [
+        90395,
+        54528
+      ],
+      "green": 15286
+    }
+  ],
+  "remaining": [
+    "from-image-asset导入、幂等、容量、不可变对象及源变化竞争",
+    "来源图片跨用户/Project、全生命周期/规格边界、七字段正向HTTP、查询与撤权快照交错",
+    "输入删除与租约/清理竞争，v1 multipart",
+    "媒体content/删除/保存、任务/请求查询、回调、管理及控制面",
+    "双SDK与浏览器、G0-G5/Chat-Image完整隔离回归、最终四类独立验收及Git/CI/合并"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "vid_g7_started": false,
+  "pr_state": "NOT_CREATED"
+}

@@ -19,8 +19,34 @@ import (
 
 // G5AdminHandler 提供 AI 网关管理工作台接口；所有写操作先审计，审计失败即拒绝业务变更。
 type G5AdminHandler struct {
-	service *service.G5AdminService
-	audit   governanceAuditRecorder
+	service           *service.G5AdminService
+	audit             governanceAuditRecorder
+	videoPublications *VideoAdminHandler
+}
+
+func (h *G5AdminHandler) WithVideoPublications(video *VideoAdminHandler) *G5AdminHandler {
+	h.videoPublications = video
+	return h
+}
+
+func (h *G5AdminHandler) dispatchVideoPublication(w http.ResponseWriter, r *http.Request, id uint64, action string) bool {
+	if h.service == nil {
+		return false
+	}
+	video, err := h.service.IsVideoModel(r.Context(), id)
+	if err != nil {
+		writeG5Error(w, err)
+		return true
+	}
+	if !video {
+		return false
+	}
+	if h.videoPublications == nil {
+		response.Error(w, 503, 50300, "视频模型发布管理未启用")
+		return true
+	}
+	h.videoPublications.ManageModelPublication(w, r, action)
+	return true
 }
 
 func NewG5AdminHandler(adminService *service.G5AdminService, audit governanceAuditRecorder) *G5AdminHandler {
@@ -80,6 +106,9 @@ func (h *G5AdminHandler) PublishModel(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if h.dispatchVideoPublication(w, r, id, "publish") {
+		return
+	}
 	var req dto.PublishModelReq
 	if !decodeGovernanceJSON(w, r, &req) {
 		return
@@ -101,6 +130,9 @@ func (h *G5AdminHandler) UnpublishModel(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	if h.dispatchVideoPublication(w, r, id, "unpublish") {
+		return
+	}
 	operatorID := middleware.UserIDFromContext(r.Context())
 	if !h.auditBeforeWrite(w, r, operatorID, "model.unpublish", "token_model", strconv.FormatUint(id, 10), nil) {
 		return
@@ -115,6 +147,9 @@ func (h *G5AdminHandler) UnpublishModel(w http.ResponseWriter, r *http.Request) 
 func (h *G5AdminHandler) RollbackModel(w http.ResponseWriter, r *http.Request) {
 	id, ok := governancePathUint64(w, r, "id")
 	if !ok {
+		return
+	}
+	if h.dispatchVideoPublication(w, r, id, "rollback") {
 		return
 	}
 	var req dto.RollbackModelReq

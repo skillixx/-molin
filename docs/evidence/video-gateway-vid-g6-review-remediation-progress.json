@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G6",
+  "status": "IN_PROGRESS_REVIEW_REMEDIATION",
+  "superseded_source_state_id": "9724b738f1ecf7e2580fb45542d8e3d945b6611671835737a6dbe99f63f0d3cc",
+  "closed_slices": [
+    {
+      "name": "running_admission",
+      "copy_tree_sha256": "c947c4bce1c673d455a91f21a4afef1550b4f7e7da8a651367651802194a2727",
+      "status": "PASS",
+      "coverage": "user1/project2/model2/concurrent winner/queued loser/provider0"
+    },
+    {
+      "name": "inline_i2v",
+      "copy_tree_sha256": "66ee69584f6dedc5b89196c042eb987d0b96c1c6b3d60ef74a5476c0bd6114ab",
+      "commit_copy_tree_sha256": "affab42574dc9573db7cce5b92acf6d29fa0edafc89943b027d6ded377ab9965",
+      "status": "PASS",
+      "coverage": "near10MiB TCP429/read disconnect/after complete disconnect/owner isolation/commit unknown"
+    },
+    {
+      "name": "content_download",
+      "copy_tree_sha256": "57d6db0d2ffb4062d6eb0bc21cf6099320751f882a7d97188e502d55483ce39b",
+      "status": "PASS",
+      "coverage": "project fifth/lease commit unknown/real slow TCP/stream revoke and delete/financial unchanged"
+    },
+    {
+      "name": "queue_admission",
+      "copy_tree_sha256": "5fa8f26c901065bd3ff11fcf7023079b0bc87635ad3b3fc71c22c5d996b6d3a5",
+      "status": "PASS",
+      "coverage": "user/project/global/100 concurrency/guard fault/tail fault/full zero-fact snapshot"
+    },
+    {
+      "name": "budget_admission",
+      "copy_tree_sha256": "14d1421543c20cdc9fd984ebfee4faeb6dc894dda722c40172645b2d9ca83ecd",
+      "status": "PASS",
+      "coverage": "hard-soft/100 concurrency/timezone day-month boundary/commit unknown/settle-release rollback"
+    },
+    {
+      "name": "model_publication",
+      "copy_tree_sha256": "1b25271d58d2b857f9546e7b778a756512bfa21bc930ccf2c3e8fedc4ad33927",
+      "default_concurrency_copy_tree_sha256": "7c49adb40344090276ac347076c41d670b611a738c3c5b218a7a8d1bf8bc9e28",
+      "status": "PASS",
+      "coverage": "commit unknown/SQL rollback/permission deny/MFA expiry/two default models one winner/legacy Chat compatibility"
+    },
+    {
+      "name": "admin_adjustment",
+      "copy_tree_sha256": "638bf104a38e61328c998db98f2e5081cb597ff90f13fb72c43408fa97cb2ced",
+      "status": "PASS",
+      "coverage": "credit/debit/100 concurrency/maker revoke/expiry/immutable approval/insufficient balance/commit unknown/legacy G5 compatibility"
+    },
+    {
+      "name": "admin_poll",
+      "copy_tree_sha256": "75f39446419360d20144ba3e5ab4348cafe7924c7d946fcb31ef2798678a2a97",
+      "status": "PASS",
+      "coverage": "100 same-key concurrency/one provider query/commit unknown/post-query revoke/MFA expiry/release-quarantine and gateway race regression"
+    },
+    {
+      "name": "admin_archive",
+      "copy_tree_sha256": "ad3ebbf4a83f2ce43cd70bbecf9021b84336a93875e204cb41be2d67f23b4572",
+      "status": "PASS",
+      "coverage": "100 same-key concurrency/one three-phase media execution/commit unknown/idempotent replay/T2V-I2V baseline"
+    },
+    {
+      "name": "admin_output_release",
+      "copy_tree_sha256": "295f5a796da0dd38af1c369556c11d8f57073306f7a2b56349e4a24c64f839a2",
+      "status": "PASS",
+      "coverage": "100 checker concurrency/checker MFA expiry/maker final expiry/commit unknown/unique execution and four audits"
+    },
+    {
+      "name": "admin_output_quarantine",
+      "copy_tree_sha256": "2cea5ec582ce3317c01833d3599c183b5fc8bf27375826a4f856e70549133723",
+      "status": "PASS",
+      "coverage": "100 same-key concurrency/admin MFA expiry/commit unknown/unique asset CAS-command-audits/full read-save-delete regression"
+    }
+  ],
+  "remaining": [
+    "最终同源SDK、全量MySQL/race、Chat/Image/G0-G5兼容",
+    "47路由/缺陷台账/证据索引/唯一PR例外与主文档一致性",
+    "重新四轴独立验收与Git闭环"
+  ],
+  "safety": {
+    "real_provider_requests": 0,
+    "real_provider_keys": 0,
+    "real_wallet_writes": 0,
+    "real_user_funds": 0,
+    "provider_cost_cny": 0,
+    "test_server_writes": 0,
+    "production_operations": 0,
+    "vid_g7_started": false
+  }
+}

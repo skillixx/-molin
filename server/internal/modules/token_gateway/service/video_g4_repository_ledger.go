@@ -11,6 +11,7 @@ import (
 
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"molin/server/internal/modules/token_gateway/model"
 	"molin/server/internal/modules/token_gateway/repository"
@@ -20,22 +21,30 @@ import (
 // VideoReferenceLoader 从受控私有对象读取已规范化参考图，禁止实现方接受用户URL。
 type VideoReferenceLoader func(ctx context.Context, asset model.AIGatewayInputAsset) (*videogateway.NormalizedReferenceImage, error)
 
+// 专用任务读取在同一事务内校验已有绑定；不接受客户端资产对象或放宽状态的布尔参数。
+type videoTaskReferenceLoader func(context.Context, *gorm.DB, string, repository.VideoOwner) (*videogateway.ControlledInputRef, *videogateway.NormalizedReferenceImage, error)
+
 // VideoRepositoryTaskLedger 把G4 Worker桥接到VID-G3共享Task、Input、Asset、Event、Callback和Payload Repository。
 type VideoRepositoryTaskLedger struct {
-	db              *gorm.DB
-	owner           repository.VideoOwner
-	taskRepo        *repository.VideoTaskRepository
-	inputRepo       *repository.VideoInputAssetRepository
-	eventRepo       *repository.VideoTaskEventRepository
-	callbackRepo    *repository.VideoProviderCallbackEventRepository
-	payloadRepo     *repository.VideoTaskPayloadRepository
-	assetRepo       *repository.VideoOutputAssetRepository
-	protector       *VideoTaskPayloadProtector
-	locator         repository.VideoObjectLocationFactory
-	referenceLoader VideoReferenceLoader
-	now             func() time.Time
-	deferDelivery   bool
-	financialFault  func(string) error
+	db                  *gorm.DB
+	owner               repository.VideoOwner
+	taskRepo            *repository.VideoTaskRepository
+	inputRepo           *repository.VideoInputAssetRepository
+	eventRepo           *repository.VideoTaskEventRepository
+	callbackRepo        *repository.VideoProviderCallbackEventRepository
+	payloadRepo         *repository.VideoTaskPayloadRepository
+	assetRepo           *repository.VideoOutputAssetRepository
+	protector           *VideoTaskPayloadProtector
+	locator             repository.VideoObjectLocationFactory
+	referenceLoader     VideoReferenceLoader
+	taskReferenceLoader videoTaskReferenceLoader
+	now                 func() time.Time
+	deferDelivery       bool
+	financialFault      func(string) error
+	runningAdmission    bool
+	runningLimits       videoRunningLimits
+	// 仅管理轮询装配的原任务标识；此路径不提供Prompt/参考图，不能用于Submit。
+	recoveryTaskID string
 }
 
 // NewVideoBillingTaskLedger 在同一G3/G4仓储上启用G5财务交付门禁，不创建第二套任务或资产账本。
@@ -60,9 +69,16 @@ func (l *VideoRepositoryTaskLedger) Load(ctx context.Context, taskID string) (vi
 	if l == nil || l.db == nil || l.protector == nil {
 		return videogateway.GatewayTask{}, videogateway.ErrGatewayTaskNotFound
 	}
+	if l.recoveryTaskID != "" {
+		return l.loadRecoveryMetadata(ctx, taskID)
+	}
 	record, err := l.taskRepo.FindForOwner(ctx, taskID, l.owner)
 	if err != nil {
 		return videogateway.GatewayTask{}, mapVideoRepositoryError(err)
+	}
+	// 已被管理归档接管时，普通Worker连新的媒体IO也不能启动；先前IO的写回另由共享CAS拒绝。
+	if record.ArchiveTokenHash != nil {
+		return videogateway.GatewayTask{}, videogateway.ErrGatewayTaskConflict
 	}
 	if !l.deferDelivery {
 		// 持久化G5身份不能由换构造器降级。显式SELECT *兼容旧库没有command_kind列的情况。
@@ -125,11 +141,22 @@ func (l *VideoRepositoryTaskLedger) Load(ctx context.Context, taskID string) (vi
 			MediaType:      "video/mp4",
 		}
 	}
-	if operation == model.AIVideoOperationImageToVideo {
+	if operation == model.AIVideoOperationImageToVideo && !videoG4TerminalStatus(record.Status) && l.taskReferenceLoader != nil {
+		task.Input, task.Reference, err = l.taskReferenceLoader(ctx, l.db, taskID, l.owner)
+		if err != nil {
+			return videogateway.GatewayTask{}, err
+		}
+		if task.Input == nil || task.Reference == nil {
+			return videogateway.GatewayTask{}, repository.ErrVideoInputSnapshotDrift
+		}
+	} else if operation == model.AIVideoOperationImageToVideo {
 		var binding *model.AIGatewayTaskInput
 		if videoG4NeedsProviderInputValidation(record.Status) {
 			binding, err = l.inputRepo.ValidateTaskInputForProvider(ctx, taskID, l.owner, l.now().UTC())
-			if err != nil || binding == nil {
+			if err != nil {
+				return videogateway.GatewayTask{}, err
+			}
+			if binding == nil {
 				return videogateway.GatewayTask{}, repository.ErrVideoInputSnapshotDrift
 			}
 		} else {
@@ -148,6 +175,10 @@ func (l *VideoRepositoryTaskLedger) Load(ctx context.Context, taskID string) (vi
 		}
 		task.Input = &videogateway.ControlledInputRef{AssetID: asset.PublicID, SHA256: binding.NormalizedSHA256, Version: binding.InputVersion}
 		if !videoG4TerminalStatus(record.Status) {
+			// 普通读取器没有TaskInput授权能力；延迟删除输入必须等待专用执行读取装配，不能静默放宽为ready。
+			if asset.LifecycleState == model.AIInputAssetPendingDelete {
+				return videogateway.GatewayTask{}, repository.ErrVideoInputSnapshotDrift
+			}
 			if l.referenceLoader == nil {
 				return videogateway.GatewayTask{}, repository.ErrVideoInputSnapshotDrift
 			}
@@ -302,6 +333,10 @@ func (l *VideoRepositoryTaskLedger) withDB(db *gorm.DB) *VideoRepositoryTaskLedg
 	scoped.now = l.now
 	scoped.deferDelivery = l.deferDelivery
 	scoped.financialFault = l.financialFault
+	scoped.runningAdmission = l.runningAdmission
+	scoped.runningLimits = l.runningLimits
+	scoped.taskReferenceLoader = l.taskReferenceLoader
+	scoped.recoveryTaskID = l.recoveryTaskID
 	return scoped
 }
 
@@ -338,21 +373,53 @@ func (l *VideoRepositoryTaskLedger) ReleaseLeaseOnce(ctx context.Context, taskID
 
 func (l *VideoRepositoryTaskLedger) RecordCallback(ctx context.Context, taskID string, callback videogateway.VerifiedCallback) (bool, error) {
 	toStatus := mapVideoG4ProviderStatus(callback.Status)
+	// 外部event_id只在Provider任务内唯一；内部全局事件键使用完整三元组摘要，长度不随外部ID增长。
+	// 新版本域与旧裸ID域分离，避免历史事件号恰好是摘要文本时碰撞，旧记录保持不变。
+	identity := fmt.Sprintf("%d:%s%d:%s%d:%s", len(callback.ProviderCode), callback.ProviderCode, len(callback.ProviderTaskID), callback.ProviderTaskID, len(callback.ExternalEventID), callback.ExternalEventID)
+	eventDigest := videoPayloadSHA256([]byte(identity))
 	var replayed bool
 	err := l.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// 回调只推进Provider执行段。归档/审核后的失败属于Worker，待对账终结属于对账流程；
+		// 不能等Gateway读取旧快照后再保护，因为原Callback Repository已经可能先写入数据库。
+		current, loadErr := repository.NewVideoTaskRepository(tx).LockForOwnerTx(tx, taskID, l.owner)
+		if loadErr != nil && !errors.Is(loadErr, repository.ErrVideoTaskNotFound) {
+			return loadErr
+		}
+		if loadErr == nil && current.Status == model.AIImageTaskSubmitted && callback.Status == videogateway.ProviderTaskSucceeded && current.ProviderCode != nil && current.ProviderTaskID != nil && *current.ProviderCode == callback.ProviderCode && *current.ProviderTaskID == callback.ProviderTaskID {
+			// Provider可以只发送最终成功。沿原单步矩阵在同一事务补齐processing，不能直接跳过节点；
+			// 已存在的事件（包括历史ignored）仅重放，不能借重试重新解释或改写原处理事实。
+			// 共享账本可能位于已有RR快照；必须当前读事件实体，不能用旧COUNT漏掉新提交的ignored。
+			var existing model.AIGatewayProviderCallbackEvent
+			existingErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("provider_code=? AND provider_task_id=? AND external_event_id=?", callback.ProviderCode, callback.ProviderTaskID, callback.ExternalEventID).Take(&existing).Error
+			if existingErr != nil && !errors.Is(existingErr, gorm.ErrRecordNotFound) {
+				return existingErr
+			}
+			if errors.Is(existingErr, gorm.ErrRecordNotFound) {
+				updated, err := repository.NewVideoTaskRepository(tx).TransitionExecution(ctx, repository.VideoStateTransition{TaskPublicID: current.PublicID, Owner: l.owner, ExpectedVersion: current.VersionNo, ToStatus: model.AIImageTaskProcessing, Progress: current.Progress, EventID: "vid_g4_cb_v2_pre_" + eventDigest, Source: "provider_callback", SafeDetailJSON: json.RawMessage(`{"reason":"state_advanced"}`), Now: l.now().UTC()})
+				if err != nil {
+					return err
+				}
+				current = updated
+			}
+		}
+		if loadErr == nil && current.Status != model.AIImageTaskSubmitted && current.Status != model.AIImageTaskProcessing {
+			// 同态不是允许迁移，原Repository仍追加该回调为ignored并保留三元去重事实。
+			toStatus = videogateway.TaskStatus(current.Status)
+		}
 		outcome, err := repository.NewVideoProviderCallbackEventRepository(tx).RecordAndApply(ctx, repository.VideoProviderCallbackCommand{
 			ProviderCode: callback.ProviderCode, ProviderTaskID: callback.ProviderTaskID,
 			ExternalEventID: callback.ExternalEventID, BodySHA256: callback.BodySHA256,
 			ExpectedTaskPublicID: taskID, ExpectedOwner: l.owner,
 			SignatureStatus: model.AIProviderCallbackSignatureValid, ToStatus: string(toStatus),
-			EventID:        "vid_g4_callback_" + callback.ExternalEventID,
+			EventID:        "vid_g4_cb_v2_" + eventDigest,
 			SafeResultJSON: json.RawMessage("{\"result\":\"applied\"}"), ReceivedAt: l.now().UTC(),
 		})
 		if err != nil {
 			return err
 		}
 		replayed = outcome.Replayed
-		if l.deferDelivery && outcome.Applied {
+		// Applied描述原事件的历史结果；重放只能恢复ACK，不能按当前任务再次安排补偿或人工核对。
+		if l.deferDelivery && outcome.Applied && !outcome.Replayed {
 			record, err := repository.NewVideoTaskRepository(tx).LockForOwnerTx(tx, taskID, l.owner)
 			if err != nil {
 				return err

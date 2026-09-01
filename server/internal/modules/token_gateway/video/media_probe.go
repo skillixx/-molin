@@ -245,21 +245,25 @@ func classifyMediaReadError(err error) error {
 
 func parseMovieMetadata(moov []byte) (VideoMediaMetadata, error) {
 	var result VideoMediaMetadata
-	mvhd, ok := findBox(moov, "mvhd")
-	if !ok || len(mvhd) < 20 {
+	movies := findBoxes(moov, "mvhd")
+	if len(movies) != 1 {
 		return result, ErrMediaContainer
 	}
-	timescale := binary.BigEndian.Uint32(mvhd[12:16])
-	duration := binary.BigEndian.Uint32(mvhd[16:20])
-	if timescale == 0 || uint64(duration) > math.MaxUint64/1000 {
+	timescale, duration, ok := parseMediaClock(movies[0])
+	if !ok || duration > math.MaxUint64/1000 {
 		return result, ErrMediaContainer
 	}
 	result.DurationMillis = uint64(duration) * 1000 / uint64(timescale)
 	tracks := findBoxes(moov, "trak")
+	videoTracks := 0
 	for _, track := range tracks {
 		handler := parseHandler(track)
 		switch handler {
 		case "vide":
+			videoTracks++
+			if videoTracks != 1 {
+				return result, ErrMediaContainer
+			}
 			tkhd, exists := findBox(track, "tkhd")
 			if !exists || len(tkhd) < 84 {
 				return result, ErrMediaContainer
@@ -267,7 +271,14 @@ func parseMovieMetadata(moov []byte) (VideoMediaMetadata, error) {
 			result.Width = binary.BigEndian.Uint32(tkhd[len(tkhd)-8:]) >> 16
 			result.Height = binary.BigEndian.Uint32(tkhd[len(tkhd)-4:]) >> 16
 			result.VideoCodec = parseSampleCodec(track)
-			result.FrameRate = parseFrameRate(track, timescale)
+			if result.VideoCodec == "" {
+				return result, ErrMediaContainer
+			}
+			var err error
+			result.FrameRate, err = parseFrameRate(track)
+			if err != nil {
+				return result, err
+			}
 		case "soun":
 			result.HasAudio = true
 			result.AudioCodec = parseSampleCodec(track)
@@ -295,16 +306,78 @@ func parseSampleCodec(track []byte) string {
 	return string(stsd[12:16])
 }
 
-func parseFrameRate(track []byte, timescale uint32) uint32 {
+// stts采用同一视频轨道的mdhd时基，不能使用电影mvhd时基；只接受可精确表示的整数CFR。
+func parseFrameRate(track []byte) (uint32, error) {
+	media := findBoxes(track, "mdia")
+	if len(media) != 1 {
+		return 0, ErrMediaContainer
+	}
+	clocks := findBoxes(media[0], "mdhd")
+	if len(clocks) != 1 {
+		return 0, ErrMediaContainer
+	}
+	timescale, duration, valid := parseMediaClock(clocks[0])
+	if !valid || duration == 0 {
+		return 0, ErrMediaContainer
+	}
 	stts, ok := findBoxRecursive(track, "stts")
-	if !ok || len(stts) < 16 || binary.BigEndian.Uint32(stts[4:8]) == 0 {
-		return 0
+	if !ok || len(stts) < 16 || stts[0] != 0 {
+		return 0, ErrMediaContainer
+	}
+	entries := uint64(binary.BigEndian.Uint32(stts[4:8]))
+	if entries == 0 || uint64(len(stts)) != 8+entries*8 {
+		return 0, ErrMediaContainer
 	}
 	delta := binary.BigEndian.Uint32(stts[12:16])
 	if delta == 0 {
-		return 0
+		return 0, ErrMediaContainer
 	}
-	return timescale / delta
+	var sampleTicks uint64
+	for i := uint64(0); i < entries; i++ {
+		entry := stts[8+i*8 : 16+i*8]
+		if binary.BigEndian.Uint32(entry[:4]) == 0 {
+			return 0, ErrMediaContainer
+		}
+		if binary.BigEndian.Uint32(entry[4:]) != delta {
+			return 0, ErrMediaResourceLimit
+		}
+		// 不能仅凭首个delta和电影时长宣称视频完整；累计采样时长必须匹配所属媒体头。
+		ticks := uint64(binary.BigEndian.Uint32(entry[:4])) * uint64(delta)
+		if sampleTicks > math.MaxUint64-ticks {
+			return 0, ErrMediaContainer
+		}
+		sampleTicks += ticks
+	}
+	if sampleTicks != duration {
+		return 0, ErrMediaContainer
+	}
+	if timescale%delta != 0 {
+		return 0, ErrMediaResourceLimit
+	}
+	return timescale / delta, nil
+}
+
+// mvhd/mdhd的版本0和1使用不同偏移；未知版本、截断和零时基必须明确拒绝。
+func parseMediaClock(data []byte) (uint32, uint64, bool) {
+	if len(data) < 20 {
+		return 0, 0, false
+	}
+	var scale uint32
+	var duration uint64
+	switch data[0] {
+	case 0:
+		scale = binary.BigEndian.Uint32(data[12:16])
+		duration = uint64(binary.BigEndian.Uint32(data[16:20]))
+	case 1:
+		if len(data) < 32 {
+			return 0, 0, false
+		}
+		scale = binary.BigEndian.Uint32(data[20:24])
+		duration = binary.BigEndian.Uint64(data[24:32])
+	default:
+		return 0, 0, false
+	}
+	return scale, duration, scale > 0
 }
 
 func findBox(data []byte, boxType string) ([]byte, bool) {
@@ -381,7 +454,11 @@ func makeTrack(handler, codec string, tkhd []byte, sampleCount, sampleDelta uint
 	}
 	stbl := makeBox("stbl", append(makeBox("stsd", stsd), makeBox("stts", stts)...))
 	minf := makeBox("minf", stbl)
-	mdia := makeBox("mdia", append(makeBox("hdlr", hdlr), minf...))
+	// Fake也保留独立媒体时基，不能靠缺失mdhd掩盖真实MP4的时钟差异。
+	mdhd := make([]byte, 24)
+	binary.BigEndian.PutUint32(mdhd[12:16], 24_000)
+	binary.BigEndian.PutUint32(mdhd[16:20], sampleCount*sampleDelta)
+	mdia := makeBox("mdia", append(append(makeBox("mdhd", mdhd), makeBox("hdlr", hdlr)...), minf...))
 	return makeBox("trak", append(makeBox("tkhd", tkhd), mdia...))
 }
 

@@ -1,0 +1,80 @@
+{
+  "target_goal": "VID-G6",
+  "status": "INPUT_QUARANTINE_FOCUSED_PASS_NOT_FULL_G6",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "UNCOMMITTED",
+  "source_manifest": "video-gateway-vid-g6-admin-input-quarantine-source.json",
+  "source_state_id": "12aecf7d17a7cfdcc94b5d55d0c7c5d224269bb50b772647f6b3bd8b57373871",
+  "source_file_count": 271,
+  "registered_routes": 41,
+  "required_routes": 46,
+  "bootstrap_mounted": false,
+  "closed_route": {
+    "red_chunk": "f9050e",
+    "expected": 503,
+    "actual": 404,
+    "green_chunk": "060faa",
+    "exit_code": 0
+  },
+  "cancellation_matrix_previous": {
+    "session": 44465,
+    "exit_code": 0,
+    "copy_tree_sha256": "52493bf834d203064b0ba87139a738be587549038e767185b5e1324be046c61b",
+    "service_seconds": 109.703,
+    "scope": "旧断言批次：四写入故障、真实提交后确认丢失、I2V租约；不替代后续加强断言"
+  },
+  "affected_batch": {
+    "session": 42546,
+    "exit_code": 1,
+    "copy_tree_sha256": "1daf08899d9a4a658905e73b94ece51d92c93011d96a745616b185c483b40ee5",
+    "scope": "admin-mutations",
+    "required_tests": 15,
+    "input_quarantine_http": "PASS",
+    "input_quarantine_seconds": 6.94,
+    "failed_test": "TestVideoG6AdminCancelI2VLeaseMySQL",
+    "failure": "增强断言误用了T2V的0.50；原G5 I2V夹具为0.15元/秒×5秒=0.75",
+    "production_billing_code_changed": false
+  },
+  "focused_reverification": {
+    "session": 65318,
+    "exit_code": 0,
+    "scope": "admin-cancel-i2v",
+    "required_tests": 1,
+    "copy_tree_sha256": "e270d6295cbbd7e9e0bb3d66d688c74857dd3b379169d07c9afb58f46c80a0c2",
+    "test_seconds": 10.92,
+    "service_seconds": 12.02,
+    "scope_note": "只重验更正费用断言的I2V用例；未重跑全量，不修改计费规则"
+  },
+  "current_validation_note": "本批输入隔离、共用解析/加密、取消和输入读取相关验证采用受影响范围；最终G6仍需完整精确源码验收。",
+  "independent_review": "产品经理确认沿用既有状态矩阵，仅隔离不改审核/期限/租约/资金；独立Standards只读检查未发现确定新增缺陷，确认旧取消AAD兼容，未另跑数据库，不签完整G6。",
+  "native": {
+    "session": 64106,
+    "exit_code": 0,
+    "checks": [
+      "go test ./...",
+      "go vet ./...",
+      "go mod verify"
+    ],
+    "mysql_proof": false
+  },
+  "checks": {
+    "gofmt_dirty_untracked": "PASS",
+    "git_diff_check": "PASS",
+    "new_doc_links": "PASS",
+    "secret_pattern_scan": "PASS_4_SCOPED_FILES",
+    "full_stage_validation": "NOT_COMPLETE"
+  },
+  "remaining": [
+    "输入隔离三种处理中状态与全部禁止状态、上传及损坏来源矩阵",
+    "输入隔离100并发、发布/提交竞争、原子故障、提交未知与权限期限",
+    "取消多管理员/提交竞争与权限时效等剩余矩阵",
+    "其余五个管理写入口及SDK/完整G6验收/Git闭环"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "vid_g7_started": false
+}

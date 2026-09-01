@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G6",
+  "status": "PARTIAL_HTTP_DEVELOPMENT",
+  "source_state_id": "aec60042dad56abd2ca9efb9456e8bd46310960e2ab9ebdc514ab9f91766b0fe",
+  "code_state_id": "817399237d6bf1b872f709bf692d5bc1f456eab21bcbd261eafe778f791091e7",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_changes": "UNCOMMITTED",
+  "current_run": {
+    "session_id": 41327,
+    "status": "FAIL_FIRST_CREATE_CONCURRENCY",
+    "failure": "空账本100首次创建出现HTTP500；后续95303诊断捕获MySQL1040。不得复用旧100重放PASS证明首次竞争。",
+    "resources_cleaned": true,
+    "source_copy": "CONTAINER_COPY_READY",
+    "container_source_manifest": "32/32_MATCH",
+    "required_top_level_tests": 11,
+    "full_stage": false
+  },
+  "historical_runs": [
+    {
+      "session_id": 54199,
+      "result": "PASS",
+      "source_state_id": "0165df254ed2d205d059fa5b72a498a235351077bff75aeeeefe1ef8bb63cb05",
+      "tests": 7,
+      "resources_cleaned": true
+    },
+    {
+      "session_id": 99230,
+      "result": "INVALID_FOR_ACCEPTANCE_BUILD_FAILED",
+      "reason": "实时挂载源码读到TDD测试和实现文件的中间状态；已改复制后编译。",
+      "resources_cleaned": true
+    },
+    {
+      "session_id": 35987,
+      "result": "PASS",
+      "source_state_id": "290c1ef2e413ee2e92d4d8c3710c2e8a6469cabff366a0c106fb4284481703b9",
+      "tests": 11,
+      "http_test_seconds": 5.18,
+      "service_package_seconds": 2.016,
+      "scope": "真实SK T2V单次首次创建、100并发重放、Get Job、唯一Quote/Hold/Task及0.50元合成预占；版本化权益/会员矩阵。不是当前首次100竞争或后补拒绝矩阵。",
+      "resources_cleaned": true
+    }
+  ],
+  "native_checks": {
+    "session_id": 95406,
+    "go_test_all": "PASS",
+    "go_vet_all": "PASS",
+    "go_mod_verify": "PASS",
+    "without_dsn_integration": "SKIP_NOT_ACCEPTANCE",
+    "sensitive_scan": {
+      "files": 209,
+      "findings": 0
+    },
+    "tracked_untracked_format": "PASS"
+  },
+  "independent_partial_review": {
+    "agent": "vid_g6_contract_audit",
+    "manifest_files": 32,
+    "manifest_match": true,
+    "full_qa": "NOT_RUN",
+    "reviewed_changes": [
+      "operation传到G5生成、重放及提交前事务校验",
+      "显式空字段拒绝、缺省仍允许",
+      "余额不足及审核错误低敏映射",
+      "已存在content删除事实的GetVideo404",
+      "空账本100首次竞争与100后续重放分开"
+    ],
+    "remaining_evidence": [
+      "发布Hook需只执行一次；当前反例直接Service调用，不冒称HTTP",
+      "审核拒绝/不可用尚缺HTTP动态反例，余额不足尚缺错误Envelope断言",
+      "媒体删除404和无产物failed墓碑尚缺动态合同",
+      "零新增副作用需扩大到wallet_transactions/Usage/Outbox逐场景断言",
+      "OpenAPI补402",
+      "最终runner应自动冻结migration与源码并输出实际文件清单；当前手工验证容器32项源hash"
+    ]
+  },
+  "implemented_route_slice": [
+    "POST /v1/videos",
+    "GET /v1/videos/{video_id}"
+  ],
+  "route_scope": "T2V本地切片；未接bootstrap；I2V输入依赖未装配返回503，剩余完整路由仍待实现",
+  "remaining_goal": "完整43路由、I2V、平台JWT与202、上传/权利、游标/内容/删除/资产、回调管理、完整资源与预算、SDK、Chat/Image回归、独立QA/PM/Standards/Spec及Git闭环全部保留",
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "provider_cost_cny": "0",
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "pr_state": "NOT_CREATED",
+  "next_goal_allowed": false,
+  "vid_g7_started": false
+}

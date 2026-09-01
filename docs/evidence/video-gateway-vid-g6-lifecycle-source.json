@@ -1,0 +1,620 @@
+{
+  "target_goal": "VID-G6",
+  "status": "IN_PROGRESS_NOT_ACCEPTED",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "UNCOMMITTED",
+  "captured_at": "2026-08-31T13:54:16.5237178+08:00",
+  "source_state_id": "cb1ac0d8664aa5c06a34a2b517f425f33ad0dd8859aaca716b7c9e8b911fabae",
+  "file_count": 152,
+  "algorithm": "UTF8 BASE_COMMIT行加排序path|sha256，无末尾换行；排除docs/evidence与output/playwright",
+  "manifest": [
+    {
+      "path": "docs/database-schema-design.md",
+      "sha256": "ab4de8850099958d86d9afecef08475a9a4327c0de9686ced1273837e8755e80"
+    },
+    {
+      "path": "docs/frontend-api-reference.md",
+      "sha256": "43d222e5eabf8a4ee8872678315ace837bcb7455c4e7875b742c2631b44ef374"
+    },
+    {
+      "path": "docs/full-api-design.md",
+      "sha256": "0a5f947cf0e8c8e7f31d818456c0ef4a5b2a2c1cc3bbfa0018a10d86e0ee9e4f"
+    },
+    {
+      "path": "docs/test-plan.md",
+      "sha256": "7a376b4f9bb16ad0e0ddd46f8129969b5b88fa19148d432bbe25be8040ed392a"
+    },
+    {
+      "path": "docs/video-gateway-openapi-snapshot-v1.yaml",
+      "sha256": "9983c704edd7c119d5a0b456aecd64323ca34476ac0c4b0d5e3947202d285a38"
+    },
+    {
+      "path": "docs/video-gateway-vid-g6-http-project-sk-contract.md",
+      "sha256": "e75b246a4fd906c6fb486033ad69dd6dd2326d4bafc8db909c90467a0b460c16"
+    },
+    {
+      "path": "infra/scripts/verify-video-gateway-vid-g6.sh",
+      "sha256": "dd74b1f7dfc5d366e21b6ba8073bd610aa84466ab73565f7b02bf3fe25fb8996"
+    },
+    {
+      "path": "README.md",
+      "sha256": "1c369c28f229f05943555aa98c5719a1c9fff33f23e2833ca94f54d99bf5169f"
+    },
+    {
+      "path": "server/internal/middleware/recovery_test.go",
+      "sha256": "c19ce722fd72e5d0140d6c81c1069a6b14b236c58effc034a439ff95bc574c07"
+    },
+    {
+      "path": "server/internal/middleware/recovery.go",
+      "sha256": "8a5dea6bf2ec0843f7e40d1cba2ddda7b6a9d327d5cf272dc1a661eee8383bf8"
+    },
+    {
+      "path": "server/internal/modules/iam/service/iam_service.go",
+      "sha256": "7dd391a7767847c0882464bc151821aa8d796f88b574efc473390d2fdcb8a0e2"
+    },
+    {
+      "path": "server/internal/modules/iam/service/permission_fresh_mysql_test.go",
+      "sha256": "455a4f6605529e29d4642616ddcea2e4f08584cc95bfa99409d11cfe6c1aae38"
+    },
+    {
+      "path": "server/internal/modules/iam/service/permission_fresh_test.go",
+      "sha256": "f1672f79939a39796971ad27a3e97083919b81a4ab44c9e3f11a030f16d7ed94"
+    },
+    {
+      "path": "server/internal/modules/iam/service/permission_fresh.go",
+      "sha256": "0230ed939364e1e281e727dd4a45afa451db7aec1cfe30469de105a805e29536"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/dto/video_test.go",
+      "sha256": "b61d171a51f5f398ff76bc728ed75a09c2c2251d20900080cfe75beeffa26a23"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/dto/video.go",
+      "sha256": "17da7b021976e07cad652b928d2824b90bcd3bbc3274a26976a3ab2f0036657c"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_asset_lifecycle_handler.go",
+      "sha256": "f6291f5e55dfd74daeebb1db739b47cf02575734e7a99b218f2e84e5d5b85af5"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_content_error_test.go",
+      "sha256": "0151b9b7f21876d4b9eaff5d80ecb93cd5cadeef1b06d972d039e598f5a93fee"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_content_limits_test.go",
+      "sha256": "fd265516336d0e0f63253fa790ad8d30a611abd003fe1280f7bb9649fa950a46"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_content_test.go",
+      "sha256": "048fc0629efe33862d3e5826d7d7cdea3fe00a24f59389933d4a835f0d2bce1d"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_content.go",
+      "sha256": "c5cc6a8abc7707e38b6b2bde7afaebfbf9e0c91b3a3d06beed08fb99a0865567"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_handler.go",
+      "sha256": "12a807a82cdea11a9ebeef6f38e708821733f18a1c0a0c4be1b5944cb44c9c1f"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_input_handler.go",
+      "sha256": "2ad77bf6874d18eca5c1d5805056bf1cdbc684cf0809102ce85b71872254f29b"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_input_import_handler.go",
+      "sha256": "05062dc98700d08963712d92e3dded1098828844869926aa6977d753885f432f"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_list_handler.go",
+      "sha256": "564a02c66a19c7826c4fb6d553385d187fb68cb66313580d8d542fd9293c7a5c"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_media_delete_handler.go",
+      "sha256": "a592d0a2ca0dee993490a00ac6b22c1f60e3c8ae476f93ec30bf2a7a9cd022bf"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_platform_handler.go",
+      "sha256": "521711decb1df2642cf9ac56ff73e4c5b8765d66e1ddc082a314e670a6b9047e"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_rights_handler.go",
+      "sha256": "17a4198979f3507f603e2752fc529f81dadd5dd4ad40a8335bb13339b72b56a3"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_task_cancel_handler.go",
+      "sha256": "2e6f1ff50943153b6fbeb232fad89acd328de0c47a390f3f57b7da44c63a375f"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_task_query_handler.go",
+      "sha256": "3b6ab1045cf159eb45e814a043220fae0067dd94793f2d2f7a344a3482cf155c"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/handler/video_upload_handler.go",
+      "sha256": "1cd9098f7695ce1d1906ebd65061616496071b73b86abe10da21afdacd2249bb"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_input_deletion_repository.go",
+      "sha256": "6b64e48471a755ea25526b39356e1938aaea551111ff23b94a1616dbb6249e0d"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_input_repository.go",
+      "sha256": "0a33a6477ffe8e5b11908c8e747ba446ae8a83434bec539b0416d67b597fedcc"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/repository/video_quote_repository.go",
+      "sha256": "2d1d01b6780e66737a3f19b07f3a5e7923eb2dd539eb9a22f57a5a5588d391c4"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/export_video_content_http_test.go",
+      "sha256": "611b6150d58c583256bceeab710a877293be45a016df453f6555ffac3ae7d837"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/export_video_import_http_test.go",
+      "sha256": "bacd1582148e3addb3ef7ee9009790f742ae7fd6919171d0d3e236555750a1f8"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/testdata/vid_g6_playable.mp4",
+      "sha256": "17983e00fd03ae81974ea6e38f3c8d7c73b3518c5e02325e7c9e32fb564c7f0a"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_access_mysql_test.go",
+      "sha256": "22410697ee33c1af592fd4b1018d86608592197b54035fa4ee12bc5b1dfc97bc"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_access_service.go",
+      "sha256": "7d11a22c838f9931f3516b49b4fb93fef6a7d4d26d5138a8eaf2a046d4cd7827"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_asset_lifecycle_http_mysql_test.go",
+      "sha256": "187502ef92130a8c9c1f58947538c1a6869d358e1b21bea0851c38f1f397d6a4"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_asset_lifecycle_service.go",
+      "sha256": "fec4ac90aed33fc24cfde42888d494d2dc90fa0884304a200b8b6ce804cab07e"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_automatic_reservation.go",
+      "sha256": "9dfae1774c680f9342c39466137315db2eba2c7be85e834b7d23df476a400b12"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_cancel.go",
+      "sha256": "d68ffa55068e7a7b67090ba44982b5644ae0f2fb346c140a9889fbc8ca0bbbcd"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_billing_reservation.go",
+      "sha256": "3b6cc60eef00d498f697e5267158cc2ebbf7a291d5223fbe8e70ba61afdf2fd1"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_connection_mysql_test.go",
+      "sha256": "f44f4ef0161a43b890e7e88231a74c7b17b1533c3f4826f703f5c1aa77e82f8c"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_content_http_mysql_test.go",
+      "sha256": "a64d72f4307e8cbf342b15eeb6a30ec3c4ca354fa0d7bd23f5a0fb8fed3df76f"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_content_multichunk_mysql_test.go",
+      "sha256": "a90faa1c6b5ebb78776f66090e5c84d22b08e4d41a35e2bcdb14ad78c5c0633e"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_content_service_mysql_test.go",
+      "sha256": "39bce8720c5a6b8ef746813bd042aec89a016694d9a8dfb558352e185a5a21d9"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_content_service.go",
+      "sha256": "eac64a9eb147afd0169476ac0d757f19c06c065d1c8b3a34cba90da712849852"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_download_lease.go",
+      "sha256": "92f33c3068c9f15fc096ab588c8328b5101920dec3d14722bfc48839c8ae07c1"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_download_limits_mysql_test.go",
+      "sha256": "ead9c6073c301ebd77c9f4b4feaccbd6085ddd76ca03458ad7c90e9f6b97693c"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_entitlement_mysql_test.go",
+      "sha256": "132ff07a7f1a7191b267047a3e64d4dbf4cda041c3a60013623c1a06e9712708"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_g4_repository_ledger.go",
+      "sha256": "1f559b7f32142148616be52af7b0c68d76d7736245a95d2add7a0e9acdce62db"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_generation_lookup.go",
+      "sha256": "aa2eaac108e07c820fee45aef849532bfc532920ded5120f543eb2e3fd09c77c"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_http_replay.go",
+      "sha256": "64a14099717a2dde41f44bd32740e525ef2d08664319e3f15303d621f49f8795"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_http_service_test.go",
+      "sha256": "4be41438e732fdbf834e01050f4cf0ed7c90056b835cd6bc1612fd18464f2dc5"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_http_service.go",
+      "sha256": "d7c253e9ac85c145bb46ce8430d8079436c4dcbdb29ff6dfe814e2fe3e083bf5"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_i2v_contract_mysql_test.go",
+      "sha256": "178b1698337de703524abc013a4ed1e1f7ba3d75fd0b4e8534f70a9564f7a55b"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_input_capacity.go",
+      "sha256": "01728c5becc76e76f72c8e815bfcf07cc4364c1038c57b389cc593e32aab2c73"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_input_cleanup_bound_mysql_test.go",
+      "sha256": "a97e3a844970356a0dfd28742f9cffb0acb083728888da0552f1b9b3e46d1186"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_input_cleanup_http_mysql_test.go",
+      "sha256": "c98165d535f23801581400e615e351a4a386188ebe9420c600c6dfe15f3de02a"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_input_cleanup_mysql_test.go",
+      "sha256": "0575fcb1cbb8b76364cdf138f2d45a788eec7d77baa3cfbbe6b120a272f9d030"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_input_cleanup.go",
+      "sha256": "a0f0f88692b09b73e2e19a75593ccd1bc8a775c4713ba454e9bc218771fad2b0"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_input_delete_mysql_test.go",
+      "sha256": "0ee4ff3c293780df981c26bc4a07885c460a0e9523ea51284a0b8fae74259f0f"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_input_delete_service.go",
+      "sha256": "7c1ef8e3b3c3b7ab65d87e0b69728961fc5ab2f56aec52f6a1f4baa0b5143ced"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_input_import_http_mysql_test.go",
+      "sha256": "da44cdfd0a349f5a4c8bad56fd0eb774d000f525a44048f871db81405db09568"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_input_import_mysql_test.go",
+      "sha256": "b72f5fd70ff579b8675d0308db1c78c3e6e3fae50000f0f855fbe5f7e3f34851"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_input_import_publish.go",
+      "sha256": "62bf9245e89d0505bc2f98828c5b99b3c1e4c260e9d8c94626d7bd3706b94068"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_input_import_retention_mysql_test.go",
+      "sha256": "f6faa8789c4d64af6e39c81d7fcc03cfeaf7f980c6351f8d1c51aecef63aca7d"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_input_import_service.go",
+      "sha256": "186c094e712b54587c6ee2856f49c1eb061df522e594ecca57f1f9b37ce0a8c1"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_input_query_mysql_test.go",
+      "sha256": "571f0762822a3346610bc41e1adad62f97a15eace32b4b5b69b1b0a49eda6972"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_input_query_service.go",
+      "sha256": "71b302e291ef2ce9b70e47481bbe6aeec7ed86d4587d0721548eaf547d26ef70"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_jwt_auth_test.go",
+      "sha256": "35b0607f4dd1cf5b22b5471a55962caca8da85a3caa972fb9852a299a7a10072"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_jwt_auth.go",
+      "sha256": "c1af715f9f3aab4ad7b2e2d54f43ae4ab013cde3c24d81de13f49c9cd339d1dd"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_list_mysql_test.go",
+      "sha256": "9d9f22244a806d04c2f347f5c78a6ba9a3f5c6eb94bacb6a3b19ba2f6fdb42f6"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_list_service.go",
+      "sha256": "da46b91cec8ae1e89893e0a84c6d9e075b8c162ce73466ed3eccab3c434b90cc"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_media_delete_failures_mysql_test.go",
+      "sha256": "00f875ee462749636425029c686fe349eaf948d96c58cf7dd8d812c013018d81"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_media_delete_http_mysql_test.go",
+      "sha256": "8f40e6bfde44a10fe44a6afd32e82aeab33dfec87ba68b5f0fc9cb262241baf7"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_media_delete_plan_test.go",
+      "sha256": "7b5957c2776c9838d0a055c0cf6238d489ddd1b036ef287d46fd712944364764"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_media_delete_service.go",
+      "sha256": "ef5a9a6020d88086f5730cc6fe777b2caa31f9d52f631a4be895f615859c3b9e"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_membership_access.go",
+      "sha256": "2b607d3af860111bf0a2b711e01b7b9ba5a2cbcc5a4b5d7fc7c0cb776ed92b4b"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_model_contract_test.go",
+      "sha256": "2eda3a38f1928952880cf4023415216ddf403f7e75ecf35006b0fea66eeab20e"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_model_contract.go",
+      "sha256": "4d2abba72dcacefc06a5a16d2f7c1109cdb56b129db9efc298ce32b6c69af002"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_playable_fixture_test.go",
+      "sha256": "9bf24742bb3cbda248804383f8964db9afb988c86a2f0ef2e3a070ab649d983b"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_quote_facade.go",
+      "sha256": "2fb41d4ebcce54c17ed184cdbd290f84d05d114d91f780ce59eec1bcad2dbde4"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_quote_snapshot_mysql_test.go",
+      "sha256": "7cbc71bdc65f2b01ad4453ce85bbff16bd378303fc4a9ded210f8420385868b8"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_quote_transaction.go",
+      "sha256": "cd0bed775c24681aa155284173d6bb86e6c0f3a0605da92ba22377de19b40a8e"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_rights_generation.go",
+      "sha256": "aa5b6faf00a73318eec46b812e8c5f199d2e8b88fafb2a095138ebed9d8e092b"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_rights_mysql_test.go",
+      "sha256": "55bb6a9e542d2cff781cd915474ae8810864244ad25df8cdd24eca64147ff814"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_rights_service.go",
+      "sha256": "51da73e3f55d0dc3f6bb9e5e6720dbed04711c6fe4e1eb60b9f8dd7e7ab08000"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_source_image_mysql_test.go",
+      "sha256": "af22412f20ae27b1097ae102e3093a2cdf02b2dca7f1baa9b6c04bf248c8b9a9"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_source_image_service.go",
+      "sha256": "e5ea2957bbe8057695a12a9cd1f3d1c29aa80500ee9ad2a03689fad0eab4e82b"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_task_cancel_http_mysql_test.go",
+      "sha256": "b147ddc1b68dec4da4fce18bbd58e03a44284a97b6d1c3bb465ff43110adf276"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_task_cancel_mysql_test.go",
+      "sha256": "a872efb0b470c63257eb881b67c564138b23fb84bfceb19f7bdb90b7ec17fd68"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_task_cancel_race_mysql_test.go",
+      "sha256": "9ee3281fa69c14396f0004ba605eccb48431cddc85da698baf325c263e686012"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_task_cancel_service.go",
+      "sha256": "93c9df3ebee75af3dc5523cf790272435e70bd48b49f804e52313de8a922f0bb"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_task_event_query.go",
+      "sha256": "758c7089c67682a01c89a47717349f4ebb57b1769c8b9fd08d55c9a0ead3e20a"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_task_query_mysql_test.go",
+      "sha256": "53019dc04ba4660ee703816ec04562ba402922ac5ae4a462b6250f299f49299b"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_task_query_service.go",
+      "sha256": "fbde85bdbeb76414cda124f71ea57816cb78a74f7e7030b9b3975556f6309613"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_task_reference_mysql_test.go",
+      "sha256": "a229b041ab7678c3b1dff32a87cd08baa7c83fa0e202f35d2559f97b3b765c27"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_task_reference.go",
+      "sha256": "d56dc7564ff883f0fb78bf17f4e4227d13fe72bca9f46d8b18bac78061025480"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_upload_complete.go",
+      "sha256": "2d701b3b0792f4ecc761befefd6639ed35b9129ef169037742e2d8b2332b87fa"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_upload_mysql_test.go",
+      "sha256": "2b1d84358b7ab5ebc75d2d0974c74f85972004cd6e18904e06a2253282935217"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_upload_recovery_mysql_test.go",
+      "sha256": "5f6f41e3336307ae7b393f43c9ac2bc5e293cac5dc10a1ce478ac7f91168c723"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/service/video_upload_service.go",
+      "sha256": "7d86b53c6ae7b05ebd7edfa3ebfd23692032627cf313aded52f0e933be7d9b1e"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video_asset_lifecycle_route_test.go",
+      "sha256": "23ebe1980ff4cd07c30864b750b4fa35b5e711495fb53ac2eb5f6b7353af73a1"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video_cancel_route_test.go",
+      "sha256": "31d6d1e443e3bfee9543bdd7de8f29fdf5a876f076758db45752c6fddf28db51"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video_content_route_test.go",
+      "sha256": "5f510ae92bee47b58acce59f9ebd7f5cb6ae70642f916a569e123f4dac8ffb09"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video_http_mysql_test.go",
+      "sha256": "a16d5d9ddff4920f2fcafcfbc0e4f635b000700ff74d3089525a60f5aaf7f6aa"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video_list_test.go",
+      "sha256": "e68687925ba5e8e35122aad97ea58bf15e7097aac757c12a83627745c3fba70d"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video_media_delete_route_test.go",
+      "sha256": "e5144cfd3b9ce68b1a5cae4a1aef5af9f1d072ba2a76fc83e2aa345bd39b5967"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video_route.go",
+      "sha256": "5786436d02cc410cb2b6d34465b52fb2a410929619dd599823f5d083dd75e1fb"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video_upload_http_mysql_test.go",
+      "sha256": "2cc99f5d2b20aae52f730688bd7018156fed3e316fe5262a3fdaad9907876eb1"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video_upload_route_test.go",
+      "sha256": "5c22251fb247f92d4c98b2f2ba8969cd4d8cd6f0bef61a64c26f4861f53734fc"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/media_clock_test.go",
+      "sha256": "5932cd9eca4e9c8a8f7a4d0ffbf8334915187e2e8b41e1d65cebd0a219213d17"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/media_probe.go",
+      "sha256": "e4b96afbec54435f6f69d42a6d872fb88b12a3139e02169a7a5eb0a2745e9a31"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/object_store.go",
+      "sha256": "aa69235b2caf704f82a8aae26f10c650c97719e368f37a683294a1417483b9ab"
+    },
+    {
+      "path": "server/internal/modules/token_gateway/video/safety.go",
+      "sha256": "f3c98f5ac056c9146837c838205bbb18705921e4b7f0ebe904e7f07fcecff735"
+    },
+    {
+      "path": "server/migrations/000078_video_http_access_contract.down.sql",
+      "sha256": "789c57d51d6d1d5f2856791043cd6f2b52ba5efdaeacd0c978bffc9d88b07832"
+    },
+    {
+      "path": "server/migrations/000078_video_http_access_contract.up.sql",
+      "sha256": "41cd24b846730ae52567919f9b94ad7d62b7ff98c18fd89a640a3b4d23b47bb4"
+    },
+    {
+      "path": "server/migrations/000079_video_rights_contract.down.sql",
+      "sha256": "a87614f1c2e36b6267a6f06117ed70dcdeb341b5bafc27d0c1ba975c021df78f"
+    },
+    {
+      "path": "server/migrations/000079_video_rights_contract.up.sql",
+      "sha256": "ddfc973a6ab2bbc7bd826b576d0cf8b927f11aa59ea707f0e295299445ddfab7"
+    },
+    {
+      "path": "server/migrations/000080_video_rights_declarations.down.sql",
+      "sha256": "c20051e90e76ebcad924f48b73fd932448625ccb6e33139e662a833c7d774d72"
+    },
+    {
+      "path": "server/migrations/000080_video_rights_declarations.up.sql",
+      "sha256": "363798e0e64cc0e48f6bb75eb4b5d32057da0ffce94d65cd3ef044192a2e78fa"
+    },
+    {
+      "path": "server/migrations/000081_video_upload_controls.down.sql",
+      "sha256": "310caa1e6f78e0787999523ec325c68cf2e7c1f9c3e75ac13c7095a6baa21f32"
+    },
+    {
+      "path": "server/migrations/000081_video_upload_controls.up.sql",
+      "sha256": "40f3a46cd1200a927bd2a7b62fc4ca2b3310df99e4bd8c23fc8b3d0ce171bd97"
+    },
+    {
+      "path": "server/migrations/000082_video_input_import_controls.down.sql",
+      "sha256": "6cd0c4ffbab2b14a3788da6005e26c26521986f5ebe4cb7380edf379479eccb2"
+    },
+    {
+      "path": "server/migrations/000082_video_input_import_controls.up.sql",
+      "sha256": "04d5c967fef207313d01306fbd14bb8068796e58eb787dea8e59377347927bd8"
+    },
+    {
+      "path": "server/migrations/000083_video_input_deletion_requests.down.sql",
+      "sha256": "c69c738e454c33ebc8a10a4de30df52faa1e6c4909d4911bb20ff36931fc0ea3"
+    },
+    {
+      "path": "server/migrations/000083_video_input_deletion_requests.up.sql",
+      "sha256": "f982cb9f283737af15fd2f1f7fa6374ed01c54d2b762168a5604418ed5bb6500"
+    },
+    {
+      "path": "server/migrations/000084_video_input_cleanup_facts.down.sql",
+      "sha256": "372385410f7edc90ce5d6a0954b4a05a0b9d5fe2d5ed6fa1d79b7e6c5dd6476e"
+    },
+    {
+      "path": "server/migrations/000084_video_input_cleanup_facts.up.sql",
+      "sha256": "d5941abd48347a51b6703628e0ade5beb15c1dba745c92d9274c85fb8f4a521f"
+    },
+    {
+      "path": "server/migrations/000085_video_download_leases.down.sql",
+      "sha256": "986d35d374221dc27e1153a76752dcd1be5a9b86f691ffcdd90443fe597f63da"
+    },
+    {
+      "path": "server/migrations/000085_video_download_leases.up.sql",
+      "sha256": "ee7f3fefc29f24f3d4b61b5497cec12322c8a825f42801c5ed31f10ada585784"
+    },
+    {
+      "path": "server/migrations/000086_video_cancellation_commands.down.sql",
+      "sha256": "24edc9e9320aa78161b650b00b27ec1416f0059eb0c89cbe43a20fc23c5379c2"
+    },
+    {
+      "path": "server/migrations/000086_video_cancellation_commands.up.sql",
+      "sha256": "3c11cd9a03745c66803a75528d50fa69b52574f67ddaa69e2bdf811cf287a6ae"
+    },
+    {
+      "path": "server/migrations/000087_video_media_deletion.down.sql",
+      "sha256": "943215b68127db7f7094659550b6c5005719263c51a01988a4aa72ae9562b089"
+    },
+    {
+      "path": "server/migrations/000087_video_media_deletion.up.sql",
+      "sha256": "4fdfb4025a498d3f89d4a68908923af4c46e80bf83651688bc234936278d92fc"
+    },
+    {
+      "path": "tests/api/video-gateway-vid-g6-sdk/.gitignore",
+      "sha256": "00b46fc36ac104099c8e5d2f7d7079c7753d8337c2f56645b96c3a4b7bd7ce72"
+    },
+    {
+      "path": "tests/api/video-gateway-vid-g6-sdk/fixture.example.json",
+      "sha256": "ce8879f1aa97d05e172ea8c6b19ece45d73337f3e8e657aa080db5bef2683494"
+    },
+    {
+      "path": "tests/api/video-gateway-vid-g6-sdk/package-lock.json",
+      "sha256": "fde58e5006cefee805394b9892278b117da7f2676e88345f02a6b1da5a82ba19"
+    },
+    {
+      "path": "tests/api/video-gateway-vid-g6-sdk/package.json",
+      "sha256": "0ff0966bc6c508a37885be0b793743c8d8959de7e6d8928a20a5b00f78f14596"
+    },
+    {
+      "path": "tests/api/video-gateway-vid-g6-sdk/README.md",
+      "sha256": "9f70a3df2237edd36b7cd97d8fe3e1f2aefee2e7405f9dea69283a9f06790a7c"
+    },
+    {
+      "path": "tests/api/video-gateway-vid-g6-sdk/requirements.lock.txt",
+      "sha256": "a97efbbaadbade3184ec31fabd37eea29fcfe1472f02c392c0beb1b1c460aa04"
+    },
+    {
+      "path": "tests/api/video-gateway-vid-g6-sdk/requirements.txt",
+      "sha256": "56e620e18d3888a40183e17efa13a0465f1461c2bab698ebe55db61b9106b328"
+    },
+    {
+      "path": "tests/api/video-gateway-vid-g6-sdk/sdk_python.py",
+      "sha256": "f4519c4f7e5b96dde0d7d8e54124d453728e208b6d7b3e4071b7933c78157968"
+    },
+    {
+      "path": "tests/api/video-gateway-vid-g6-sdk/sdk_typescript.ts",
+      "sha256": "50cf125866893da058dc4d237a850592ff4f4e3e4f68b4e775369953dcad542e"
+    },
+    {
+      "path": "tests/api/video-gateway-vid-g6-sdk/validation.json",
+      "sha256": "d248626eeb5b5ae593a97ec51f8b835e24e2dbbb94ea3f71021b3eb9ff198ee9"
+    },
+    {
+      "path": "tests/fixtures/video-gateway-vid-g6/generate-playable.ps1",
+      "sha256": "c0888475f18aea41cc4c2985e9e6e50e023a95e1a2ccdc8de0ba01c61806f0b4"
+    },
+    {
+      "path": "tests/fixtures/video-gateway-vid-g6/media-toolchain.json",
+      "sha256": "bc0db0762e79d922b19ea5fbe17f881fbeee2544e4bb7d29eb20e08d9009be27"
+    },
+    {
+      "path": "tests/fixtures/video-gateway-vid-g6/playable-preview.cjs",
+      "sha256": "67a9d05d86ce1484422801497a92f03bd9d95d0759832b1b256cf6dac8e97059"
+    },
+    {
+      "path": "tests/fixtures/video-gateway-vid-g6/README.md",
+      "sha256": "5aee8a3e5d31b3ab58daf814023488c7a5fe2245f952fe17c7bb326beffeadeb"
+    }
+  ]
+}

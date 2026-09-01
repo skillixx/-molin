@@ -1,0 +1,82 @@
+{
+  "schema_version": 2,
+  "target_goal": "VID-G6",
+  "status": "PASS_INDEPENDENT_REVIEWS_READY_FOR_GIT_CI",
+  "source_state_id": "7e03bb3ef60c2eb61bdec03854467262065221da2535174635a1f41b23a49a20",
+  "copy_tree_sha256": "b9593d3d3d9a42b8e07844ec6ab838f37dc06e5eee1909f79efe2215759193c2",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "runs": {
+    "vid_g6_mysql_all": {
+      "status": "PASS",
+      "latest_migration": 109,
+      "linux_race": true,
+      "required_tests": "ALL_RUN_PASS",
+      "service_seconds": 1230.686,
+      "real_provider_calls": 0,
+      "real_wallet_writes": 0
+    },
+    "locked_sdk_http": {
+      "status": "PASS",
+      "python": "openai==2.45.0",
+      "typescript": "openai@6.39.0",
+      "real_loopback_http": true,
+      "temporary_mysql": true,
+      "provider": "synthetic",
+      "object_store": "synthetic"
+    },
+    "browser_playback": {
+      "status": "PASS_STATIC_FIXTURE",
+      "duration_seconds": 5,
+      "seek_seconds": 3,
+      "viewport_width": 390,
+      "horizontal_overflow": false
+    },
+    "go_test_all": "PASS",
+    "go_vet_all": "PASS",
+    "go_mod_verify": "PASS",
+    "go_mod_tidy_diff": "PASS",
+    "gofmt_changed_and_untracked": {
+      "status": "PASS",
+      "files": 295
+    },
+    "git_diff_check": "PASS",
+    "sensitive_scan": {
+      "status": "PASS",
+      "files": 573,
+      "findings": 0
+    },
+    "image_compatibility": {
+      "status": "PASS",
+      "mysql": "8.0.46",
+      "race": true,
+      "provider_calls": "fake_only",
+      "real_wallet_writes": 0
+    },
+    "g5_chat_finance_compatibility": {
+      "status": "PASS",
+      "seconds": 362.376,
+      "race": true,
+      "full_chain": "1_to_77",
+      "repeat_up": true,
+      "down_retained": true,
+      "reup": true
+    },
+    "callback_focus": "PASS",
+    "model_default_focus": "PASS",
+    "cancel_focus": "PASS"
+  },
+  "safety": {
+    "real_provider_requests": 0,
+    "real_provider_keys": 0,
+    "real_wallet_writes": 0,
+    "real_user_funds": 0,
+    "real_adjustments": 0,
+    "provider_cost_cny": 0,
+    "test_server_writes": 0,
+    "production_operations": 0,
+    "vid_g7_started": false
+  },
+  "boundary": "真实Provider、MinIO、RabbitMQ、Redis、Bifrost视频数据面、共享测试服与生产均未运行；SDK和浏览器证据不能扩写为这些能力。",
+  "next_gate": "EXACT_STAGE_COMMIT_PUSH_PR_READY_CI_MERGE"
+}

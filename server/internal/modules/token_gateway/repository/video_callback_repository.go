@@ -120,7 +120,7 @@ func (r *VideoProviderCallbackEventRepository) RecordAndApply(ctx context.Contex
 			result["reason"] = "provider_task_mismatch"
 		} else if !taskFound {
 			result["reason"] = "task_not_found"
-		} else if !videoExecutionTransitionAllowed(task.Status, command.ToStatus) {
+		} else if task.ArchiveTokenHash != nil || !videoExecutionTransitionAllowed(task.Status, command.ToStatus) {
 			result["reason"] = "out_of_order_or_terminal"
 		} else {
 			update := tx.Model(&model.AIImageTask{}).
@@ -177,9 +177,10 @@ func findVideoCallbackByIdentity(tx *gorm.DB, command VideoProviderCallbackComma
 	return &event, err == nil, err
 }
 
-func findVideoTaskByProviderRef(tx *gorm.DB, providerCode, providerTaskID string) (*model.AIImageTask, bool, error) {
-	var task model.AIImageTask
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+func findVideoTaskByProviderRef(tx *gorm.DB, providerCode, providerTaskID string) (*VideoTaskRecord, bool, error) {
+	// SELECT *兼容未迁移旧库；没有围栏列时指针为nil，保留原回调合同。
+	var task VideoTaskRecord
+	err := tx.Table("ai_gateway_tasks").Select("*").Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("provider_code=? AND provider_task_id=? AND capability=? AND operation IN ?", providerCode, providerTaskID, model.AIVideoCapability, []string{model.AIVideoOperationTextToVideo, model.AIVideoOperationImageToVideo}).First(&task).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, false, nil

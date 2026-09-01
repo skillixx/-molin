@@ -44,10 +44,14 @@ type VideoOwner struct {
 // VideoTaskRecord 合并共享任务事实和请求三轴状态，不复制报价或财务账本。
 type VideoTaskRecord struct {
 	model.AIImageTask
-	RequestExecutionStatus string `gorm:"column:request_execution_status"`
-	BillingStatus          string `gorm:"column:billing_status"`
-	DeliveryStatus         string `gorm:"column:delivery_status"`
-	RequestVersionNo       uint64 `gorm:"column:request_version_no"`
+	RequestExecutionStatus string     `gorm:"column:request_execution_status"`
+	BillingStatus          string     `gorm:"column:billing_status"`
+	DeliveryStatus         string     `gorm:"column:delivery_status"`
+	RequestVersionNo       uint64     `gorm:"column:request_version_no"`
+	ArchiveGeneration      *uint64    `gorm:"column:archive_generation" json:"-"`
+	ArchiveTokenHash       *string    `gorm:"column:archive_token_hash" json:"-"`
+	ArchiveLeaseUntil      *time.Time `gorm:"column:archive_lease_until" json:"-"`
+	ArchivePhase           *string    `gorm:"column:archive_phase" json:"-"`
 }
 
 // VideoStateTransition 描述一次带追加式事件的状态迁移命令。
@@ -62,12 +66,29 @@ type VideoStateTransition struct {
 	SafeDetailJSON  json.RawMessage
 	FailureOrigin   string `json:"-"`
 	Now             time.Time
+	ArchiveFence    *VideoArchiveFenceProof `json:"-"`
 }
 
 // VideoTaskRepository 在共享ai_gateway_tasks和ai_requests上实现视频三轴CAS。
-type VideoTaskRepository struct{ db *gorm.DB }
+type VideoTaskRepository struct {
+	db           *gorm.DB
+	archiveClock func() time.Time
+}
 
 func NewVideoTaskRepository(db *gorm.DB) *VideoTaskRepository { return &VideoTaskRepository{db: db} }
+
+// 可控时钟只用于归档租约测试；HTTP不能配置此依赖，默认始终使用锁定后的实际UTC时间。
+func (r *VideoTaskRepository) WithArchiveClock(clock func() time.Time) *VideoTaskRepository {
+	copy := *r
+	copy.archiveClock = clock
+	return &copy
+}
+func (r *VideoTaskRepository) archiveNow() time.Time {
+	if r.archiveClock != nil {
+		return r.archiveClock().UTC()
+	}
+	return time.Now().UTC()
+}
 
 // LockForOwnerTx 供财务协调器沿用同一Task/Request锁顺序，不能在结算期间被Worker推进或换绑。
 func (r *VideoTaskRepository) LockForOwnerTx(tx *gorm.DB, publicID string, owner VideoOwner) (*VideoTaskRecord, error) {
@@ -142,6 +163,9 @@ func (r *VideoTaskRepository) TransitionExecution(ctx context.Context, command V
 		if record.VersionNo != command.ExpectedVersion {
 			return ErrVideoTaskConflict
 		}
+		if err := CheckVideoArchiveFence(record, command.ArchiveFence, r.archiveNow()); err != nil {
+			return err
+		}
 		if !videoExecutionTransitionAllowed(record.Status, command.ToStatus) || command.Progress < record.Progress || command.Progress > 100 {
 			return ErrVideoTaskTransition
 		}
@@ -175,6 +199,9 @@ func (r *VideoTaskRepository) TransitionExecution(ctx context.Context, command V
 			return err
 		}
 		updated, err = findVideoTaskRecord(tx, command.TaskPublicID, command.Owner, false)
+		if err == nil {
+			err = CheckVideoArchiveFence(updated, command.ArchiveFence, r.archiveNow())
+		}
 		return err
 	})
 	return updated, err

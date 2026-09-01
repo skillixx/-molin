@@ -1,0 +1,85 @@
+{
+  "target_goal": "VID-G6",
+  "scope": "archive-shared-fence-foundation",
+  "stage_status": "IN_PROGRESS",
+  "source_state_id": "2b65d30ff84c7cc127866088ca820fac7a56ac4964c6e7313beb55cf9b48abe7",
+  "source_manifest": "video-gateway-vid-g6-archive-fence-source.json",
+  "base_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "source_commit": "52563ba450c6d488456137162580022deb06acc8",
+  "local_registered_routes": 44,
+  "total_routes": 46,
+  "archive_http_implemented": false,
+  "runs": [
+    {
+      "session_id": 82012,
+      "status": "PASS",
+      "schema": 99,
+      "required": 5,
+      "passed": 5,
+      "linux_race": true,
+      "copy_tree_sha256": "cb42becac5794e4aa96555846cd2e5bc01a48a8c71ba6a526abc3a153e36c5f1",
+      "note": "两处独立审查P2修复前的历史基础快照，不覆盖实时租约修复"
+    },
+    {
+      "session_id": 95313,
+      "status": "PASS",
+      "schema": 99,
+      "required": 6,
+      "passed": 6,
+      "skipped": 0,
+      "linux_race": true,
+      "copy_tree_sha256": "98707a7a02125bedc8154b1c67206f5e89d6c43060aae05cd157bbb184451b22",
+      "repository_seconds": 1.048,
+      "service_seconds": 25.187,
+      "video_seconds": 1.112,
+      "fence_mysql_seconds": 3.6,
+      "expiry_mysql_seconds": 3.44,
+      "covers": [
+        "100并发认领原Task唯一赢家",
+        "普通旧Worker及无证明状态推进拒绝",
+        "pending_reconcile技术phase不回退原状态",
+        "技术步骤不可跳级",
+        "显式虚拟时钟过期接管及旧令牌拒绝",
+        "无证明/无围栏释放返回冲突而非panic",
+        "实际100ms租约在独立持锁等待中到期后拒绝且Task完整不变",
+        "管理轮询/回调/原G4 Fake完整流程兼容"
+      ]
+    }
+  ],
+  "decisions": [
+    "围栏仍在原Task，只有哈希持久化，原令牌为不可公开构造的内存证明",
+    "技术phase不是第二Task，也不等于成功证据",
+    "事件Now与锁后/提交前租约时钟分离",
+    "旧库SELECT *缺少归档列时为nil保持兼容",
+    "过期不放行旧Worker，必须新代次认领"
+  ],
+  "reviews": {
+    "standards": "两处P2源码修复静态复核通过；95313实际通过对应动态用例，仍未签完整基础或G6",
+    "known_boundaries": [
+      "所有资产仓储直写并未全部接围栏",
+      "实际IO前后检查及不可覆盖对象策略仍待归档协调器",
+      "管理员reason/MFA/幂等/前后审计未接archive HTTP",
+      "最终原成本/六资产安全树/时长校验及原G3终态/G5交付尚待"
+    ]
+  },
+  "remaining": [
+    "完成完整archive-retry服务与HTTP",
+    "调账HTTP与独立审批",
+    "隔离/解除/轮询剩余完整矩阵、SDK与全兼容回归",
+    "精确源码独立验收、Ready CI和授权Git闭环"
+  ],
+  "git": {
+    "committed": false,
+    "pushed": false,
+    "pr": "NONE"
+  },
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "next_goal_allowed": "NO",
+  "vid_g7_started": "NO"
+}
