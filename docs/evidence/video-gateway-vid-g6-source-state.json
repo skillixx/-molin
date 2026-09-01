@@ -1,15 +1,16 @@
 {
   "schema_version": 3,
   "target_goal": "VID-G6",
-  "status": "SOURCE_COMMITTED_PENDING_GIT_CI",
+  "status": "PASS_REVIEWS_SOURCE_COMMITTED_PENDING_PUSH_CI",
   "base_commit": "52563ba450c6d488456137162580022deb06acc8",
-  "source_commit": "bf4a84ffdbccfa77112efc1736689508c794f9c6",
+  "source_commit": "f1aaa20d5a1a1c1da1976d11601de08be690cf24",
+  "business_source_commit": "bf4a84ffdbccfa77112efc1736689508c794f9c6",
   "branch": "feature/video-gateway-vid-g6-http-project-sk-contract",
-  "source_state_id": "7e03bb3ef60c2eb61bdec03854467262065221da2535174635a1f41b23a49a20",
-  "copy_tree_sha256": "b9593d3d3d9a42b8e07844ec6ab838f37dc06e5eee1909f79efe2215759193c2",
-  "captured_at": "2026-09-01T21:31:06.2269009+08:00",
+  "source_state_id": "2644f9a29b34176fdd8acbdc8c993c150d9f96658a9210eec1192dffeded46d9",
+  "copy_tree_sha256": "5a2769740f149c42c1da2cba7122604bd56197f9990d551b0ad9cbcc250233c3",
+  "captured_at": "2026-09-01T22:52:43.2339556+08:00",
   "algorithm": "UTF8无BOM；BASE_COMMIT=<sha>加LF，随后按路径排序的path|sha256各加LF；文件SHA按原始字节；docs/evidence排除避免自引用。",
-  "manifest_count": 407,
+  "manifest_count": 409,
   "manifest": [
     {
       "path": "docs/database-schema-design.md",
@@ -130,6 +131,14 @@
     {
       "path": "docs/video-gateway-vid-g6-saved-read-contract.md",
       "sha256": "a8759b63b0bcc30d221fa28b2d3dd4b32827f34771e43997d7f520e8705b403a"
+    },
+    {
+      "path": "infra/scripts/classify-ci-change-scope.py",
+      "sha256": "38dc9624606c8280efff6f3672e0e568c21c3b50b8f065148092378cccacf5e0"
+    },
+    {
+      "path": "infra/scripts/test_classify_ci_change_scope.py",
+      "sha256": "8d2e88ae085d2be10d463fcdaeb07b3cdb07dbfe2f08213d027790611543369c"
     },
     {
       "path": "infra/scripts/verify-video-gateway-vid-g6-sdk.ps1",

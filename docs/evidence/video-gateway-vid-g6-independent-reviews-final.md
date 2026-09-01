@@ -1,5 +1,7 @@
 # VID-G6 最终独立验收回执
 
+> **状态：STALE_AFTER_CI_CLASSIFIER_FIX。** 本回执只绑定下述`7e03...`源码；PR #422首次Ready CI暴露分类器renameLimit失败后，非evidence源码已变化。本回执不得用于新SOURCE_STATE验收，须保留为历史并生成新的独立回执。
+
 绑定SOURCE_STATE：`7e03bb3ef60c2eb61bdec03854467262065221da2535174635a1f41b23a49a20`
 
 绑定容器副本：`b9593d3d3d9a42b8e07844ec6ab838f37dc06e5eee1909f79efe2215759193c2`

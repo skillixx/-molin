@@ -1,18 +1,18 @@
 {
   "schema_version": 2,
   "target_goal": "VID-G6",
-  "status": "PASS_REVIEWS_SOURCE_COMMITTED_READY_FOR_PUSH",
-  "source_state_id": "7e03bb3ef60c2eb61bdec03854467262065221da2535174635a1f41b23a49a20",
-  "copy_tree_sha256": "b9593d3d3d9a42b8e07844ec6ab838f37dc06e5eee1909f79efe2215759193c2",
+  "status": "PASS_REVIEWS_SOURCE_COMMITTED_PENDING_PUSH_CI",
+  "source_state_id": "2644f9a29b34176fdd8acbdc8c993c150d9f96658a9210eec1192dffeded46d9",
+  "copy_tree_sha256": "5a2769740f149c42c1da2cba7122604bd56197f9990d551b0ad9cbcc250233c3",
   "base_commit": "52563ba450c6d488456137162580022deb06acc8",
-  "source_commit": "bf4a84ffdbccfa77112efc1736689508c794f9c6",
+  "source_commit": "f1aaa20d5a1a1c1da1976d11601de08be690cf24",
   "runs": {
     "vid_g6_mysql_all": {
       "status": "PASS",
       "latest_migration": 109,
       "linux_race": true,
       "required_tests": "ALL_RUN_PASS",
-      "service_seconds": 1230.686,
+      "service_seconds": 1232.352,
       "real_provider_calls": 0,
       "real_wallet_writes": 0
     },
@@ -64,7 +64,17 @@
     },
     "callback_focus": "PASS",
     "model_default_focus": "PASS",
-    "cancel_focus": "PASS"
+    "cancel_focus": "PASS",
+    "ci_change_scope": {
+      "status": "PASS_LOCAL_AFTER_CI_FAILURE",
+      "unit_tests": 43,
+      "ready_contract_tests": 10,
+      "draft_selection_tests": 14,
+      "draft_runner_tests": 5,
+      "exact_pr_classification": "PASS",
+      "root_cause": "git_copy_detection_limit",
+      "copy_detection_limit": 2000
+    }
   },
   "safety": {
     "real_provider_requests": 0,
@@ -78,5 +88,14 @@
     "vid_g7_started": false
   },
   "boundary": "真实Provider、MinIO、RabbitMQ、Redis、Bifrost视频数据面、共享测试服与生产均未运行；SDK和浏览器证据不能扩写为这些能力。",
-  "next_gate": "PUSH_PR_READY_CI_MERGE"
+  "next_gate": "PUSH_NEW_HEAD_READY_CI_MERGE",
+  "business_source_commit": "bf4a84ffdbccfa77112efc1736689508c794f9c6",
+  "git_state": {
+    "pr_number": 422,
+    "pr_state": "OPEN_OLD_HEAD",
+    "pr_head": "23b4f5ca6865b16ea11026a46693960071e02e0b",
+    "ci_status": "FAILED_OLD_HEAD_CLASSIFIER_FIXED_LOCALLY",
+    "local_fix_committed": true,
+    "local_fix_pushed": false
+  }
 }

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "target_goal": "VID-G6",
-  "status": "PASS_REVIEWS_SOURCE_COMMITTED_PENDING_GIT_CI",
+  "status": "PASS_INDEPENDENT_REVIEWS_SOURCE_COMMITTED_PENDING_PUSH_CI",
   "base_commit": "52563ba450c6d488456137162580022deb06acc8",
   "goal_sha256": "e8a0c9a365f7f0b7039d2707150598770b72c4159868a510b0e7ad25aec98470",
   "ssot": "docs/video-gateway-goal-stage-execution-prompt.md#vid-g6httpproject-sk回调与查询合同",
