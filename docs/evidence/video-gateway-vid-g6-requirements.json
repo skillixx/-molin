@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "target_goal": "VID-G6",
-  "status": "PASS_INDEPENDENT_REVIEWS_SOURCE_COMMITTED_PENDING_PUSH_CI",
+  "status": "INDEPENDENT_REVIEWS_PASS_PENDING_GIT_READY_CI",
   "base_commit": "52563ba450c6d488456137162580022deb06acc8",
   "goal_sha256": "e8a0c9a365f7f0b7039d2707150598770b72c4159868a510b0e7ad25aec98470",
   "ssot": "docs/video-gateway-goal-stage-execution-prompt.md#vid-g6httpproject-sk回调与查询合同",
@@ -526,10 +526,11 @@
     {
       "id": "G6-R21",
       "description": "四类独立验收、精确源码绑定、P0/P1/P2清零后授权Git闭环与Ready完整CI",
-      "status": "PASS_INDEPENDENT_REVIEWS_PENDING_GIT_CI",
+      "status": "INDEPENDENT_REVIEWS_PASS_PENDING_GIT_READY_CI",
       "evidence": [
         "docs/evidence/video-gateway-vid-g6-local-verification.json",
-        "docs/evidence/video-gateway-vid-g6-source-state.json"
+        "docs/evidence/video-gateway-vid-g6-source-state.json",
+        "docs/evidence/video-gateway-vid-g6-independent-reviews-final-v3.md"
       ]
     },
     {

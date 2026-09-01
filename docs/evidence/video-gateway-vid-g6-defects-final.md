@@ -1,6 +1,6 @@
 # VID-G6 最终本地缺陷台账
 
-绑定SOURCE_STATE：`2644f9a29b34176fdd8acbdc8c993c150d9f96658a9210eec1192dffeded46d9`
+绑定SOURCE_STATE：`f7831697a58aab29d1084330de44a3eb65ce9c243d0dd08236ab1803d9722a54`
 
 本台账保留首轮独立审查和最终全量门禁发现的问题。`CLOSED_VERIFIED`只表示当前本地源码已通过对应复验；最终P0/P1/P2计数仍须由新SOURCE_STATE下四轴独立终审确认。
 
@@ -25,5 +25,7 @@
 | G6-FINAL-017 | P2 | 五份主文档硬编码上一轮副本哈希和耗时，随源码变化漂移 | 主文档只引用最终evidence SSOT，不再重复易漂移值；精确副本和耗时只写不可变回执 | CLOSED_VERIFIED |
 | G6-FINAL-018 | P2 | queue合同误写门闩在Hold前，实际为事务末尾提交前 | 文档同步为先形成事务内不可见暂态事实、末尾门闩拒绝后整笔回滚；不改已验证锁序 | CLOSED_VERIFIED |
 | G6-FINAL-019 | P1 | PR #422 Ready CI分类器将Git大变更复制检测warning视为异常，后续门禁全部SKIP | 固定`git diff -l2000 --find-copies-harder`完成当前复制/重命名检测并保留有限复杂度保护，不忽略stderr；分类43项含warning/非零退出失败关闭，另29项合同及原PR精确base/head分类PASS | CLOSED_VERIFIED |
+| G6-FINAL-020 | P1 | PR #422新HEAD四处敏感门禁把SHA-256/SOURCE_STATE中的11位数字片段误判为完整手机号 | 手机号正则改为ASCII字母数字边界，独立手机号仍检测且不回显；hex摘要形态不报。扫描器6项自测及最终595历史blob/596事件完整扫描findings=0 | CLOSED_VERIFIED |
+| G6-FINAL-021 | P1 | G6客户专项脚本只跳过65/66却继续提前执行67—109，且请求夹具默认当前时间会在跨月后漂出固定汇总窗口 | 基线迁移严格停在000064后显式验证65/66；两条请求固定在2026-08窗口；增加4项脚本合同测试和失败输出口令遮蔽；真实临时MySQL 8专项及最终G6 all通过 | CLOSED_VERIFIED |
 
 当前待独立终审缺陷计数候选：`P0=0 / P1=0 / P2=0`。若任一独立角色发现新问题，本台账立即恢复开放状态并重新绑定修复后的SOURCE_STATE。

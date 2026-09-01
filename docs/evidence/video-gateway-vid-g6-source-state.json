@@ -1,16 +1,17 @@
 {
   "schema_version": 3,
   "target_goal": "VID-G6",
-  "status": "PASS_REVIEWS_SOURCE_COMMITTED_PENDING_PUSH_CI",
+  "status": "INDEPENDENT_REVIEWS_PASS_PENDING_GIT_READY_CI",
   "base_commit": "52563ba450c6d488456137162580022deb06acc8",
-  "source_commit": "f1aaa20d5a1a1c1da1976d11601de08be690cf24",
+  "source_commit": "4de1d59a86c47866b8cec62019ab498b4e76d47a",
   "business_source_commit": "bf4a84ffdbccfa77112efc1736689508c794f9c6",
+  "ci_classifier_source_commit": "f1aaa20d5a1a1c1da1976d11601de08be690cf24",
   "branch": "feature/video-gateway-vid-g6-http-project-sk-contract",
-  "source_state_id": "2644f9a29b34176fdd8acbdc8c993c150d9f96658a9210eec1192dffeded46d9",
-  "copy_tree_sha256": "5a2769740f149c42c1da2cba7122604bd56197f9990d551b0ad9cbcc250233c3",
-  "captured_at": "2026-09-01T22:52:43.2339556+08:00",
+  "source_state_id": "f7831697a58aab29d1084330de44a3eb65ce9c243d0dd08236ab1803d9722a54",
+  "copy_tree_sha256": "78582a80abf1e6a821ebcf8bd9b44645de0ea589096cea9ad167d96a8779d7f6",
+  "captured_at": "2026-09-02T00:31:02.3263592+08:00",
   "algorithm": "UTF8无BOM；BASE_COMMIT=<sha>加LF，随后按路径排序的path|sha256各加LF；文件SHA按原始字节；docs/evidence排除避免自引用。",
-  "manifest_count": 409,
+  "manifest_count": 413,
   "manifest": [
     {
       "path": "docs/database-schema-design.md",
@@ -137,8 +138,16 @@
       "sha256": "38dc9624606c8280efff6f3672e0e568c21c3b50b8f065148092378cccacf5e0"
     },
     {
+      "path": "infra/scripts/test_ai_gateway_g6_customer_verifier_contract.py",
+      "sha256": "795b4af7050595cd96815bd34b6fb2872377b4d87d7cca6ebdc9fd87c3c74170"
+    },
+    {
       "path": "infra/scripts/test_classify_ci_change_scope.py",
       "sha256": "8d2e88ae085d2be10d463fcdaeb07b3cdb07dbfe2f08213d027790611543369c"
+    },
+    {
+      "path": "infra/scripts/verify-ai-gateway-g6-customer.sh",
+      "sha256": "8aef441ec2514a2d3c9047e8159c33ef460888944db71aa09d77749b10d09b37"
     },
     {
       "path": "infra/scripts/verify-video-gateway-vid-g6-sdk.ps1",
@@ -1631,6 +1640,14 @@
     {
       "path": "tests/api/video-gateway-vid-g6-sdk/validation.json",
       "sha256": "6b17f68c5fc6dd5cce3bb32f84f9fd00ca381ed69905d582e31408d7c95fbc1b"
+    },
+    {
+      "path": "tests/email/sensitive_scan_selftest.py",
+      "sha256": "d0a96420254b8182cf33ff74c5bff3ad02aaac41007812df62f6c1a611873140"
+    },
+    {
+      "path": "tests/email/sensitive_scan.py",
+      "sha256": "6c75bb28b38b7d04595a14e9b3b4f210756e2efa82a765f0cf960c5da7e55a62"
     },
     {
       "path": "tests/fixtures/video-gateway-vid-g6/generate-playable.ps1",

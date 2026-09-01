@@ -1,18 +1,18 @@
 {
   "schema_version": 2,
   "target_goal": "VID-G6",
-  "status": "PASS_REVIEWS_SOURCE_COMMITTED_PENDING_PUSH_CI",
-  "source_state_id": "2644f9a29b34176fdd8acbdc8c993c150d9f96658a9210eec1192dffeded46d9",
-  "copy_tree_sha256": "5a2769740f149c42c1da2cba7122604bd56197f9990d551b0ad9cbcc250233c3",
+  "status": "INDEPENDENT_REVIEWS_PASS_PENDING_GIT_READY_CI",
+  "source_state_id": "f7831697a58aab29d1084330de44a3eb65ce9c243d0dd08236ab1803d9722a54",
+  "copy_tree_sha256": "78582a80abf1e6a821ebcf8bd9b44645de0ea589096cea9ad167d96a8779d7f6",
   "base_commit": "52563ba450c6d488456137162580022deb06acc8",
-  "source_commit": "f1aaa20d5a1a1c1da1976d11601de08be690cf24",
+  "source_commit": "4de1d59a86c47866b8cec62019ab498b4e76d47a",
   "runs": {
     "vid_g6_mysql_all": {
       "status": "PASS",
       "latest_migration": 109,
       "linux_race": true,
       "required_tests": "ALL_RUN_PASS",
-      "service_seconds": 1232.352,
+      "service_seconds": 1237.281,
       "real_provider_calls": 0,
       "real_wallet_writes": 0
     },
@@ -43,7 +43,7 @@
     "git_diff_check": "PASS",
     "sensitive_scan": {
       "status": "PASS",
-      "files": 573,
+      "files": 178,
       "findings": 0
     },
     "image_compatibility": {
@@ -74,6 +74,26 @@
       "exact_pr_classification": "PASS",
       "root_cause": "git_copy_detection_limit",
       "copy_detection_limit": 2000
+    },
+    "sensitive_scanner_boundary": {
+      "status": "PASS_LOCAL_AFTER_CI_FAILURE",
+      "selftests": 6,
+      "historical_blobs": 595,
+      "historical_events": 596,
+      "committed_paths": 584,
+      "findings": 0,
+      "phone_boundary": "ASCII_ALNUM",
+      "standalone_phone_detected": true,
+      "hex_digest_phone_shape_ignored": true
+    },
+    "g6_customer_mysql_verifier": {
+      "status": "PASS_LOCAL_AFTER_CI_FAILURE",
+      "mysql": "8.0",
+      "schema": "64_TO_65_TO_66",
+      "later_migrations_applied_before_g6": false,
+      "fixture_time_fixed_inside_aggregate_window": true,
+      "contract_tests": 4,
+      "temporary_password_redacted_on_failure": true
     }
   },
   "safety": {
@@ -88,14 +108,15 @@
     "vid_g7_started": false
   },
   "boundary": "真实Provider、MinIO、RabbitMQ、Redis、Bifrost视频数据面、共享测试服与生产均未运行；SDK和浏览器证据不能扩写为这些能力。",
-  "next_gate": "PUSH_NEW_HEAD_READY_CI_MERGE",
+  "next_gate": "COMMIT_PUSH_READY_CI",
   "business_source_commit": "bf4a84ffdbccfa77112efc1736689508c794f9c6",
   "git_state": {
     "pr_number": 422,
-    "pr_state": "OPEN_OLD_HEAD",
-    "pr_head": "23b4f5ca6865b16ea11026a46693960071e02e0b",
-    "ci_status": "FAILED_OLD_HEAD_CLASSIFIER_FIXED_LOCALLY",
+    "pr_state": "OPEN_CURRENT_FAILED_HEAD",
+    "pr_head": "781c6cb8826392dc8b6674dc13bed572ecf98093",
+    "ci_status": "FAILED_CURRENT_HEAD_SCANNER_AND_G6_MYSQL_FIXES_LOCAL",
     "local_fix_committed": true,
     "local_fix_pushed": false
-  }
+  },
+  "ci_classifier_source_commit": "f1aaa20d5a1a1c1da1976d11601de08be690cf24"
 }

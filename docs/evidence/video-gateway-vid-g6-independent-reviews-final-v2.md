@@ -1,5 +1,7 @@
 # VID-G6 最终独立验收回执 v2
 
+> **状态：STALE_AFTER_SENSITIVE_SCANNER_FIX。** 本回执绑定`2644...`源码；PR #422新HEAD的共享敏感扫描把SHA摘要数字片段误判为手机号后，`tests/email/sensitive_scan.py`及自测已变化。本回执保留为历史，不能替代新SOURCE_STATE终审。
+
 绑定SOURCE_STATE：`2644f9a29b34176fdd8acbdc8c993c150d9f96658a9210eec1192dffeded46d9`
 
 绑定源码提交：`f1aaa20d5a1a1c1da1976d11601de08be690cf24`
