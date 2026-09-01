@@ -368,6 +368,7 @@ def changed_paths(repo_root: Path, base_sha: str, head_sha: str) -> list[str]:
             "--name-status",
             "-z",
             "--find-copies-harder",
+            "-l2000",
             "--diff-filter=ACDMRT",
             f"{base}...{head}",
         ],

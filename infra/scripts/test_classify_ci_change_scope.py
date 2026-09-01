@@ -3,6 +3,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPT_PATH = Path(__file__).with_name("classify-ci-change-scope.py")
@@ -467,6 +468,56 @@ class ClassifyCIChangeScopeTest(unittest.TestCase):
                 [".github/workflows/critical.yml", "docs/critical.md"],
                 self.classifier.changed_paths(repo, base_sha, head_sha),
             )
+
+    def test_changed_paths_uses_finite_git_copy_detection_limit(self):
+        """大阶段PR完整检测复制来源，同时保留有限的runner复杂度保护。"""
+
+        completed = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="C100\0docs/source.md\0server/copied.go\0",
+            stderr="",
+        )
+        with mock.patch.object(
+            self.classifier.subprocess, "run", return_value=completed
+        ) as run:
+            paths = self.classifier.changed_paths(Path.cwd(), "0" * 40, "1" * 40)
+
+        command = run.call_args.args[0]
+        self.assertIn("--find-copies-harder", command)
+        self.assertIn("-l2000", command)
+        self.assertNotIn("-l0", command)
+        self.assertEqual(["docs/source.md", "server/copied.go"], paths)
+
+    def test_changed_paths_rejects_git_warning_on_stderr(self):
+        """复制检测超过有限上限时必须失败关闭，不能接受不完整路径集。"""
+
+        completed = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="M\0server/changed.go\0",
+            stderr="warning: rename detection was skipped\n",
+        )
+        with mock.patch.object(
+            self.classifier.subprocess, "run", return_value=completed
+        ):
+            with self.assertRaises(self.classifier.ClassificationError):
+                self.classifier.changed_paths(Path.cwd(), "0" * 40, "1" * 40)
+
+    def test_changed_paths_rejects_nonzero_git_exit(self):
+        """Git读取失败必须停止分类，不能用空路径或部分结果继续门禁。"""
+
+        completed = subprocess.CompletedProcess(
+            args=[],
+            returncode=128,
+            stdout="",
+            stderr="fatal: bad object\n",
+        )
+        with mock.patch.object(
+            self.classifier.subprocess, "run", return_value=completed
+        ):
+            with self.assertRaises(self.classifier.ClassificationError):
+                self.classifier.changed_paths(Path.cwd(), "0" * 40, "1" * 40)
 
 
 if __name__ == "__main__":
