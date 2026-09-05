@@ -61,5 +61,6 @@ $document = [ordered]@{
     }
     defects = $items
 }
-[IO.File]::WriteAllText((Join-Path $repoRoot $Output), ($document | ConvertTo-Json -Depth 8) + "`n", [Text.UTF8Encoding]::new($false))
+$json = ($document | ConvertTo-Json -Depth 8).Replace("`r`n", "`n")
+[IO.File]::WriteAllText((Join-Path $repoRoot $Output), $json + "`n", [Text.UTF8Encoding]::new($false))
 Write-Output ('VIDEO_G7_DEFECT_LEDGER=PASS source_state_id=' + $state.source_state_id + ' total=' + $items.Count + ' p0=' + $document.open_counts.P0 + ' p1=' + $document.open_counts.P1 + ' p2=' + $document.open_counts.P2 + ' status=' + $Status)

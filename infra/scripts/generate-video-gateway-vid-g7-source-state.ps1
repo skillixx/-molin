@@ -117,6 +117,6 @@ $document = [ordered]@{
     vid_g8_started = $false
 }
 $absoluteOutput = Join-Path $repoRoot $OutputPath
-$json = $document | ConvertTo-Json -Depth 8
+$json = ($document | ConvertTo-Json -Depth 8).Replace("`r`n", "`n")
 [IO.File]::WriteAllText($absoluteOutput, $json + "`n", [Text.UTF8Encoding]::new($false))
 Write-Output ('VIDEO_G7_SOURCE_STATE=PASS id=' + $sourceStateID + ' manifest=' + $manifest.Count + ' patch=' + $trackedPatchSHA + ' untracked=' + $untrackedManifestSHA + ' provenance=' + $provenance)
