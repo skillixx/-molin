@@ -83,7 +83,7 @@ BIFROST_VIDEO_DATA_PLANE=OFF
 5. 顺序应用110—122 migration，逐项核对schema和既有业务事实计数。
 6. 验证`/api/health`、`/api/ready`、`/api/version`，视频路由为404，Chat/Image和钱包只读基线不变。
 7. 不接收视频任务、不调用Provider、不创建真实Hold。
-8. 执行应用回滚和12步Expand-only兼容撤回；复验13类事实、Chat/Image、钱包及关闭态重启。
+8. 执行应用回滚和13步Expand-only兼容撤回；复验14项事实、Chat/Image、钱包及关闭态重启。
 9. 若任一步失败，停止后续动作，保留兼容Worker/回调接收器和全部事实，按已验证恢复点恢复应用。
 
 ## 授权精确文本
