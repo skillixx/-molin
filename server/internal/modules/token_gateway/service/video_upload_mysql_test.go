@@ -169,6 +169,44 @@ func newVideoUploadFixture(t *testing.T) (*gorm.DB, *VideoUploadService, *videoU
 	return db, s, store, c, data
 }
 
+func TestVideoG7UploadSessionRetentionMySQL(t *testing.T) {
+	db, uploads, store, command, _ := newVideoUploadFixture(t)
+	ctx := context.Background()
+	createdAt := time.Now().UTC().Truncate(time.Second).Add(-25 * time.Hour)
+	uploads.now = func() time.Time { return createdAt }
+	created, err := uploads.Create(ctx, command)
+	if err != nil || created.Upload == nil || created.Status != model.AIUploadSessionUploading {
+		t.Fatalf("准备未完成上传会话失败: reply=%+v err=%v", created, err)
+	}
+	app := &VideoHTTPService{db: db, uploads: uploads}
+	worker, err := NewVideoInputRetentionWorker(app, "upload-session-retention")
+	if err != nil {
+		t.Fatal(err)
+	}
+	completedAt := createdAt.Add(25 * time.Hour)
+	worker.now = func() time.Time { return completedAt }
+	if count, err := worker.RunOnce(ctx, 10); err != nil || count != 1 {
+		t.Fatalf("24小时未完成会话必须墓碑化并收口: count=%d err=%v", count, err)
+	}
+	var session model.AIUploadSession
+	if err := db.Where("public_id=?", created.SessionID).Take(&session).Error; err != nil || session.Status != model.AIUploadSessionExpired || session.ExpiredAt == nil || !session.ExpiredAt.Equal(completedAt) || session.FinalInputAssetID != nil {
+		t.Fatalf("会话必须保留并进入expired: session=%+v err=%v", session, err)
+	}
+	var fact videoUploadSessionRetentionFact
+	if err := db.Where("session_id=?", session.ID).Take(&fact).Error; err != nil || fact.PolicyVersion != "vid-g7-upload-session-retention-v1" || !fact.EligibleAt.Equal(createdAt.Add(24*time.Hour)) || !fact.CompletedAt.Equal(completedAt) {
+		t.Fatalf("必须追加可追溯清理事实: fact=%+v err=%v", fact, err)
+	}
+	store.Lock()
+	discarded := store.entries[created.SessionID] != nil && store.entries[created.SessionID].discarded
+	store.Unlock()
+	if !discarded {
+		t.Fatal("数据库终态前必须完成不可复活墓碑")
+	}
+	if count, err := worker.RunOnce(ctx, 10); err != nil || count != 0 {
+		t.Fatalf("已收口会话重跑必须零写: count=%d err=%v", count, err)
+	}
+}
+
 func TestVideoG6UploadMySQLSealCompleteReplay(t *testing.T) {
 	db, s, store, c, data := newVideoUploadFixture(t)
 	ctx := context.Background()

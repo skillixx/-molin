@@ -24,7 +24,13 @@ func (l *VideoRepositoryTaskLedger) ValidateSubmissionClaim(ctx context.Context,
 		if err != nil {
 			return err
 		}
+		if err := ensureLegacyVideoCapacityTx(tx); err != nil {
+			return err
+		}
 		if _, _, _, _, err := loadVideoFinancialFactsTx(tx, task, l.owner); err != nil {
+			return err
+		}
+		if err := repository.CheckVideoWorkerLeaseTx(ctx, tx, task); err != nil {
 			return err
 		}
 		deadline, err = videoSubmissionClaimTx(tx, task, version)
@@ -33,6 +39,9 @@ func (l *VideoRepositoryTaskLedger) ValidateSubmissionClaim(ctx context.Context,
 		}
 		if task.Status != model.AIImageTaskSubmitting || task.ProviderTaskID != nil || task.AttemptCount != 0 || !l.now().UTC().Before(deadline) {
 			return ErrVideoBillingState
+		}
+		if task.WorkerLeaseVersion > 0 && task.WorkerLeaseUntil != nil && task.WorkerLeaseUntil.Before(deadline) {
+			deadline = *task.WorkerLeaseUntil
 		}
 		return nil
 	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
@@ -68,6 +77,9 @@ func (l *VideoRepositoryTaskLedger) RecordSubmissionReceipt(parent context.Conte
 			if receipt.RequestID != task.RequestID {
 				return ErrVideoBillingConflict
 			}
+			if task.SubmissionIntentID != nil && (!videoProviderTaskUUIDPattern.MatchString(*task.SubmissionIntentID) || receipt.ProviderTaskID != *task.SubmissionIntentID) {
+				return ErrVideoBillingConflict
+			}
 			if _, _, _, _, err := loadVideoFinancialFactsTx(tx, task, l.owner); err != nil {
 				return err
 			}
@@ -90,6 +102,11 @@ func (l *VideoRepositoryTaskLedger) RecordSubmissionReceipt(parent context.Conte
 			}
 			if task.Status != model.AIImageTaskSubmitting && task.Status != model.AIImageTaskPendingReconcile {
 				return ErrVideoBillingState
+			}
+			// 已接受的相同回执已在上方只读返回；未绑定身份的首次写入必须服从当前执行代次。
+			// WithoutCancel只隔离原RPC取消，不允许旧Worker绕过pending分支继续绑定。
+			if err := repository.CheckVideoWorkerLeaseTx(ctx, tx, task); err != nil {
+				return err
 			}
 			now := l.now().UTC()
 			if task.Status == model.AIImageTaskSubmitting && (!now.Before(deadline) || receipt.Status == videogateway.ProviderTaskUnknown || receipt.Status == videogateway.ProviderTaskFailed || receipt.Status == videogateway.ProviderTaskCancelled) {
@@ -134,6 +151,11 @@ func (l *VideoRepositoryTaskLedger) RecordSubmissionReceipt(parent context.Conte
 			if task.Status == model.AIImageTaskSubmitted && !l.now().UTC().Before(deadline) {
 				return billingservice.ErrConcurrentUpdate
 			}
+			// 绑定、接受事件及恢复检查都消耗租期；事务尾部再次读数据库时钟，过期则整笔回滚。
+			// Task锁仍由本事务持有，其他执行者不能在此期间续期或换代。
+			if err := repository.CheckVideoWorkerLeaseTx(ctx, tx, task); err != nil {
+				return err
+			}
 			result = videoSubmissionMetadata(task)
 			return nil
 		}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
@@ -176,6 +198,9 @@ func appendVideoSubmissionRejectionTx(tx *gorm.DB, task *repository.VideoTaskRec
 
 func videoSubmissionMetadata(task *repository.VideoTaskRecord) videogateway.GatewayTask {
 	r := videogateway.GatewayTask{DeferDelivery: true, TaskID: task.PublicID, RequestID: task.RequestID, Status: videogateway.TaskStatus(task.Status), Version: task.VersionNo, CancelRequestedAt: task.CancelRequestedAt}
+	if task.SubmissionClaimVersion != nil {
+		r.SubmissionClaimVersion = *task.SubmissionClaimVersion
+	}
 	if task.Operation != nil {
 		r.Operation = *task.Operation
 	}

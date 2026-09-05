@@ -18,7 +18,7 @@ import (
 // ReleaseUnserviceable 只依据已确认无产物或明确安全拒绝事实全额释放，不接受调用方金额或失败原因。
 func (s *VideoBillingService) ReleaseUnserviceable(ctx context.Context, taskID string, owner repository.VideoOwner) (*VideoFinancialResult, error) {
 	r, err := s.releaseUnserviceable(ctx, taskID, owner, nil)
-	if err != nil && s != nil && s.db != nil && !errors.Is(err, repository.ErrVideoCompensationBusy) && !errors.Is(err, repository.ErrVideoCompensationLeaseLost) {
+	if err != nil && s != nil && s.db != nil && !errors.Is(err, repository.ErrVideoCompensationBusy) && !errors.Is(err, repository.ErrVideoCompensationLeaseLost) && !errors.Is(err, repository.ErrVideoWorkerLeaseLost) {
 		markCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
 		err = errors.Join(err, s.markVideoReleasePending(markCtx, taskID, owner))
@@ -73,6 +73,12 @@ func (s *VideoBillingService) releaseUnserviceable(ctx context.Context, taskID s
 			if !existing {
 				if ce == nil && job.Status == "completed" {
 					return repository.ErrVideoCompensationLeaseLost
+				}
+				// 普通首次退款需要当前执行证明；补偿入口已在上方验证自己的同请求当前租约。
+				if lease == nil {
+					if err := repository.CheckVideoWorkerLeaseTx(ctx, tx, task); err != nil {
+						return err
+					}
 				}
 				if (r.BillingStatus != model.AIBillingHeld && r.BillingStatus != model.AIBillingSettlementPending) || r.DeliveryStatus != model.AIDeliveryPending || hold.Status != billingmodel.HoldStatusHolding || hold.SettledAmount != nil || link.SettledAmount != nil || link.SettleTransactionID != nil || link.ReleaseTransactionID != nil {
 					return ErrVideoBillingState
@@ -185,6 +191,12 @@ func (s *VideoBillingService) releaseUnserviceable(ctx context.Context, taskID s
 			if lease != nil && !lease.LockedAt.Add(repository.VideoCompensationLeaseDuration).After(s.now().UTC()) {
 				return repository.ErrVideoCompensationLeaseLost
 			}
+			if !existing && lease == nil {
+				// 钱包、零销售、拒绝交付、输入释放和Outbox必须随过期执行权一起回滚。
+				if err := repository.CheckVideoWorkerLeaseTx(ctx, tx, task); err != nil {
+					return err
+				}
+			}
 			result = &VideoFinancialResult{RequestID: task.RequestID, TaskID: task.PublicID, ExecutionStatus: task.Status, BillingStatus: model.AIBillingReleased, DeliveryStatus: model.AIDeliveryRejected, HeldAmount: hold.HoldAmount, SettledAmount: decimal.Zero, ReleasedAmount: hold.HoldAmount, Existing: existing}
 			return nil
 		}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
@@ -194,11 +206,24 @@ func (s *VideoBillingService) releaseUnserviceable(ctx context.Context, taskID s
 
 // loadVideoProviderReleaseProofTx 区分无产物确认与安全拒绝；仅有failed或quarantined状态并不构成退款依据。
 func loadVideoProviderReleaseProofTx(tx *gorm.DB, task *repository.VideoTaskRecord, q *model.AIGatewayQuote) (*model.VideoUsageItem, error) {
+	return loadVideoProviderReleaseProof(tx, task, q, true)
+}
+
+// RR容量快照只读同一证明，不取得写锁；证明字段和事件要求与财务事务完全一致。
+func loadVideoProviderReleaseProofSnapshotTx(tx *gorm.DB, task *repository.VideoTaskRecord, q *model.AIGatewayQuote) (*model.VideoUsageItem, error) {
+	return loadVideoProviderReleaseProof(tx, task, q, false)
+}
+
+func loadVideoProviderReleaseProof(tx *gorm.DB, task *repository.VideoTaskRecord, q *model.AIGatewayQuote, lockAssets bool) (*model.VideoUsageItem, error) {
 	if task.Status != model.AIImageTaskFailed && task.Status != model.AIImageTaskCancelled {
 		return nil, ErrVideoBillingState
 	}
 	var assets []model.AIImageAsset
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id=?", task.RequestID).Find(&assets).Error; err != nil {
+	query := tx.Where("request_id=?", task.RequestID)
+	if lockAssets {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	if err := query.Find(&assets).Error; err != nil {
 		return nil, err
 	}
 	if len(assets) == 0 {

@@ -90,6 +90,7 @@ func (s *VideoHTTPService) DeleteMedia(ctx context.Context, caller VideoCaller, 
 }
 
 func (s *VideoHTTPService) deleteMedia(ctx context.Context, caller VideoCaller, id, key string, selected *videoAssetDeleteRequest) (*VideoDeleted, error) {
+	retentionAt, retention := videoRetentionDeleteTime(ctx)
 	// 准备阶段也会持锁读取Store，必须自行设定上限，不能依赖客户端主动断连。
 	ctx, cancelPrepare := context.WithTimeout(ctx, 30*time.Second)
 	defer cancelPrepare()
@@ -102,10 +103,12 @@ func (s *VideoHTTPService) deleteMedia(ctx context.Context, caller VideoCaller, 
 	// 先持久化隐藏意图；即使后续对象已删而确认提交失败，也不能重新公开旧Job。
 	err := retryVideoBillingTransaction(ctx, func() error {
 		return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			if err := revalidateVideoReadCredential(ctx, caller); err != nil {
-				return err
+			if !retention {
+				if err := revalidateVideoReadCredential(ctx, caller); err != nil {
+					return err
+				}
 			}
-			task, owner, err := s.taskForPlatformTx(ctx, tx, caller, id, false)
+			task, owner, err := s.taskForMediaDeleteTx(ctx, tx, caller, id, retention)
 			if err != nil {
 				return err
 			}
@@ -115,8 +118,10 @@ func (s *VideoHTTPService) deleteMedia(ctx context.Context, caller VideoCaller, 
 			if task.Operation == nil {
 				return ErrVideoMediaProtected
 			}
-			if err := s.access.AuthorizeTx(ctx, tx, owner, task.LogicalModelCode, time.Now().UTC(), *task.Operation); err != nil {
-				return err
+			if !retention {
+				if err := s.access.AuthorizeTx(ctx, tx, owner, task.LogicalModelCode, time.Now().UTC(), *task.Operation); err != nil {
+					return err
+				}
 			}
 			hash := videoBillingDigest(fmt.Sprintf("media-delete:%d:%d:%s", owner.UserID, owner.ProjectID, key))
 			if selected != nil {
@@ -187,6 +192,9 @@ func (s *VideoHTTPService) deleteMedia(ctx context.Context, caller VideoCaller, 
 			if err := mediaDeleteProtection(tx, task, assets, s.saveStore); err != nil {
 				return err
 			}
+			if retention && !videoRetentionAssetsEligible(assets, retentionAt) {
+				return ErrVideoMediaProtected
+			}
 			if len(assets) > 0 {
 				if _, err := loadVideoSettlementMediaTx(tx, task, false, time.Now().UTC()); err != nil {
 					return ErrVideoMediaProtected
@@ -247,10 +255,13 @@ func (s *VideoHTTPService) deleteMedia(ctx context.Context, caller VideoCaller, 
 			if err := tx.Create(&op).Error; err != nil {
 				return err
 			}
-			if err := s.access.AuthorizeTx(ctx, tx, owner, task.LogicalModelCode, time.Now().UTC(), *task.Operation); err != nil {
-				return err
+			if !retention {
+				if err := s.access.AuthorizeTx(ctx, tx, owner, task.LogicalModelCode, time.Now().UTC(), *task.Operation); err != nil {
+					return err
+				}
+				return revalidateVideoReadCredential(ctx, caller)
 			}
-			return revalidateVideoReadCredential(ctx, caller)
+			return nil
 		}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	})
 	if err != nil {
@@ -312,6 +323,7 @@ func mediaDeleteProtection(tx *gorm.DB, task *repository.VideoTaskRecord, assets
 }
 
 func (s *VideoHTTPService) executeMediaDelete(ctx context.Context, caller VideoCaller, id string) (*VideoDeleted, error) {
+	retentionAt, retention := videoRetentionDeleteTime(ctx)
 	operation, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	// 存储取消后仍保留短暂事务期限完成失败标记，不提前释放安全锁给其他清理或保全操作。
@@ -320,16 +332,22 @@ func (s *VideoHTTPService) executeMediaDelete(ctx context.Context, caller VideoC
 	var result *VideoDeleted
 	var storeFailure error
 	err := s.db.WithContext(dbctx).Transaction(func(tx *gorm.DB) error {
-		if err := revalidateVideoReadCredential(operation, caller); err != nil {
-			return err
+		if !retention {
+			if err := revalidateVideoReadCredential(operation, caller); err != nil {
+				return err
+			}
 		}
-		task, owner, err := s.taskForPlatformTx(dbctx, tx, caller, id, false)
+		task, owner, err := s.taskForMediaDeleteTx(dbctx, tx, caller, id, retention)
 		if err != nil {
 			return err
 		}
 		// 准备事务已提交不代表执行仍获准；模型可在两阶段之间撤下原操作。
-		if err := s.checkCurrentVideoDeleteAuthority(operation, tx, caller, task, owner); err != nil {
-			return err
+		if !retention {
+			if !retention {
+				if err := s.checkCurrentVideoDeleteAuthority(operation, tx, caller, task, owner); err != nil {
+					return err
+				}
+			}
 		}
 		var op videoMediaDeletion
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("task_id=?", task.ID).Take(&op).Error; err != nil {
@@ -390,6 +408,9 @@ func (s *VideoHTTPService) executeMediaDelete(ctx context.Context, caller VideoC
 		}
 		if err := mediaDeleteProtection(tx, task, assets, s.saveStore); err != nil {
 			return err
+		}
+		if retention && !videoRetentionAssetsEligible(assets, retentionAt) {
+			return ErrVideoMediaProtected
 		}
 		for i, a := range assets {
 			p := plan[i]
@@ -464,9 +485,13 @@ func (s *VideoHTTPService) executeMediaDelete(ctx context.Context, caller VideoC
 					err = ErrVideoMediaDeleteUnavailable
 				} else {
 					// Head属于外部等待；实际删除每个对象前重新确认资格，不能等删完再报401/403。
-					deleteCtx, finish, authErr := s.currentVideoDeleteAuthority(operation, tx, caller, task, owner)
-					if authErr != nil {
-						return authErr
+					deleteCtx, finish := operation, func() {}
+					if !retention {
+						var authErr error
+						deleteCtx, finish, authErr = s.currentVideoDeleteAuthority(operation, tx, caller, task, owner)
+						if authErr != nil {
+							return authErr
+						}
 					}
 					err = s.mediaDeleteStore.Delete(deleteCtx, ref)
 					finish()
@@ -480,11 +505,13 @@ func (s *VideoHTTPService) executeMediaDelete(ctx context.Context, caller VideoC
 				return advance("delete_failed")
 			}
 		}
-		if err := s.access.AuthorizeTx(dbctx, tx, owner, task.LogicalModelCode, time.Now().UTC(), *task.Operation); err != nil {
-			return err
-		}
-		if err := revalidateVideoReadCredential(operation, caller); err != nil {
-			return err
+		if !retention {
+			if err := s.access.AuthorizeTx(dbctx, tx, owner, task.LogicalModelCode, time.Now().UTC(), *task.Operation); err != nil {
+				return err
+			}
+			if err := revalidateVideoReadCredential(operation, caller); err != nil {
+				return err
+			}
 		}
 		// 交付对象删除不能附带清除审核副本；确认提交前复核保留对象的实际hash和大小。
 		for _, p := range plan {
@@ -501,8 +528,10 @@ func (s *VideoHTTPService) executeMediaDelete(ctx context.Context, caller VideoC
 		if err := advance("completed"); err != nil {
 			return err
 		}
-		if err := s.checkCurrentVideoDeleteAuthority(operation, tx, caller, task, owner); err != nil {
-			return err
+		if !retention {
+			if err := s.checkCurrentVideoDeleteAuthority(operation, tx, caller, task, owner); err != nil {
+				return err
+			}
 		}
 		result = &VideoDeleted{ID: task.PublicID, Object: "video.deleted", Deleted: true, RequestID: task.RequestID}
 		return nil

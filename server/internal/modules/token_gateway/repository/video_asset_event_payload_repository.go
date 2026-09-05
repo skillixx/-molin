@@ -158,6 +158,7 @@ func (r *VideoOutputAssetRepository) FindDeliverable(ctx context.Context, public
 AND ai_gateway_assets.lifecycle_state='available' AND ai_gateway_assets.moderation_status='passed'
 AND ai_gateway_assets.explicit_label_status='applied' AND ai_gateway_assets.implicit_label_status='applied'
 AND ai_gateway_assets.dispute_status<>'open' AND ai_gateway_assets.deleted_at IS NULL AND ai_gateway_assets.media_deleted_at IS NULL
+AND NOT EXISTS (SELECT 1 FROM ai_video_object_reconciliation_observations o WHERE o.direction='db_missing_object' AND o.bucket=ai_gateway_assets.bucket AND o.object_key=ai_gateway_assets.object_key AND o.status='confirmed')
 AND tasks.capability=? AND tasks.operation IN ? AND tasks.status='succeeded'
 AND requests.modality='video' AND requests.capability=? AND requests.billing_status IN ? AND requests.delivery_status='available'`,
 			model.AIVideoCapability, []string{model.AIVideoOperationTextToVideo, model.AIVideoOperationImageToVideo}, model.AIVideoCapability,
@@ -174,8 +175,9 @@ AND requests.modality='video' AND requests.capability=? AND requests.billing_sta
 
 // MoveObjectLocation 只允许服务端把同一对象键从临时区晋级到结果区或迁入隔离区。
 func (r *VideoOutputAssetRepository) MoveObjectLocation(ctx context.Context, publicID string, owner VideoOwner, expectedVersion uint64, from, to VideoObjectLocation, now time.Time) (*model.AIImageAsset, error) {
-	if from.ObjectKey == "" || from.ObjectKey != to.ObjectKey || from.Bucket != "video-temp" ||
-		(to.Bucket != "video-result" && to.Bucket != "video-quarantine") || now.IsZero() {
+	legacyMove := from.Bucket == "video-temp" && (to.Bucket == "video-result" || to.Bucket == "video-quarantine")
+	sharedMove := from.Bucket == "ai-upload-temp" && (to.Bucket == "ai-result" || to.Bucket == "ai-quarantine")
+	if from.ObjectKey == "" || from.ObjectKey != to.ObjectKey || (!legacyMove && !sharedMove) || now.IsZero() {
 		return nil, ErrVideoAssetTransition
 	}
 	asset, err := r.FindOwnedForInternal(ctx, publicID, owner)
@@ -458,6 +460,10 @@ func NewVideoTaskEventRepository(db *gorm.DB) *VideoTaskEventRepository {
 }
 
 func (r *VideoTaskEventRepository) Append(ctx context.Context, taskPublicID string, owner VideoOwner, event model.AIGatewayTaskEvent) error {
+	// 执行租约审计只能随仓储认领/释放事务形成，通用事件入口不能伪造持有者证明。
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(event.EventType)), "video_worker_lease_") {
+		return ErrVideoUnsafeDetail
+	}
 	// 释放证据必须来自原执行CAS，通用追加入口不接受旧式或伪造的财务释放标记。
 	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(event.EventType)), "video_release_") || strings.EqualFold(strings.TrimSpace(event.EventType), "cancel_requested") || strings.EqualFold(strings.TrimSpace(event.EventType), "provider_no_product_confirmed") || strings.EqualFold(strings.TrimSpace(event.EventType), "provider_result_conflict") || strings.EqualFold(strings.TrimSpace(event.EventType), "submission_receipt_rejected") || strings.EqualFold(strings.TrimSpace(event.EventType), "submission_receipt_accepted") || strings.EqualFold(strings.TrimSpace(event.EventType), "provider_task_bound_pending") {
 		return ErrVideoUnsafeDetail

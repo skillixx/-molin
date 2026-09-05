@@ -12,7 +12,7 @@ type videoRouteProbe struct {
 	path   string
 }
 
-// TestVideoG6CompleteRouteMatrixClosedByDefault 以真实ServeMux核对完整47条路由，避免文档计数掩盖漏注册或重复注册。
+// TestVideoG6CompleteRouteMatrixClosedByDefault 以真实ServeMux核对完整49条路由，避免文档计数掩盖漏注册或重复注册。
 func TestVideoG6CompleteRouteMatrixClosedByDefault(t *testing.T) {
 	mux := http.NewServeMux()
 	RegisterVideoUserRoutes(mux, nil, nil, false)
@@ -57,6 +57,8 @@ func TestVideoG6CompleteRouteMatrixClosedByDefault(t *testing.T) {
 		{"POST", "/api/admin/token/video-adjustments"},
 		{"POST", "/api/admin/token/video-tasks/task_test/archive-retry"},
 		{"POST", "/api/admin/token/video-tasks/task_test/poll"},
+		{"POST", "/api/admin/token/video-tasks/task_test/dlq/poll/recover"},
+		{"POST", "/api/admin/token/video-rabbit/poll/poison/discard"},
 		{"POST", "/api/admin/token/video-assets/asset_test/release"},
 		{"POST", "/api/admin/token/video-assets/asset_test/quarantine"},
 		{"POST", "/api/admin/token/video-input-assets/input_test/quarantine"},
@@ -68,8 +70,8 @@ func TestVideoG6CompleteRouteMatrixClosedByDefault(t *testing.T) {
 		{"GET", "/api/admin/token/video-tasks/task_test"},
 		{"POST", "/api/internal/ai/provider-callbacks/fake"},
 	}
-	if len(routes) != 47 {
-		t.Fatalf("VID-G6路由清单必须精确为47条，实际%d", len(routes))
+	if len(routes) != 49 {
+		t.Fatalf("视频路由清单必须精确为49条，实际%d", len(routes))
 	}
 	seen := map[string]struct{}{}
 	for _, route := range routes {

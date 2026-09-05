@@ -44,19 +44,12 @@ func (l *VideoRepositoryTaskLedger) ClaimRunning(ctx context.Context, taskID str
 	if l == nil || l.db == nil {
 		return video.GatewayTask{}, video.ErrGatewayTaskNotFound
 	}
-	if !l.runningAdmission {
-		return l.Advance(ctx, taskID, expectedVersion, video.TaskSubmitting, "worker", "state_advanced", nil)
-	}
 	limits := l.runningLimits
-	if limits.User <= 0 || limits.Project <= 0 || limits.Model <= 0 {
+	if l.runningAdmission && (limits.User <= 0 || limits.Project <= 0 || limits.Model <= 0) {
 		return video.GatewayTask{}, video.ErrGatewayRunningCapacity
 	}
 	var claimed video.GatewayTask
 	err := l.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var guard videoQueueGuardRow
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=1").Take(&guard).Error; err != nil {
-			return err
-		}
 		record, err := repository.NewVideoTaskRepository(tx).LockForOwnerTx(tx, taskID, l.owner)
 		if err != nil {
 			return err
@@ -66,6 +59,18 @@ func (l *VideoRepositoryTaskLedger) ClaimRunning(ctx context.Context, taskID str
 		}
 		if record.Status != model.AIImageTaskQueued {
 			return repository.ErrVideoTaskTransition
+		}
+		// 先锁Task再取单行门闩，避免与创建的Task→guard形成反序；恢复态保持queued。
+		var guard videoQueueGuardRow
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=1").Take(&guard).Error; err != nil {
+			return errors.Join(ErrVideoGovernanceUnavailable, err)
+		}
+		if !videoLegacyCapacityOpen(guard.CapacityState) {
+			return ErrVideoGovernanceUnavailable
+		}
+		if !l.runningAdmission {
+			claimed, err = l.withDB(tx).advanceOnce(ctx, taskID, expectedVersion, video.TaskSubmitting, "worker", "state_advanced", nil)
+			return err
 		}
 		checks := []struct {
 			where string

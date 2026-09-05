@@ -29,6 +29,8 @@ type videoQueueGuardRow struct {
 	ID        uint8
 	VersionNo uint64
 	UpdatedAt time.Time
+	// 旧库没有该列时扫描为空，继续兼容；111之后只有uninitialized允许旧G6路径。
+	CapacityState string `gorm:"column:capacity_state"`
 }
 
 func (videoQueueGuardRow) TableName() string { return "ai_video_queue_admission_guard" }
@@ -58,6 +60,9 @@ func (a MySQLVideoQueueAdmission) AdmitTx(tx *gorm.DB, owner repository.VideoOwn
 		return errors.Join(ErrVideoGovernanceUnavailable, err)
 	}
 	if guard.VersionNo == 0 {
+		return ErrVideoGovernanceUnavailable
+	}
+	if !videoLegacyCapacityOpen(guard.CapacityState) {
 		return ErrVideoGovernanceUnavailable
 	}
 	statuses := []string{model.AIImageTaskCreated, model.AIImageTaskReserved, model.AIImageTaskQueued}
@@ -93,6 +98,23 @@ func (a MySQLVideoQueueAdmission) AdmitTx(tx *gorm.DB, owner repository.VideoOwn
 		return errors.Join(ErrVideoGovernanceUnavailable, err)
 	}
 	if current != 1 {
+		return ErrVideoGovernanceUnavailable
+	}
+	return nil
+}
+
+func videoLegacyCapacityOpen(state string) bool { return state == "" || state == "uninitialized" }
+
+// Task已锁定后再读门闩，与创建事务的Task→guard顺序一致；恢复Begin只锁门闩，不反向锁Task。
+func ensureLegacyVideoCapacityTx(tx *gorm.DB) error {
+	if tx == nil {
+		return ErrVideoGovernanceUnavailable
+	}
+	var guard videoQueueGuardRow
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("id=1").Take(&guard).Error; err != nil {
+		return ErrVideoGovernanceUnavailable
+	}
+	if guard.VersionNo == 0 || !videoLegacyCapacityOpen(guard.CapacityState) {
 		return ErrVideoGovernanceUnavailable
 	}
 	return nil

@@ -219,12 +219,12 @@ func (s *VideoInputImportService) Import(ctx context.Context, c VideoInputImport
 		if err != nil {
 			return err
 		}
-		asset := model.AIGatewayInputAsset{PublicID: inputID, UserID: owner.UserID, ProjectID: owner.ProjectID, SourceType: "gateway_asset_snapshot", SourceGatewayAssetID: &source.ID, OriginalSHA256: *source.SHA256, ModerationStatus: model.AIModerationPending, VersionNo: 1, LifecycleState: model.AIInputAssetNormalizing, ExpiresAt: now.Add(7 * 24 * time.Hour), CreatedAt: now, UpdatedAt: now}
+		asset := model.AIGatewayInputAsset{PublicID: inputID, UserID: owner.UserID, ProjectID: owner.ProjectID, SourceType: "gateway_asset_snapshot", SourceGatewayAssetID: &source.ID, OriginalSHA256: *source.SHA256, ModerationStatus: model.AIModerationPending, VersionNo: 1, LifecycleState: model.AIInputAssetNormalizing, ExpiresAt: now.Add(currentVideoRetentionPolicy.InputBound), CreatedAt: now, UpdatedAt: now}
 		if err := tx.Create(&asset).Error; err != nil {
 			return err
 		}
 		until := now.Add(2 * time.Minute)
-		r = videoInputImportRecord{InputAssetID: asset.ID, InputPublicID: inputID, PublicID: importID, UserID: owner.UserID, ProjectID: owner.ProjectID, APIKeyID: owner.APIKeyID, CommandKeyHash: key, CommandFingerprint: fingerprint, SourceAssetID: source.ID, SourcePublicID: source.PublicID, SourceVersion: source.VersionNo, SourceSHA256: *source.SHA256, SourceBucket: *source.Bucket, SourceObjectKey: *source.ObjectKey, SourceMIMEType: *source.MIMEType, SourceSizeBytes: *source.SizeBytes, SourceWidth: *source.Width, SourceHeight: *source.Height, NormalizedBucket: s.options.NormalizedBucket, NormalizedKey: fmt.Sprintf("import/%d/%d/%s.png", owner.UserID, owner.ProjectID, inputID), ReservedBytes: uint64(videoUploadMaxBytes), Status: "processing", VersionNo: 1, LeaseUntil: &until, ExpiresAt: now.Add(24 * time.Hour), CreatedAt: now}
+		r = videoInputImportRecord{InputAssetID: asset.ID, InputPublicID: inputID, PublicID: importID, UserID: owner.UserID, ProjectID: owner.ProjectID, APIKeyID: owner.APIKeyID, CommandKeyHash: key, CommandFingerprint: fingerprint, SourceAssetID: source.ID, SourcePublicID: source.PublicID, SourceVersion: source.VersionNo, SourceSHA256: *source.SHA256, SourceBucket: *source.Bucket, SourceObjectKey: *source.ObjectKey, SourceMIMEType: *source.MIMEType, SourceSizeBytes: *source.SizeBytes, SourceWidth: *source.Width, SourceHeight: *source.Height, NormalizedBucket: s.options.NormalizedBucket, NormalizedKey: fmt.Sprintf("import/%d/%d/%s.png", owner.UserID, owner.ProjectID, inputID), ReservedBytes: uint64(videoUploadMaxBytes), Status: "processing", VersionNo: 1, LeaseUntil: &until, ExpiresAt: now.Add(currentVideoRetentionPolicy.ImportProcessing), CreatedAt: now}
 		if err := tx.Create(&r).Error; err != nil {
 			return err
 		}

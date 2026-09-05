@@ -178,6 +178,10 @@ func (s *VideoAdminService) CancelTask(ctx context.Context, c VideoAdminCancelCo
 				if task.VersionNo != c.VersionNo {
 					return ErrVideoAdminCommandConflict
 				}
+				// 管理权限已通过；携带Worker证明时，新管理命令仍不能借控制面身份恢复失效执行权。
+				if err := repository.CheckVideoWorkerContextLeaseTx(ctx, tx, task); err != nil {
+					return err
+				}
 				initial, err := videoCancellationAction(task)
 				if err != nil {
 					return err
@@ -257,6 +261,12 @@ func (s *VideoAdminService) CancelTask(ctx context.Context, c VideoAdminCancelCo
 			}
 			if err := s.authorizeTx(ctx, tx, c.Caller, "ai_gateway:task_manage"); err != nil {
 				return err
+			}
+			// 内层取消之外还写入原因信封、命令和前后审计；最终权限复验后再核对租约，整体失权则整体回滚。
+			if !replayed {
+				if err := repository.CheckVideoWorkerContextLeaseTx(ctx, tx, task); err != nil {
+					return err
+				}
 			}
 			reply = &VideoAdminCancellationReply{VideoAdminTaskDetails: &VideoAdminTaskDetails{VideoTaskDetails: detail, UserID: owner.UserID, ProjectID: owner.ProjectID, APIKeyID: owner.APIKeyID}, CancelRequestedAt: task.CancelRequestedAt, CancellationResult: result, Idempotent: replayed}
 			return nil

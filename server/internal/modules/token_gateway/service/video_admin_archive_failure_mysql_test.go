@@ -79,7 +79,7 @@ func TestVideoG6AdminArchiveSafetyFailureMySQL(t *testing.T) {
 			if err := f.f.DB.Where("task_id=? AND asset_role='content'", task.ID).Take(&root).Error; err != nil {
 				t.Fatal(err)
 			}
-			if root.ModerationStatus != "rejected" || root.LifecycleState != "quarantined" || root.Bucket == nil || *root.Bucket != "video-quarantine" {
+			if root.ModerationStatus != "rejected" || root.LifecycleState != "quarantined" || root.Bucket == nil || *root.Bucket != "ai-quarantine" {
 				t.Fatal("必须保留真实审核拒绝和隔离位置，不能丢弃安全事实")
 			}
 			current, err := repo.FindForOwner(context.Background(), f.task, owner)

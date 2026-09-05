@@ -1,5 +1,11 @@
 # 测试计划
 
+VID-G7新增[执行租约专项](video-gateway-vid-g7-worker-lease-contract.md)：租约基础、事务回滚、数值边界与输入保护已由124项组合race覆盖。自动10秒心跳、异常退出和到期接管使用独立heartbeat筛选补验；组件测试不能替代完整运行时、多进程kill、Redis/MinIO和完整G7验收。
+
+后续回执首尾围栏由15项Linux race（含全部13项原G5提交测试）及同源31项G7/Broker组合验证。`-Focus receipt`必须实际发现旧测试且全部RUN/PASS，零匹配和SKIP均失败；真实30秒尾部到期与五秒context超时须分别断言，不得混用。
+
+普通财务围栏使用`-Focus financial_fence -LinuxRace`：验证结算/退款的missing/stale拒绝与合法重放、独立补偿授权，以及主事务/新补记事务的四个并行到期子例。`-FinanceRegression`仍要求发现并完整执行原99项G5，不能用新四项专项替代；并行子例须单列耗时，顶层耗时不表示总等待时间。
+
 ## 1. 测试策略
 
 ```text
@@ -1535,3 +1541,80 @@ I2V事务增量：真实G4规范化640px PNG、G3输入事实及G5钱包；缺�
 - 通用门禁：`go test ./...`、`go vet ./...`、`go mod verify`、`go mod tidy -diff`、G6变更Go文件gofmt、Bash语法、diff与高风险凭据模式扫描通过。
 - 安全边界：真实Provider请求/Key、真实钱包写入、真实用户资金、真实调账、测试服写入、生产操作均为0；Outbox Dispatcher、RabbitMQ、Redis、MinIO和Bifrost视频数据面关闭。
 - 最终结论须等待新SOURCE_STATE绑定的QA、PM、Standards、Spec四轴独立复核；之后才允许提交、PR、Ready CI和普通合并。VID-G7不得开始。
+
+## VID-G7 共享Outbox领取专项
+
+本节新增G7测试范围，不改写前述G6历史过程记录。使用`verify-video-gateway-vid-g7-outbox.ps1`及可选`-LinuxRace`，从空临时MySQL应用全部109个up migration，使用原G5真实预占/取消事务和合成钱包。
+
+七个必选顶层测试覆盖：旧发布器视频关闭、双向领取范围与视频回写隔离、100并发唯一认领与接管、同秒dead及管理重排防令牌重用、真实取消事件有序发布、连续普通重试/旧回写拒绝/未来高水位接管边界、批量不同令牌与数据库一致。每项必须实际RUN/PASS，无SKIP；脚本退出及精确清理均通过，并核对运行前后源码哈希未变化。
+
+同秒ABA先在真实MySQL复现旧令牌MarkPublished错误成功，修复后原反例复验；不得删除该反例。运行器PowerShell主机参数必须使用完整带引号参数，避免`-h127.0.0.1`被拆成`-h127`与`.0.0.1`。本专项不覆盖完整MQ发布窗口、Provider任务计数、Redis/MinIO或全阶段兼容，最终范围及结果见同源证据。
+
+G7增量加入运输状态与财务重放、首次终结、H/P/C恢复、大小写身份和坏运输结构矩阵。`-FinanceRegression`沿用G5默认all筛选，动态发现99项并要求逐项RUN/PASS；曾与11项G7在同源Linux race下110/110通过，该历史源码不自动覆盖后续新增投影。
+
+投影专项`-Focus projection`覆盖T2V/I2V的held/released/settled、执行中粗细状态映射、unknown及adjustment、全部原事件ID、四字段最小输出、失效/过期/伪造租约、同消息发布重试仍attempt0，以及无原结算/释放/补偿依据的六类伪造事件。默认all纳入全部投影及原Outbox用例；测试结果必须另以当前SOURCE_STATE绑定。历史图片导入来源、媒体清理后引用及真正Broker发布/持久化消费仍为待验收。
+
+新测试统一UTC秒级夹具时钟：MySQL 8.0.46在本机隔离只读探针中将DATETIME(0)的`.900000`舍入到下一秒，不能用带小数的next_retry_at写入后立刻以截秒时间断言已到期；生产领取规则不因此放宽。dead完成时间/次数/币种各反例必须保留合法锁，缺锁单独验证，避免多重非法条件掩盖缺测。
+
+发布桥接专项使用`-Broker -Focus relay -LinuxRace`，要求独立MySQL/RabbitMQ双门禁、全部109个迁移和真实Broker。必须验证两个依赖/联合顶层测试实际RUN/PASS，联合测试七个场景为T2V、I2V、不可路由、真实basic.ack丢失、确认持久化故障、100并发以及坏事实前置拒绝；原Task/事件唯一且七张财务表完整不变。缺Broker批准或relay未启用Broker时在Docker前退出3。`-Broker -LinuxRace`默认合并原17项与新增2项，19项不得SKIP。
+
+数据库确认故障是GORM回调注入，接管采用受控时钟；不得将其表述为真实DB断连或进程kill。测试观察者取消息并ACK不代表业务消费者已实现；真实任务处理、重复消息不重提Provider和运行时默认关闭仍需独立验收。
+
+## VID-G7 外层取消围栏与组合隔离增量
+
+`TestVideoG7WorkerCancelOuterTransactionMySQL`通过真实G6创建服务验证T2V/I2V的用户/管理员外层取消：真实租约到期全事务回滚、过期证明入口拒绝、原无证明控制面授权、管理员权限/MFA负例、旧证明只读重放以及独立任务有效Worker首次成功。仅数据库详情响应注入延迟，用户Caller为服务边界，不宣称HTTP路由全量验收。
+
+`verify-video-gateway-vid-g7-outbox.ps1 -LinuxRace -Broker -FinanceRegression`须隔离G6创建型测试与Outbox大批量任务夹具，分别使用全新临时库，合计检查全部RUN/PASS与零SKIP；不得提高全局queued=100或删除历史任务以绕过容量。对应证据见`docs/evidence/video-gateway-vid-g7-outer-cancel-fence-verification.json`。session58972最外层exit=0，groups=2/required=135全部通过，绑定server哈希f6372389。后续新增Redis策略的纯单元测试单独记录，不据此宣称Redis或完整G7集成通过。
+
+## VID-G7 真实Redis存储组件增量
+
+`infra/scripts/verify-video-gateway-vid-g7-redis.ps1`要求本轮临时Redis授权、锁定镜像、实际run_id及精确资源ID清理；加`-LinuxRace`验证竞态。session80555 native与session56671 Linux race同源十四项全部通过、SKIP=0，server哈希218f7ee7。测试包括100并发2/98裁决、坏状态、Request唯一性、轴收紧、大整数/JWT、promoting双占、confirm/release、queued名额恢复、过期债务exact清理、真实30秒到期、原nonce重放、客户端丢结果及普通输出脱敏。包内confirm/release当前只证明Redis原子动作，不能代替MySQL业务提交和安全终态证明。
+
+单实例goroutine不能替代2/4/8个Go进程；客户端Hook丢结果不能写成TCP断连；手工初始Redis快照不证明MySQL授权/重建。当前已补2/4/8独立进程、初始化、确认/释放、数据库提交未知、进程kill和完整本地运行时验证；测试服真实重启仍待授权，见[Redis合同](video-gateway-vid-g7-redis-capacity-contract.md)。
+
+## VID-G7 MySQL恢复租约专项（本地已验证）
+
+新增`-Focus capacity_boundary`：新库+runner server_uuid绑定的合成uint64边界，恢复完整SQL守卫后通过公开Repository验证末次Begin/Renew/Block、耗尽拒绝、阻断只读重放及直接SQL回绕拒绝。夹具不是业务恢复或真实崩溃证据。完整all将该不可重置门闩放在独立新库；分组必须精确匹配子Focus实际顶层测试，禁止通配吞掉未运行测试后虚计PASS。
+
+新增`-Focus submission_plan`：T2V/I2V通过真实预占与提交claim验证无Worker证明零写、计划与事件原子创建、原回执/attempt不变、同计划重放、错claim/Provider拒绝、输入与资金不变及JSON隐藏。后续已补100并发、SQL直接绕过、事务失败/COMMIT未知、尾部过期和完整本地运行时证明；测试服门禁仍独立等待授权。
+
+提交计划专项现纳入七个明确顶层测试：基础、100并发、SQL计划保护、首次/后续身份冻结、归属/根事务、COMMIT未知和真实尾到期。session16923同源码Linux race七项全部通过，SKIP0、清理通过，server哈希8285b73a。身份负例使用真实存在的同归属替代Key/Quote，要求明确命中计划守卫1644而不是外键拒绝。尾到期先等待原30秒Worker租约接近截止，再在5秒根事务内于事件后跨期，实际运行60.51秒，命中Worker失权且非context超时。COMMIT包装执行真实sql.Tx.Commit后丢确认，不替换核心事务，也不声称TCP断连。session22256再执行`-Focus receipt -LinuxRace`，发现13项原G5提交并与七项计划、两项既有G7提交围栏合并，22/22通过、SKIP0、清理通过；两个真实尾到期分别60.52/60.86秒。
+
+新增`-Focus capacity_cutoff`：用单一真实恢复epoch将Begin插入Claim COMMIT后和Provider紧前，验证旧G6新创建整笔回滚、queued不推进、计划写入/重放及claim校验拒绝、非defer投影路径Provider调用0、输入/Task/事件/钱包不变。session57910先复现recovering后Claim成功；session65089最终Linux race通过。恢复状态须返回治理不可用而非容量429；session98750复现错误语义，修复后由同一最终专项验证。完整`capacity_epoch`回归另行执行，确保历史兼容断言不重新打开cutoff。
+
+Redis runner新增`-Focus recovery`并自动发现四项恢复测试。session91943精确复现旧run_id阻断；修复后session86078 native四项通过。session78608完整十二项Linux通过，含原30秒债务；QA补测试自行DEL/确认固定键空后，session93633恢复Linux四项复验通过。覆盖stage/activate、staged拒绝普通操作、同/异快照、旧epoch、旧run_id新epoch、staged/ready TTL、超前期限、Provider hard cap、EVAL丢返回、100并发和快照值/指针脱敏。它不是MySQL账本快照或ready证明。
+
+容量执行专项使用`-Focus capacity_execution|capacity_execution_history|capacity_execution_recovery|capacity_send_crash -Redis`，Linux增加`-LinuxRace`。14f0d284下四项native/Linux全部通过：主专项100并发验证Provider Submit入口1、任务1及T2V/I2V共享Provider=2；历史计划验证NULL epoch补绑、缺事件拒绝和COMMIT未知；下一epoch验证原首次epoch不变而Redis以新nonce恢复running；崩溃专项验证permit消费后无Provider调用、重启不可重提、2分钟后pending_reconcile且Hold/running容量保留。000114/115部分CHECK/Trigger缺失后重入分别恢复1/2和1/3。
+
+`capacity_reservation`覆盖Redis queued与原财务事务：回执丢失、MySQL明确回滚、显式/自动Quote、global满零Request/Task/Hold/Outbox、COMMIT未知和100并发同意图；session33793/27836 native/Linux通过。`capacity_terminal_release`与更新后的`capacity_send_crash`覆盖安全取消释放、跨归属拒绝、重放和pending保守占用，session45067/95205及96157/28025通过。`capacity_process_2|4|8`实际从父测试启动独立Go子进程，各自打开MySQL/Redis、领取Worker lease并经TCP barrier同时起跑；native和Linux race六轮均严格保持Provider running=2，剩余queued。
+
+新增`-Focus capacity_snapshot`：真实创建reserved T2V、queued I2V、planned pending_reconcile、已绑定submitted、103个完整预占后取消历史、settled+delivered成功终态、Provider明确失败并释放终态，以及无可靠结束证明failed。成功终态含seq1 credit与seq2 debit，失败终态含credit；Builder须分页扫描全部历史，仅返回queued=2/running=2，同proof两次digest一致，交付Outbox payload损坏须阻断并在恢复原合成事实后零差异。session72893复现历史总数>102错误阻断，session74325复现故障注入改变updated_at，session93914复现proof超时；修复分页、纯读调账/终态全集、固定时间注入和每页续期后，session23276 native及最终session49686 Linux race通过。该专项未同时启动Redis，不代替跨系统stage/ready测试。
+
+`verify-video-gateway-vid-g7-outbox.ps1 -Focus capacity_epoch`覆盖原门闩的100 CAS、真实30秒到期接管、I2V/资金不变、G6锁读兼容、审计失败回滚、嵌套事务拒绝、根PreparedStmt、Block尾部到期以及真实COMMIT后的包装层丢确认。`-Focus capacity_epoch_version`覆盖单独版本回退/跳号、恢复审计改删/重复/别名和其他模块兼容。完整all为该单行状态提供独立临时库，全部分组累计必需测试，不削减门禁。
+
+session43096补强native/Linux race各两项为历史结果；之后session98087无唯一键遮蔽地复现缺schema和数字owner漏洞，已修为七字段/NULL安全类型检查。session39272原生17例及同源码Linux capacity_epoch两项均通过，SKIP=0、清理通过；最大uint64数据库边界已由独立`capacity_boundary`新库验证。完整阶段仍受最终审查和测试服门禁约束，详情见[恢复租约合同](video-gateway-vid-g7-capacity-recovery-epoch.md)。
+
+## VID-G7关闭态运行时、MinIO、对象补偿与回滚
+
+执行：
+
+```powershell
+$env:VIDEO_GATEWAY_G7_MYSQL_ISOLATED_APPROVED='YES'
+$env:VIDEO_GATEWAY_G7_REDIS_ISOLATED_APPROVED='YES'
+$env:VIDEO_GATEWAY_G7_RABBIT_ISOLATED_APPROVED='YES'
+$env:VIDEO_GATEWAY_G7_MINIO_ISOLATED_APPROVED='YES'
+.\infra\scripts\verify-video-gateway-vid-g7-runtime.ps1
+```
+
+脚本只创建无宿主端口的本轮内部网络和临时MySQL、Redis、RabbitMQ、MinIO、Go容器。当前22项必需测试必须精确RUN/PASS且SKIP=0：
+
+- `TestVideoG7BootstrapClosedRuntimeMySQLRedisRabbitMinIO`：模块关闭路由404；模块装配但流量关闭503；submit/poll/fetch各2个Worker；Outbox、容量恢复、MinIO和统一低基数指标装配。
+- `TestVideoG7ObjectScannerMySQLMinIO`：双向静默观察、持久分页/重启续页、实际`vid_`与历史`video_`前缀、保存目标、DB失败恢复及事实保留。
+- `TestVideoG7ImportRetentionCursorSkipsProtectedPrefixMySQL`与`TestVideoG7UploadSessionRetentionMySQL`：输入公平续页、24小时未完成会话墓碑及追加事实。
+- `TestVideoG7OutputRetentionWorkerMySQL`：真实G7容量/Worker/Provider链形成六项父子资产，五项交付对象到期删除、审核副本保留、财务不变，并留下queued/pending_reconcile回滚事实。
+- Native HTTP严格JSON、禁止重定向、图片三项兼容和组件独立指标故障同批执行。
+- Rabbit新增真实Broker死信恢复/重复ACK/无许可保留、毒消息摘要处置/前方合法消息暂存回队；MySQL验证管理员权限、MFA、同Key意图冻结、原Task/Request/version、TaskEvent和前后审计。MySQL+Rabbit联合验证confirm丢失、发布后完成审计失败、完成审计后DLQ ACK未知三类窗口。运行时单元边界验证毒消息只执行一次、瞬态失败健康降级/重连及Shutdown超时保留生命周期；真实MySQL验证实例A写熔断、实例B阻断、恢复后实例C放行；bootstrap另验证监听失败仍同步收口Worker。
+
+随后用锁定promtool验证10条视频告警规则，解析Grafana 8面板JSON；逆序执行110—122共13个Expand-only down，比较14字段快照，包括容量epoch、Worker/发送权列、扫描游标、对象观察、Rabbit毒消息熔断、会话/输入/输出retention、queued/pending_reconcile、两个holding Hold及提交计划/发送事件，随后再次等待关闭态runtime九类组件首次健康并优雅停机。最新同源结果以证据文件为准；它不替代共享测试服务器备份、安装、告警送达和实际回滚授权。
+
+独立事实快照门禁使用`verify-video-gateway-vid-g7-fact-snapshot.ps1`：两个隔离MySQL组分别验证逻辑备份恢复与110—122升级/兼容撤回。每组必须运行4个G6真实服务种子，形成13类非空请求、任务、输入、载荷、回调、Usage、资产、事件、Outbox、Hold、钱包关联和审计事实，并同时包含T2V/I2V；expanded快照还必须包含受约束Rabbit熔断表。快照只输出表名、行数和聚合摘要。输入manifest的表集合、顺序和WHERE必须与当前base/expanded内建白名单逐项一致，恶意`COMMIT/DDL` manifest必须在执行快照SQL前拒绝且原表保留。Prompt密文与nonce使用`--hex-blob`恢复，钱包一分钱受控篡改必须被摘要检测。两组均须PASS、SKIP=0、无宿主端口且清理容器/网络/卷；该本地结果仍不能替代测试服实际备份和回滚。

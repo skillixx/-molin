@@ -68,6 +68,9 @@ func (r *VideoInputAssetRepository) FindReadyForBindingTx(tx *gorm.DB, publicID 
 	if asset.LifecycleState != model.AIInputAssetReady || asset.ModerationStatus != model.AIModerationPassed || asset.NormalizedSHA256 == nil || !asset.ExpiresAt.After(now) || asset.DeleteRequestedAt != nil || asset.PendingDeleteAt != nil || asset.DeletedAt != nil {
 		return nil, ErrVideoInputUnavailable
 	}
+	if missing, err := videoInputObjectMissing(tx, asset); err != nil || missing {
+		return nil, ErrVideoInputUnavailable
+	}
 	return asset, nil
 }
 
@@ -86,6 +89,9 @@ func (r *VideoInputAssetRepository) FindReadyForBinding(ctx context.Context, pub
 		return nil, err
 	}
 	if asset.LifecycleState != model.AIInputAssetReady || asset.ModerationStatus != model.AIModerationPassed || asset.NormalizedSHA256 == nil || asset.ExpiresAt.Before(now) || asset.ExpiresAt.Equal(now) || asset.DeleteRequestedAt != nil || asset.PendingDeleteAt != nil || asset.DeletedAt != nil {
+		return nil, ErrVideoInputUnavailable
+	}
+	if missing, err := videoInputObjectMissing(r.db.WithContext(ctx), asset); err != nil || missing {
 		return nil, ErrVideoInputUnavailable
 	}
 	return asset, nil
@@ -238,6 +244,9 @@ func (r *VideoInputAssetRepository) validateTaskInputForProviderTx(ctx context.C
 		return nil, err
 	}
 	asset = *trustedAsset
+	if missing, err := videoInputObjectMissing(r.db.WithContext(ctx), &asset); err != nil || missing {
+		return nil, ErrVideoInputSnapshotDrift
+	}
 	valid, err := videoBoundInputSnapshotValid(r.db.WithContext(ctx), &asset, &inputs[0], owner, now)
 	if err != nil {
 		return nil, err
@@ -296,6 +305,9 @@ func (r *VideoTaskInputRepository) BindReadyInput(ctx context.Context, taskPubli
 		if err != nil || asset.LifecycleState != model.AIInputAssetReady || asset.ModerationStatus != model.AIModerationPassed || asset.NormalizedSHA256 == nil || !asset.ExpiresAt.After(now) || asset.DeleteRequestedAt != nil || asset.PendingDeleteAt != nil || asset.DeletedAt != nil {
 			return ErrVideoInputUnavailable
 		}
+		if missing, err := videoInputObjectMissing(tx, asset); err != nil || missing {
+			return ErrVideoInputUnavailable
+		}
 		var count int64
 		if err := tx.Model(&model.AIGatewayTaskInput{}).Where("task_id=?", task.ID).Count(&count).Error; err != nil {
 			return err
@@ -317,6 +329,16 @@ func (r *VideoTaskInputRepository) BindReadyInput(ctx context.Context, taskPubli
 		return nil, err
 	}
 	return &binding, nil
+}
+
+// confirmed对象缺失观察是直接使用围栏；恢复扫描将其resolved后才允许重新绑定或提交。
+func videoInputObjectMissing(db *gorm.DB, asset *model.AIGatewayInputAsset) (bool, error) {
+	if db == nil || asset == nil || asset.Bucket == nil || asset.ObjectKey == nil {
+		return true, nil
+	}
+	var count int64
+	err := db.Table("ai_video_object_reconciliation_observations").Where("direction='db_missing_object' AND bucket=? AND object_key=? AND status='confirmed'", *asset.Bucket, *asset.ObjectKey).Count(&count).Error
+	return count > 0, err
 }
 
 func (r *VideoTaskInputRepository) ListForOwner(ctx context.Context, taskPublicID string, owner VideoOwner) ([]model.AIGatewayTaskInput, error) {

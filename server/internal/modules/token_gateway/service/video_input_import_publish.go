@@ -59,7 +59,7 @@ func (s *VideoInputImportService) publish(ctx context.Context, caller VideoCalle
 			return ErrVideoImportConflict
 		}
 		// 首次ready才冻结完整输入留存期；原24小时处理命令期限不变，完成重放不再进入此发布分支。
-		changed = tx.Model(&model.AIGatewayInputAsset{}).Where("id=? AND version_no=2 AND lifecycle_state='moderating'", input.ID).Updates(map[string]any{"lifecycle_state": "ready", "version_no": 3, "expires_at": now.Add(7 * 24 * time.Hour), "updated_at": now})
+		changed = tx.Model(&model.AIGatewayInputAsset{}).Where("id=? AND version_no=2 AND lifecycle_state='moderating'", input.ID).Updates(map[string]any{"lifecycle_state": "ready", "version_no": 3, "expires_at": now.Add(currentVideoRetentionPolicy.InputBound), "updated_at": now})
 		if changed.Error != nil {
 			return changed.Error
 		}

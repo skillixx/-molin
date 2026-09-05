@@ -265,7 +265,7 @@ func (s *VideoAdminService) PollTask(ctx context.Context, c VideoAdminPollComman
 		deadline = c.Caller.credential.expiresAt
 	}
 	queryCtx, queryCancel := context.WithDeadline(ctx, deadline)
-	observed, queryErr := s.pollProvider.Query(queryCtx, video.QueryRequest{ProviderTaskID: *task.ProviderTaskID})
+	observed, queryErr := s.pollProvider.Query(queryCtx, video.QueryRequest{ProviderTaskID: *task.ProviderTaskID, Operation: *task.Operation})
 	queryCancel()
 	var result *VideoAdminPollReply
 	err = retryVideoBillingTransaction(ctx, func() error {

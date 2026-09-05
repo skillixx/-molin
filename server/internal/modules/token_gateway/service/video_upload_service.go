@@ -31,11 +31,11 @@ const videoUploadMaxBytes int64 = 10 << 20
 
 // Target只由服务器从归属记录构造，不接受客户端提供的bucket、object_key或任意URL。
 type VideoUploadTarget struct {
-	SessionID, InputAssetID                                                        string
-	UserID, ProjectID                                                              uint64
-	SourceType, SourceBucket, SourceKey, NormalizedBucket, NormalizedKey, MIMEType string
-	SizeBytes                                                                      uint64
-	UploadExpiresAt                                                                time.Time
+	SessionID, InputAssetID                                                                        string
+	UserID, ProjectID                                                                              uint64
+	SourceType, SourceBucket, SourceKey, NormalizedBucket, NormalizedKey, MIMEType, ExpectedSHA256 string
+	SizeBytes                                                                                      uint64
+	UploadExpiresAt                                                                                time.Time
 }
 type VideoUploadGrant struct {
 	Method    string            `json:"method"`
@@ -115,7 +115,7 @@ type videoUploadRecord struct {
 }
 
 func (r videoUploadRecord) target() VideoUploadTarget {
-	return VideoUploadTarget{SessionID: r.session.PublicID, InputAssetID: r.control.InputPublicID, UserID: r.session.UserID, ProjectID: r.session.ProjectID, SourceType: r.session.SourceType, SourceBucket: r.session.Bucket, SourceKey: r.session.ObjectKey, NormalizedBucket: r.control.NormalizedBucket, NormalizedKey: r.control.NormalizedKey, MIMEType: r.session.MIMEType, SizeBytes: r.session.SizeBytes, UploadExpiresAt: r.control.UploadExpiresAt}
+	return VideoUploadTarget{SessionID: r.session.PublicID, InputAssetID: r.control.InputPublicID, UserID: r.session.UserID, ProjectID: r.session.ProjectID, SourceType: r.session.SourceType, SourceBucket: r.session.Bucket, SourceKey: r.session.ObjectKey, NormalizedBucket: r.control.NormalizedBucket, NormalizedKey: r.control.NormalizedKey, MIMEType: r.session.MIMEType, ExpectedSHA256: r.control.ExpectedSHA256, SizeBytes: r.session.SizeBytes, UploadExpiresAt: r.control.UploadExpiresAt}
 }
 func (r videoUploadRecord) reply(now time.Time, replay bool) *VideoUploadReply {
 	p := &VideoUploadReply{SessionID: r.session.PublicID, Status: r.session.Status, ExpiresAt: r.session.ExpiresAt, VersionNo: r.control.VersionNo, CleanupPending: r.control.CleanupPending, Idempotent: replay}
@@ -275,7 +275,7 @@ func (s *VideoUploadService) Create(ctx context.Context, c VideoUploadCreateComm
 		if sourceType == model.AIUploadSourceOpenAIInlineMultipart {
 			prefix = "inline"
 		}
-		r.session = model.AIUploadSession{PublicID: sid, UserID: owner.UserID, ProjectID: owner.ProjectID, APIKeyID: owner.APIKeyID, Purpose: model.AIUploadPurposeVideoReferenceImage, SourceType: sourceType, MIMEType: c.MIMEType, SizeBytes: c.SizeBytes, Bucket: s.options.SourceBucket, ObjectKey: fmt.Sprintf("%s/%d/%d/%s", prefix, owner.UserID, owner.ProjectID, sid), Status: "created", ExpiresAt: now.Add(24 * time.Hour), CreatedAt: now, UpdatedAt: now}
+		r.session = model.AIUploadSession{PublicID: sid, UserID: owner.UserID, ProjectID: owner.ProjectID, APIKeyID: owner.APIKeyID, Purpose: model.AIUploadPurposeVideoReferenceImage, SourceType: sourceType, MIMEType: c.MIMEType, SizeBytes: c.SizeBytes, Bucket: s.options.SourceBucket, ObjectKey: fmt.Sprintf("%s/%d/%d/%s", prefix, owner.UserID, owner.ProjectID, sid), Status: "created", ExpiresAt: now.Add(currentVideoRetentionPolicy.UploadSession), CreatedAt: now, UpdatedAt: now}
 		if err := tx.Create(&r.session).Error; err != nil {
 			return err
 		}

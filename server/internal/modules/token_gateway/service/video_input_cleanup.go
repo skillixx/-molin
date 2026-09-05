@@ -64,7 +64,7 @@ func cleanupAdapterPresent(v any) bool {
 // CleanupInput是限定用途的内部清理入口，不是新的生成授权；用户HTTP必须另行完成当前主体校验。
 // 数据库锁仅覆盖同步、遵守取消约定的适配器；外部异步存储仍须独立围栏合同，不能自动降级装配。
 func (s *VideoHTTPService) CleanupInput(ctx context.Context, id string, owner repository.VideoOwner, policy VideoInputCleanupPolicy) (*VideoInputDeletionReply, error) {
-	if s == nil || s.db == nil || policy.Purpose != "non_commercial_test_fixture" || policy.BoundRetention != 7*24*time.Hour || !videoIntentPolicyCode.MatchString(policy.Version) {
+	if s == nil || s.db == nil || policy.Purpose != "non_commercial_test_fixture" || policy.BoundRetention != currentVideoRetentionPolicy.InputBound || !videoIntentPolicyCode.MatchString(policy.Version) {
 		return nil, ErrVideoAccessUnavailable
 	}
 	if !videoBillingPublicID.MatchString(id) || owner.UserID == 0 || owner.ProjectID == 0 {

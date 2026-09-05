@@ -46,7 +46,12 @@ type videoG6I2VFixture struct {
 // 从真实规范化PNG、G3输入事实及G5钱包构建独立I2V场景，不以业务Mock替代事务。
 func newVideoG6I2VFixture(t *testing.T) videoG6I2VFixture {
 	t.Helper()
-	db := openVideoG6MySQL(t)
+	return newVideoG6I2VFixtureWithDB(t, openVideoG6MySQL(t))
+}
+
+// G7复用完整G6权限、模型、输入和资金夹具；数据库仍由各阶段严格隔离入口验证。
+func newVideoG6I2VFixtureWithDB(t *testing.T, db *gorm.DB) videoG6I2VFixture {
+	t.Helper()
 	f := newVideoG5ReservationFixture(t, db, "10")
 	id, code := f.owner.UserID, f.command.FingerprintInput.LogicalModelCode
 	price := f.quotes.pricing.repo.(*fakeActivePriceReader)

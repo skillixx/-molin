@@ -6,13 +6,16 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 
 	"molin/server/internal/config"
+	"molin/server/internal/config/videosecrets"
 	"molin/server/internal/httpserver"
 	"molin/server/internal/jobs"
 	"molin/server/internal/middleware"
@@ -59,6 +62,7 @@ import (
 	tokenclient "molin/server/internal/modules/token_gateway/client"
 	imagegateway "molin/server/internal/modules/token_gateway/image"
 	tokengatewaysvc "molin/server/internal/modules/token_gateway/service"
+	videogateway "molin/server/internal/modules/token_gateway/video"
 	workbenchmod "molin/server/internal/modules/workbench"
 	wbsecurity "molin/server/internal/modules/workbench/security"
 	"molin/server/pkg/cache"
@@ -70,6 +74,8 @@ import (
 type App struct {
 	Config config.Config
 	Server *http.Server
+	// shutdown在HTTP停止接收并排空后同步收口视频Worker；失败时不得抢先关闭其依赖。
+	shutdown func(context.Context) error
 }
 
 // ——— Adapter 私有类型，仅在 bootstrap 内使用 ———
@@ -596,6 +602,196 @@ func buildImageRuntime(ctx context.Context, cfg config.Config, gormDB *gorm.DB, 
 	})
 }
 
+// buildVideoRuntime只在视频模块显式开启后调用；所有真实Provider路径在G7保持不可构造。
+func buildVideoRuntime(ctx context.Context, cfg config.Config, gormDB *gorm.DB, metrics *tokengatewaysvc.AIGatewayMetrics) (*tokengatewaymod.VideoRuntime, func(), error) {
+	bundle, err := cfg.LoadVideoSecrets()
+	if err != nil || bundle == nil {
+		return nil, nil, fmt.Errorf("视频凭据加载失败")
+	}
+	defer bundle.Clear()
+	read := func(purpose videosecrets.Purpose) ([]byte, error) {
+		value, ok := bundle.Bytes(purpose)
+		if !ok {
+			return nil, fmt.Errorf("视频凭据用途缺失")
+		}
+		return value, nil
+	}
+	quote, err := read(videosecrets.Quote)
+	if err != nil {
+		return nil, nil, err
+	}
+	payload, err := read(videosecrets.Payload)
+	if err != nil {
+		return nil, nil, err
+	}
+	callback, err := read(videosecrets.Callback)
+	if err != nil {
+		return nil, nil, err
+	}
+	adminReason, err := read(videosecrets.AdminReason)
+	if err != nil {
+		return nil, nil, err
+	}
+	download, err := read(videosecrets.Download)
+	if err != nil {
+		return nil, nil, err
+	}
+	minioAccess, err := read(videosecrets.MinIOAccess)
+	if err != nil {
+		return nil, nil, err
+	}
+	minioSecret, err := read(videosecrets.MinIOSecret)
+	if err != nil {
+		return nil, nil, err
+	}
+	rabbitPassword, err := read(videosecrets.RabbitPassword)
+	if err != nil {
+		return nil, nil, err
+	}
+	redisPassword, err := read(videosecrets.RedisPassword)
+	if err != nil {
+		return nil, nil, err
+	}
+	capacitySecret, err := read(videosecrets.CapacityNonce)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, secret := range [][]byte{quote, payload, callback, adminReason, download, minioAccess, minioSecret, rabbitPassword, redisPassword, capacitySecret} {
+		defer clear(secret)
+	}
+
+	infra := cfg.VideoGateway.Infrastructure
+	outputStore, err := videogateway.NewMinIOVideoObjectStore(videogateway.MinIOVideoObjectStoreConfig{
+		Endpoint: infra.MinIOEndpoint, AccessKey: string(minioAccess), SecretKey: string(minioSecret), UseSSL: infra.MinIOUseSSL,
+		Buckets: []string{"ai-upload-temp", "ai-result", "ai-quarantine", "ai-user-assets"}, VerifyArchiveFence: tokengatewaysvc.NewVideoArchiveObjectFenceVerifier(gormDB),
+	})
+	if err != nil || outputStore.VerifyBuckets(ctx) != nil {
+		return nil, nil, fmt.Errorf("视频MinIO结果存储未就绪")
+	}
+	uploadStore, err := tokengatewaysvc.NewMinIOVideoUploadStore(tokengatewaysvc.MinIOVideoUploadStoreConfig{
+		Endpoint: infra.MinIOEndpoint, PublicUploadEndpoint: infra.MinIOPublicUploadEndpoint,
+		AccessKey: string(minioAccess), SecretKey: string(minioSecret), UseSSL: infra.MinIOUseSSL,
+		SourceBucket: "ai-upload-temp", NormalizedBucket: "ai-result",
+	})
+	if err != nil || uploadStore.VerifyBuckets(ctx) != nil {
+		return nil, nil, fmt.Errorf("视频MinIO输入存储未就绪")
+	}
+	sharedImageStore, err := imagegateway.NewMinIOObjectStore(imagegateway.MinIOObjectStoreConfig{
+		Endpoint: infra.MinIOEndpoint, PublicDownloadEndpoint: infra.MinIOPublicUploadEndpoint,
+		AccessKey: string(minioAccess), SecretKey: string(minioSecret), UseSSL: infra.MinIOUseSSL,
+		Buckets: []string{"ai-upload-temp", "ai-result", "ai-quarantine"},
+	})
+	if err != nil || sharedImageStore.VerifyBuckets(ctx) != nil {
+		return nil, nil, fmt.Errorf("视频图片导入源存储未就绪")
+	}
+	importStore, err := tokengatewaysvc.NewVideoMinIOImportStore(sharedImageStore, "ai-result")
+	if err != nil {
+		return nil, nil, err
+	}
+
+	videoRedis := redis.NewClient(&redis.Options{Addr: infra.RedisAddr, Password: string(redisPassword), DB: infra.RedisDB, MaxRetries: -1, ContextTimeoutEnabled: true, DialTimeout: time.Second, ReadTimeout: time.Second, WriteTimeout: time.Second})
+	if err := videoRedis.Ping(ctx).Err(); err != nil {
+		_ = videoRedis.Close()
+		return nil, nil, fmt.Errorf("视频Redis未就绪")
+	}
+	cleanup := func() { _ = videoRedis.Close() }
+	nonceKey, err := tokengatewaysvc.NewVideoCapacityNonceKey(capacitySecret)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	capacity, err := tokengatewaysvc.PrepareVideoCapacityRuntime(ctx, gormDB, videoRedis, nonceKey, infra.WorkerID+"-recovery")
+	if err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("视频容量恢复未就绪: %w", err)
+	}
+
+	scheme := "amqp"
+	if infra.RabbitTLS {
+		scheme = "amqps"
+	}
+	rabbitURL := (&url.URL{Scheme: scheme, User: url.UserPassword(infra.RabbitUser, string(rabbitPassword)), Host: infra.RabbitEndpoint, Path: infra.RabbitVHost}).String()
+	opener, err := videogateway.NewTaskConnectionOpener(rabbitURL)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	topology, err := videogateway.NewTaskTopology("molin.video")
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	connection, err := opener(ctx)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	channel, channelErr := connection.Channel()
+	if channelErr == nil {
+		channelErr = topology.Declare(channel)
+	}
+	if channel != nil {
+		_ = channel.Close()
+	}
+	_ = connection.CloseDeadline(time.Now().Add(time.Second))
+	if channelErr != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("视频RabbitMQ拓扑未就绪")
+	}
+	publisher, err := videogateway.NewTaskPublisher(topology, opener, 5*time.Second)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	consumer, err := videogateway.NewTaskConsumer(topology, opener, publisher, 4, 30*time.Second)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	provider, err := videogateway.NewNativeAsyncHTTPVideoAdapter(videogateway.NativeAsyncHTTPAdapterConfig{
+		BaseURL: infra.FakeProviderEndpoint,
+		Client: &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error {
+			return errors.New("视频Fake Provider禁止重定向")
+		}},
+		InputResolver: tokengatewaysvc.NewVideoProviderInputResolver(gormDB, uploadStore), FakeOnly: true,
+	})
+	if err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("视频Fake Provider HTTP合同未就绪")
+	}
+	runtime, err := tokengatewaymod.NewVideoRuntime(tokengatewaymod.VideoRuntimeDeps{
+		DB: gormDB, Recovery: capacity.Recovery, Capacity: capacity.Store, CapacityNonce: nonceKey,
+		Provider: provider, ObjectStore: outputStore, UploadStore: uploadStore, ImportStore: importStore, Publisher: publisher, Consumer: consumer,
+		WorkerID: infra.WorkerID, AdminVerifyHours: cfg.AdminVerifyExpireHours,
+		Secrets: tokengatewaymod.VideoRuntimeSecrets{Quote: quote, Payload: payload, Callback: callback, AdminReason: adminReason, Download: download},
+	})
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	state, err := capacity.Recovery.Current(ctx)
+	if err != nil || state.State != "ready" {
+		cleanup()
+		return nil, nil, fmt.Errorf("视频容量指标事实未就绪")
+	}
+	collector, err := tokengatewaysvc.NewVideoRuntimeMetricsCollector(gormDB, topology, opener, capacity.Store, state.RedisRunID)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	collector.WithRuntimeHealth(func() map[string]tokengatewaysvc.VideoRuntimeWorkerState {
+		result := map[string]tokengatewaysvc.VideoRuntimeWorkerState{}
+		for name, item := range runtime.HealthSnapshot() {
+			result[name] = tokengatewaysvc.VideoRuntimeWorkerState{Up: item.Up, FailureCount: item.FailureCount, LastSuccessAt: item.LastSuccessAt}
+		}
+		return result
+	})
+	if metrics != nil {
+		metrics.WithVideoGaugeCollector(collector)
+	}
+	return runtime, cleanup, nil
+}
+
 // NewApp 初始化所有基础设施和模块，完成依赖注入，返回可启动的 App。
 func NewApp() (*App, error) {
 	cfg := config.Load()
@@ -611,6 +807,10 @@ func NewApp() (*App, error) {
 	}
 	if err := cfg.ValidateImageGatewayConfig(); err != nil {
 		return nil, fmt.Errorf("图片网关配置无效: %w", err)
+	}
+	// 视频开关单独校验，非法值不能在连接数据库、缓存或读取凭据后才被发现。
+	if err := cfg.ValidateVideoGatewayConfig(); err != nil {
+		return nil, fmt.Errorf("视频网关配置无效: %w", err)
 	}
 	if err := cfg.ValidateAIGatewayProductionConfig(); err != nil {
 		return nil, fmt.Errorf("AI 网关生产配置无效: %w", err)
@@ -801,6 +1001,7 @@ func NewApp() (*App, error) {
 
 	// ——— 构建路由 ———
 	mux := http.NewServeMux()
+	var videoRuntimeShutdown func(context.Context) error
 
 	// 健康检查（无需鉴权）
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
@@ -861,6 +1062,7 @@ func NewApp() (*App, error) {
 	// tokenForwardSvc 在 token 网关成功装配时被赋值，供下方 workbench 编排端点复用单轮转发（ChatOnce）；
 	// token 网关未启用时保持 nil → 编排 chat 端点不注册。
 	var tokenForwardSvc *tokengatewaysvc.ForwardService
+	var gatewayMetrics *tokengatewaysvc.AIGatewayMetrics
 	if cfg.TokenProviderKey != "" {
 		// 跨模块依赖通过接口注入，避免 import 环：
 		//   - AssetGate：assetService 直接满足 HasActiveTokenAsset(ctx, userID) 签名。
@@ -919,6 +1121,7 @@ func NewApp() (*App, error) {
 		if tokenGatewayModule, tgErr := tokengatewaymod.New(gormDB, redisClient, cfg.TokenProviderKey, cfg.APIKeyHMACSecret, assetService, tokenReporter, tokenScopeResolver, walletHoldService, outboxPublisher, g3DefaultMaxTokens, resourceDefaults); tgErr != nil {
 			log.Printf("[token_gateway] 初始化失败，管理端/用户端未启用: %v", tgErr)
 		} else {
+			gatewayMetrics = tokenGatewayModule.Metrics
 			tokenGatewayModule.ChannelService.WithHealthInternalAllowlist(cfg.AIGatewayHealthInternalAllowlist)
 			// 总闸同时约束工作台与会话摘要复用的共享转发器，不能只保护公开 ChatHandler。
 			tokenGatewayModule.ForwardService.WithTrafficEnabled(cfg.AIGatewayTrafficEnabled)
@@ -1019,6 +1222,44 @@ func NewApp() (*App, error) {
 		log.Printf("[token_gateway] TOKEN_PROVIDER_KEY 未配置，token 网关门面未启用")
 	}
 
+	// 视频模块独立于Chat Provider密钥装配；关闭时不注册路由、不读视频凭据、不连接专用基础设施。
+	if cfg.VideoGateway.Enabled {
+		if gatewayMetrics == nil {
+			gatewayMetrics = tokengatewaysvc.NewAIGatewayMetrics(tokengatewaysvc.NewAIGatewayDBGaugeCollector(gormDB))
+			metricsHandler.WithAIGatewayMetrics(gatewayMetrics)
+		}
+		setupCtx, cancelSetup := context.WithTimeout(context.Background(), 3*time.Minute)
+		videoRuntime, closeVideoInfra, videoErr := buildVideoRuntime(setupCtx, cfg, gormDB, gatewayMetrics)
+		cancelSetup()
+		if videoErr != nil {
+			return nil, fmt.Errorf("视频网关关闭态装配失败: %w", videoErr)
+		}
+		jwtAuth, authErr := tokengatewaysvc.NewVideoJWTAuthenticator(gormDB, cfg.JWTSecret, tokengatewaysvc.RedisVideoTokenRevocations{Client: redisClient})
+		if authErr != nil {
+			closeVideoInfra()
+			return nil, fmt.Errorf("视频网关JWT装配失败: %w", authErr)
+		}
+		tokengatewaymod.RegisterVideoUserRoutes(mux, videoRuntime.UserApp, apiKeyService, cfg.VideoGateway.TrafficEnabled, jwtAuth)
+		// 流量关闭仍保留内部Fake回调和管理读写，以便既有任务形成可恢复收口证据。
+		tokengatewaymod.RegisterVideoInternalRoutes(mux, videoRuntime.CallbackApp, true)
+		tokengatewaymod.RegisterVideoAdminRoutes(mux, videoRuntime.AdminApp, jwtAuth, true)
+		runtimeCtx, cancelRuntime := context.WithCancel(context.Background())
+		if err := videoRuntime.Start(runtimeCtx); err != nil {
+			cancelRuntime()
+			closeVideoInfra()
+			return nil, fmt.Errorf("视频Worker装配失败: %w", err)
+		}
+		videoRuntimeShutdown = func(shutdownCtx context.Context) error {
+			cancelRuntime()
+			if err := videoRuntime.Shutdown(shutdownCtx); err != nil {
+				log.Printf("[video_gateway] Worker收口超时，保留持久租约供下一实例接管: %v", err)
+				return err
+			}
+			closeVideoInfra()
+			return nil
+		}
+	}
+
 	// 聊天工作台（S2-丁7/8/9/10）：Agent/Skill/Plugin 管理端 + 用户端（自建/选用）+ tool-use 编排对话。
 	// 插件凭证加密需 32 字节密钥（PluginSecretKey，回退复用 TOKEN_PROVIDER_KEY）；未配置则跳过装配，灰度降级不 panic。
 	if cfg.PluginSecretKey != "" {
@@ -1065,10 +1306,51 @@ func NewApp() (*App, error) {
 	handler := middleware.RequestID(middleware.Recovery(middleware.Logger(mux)))
 
 	srv := httpserver.New(cfg, handler)
-	return &App{Config: cfg, Server: srv}, nil
+	return &App{Config: cfg, Server: srv, shutdown: videoRuntimeShutdown}, nil
 }
 
 func (a *App) Run() error {
+	return a.RunContext(context.Background())
+}
+
+// RunContext把操作系统取消信号变成可等待的HTTP、Worker和依赖关闭序列。
+func (a *App) RunContext(ctx context.Context) error {
+	if a == nil || a.Server == nil || ctx == nil {
+		return errors.New("应用运行参数无效")
+	}
 	fmt.Printf("API server 启动，监听 %s\n", a.Server.Addr)
-	return a.Server.ListenAndServe()
+	serveResult := make(chan error, 1)
+	go func() { serveResult <- a.Server.ListenAndServe() }()
+	select {
+	case err := <-serveResult:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		// 监听失败时已经装配的视频Worker也必须收口，不能泄漏后台执行器。
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		return errors.Join(err, a.shutdownRuntime(shutdownCtx))
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+		defer cancel()
+		httpErr := a.Server.Shutdown(shutdownCtx)
+		runtimeErr := a.shutdownRuntime(shutdownCtx)
+		var serveErr error
+		select {
+		case serveErr = <-serveResult:
+		case <-shutdownCtx.Done():
+			serveErr = shutdownCtx.Err()
+		}
+		if errors.Is(serveErr, http.ErrServerClosed) {
+			serveErr = nil
+		}
+		return errors.Join(httpErr, runtimeErr, serveErr)
+	}
+}
+
+func (a *App) shutdownRuntime(ctx context.Context) error {
+	if a.shutdown == nil {
+		return nil
+	}
+	return a.shutdown(ctx)
 }

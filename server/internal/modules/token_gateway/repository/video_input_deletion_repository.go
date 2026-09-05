@@ -2,9 +2,12 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"math"
 	"regexp"
+	"strconv"
 	"time"
 
 	"gorm.io/gorm"
@@ -18,6 +21,7 @@ type VideoInputDeletionRequest struct {
 	UserID                  uint64    `json:"-"`
 	ProjectID               uint64    `json:"-"`
 	APIKeyID                *uint64   `json:"-"`
+	RequestKind             string    `json:"-"`
 	CommandKeyHash          string    `json:"-"`
 	OriginalVersion         uint64    `json:"-"`
 	DeletionVersion         uint64    `json:"-"`
@@ -30,9 +34,27 @@ type VideoInputDeletionRequest struct {
 func (VideoInputDeletionRequest) TableName() string { return "ai_video_input_deletion_requests" }
 
 var videoDeletionHash = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var videoInputDeletionPublicID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 
 // RequestDeferredDelete 原子保存命令凭据并进入pending_delete，实际清理必须另外取得安全终态与留存证明。
 func (r *VideoInputAssetRepository) RequestDeferredDelete(ctx context.Context, publicID string, owner VideoOwner, expectedVersion uint64, commandKeyHash string, now time.Time) (*model.AIGatewayInputAsset, bool, error) {
+	return r.requestDelete(ctx, publicID, owner, expectedVersion, commandKeyHash, "user", now)
+}
+
+// RequestRetentionDelete只允许后台对已到期ready输入创建确定性删除凭据，不能伪装成用户命令。
+func (r *VideoInputAssetRepository) RequestRetentionDelete(ctx context.Context, publicID string, owner VideoOwner, expectedVersion uint64, now time.Time) (*model.AIGatewayInputAsset, bool, error) {
+	if r == nil || r.db == nil || !validVideoOwner(owner) || !videoInputDeletionPublicID.MatchString(publicID) || expectedVersion == 0 || expectedVersion == math.MaxUint64 || now.IsZero() {
+		return nil, false, ErrVideoInputConflict
+	}
+	var identity struct{ ID uint64 }
+	if err := r.db.WithContext(ctx).Table("ai_gateway_input_assets").Select("id").Where("public_id=? AND user_id=? AND project_id=?", publicID, owner.UserID, owner.ProjectID).Take(&identity).Error; err != nil {
+		return nil, false, err
+	}
+	keyRaw := sha256.Sum256([]byte("video-input-retention:" + strconv.FormatUint(identity.ID, 10) + ":" + strconv.FormatUint(expectedVersion, 10)))
+	return r.requestDelete(ctx, publicID, owner, expectedVersion, hex.EncodeToString(keyRaw[:]), "retention", now)
+}
+
+func (r *VideoInputAssetRepository) requestDelete(ctx context.Context, publicID string, owner VideoOwner, expectedVersion uint64, commandKeyHash, requestKind string, now time.Time) (*model.AIGatewayInputAsset, bool, error) {
 	if r == nil || r.db == nil || !validVideoOwner(owner) || expectedVersion == 0 || expectedVersion == math.MaxUint64 || !videoDeletionHash.MatchString(commandKeyHash) || now.IsZero() {
 		return nil, false, ErrVideoInputConflict
 	}
@@ -50,7 +72,7 @@ func (r *VideoInputAssetRepository) RequestDeferredDelete(ctx context.Context, p
 			if old.UserID != owner.UserID || old.ProjectID != owner.ProjectID || !sameVideoDeletionKey(old.APIKeyID, owner.APIKeyID) {
 				return ErrVideoInputNotFound
 			}
-			if old.CommandKeyHash != commandKeyHash || old.OriginalVersion != expectedVersion {
+			if old.CommandKeyHash != commandKeyHash || old.OriginalVersion != expectedVersion || old.RequestKind != requestKind {
 				return ErrVideoInputConflict
 			}
 			if asset.LifecycleState == model.AIInputAssetPendingDelete && !VideoPendingDeletionMatches(asset, old) {
@@ -62,10 +84,11 @@ func (r *VideoInputAssetRepository) RequestDeferredDelete(ctx context.Context, p
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		if asset.VersionNo != expectedVersion || asset.LifecycleState != model.AIInputAssetReady || asset.ModerationStatus != model.AIModerationPassed || asset.LegalHold || asset.NormalizedSHA256 == nil || asset.ModerationPolicyVersion == nil || !asset.ExpiresAt.After(now) || asset.DeleteRequestedAt != nil || asset.PendingDeleteAt != nil || asset.DeletedAt != nil {
+		validTime := requestKind == "user" && asset.ExpiresAt.After(now) || requestKind == "retention" && !asset.ExpiresAt.After(now)
+		if !validTime || (requestKind != "user" && requestKind != "retention") || asset.VersionNo != expectedVersion || asset.LifecycleState != model.AIInputAssetReady || asset.ModerationStatus != model.AIModerationPassed || asset.LegalHold || asset.NormalizedSHA256 == nil || asset.ModerationPolicyVersion == nil || asset.DeleteRequestedAt != nil || asset.PendingDeleteAt != nil || asset.DeletedAt != nil {
 			return ErrVideoInputConflict
 		}
-		request := VideoInputDeletionRequest{InputAssetID: asset.ID, UserID: owner.UserID, ProjectID: owner.ProjectID, APIKeyID: owner.APIKeyID, CommandKeyHash: commandKeyHash, OriginalVersion: expectedVersion, DeletionVersion: expectedVersion + 1, NormalizedSHA256: *asset.NormalizedSHA256, ModerationPolicyVersion: *asset.ModerationPolicyVersion, InputExpiresAt: asset.ExpiresAt, RequestedAt: now}
+		request := VideoInputDeletionRequest{InputAssetID: asset.ID, UserID: owner.UserID, ProjectID: owner.ProjectID, APIKeyID: owner.APIKeyID, RequestKind: requestKind, CommandKeyHash: commandKeyHash, OriginalVersion: expectedVersion, DeletionVersion: expectedVersion + 1, NormalizedSHA256: *asset.NormalizedSHA256, ModerationPolicyVersion: *asset.ModerationPolicyVersion, InputExpiresAt: asset.ExpiresAt, RequestedAt: now}
 		if err := tx.Create(&request).Error; err != nil {
 			return err
 		}
@@ -89,6 +112,7 @@ func sameVideoDeletionKey(a, b *uint64) bool {
 // 尚未进入实际清理时，原申请只允许唯一的删除版本；额外漂移不能被原键重放洗成新回执。
 func VideoPendingDeletionMatches(asset *model.AIGatewayInputAsset, d VideoInputDeletionRequest) bool {
 	return asset != nil && asset.ID == d.InputAssetID && asset.UserID == d.UserID && asset.ProjectID == d.ProjectID &&
+		(d.RequestKind == "user" || d.RequestKind == "retention") &&
 		asset.LifecycleState == model.AIInputAssetPendingDelete && asset.VersionNo == d.DeletionVersion && d.DeletionVersion == d.OriginalVersion+1 &&
 		!asset.LegalHold && asset.ModerationStatus == model.AIModerationPassed && asset.DeletedAt == nil &&
 		asset.NormalizedSHA256 != nil && *asset.NormalizedSHA256 == d.NormalizedSHA256 && asset.ModerationPolicyVersion != nil && *asset.ModerationPolicyVersion == d.ModerationPolicyVersion &&

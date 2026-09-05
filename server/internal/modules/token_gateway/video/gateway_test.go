@@ -425,7 +425,7 @@ func TestDerivedAssetPartialStoreFailureLeavesNoResultOrTemporaryOrphans(t *test
 	for _, role := range []string{"cover", "preview", "thumbnail", "moderation_copy", "derived"} {
 		assetID := "vasset-" + fixture.taskID + "-" + role
 		objectKey := fixture.taskID + "/" + assetID + "/" + role + ".bin"
-		for _, bucket := range []string{"video-temp", "video-result"} {
+		for _, bucket := range []string{"ai-upload-temp", "ai-result"} {
 			if _, err := baseStore.Head(context.Background(), VideoObjectRef{Bucket: bucket, ObjectKey: objectKey}); !errors.Is(err, ErrVideoObjectNotFound) {
 				t.Fatalf("派生失败不得留下无账本结果区/临时区对象: role=%s bucket=%s err=%v", role, bucket, err)
 			}
@@ -486,6 +486,31 @@ type gatewayFixture struct {
 	adapter  *FakeAsyncVideoAdapter
 	verifier *FakeProviderCallbackVerifier
 	labeler  *FakeVideoAILabeler
+}
+
+type rejectingProviderSubmissionGate struct {
+	VideoTaskLedger
+	calls int
+}
+
+func (g *rejectingProviderSubmissionGate) ValidateProviderSubmission(context.Context, string, uint64) error {
+	g.calls++
+	return ErrProviderResultUnknown
+}
+
+// TestVideoGatewayChecksPersistentGateImmediatelyBeforeProvider 覆盖非deferDelivery旧路径，不能只保护G5财务路径。
+func TestVideoGatewayChecksPersistentGateImmediatelyBeforeProvider(t *testing.T) {
+	for _, operation := range []string{OperationTextToVideo, OperationImageToVideo} {
+		t.Run(operation, func(t *testing.T) {
+			f := newGatewayFixture(t, operation, FakeVideoSuccess, FakeVideoModerationAllow, FakeVideoLabelSuccess)
+			gate := &rejectingProviderSubmissionGate{VideoTaskLedger: f.gateway.deps.Ledger}
+			f.gateway.deps.Ledger = gate
+			result, err := f.submit.Run(context.Background(), f.taskID)
+			if !errors.Is(err, ErrProviderResultUnknown) || result.Status != TaskSubmitting || gate.calls != 1 || f.adapter.SubmitCalls() != 0 {
+				t.Fatalf("持久门拒绝后必须停在submitting且Provider调用为0: status=%s gate=%d provider=%d err=%v", result.Status, gate.calls, f.adapter.SubmitCalls(), err)
+			}
+		})
+	}
 }
 
 var errFakeVideoObjectStore = errors.New("Fake ObjectStore故障")
