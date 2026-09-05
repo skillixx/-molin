@@ -18,7 +18,22 @@ func TestVideoG7ConfigLoadsTenIndependentSecretsLinux(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	cfg := Config{AppEnv: "test", VideoGateway: VideoGatewayConfig{Enabled: true, ExecutionDriver: "native_async", Secrets: p}}
+	cfg := Config{AppEnv: "test", VideoGateway: VideoGatewayConfig{
+		Enabled:         true,
+		ExecutionDriver: "native_async",
+		Secrets:         p,
+		// Linux专属凭据测试也必须提供完整低敏基础设施，避免绕过生产装配校验。
+		Infrastructure: VideoInfrastructureConfig{
+			MinIOEndpoint:             "minio:9000",
+			MinIOPublicUploadEndpoint: "http://127.0.0.1:9000",
+			FakeProviderEndpoint:      "http://127.0.0.1:18080",
+			RabbitEndpoint:            "rabbitmq:5672",
+			RabbitUser:                "molin_video",
+			RabbitVHost:               "/molin-video",
+			RedisAddr:                 "redis:6379",
+			WorkerID:                  "video-config-test",
+		},
+	}}
 	bundle, err := cfg.LoadVideoSecrets()
 	if err != nil {
 		t.Fatal(err)
