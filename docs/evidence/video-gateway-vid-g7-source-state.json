@@ -2,19 +2,19 @@
   "schema_version": 3,
   "target_goal": "VID-G7",
   "status": "WORKTREE_SNAPSHOT",
-  "source_state_id": "1ff1538481e5e6ca91b961028583a0128b5abb3e63a5453e6525b5e8b797c7c1",
-  "head_commit": "1fa171bacd64240e66b76ba00bc9eab32da4a59e",
+  "source_state_id": "e8b35c10978c55e2eca839c87bba180029646e34aeb3a180ef8d19dd4a544c1e",
+  "head_commit": "ab61935afa4b1a777490efc00d4d01889919b4b2",
   "base_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
   "origin_main_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
   "origin_main_remote_url": "ssh://github.com/skillixx/-molin.git",
   "origin_main_provenance": "FRESH_FETCH",
-  "origin_main_observed_at": "2026-09-05T07:26:04.5122173Z",
+  "origin_main_observed_at": "2026-09-05T07:34:02.1237755Z",
   "tracked_patch_sha256": "EMPTY",
   "untracked_manifest_sha256": "EMPTY",
-  "evidence_captured_at": "2026-09-05T07:26:05.9470487Z",
+  "evidence_captured_at": "2026-09-05T07:34:03.5479706Z",
   "branch": "codex/video-gateway-vid-g7-infra-recovery",
   "uncommitted_changes": true,
-  "manifest_sha256": "6eb338bbbee2eb3966fc2a58e4d56b4d6d8c7aef1a40a2b015bd8cf92b4aa8e3",
+  "manifest_sha256": "02c280eab92d7a27534d305e27de267349f9fed0828e73ae81bd549076bbd037",
   "manifest_count": 222,
   "manifest": [
     {
@@ -95,11 +95,11 @@
     },
     {
       "path": "infra/scripts/generate-video-gateway-vid-g7-defect-ledger.ps1",
-      "sha256": "1608c315c6d9d7977cf2e897d988256e81c2c87dce2866597e55b716c594858d"
+      "sha256": "dee8d429b2a30d4a14ae367a041f9146ce4209bc68c21bf110f3f21fe007dbe1"
     },
     {
       "path": "infra/scripts/generate-video-gateway-vid-g7-source-state.ps1",
-      "sha256": "33f314c5272f391ae8d56b6ebd94ad0fd9f977be2e51b4692cd1a2898045af03"
+      "sha256": "d074779e58733804dfa8317a9c6d83b3ff7ac6ca8debd7c31aedca0469a73366"
     },
     {
       "path": "infra/scripts/verify-video-gateway-vid-g7-fact-snapshot.ps1",
@@ -851,15 +851,15 @@
     },
     {
       "path": "server/migrations/000116_video_shared_minio_buckets.down.sql",
-      "sha256": "74a18ef1c15cb1076e39f6b69a28559950454cb70b500bb2ea9a0bb78979a8ae"
+      "sha256": "4a8936aa1afbd148e45e48ab73937d895f271d285121ef1a5f814c1b4b1d69ca"
     },
     {
       "path": "server/migrations/000116_video_shared_minio_buckets.up.sql",
-      "sha256": "8839f6526b5d5bbfded27d9d5ce6b056b8abeb5d7d669634ea03e63579a05156"
+      "sha256": "e05aefa3b04c4d5f3e9723799d7163eb4c02b176633ddc774c75c09b9589b8dc"
     },
     {
       "path": "server/migrations/000117_video_object_reconciliation_observations.down.sql",
-      "sha256": "0351424b407e9be7e1c366c0715d3812608f9b2e906e4125cdf800c89345dcd6"
+      "sha256": "47652976887b6a669aa5120d6f2d3ea5583f1072a741dcef673fae64b45dff92"
     },
     {
       "path": "server/migrations/000117_video_object_reconciliation_observations.up.sql",
@@ -867,7 +867,7 @@
     },
     {
       "path": "server/migrations/000118_video_input_retention_cleanup.down.sql",
-      "sha256": "b8af5aeb84ddf4cba2e30577eeb5d77c7167f5de935013dac3f560a431f5dca2"
+      "sha256": "74586c37818011cc51f61b82508577414734f59383cbc8f8d7a71832f1408bf9"
     },
     {
       "path": "server/migrations/000118_video_input_retention_cleanup.up.sql",

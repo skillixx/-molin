@@ -1,9 +1,9 @@
 {
   "target_goal": "VID-G7",
   "captured_at": "2026-09-05T07:14:56Z",
-"source_state_id": "1ff1538481e5e6ca91b961028583a0128b5abb3e63a5453e6525b5e8b797c7c1",
+"source_state_id": "e8b35c10978c55e2eca839c87bba180029646e34aeb3a180ef8d19dd4a544c1e",
   "session": 92406,
-  "source_tree_sha256": "7140b959397b4afdc11e2e53b76d5a679759dca3415695a616c919e05b0ff17a",
+  "source_tree_sha256": "4f10ff8019012bd118ffbf3577a96034be1b3e21bc2ba08169addfb260f5a13f",
   "environment": "local-isolated-linux-containers",
   "command": "$env:VIDEO_GATEWAY_G7_MYSQL_ISOLATED_APPROVED='YES'; $env:VIDEO_GATEWAY_G7_REDIS_ISOLATED_APPROVED='YES'; $env:VIDEO_GATEWAY_G7_RABBIT_ISOLATED_APPROVED='YES'; $env:VIDEO_GATEWAY_G7_MINIO_ISOLATED_APPROVED='YES'; .\\infra\\scripts\\verify-video-gateway-vid-g7-runtime.ps1",
   "result": {
