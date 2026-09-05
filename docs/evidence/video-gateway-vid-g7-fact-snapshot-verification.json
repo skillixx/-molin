@@ -1,7 +1,7 @@
 {
   "target_goal": "VID-G7",
   "captured_at": "2026-09-05T07:14:56Z",
-"source_state_id": "fdd207bf23973880b06bd0d3afb406ce436317db5759a683e4ab3b0aa0a413ec",
+"source_state_id": "e041a6d768afc85a5684ae9c46713ea26fac1813462f03faab62a27b3737dea0",
   "command": "$env:VIDEO_GATEWAY_G7_MYSQL_ISOLATED_APPROVED='YES'; .\\infra\\scripts\\verify-video-gateway-vid-g7-fact-snapshot.ps1",
   "session": 13495,
   "runner_sha256": "7f4884d0ded3eafe631c23da0d07db08bdab9cd4c9c166c74f8c91badc6cad16",

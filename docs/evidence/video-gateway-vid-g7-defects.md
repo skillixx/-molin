@@ -232,3 +232,4 @@ Redis确认与释放增量：
 - `G7-SOURCE-DESCENDANT-033 / P1`：证据后代规则的diff-filter漏掉删除状态D，后续证据提交可能删除未进入阶段manifest的基础文件。校验器现同时纳入D并用排除`docs/evidence/**`后的内容diff作第二道拒绝；临时后代真实删除`server/go.mod`时稳定失败，临时工作树清理通过。状态`FIXED_PENDING_VERIFY`。
 - `G7-CI-DIFF-FORMAT-034 / P2`：本地仅对未提交工作树执行`git diff --check`，未按CI的`origin/main...HEAD`范围检查；PowerShell生成JSON使用CRLF并有四个Expand-only migration多余尾空行。生成器现固定UTF-8无BOM和LF，全部46个证据文件机械规范化，四个SQL仅删除尾空行；本地分支全量diff检查通过。状态`FIXED_PENDING_VERIFY`。
 - `G7-LINUX-CONFIG-FIXTURE-035 / P1`：Linux专属十用途Secret测试开启视频模块却未构造必需的MinIO、RabbitMQ、Redis和Worker低敏配置，CI在`VIDEO_GATEWAY_MINIO_ENDPOINT`失败，而Windows本地因构建约束未执行该用例。测试夹具现提供完整合法基础设施字段，Go 1.26.5 Linux容器同名用例通过。状态`FIXED_PENDING_VERIFY`。
+- `G7-AUTH-ROLLBACK-COUNT-036 / P1`：授权包Migration章节已扩展到110—122，但执行序列仍写12步撤回和13类事实，可能让测试服按旧范围执行。现统一为13步Expand-only撤回与14项事实复验，并保持所有主机、镜像、数据库和备份字段在授权前为`HUMAN_REQUIRED`。状态`FIXED_PENDING_VERIFY`。

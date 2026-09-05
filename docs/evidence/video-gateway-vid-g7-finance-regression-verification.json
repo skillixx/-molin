@@ -1,7 +1,7 @@
 {
   "target_goal": "VID-G7",
   "captured_at": "2026-09-05T07:14:56Z",
-"source_state_id": "fdd207bf23973880b06bd0d3afb406ce436317db5759a683e4ab3b0aa0a413ec",
+"source_state_id": "e041a6d768afc85a5684ae9c46713ea26fac1813462f03faab62a27b3737dea0",
   "session": 88948,
   "runner_sha256": "1c96e3b6c2f08407821a91e86cb83506fd73b44efde90f23e52d6d3acb621005",
   "scope": "本地隔离MySQL、Redis、RabbitMQ上的G5财务兼容与G7异步执行Linux race组合",

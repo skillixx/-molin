@@ -1,7 +1,7 @@
 {
   "target_goal": "VID-G7",
   "captured_at": "2026-09-05T07:14:56Z",
-"source_state_id": "fdd207bf23973880b06bd0d3afb406ce436317db5759a683e4ab3b0aa0a413ec",
+"source_state_id": "e041a6d768afc85a5684ae9c46713ea26fac1813462f03faab62a27b3737dea0",
   "session": 92406,
   "source_tree_sha256": "c5c7e1c8175384d5ce99a214ba645aa6cf3aa9389f9efcd3cd2555f71fff0784",
   "environment": "local-isolated-linux-containers",
