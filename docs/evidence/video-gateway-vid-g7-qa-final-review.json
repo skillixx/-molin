@@ -12,7 +12,7 @@
     "finance": "166/166",
     "fact_snapshot": "2/2",
     "sensitive_scan": "268/268",
-    "defect_ledger_transition_authorized": 161
+    "defect_ledger_transition_authorized": 162
   },
   "external_gate": "TEST_SERVER_AUTHORIZATION_NOT_GRANTED",
   "g7_acceptance": "INCOMPLETE",
