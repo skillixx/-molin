@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "scope": "REDIS-01中的不可变容量策略、只收紧校验与稳定指纹，不是Redis租约实现",
+  "status": "PASS_POLICY_UNIT_AND_LINUX_RACE",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "uncommitted_changes": true,
+  "source_server_execution_sha256": "99d3553e9c43da5666ee6ec4039082c99cf8211714d7df3278bf87aacdda85a6",
+  "implementation": [
+    "server/internal/modules/token_gateway/video/capacity_policy.go",
+    "server/internal/modules/token_gateway/video/capacity_policy_test.go"
+  ],
+  "tests": {
+    "red": {
+      "tool_chunk": "d0cbad",
+      "exit_code": 1,
+      "reason": "未实现构造器拒绝合法默认与收紧策略；不把开发期stub当现有生产漏洞"
+    },
+    "focused": {
+      "session": 18726,
+      "run": 2,
+      "pass": 2,
+      "scope_subcases": 10,
+      "fixed_vector": "1d489742b370cb9cf8f4a82dca5051ed04f3afdb73b398ac5fbf7c92d1e29734"
+    },
+    "toolchain": {
+      "session": 18726,
+      "exit_code": 0,
+      "go_test_all": "PASS_DEFAULT_ENV",
+      "go_vet": "PASS",
+      "go_mod_verify": "PASS",
+      "boundary": "默认环境未连接MySQL/Redis，不能冒称全量集成"
+    },
+    "linux_race": {
+      "session": 99229,
+      "image": "golang@sha256:908f8ff2ec296df2f349563072c7925775cd28b50361a52ed834a8a37399b9bf",
+      "command": "go test -race -json -count=1 -timeout=120s ./internal/modules/token_gateway/video -run ^TestVideoG7CapacityPolicy",
+      "network": "none",
+      "source_mount": "readonly",
+      "run": 2,
+      "pass": 2,
+      "skip": 0,
+      "exit_code": 0,
+      "source_before_after": "UNCHANGED",
+      "cleanup": "PASS"
+    },
+    "sensitive_scan": {
+      "files": 100,
+      "fail": 0,
+      "review": 0
+    },
+    "diff_check": "PASS"
+  },
+  "assertions": [
+    "queued默认2/10/2/100/100，running默认1/2/1/2/2",
+    "十轴分别拒绝零和超过上限，合法收紧允许",
+    "输入、输出和默认值副本均不能修改原策略",
+    "nil与零对象失败关闭",
+    "固定版本和轴顺序匹配已知SHA-256向量，每个可收紧轴进入指纹",
+    "指纹不提供容量、执行或恢复授权"
+  ],
+  "reviews": {
+    "pm_spec": {
+      "agent": "g7_late_observation_policy",
+      "result": "确认Key/model默认与稳定JWT主体为范围内工程决策，非完整PM PASS"
+    },
+    "qa_policy": {
+      "agent": "g7_outbox_finance_audit",
+      "result": "只读复核未发现具体P0/P1/P2；固定向量建议已实现并复验，非完整QA PASS"
+    },
+    "engineering_design": {
+      "agent": "g7_outbox_safety_check",
+      "status": "OPEN_DESIGN_ACTIONS",
+      "items": [
+        "首次Provider调用前持久化计划Provider、提交意图及容量代次，不能提前改写回执绑定字段",
+        "promoting保留queued和running保护，MySQL确定提交后才确认迁移；未知结果保留容量债务",
+        "原Request唯一INSERT胜者与事务尝试代次绑定，恢复与创建/运行统一锁序",
+        "MySQL权威恢复代次与部分丢键检测，重建覆盖已授予提交权但可能尚未发出请求的旧Worker"
+      ],
+      "boundary": "设计约束已写入合同，字段/锁序/开放判据及故障测试尚待实现，不作为工程审查PASS"
+    }
+  },
+  "historical_integration": {
+    "session": 58972,
+    "result": "PASS_135_OF_135_GROUPS_2",
+    "server_sha256": "f6372389e5c22bb075e1155ac8eeb2219832930d9e4d3fd6ea33738516ddb80e",
+    "receipt": "docs/evidence/video-gateway-vid-g7-outer-cancel-fence-verification.json",
+    "boundary": "容量策略新增之后server整体哈希改变，不将原135项结果重新绑定本源码"
+  },
+  "real_redis_integration": "NOT_RUN",
+  "remaining": [
+    "身份及容量许可",
+    "Redis原子准入/迁移/续期",
+    "持久提交身份与跨系统恢复",
+    "2/4/8真实Go进程",
+    "完整运行时、独立阶段验收及测试服授权"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false,
+  "source_state_id": "2ea494b9aa304c01630411a27a453fbdf51d1461692d3763906af74e5b807748"
+}

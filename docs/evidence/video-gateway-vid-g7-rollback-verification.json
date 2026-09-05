@@ -1,0 +1,44 @@
+{
+  "target_goal": "VID-G7",
+  "captured_at": "2026-09-05T07:14:56Z",
+"source_state_id": "1ff1538481e5e6ca91b961028583a0128b5abb3e63a5453e6525b5e8b797c7c1",
+  "session": 92406,
+  "source_tree_sha256": "7140b959397b4afdc11e2e53b76d5a679759dca3415695a616c919e05b0ff17a",
+  "environment": "local-isolated-linux-containers",
+  "command": "$env:VIDEO_GATEWAY_G7_MYSQL_ISOLATED_APPROVED='YES'; $env:VIDEO_GATEWAY_G7_REDIS_ISOLATED_APPROVED='YES'; $env:VIDEO_GATEWAY_G7_RABBIT_ISOLATED_APPROVED='YES'; $env:VIDEO_GATEWAY_G7_MINIO_ISOLATED_APPROVED='YES'; .\\infra\\scripts\\verify-video-gateway-vid-g7-runtime.ps1",
+  "result": {
+    "traffic_gate": "PASS",
+    "application_closed_runtime_restart": "PASS",
+    "schema_compatible_down": "PASS",
+    "down_migrations": [110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122],
+    "facts_preserved": true,
+    "fact_snapshot_fields": 14,
+    "post_down_runtime_restart": true,
+    "cleanup": "PASS",
+    "exit_code": 0
+  },
+  "preserved": [
+    "pending_reconcile_task",
+    "hard_cap_queued_task",
+    "two_holding_wallet_holds",
+    "submission_plan_and_send_facts",
+    "capacity_epoch_and_worker_lease",
+    "object_observations_and_compensation",
+    "retention_and_audit_facts"
+  ],
+  "compatible_worker_recovery": {
+    "rabbit_submit_poll_fetch": "PASS",
+    "settle_deliver_capacity_release": "PASS",
+    "late_message_replay_finance_unchanged": true,
+    "provider_create_count": 1
+  },
+  "boundaries": {
+    "shared_test_server": "NOT_RUN_NOT_AUTHORIZED",
+    "backup_restore": "NOT_RUN_NOT_AUTHORIZED",
+    "real_provider_requests": 0,
+    "real_wallet_writes": 0,
+    "test_server_writes": 0,
+    "production_operations": 0
+  },
+  "decision": "LOCAL_ROLLBACK_PASS_TEST_SERVER_INCOMPLETE"
+}

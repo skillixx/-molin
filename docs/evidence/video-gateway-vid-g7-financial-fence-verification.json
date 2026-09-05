@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "scope": "普通结算/退款及失败后补记的首尾执行围栏，保留独立补偿授权",
+  "status": "PASS_LOCAL_FINANCIAL_FENCES_AND_FULL_REGRESSION",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "uncommitted_changes": true,
+  "source_state_id": "a5215d6286906695169958b14509f8ecc6c262e2a86dfc4d42786bf4b1d67931",
+  "source_server_execution_sha256": "5e1f9d9d83cdacc99fbb72a7b365cd374987b2c72c896cfe99191dba5fc88784",
+  "production_files": [
+    "server/internal/modules/token_gateway/service/video_billing_settle.go",
+    "server/internal/modules/token_gateway/service/video_billing_release.go",
+    "server/internal/modules/token_gateway/service/video_compensation_worker.go"
+  ],
+  "authorization_boundary": "普通首次资金写入需要当前G7执行证明；已闭合只读重放无需重领；Recover入口仍先完整验证同请求当前补偿租约；非nil本身不是授权",
+  "tests": {
+    "red": [
+      {
+        "session": 99131,
+        "server_sha256": "00616c03446e19834ff8df7bad4ea05a8412ffc3e5ef76677bc770e7d9fe3101",
+        "cases": 4,
+        "reason": "T2V/I2V缺少或旧证明仍被普通结算接受"
+      },
+      {
+        "session": 86764,
+        "server_sha256": "a8184025cd7867e4c3ba8d2670cbdf9f93c8ac63f7d576abb4ed9035316eb1d2",
+        "cases": 4,
+        "reason": "普通退款仍接受缺少或旧证明"
+      }
+    ],
+    "settle_green": {
+      "session": 83687,
+      "server_sha256": "1ae7dbbbcb4e6e67acd97d47109a1f101c1a4cfcab0c7242a4562c01b41c9839",
+      "pass": 1
+    },
+    "settle_release_green": {
+      "session": 55472,
+      "server_sha256": "6c28fdabe502695127c1d1f937f7626fcd11a24a433371c56665dd924f92b959",
+      "pass": 2
+    },
+    "compensation_race": {
+      "session": 84514,
+      "server_sha256": "4f963293e25751594c46bea596ea2c56c47745b336c93bea4625c31f9f614edf",
+      "required": 3,
+      "pass": 3,
+      "skip": 0,
+      "cleanup": "PASS"
+    },
+    "focused_race": {
+      "session": 55140,
+      "command": "verify-video-gateway-vid-g7-outbox.ps1 -Focus financial_fence -LinuxRace",
+      "migration_up_count": 110,
+      "required": 4,
+      "run": 4,
+      "pass": 4,
+      "skip": 0,
+      "race": "PASS",
+      "exit_code": 0,
+      "source_before_after": "UNCHANGED",
+      "cleanup": "PASS",
+      "tail_cases": [
+        "settle",
+        "release",
+        "mark_settle",
+        "mark_release"
+      ],
+      "tail_timing_note": "顶层0.01秒不含并行等待；同源全量回归已单列四个子例，各31秒以上。"
+    },
+    "full_regression": {
+      "session": 48490,
+      "status": "PASS",
+      "command": "verify-video-gateway-vid-g7-outbox.ps1 -Broker -FinanceRegression -LinuxRace",
+      "discovered_g5": 99,
+      "migration_up_count": 110,
+      "required": 133,
+      "run": 133,
+      "pass": 133,
+      "skip": 0,
+      "race": "PASS",
+      "exit_code": 0,
+      "source_before_after": "UNCHANGED",
+      "cleanup": "PASS",
+      "tail_case_seconds": {
+        "mark_release": 31.12,
+        "release": 31.12,
+        "mark_settle": 31.52,
+        "settle": 31.55
+      },
+      "relay_seconds": 3.43
+    }
+  },
+  "assertions": [
+    "missing/stale普通结算退款零Task/事件/八表/Input写入且不创建补偿",
+    "当前证明按原金额终结资金，已闭合只读重放保持",
+    "普通执行租约释放后有效独立补偿仍能恢复；错RequestID非nil补偿证明拒绝",
+    "真实事务内合成故障，非数据库断连",
+    "实际租约截止后主事务和补记事务均回滚，原错误与尾部命中分别验证",
+    "新代次可首次完成原资金终结，Fake Submit一次"
+  ],
+  "independent_review": {
+    "agent": "g7_outbox_finance_audit",
+    "mode": "只读测试/权限边界审查；因角色禁止server写入，全部代码由主代理实现",
+    "result": "普通/补偿授权、补记首尾和并行尾部测试设计未发现具体新增P0/P1/P2；非完整阶段验收"
+  },
+  "toolchain": {
+    "session": 56713,
+    "go_test_all": "PASS_DEFAULT_ENV",
+    "go_vet": "PASS",
+    "go_mod_verify": "PASS",
+    "gofmt": "PASS",
+    "powershell_parse": "PASS",
+    "sensitive_scan": {
+      "files": 87,
+      "fail": 0,
+      "review": 0
+    }
+  },
+  "remaining": [
+    "共享恢复写入与用户/管理取消的Worker上下文围栏",
+    "外部IO、业务消费者、native_async Fake HTTP",
+    "Redis/MinIO、多实例kill、监控及回滚",
+    "完整QA/PM/Standards/Spec/DEV与获批测试服验收"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false
+}

@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "scope": "原容量门闩ready摘要、严格审计、NULL租期SQL守卫及000113部分DDL重入",
+  "status": "LOCAL_MYSQL_READY_VERIFIED_RUNTIME_PENDING",
+  "base_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "source_server_sha256": "0c1a0325e5edceb31348598d38377dad915dd6d3c4998ca279f209c33dc52a72",
+  "migration": "000113_video_capacity_ready.up.sql",
+  "native": {
+    "session": 1266,
+    "required": 1,
+    "run": 1,
+    "pass": 1,
+    "skip": 0,
+    "cleanup": "PASS"
+  },
+  "linux_race": {
+    "session": 28590,
+    "required": 1,
+    "run": 1,
+    "pass": 1,
+    "skip": 0,
+    "cleanup": "PASS"
+  },
+  "partial_migration_recovery": {
+    "injected_state": "ready列保留，CHECK、唯一索引和三个ready Trigger缺失",
+    "result": "PASS",
+    "check_constraints": 1,
+    "unique_indexes": 1,
+    "triggers": 3
+  },
+  "covered": [
+    "recovering到ready的version_no CAS",
+    "相同ready只读重放和相反摘要拒绝",
+    "ready不可回退blocked且新恢复必须增加epoch",
+    "COMMIT成功但回执丢失后可由正常连接查明",
+    "capacity_lease_until为NULL时SQL层拒绝且零写",
+    "生成列存在而CHECK、索引、Trigger缺失时000113可重入恢复"
+  ],
+  "not_yet_verified": [
+    "业务运行时容量授权",
+    "真实进程和Redis重启",
+    "测试服migration与实际回滚",
+    "完整VID-G7验收"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false
+}

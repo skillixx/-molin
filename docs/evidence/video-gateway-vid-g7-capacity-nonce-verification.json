@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "scope": "跨进程容量nonce稳定派生、独立凭据用途与恢复快照接线",
+  "status": "LOCAL_COMPONENT_VERIFIED_MULTI_PROCESS_RUNTIME_PENDING",
+  "base_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "latest_source_server_sha256": "e070910af32a435464917955cfd1c189b0fb580e4b68d3a4f96b6854d8687bb5",
+  "red": {
+    "session": 224880,
+    "result": "NewVideoCapacityNonceKey不存在，编译失败"
+  },
+  "unit": {
+    "status": "PASS",
+    "fixed_vector": "74c79f0843ce36acdc7263891811e9508f239a718b14f45aa556915e22245fe8",
+    "covered": [
+      "同密钥、epoch和完整身份稳定",
+      "Task、Request、User、Project、Key scope、Model和Operation逐字段分离",
+      "未冻结Provider拒绝",
+      "不同epoch和不同密钥分离",
+      "构造器复制输入",
+      "Key指针和值的JSON、String及GoString脱敏"
+    ]
+  },
+  "configuration": {
+    "status": "PASS_NATIVE_AND_LINUX_RACE",
+    "purpose": "capacity_nonce",
+    "environment": "VIDEO_GATEWAY_CAPACITY_SECRET_FILE",
+    "bytes": 32,
+    "linux_observed_pass_events": 103,
+    "linux_fail_or_skip": 0,
+    "explicit_same_value_rejection": "RedisPassword与CapacityNonce同值整包拒绝"
+  },
+  "integration": {
+    "source_server_sha256": "53c692bbda4e4cf93f4d002f2d7cbaed56e9162116e3c186e36b58f8a6e0023c",
+    "snapshot_native_session": 51344,
+    "snapshot_linux_session": 46988,
+    "coordinator_native_session": 54386,
+    "coordinator_linux_session": 98536,
+    "status": "PASS"
+  },
+  "independent_review": {
+    "agent": "g7_late_observation_policy",
+    "p0": 0,
+    "p1": 0,
+    "open_p2": [
+      "真实2/4/8独立进程同文件向量",
+      "运行时Bundle临时副本构造后clear",
+      "新epoch密钥轮换演练",
+      "每环境独立CSPRNG密钥部署证明"
+    ],
+    "boundary": "容量nonce切片，不是完整G7产品或Spec验收"
+  },
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false
+}

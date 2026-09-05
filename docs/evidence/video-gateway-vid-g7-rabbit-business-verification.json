@@ -1,0 +1,30 @@
+{
+  "target_goal": "VID-G7",
+  "status": "STALE_AFTER_RUNTIME_AND_ORPHAN_INCREMENT",
+  "captured_at": "2026-09-04T05:11:00Z",
+  "scope": "G5 held Outbox到RabbitMQ submit/poll/fetch业务消费者的真实隔离闭环",
+  "source_tree_sha256": "0d915ca9d0ad9f78d8142c3b34a61b55482fec955e39143288c8d5309fb5d918",
+  "migration_count": 116,
+  "runs": [
+    {"platform": "windows-native", "required": 1, "run": 1, "pass": 1, "skip": 0, "exit_code": 0},
+    {"platform": "linux-amd64-race", "required": 1, "run": 1, "pass": 1, "skip": 0, "exit_code": 0}
+  ],
+  "verified": {
+    "mysql_outbox_to_rabbit": true,
+    "submit_poll_fetch_shared_handler": true,
+    "message_owner_reloaded_from_database": true,
+    "duplicate_submit_provider_entries": 1,
+    "duplicate_submit_provider_tasks": 1,
+    "final_task_status": "succeeded",
+    "shared_minio_bucket_transition": true,
+    "cleanup": "PASS"
+  },
+  "boundaries": {
+    "bootstrap_process_kill": false,
+    "test_server_writes": 0,
+    "real_provider_requests": 0,
+    "real_wallet_writes": 0,
+    "provider_cost_cny": 0
+  },
+  "decision": "LOCAL_BUSINESS_CHAIN_PASS_STAGE_INCOMPLETE"
+}

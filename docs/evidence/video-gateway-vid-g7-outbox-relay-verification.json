@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "scope": "原G5 Outbox投影到真实RabbitMQ发布侧恢复；不包含业务消费者",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "source_state_id": "2facb6f9f1e7da4d774eaee841dea9c3d98a7e41e95782ee150f15bfa8945410",
+  "uncommitted_changes": true,
+  "source_server_execution_sha256": "40e275e2db39feaf9f86f2a2dc3bbc803f6c0a04ce5433f1d5a0b86c3cad7a58",
+  "implemented": "VideoOutboxPublisher实现原OutboxPublisher接口，使用原Projector和生产TaskPublisher，成功确认后共享Worker更新原事件",
+  "tests": {
+    "tdd_red": "新增桥接构造函数不存在时编译失败",
+    "focused": {
+      "session": 94439,
+      "command": "verify-video-gateway-vid-g7-outbox.ps1 -Broker -Focus relay -LinuxRace",
+      "run": 2,
+      "pass": 2,
+      "skip": 0,
+      "relay_seconds": 3.5,
+      "cleanup": "PASS"
+    },
+    "combined": {
+      "session": 53650,
+      "command": "verify-video-gateway-vid-g7-outbox.ps1 -Broker -LinuxRace",
+      "migration_up_count": 109,
+      "required": 19,
+      "run": 19,
+      "pass": 19,
+      "skip": 0,
+      "race": "PASS",
+      "exit_code": 0,
+      "source_before_after": "UNCHANGED",
+      "relay_seconds": 3.5,
+      "cleanup": "PASS"
+    },
+    "relay_subcases": [
+      "T2V真实确认发布",
+      "I2V真实确认发布",
+      "真实QueueUnbind不可路由后恢复",
+      "网络边界丢弃真实basic.ack，实际Broker消息保留并可重投",
+      "Broker成功后GORM确认写入故障，原publishing接管重投",
+      "100并发正常认领单一确认与单消息",
+      "坏财务依据在Broker前拒绝"
+    ],
+    "money_invariance": "除Outbox外七张财务表逐行不变；Task与Outbox各1条，原event_id不变",
+    "go_test_all": "PASS_DEFAULT_ENV_NOT_FULL_G7_INTEGRATION",
+    "go_vet_all": "PASS",
+    "go_mod_verify": "PASS",
+    "powershell_ast": "PASS",
+    "default_gate_cases": 3,
+    "default_gates": "PASS_EXIT_3_BEFORE_DOCKER",
+    "gofmt": "PASS",
+    "diff_check": "PASS",
+    "sensitive_scan": {
+      "status": "PASS",
+      "files": 66,
+      "fail": 0,
+      "review": 0,
+      "info": 8
+    }
+  },
+  "images": {
+    "mysql": "mysql@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b",
+    "rabbitmq": "rabbitmq@sha256:606d8c0d6b3c18d1da9afc53bc7cdb2a8d5486df91b5a9830e9e07626c9ae281",
+    "go": "golang@sha256:908f8ff2ec296df2f349563072c7925775cd28b50361a52ed834a8a37399b9bf"
+  },
+  "independent_review": {
+    "agent": "/root/g7_outbox_finance_audit",
+    "role": "测试工程师",
+    "mode": "READ_ONLY_STATIC_SLICE",
+    "remaining_specific_p0": 0,
+    "remaining_specific_p1": 0,
+    "remaining_specific_p2": 0,
+    "full_g7_qa": "NOT_RUN"
+  },
+  "limitations": [
+    "db_ack_failed是GORM更新前故障注入，不是真实数据库断连",
+    "接管使用受控时钟，不是实际等待三分钟或进程kill",
+    "测试队列观察者不是业务TaskConsumer；不证明重复消息不会重复提交Provider",
+    "尚无视频运行时装配、Redis/MinIO、多Go实例、完整监控回滚和测试服验收",
+    "最新源码完整G5/Chat/Image/SDK及完整阶段独立验收仍待最终执行"
+  ],
+  "test_server_authorization": "NOT_GRANTED",
+  "test_server_writes": 0,
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false
+}

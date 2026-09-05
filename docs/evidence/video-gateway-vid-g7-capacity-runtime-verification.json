@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "scope": "新请求queued准入、安全终态释放及2/4/8真实Go进程Provider hard cap竞争",
+  "status": "LOCAL_CAPACITY_RUNTIME_COMPONENTS_VERIFIED_BOOTSTRAP_PENDING",
+  "base_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "reservation": {
+    "source_server_sha256": "bb5fbcac6475d61646a81749bf382b2573fcb507cb4178cb4aa679206db4e2b6",
+    "native_session": 33793,
+    "linux_session": 27836,
+    "covered": [
+      "Redis回执丢失后确认MySQL无Task再清理queued",
+      "Redis预留后MySQL明确回滚清理queued",
+      "显式Quote与OpenAI自动Quote共用准入",
+      "global queued满时Request/Task/Hold/Outbox均为0",
+      "MySQL COMMIT未知回读原幂等事实",
+      "100并发同生成意图只有一个Request/Task/Hold和一份queued"
+    ]
+  },
+  "terminal_release": {
+    "source_server_sha256": "a670910d199175b4df390727c57c37cbb06fe107468925461ed7e2e05958e955",
+    "native_session": 45067,
+    "linux_session": 95205,
+    "crash_native_session": 96157,
+    "crash_linux_session": 28025,
+    "covered": [
+      "安全cancelled终态完整财务/输入/Outbox证明后释放queued",
+      "跨用户/Project释放拒绝且不泄露",
+      "释放重放双侧零写",
+      "pending_reconcile保留running容量和holding Hold"
+    ]
+  },
+  "multi_process": {
+    "source_server_sha256": "1e3ef61a41f61f6306bdeab65f3e87c4531de8dbc5d3aa37ae5532722c37002c",
+    "native": {
+      "2": {"session": 54889, "running": 2, "queued": 0, "pass": true},
+      "4": {"session": 32588, "running": 2, "queued": 2, "pass": true},
+      "8": {"session": 29730, "running": 2, "queued": 6, "pass": true}
+    },
+    "linux_race": {
+      "2": {"session": 79068, "running": 2, "queued": 0, "pass": true},
+      "4": {"session": 41420, "running": 2, "queued": 2, "pass": true},
+      "8": {"session": 54140, "running": 2, "queued": 6, "pass": true}
+    },
+    "process_contract": "每个子进程独立打开MySQL/Redis、读取相同测试容量密钥、领取独立Worker lease并同时起跑",
+    "provider_requests": 0
+  },
+  "not_yet_verified": [
+    "生产bootstrap装配与真实配置轮换",
+    "RabbitMQ业务消费者进程",
+    "native_async Fake HTTP create/retrieve/content/delete",
+    "实际进程kill和Redis进程重启",
+    "测试服关闭态安装"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false
+}

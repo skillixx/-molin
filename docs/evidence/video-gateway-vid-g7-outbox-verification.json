@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "scope": "共享Outbox视频Repository；未完成业务MQ发布与消费接线",
+  "source_state_id": "719543d1fdce2222b33808dd312128745b3fc41d093b66b52cf7961523634efe",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "uncommitted_changes": true,
+  "source_server_execution_sha256": "00860598a79dd3d9f48f5a9b1f9fc6007cc53691c97177781497aae764be032f",
+  "source_server_before_after": "UNCHANGED",
+  "tests": {
+    "red": "缺少NewVideoOutboxRepository编译失败；session87721真实MySQL同秒重排接受旧MarkPublished",
+    "green": "session47002五项Windows/MySQL通过；session74291七项Linux race通过",
+    "runner": "infra/scripts/verify-video-gateway-vid-g7-outbox.ps1 -LinuxRace",
+    "mysql_image": "mysql@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b",
+    "go_image": "golang@sha256:908f8ff2ec296df2f349563072c7925775cd28b50361a52ed834a8a37399b9bf",
+    "migrations": "000001..000109全部up；不代表golang-migrate版本/dirty门禁",
+    "required_runs": 7,
+    "required_passes": 7,
+    "skip": 0,
+    "race": "PASS",
+    "results": [
+      {
+        "test": "TestVideoG5ReserveMySQLOutboxDispatcherOff",
+        "seconds": 0.21,
+        "status": "PASS"
+      },
+      {
+        "test": "TestVideoG7OutboxScopeMySQL",
+        "seconds": 0.17,
+        "status": "PASS"
+      },
+      {
+        "test": "TestVideoG7OutboxConcurrentClaimMySQL",
+        "seconds": 0.29,
+        "status": "PASS"
+      },
+      {
+        "test": "TestVideoG7OutboxSameSecondRequeueMySQL",
+        "seconds": 0.13,
+        "status": "PASS"
+      },
+      {
+        "test": "TestVideoG7OutboxAggregateOrderMySQL",
+        "seconds": 0.31,
+        "status": "PASS"
+      },
+      {
+        "test": "TestVideoG7OutboxRetryHighWaterMySQL",
+        "seconds": 0.19,
+        "status": "PASS"
+      },
+      {
+        "test": "TestVideoG7OutboxBatchTokensMySQL",
+        "seconds": 0.18,
+        "status": "PASS"
+      }
+    ],
+    "cleanup": "PASS",
+    "go_test_all": "PASS_DEFAULT_ENVIRONMENT_NOT_FULL_G7_INTEGRATION",
+    "go_vet_all": "PASS",
+    "go_mod_verify": "PASS",
+    "powershell_ast": "PASS",
+    "default_closed": "PASS_EXIT_3",
+    "sensitive_scan": {
+      "status": "PASS",
+      "files": 46,
+      "fail_categories": 0,
+      "review_categories": 0,
+      "info_categories": 8
+    },
+    "diff_check": "PASS"
+  },
+  "independent_slice_review": {
+    "agent": "/root/g7_outbox_safety_check",
+    "role": "测试工程师",
+    "mode": "READ_ONLY_STATIC_REVIEW",
+    "initial_p2": 2,
+    "remaining_specific_p0": 0,
+    "remaining_specific_p1": 0,
+    "remaining_specific_p2": 0,
+    "conclusion": "两组缺测已补齐并独立静态复核；运行结果由主代理实测，不是完整G7 QA签署"
+  },
+  "limitations": [
+    "Outbox业务投影、持久化处理器、RabbitMQ联合崩溃窗口及Provider任务计数待完成",
+    "Redis、MinIO、多Go实例、监控与回滚闭环待完成",
+    "默认环境全库Go测试不替代隔离Chat/Image完整集成回归",
+    "完整G7 QA/PM/Standards/Spec/DEV终审和CI未执行",
+    "快速重排/时钟回退可使高水位晚于墙钟，接管保守延后，回滚须保留兼容代码"
+  ],
+  "test_server_authorization": "NOT_GRANTED",
+  "test_server_writes": 0,
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false
+}

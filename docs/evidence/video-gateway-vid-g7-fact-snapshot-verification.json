@@ -1,0 +1,65 @@
+{
+  "target_goal": "VID-G7",
+  "captured_at": "2026-09-05T07:14:56Z",
+"source_state_id": "1ff1538481e5e6ca91b961028583a0128b5abb3e63a5453e6525b5e8b797c7c1",
+  "command": "$env:VIDEO_GATEWAY_G7_MYSQL_ISOLATED_APPROVED='YES'; .\\infra\\scripts\\verify-video-gateway-vid-g7-fact-snapshot.ps1",
+  "session": 13495,
+  "runner_sha256": "7f4884d0ded3eafe631c23da0d07db08bdab9cd4c9c166c74f8c91badc6cad16",
+  "snapshot_script_sha256": "92c235fce926f7261a367af4c1544bb1e4036f83a7a426d9f027156f69d2b6f5",
+  "source_scope_sha256": "684e1e2d0864d371d5b3c492bd7a1b16dc0244ee42947a8d58e3efb31eff8cc0",
+  "mysql_image_digest": "mysql@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b",
+  "go_image_digest": "golang@sha256:908f8ff2ec296df2f349563072c7925775cd28b50361a52ed834a8a37399b9bf",
+  "result": {
+    "required": 2,
+    "run": 2,
+    "pass": 2,
+    "skip": 0,
+    "exit_code": 0,
+    "cleanup": "PASS",
+    "host_ports": 0,
+    "seed_tests_per_group": 4,
+    "seed_test_groups": 2,
+    "representative_nonempty_fact_types": 13,
+    "operations": 2,
+    "malicious_manifest": "REJECTED",
+    "sensitivity_tamper": "DETECTED",
+    "single_repeatable_read_snapshot": true,
+    "low_sensitive_table_digest": true
+  },
+  "groups": [
+    {
+      "name": "restore",
+      "schema": 109,
+      "dump_restored_to_independent_schema": true,
+      "base_manifest_reused": true,
+      "digest_equal": true,
+      "binary_columns_restored_with_hex_blob": true,
+      "wallet_tamper_detected": true,
+      "status": "PASS",
+      "cleanup": "PASS"
+    },
+    {
+      "name": "expand_down",
+      "pre_schema": 109,
+      "expanded_schema": 122,
+      "base_manifest_reused_after_expand": true,
+      "pre_post_install_base_equal": true,
+      "expanded_post_rollback_equal": true,
+      "runtime_expand_fences_replayed": [116, 117],
+      "status": "PASS",
+      "cleanup": "PASS"
+    }
+  ],
+  "output_contract": {
+    "shape": "table_row_count_aggregate_sha256_only",
+    "empty_table_marker": true,
+    "raw_business_values_in_evidence": false
+  },
+  "boundaries": {
+    "test_server_writes": 0,
+    "real_provider_requests": 0,
+    "real_wallet_writes": 0,
+    "production_operations": 0
+  },
+  "decision": "LOCAL_FACT_SNAPSHOT_RUNNER_PASS"
+}

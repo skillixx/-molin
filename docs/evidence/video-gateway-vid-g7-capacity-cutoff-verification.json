@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "status": "LOCAL_VERIFIED_FOUNDATION_ONLY",
+  "base_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "source_state_id": "ccde90df1092ab25bfb0f94add5e20a0b75988814376e918203cdccca7a6c59e",
+  "source_server_sha256": "122638bc906730704446d69222f511789feeba590d40b7a16f4f61fa299e9901",
+  "claim_red": {"session": 57910, "observed": "recovering后ClaimRunning返回nil并推进", "exit_code": 2},
+  "gateway_red": {"operations": ["text_to_video", "image_to_video"], "gate_calls": 0, "provider_calls": 1, "result": "submitted"},
+  "governance_error_red": {"session": 98750, "observed": "recovering错误返回运行容量已满", "exit_code": 2},
+  "test_fixture_corrections": [
+    {"session": 92095, "issue": "G5底层夹具未装生产队列门", "production_defect": false},
+    {"session": 79344, "issue": "不可回退恢复门闩被两个顶层测试复用", "production_defect": false}
+  ],
+  "linux_cutoff": {"session": 65089, "source_server_sha256": "a7d67126e9e35a7602fcd4b90ae65ff171f616a7e0d4ffb02f67fffdff668fdf", "required": 1, "run": 1, "pass": 1, "skip": 0, "provider_calls": 0, "cleanup": "PASS"},
+  "linux_recovery_compatibility": {"session": 62926, "source_server_sha256": "122638bc906730704446d69222f511789feeba590d40b7a16f4f61fa299e9901", "required": 2, "run": 2, "pass": 2, "skip": 0, "recovery_elapsed_seconds": 61.82, "cleanup": "PASS"},
+  "linux_submission_compatibility": {"session": 28234, "source_server_sha256": "122638bc906730704446d69222f511789feeba590d40b7a16f4f61fa299e9901", "discovered_g5_submission": 13, "required": 22, "run": 22, "pass": 22, "skip": 0, "cleanup": "PASS"},
+  "default_go_checks": {"session": 28234, "go_test": "PASS", "go_vet": "PASS", "go_mod_verify": "PASS"},
+  "covered": [
+    "recovering后旧G6创建整笔回滚且无Request Task Hold",
+    "recovering后ClaimRunning保持queued",
+    "计划与原claim校验失败关闭",
+    "Claim提交后Begin仍在Provider紧前阻断",
+    "非deferDelivery投影路径Provider调用为0",
+    "恢复不是容量429",
+    "回执入口继续允许原调用收口",
+    "Task到guard锁序一致"
+  ],
+  "not_yet_verified": ["完整RR账本快照", "Redis staged快照", "MySQL ready审计", "Redis原子激活", "ready容量代次绑定", "2/4/8进程与Redis重启", "完整G7验收"],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false
+}

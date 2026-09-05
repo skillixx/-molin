@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "scope": "Outbox原事实到低敏任务消息投影；不包含真实发布与消费者接线",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "source_state_id": "541ebd65ecb7ebfac084198b1ad3155be5483128593956ed24e89c600436cb6b",
+  "uncommitted_changes": true,
+  "source_server_execution_sha256": "94fd2e3095c8e0a967a44653cfd4d945bca3c5e1cf1d51cb44603de4427d0113",
+  "tests": {
+    "runner": "infra/scripts/verify-video-gateway-vid-g7-outbox.ps1 -LinuxRace",
+    "session": 50944,
+    "source_before_after": "UNCHANGED",
+    "migration_up_count": 109,
+    "required": 17,
+    "run": 17,
+    "pass": 17,
+    "skip": 0,
+    "exit_code": 0,
+    "race": "PASS",
+    "cleanup": "PASS",
+    "projection_seconds": {
+      "basic": 3.86,
+      "lease": 0.16,
+      "fabricated_facts": 0.95,
+      "recovery_adjustment": 1.08,
+      "running": 0.66
+    },
+    "go_test_all": "PASS_DEFAULT_ENVIRONMENT_NOT_FULL_G7_INTEGRATION",
+    "go_vet_all": "PASS",
+    "go_mod_verify": "PASS",
+    "powershell_ast": "PASS",
+    "gofmt_checked_files": "PASS",
+    "diff_check": "PASS"
+  },
+  "historical_full_g5": {
+    "session": 75089,
+    "source_server_sha256": "7d175cb517b103202a077e7b5d37749b0fce4d514438d531a267f2f260c3ae8d",
+    "g5_tests": 99,
+    "g7_tests": 11,
+    "run": 110,
+    "pass": 110,
+    "skip": 0,
+    "cleanup": "PASS",
+    "applicability": "历史源码全量通过；未重绑当前源码，当前完整G7验收不可复用为PASS"
+  },
+  "red_green": [
+    {
+      "session": 16142,
+      "result": "dead_without_lease真实反例先红；当前非空高水位规则通过"
+    },
+    {
+      "session": 72770,
+      "result": "首轮投影/租约测试FAIL；独立审查确认Task/Request粗细状态错误直比"
+    },
+    {
+      "session": 4885,
+      "result": "伪造原业务依据事件被投影接受，反例先红"
+    },
+    {
+      "session": 50239,
+      "result": "亚秒夹具重领/后序领取前置失败，整轮FAIL，不作为投影拒绝通过"
+    },
+    {
+      "session": 94734,
+      "result": "修正Repository测试旧映射名后全库Go/vet/mod通过"
+    }
+  ],
+  "clock_probe": {
+    "target": "本Goal唯一临时MySQL，只读SELECT",
+    "input": "2026-09-03 00:00:00.900000",
+    "cast_datetime0": "2026-09-03 00:00:01",
+    "time_truncate_fractional": false,
+    "change": "只统一测试夹具UTC秒值，不修改生产领取规则"
+  },
+  "independent_review": {
+    "agent": "/root/g7_outbox_finance_audit",
+    "mode": "READ_ONLY_STATIC_SLICE",
+    "remaining_specific_p0": 0,
+    "remaining_specific_p1": 0,
+    "remaining_specific_p2": 0,
+    "scope_note": "静态复核不代替完整G7 QA/PM/Standards/Spec/DEV签署"
+  },
+  "limitations": [
+    "历史图片导入来源、媒体清理后输入投影独立运行证据待补",
+    "实际RabbitMQ发布、消息持久化处理器、联合崩溃/确认未知恢复待完成",
+    "Redis/MinIO、多Go实例、运行时、监控回滚、测试服及完整阶段验收待完成",
+    "当前17项不替代最新源码完整G5、Chat/Image及SDK兼容回归"
+  ],
+  "test_server_authorization": "NOT_GRANTED",
+  "test_server_writes": 0,
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false
+}

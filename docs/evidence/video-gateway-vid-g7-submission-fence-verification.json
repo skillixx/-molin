@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "scope": "正常与pending提交回执首次写入首尾Worker围栏，保持已接受回执只读重放",
+  "status": "PASS_LOCAL_SUBMISSION_FENCE_AND_COMBINED",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "source_state_id": "1f5333df65978f2d5422cf8b3a58053b310f60d22c9182b293d2e1a5cdc205c0",
+  "source_server_execution_sha256": "71253b87c6f290a6303922931ebb2c17ba90fdaba3fe46072be3dbf3fa16f991",
+  "uncommitted_changes": true,
+  "implementation": "复用CheckVideoWorkerLeaseTx；首次状态/身份写入前及接受事件/恢复检查后分别验证，不改变金额、HTTP/MQ字段或新增账本",
+  "tests": {
+    "red": {
+      "session": 15302,
+      "server_sha256": "aaee4922a73bb8fe30a4a112428ccc013bafa0ba602658efb49a2627131daa42",
+      "failed_cases": 4,
+      "reason": "T2V/I2V无证明或旧取消证明均绕过pending直接UPDATE，错误返回nil"
+    },
+    "first_green": {
+      "session": 92280,
+      "server_sha256": "81026532ca012f58297bc7bc9bcfe325548a4288e97525a49d0db84d379a9341",
+      "required": 14,
+      "run": 14,
+      "pass": 14,
+      "skip": 0,
+      "cleanup": "PASS"
+    },
+    "focused_race": {
+      "session": 5470,
+      "command": "verify-video-gateway-vid-g7-outbox.ps1 -Focus receipt -LinuxRace",
+      "migration_up_count": 110,
+      "legacy_g5_submission": 13,
+      "required": 15,
+      "run": 15,
+      "pass": 15,
+      "skip": 0,
+      "race": "PASS",
+      "exit_code": 0,
+      "source_before_after": "UNCHANGED",
+      "cleanup": "PASS",
+      "tail_expiry_seconds": 60.86
+    },
+    "combined": {
+      "session": 82352,
+      "status": "PASS",
+      "command": "verify-video-gateway-vid-g7-outbox.ps1 -Broker -LinuxRace",
+      "migration_up_count": 110,
+      "required": 31,
+      "run": 31,
+      "pass": 31,
+      "skip": 0,
+      "race": "PASS",
+      "exit_code": 0,
+      "source_before_after": "UNCHANGED",
+      "cleanup": "PASS",
+      "tail_expiry_seconds": 60.86,
+      "relay_seconds": 3.47
+    }
+  },
+  "assertions": [
+    "缺少/旧证明拒绝且Task/事件/八表不变",
+    "当前poll持有者保存同一次原回执，不回退pending",
+    "已接受同回执在释放后允许只读重放",
+    "事务外等待约28秒，写入接受事件后在5秒事务内跨实际Worker截止",
+    "尾部钩子一次、LeaseLost且非context超时",
+    "正常分支补偿原本不存在、pending分支原本存在，均完整保留",
+    "Task/事件/八表/Input/补偿整笔回滚",
+    "新代次可恢复同一原回执，Fake Submit始终一次"
+  ],
+  "toolchain": {
+    "session": 26103,
+    "go_test_all": "PASS_DEFAULT_ENV",
+    "go_vet": "PASS",
+    "go_mod_verify": "PASS",
+    "powershell_parse": "PASS",
+    "sensitive_scan": {
+      "files": 82,
+      "fail": 0,
+      "review": 0
+    }
+  },
+  "independent_review": {
+    "agent": "g7_outbox_finance_audit",
+    "mode": "只读切片审查，不是完整G7验收",
+    "result": "首尾检查与旧G5边界正确；补偿存在/不存在前提已按审查意见明确断言"
+  },
+  "remaining": [
+    "结算/释放/共享恢复写入的普通Worker围栏",
+    "外部IO围栏及业务消费者",
+    "native_async Fake HTTP、Redis/MinIO、多实例kill、监控与回滚",
+    "完整QA/PM/Standards/Spec/DEV及测试服独立授权"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false
+}

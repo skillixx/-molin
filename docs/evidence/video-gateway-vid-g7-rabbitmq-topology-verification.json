@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "receipt_status": "HISTORICAL_REPLACED_BY_COMBINED_PUBLISHER_RUN",
+  "superseded_by": "docs/evidence/video-gateway-vid-g7-rabbitmq-publisher-verification.json",
+  "scope": "消息编解码、RabbitMQ持久拓扑与真实Broker路由恢复；不是生产发布/消费闭环",
+  "source_state_id": "4203870b799d994e55c41173e48c6ab2844ff32e3865d2da03ed7122e481eee9",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "uncommitted_changes": true,
+  "tests": {
+    "unit_video_package": "PASS",
+    "go_test_all": "PASS_DEFAULT_ENVIRONMENT_NOT_FULL_G7_INTEGRATION",
+    "go_vet_video_package": "PASS",
+    "go_mod_verify": "PASS",
+    "linux_race": {
+      "command": "go test -race -count=1 -v ./internal/modules/token_gateway/video -run ^TestVideoG7(TaskMessage|TopologyNames)",
+      "image": "golang@sha256:908f8ff2ec296df2f349563072c7925775cd28b50361a52ed834a8a37399b9bf",
+      "status": "PASS",
+      "top_level_tests": 3,
+      "seconds": 1.053,
+      "network": "none"
+    },
+    "isolated_broker": {
+      "runner": "infra/scripts/verify-video-gateway-vid-g7-rabbitmq.ps1",
+      "test": "TestVideoG7RabbitTopologyIsolated",
+      "status": "PASS",
+      "seconds": 184.76,
+      "host_test_platform": "windows",
+      "image": "rabbitmq@sha256:606d8c0d6b3c18d1da9afc53bc7cdb2a8d5486df91b5a9830e9e07626c9ae281",
+      "vhost": "vid_g7",
+      "network": "temporary_dedicated_bridge",
+      "host_port_binding": "127.0.0.1_random_port",
+      "exchange_count": 3,
+      "queue_count": 18,
+      "stages": [
+        "submit",
+        "poll",
+        "fetch"
+      ],
+      "required_run": 1,
+      "required_pass": 1,
+      "skip": 0,
+      "cleanup": "PASS",
+      "assertions": [
+        "重复持久quorum拓扑声明",
+        "全部12条延迟队列存在",
+        "三阶段T2V/I2V共用路由",
+        "六条任务Nack进入对应死信",
+        "2秒TTL回原poll队列",
+        "目标解绑并恢复后原延迟消息不丢失"
+      ]
+    }
+  },
+  "failed_attempts_resolved": [
+    "internal网络没有可用宿主AMQP发布端口，改为独立bridge且仅loopback暴露",
+    "root诊断与服务cookie权限冲突，改rabbitmq用户check_running",
+    "TCP代理提前接受连接不是Rabbit应用就绪",
+    "45秒不足以覆盖内部默认3分钟死信重试；仅将故障恢复观察窗改210秒，正常延迟断言保持"
+  ],
+  "authority_sources": [
+    "https://www.rabbitmq.com/blog/2022/03/29/at-least-once-dead-lettering",
+    "https://www.rabbitmq.com/docs/next/confirms"
+  ],
+  "pending": [
+    "生产publisher confirm/mandatory结果协调",
+    "消费prefetch/ACK持久化/有界重试和DLQ恢复",
+    "G5 Outbox与任务账本接线",
+    "Redis多轴租约与hard cap",
+    "MinIO封存/清理/孤儿对账",
+    "完整G7多实例故障恢复和监控回滚",
+    "独立五轴终审",
+    "获批测试服安装及实际回滚",
+    "Git/Ready CI/合并"
+  ],
+  "test_server_authorization": "NOT_GRANTED",
+  "test_server_writes": 0,
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false
+}

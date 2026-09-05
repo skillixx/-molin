@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "scope": "原Task执行租约与追加事件、Task写入围栏；完整运行时尚未接线",
+  "status": "PASS_LOCAL_LEASE_AND_FINANCE_COMBINED",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "source_state_id": "41fbd2be2aa52c9f7eb04601a601e7e517507e438296f051ddb7f2c600c4dfc0",
+  "source_server_execution_sha256": "f98db1535f0a70554dd62908eecb312cacd04cde462bf398a675c880fc4a49ec",
+  "uncommitted_changes": true,
+  "migration": "000110_video_worker_leases",
+  "tdd_red": [
+    {
+      "session": 76344,
+      "case": "无证明Worker仍能推进Task"
+    },
+    {
+      "session": 31833,
+      "server_sha256": "7aa025e3b4c91447e9229c79d3ef825cfdbce7c5ba5d50bedf537fa0d194db80",
+      "cases": [
+        "SQL插入非零初态",
+        "同代次任意事件ID"
+      ]
+    },
+    {
+      "session": 23908,
+      "server_sha256": "c7582a8a8a64c90db01c5c013dd8e9a21417f000234db22cf4993958dc133e3d",
+      "case": "最大代次合法续期溢出"
+    }
+  ],
+  "historical_focused_green": {
+    "session": 5567,
+    "server_sha256": "5c3087652c55a9cf477c2a0d5792b9f96ea664dd627b7f49c56e11295f6e20b8",
+    "command": "verify-video-gateway-vid-g7-outbox.ps1 -Focus lease -LinuxRace",
+    "migration_count": 110,
+    "required": 7,
+    "run": 7,
+    "pass": 7,
+    "skip": 0,
+    "cleanup": "PASS",
+    "expiry_seconds": 30.32,
+    "boundary": "此后增加了极限DDL临时库身份绑定，该结果不重新绑定新源码"
+  },
+  "current_combined": {
+    "session": 99067,
+    "status": "PASS",
+    "command": "verify-video-gateway-vid-g7-outbox.ps1 -LinuxRace -Broker -FinanceRegression",
+    "discovered_g5": 99,
+    "migration_count": 110,
+    "broker": "REAL_TEMPORARY_RABBITMQ",
+    "required": 124,
+    "run": 124,
+    "pass": 124,
+    "skip": 0,
+    "race": "PASS",
+    "exit_code": 0,
+    "source_before_after": "UNCHANGED",
+    "cleanup": "PASS",
+    "expiry_seconds": 30.29,
+    "relay_seconds": 3.37
+  },
+  "toolchain": {
+    "session": 29221,
+    "go_test_all": "PASS_DEFAULT_ENV_NOT_FULL_INTEGRATION",
+    "go_vet": "PASS",
+    "go_mod_verify": "PASS",
+    "powershell_parse": "PASS",
+    "default_gate_cases": 3,
+    "sensitive_scan": {
+      "files": 76,
+      "fail": 0,
+      "review": 0
+    }
+  },
+  "independent_review": {
+    "agent": "g7_outbox_finance_audit",
+    "mode": "只读切片审查，不是完整G7验收",
+    "result": "已关闭两项SQL历史缺口、最大代次溢出及极限DDL目标绑定意见；未发现新的具体P0/P1/P2"
+  },
+  "limitations": [
+    "自动10秒心跳和业务消费者未接线",
+    "未验证真实进程kill恢复或锁等待跨期",
+    "归档围栏互斥及媒体/财务所有写入边界未完成",
+    "未完成Redis/MinIO和2/4/8实例",
+    "未演练migration重入/兼容down",
+    "全阶段QA/PM/Standards/Spec/DEV未通过"
+  ],
+  "test_server_authorization": "NOT_GRANTED",
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false
+}

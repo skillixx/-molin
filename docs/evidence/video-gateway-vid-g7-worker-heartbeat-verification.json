@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "scope": "10秒心跳执行器的真实租约续期、取消、panic及过期接管；尚未装配业务消费者",
+  "status": "PASS_LOCAL_HEARTBEAT_AND_OUTBOX_COMBINED",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "uncommitted_changes": true,
+  "source_state_id": "632bdb3b5bd5c7aec2f09b50155971f9feaac0906544f187e8030b5bf55520cf",
+  "source_server_execution_sha256": "e490668c7296a196b33e5662384ed4ef5f6b5ff76f063e1bc38395d23172f3d9",
+  "implementation": {
+    "file": "server/internal/modules/token_gateway/service/video_worker_heartbeat.go",
+    "heartbeat_seconds": 10,
+    "lease_seconds": 30,
+    "cleanup_seconds": 5,
+    "behavior": "先Claim再工作；续期失败取消工作，工作同步退出后stop/join心跳，再用独立context按原代次释放",
+    "limits": "不能强制停止忽略context的Go代码，外部IO及写入仍须围栏"
+  },
+  "tests": {
+    "tdd_red": "构造器及执行命令未实现时实际编译失败",
+    "fixture_failures": [
+      {
+        "session": 69723,
+        "server_sha256": "b612d10c5721779f86e2a3e730e5547d7b307195a458a9ca3a73e96ccdf1aef8",
+        "reason": "错误要求正常CAS后的Request执行轴不变"
+      },
+      {
+        "session": 45016,
+        "server_sha256": "213fedc8609f7598e121a37919a7166abef3f64173c68b91fb2a7fbebce27080",
+        "reason": "原快照省略空表键，误把空Usage当缺失"
+      }
+    ],
+    "positive_mysql": {
+      "session": 83930,
+      "server_sha256": "ed12d472c621b59276a8ba5379a16ebeb108cba8f364e8fab497b0c64ffb5b6b",
+      "pass": 1,
+      "skip": 0,
+      "seconds": 30.72,
+      "cleanup": "PASS"
+    },
+    "historical_race": {
+      "session": 11741,
+      "server_sha256": "9ec95b20f528ec97974f95463ab22081096decf7a76b1c35a6b36e18e2ae300c",
+      "required": 3,
+      "run": 3,
+      "pass": 3,
+      "skip": 0,
+      "durations_seconds": [
+        10.28,
+        30.59,
+        30.46
+      ],
+      "cleanup": "PASS",
+      "boundary": "之后补独立旧CAS结果与5秒期限，不重新绑定此结果"
+    },
+    "combined": {
+      "session": 50802,
+      "status": "PASS",
+      "command": "verify-video-gateway-vid-g7-outbox.ps1 -Broker -LinuxRace",
+      "migration_up_count": 110,
+      "required": 29,
+      "run": 29,
+      "pass": 29,
+      "skip": 0,
+      "race": "PASS",
+      "exit_code": 0,
+      "source_before_after": "UNCHANGED",
+      "cleanup": "PASS",
+      "heartbeat_seconds": [
+        10.21,
+        30.56,
+        30.43
+      ],
+      "lease_expiry_seconds": 30.3,
+      "relay_seconds": 3.58,
+      "independent_old_cas_result": "LeaseLost",
+      "old_cleanup_cannot_release_new_owner": "PASS"
+    }
+  },
+  "toolchain": {
+    "session": 52261,
+    "go_test_all": "PASS_DEFAULT_ENV",
+    "go_vet": "PASS",
+    "go_mod_verify": "PASS",
+    "gofmt": "PASS",
+    "powershell_parse": "PASS",
+    "sensitive_scan": {
+      "files": 80,
+      "fail": 0,
+      "review": 0
+    }
+  },
+  "independent_slice_review": {
+    "agent": "g7_outbox_finance_audit",
+    "mode": "只读测试/Spec复核，不是完整阶段QA",
+    "findings": "生产时序未发现具体P0/P1/P2；测试对照口径、独立旧CAS断言及期限意见已修正"
+  },
+  "next_required": [
+    "实际业务消费者接线",
+    "迟到Provider绑定和财务/恢复写入边界的Worker围栏",
+    "Provider/媒体IO围栏及native_async Fake HTTP任务计数",
+    "Redis、MinIO、多实例kill恢复、监控、三类回滚",
+    "完整QA/PM/Standards/Spec/DEV门禁及获批测试服关闭态验收"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false
+}

@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "scope": "Redis promoting、MySQL提交计划/容量epoch/发送权、running确认、Gateway紧前门与下一epoch恢复",
+  "status": "LOCAL_SINGLE_PROCESS_CAPACITY_EXECUTION_VERIFIED_MULTI_PROCESS_PENDING",
+  "base_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "source_server_sha256": "14f0d284f3419aa3eb0a9168e2518ae35f168bd7cb65342af4e94fdd32ff2436",
+  "migrations": [
+    "000114_video_submission_capacity_epoch.up.sql",
+    "000115_video_submission_send_permit.up.sql"
+  ],
+  "red": {
+    "provider_entry_session": 70631,
+    "provider_submit_entries": 88,
+    "provider_tasks_created": 1,
+    "result": "仅依赖Provider taskUUID去重会让高成本Submit入口重复执行"
+  },
+  "native": {
+    "capacity_execution": {"session": 70982, "pass": 1, "skip": 0, "seconds": 7.83},
+    "send_permit_crash": {"session": 1085, "pass": 1, "skip": 0, "seconds": 1.85},
+    "historical_plan": {"session": 65100, "pass": 1, "skip": 0, "seconds": 2.48},
+    "next_epoch_recovery": {"session": 65133, "pass": 1, "skip": 0, "seconds": 1.99}
+  },
+  "linux_race": {
+    "capacity_execution": {"session": 99976, "pass": 1, "skip": 0, "seconds": 4.34},
+    "send_permit_crash": {"session": 49954, "pass": 1, "skip": 0, "seconds": 0.89},
+    "historical_plan": {"session": 26367, "pass": 1, "skip": 0, "seconds": 1.16},
+    "next_epoch_recovery": {"session": 32515, "pass": 1, "skip": 0, "seconds": 0.95}
+  },
+  "migration_partial_recovery": {
+    "000114": "CHECK=1, Trigger=2",
+    "000115": "CHECK=1, Trigger=3",
+    "status": "PASS"
+  },
+  "covered": [
+    "T2V与I2V共用Provider hard cap=2",
+    "promoting到MySQL计划、容量epoch和三条唯一事件同事务",
+    "MySQL明确回滚或缺Worker proof后只退回queued",
+    "调用方取消后WithoutCancel查明并abort",
+    "非holding跨表财务事实拒绝且不获得running",
+    "MySQL COMMIT和Redis Confirm回执未知查明",
+    "冻结submission_claim_version与当前Task CAS版本分离",
+    "100并发Provider Submit入口=1且Provider任务=1",
+    "历史计划补epoch/发送权及COMMIT未知查明",
+    "缺容量事件的部分计划双侧零写拒绝",
+    "原提交epoch在下一恢复epoch保持不可变且以新nonce重建running",
+    "permit消费后Provider入口前崩溃只进入pending_reconcile并保留Hold和running容量"
+  ],
+  "independent_review": {
+    "initial_agents": ["g7_outbox_safety_check", "g7_outbox_finance_audit"],
+    "findings_fixed": [
+      "当前版本冒充原claim版本",
+      "缺计划/容量事件仍确认Redis",
+      "坏财务事实获得running",
+      "历史NULL epoch计划无法收敛",
+      "新容量epoch计划阻断下一轮快照",
+      "Submit入口重复88次",
+      "permit消费后崩溃窗口缺收口证据"
+    ],
+    "same_source_rereview": "PENDING_AGENT_CAPACITY",
+    "boundary": "不是完整VID-G7独立终审"
+  },
+  "not_yet_verified": [
+    "2/4/8独立Go进程竞争和同Secret加载",
+    "真实native_async Fake HTTP",
+    "RabbitMQ业务消费者与进程kill",
+    "终态容量释放的MySQL证明包装",
+    "MinIO、监控、三类回滚和测试服"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false
+}

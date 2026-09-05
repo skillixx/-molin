@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "source_state_id": "56c2d92c85ff94f802170aa4fbcc85a2503e7d762e16cac89a7c72f4945752ef",
+  "status": "COMPLETED_HISTORICAL_BASELINE_NOT_FULL_G7",
+  "uncommitted_changes": true,
+  "implemented": [
+    "四处财务校验改用有限运输四态结构，保留原金额/币种/operation/序号/全集/钱包验证",
+    "取回后增加精确AggregateID/EventType/EventID比较，避免CI排序规则身份绕过"
+  ],
+  "red_evidence": [
+    {
+      "session": 4538,
+      "source_server_sha256": "ecdf52fcc581c45c27a100ffdb738bbe9fb582c5b2ee756b513ec6b8ced10f32",
+      "result": "8种合法领取后首次终结/终态重放错误失败"
+    },
+    {
+      "session": 32401,
+      "source_server_sha256": "abc9d8d20c3d1d5a4bff9fd9c5fd95359d55da88438151e743d2684f51b0848e",
+      "result": "运输兼容正例及坏形状/金额/币种反例通过，三个大小写身份反例先红；整轮FAIL"
+    }
+  ],
+  "local_checks": {
+    "go_test_all": "PASS_DEFAULT_ENV_NOT_FULL_G7_INTEGRATION",
+    "go_vet_all": "PASS",
+    "go_mod_verify": "PASS",
+    "powershell_ast": "PASS",
+    "diff_check": "PASS"
+  },
+  "independent_review": {
+    "agent": "/root/g7_outbox_finance_audit",
+    "mode": "READ_ONLY_STATIC",
+    "financial_invariants": "未发现移除金额/归属/全集验证",
+    "pending": "dead缺租约已由后续反例及17项专项关闭，当前阶段仍未完整验收"
+  },
+  "next_actions": [
+    "继续实际发布和持久化任务处理器",
+    "当前源码完整G5/Chat/Image回归及完整G7门禁仍待最终验证"
+  ],
+  "test_server_authorization": "NOT_GRANTED",
+  "test_server_writes": 0,
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false,
+  "completed_run": {
+    "exec_session_id": 75089,
+    "runner": "infra/scripts/verify-video-gateway-vid-g7-outbox.ps1 -LinuxRace -FinanceRegression",
+    "mysql_container": "molin-vidg7-outbox-mysql-abf89c3f7afe",
+    "go_container": "molin-vidg7-outbox-go-abf89c3f7afe",
+    "network": "molin-vidg7-outbox-net-abf89c3f7afe",
+    "migrations": "109个up PASS",
+    "g5_required": 99,
+    "g7_required": 11,
+    "total_required": 110,
+    "status": "PASS",
+    "last_verified": "原session75089已退出0，全部110项通过，临时资源已回收",
+    "source_server_sha256": "7d175cb517b103202a077e7b5d37749b0fce4d514438d531a267f2f260c3ae8d",
+    "run": 110,
+    "pass": 110,
+    "skip": 0,
+    "cleanup": "PASS"
+  },
+  "superseded_by": "video-gateway-vid-g7-outbox-projection-verification.json"
+}

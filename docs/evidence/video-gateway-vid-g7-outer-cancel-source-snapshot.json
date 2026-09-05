@@ -1,0 +1,351 @@
+{
+  "schema_version": 1,
+  "status": "HISTORICAL_SOURCE_SNAPSHOT",
+  "purpose": "保留容量策略新增前75项manifest；内部RUNNING字段是当时快照，不表示现有会话仍在运行，最终135项PASS见outer-cancel-fence-verification.json。",
+  "snapshot": {
+    "schema_version": 1,
+    "target_goal": "VID-G7",
+    "status": "PARTIAL_OUTER_CANCEL_VERIFIED_PARENT_SUITE_RUNNING",
+    "base_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+    "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+    "uncommitted_changes": true,
+    "branch": "codex/video-gateway-vid-g7-infra-recovery",
+    "goal_sha256": "432619c7d9bdf5da4b59ab8c0e406dcf2306574c23851a5a0265a79e3e0f4948",
+    "source_state_id": "fc252ca524bb58d99a3633044c31664ec145f0f073e873192f7285eee1edf7e9",
+    "algorithm": "UTF8无BOM；BASE_COMMIT=<sha>加LF，再按PowerShell Sort-Object路径顺序拼接path|sha256加LF；文件按原始字节SHA256；docs/evidence排除以避免自引用",
+    "manifest_count": 75,
+    "manifest": [
+      {
+        "path": "docs/database-schema-design.md",
+        "sha256": "63a07b7073693689b9d9fe1a762fab06e333fc5d1d52032ec415f372037e77ce"
+      },
+      {
+        "path": "docs/full-api-design.md",
+        "sha256": "f66de592394804dfa6fbf4df26fd409b8b89af671eb8c4d8d4f21bd384c2ca6b"
+      },
+      {
+        "path": "docs/test-plan.md",
+        "sha256": "16a026b489f8e2679cd9c3324763c0d5ed163724782511ea85cf143abc8d137a"
+      },
+      {
+        "path": "docs/video-gateway-goal-stage-execution-prompt.md",
+        "sha256": "47417bb41462bc64feb47e9e084ee892f98cd2ead4b0bb75c2e28179520b1161"
+      },
+      {
+        "path": "docs/video-gateway-vid-g7-infra-recovery.md",
+        "sha256": "da80a6d274e451263e196a54daa928c050dfb9324bb726720557735c98496ee2"
+      },
+      {
+        "path": "docs/video-gateway-vid-g7-outbox-contract.md",
+        "sha256": "744d391364cf8aa132fa07d46a340ec2916b946c39ddb32c08854442e5270c65"
+      },
+      {
+        "path": "docs/video-gateway-vid-g7-outbox-financial-contract.md",
+        "sha256": "08c3ab4cfba3e649c2998c21fe4d69da47db05285b7a803417bcca4d7b13f09d"
+      },
+      {
+        "path": "docs/video-gateway-vid-g7-rabbitmq-contract.md",
+        "sha256": "4273a01ae8c0920ed410424534b70430f71f6ed34fe9673ad63b2ebb5baa916d"
+      },
+      {
+        "path": "docs/video-gateway-vid-g7-worker-lease-contract.md",
+        "sha256": "5a6a499b2d7fd15df20e5b22ed2be9c83f37e3c097bfd56abe8bc0f7f32c3a02"
+      },
+      {
+        "path": "infra/.env.example",
+        "sha256": "dc2005a8dc3d214d109e42c4853fb645d886a7c05dd7599bed610853f7f45367"
+      },
+      {
+        "path": "infra/scripts/verify-video-gateway-vid-g7-outbox.ps1",
+        "sha256": "530e585afce7f10cd5aac58235aae671329dffc4e5ce033744c107d877d546dd"
+      },
+      {
+        "path": "infra/scripts/verify-video-gateway-vid-g7-rabbitmq.ps1",
+        "sha256": "1f617cff816e6a2f30e80afb37cd36ee6b55ed6c41ade1309750de0d754c94b4"
+      },
+      {
+        "path": "README.md",
+        "sha256": "96d6ad437d0d4e1387f37e1daf74f3477f0b3a3d0fb083a26e0498566c2e7599"
+      },
+      {
+        "path": "server/internal/bootstrap/app.go",
+        "sha256": "6ff13a1234161154a5401034e76383b0b3b8d0580482855ff4a794c78ddfe99f"
+      },
+      {
+        "path": "server/internal/bootstrap/video_config_test.go",
+        "sha256": "c3a4fe5193d55558b47fc7a0d83b97577f0e114c32d52efc874f3ec33f85fe39"
+      },
+      {
+        "path": "server/internal/config/config.go",
+        "sha256": "e1e53bbf4b58a2b3af29b72faebc288a183bea95f5f9009bb15ed2a750764652"
+      },
+      {
+        "path": "server/internal/config/video_gateway_linux_test.go",
+        "sha256": "0d8f3833855fb356031f818e92be1d5951955e4606bf0f443bcd1f1fe9c2b668"
+      },
+      {
+        "path": "server/internal/config/video_gateway_test.go",
+        "sha256": "2e1f84ee2cabafafe0ab4838165d55ec067b0a70cfb117282c5ca05bd7fee0cd"
+      },
+      {
+        "path": "server/internal/config/video_gateway.go",
+        "sha256": "2604de92669009879be3552ef38e1bfb5ba6ca0753dc95c048fa799f79504d36"
+      },
+      {
+        "path": "server/internal/config/videosecrets/files_linux_test.go",
+        "sha256": "67c580d0c532eab7c1ed25eb0d7c3e9e046113bbbe8dc21bba5e583c550c4d99"
+      },
+      {
+        "path": "server/internal/config/videosecrets/files_linux.go",
+        "sha256": "1b59f3c03f7ab4f9f1ffb75047b6daeabd4bdc0ebcc78e5b869300b6a739cd12"
+      },
+      {
+        "path": "server/internal/config/videosecrets/files_other_test.go",
+        "sha256": "d7db143d62f4c83ffa175f81da7b5e192fbbe2385c0753bdb88f9e44169a8ec7"
+      },
+      {
+        "path": "server/internal/config/videosecrets/files_other.go",
+        "sha256": "b192bcf5ba6d910a4ad8ca8297bdf269a89e4f0f402f53560bd54c295f775fe2"
+      },
+      {
+        "path": "server/internal/config/videosecrets/files_test.go",
+        "sha256": "5572572767e202eacf560b1d96b6ec4a3d8a8331748326e1d14855702474427b"
+      },
+      {
+        "path": "server/internal/config/videosecrets/files.go",
+        "sha256": "aed43e2dae7826664735a2641836fa662df3b6e40fdf293327d64bab47a93f69"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/repository/g3_outbox_repository.go",
+        "sha256": "1be4b391a1a1d05dfd0e516e6116331edaa053ed24ea9a1c968bd5d5d91ad9cc"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/repository/video_asset_event_payload_repository.go",
+        "sha256": "e060999b0f61566b29e9123996ffc1a997565fa4a40c7bebf79a18379b3b881e"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/repository/video_callback_repository.go",
+        "sha256": "f8b84b8be98e4b1a8b4808fb398497d543679a6480bef9711560f48ed2682348"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/repository/video_repository_mysql_test.go",
+        "sha256": "bc2e8ba4e31bf5ceae804ed3562797623198376f76b77e9e0a53f3d09ec0c536"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/repository/video_task_repository.go",
+        "sha256": "31df924f7f53118edefd12cd3c21f5df023cd7245f5fc922138d92546275c6c3"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/repository/video_worker_context_test.go",
+        "sha256": "c8794060d2d597047112eaa1c990cb16ea61695e389215b167e57546fc854f29"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/repository/video_worker_lease.go",
+        "sha256": "a9ab703cda900d579acafad22a084cacb71507e2b6ce337e023f7a8557c72979"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_adjustment_reconciliation.go",
+        "sha256": "2d51b33154cf90a565ce8754d78f6698c9c0ea7a31b5d1e384680aa7459b58b6"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_admin_cancel.go",
+        "sha256": "9846c4159a4ad805fc334153aeb5e8447b68ef1f94454bf3c4297e9fa8894f2d"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_billing_cancel.go",
+        "sha256": "f6a428c0d8f0302e01b5d4507026b858e45e0992b915901d5f46a03370987133"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_billing_release.go",
+        "sha256": "54b22ffd305ea70a241bfca80e57614d7a657581185f6ce5107e7c843c94d8a3"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_billing_settle.go",
+        "sha256": "bdc2131ce73f6a594a42c5cf45e3b1f24e4f4b0e4b0b51255bc12f7d7f175de9"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_compensation_worker.go",
+        "sha256": "9d5e56d8371b8d33212a6e3d5f5754c40d1912775fb73708349f1aae45d84488"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_execution_reconcile.go",
+        "sha256": "d5bb0f4cc8a1a50ade4c7c53fad98e622252cadf6e1f1c4d7cb89a060386d9b1"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_i2v_contract_mysql_test.go",
+        "sha256": "e63f602dfa3e56bb78a4c1b2f47b497b2b4fd290493b429738fdc6f2a3fee510"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_outbox_financial_mysql_test.go",
+        "sha256": "244608ff5bd54cbbf6e1a4eefcd5164b326083b27549e11a403decedb65e3921"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_outbox_integrity_mysql_test.go",
+        "sha256": "08976ca739f9c0befe6b4cce76089b59b522f6cdd9bee5f047c8792870690ed4"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_outbox_projection_facts_mysql_test.go",
+        "sha256": "a91cb8c29a11926dafd6bdc6429861bf4773dc74a95109732e1c85e5942d5a61"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_outbox_projection_mysql_test.go",
+        "sha256": "6ab8cbcf012f2bbf397d2e56ddbeb60959032b549b709dd7c308518fa53dcba2"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_outbox_projection.go",
+        "sha256": "8d021c119a7be9ed4f64c0c0a81ee96c4603c4e6497b1f2f2f7c305f82a71b78"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_outbox_publisher_test.go",
+        "sha256": "33700d7c3b1022a366eb6d13cc5969cd88e3edb510e34e082ba7dd22f0eb308e"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_outbox_publisher.go",
+        "sha256": "5711794aef84cfbe1d6ffbb6bb2a9fb4c89d9a0534fb84df510beee0457c773f"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_outbox_relay_integration_test.go",
+        "sha256": "fe300640ea75345f1747a9c3457db61e47c4f3623b788e2ee64ff08ade411971"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_outbox_repository_mysql_test.go",
+        "sha256": "4d8639f8af2f8a00fea764f424a741206649bd0216f608b5b0304f5cee1fef74"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_outbox_state.go",
+        "sha256": "fb1e3c7bce4950bc85d56335301a41ce990ad9e8627bd81c67f464224dbe6832"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_submission_receipt.go",
+        "sha256": "549dbc8bad42423d5f92120f468d34229ffca4e6f4a2415398e36c17bb264697"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_submission_worker_fence_mysql_test.go",
+        "sha256": "2f0f6b82c6ad3c0deb780d4e83de5d868d150ab4e0fecf0871c0a205c69f19ee"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_task_cancel_service.go",
+        "sha256": "314816897b7e7817040a5f8f02113a3838ce1638304cf4b83e13e2fabba2a3aa"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_worker_cancel_fence_mysql_test.go",
+        "sha256": "ab8708ad6a9cfbe23356cde3333542d53c64a39d208dc84d3f045ccd1f4114f8"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_worker_cancel_outer_mysql_test.go",
+        "sha256": "7141464d1082aedc77b6772edf77cf72a5f89acf1758960e83aec9ecc84851fe"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_worker_financial_fence_mysql_test.go",
+        "sha256": "857d0ed3aa0ec71a47afe4e875983ab63c0177781ef26a65f43bc8843767250e"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_worker_financial_tail_mysql_test.go",
+        "sha256": "6bbbd3ebb2ad781bd44a781e46687dfdb9f3a12e6df70eb0f615e8b70485cde7"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_worker_heartbeat_failure_mysql_test.go",
+        "sha256": "4d12e4ca3ff531295d1d534d7380b0da73c2e15e20f2c14a15b0df3375335946"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_worker_heartbeat_mysql_test.go",
+        "sha256": "b46975d501943d782edc417cb1ce317de164c3e6310e8925d098f85cb8ea3168"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_worker_heartbeat.go",
+        "sha256": "b1f17722ce822fe7fbd0fd6d21d098a5b5380be5a4867265437acb1a9329758e"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_worker_lease_failure_mysql_test.go",
+        "sha256": "968bbfca42d964910ae59200105ad6695b453b91c7575cce3c4d064bbd514071"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_worker_lease_mysql_test.go",
+        "sha256": "7b7bdbc3238c28b823b54f74a33f65ea6cafeee778151aa04929fc9840962c97"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/service/video_worker_lease_sql_mysql_test.go",
+        "sha256": "0603c4a98f8da429e375dd39c8997d29e1e9e00dd8a9be1ae40053ed9f1e5636"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/video/rabbitmq_consumer_integration_test.go",
+        "sha256": "12921f18de16d79705e20868d3279c5c5e4c334c7b69358a74a6ea511da52599"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/video/rabbitmq_consumer_test.go",
+        "sha256": "9f9ba40c8b12b8864a191520a4db16b4f920c94436fcbe5fb896d25165ebf551"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/video/rabbitmq_consumer.go",
+        "sha256": "a344d67dc8aa0ae5176643a78239b0e79038133c36176d8cb8da366251130f3d"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/video/rabbitmq_publisher_integration_test.go",
+        "sha256": "4aff6fdc918f5f4ff801a63d9a1fba055934f3fa2236415c586847ad8973e74d"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/video/rabbitmq_publisher_test.go",
+        "sha256": "cb279cd35a90599e36d85f5598289b1c1996b49c0bc02a216e01714465e92ef7"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/video/rabbitmq_publisher.go",
+        "sha256": "b4e78ea4a1927bd368647728ebedec77f55a17f594aae9a3f71101df86f0ec91"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/video/rabbitmq_topology_integration_test.go",
+        "sha256": "ce04c6a2965864294cabfb218c909e19568d173a30a17075248bc637e2c2f397"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/video/rabbitmq_topology.go",
+        "sha256": "781f1d5efcdc94e34d21eb0ed28e15985c1ad2077821bf02ced370ddf9a4d4de"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/video/task_message_test.go",
+        "sha256": "ba20228cc74a42f66bdd7af2769ebe260b958171662e69f84d9c806123c8fe90"
+      },
+      {
+        "path": "server/internal/modules/token_gateway/video/task_message.go",
+        "sha256": "16094f39d3a5c2a4913539cf8de42b89b8da442556f576e840f9a87821a42fac"
+      },
+      {
+        "path": "server/migrations/000110_video_worker_leases.down.sql",
+        "sha256": "b5ee5e9304f8897339f18f3ba28600e0f6853d2bbe3640d7fc50062a184cbdc5"
+      },
+      {
+        "path": "server/migrations/000110_video_worker_leases.up.sql",
+        "sha256": "3f41f6c55ce4056eb187c16f3c6c5237acbd45887c2a493b5c5211b817809bda"
+      }
+    ],
+    "g6_entry_gate": "PASS",
+    "requirements_matrix": "docs/video-gateway-vid-g7-infra-recovery.md",
+    "local_integration": "OUTER_CANCEL_RACE_PASS_PARENT_134_RUNNING",
+    "test_server_authorization": "NOT_GRANTED",
+    "test_server_writes": 0,
+    "g7_acceptance": "INCOMPLETE",
+    "vid_g8_started": false,
+    "previous_source_state_id": "60ec10b426cbb45d8e5a22a22159edc87afefd7ac80253fea5bbc8e9c6bea296",
+    "previous_snapshot_status": "OUTER_CANCEL_WIP_NOW_CHILD_VERIFIED",
+    "configuration_tests": "PASS",
+    "secret_loader_tests": "PASS_LINUX",
+    "rabbitmq_topology_tests": "PASS",
+    "rabbitmq_publisher_tests": "PASS",
+    "rabbitmq_consumer_tests": "PASS",
+    "outbox_repository_tests": "STALE_PENDING_CURRENT_COMBINED",
+    "latest_evidence": "docs/evidence/video-gateway-vid-g7-outer-cancel-fence-verification.json",
+    "historical_evidence_boundary": "session83706同server源码135项中134项通过、外层创建夹具容量失败；session58972已将外层四例放入独立库并通过Linux race及清理，父级134项仍在运行。只有最外层exit0和groups2/required135才能报告整组通过。",
+    "outbox_financial_tests": "STALE_PENDING_CURRENT_COMBINED",
+    "outbox_projection_tests": "STALE_PENDING_CURRENT_COMBINED",
+    "outbox_relay_tests": "STALE_PENDING_CURRENT_COMBINED",
+    "worker_lease_tests": "STALE_PENDING_CURRENT_COMBINED",
+    "worker_heartbeat_tests": "STALE_PENDING_CURRENT_COMBINED",
+    "submission_fence_tests": "STALE_PENDING_CURRENT_COMBINED",
+    "worker_financial_tests": "STALE_PENDING_CURRENT_COMBINED",
+    "worker_cancel_tests": "PASS_BASE_AND_G6_BEFORE_SUBMIT_OUTER_NOT_ALL_CANCEL_STATES",
+    "source_server_execution_sha256": "f6372389e5c22bb075e1155ac8eeb2219832930d9e4d3fd6ea33738516ddb80e",
+    "active_verification": {
+      "session": 58972,
+      "phase": "PARENT_134_TESTS_RUNNING",
+      "instruction": "先用原会话核验，不按子组PASS判完整通过，不因无输出重启"
+    }
+  }
+}

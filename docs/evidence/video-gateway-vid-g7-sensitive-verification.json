@@ -1,0 +1,14 @@
+{
+  "target_goal": "VID-G7",
+  "captured_at": "2026-09-05T07:16:00Z",
+"source_state_id": "1ff1538481e5e6ca91b961028583a0128b5abb3e63a5453e6525b5e8b797c7c1",
+  "manifest_count": 222,
+  "candidate_count": 268,
+  "evidence_and_current_change_files": 46,
+  "scanned_text_files": 268,
+  "skipped_binary_files": 0,
+  "finding_count": 0,
+  "findings": [],
+  "status": "PASS",
+  "evidence_boundary": "SOURCE_STATE清单逐文件验hash；证据目录不参与SOURCE_STATE自引用，但全部当前变更仍进入泄漏扫描"
+}
