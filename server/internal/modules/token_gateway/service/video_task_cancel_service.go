@@ -73,6 +73,10 @@ func (s *VideoHTTPService) CancelTask(ctx context.Context, caller VideoCaller, i
 					return ErrVideoCancelConflict
 				}
 			} else {
+				// 新命令可能写入意图或退款；原控制面授权之外，仅携带Worker证明时附加执行围栏。
+				if err := repository.CheckVideoWorkerContextLeaseTx(ctx, tx, task); err != nil {
+					return err
+				}
 				initial, err := videoCancellationAction(task)
 				if err != nil {
 					return err
@@ -139,6 +143,12 @@ func (s *VideoHTTPService) CancelTask(ctx context.Context, caller VideoCaller, i
 			}
 			if err := s.access.AuthorizeTx(ctx, tx, owner, task.LogicalModelCode, time.Now().UTC(), *task.Operation); err != nil {
 				return err
+			}
+			// 内层退款返回后仍有详情与准入读取，必须在最外层事务结束前复核；只读重放不新增执行权要求。
+			if !replayed {
+				if err := repository.CheckVideoWorkerContextLeaseTx(ctx, tx, task); err != nil {
+					return err
+				}
 			}
 			reply = &VideoCancellationReply{VideoTaskDetails: detail, CancelRequestedAt: task.CancelRequestedAt, CancellationResult: result, Idempotent: replayed}
 			return nil

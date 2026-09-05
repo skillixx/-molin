@@ -1,0 +1,16 @@
+{
+  "target_goal": "VID-G7",
+  "role": "independent_product_manager",
+"reviewed_source_state": "e041a6d768afc85a5684ae9c46713ea26fac1813462f03faab62a27b3737dea0",
+  "read_only": true,
+  "confirmation": "PASS",
+  "p0": 0,
+  "p1": 0,
+  "p2": 0,
+  "scope_control": "PASS",
+  "local_engineering_boundary": "PASS",
+  "external_gate": "TEST_SERVER_AUTHORIZATION_NOT_GRANTED",
+  "g7_acceptance": "INCOMPLETE",
+  "next_goal_allowed": false,
+  "vid_g8_started": false
+}

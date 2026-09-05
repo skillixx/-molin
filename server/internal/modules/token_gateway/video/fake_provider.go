@@ -29,6 +29,7 @@ const (
 )
 
 var lowerHexSHA256 = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var providerTaskUUIDPattern = regexp.MustCompile(`^taskUUID-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
 type fakeProviderTask struct {
 	request SubmitRequest
@@ -66,8 +67,11 @@ func (a *FakeAsyncVideoAdapter) Submit(ctx context.Context, request SubmitReques
 		return a.tasks[taskID].result, ErrDuplicateSubmitForbidden
 	}
 	a.submitCalls++
-	digest := sha256.Sum256([]byte(request.RequestID))
-	taskID := "taskUUID-" + hex.EncodeToString(digest[:12])
+	taskID := request.ProviderTaskID
+	if taskID == "" {
+		digest := sha256.Sum256([]byte(request.RequestID))
+		taskID = "taskUUID-" + hex.EncodeToString(digest[:12])
+	}
 	result := SubmitResult{RequestID: request.RequestID, ProviderCode: a.Name(), ProviderTaskID: taskID, Status: ProviderTaskQueued}
 	task := &fakeProviderTask{request: request, result: result, status: ProviderTaskQueued, content: buildFakeMP4Fixture(request.Spec)}
 	a.tasks[taskID] = task
@@ -203,6 +207,9 @@ func (a *FakeAsyncVideoAdapter) SubmitCalls() int {
 
 func validateSubmitRequest(request SubmitRequest) error {
 	if strings.TrimSpace(request.RequestID) == "" || strings.TrimSpace(request.Prompt) == "" || request.Spec.Width == 0 || request.Spec.Height == 0 || request.Spec.DurationSeconds == 0 || request.Spec.FrameRate == 0 {
+		return ErrVideoRequestInvalid
+	}
+	if request.ProviderTaskID != "" && !providerTaskUUIDPattern.MatchString(request.ProviderTaskID) {
 		return ErrVideoRequestInvalid
 	}
 	switch request.Operation {

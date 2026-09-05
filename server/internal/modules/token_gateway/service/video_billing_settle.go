@@ -20,7 +20,7 @@ import (
 // 财务事务不会把资产改为available；交付必须由后续独立门禁处理。
 func (s *VideoBillingService) SettleReady(ctx context.Context, taskID string, owner repository.VideoOwner) (*VideoFinancialResult, error) {
 	result, err := s.settleReady(ctx, taskID, owner, nil)
-	if err != nil && s != nil && s.db != nil && !errors.Is(err, repository.ErrVideoCompensationBusy) && !errors.Is(err, repository.ErrVideoCompensationLeaseLost) {
+	if err != nil && s != nil && s.db != nil && !errors.Is(err, repository.ErrVideoCompensationBusy) && !errors.Is(err, repository.ErrVideoCompensationLeaseLost) && !errors.Is(err, repository.ErrVideoWorkerLeaseLost) {
 		// 客户端断连不能丢掉财务恢复标记；只给已回滚的数据库补记最多5秒，不做任何Provider操作。
 		markCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer cancel()
@@ -77,6 +77,13 @@ func (s *VideoBillingService) settleReady(ctx context.Context, taskID string, ow
 			existing := r.BillingStatus == model.AIBillingSettled
 			if !existing && (r.BillingStatus != model.AIBillingHeld && r.BillingStatus != model.AIBillingSettlementPending) {
 				return ErrVideoBillingState
+			}
+			// 普通首次结算须持有当前执行证明；已结算重放不写资金，不要求重新认领。
+			// 非nil补偿租约已由上方同请求CheckLeaseTx验证，保留G5独立恢复授权，不能仅凭参数豁免。
+			if !existing && lease == nil {
+				if err := repository.CheckVideoWorkerLeaseTx(ctx, tx, task); err != nil {
+					return err
+				}
 			}
 			media, err := loadVideoSettlementMediaTx(tx, task, !existing, s.now().UTC())
 			if err != nil {
@@ -198,6 +205,9 @@ func (s *VideoBillingService) settleReady(ctx context.Context, taskID string, ow
 				if _, err := comp.CheckLeaseTx(tx, *lease); err != nil {
 					return err
 				}
+			} else if err := repository.CheckVideoWorkerLeaseTx(ctx, tx, task); err != nil {
+				// 钱包、Usage、Outbox及输入释放均在同一事务，执行租约跨期时必须全部撤销。
+				return err
 			}
 			output = videoSettledResult(task, *final, price, false)
 			return nil
@@ -210,8 +220,20 @@ func (s *VideoBillingService) settleReady(ctx context.Context, taskID string, ow
 }
 
 func loadVideoSettlementMediaTx(tx *gorm.DB, task *repository.VideoTaskRecord, requireReady bool, now time.Time) (*model.AIImageAsset, error) {
+	return loadVideoSettlementMedia(tx, task, requireReady, now, true)
+}
+
+func loadVideoSettlementMediaSnapshotTx(tx *gorm.DB, task *repository.VideoTaskRecord, now time.Time) (*model.AIImageAsset, error) {
+	return loadVideoSettlementMedia(tx, task, false, now, false)
+}
+
+func loadVideoSettlementMedia(tx *gorm.DB, task *repository.VideoTaskRecord, requireReady bool, now time.Time, lockAssets bool) (*model.AIImageAsset, error) {
 	var assets []model.AIImageAsset
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("request_id=?", task.RequestID).Order("id ASC").Find(&assets).Error; err != nil {
+	query := tx.Where("request_id=?", task.RequestID).Order("id ASC")
+	if lockAssets {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	if err := query.Find(&assets).Error; err != nil {
 		return nil, err
 	}
 	if len(assets) != 6 {
@@ -307,8 +329,20 @@ func loadVideoConfirmedOutcomeCostTx(tx *gorm.DB, task *repository.VideoTaskReco
 }
 
 func validateVideoSettledFinanceTx(tx *gorm.DB, task *repository.VideoTaskRecord, r model.VideoBillingRequest, link model.AIRequestWalletLink, hold billingmodel.WalletHold, price *VideoSettlement) error {
-	if err := validateVideoAdjustmentsTx(tx, task); err != nil {
-		return err
+	return validateVideoSettledFinance(tx, task, r, link, hold, price, false)
+}
+
+func validateVideoSettledFinanceSnapshotTx(tx *gorm.DB, task *repository.VideoTaskRecord, r model.VideoBillingRequest, link model.AIRequestWalletLink, hold billingmodel.WalletHold, price *VideoSettlement) error {
+	return validateVideoSettledFinance(tx, task, r, link, hold, price, true)
+}
+
+func validateVideoSettledFinance(tx *gorm.DB, task *repository.VideoTaskRecord, r model.VideoBillingRequest, link model.AIRequestWalletLink, hold billingmodel.WalletHold, price *VideoSettlement, readOnly bool) error {
+	adjustmentErr := validateVideoAdjustmentsTx(tx, task)
+	if readOnly {
+		adjustmentErr = validateVideoAdjustmentsSnapshotTx(tx, task)
+	}
+	if adjustmentErr != nil {
+		return adjustmentErr
 	}
 	if r.BillingStatus != model.AIBillingSettled || r.SettledAmount == nil || !r.SettledAmount.Equal(price.SettledAmount) || hold.Status != billingmodel.HoldStatusSettled || hold.SettledAmount == nil || !hold.SettledAmount.Equal(price.SettledAmount) || link.SettledAmount == nil || !link.SettledAmount.Equal(price.SettledAmount) || link.SettleTransactionID == nil || link.ReleaseTransactionID == nil || hold.SettleTxnID == nil || *hold.SettleTxnID != *link.SettleTransactionID {
 		return ErrVideoBillingState
@@ -358,7 +392,7 @@ func validateVideoSettledFinanceTx(tx *gorm.DB, task *repository.VideoTaskRecord
 		return err
 	}
 	expected := map[string]string{"video_billing_held": model.AIBillingHeld, "video_billing_settled": model.AIBillingSettled}
-	if r.DeliveryStatus == model.AIDeliveryAvailable {
+	if r.DeliveryStatus == model.AIDeliveryAvailable || (readOnly && r.DeliveryStatus == model.AIDeliveryExpired) {
 		expected["video_delivery_available"] = model.AIDeliveryAvailable
 	}
 	// 有补偿记录时必须同时存在最初pending与required事实，不能靠忽略额外事件通过重放。
@@ -379,7 +413,7 @@ func validateVideoSettledFinanceTx(tx *gorm.DB, task *repository.VideoTaskRecord
 	}
 	for _, event := range events {
 		status, ok := expected[event.EventType]
-		if !ok || event.AggregateType != "video_request" || event.EventID != "vg5_"+videoBillingDigest(task.RequestID+":"+event.EventType) || event.Status != model.AIOutboxPending || event.LockedAt != nil {
+		if !ok || event.AggregateType != "video_request" || event.AggregateID != task.RequestID || event.EventID != "vg5_"+videoBillingDigest(task.RequestID+":"+event.EventType) || !validVideoOutboxTransportState(event) {
 			return ErrVideoBillingState
 		}
 		amount := price.SettledAmount

@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "status": "LOCAL_VERIFIED_FOUNDATION_ONLY",
+  "base_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "uncommitted_changes": true,
+  "source_server_sha256": "8285b73ad8675cf9ecdca742028fbe8361ffe0149e9f400d09df576e6cea2495",
+  "red_missing_api": {
+    "session": 30341,
+    "exit_code": 1,
+    "observed": "尚未提供持久提交计划服务；公开接口RED，无数据库或Provider请求"
+  },
+  "historical_short_id_native": {
+    "session": 69481,
+    "source_server_sha256": "80edd549b24ee034afabe3bae117be856a81415b0fb18bee9f4d76074cdbc5b1",
+    "plan_top_level_pass": 1,
+    "plan_operations": 2,
+    "boundary_top_level_pass": 1,
+    "databases": 2,
+    "skip": 0,
+    "exit_code": 0,
+    "cleanup": "PASS"
+  },
+  "red_long_request_id": {
+    "session": 75438,
+    "source_server_sha256": "3c0b90cebd6516850127f14faaaa4979413f5a161ccb274ab4309e1d7c181313",
+    "request_id_lengths": [
+      65,
+      128
+    ],
+    "mysql_error": 1406,
+    "column": "submission_intent_id",
+    "top_level_run": 1,
+    "top_level_pass": 0,
+    "exit_code": 2
+  },
+  "active_verification": null,
+  "independent_engineering": {
+    "agent": "g7_outbox_safety_check",
+    "read_only": true,
+    "scope": "计划元数据及SQL边界，不是完整DEV/Standards/Spec验收",
+    "finding": "RequestID长度缺口；计划与容量许可必须分离",
+    "reviewed_source_server_sha256": "8285b73ad8675cf9ecdca742028fbe8361ffe0149e9f400d09df576e6cea2495",
+    "result": "PASS_BOUNDED"
+  },
+  "runner_review": {
+    "agent": "g7_outbox_finance_audit",
+    "read_only": true,
+    "scope": "精确分组不虚计AuditTypes",
+    "status": "FIXED_STATIC_VERIFIED",
+    "full_finance_combination": "NOT_RUN_CURRENT"
+  },
+  "covered_by_current_plan_test": [
+    "T2V/I2V真实预占与提交claim",
+    "65/128字符RequestID",
+    "无Worker证明拒绝零写",
+    "事件写入后故障整笔回滚",
+    "原Task与唯一计划事件",
+    "同计划只读重放和异claim/Provider拒绝",
+    "计划字段JSON隐藏",
+    "输入与原资金事实不变",
+    "原claim校验与回执继续绑定",
+    "I2V待对账迟到回执不回退"
+  ],
+  "not_yet_verified": [
+    "完整账本快照",
+    "ready/promoting/容量代次绑定",
+    "Redis重启与2/4/8进程",
+    "Provider RPC及实际ACK丢失恢复",
+    "MinIO/监控/回滚与完整G7阶段验收"
+  ],
+  "provider_rpc_wired": false,
+  "capacity_epoch_binding": "NULL_ONLY_NO_EXECUTION_AUTHORITY",
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false,
+  "source_state_id": "a99545dfcd77f0ce3aa4d97b06d890637aa0ec5f646e79896d58db658a10cc95",
+  "receipt_fixture_failure": {
+    "session": 2989,
+    "source_server_sha256": "5224d67306fb52c0b507977bcdd6059db1ca0de9843c39d71f8b81439f38b72b",
+    "exit_code": 2,
+    "root_cause": "T2V回执夹具错误使用plan_前缀；原Repository只允许taskUUID-，已修夹具不改生产规则",
+    "boundary_group": "NOT_STARTED"
+  },
+  "linux_plan": {
+    "session": 34808,
+    "top_level_run": 1,
+    "top_level_pass": 1,
+    "operations": 2,
+    "skip": 0,
+    "elapsed_seconds": 1.35,
+    "cleanup": "PASS",
+    "source_server_sha256": "d9362d78b644cad09ece8661e6448d6027c02f8e9bde98ed939c9f1499f9feec"
+  },
+  "default_go_checks": {
+    "session": 13225,
+    "exit_code": 0,
+    "commands": [
+      "go test ./...",
+      "go vet ./...",
+      "go mod verify"
+    ],
+    "source_server_sha256": "8285b73ad8675cf9ecdca742028fbe8361ffe0149e9f400d09df576e6cea2495"
+  },
+  "sensitive_scan": {
+    "files": 121,
+    "fail": 0,
+    "review": 0,
+    "status": "PASS"
+  },
+  "linux_expanded": {
+    "session": 16923,
+    "source_server_sha256": "8285b73ad8675cf9ecdca742028fbe8361ffe0149e9f400d09df576e6cea2495",
+    "required": 7,
+    "run": 7,
+    "pass": 7,
+    "skip": 0,
+    "tail_expiry_seconds": 60.51,
+    "cleanup": "PASS",
+    "exit_code": 0
+  },
+  "linux_g5_compatibility": {
+    "session": 22256,
+    "source_server_sha256": "8285b73ad8675cf9ecdca742028fbe8361ffe0149e9f400d09df576e6cea2495",
+    "discovered_g5_submission": 13,
+    "required": 22,
+    "run": 22,
+    "pass": 22,
+    "skip": 0,
+    "plan_tail_seconds": 60.52,
+    "worker_tail_seconds": 60.86,
+    "cleanup": "PASS",
+    "exit_code": 0
+  },
+  "native_guards": {
+    "session": 82439,
+    "source_server_sha256": "37e5900a991bf5fee817699240164108fbbe510d5f9209332a6918d20b0616bf",
+    "required": 4,
+    "run": 4,
+    "pass": 4,
+    "skip": 0,
+    "cleanup": "PASS"
+  },
+  "identity_red": {
+    "session": 17002,
+    "source_server_sha256": "3c6c0d74e8c3cf2d41eee6a34f49d4b9454f9923f7a31a71b151ab8a32650b68",
+    "public_id_update_errors": [
+      null,
+      null
+    ],
+    "operations": 2,
+    "exit_code": 2
+  },
+  "independent_qa": {
+    "agent": "g7_outbox_finance_audit",
+    "read_only": true,
+    "reviewed_source_server_sha256": "8285b73ad8675cf9ecdca742028fbe8361ffe0149e9f400d09df576e6cea2495",
+    "result": "PASS_BOUNDED",
+    "p0": 0,
+    "p1": 0,
+    "p2": 0,
+    "boundary": "提交计划增量，不是完整G7 QA"
+  }
+}

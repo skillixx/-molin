@@ -1,0 +1,85 @@
+# 视频网关VID-G7告警；仅使用operation、status、stage、kind、phase和direction等封闭低基数标签。
+groups:
+  - name: molin-video-gateway-g7
+    interval: 15s
+    rules:
+      - alert: MolinVideoProviderHardCapExceeded
+        expr: sum(molin_ai_gateway_video_capacity_leases{phase=~"promoting|running"}) > 2
+        for: 0m
+        labels: { severity: critical, module: video_gateway, p_level: P0 }
+        annotations:
+          summary: 视频Provider并发超过硬上限
+          description: 立即关闭视频新流量，保留在途Worker并核对Redis恢复epoch与Provider任务事实。
+          runbook_url: https://github.com/skillixx/-molin/blob/main/docs/video-gateway-monitoring.md#告警与处置
+      - alert: MolinVideoPendingReconcileTooOld
+        expr: max by (operation) (molin_ai_gateway_video_task_oldest_age_seconds{status="pending_reconcile"}) > 300
+        for: 1m
+        labels: { severity: critical, module: video_gateway, p_level: P1 }
+        annotations:
+          summary: 视频任务长期待对账
+          description: 禁止释放Hold、容量和输入租约，按Task/Provider/财务低敏事实执行恢复对账。
+          runbook_url: https://github.com/skillixx/-molin/blob/main/docs/video-gateway-monitoring.md#告警与处置
+      - alert: MolinVideoDeadLetterBacklog
+        expr: sum by (stage) (molin_ai_gateway_video_queue_depth{kind="dead"}) > 0
+        for: 5m
+        labels: { severity: warning, module: video_gateway, p_level: P1 }
+        annotations:
+          summary: 视频死信队列存在积压
+          description: 保留原消息和任务事实，先核对失败类别与重放资格，禁止直接清空DLQ。
+          runbook_url: https://github.com/skillixx/-molin/blob/main/docs/video-gateway-monitoring.md#告警与处置
+      - alert: MolinVideoUnsettledHoldTooOld
+        expr: molin_ai_gateway_video_unsettled_holds_oldest_age_seconds > 600
+        for: 5m
+        labels: { severity: critical, module: video_gateway, p_level: P1 }
+        annotations:
+          summary: 视频冻结金额长期未结算
+          description: 保持流量关闭，核对Provider终态、Usage、钱包流水、Outbox和补偿任务。
+          runbook_url: https://github.com/skillixx/-molin/blob/main/docs/video-gateway-monitoring.md#告警与处置
+      - alert: MolinVideoConfirmedObjectAnomaly
+        expr: sum(molin_ai_gateway_video_object_observations{status="confirmed"}) > 0
+        for: 1m
+        labels: { severity: warning, module: video_gateway, p_level: P1 }
+        annotations:
+          summary: 视频对象双向对账异常已确认
+          description: 检查DB到MinIO缺失或MinIO无引用补偿；不得跳过静默窗或直接删除业务事实。
+          runbook_url: https://github.com/skillixx/-molin/blob/main/docs/video-gateway-monitoring.md#告警与处置
+      - alert: MolinVideoObjectCompensationBlocked
+        expr: sum(molin_ai_gateway_video_object_compensations{status=~"dead|manual_review"}) > 0
+        for: 1m
+        labels: { severity: critical, module: video_gateway, p_level: P1 }
+        annotations:
+          summary: 视频对象补偿需要人工处理
+          description: 保持流量关闭并核对对象摘要、引用和观察episode，禁止直接清空补偿事实。
+          runbook_url: https://github.com/skillixx/-molin/blob/main/docs/video-gateway-monitoring.md#告警与处置
+      - alert: MolinVideoRuntimeComponentDown
+        expr: molin_ai_gateway_video_component_up == 0
+        for: 2m
+        labels: { severity: critical, module: video_gateway, p_level: P1 }
+        annotations:
+          summary: 视频运行组件持续不可用
+          description: 保持新流量关闭，按component核对MySQL、Redis、RabbitMQ或Worker最近成功时间，禁止因指标局部失败隐藏其他组件。
+          runbook_url: https://github.com/skillixx/-molin/blob/main/docs/video-gateway-monitoring.md#告警与处置
+      - alert: MolinVideoQueueAgeTooOld
+        expr: max by (operation) (molin_ai_gateway_video_task_oldest_age_seconds{status="queued"}) > 120
+        for: 1m
+        labels: { severity: warning, module: video_gateway, p_level: P1 }
+        annotations:
+          summary: 视频排队任务超过冻结年龄上限
+          description: 核对RabbitMQ工作/延迟队列、Worker健康和Provider hard cap，不得通过重复提交消除积压。
+          runbook_url: https://github.com/skillixx/-molin/blob/main/docs/video-gateway-monitoring.md#告警与处置
+      - alert: MolinVideoQueueBacklog
+        expr: sum by (stage) (molin_ai_gateway_video_queue_depth{kind=~"work|delay"}) > 100
+        for: 5m
+        labels: { severity: warning, module: video_gateway, p_level: P1 }
+        annotations:
+          summary: 视频工作或延迟队列持续积压
+          description: 核对组件健康、队列年龄和有界重试，禁止直接清空消息或绕过Provider容量。
+          runbook_url: https://github.com/skillixx/-molin/blob/main/docs/video-gateway-monitoring.md#告警与处置
+      - alert: MolinVideoCleanupFailure
+        expr: sum by (kind) (molin_ai_gateway_video_cleanup_failures) > 0
+        for: 5m
+        labels: { severity: warning, module: video_gateway, p_level: P1 }
+        annotations:
+          summary: 视频清理流程存在失败事实
+          description: 按kind核对对象补偿、输入墓碑或资产删除；保留业务事实并执行有界恢复。
+          runbook_url: https://github.com/skillixx/-molin/blob/main/docs/video-gateway-monitoring.md#告警与处置

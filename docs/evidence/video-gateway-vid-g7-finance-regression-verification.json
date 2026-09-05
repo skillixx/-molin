@@ -1,0 +1,45 @@
+{
+  "target_goal": "VID-G7",
+  "captured_at": "2026-09-05T07:14:56Z",
+"source_state_id": "e041a6d768afc85a5684ae9c46713ea26fac1813462f03faab62a27b3737dea0",
+  "session": 88948,
+  "runner_sha256": "1c96e3b6c2f08407821a91e86cb83506fd73b44efde90f23e52d6d3acb621005",
+  "scope": "本地隔离MySQL、Redis、RabbitMQ上的G5财务兼容与G7异步执行Linux race组合",
+  "source_server_sha256": "e06ebbe2c28e7c8d18742287fdf8255da149926104420986a972b51ce30ccd78",
+  "command": "$env:VIDEO_GATEWAY_G7_MYSQL_ISOLATED_APPROVED='YES'; $env:VIDEO_GATEWAY_G7_REDIS_ISOLATED_APPROVED='YES'; $env:VIDEO_GATEWAY_G7_RABBIT_ISOLATED_APPROVED='YES'; .\\infra\\scripts\\verify-video-gateway-vid-g7-outbox.ps1 -FinanceRegression -Broker -Redis -LinuxRace",
+  "result": {
+    "groups": 22,
+    "required": 166,
+    "run": 166,
+    "pass": 166,
+    "skip": 0,
+    "finance_required": 99,
+    "finance_pass": 99,
+    "main_group_required": 144,
+    "main_group_pass": 144,
+    "bad_events": 0,
+    "exit_code": 0,
+    "cleanup": "PASS"
+  },
+  "runner_regression": {
+    "pre_fix": "主组合145项仅85项通过，60项因capacity cutoff留下blocked门闩而返回视频生成治理暂不可用",
+    "fix": "capacity_cutoff独立数据库；capacity_audit_types加入必跑集合并独立数据库",
+    "post_fix": "22组166项全部通过，Finance 99项全部通过",
+    "production_capacity_policy_changed": false
+  },
+  "rabbit_terminal_finance": {
+    "compatible_worker": true,
+    "settle_delivery_capacity_release_in_fetch_lease": true,
+    "late_poll_fetch_replay_finance_unchanged": true,
+    "provider_create_count": 1
+  },
+  "boundaries": {
+    "real_provider_requests": 0,
+    "real_provider_keys": 0,
+    "real_wallet_writes": 0,
+    "provider_cost_cny": 0,
+    "test_server_writes": 0,
+    "production_operations": 0
+  },
+  "decision": "LOCAL_FINANCE_AND_ASYNC_REGRESSION_PASS"
+}

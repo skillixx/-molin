@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "scope": "RabbitMQ消费者传输协调；未接入G3/G5持久化处理器和Outbox",
+  "source_state_id": "a395288233baba5c44feddda440cb2f5b464fe67c6ff462e8b5209417e647910",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "uncommitted_changes": true,
+  "tests": {
+    "tdd_red": "新增消费者类型/接口尚不存在时编译失败",
+    "video_package": "PASS",
+    "go_test_all": "PASS_DEFAULT_ENVIRONMENT_NOT_FULL_G7_INTEGRATION",
+    "go_vet_video": "PASS",
+    "go_mod_verify": "PASS",
+    "linux_race": {
+      "status": "PASS",
+      "seconds": 1.036,
+      "top_level_tests": 6,
+      "image": "golang@sha256:908f8ff2ec296df2f349563072c7925775cd28b50361a52ed834a8a37399b9bf",
+      "network": "none",
+      "source_mount": "readonly"
+    },
+    "isolated_broker": {
+      "runner": "infra/scripts/verify-video-gateway-vid-g7-rabbitmq.ps1",
+      "focus": "all",
+      "platform": "windows_go_real_linux_broker",
+      "status": "PASS",
+      "required_runs": 3,
+      "required_passes": 3,
+      "skip": 0,
+      "consumer_seconds": 7.65,
+      "publisher_seconds": 3.52,
+      "topology_seconds": 184.72,
+      "image": "rabbitmq@sha256:606d8c0d6b3c18d1da9afc53bc7cdb2a8d5486df91b5a9830e9e07626c9ae281",
+      "cleanup": "PASS"
+    },
+    "consumer_subtests": 9,
+    "assertions": [
+      "prefetch=1且处理屏障释放前不ACK",
+      "错误和panic后原消息带redelivered恢复",
+      "0到1延迟重试后到限转DLQ",
+      "目标不可路由不ACK原消息",
+      "目标已收但确认丢失时原消息与重试副本均保留",
+      "超过最大attempt不调用处理器且不重置次数",
+      "处理超时即使返回Handled也不ACK",
+      "不合规正文不进入业务也不复制到DLQ",
+      "两个本地Worker严格并行上限与取消收口"
+    ]
+  },
+  "implemented": "ConsumeOne有界设置和处理、手动ACK、显式Handled/Retry/Reject、确认后搬运、1至8本地Worker并行调度",
+  "limitations": [
+    "处理器接口要求真实持久化；当前传输测试使用阻塞/故障边界夹具，不声称真实任务或财务验收",
+    "本地Worker并行不等于2/4/8个Go实例的共享hard cap",
+    "尚无进程kill/真实持久化幂等/Outbox接线/Redis/MinIO完整集成",
+    "处理器必须遵守context，不能强制终止任意忽略取消的Go函数",
+    "DLQ受控重放和毒消息诊断入口待实现",
+    "API余部及数据库/测试计划完整通读待完成"
+  ],
+  "test_server_authorization": "NOT_GRANTED",
+  "test_server_writes": 0,
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "real_user_funds": 0,
+  "real_adjustments": 0,
+  "provider_cost_cny": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false
+}

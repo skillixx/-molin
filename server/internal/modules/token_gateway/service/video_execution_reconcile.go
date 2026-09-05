@@ -175,7 +175,7 @@ func ensureVideoRecoveryOutboxTx(tx *gorm.DB, task *repository.VideoTaskRecord, 
 		return err
 	}
 	payload, _ := json.Marshal(map[string]interface{}{"request_id": task.RequestID, "status": status, "amount": amount.StringFixed(8), "currency": "CNY", "operation": *task.Operation, "version": 1})
-	if event.AggregateType != "video_request" || event.AggregateID != task.RequestID || event.EventType != kind || event.Status != model.AIOutboxPending || event.LockedAt != nil || !equalVideoFinancialJSON(event.PayloadJSON, payload) {
+	if event.EventID != id || event.AggregateType != "video_request" || event.AggregateID != task.RequestID || event.EventType != kind || !validVideoOutboxTransportState(event) || !equalVideoFinancialJSON(event.PayloadJSON, payload) {
 		return ErrVideoBillingState
 	}
 	return nil

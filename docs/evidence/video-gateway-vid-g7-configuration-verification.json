@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "receipt_status": "HISTORICAL_SOURCE_STATE",
+  "superseded_by": "docs/evidence/video-gateway-vid-g7-secret-verification.json",
+  "scope": "配置加载、三层开关和bootstrap启动前校验切片；不是完整G7验收",
+  "source_state_id": "1209d47f872f4684d14b811f53b4972a55c1fbde24c90045ddf06d0f83d18e1f",
+  "base_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "uncommitted_changes": true,
+  "tests": {
+    "tdd_default_red": "编译失败：视频配置加载函数/字段/校验函数尚不存在",
+    "tdd_bootstrap_red": "NewApp只返回后置TRUSTED_PROXY_IPS错误，未接视频校验",
+    "windows_config_bootstrap": {
+      "command": "go test ./internal/config ./internal/bootstrap -count=1",
+      "status": "PASS"
+    },
+    "windows_go_test_all": {
+      "command": "go test ./...",
+      "status": "PASS",
+      "integration_boundary": "默认未注入隔离DSN的MySQL/中间件用例不计作G7集成通过"
+    },
+    "go_vet": {
+      "command": "go vet ./internal/config ./internal/bootstrap",
+      "status": "PASS"
+    },
+    "go_mod_verify": "PASS",
+    "linux_config_race": {
+      "status": "PASS",
+      "command": "go test -race -count=1 -v ./internal/config -run ^TestVideoG7",
+      "image": "golang@sha256:908f8ff2ec296df2f349563072c7925775cd28b50361a52ed834a8a37399b9bf",
+      "network": "none",
+      "source_mount": "readonly",
+      "required_top_level": 5,
+      "subtests": 37,
+      "skips": 0,
+      "seconds": 1.041
+    },
+    "initial_linux_environment_failure": {
+      "status": "RESOLVED",
+      "reason": "临时目录禁止执行导致测试二进制permission denied；该次没有执行测试",
+      "change": "仅本轮容器tmpfs增加exec，重新运行全部配置race用例通过"
+    }
+  },
+  "remaining": [
+    "Secret安全文件加载",
+    "视频路由与Worker装配",
+    "RabbitMQ/Redis/MinIO真实隔离集成",
+    "多实例与故障恢复",
+    "监控与回滚",
+    "全量兼容与五轴终审",
+    "测试服授权包及获批安装/实际回滚",
+    "精确HEAD CI和Git合并"
+  ],
+  "qa_acceptance": "NOT_RUN",
+  "pm_confirmation": "NOT_RUN",
+  "standards_review": "NOT_RUN",
+  "spec_review": "NOT_RUN",
+  "g7_acceptance": "INCOMPLETE",
+  "test_server_authorization": "NOT_GRANTED",
+  "test_server_writes": 0,
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "production_operations": 0,
+  "vid_g8_started": false
+}

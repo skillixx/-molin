@@ -113,7 +113,7 @@ func (s *VideoUploadService) Complete(ctx context.Context, caller VideoCaller, i
 			return ErrVideoUploadConflict
 		}
 		mime, size, width, height, policy := "image/png", normalized.SizeBytes, uint32(normalized.Width), uint32(normalized.Height), s.options.ModerationPolicyVersion
-		asset := model.AIGatewayInputAsset{PublicID: current.control.InputPublicID, UserID: owner.UserID, ProjectID: owner.ProjectID, SourceType: current.session.SourceType, UploadSessionID: &current.session.ID, OriginalSHA256: normalized.OriginalSHA256, NormalizedSHA256: &normalized.NormalizedSHA256, Bucket: &current.control.NormalizedBucket, ObjectKey: &current.control.NormalizedKey, MIMEType: &mime, SizeBytes: &size, Width: &width, Height: &height, ModerationPolicyVersion: &policy, ModerationStatus: model.AIModerationPassed, VersionNo: 1, LifecycleState: model.AIInputAssetReady, ExpiresAt: now.Add(7 * 24 * time.Hour), CreatedAt: now, UpdatedAt: now}
+		asset := model.AIGatewayInputAsset{PublicID: current.control.InputPublicID, UserID: owner.UserID, ProjectID: owner.ProjectID, SourceType: current.session.SourceType, UploadSessionID: &current.session.ID, OriginalSHA256: normalized.OriginalSHA256, NormalizedSHA256: &normalized.NormalizedSHA256, Bucket: &current.control.NormalizedBucket, ObjectKey: &current.control.NormalizedKey, MIMEType: &mime, SizeBytes: &size, Width: &width, Height: &height, ModerationPolicyVersion: &policy, ModerationStatus: model.AIModerationPassed, VersionNo: 1, LifecycleState: model.AIInputAssetReady, ExpiresAt: now.Add(currentVideoRetentionPolicy.InputBound), CreatedAt: now, UpdatedAt: now}
 		if err := tx.Create(&asset).Error; err != nil {
 			return err
 		}

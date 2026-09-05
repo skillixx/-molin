@@ -254,8 +254,17 @@ func equalVideoFinancialJSON(a, b json.RawMessage) bool {
 
 // videoWalletHistoryConsistent 锁住钱包再串联已有流水，避免把全额解冻误认为净释放；冻结额与所有未终结Hold相等。
 func videoWalletHistoryConsistent(tx *gorm.DB, walletID, userID uint64) bool {
+	return videoWalletHistoryConsistentMode(tx, walletID, userID, true)
+}
+
+// RR快照复用同一钱包串联校验但不获取写锁，避免把只读恢复变成资金互斥事务。
+func videoWalletHistoryConsistentMode(tx *gorm.DB, walletID, userID uint64, lockWallet bool) bool {
 	var wallet billingmodel.Wallet
-	if tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND user_id=?", walletID, userID).First(&wallet).Error != nil || wallet.Currency != "CNY" {
+	query := tx.Where("id=? AND user_id=?", walletID, userID)
+	if lockWallet {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	if query.First(&wallet).Error != nil || wallet.Currency != "CNY" {
 		return false
 	}
 	var rows []billingmodel.WalletTransaction

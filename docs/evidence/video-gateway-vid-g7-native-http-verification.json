@@ -1,0 +1,40 @@
+{
+  "target_goal": "VID-G7",
+  "captured_at": "2026-09-04T06:50:00Z",
+  "source_tree_sha256": "9e3ea112159d70abaf89a133ede2cc9d8a4c45991ce98e35f0456c5ba8679e74",
+  "scope": "Runware形状回环Fake原生异步HTTP、持久taskUUID与MySQL/Redis提交链",
+  "runs": [
+    {"name": "native_http_mysql_redis", "platform": "windows-native", "required": 1, "run": 1, "pass": 1, "skip": 0, "exit_code": 0},
+    {"name": "native_http_mysql_redis", "platform": "linux-amd64-race", "required": 1, "run": 1, "pass": 1, "skip": 0, "exit_code": 0},
+    {"name": "submission_plan", "platform": "windows-native", "required": 7, "run": 7, "pass": 7, "skip": 0, "exit_code": 0},
+    {"name": "submission_plan", "platform": "linux-amd64-race", "required": 7, "run": 7, "pass": 7, "skip": 0, "exit_code": 0}
+  ],
+  "verified": {
+    "task_array_single_item": true,
+    "task_type": "videoInference",
+    "provider_model": "runway:1@2",
+    "duration_seconds": 5,
+    "text_to_video": "PASS",
+    "image_to_video": "PASS",
+    "normalized_input_byte_match": true,
+    "task_uuid_v4_persisted_before_http": true,
+    "provider_receipt_must_match_persisted_uuid": true,
+    "ack_connection_drop": true,
+    "restart_query_same_uuid": true,
+    "provider_tasks_per_intent": 1,
+    "http_range": true,
+    "content_delete": true,
+    "query_error_classes": ["not_found", "rate_limited_unknown", "corrupt", "timeout"],
+    "non_loopback_fake_endpoint_rejected": true
+  },
+  "boundaries": {
+    "real_runware_request": false,
+    "real_provider_requests": 0,
+    "real_provider_keys": 0,
+    "provider_cost_cny": 0,
+    "bifrost_video_data_plane": false,
+    "test_server_writes": 0,
+    "production_operations": 0
+  },
+  "decision": "LOCAL_NATIVE_HTTP_PASS_STAGE_INCOMPLETE"
+}

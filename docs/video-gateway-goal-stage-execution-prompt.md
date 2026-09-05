@@ -1,18 +1,18 @@
 # 墨灵 OpenAI Videos兼容快照v1 文生/图生视频网关 Goal 目标阶段开发文档
 
-> 文档状态：ACTIVE / VID-G0-VID-G1 AUTO_PASS / VID-G2 EXECUTING / VID-G3-G8 PLANNED
+> 文档状态：ACTIVE / VID-G0—VID-G6 已完成合并 / VID-G7 LOCAL_GATES_PASS_PENDING_INDEPENDENT_REVIEW_AND_TEST_SERVER / VID-G8 PLANNED
 >
 > 编制日期：2026-08-27
 >
-> 最近更新：2026-08-28（VID-G1经PR #417完成squash merge，VID-G2开始执行）
+> 最近更新：2026-09-05（VID-G7本地四依赖runtime 14/14、Finance组合22组166/166、跨进程Fetch、Rabbit终态财务、持久公平留存、迁移重入、优雅停机、监控与110–121回滚通过；独立复审和测试服授权仍待）
 >
-> 当前执行基线：FRESH_FETCH origin/main@d57afd6ec30861ebaadd0faf7775e1ff27a5ecee；VID-G1经PR #417完成squash merge
+> 当前执行基线：FRESH_FETCH origin/main@4d80d1cf0966d876c6c2171dce1a337afd2aa05b；VID-G7 分支为 codex/video-gateway-vid-g7-infra-recovery
 >
 > 适用工作区：D:\molingproject\molin-gateway-worktree
 >
 > 适用范围：文生视频与图生视频共用的VID-G0至VID-G8；VID-G9与VID-G10仅定义边界，不在本文自动执行
 >
-> 证据边界：VID-G0、VID-G1已合并；VID-G2正在本地开发非商业价格、Quote与原子预占，不证明已提交PR、测试环境migration、真实Provider、生产开放或商业验收。
+> 证据边界：VID-G6 已经 PR #422 合并，精确 HEAD Ready CI 全绿及五轴独立验收通过，见 docs/evidence/video-gateway-vid-g6-final-merge.json。VID-G7 仅获准本地隔离开发；测试服写入、迁移、部署与重启尚未授权，真实 Provider、生产开放与商业验收均未执行。下文历史快照保留，不能代替当前摘要。
 >
 > 协议边界：OpenAI官方Sora Videos API已标记将于2026-09-24关闭。本文冻结的是基于2026-08-27官方合同的“Molin OpenAI Videos兼容快照v1”，由Molin自行维护，不承诺继续跟随OpenAI接口或SDK变化；/api/token/videos/*是长期平台增强与迁移出口。
 

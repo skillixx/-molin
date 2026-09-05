@@ -1,0 +1,65 @@
+{
+  "target_goal": "VID-G7",
+  "status": "STALE_AFTER_RUNTIME_AND_ORPHAN_INCREMENT",
+  "evidence_scope": "本地一次性隔离MinIO的视频输出对象与输入上传封存增量",
+  "captured_at": "2026-09-04T05:12:00Z",
+  "source_tree_sha256": "d065bf8febc5effaf953575a9e813ad24b50afba84d1502c71d6ecd915fb7433",
+  "source_hash_scope": [
+    "server",
+    "infra/scripts/verify-video-gateway-vid-g7-minio.ps1"
+  ],
+  "locked_images": {
+    "minio": "minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+    "go": "golang@sha256:908f8ff2ec296df2f349563072c7925775cd28b50361a52ed834a8a37399b9bf"
+  },
+  "runs": [
+    {
+      "platform": "windows-native",
+      "command": "$env:VIDEO_GATEWAY_G7_MINIO_ISOLATED_APPROVED='YES'; .\\infra\\scripts\\verify-video-gateway-vid-g7-minio.ps1",
+      "required": 2,
+      "run": 2,
+      "pass": 2,
+      "skip": 0,
+      "exit_code": 0
+    },
+    {
+      "platform": "linux-amd64-race",
+      "command": "$env:VIDEO_GATEWAY_G7_MINIO_ISOLATED_APPROVED='YES'; .\\infra\\scripts\\verify-video-gateway-vid-g7-minio.ps1 -LinuxRace",
+      "required": 2,
+      "run": 2,
+      "pass": 2,
+      "skip": 0,
+      "exit_code": 0
+    }
+  ],
+  "verified": {
+    "server_owned_output_location": true,
+    "bounded_streaming_sha256": true,
+    "conditional_single_winner": true,
+    "range_read": true,
+    "promote_and_quarantine": true,
+    "immutable_saved_copy": true,
+    "anonymous_get_and_list_denied": true,
+    "archive_fence": true,
+    "signed_upload_metadata": true,
+    "sealed_etag_or_version": true,
+    "late_presigned_overwrite_denied": true,
+    "discard_tombstone_prevents_resurrection": true,
+    "inline_body_digest_revalidated": true,
+    "temporary_plaintext_cleanup": true,
+    "cleanup": true
+  },
+  "boundaries": {
+    "bootstrap_runtime_wired": true,
+    "bidirectional_orphan_reconciliation": false,
+    "test_server_install": false,
+    "actual_shared_environment_rollback": false,
+    "real_provider_requests": 0,
+    "real_provider_keys": 0,
+    "real_wallet_writes": 0,
+    "provider_cost_cny": 0,
+    "test_server_writes": 0,
+    "production_operations": 0
+  },
+  "decision": "LOCAL_COMPONENT_PASS_STAGE_INCOMPLETE"
+}

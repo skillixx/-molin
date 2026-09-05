@@ -1,0 +1,52 @@
+{
+  "schema_version": 2,
+  "target_goal": "VID-G7",
+  "source_state_id": "16e672d40cb19bd87230e996260ed7e76df83ce17717759c4da94291b80096f5",
+  "reconciled_at": "2026-09-05T02:27:48Z",
+  "captured_at": "2026-09-04T19:18:21Z",
+  "purpose": "记录实际合同通读进度，避免把部分读取误报为完整核对",
+  "fully_read": [
+    {
+      "path": "docs/video-gateway-vid-g0-gate.md",
+      "sha256": "9d221f298265b827edec97c8d0b07432511092110e60c85600800b44305607a6",
+      "status": "FULLY_READ"
+    },
+    {
+      "path": "docs/video-gateway-openapi-snapshot-v1.yaml",
+      "sha256": "3d6b4873ab3674ad176db9560ab368d1030d8291cbac6485d65d7dcd2b22b0f3",
+      "status": "FULLY_READ"
+    },
+    {
+      "path": "docs/video-gateway-vid-g6-http-project-sk-contract.md",
+      "sha256": "47c55ac13e20323ff6d2d38081578124bfe06b6b9c3677e892133e8868fcef10",
+      "status": "FULLY_READ"
+    },
+    {
+      "path": "docs/full-api-design.md",
+      "sha256": "5f92eabe1f9fbbbdeb8f422bc696e8edae110d1b55682f02ec3876fab2692afc",
+      "status": "FULLY_READ"
+    },
+    {
+      "path": "docs/database-schema-design.md",
+      "sha256": "f848bbf31b2ba5a0fd758943d5a8c81e8cd2e3ff1a309659d0f2d3d080315d4c",
+      "status": "FULLY_READ"
+    },
+    {
+      "path": "docs/test-plan.md",
+      "sha256": "64bd2f5bb9b6ab23e68454f3c1458d0fcc23312fe683e3fbc850c7bd1fbf64b6",
+      "status": "FULLY_READ"
+    },
+    {
+      "path": "docs/video-gateway-vid-g7-infra-recovery.md",
+      "sha256": "3a1b69bd1f286a0117bfa2f81540b70c72fbe68632e31dae2cd803cdb8acc015",
+      "status": "FULLY_READ_AND_CURRENT_MATRIX_RECONCILED"
+    }
+  ],
+  "section_fully_read": {
+    "path": "docs/video-gateway-goal-stage-execution-prompt.md",
+    "section": "VID-G7：RabbitMQ、MinIO、Redis与测试服关闭态"
+  },
+  "remaining_full_reads": [],
+  "all_required_contracts_read": true,
+  "partial_reads": []
+}

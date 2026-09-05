@@ -307,11 +307,11 @@ func generateVideoObjectRef(request PutVideoObjectRequest) (VideoObjectRef, erro
 func bucketForVideoZone(zone VideoObjectZone) string {
 	switch zone {
 	case VideoObjectTemporary:
-		return "video-temp"
+		return "ai-upload-temp"
 	case VideoObjectResult:
-		return "video-result"
+		return "ai-result"
 	case VideoObjectQuarantine:
-		return "video-quarantine"
+		return "ai-quarantine"
 	case VideoObjectSaved:
 		return "ai-user-assets"
 	default:
@@ -329,7 +329,8 @@ func validVideoObjectRole(role string) bool {
 }
 
 func validVideoObjectRef(ref VideoObjectRef) bool {
-	if ref.Bucket != bucketForVideoZone(VideoObjectTemporary) && ref.Bucket != bucketForVideoZone(VideoObjectResult) && ref.Bucket != bucketForVideoZone(VideoObjectQuarantine) && ref.Bucket != bucketForVideoZone(VideoObjectSaved) {
+	// 旧G4/G5测试事实保留只读兼容；G7生产Store配置只允许三个共享AI bucket及用户资产bucket。
+	if ref.Bucket != bucketForVideoZone(VideoObjectTemporary) && ref.Bucket != bucketForVideoZone(VideoObjectResult) && ref.Bucket != bucketForVideoZone(VideoObjectQuarantine) && ref.Bucket != bucketForVideoZone(VideoObjectSaved) && ref.Bucket != "video-temp" && ref.Bucket != "video-result" && ref.Bucket != "video-quarantine" {
 		return false
 	}
 	parts := strings.Split(ref.ObjectKey, "/")

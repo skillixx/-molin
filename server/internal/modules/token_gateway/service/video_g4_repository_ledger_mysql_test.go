@@ -328,7 +328,7 @@ func assertVideoG4AdvanceRollsBackAssetFailure(t *testing.T, db *gorm.DB, protec
 	ledger := NewVideoRepositoryTaskLedger(db, owner, protector, videoG4TestLocationFactory{}, nil)
 	_, err = ledger.Advance(context.Background(), taskID, 1, videogateway.TaskModerating, "worker", "atomic_failure", func(next *videogateway.GatewayTask) error {
 		next.Asset = &videogateway.GatewayAsset{AssetID: "vasset-" + taskID, Role: model.AIImageAssetContent,
-			Object:   videogateway.StoredVideoObject{Ref: videogateway.VideoObjectRef{Bucket: "video-temp", ObjectKey: taskID + "/vasset-" + taskID + "/content.bin"}},
+			Object:   videogateway.StoredVideoObject{Ref: videogateway.VideoObjectRef{Bucket: "ai-upload-temp", ObjectKey: taskID + "/vasset-" + taskID + "/content.bin"}},
 			MIMEType: "video/mp4", SizeBytes: 1024, SHA256: fmt.Sprintf("%064x", fixtureID), Width: 1280, Height: 720,
 			DurationMillis: 5000, FrameRate: 24, VideoCodec: "avc1", AudioCodec: "mp4a", HasAudio: true,
 			Lifecycle: videogateway.AssetTemporary, ModerationStatus: videogateway.AssetModerationPending,
@@ -353,9 +353,9 @@ func assertVideoG4AdvanceRollsBackAssetFailure(t *testing.T, db *gorm.DB, protec
 type videoG4TestLocationFactory struct{}
 
 func (videoG4TestLocationFactory) NewVideoObjectLocation(_ context.Context, _ repository.VideoOwner, taskPublicID, assetPublicID, role string, _ uint32) (repository.VideoObjectLocation, error) {
-	bucket := "video-result"
+	bucket := "ai-result"
 	if role == model.AIImageAssetContent {
-		bucket = "video-temp"
+		bucket = "ai-upload-temp"
 	}
 	return repository.VideoObjectLocation{Bucket: bucket, ObjectKey: taskPublicID + "/" + assetPublicID + "/" + role + ".bin"}, nil
 }

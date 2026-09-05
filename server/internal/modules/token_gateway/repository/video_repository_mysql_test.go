@@ -509,7 +509,7 @@ func seedVideoG3Task(t *testing.T, db *gorm.DB, id, priceID uint64, owner VideoO
 	request := model.AIRequest{
 		RequestID: requestID, UserID: owner.UserID, ProjectID: &owner.ProjectID, APIKeyID: owner.APIKeyID,
 		LogicalModelCode: modelCode, Modality: "video", Capability: model.AIVideoCapability, Operation: &operation,
-		ModerationStatus: model.AIModerationPending, ExecutionStatus: videoRequestExecutionStatus(status),
+		ModerationStatus: model.AIModerationPending, ExecutionStatus: VideoRequestExecutionStatus(status),
 		BillingStatus: billing, DeliveryStatus: delivery, VersionNo: 1,
 	}
 	if err := db.Create(&request).Error; err != nil {

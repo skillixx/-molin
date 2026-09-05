@@ -1,0 +1,79 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "视频任务状态与最老年龄",
+      "targets": [
+        {"expr": "molin_ai_gateway_video_tasks", "legendFormat": "{{operation}} {{status}} 数量"},
+        {"expr": "molin_ai_gateway_video_task_oldest_age_seconds", "legendFormat": "{{operation}} {{status}} 秒"}
+      ],
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "RabbitMQ工作、延迟与死信",
+      "targets": [{"expr": "molin_ai_gateway_video_queue_depth", "legendFormat": "{{stage}} {{kind}}"}],
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+    },
+    {
+      "type": "stat",
+      "title": "Redis容量租约",
+      "targets": [{"expr": "molin_ai_gateway_video_capacity_leases", "legendFormat": "{{phase}}"}],
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 8}
+    },
+    {
+      "type": "stat",
+      "title": "未结算冻结金额",
+      "targets": [
+        {"expr": "molin_ai_gateway_video_unsettled_holds", "legendFormat": "数量"},
+        {"expr": "molin_ai_gateway_video_unsettled_holds_amount_cny", "legendFormat": "CNY"},
+        {"expr": "molin_ai_gateway_video_unsettled_holds_oldest_age_seconds", "legendFormat": "最老秒数"}
+      ],
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 8}
+    },
+    {
+      "type": "timeseries",
+      "title": "对象双向对账观察",
+      "targets": [
+        {"expr": "molin_ai_gateway_video_object_observations", "legendFormat": "观察 {{direction}} {{status}}"},
+        {"expr": "molin_ai_gateway_video_object_compensations", "legendFormat": "补偿 {{task_type}} {{status}}"}
+      ],
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 8}
+    },
+    {
+      "type": "stat",
+      "title": "运行组件健康",
+      "targets": [
+        {"expr": "molin_ai_gateway_video_component_up", "legendFormat": "{{component}} up"},
+        {"expr": "molin_ai_gateway_video_component_last_success_age_seconds", "legendFormat": "{{component}} 最近成功秒数"}
+      ],
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 14}
+    },
+    {
+      "type": "timeseries",
+      "title": "对象容量",
+      "targets": [{"expr": "molin_ai_gateway_video_object_bytes", "legendFormat": "{{bucket}} 字节"}],
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 14}
+    },
+    {
+      "type": "timeseries",
+      "title": "清理失败与组件失败",
+      "targets": [
+        {"expr": "molin_ai_gateway_video_cleanup_failures", "legendFormat": "清理 {{kind}}"},
+        {"expr": "molin_ai_gateway_video_component_failures_total", "legendFormat": "组件 {{component}}"}
+      ],
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 14}
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["molin", "video-gateway", "vid-g7", "closed-by-default"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "browser",
+  "title": "墨灵视频网关 VID-G7",
+  "uid": "molin-video-gateway-g7",
+  "version": 1
+}

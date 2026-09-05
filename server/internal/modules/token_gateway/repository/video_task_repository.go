@@ -44,14 +44,28 @@ type VideoOwner struct {
 // VideoTaskRecord 合并共享任务事实和请求三轴状态，不复制报价或财务账本。
 type VideoTaskRecord struct {
 	model.AIImageTask
-	RequestExecutionStatus string     `gorm:"column:request_execution_status"`
-	BillingStatus          string     `gorm:"column:billing_status"`
-	DeliveryStatus         string     `gorm:"column:delivery_status"`
-	RequestVersionNo       uint64     `gorm:"column:request_version_no"`
-	ArchiveGeneration      *uint64    `gorm:"column:archive_generation" json:"-"`
-	ArchiveTokenHash       *string    `gorm:"column:archive_token_hash" json:"-"`
-	ArchiveLeaseUntil      *time.Time `gorm:"column:archive_lease_until" json:"-"`
-	ArchivePhase           *string    `gorm:"column:archive_phase" json:"-"`
+	RequestExecutionStatus  string     `gorm:"column:request_execution_status"`
+	BillingStatus           string     `gorm:"column:billing_status"`
+	DeliveryStatus          string     `gorm:"column:delivery_status"`
+	RequestVersionNo        uint64     `gorm:"column:request_version_no"`
+	ArchiveGeneration       *uint64    `gorm:"column:archive_generation" json:"-"`
+	ArchiveTokenHash        *string    `gorm:"column:archive_token_hash" json:"-"`
+	ArchiveLeaseUntil       *time.Time `gorm:"column:archive_lease_until" json:"-"`
+	ArchivePhase            *string    `gorm:"column:archive_phase" json:"-"`
+	WorkerLeaseOwner        *string    `gorm:"column:lease_owner" json:"-"`
+	WorkerLeaseVersion      uint64     `gorm:"column:lease_version" json:"-"`
+	WorkerHeartbeatAt       *time.Time `gorm:"column:heartbeat_at" json:"-"`
+	WorkerLeaseUntil        *time.Time `gorm:"column:lease_until" json:"-"`
+	WorkerStage             *string    `gorm:"column:worker_stage" json:"-"`
+	WorkerLeaseActive       bool       `gorm:"column:worker_lease_active" json:"-"`
+	PlannedProviderCode     *string    `gorm:"column:planned_provider_code" json:"-"`
+	SubmissionIntentID      *string    `gorm:"column:submission_intent_id" json:"-"`
+	SubmissionClaimVersion  *uint64    `gorm:"column:submission_claim_version" json:"-"`
+	SubmissionWorkerVersion *uint64    `gorm:"column:submission_worker_version" json:"-"`
+	SubmissionCapacityEpoch *uint64    `gorm:"column:submission_capacity_epoch" json:"-"`
+	SubmissionSendTokenHash *string    `gorm:"column:submission_send_token_sha256" json:"-"`
+	SubmissionSendWorker    *uint64    `gorm:"column:submission_send_worker_version" json:"-"`
+	SubmissionSendStartedAt *time.Time `gorm:"column:submission_send_started_at" json:"-"`
 }
 
 // VideoStateTransition 描述一次带追加式事件的状态迁移命令。
@@ -120,6 +134,9 @@ func (r *VideoTaskRepository) BindProviderTask(ctx context.Context, command Vide
 		if record.VersionNo != command.ExpectedVersion || record.Status != model.AIImageTaskSubmitting || record.ProviderTaskID != nil || record.ProviderCode != nil {
 			return ErrVideoTaskConflict
 		}
+		if err := CheckVideoWorkerLeaseTx(ctx, tx, record); err != nil {
+			return err
+		}
 		result := tx.Model(&model.AIImageTask{}).
 			Where("id=? AND user_id=? AND project_id=? AND status=? AND version_no=? AND provider_task_id IS NULL AND provider_code IS NULL",
 				record.ID, command.Owner.UserID, command.Owner.ProjectID, model.AIImageTaskSubmitting, command.ExpectedVersion).
@@ -144,6 +161,9 @@ func (r *VideoTaskRepository) BindProviderTask(ctx context.Context, command Vide
 			return err
 		}
 		updated, err = findVideoTaskRecord(tx, command.TaskPublicID, command.Owner, false)
+		if err == nil {
+			err = CheckVideoWorkerLeaseTx(ctx, tx, updated)
+		}
 		return err
 	})
 	return updated, err
@@ -162,6 +182,11 @@ func (r *VideoTaskRepository) TransitionExecution(ctx context.Context, command V
 		}
 		if record.VersionNo != command.ExpectedVersion {
 			return ErrVideoTaskConflict
+		}
+		if command.Source == "worker" || ctx.Value(videoWorkerLeaseContextKey{}) != nil {
+			if err := CheckVideoWorkerLeaseTx(ctx, tx, record); err != nil {
+				return err
+			}
 		}
 		if err := CheckVideoArchiveFence(record, command.ArchiveFence, r.archiveNow()); err != nil {
 			return err
@@ -192,7 +217,7 @@ func (r *VideoTaskRepository) TransitionExecution(ctx context.Context, command V
 		}
 		// 请求账本只保存兼容的粗粒度执行态；细粒度执行权威仍是共享Task状态。
 		if err := tx.Model(&model.AIRequest{}).Where("request_id=? AND user_id=? AND project_id=?", record.RequestID, command.Owner.UserID, command.Owner.ProjectID).
-			Updates(map[string]interface{}{"execution_status": videoRequestExecutionStatus(command.ToStatus), "version_no": gorm.Expr("version_no + 1"), "updated_at": command.Now}).Error; err != nil {
+			Updates(map[string]interface{}{"execution_status": VideoRequestExecutionStatus(command.ToStatus), "version_no": gorm.Expr("version_no + 1"), "updated_at": command.Now}).Error; err != nil {
 			return err
 		}
 		if err := appendVideoTaskEventTx(tx, record.ID, command.Owner, command.EventID, "execution_status_changed", record.Status, command.ToStatus, command.Source, command.SafeDetailJSON, command.Now, command.FailureOrigin); err != nil {
@@ -201,6 +226,9 @@ func (r *VideoTaskRepository) TransitionExecution(ctx context.Context, command V
 		updated, err = findVideoTaskRecord(tx, command.TaskPublicID, command.Owner, false)
 		if err == nil {
 			err = CheckVideoArchiveFence(updated, command.ArchiveFence, r.archiveNow())
+		}
+		if err == nil && (command.Source == "worker" || ctx.Value(videoWorkerLeaseContextKey{}) != nil) {
+			err = CheckVideoWorkerLeaseTx(ctx, tx, updated)
 		}
 		return err
 	})
@@ -406,7 +434,9 @@ func videoExecutionTerminal(status string) bool {
 	return status == model.AIImageTaskSucceeded || status == model.AIImageTaskFailed || status == model.AIImageTaskCancelled || status == model.AIImageTaskExpired
 }
 
-func videoRequestExecutionStatus(taskStatus string) string {
+// VideoRequestExecutionStatus 复用既有Task细粒度到Request粗粒度映射，供写入和后台读取一致性核对共同使用。
+// G5原子预占的reserved/pending是尚未执行迁移的初态，调用方需单独识别，不改变本映射的历史写入语义。
+func VideoRequestExecutionStatus(taskStatus string) string {
 	switch taskStatus {
 	case model.AIImageTaskSucceeded:
 		return model.AIExecutionSucceeded

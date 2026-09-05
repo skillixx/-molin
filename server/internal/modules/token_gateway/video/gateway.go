@@ -50,9 +50,22 @@ func (g *VideoGateway) Submit(ctx context.Context, taskID string) (GatewayTask, 
 	if taskStatusRank(task.Status) >= taskStatusRank(TaskSubmitted) {
 		return task, nil
 	}
+	resumeSubmitting := false
 	if task.Status == TaskSubmitting {
-		// 另一次调用不是原Worker已失联的证据。只读返回，保留原RPC完成后的绑定机会。
-		return task, nil
+		resumer, ok := g.deps.Ledger.(VideoPlannedSubmissionResumer)
+		if !ok {
+			// 旧路径的另一次调用不是原Worker已失联证据；只有G7持久计划与当前容量证明可以恢复。
+			return task, nil
+		}
+		if err := resumer.ResumePlannedSubmission(ctx, task.TaskID, task.Version); err != nil {
+			// 并发赢家可能刚完成同一回执；重新读取只接受已到submitted及之后的持久事实。
+			latest, loadErr := g.Query(ctx, taskID)
+			if loadErr == nil && taskStatusRank(latest.Status) >= taskStatusRank(TaskSubmitted) {
+				return latest, nil
+			}
+			return task, err
+		}
+		resumeSubmitting = true
 	}
 	if task.CancelRequestedAt != nil {
 		return task, ErrVideoCancelBeforeSubmitRequired
@@ -63,48 +76,50 @@ func (g *VideoGateway) Submit(ctx context.Context, taskID string) (GatewayTask, 
 	if err := g.deps.Safety.Preflight(ctx, VideoSafetyRequest{Operation: task.Operation, Prompt: task.Prompt, Reference: task.Reference}); err != nil {
 		return g.failTask(ctx, task, "input_moderation_failed", err)
 	}
-	var remaining []TaskStatus
-	switch task.Status {
-	case TaskCreated:
-		remaining = []TaskStatus{TaskReserved, TaskQueued}
-	case TaskReserved:
-		remaining = []TaskStatus{TaskQueued}
-	case TaskQueued:
-		remaining = nil
-	default:
-		return task, ErrGatewayTaskTransition
-	}
-	for _, status := range remaining {
-		task, err = g.advance(ctx, task, status, "worker", "state_advanced", nil)
-		if err != nil {
-			return task, err
+	if !resumeSubmitting {
+		var remaining []TaskStatus
+		switch task.Status {
+		case TaskCreated:
+			remaining = []TaskStatus{TaskReserved, TaskQueued}
+		case TaskReserved:
+			remaining = []TaskStatus{TaskQueued}
+		case TaskQueued:
+			remaining = nil
+		default:
+			return task, ErrGatewayTaskTransition
 		}
+		for _, status := range remaining {
+			task, err = g.advance(ctx, task, status, "worker", "state_advanced", nil)
+			if err != nil {
+				return task, err
+			}
+		}
+		// 提交权不是“状态至少已到submitting”。必须由本调用亲自赢得这一次CAS，输家只读取结果。
+		if task.Status != TaskQueued || task.CancelRequestedAt != nil {
+			return task, nil
+		}
+		var claimed GatewayTask
+		var claimErr error
+		if admission, ok := g.deps.Ledger.(VideoRunningAdmissionLedger); ok {
+			claimed, claimErr = admission.ClaimRunning(ctx, task.TaskID, task.Version)
+		} else {
+			claimed, claimErr = g.deps.Ledger.Advance(ctx, task.TaskID, task.Version, TaskSubmitting, "worker", "state_advanced", nil)
+		}
+		if errors.Is(claimErr, ErrGatewayRunningCapacity) {
+			// 本地运行容量满时保持queued，不把排队视为失败，也不能调用Provider或释放Hold。
+			return g.Query(ctx, taskID)
+		}
+		if errors.Is(claimErr, ErrGatewayTaskConflict) {
+			return g.Query(ctx, taskID)
+		}
+		if claimErr != nil {
+			return task, claimErr
+		}
+		if claimed.Status != TaskSubmitting {
+			return claimed, ErrGatewayTaskConflict
+		}
+		task = claimed
 	}
-	// 提交权不是“状态至少已到submitting”。必须由本调用亲自赢得这一次CAS，输家只读取结果。
-	if task.Status != TaskQueued || task.CancelRequestedAt != nil {
-		return task, nil
-	}
-	var claimed GatewayTask
-	var claimErr error
-	if admission, ok := g.deps.Ledger.(VideoRunningAdmissionLedger); ok {
-		claimed, claimErr = admission.ClaimRunning(ctx, task.TaskID, task.Version)
-	} else {
-		claimed, claimErr = g.deps.Ledger.Advance(ctx, task.TaskID, task.Version, TaskSubmitting, "worker", "state_advanced", nil)
-	}
-	if errors.Is(claimErr, ErrGatewayRunningCapacity) {
-		// 本地运行容量满时保持queued，不把排队视为失败，也不能调用Provider或释放Hold。
-		return g.Query(ctx, taskID)
-	}
-	if errors.Is(claimErr, ErrGatewayTaskConflict) {
-		return g.Query(ctx, taskID)
-	}
-	if claimErr != nil {
-		return task, claimErr
-	}
-	if claimed.Status != TaskSubmitting {
-		return claimed, ErrGatewayTaskConflict
-	}
-	task = claimed
 	submitCtx := ctx
 	var receiptSink VideoSubmissionLedger
 	if task.DeferDelivery {
@@ -113,8 +128,17 @@ func (g *VideoGateway) Submit(ctx context.Context, taskID string) (GatewayTask, 
 		if !ok {
 			return task, ErrProviderResultUnknown
 		}
-		deadline, err := receiptSink.ValidateSubmissionClaim(ctx, taskID, task.Version)
+		claimVersion := task.Version
+		if task.SubmissionClaimVersion != 0 {
+			claimVersion = task.SubmissionClaimVersion
+		}
+		deadline, err := receiptSink.ValidateSubmissionClaim(ctx, taskID, claimVersion)
 		if err != nil {
+			// 同一计划的并发赢家可能已在两次紧前检查之间提交回执；不得把赢家降为未知。
+			latest, loadErr := g.Query(ctx, taskID)
+			if loadErr == nil && taskStatusRank(latest.Status) >= taskStatusRank(TaskSubmitted) {
+				return latest, nil
+			}
 			pending, _ := g.advance(ctx, task, TaskPendingReconcile, "worker", "submission_expired", nil)
 			return pending, err
 		}
@@ -122,19 +146,35 @@ func (g *VideoGateway) Submit(ctx context.Context, taskID string) (GatewayTask, 
 		submitCtx, cancel = context.WithDeadline(ctx, deadline)
 		defer cancel()
 	}
+	// 所有数据库claim校验完成后，才在Provider RPC紧前消费一次性发送权；旧Ledger仍执行原持久门。
+	if gate, ok := g.deps.Ledger.(VideoProviderSubmissionGate); ok {
+		if err := gate.ValidateProviderSubmission(ctx, taskID, task.Version); err != nil {
+			return task, err
+		}
+	}
 	result, submitErr := g.deps.Provider.Submit(submitCtx, SubmitRequest{
-		RequestID: task.RequestID, Operation: task.Operation, Prompt: task.Prompt, Input: task.Input, Spec: task.Spec,
+		RequestID: task.RequestID, ProviderTaskID: task.PlannedProviderTaskID, Operation: task.Operation, Prompt: task.Prompt, Input: task.Input, Spec: task.Spec,
 	})
 	if receiptSink != nil {
 		if result.ProviderTaskID == "" {
 			pending, err := g.advance(ctx, task, TaskPendingReconcile, "worker", "submit_unknown", nil)
 			return pending, errors.Join(submitErr, err, ErrProviderResultUnknown)
 		}
-		if submitErr != nil && !errors.Is(submitErr, ErrSubmitAcknowledgementLost) {
+		if submitErr != nil && !errors.Is(submitErr, ErrSubmitAcknowledgementLost) && !errors.Is(submitErr, ErrDuplicateSubmitForbidden) {
 			result.Status = ProviderTaskUnknown
 		}
-		updated, err := receiptSink.RecordSubmissionReceipt(ctx, taskID, task.Version, result)
+		claimVersion := task.Version
+		if task.SubmissionClaimVersion != 0 {
+			claimVersion = task.SubmissionClaimVersion
+		}
+		updated, err := receiptSink.RecordSubmissionReceipt(ctx, taskID, claimVersion, result)
 		if err != nil {
+			if errors.Is(submitErr, ErrDuplicateSubmitForbidden) && result.ProviderTaskID != "" {
+				latest, loadErr := g.Query(ctx, taskID)
+				if loadErr == nil && latest.ProviderCode == result.ProviderCode && latest.ProviderTaskID == result.ProviderTaskID && taskStatusRank(latest.Status) >= taskStatusRank(TaskSubmitted) {
+					return latest, submitErr
+				}
+			}
 			pending, markErr := g.advance(ctx, task, TaskPendingReconcile, "worker", "submit_unknown", nil)
 			return pending, errors.Join(submitErr, err, markErr)
 		}
@@ -178,7 +218,7 @@ func (g *VideoGateway) Poll(ctx context.Context, taskID string) (GatewayTask, er
 	if task.Status != TaskSubmitted && task.Status != TaskProcessing {
 		return task, nil
 	}
-	result, queryErr := g.deps.Provider.Query(ctx, QueryRequest{ProviderTaskID: task.ProviderTaskID})
+	result, queryErr := g.deps.Provider.Query(ctx, QueryRequest{ProviderTaskID: task.ProviderTaskID, Operation: task.Operation})
 	return g.applyPolledResult(ctx, task, result, queryErr)
 }
 
@@ -763,7 +803,7 @@ func validateGatewayTask(task GatewayTask) error {
 	if strings.TrimSpace(task.TaskID) == "" || strings.TrimSpace(task.RequestID) == "" || strings.TrimSpace(task.Prompt) == "" {
 		return ErrVideoRequestInvalid
 	}
-	if err := validateSubmitRequest(SubmitRequest{RequestID: task.RequestID, Operation: task.Operation, Prompt: task.Prompt, Input: task.Input, Spec: task.Spec}); err != nil {
+	if err := validateSubmitRequest(SubmitRequest{RequestID: task.RequestID, ProviderTaskID: task.PlannedProviderTaskID, Operation: task.Operation, Prompt: task.Prompt, Input: task.Input, Spec: task.Spec}); err != nil {
 		return err
 	}
 	if task.Operation == OperationTextToVideo {

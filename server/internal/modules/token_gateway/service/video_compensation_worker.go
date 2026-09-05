@@ -39,6 +39,11 @@ func (s *VideoBillingService) markVideoFinancialPending(ctx context.Context, tas
 			if !eligible || (task.BillingStatus != model.AIBillingHeld && task.BillingStatus != model.AIBillingSettlementPending) {
 				return nil
 			}
+			// 这是普通结算/退款失败后的新补记事务，不继承已回滚事务的执行许可。
+			// 原context取消可被隔离，但旧证明或租约到期不能借补记创建P/C及补偿任务。
+			if err := repository.CheckVideoWorkerLeaseTx(ctx, tx, task); err != nil {
+				return err
+			}
 			_, quote, _, hold, err := loadVideoFinancialFactsTx(tx, task, owner)
 			if err != nil {
 				return err
@@ -57,6 +62,9 @@ func (s *VideoBillingService) markVideoFinancialPending(ctx context.Context, tas
 				code = "release_failed"
 			}
 			_, err = s.ensureVideoRecoveryTx(ctx, tx, task, owner, code)
+			if err == nil {
+				err = repository.CheckVideoWorkerLeaseTx(ctx, tx, task)
+			}
 			return err
 		}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	})

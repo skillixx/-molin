@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "scope": "原MySQL门闩上的持久恢复代次、恢复租约和原审计事实保护；不提供ready",
+  "status": "PASS_AUDIT_TYPE_FIX_RECOVERY_FOUNDATION_ONLY",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "uncommitted_changes": true,
+  "history": [
+    {
+      "session": 78929,
+      "exit_code": 2,
+      "server_sha256": "85f0c6735f3eb9631df7535d7615a88cde4fce6840ad088ad82e1059aad4581d",
+      "result": "未实现认领，100次全部拒绝的RED"
+    },
+    {
+      "session": 42539,
+      "exit_code": 0,
+      "server_sha256": "b4b14dac0b17411c4fb7480e078af58092cb966d0e66eb3d76a9a06c50ca6a98",
+      "result": "基础MySQL通过",
+      "seconds": 31.81
+    },
+    {
+      "session": 91061,
+      "exit_code": 0,
+      "server_sha256": "76053c618e9af752ea891b23f5f4e5051bd8789a3cab2fa87f52ea811cd15f63",
+      "result": "扩展native与Linux race通过，尚未含后续SQL版本/审计强化",
+      "native_seconds": 62.62,
+      "linux_seconds": 61.36,
+      "skip": 0,
+      "cleanup": "PASS"
+    },
+    {
+      "session": 87305,
+      "exit_code": 2,
+      "server_sha256": "17d3ac24df2ca8226698c43896c3e39a6997fe2e12c859a0548a100b5d9dcafb",
+      "result": "真实SQL版本回退/跳号、审计更新/删除/重复全部错误接受"
+    },
+    {
+      "session": 98087,
+      "exit_code": 2,
+      "server_sha256": "7c461c821403b886a4f4f21c7629b5820c3478f95250c9e1d90e9953b9da9e7d",
+      "result": "owner_number和missing_schema实际INSERT成功；blocked唯一键为空，未依赖Go校验"
+    }
+  ],
+  "toolchain": {
+    "session": 9425,
+    "exit_code": 0,
+    "go_test_all": "PASS_DEFAULT_ENV",
+    "go_vet": "PASS",
+    "go_mod_verify": "PASS",
+    "sensitive_scan": {
+      "files": 113,
+      "fail": 0,
+      "review": 0
+    },
+    "diff_check": "PASS"
+  },
+  "review": {
+    "agent": "g7_outbox_finance_audit",
+    "findings": [
+      "版本单独回退缺少SQL守卫",
+      "异常退出时故障回调需立即安排Cleanup"
+    ],
+    "remediation": "版本单调、恢复审计保护、Cleanup和JSON缺字段/类型问题均已局部复验关闭；不签完整G7验收。",
+    "whole_stage_acceptance": "PENDING"
+  },
+  "open_checks": [
+    "最大uint64数据库边界",
+    "完整账本快照和ready发布",
+    "实际Redis/进程重启、确认/释放及多进程运行时"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false,
+  "source_state_id": "9ae70b61cccb550f95a14c594e57851866201e76a3d579caf2b5e447d64b9c34",
+  "source_server_execution_sha256": "33cc1706e7277edb6909bfc8a94b2c802533436c0e64fd9346e6ccbb519b3035",
+  "verification": {
+    "session": 43096,
+    "status": "PASS_EXISTING_TESTS",
+    "commands": [
+      "verify-video-gateway-vid-g7-outbox.ps1 -Focus capacity_epoch",
+      "verify-video-gateway-vid-g7-outbox.ps1 -Focus capacity_epoch -LinuxRace"
+    ],
+    "native": {
+      "required": 2,
+      "run": 2,
+      "pass": 2,
+      "skip": 0,
+      "epoch_seconds": 62.52,
+      "version_seconds": 0.11,
+      "cleanup": "PASS"
+    },
+    "phase": "COMPLETED",
+    "exit_code": 0,
+    "cleanup": "PASS",
+    "linux_race": {
+      "required": 2,
+      "run": 2,
+      "pass": 2,
+      "skip": 0,
+      "epoch_seconds": 61.64,
+      "version_seconds": 0.05,
+      "cleanup": "PASS"
+    }
+  },
+  "audit_json_remediation": {
+    "required_fields": 7,
+    "schema": "INTEGER且值1",
+    "other_fields": "六项STRING",
+    "null_safety": "存在性、类型、长度及schema值均使用<=>",
+    "review": "独立QA只读确认，39272真实native及Linux复验通过，AUDIT-002局部关闭"
+  },
+  "audit_type_verification": {
+    "session": 39272,
+    "status": "PASS",
+    "commands": [
+      "verify-video-gateway-vid-g7-outbox.ps1 -Focus capacity_audit_types",
+      "verify-video-gateway-vid-g7-outbox.ps1 -Focus capacity_epoch -LinuxRace"
+    ],
+    "native": {
+      "run": 1,
+      "pass": 1,
+      "skip": 0,
+      "subcases": 17,
+      "seconds": 0.44,
+      "cleanup": "PASS"
+    },
+    "linux_status": "PASS",
+    "linux": {
+      "required": 2,
+      "run": 2,
+      "pass": 2,
+      "skip": 0,
+      "epoch_seconds": 61.88,
+      "version_seconds": 0.05,
+      "includes_audit_type_subcases": 17,
+      "cleanup": "PASS"
+    },
+    "exit_code": 0,
+    "source_before_after": "UNCHANGED",
+    "cleanup": "PASS"
+  }
+}

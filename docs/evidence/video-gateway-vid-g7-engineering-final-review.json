@@ -1,0 +1,23 @@
+{
+  "target_goal": "VID-G7",
+  "role": "independent_engineering",
+"reviewed_source_state": "e041a6d768afc85a5684ae9c46713ea26fac1813462f03faab62a27b3737dea0",
+  "read_only": true,
+  "standards_review": "PASS",
+  "spec_review": "PASS",
+  "dev_code_review": "PASS",
+  "p0": 0,
+  "p1": 0,
+  "p2": 0,
+  "verified": {
+    "source_state": "PASS",
+    "final_evidence": "PASS",
+    "runtime": "22/22",
+    "finance": "166/166",
+    "fact_snapshot": "2/2",
+    "git_diff_check": "PASS"
+  },
+  "external_gate": "TEST_SERVER_AUTHORIZATION_NOT_GRANTED",
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false
+}

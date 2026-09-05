@@ -1,0 +1,18 @@
+services:
+  api:
+    # 关闭态只允许负责人授权的不可变镜像；--no-build与pull_policy共同阻止现场构建或漂移拉取。
+    image: ${VIDEO_G7_API_IMAGE_DIGEST:?必须提供VID-G7 API镜像digest}
+    build: !reset null
+    pull_policy: never
+    env_file: !override
+      - ${VIDEO_G7_ENV_FILE:?必须提供测试服受限环境文件}
+    environment:
+      VIDEO_GATEWAY_ENABLED: "false"
+      VIDEO_GATEWAY_TRAFFIC_ENABLED: "false"
+      REAL_PROVIDER: "false"
+      VIDEO_GATEWAY_LOCAL_FAKE_TEST: "false"
+      MYSQL_HOST: ${VIDEO_G7_API_MYSQL_HOST:?必须提供API容器MySQL地址}
+      MYSQL_PORT: ${VIDEO_G7_API_MYSQL_PORT:?必须提供API容器MySQL端口}
+      MYSQL_DATABASE: ${VIDEO_G7_MYSQL_DATABASE:?必须提供获批数据库}
+      MYSQL_USER: ${VIDEO_G7_MYSQL_USER:?必须提供获批数据库用户}
+      MYSQL_PASSWORD: ${VIDEO_G7_MYSQL_PASSWORD:?必须提供获批数据库密码}

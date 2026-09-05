@@ -17,6 +17,14 @@ func videoAdjustmentPayload(task *repository.VideoTaskRecord, item *model.VideoU
 
 // validateVideoAdjustmentsTx 独立核对调整与钱包动作，不能把原Hold消费与后续修正混为一笔。
 func validateVideoAdjustmentsTx(tx *gorm.DB, task *repository.VideoTaskRecord) error {
+	return validateVideoAdjustments(tx, task, true)
+}
+
+func validateVideoAdjustmentsSnapshotTx(tx *gorm.DB, task *repository.VideoTaskRecord) error {
+	return validateVideoAdjustments(tx, task, false)
+}
+
+func validateVideoAdjustments(tx *gorm.DB, task *repository.VideoTaskRecord, lockWallet bool) error {
 	var items []model.VideoUsageItem
 	if err := tx.Where("request_id=? AND record_kind='adjustment'", task.RequestID).Order("sequence_no").Find(&items).Error; err != nil {
 		return err
@@ -45,7 +53,7 @@ func validateVideoAdjustmentsTx(tx *gorm.DB, task *repository.VideoTaskRecord) e
 	if tx.First(&q, task.QuoteID).Error != nil || tx.Where("request_id=?", task.RequestID).First(&link).Error != nil {
 		return ErrVideoReconciliation
 	}
-	if !videoWalletHistoryConsistent(tx, link.WalletID, task.UserID) {
+	if !videoWalletHistoryConsistentMode(tx, link.WalletID, task.UserID, lockWallet) {
 		return ErrVideoReconciliation
 	}
 	seen := map[uint32]bool{}
@@ -81,7 +89,7 @@ func validateVideoAdjustmentsTx(tx *gorm.DB, task *repository.VideoTaskRecord) e
 		found := false
 		for _, event := range events {
 			if event.EventID == videoAdjustmentEventID(task.RequestID, item.SequenceNo) {
-				found = event.AggregateType == "video_request" && event.Status == model.AIOutboxPending && event.LockedAt == nil && equalVideoFinancialJSON(payload, event.PayloadJSON)
+				found = event.AggregateType == "video_request" && event.AggregateID == task.RequestID && event.EventType == "video_adjustment_recorded" && validVideoOutboxTransportState(event) && equalVideoFinancialJSON(payload, event.PayloadJSON)
 				break
 			}
 		}

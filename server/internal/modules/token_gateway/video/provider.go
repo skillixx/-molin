@@ -55,11 +55,12 @@ type VideoSpec struct {
 }
 
 type SubmitRequest struct {
-	RequestID string
-	Operation string
-	Prompt    string `json:"-"`
-	Input     *ControlledInputRef
-	Spec      VideoSpec
+	RequestID      string
+	ProviderTaskID string `json:"-"`
+	Operation      string
+	Prompt         string `json:"-"`
+	Input          *ControlledInputRef
+	Spec           VideoSpec
 }
 
 type SubmitResult struct {
@@ -75,8 +76,20 @@ type VideoSubmissionLedger interface {
 	RecordSubmissionReceipt(context.Context, string, uint64, SubmitResult) (GatewayTask, error)
 }
 
+// VideoProviderSubmissionGate 是所有执行路径在Provider RPC紧前共同经过的持久门禁。
+// 返回成功本身不创建提交许可；持久计划和容量授权仍由具体Ledger分别证明。
+type VideoProviderSubmissionGate interface {
+	ValidateProviderSubmission(context.Context, string, uint64) error
+}
+
+// VideoPlannedSubmissionResumer只允许持有当前Worker及容量证明的原计划继续同一次Provider提交。
+type VideoPlannedSubmissionResumer interface {
+	ResumePlannedSubmission(context.Context, string, uint64) error
+}
+
 type QueryRequest struct {
 	ProviderTaskID string
+	Operation      string
 }
 
 // ControlledContentRef 是Provider内容读取能力的不可伪造句柄，不包含外部URL。

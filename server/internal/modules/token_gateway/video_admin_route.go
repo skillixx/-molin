@@ -17,6 +17,8 @@ func RegisterVideoAdminRoutes(mux *http.ServeMux, app *service.VideoAdminService
 	mux.Handle("POST /api/admin/token/video-adjustments", middleware.RequestID(http.HandlerFunc(h.ManageAdjustment)))
 	mux.Handle("POST /api/admin/token/video-tasks/{task_id}/archive-retry", middleware.RequestID(http.HandlerFunc(h.RetryArchive)))
 	mux.Handle("POST /api/admin/token/video-tasks/{task_id}/poll", middleware.RequestID(http.HandlerFunc(h.PollTask)))
+	mux.Handle("POST /api/admin/token/video-tasks/{task_id}/dlq/{stage}/recover", middleware.RequestID(http.HandlerFunc(h.RecoverDeadLetter)))
+	mux.Handle("POST /api/admin/token/video-rabbit/{stage}/poison/discard", middleware.RequestID(http.HandlerFunc(h.DiscardPoisonMessage)))
 	mux.Handle("POST /api/admin/token/video-assets/{asset_id}/release", middleware.RequestID(http.HandlerFunc(h.ReleaseOutput)))
 	mux.Handle("POST /api/admin/token/video-assets/{asset_id}/quarantine", middleware.RequestID(http.HandlerFunc(h.QuarantineOutput)))
 	mux.Handle("POST /api/admin/token/video-input-assets/{input_asset_id}/quarantine", middleware.RequestID(http.HandlerFunc(h.QuarantineInput)))

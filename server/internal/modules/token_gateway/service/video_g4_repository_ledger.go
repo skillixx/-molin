@@ -134,6 +134,12 @@ func (l *VideoRepositoryTaskLedger) Load(ctx context.Context, taskID string) (vi
 	if record.ProviderTaskID != nil {
 		task.ProviderTaskID = *record.ProviderTaskID
 	}
+	if record.SubmissionClaimVersion != nil {
+		task.SubmissionClaimVersion = *record.SubmissionClaimVersion
+	}
+	if record.SubmissionIntentID != nil {
+		task.PlannedProviderTaskID = *record.SubmissionIntentID
+	}
 	if (task.Status == videogateway.TaskFetching || task.Status == videogateway.TaskStoring || task.Status == videogateway.TaskModerating || task.Status == videogateway.TaskLabeling) && task.ProviderTaskID != "" {
 		task.Content = &videogateway.ControlledContentRef{
 			ProviderTaskID: task.ProviderTaskID,

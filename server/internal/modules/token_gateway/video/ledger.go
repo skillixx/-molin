@@ -95,25 +95,28 @@ type GatewayAsset struct {
 
 type GatewayTask struct {
 	// DeferDelivery由财务仓储装配，不接受客户端字段；媒体成功后仍等待独立结算和交付事务。
-	DeferDelivery     bool `json:"-"`
-	TaskID            string
-	RequestID         string
-	Operation         string
-	Prompt            string                    `json:"-"`
-	Input             *ControlledInputRef       `json:"-"`
-	Reference         *NormalizedReferenceImage `json:"-"`
-	Spec              VideoSpec
-	Status            TaskStatus
-	Version           uint64
-	CancelRequestedAt *time.Time
-	ProviderCode      string                `json:"-"`
-	ProviderTaskID    string                `json:"-"`
-	Content           *ControlledContentRef `json:"-"`
-	Media             *VideoMediaMetadata
-	Asset             *GatewayAsset
-	LeaseReleased     bool
-	LeaseReleaseCount uint32
-	Events            []GatewayTaskEvent
+	DeferDelivery bool `json:"-"`
+	TaskID        string
+	RequestID     string
+	Operation     string
+	Prompt        string                    `json:"-"`
+	Input         *ControlledInputRef       `json:"-"`
+	Reference     *NormalizedReferenceImage `json:"-"`
+	Spec          VideoSpec
+	Status        TaskStatus
+	Version       uint64
+	// SubmissionClaimVersion是进入submitting时的冻结业务版本；计划写入后的当前Version不能冒充它。
+	SubmissionClaimVersion uint64 `json:"-"`
+	PlannedProviderTaskID  string `json:"-"`
+	CancelRequestedAt      *time.Time
+	ProviderCode           string                `json:"-"`
+	ProviderTaskID         string                `json:"-"`
+	Content                *ControlledContentRef `json:"-"`
+	Media                  *VideoMediaMetadata
+	Asset                  *GatewayAsset
+	LeaseReleased          bool
+	LeaseReleaseCount      uint32
+	Events                 []GatewayTaskEvent
 }
 
 type TaskMutation func(task *GatewayTask) error

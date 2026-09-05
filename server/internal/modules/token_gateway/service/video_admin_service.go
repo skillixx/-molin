@@ -14,6 +14,7 @@ import (
 	authrepo "molin/server/internal/modules/auth/repository"
 	authservice "molin/server/internal/modules/auth/service"
 	"molin/server/internal/modules/token_gateway/repository"
+	video "molin/server/internal/modules/token_gateway/video"
 )
 
 var (
@@ -30,6 +31,7 @@ type VideoAdminService struct {
 	adjustmentsEnabled bool
 	modelDrafts        *VideoModelDraftOptions
 	modelPublishing    *VideoModelPublishOptions
+	dlqConsumer        *video.TaskConsumer
 }
 
 // 管理写依赖必须显式传入；只读构造保持兼容，不从Prompt或供应商密钥推导管理原因密钥。
@@ -40,6 +42,7 @@ type VideoAdminWriteOptions struct {
 	AdjustmentsEnabled bool
 	ModelDrafts        *VideoModelDraftOptions
 	ModelPublishing    *VideoModelPublishOptions
+	DLQConsumer        *video.TaskConsumer
 }
 type VideoAdminTaskDetails struct {
 	*VideoTaskDetails
@@ -65,6 +68,7 @@ func NewVideoAdminService(app *VideoHTTPService, verifyHours int, writes ...Vide
 		s.reasons = p
 		s.pollProvider = writes[0].PollProvider
 		s.adjustmentsEnabled = writes[0].AdjustmentsEnabled
+		s.dlqConsumer = writes[0].DLQConsumer
 		if writes[0].ModelDrafts != nil {
 			copy := *writes[0].ModelDrafts
 			s.modelDrafts = &copy
@@ -82,6 +86,10 @@ func NewVideoAdminService(app *VideoHTTPService, verifyHours int, writes ...Vide
 		}
 	}
 	return s, nil
+}
+
+func (s *VideoAdminService) DLQRecoveryReady() bool {
+	return s != nil && s.WritesReady() && s.dlqConsumer != nil
 }
 
 func (s *VideoAdminService) WritesReady() bool {

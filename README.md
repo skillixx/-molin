@@ -198,7 +198,8 @@ scripts/                    建表、Migration、测试数据初始化脚本
 | [视频网关 VID-G3 任务、资产与事件](docs/video-gateway-vid-g3-task-asset-events.md) | 三轴状态机、输入租约、回调、AES-GCM、媒体资产和隔离MySQL验收 |
 | [视频网关 VID-G4 Fake异步与媒体安全](docs/video-gateway-vid-g4-fake-async-media-safety.md) | Fake原生异步、Worker、参考图规范化、MP4探测、审核、AI标识和对象存储 |
 | [视频网关 VID-G5 开发合同](docs/video-gateway-vid-g5-billing-outbox-reconcile.md) | 本地财务合同、预占/结算/释放/补偿/对账、金样与独立验收记录；未开放HTTP或真实业务 |
-| [视频网关 VID-G6 HTTP 开发合同](docs/video-gateway-vid-g6-http-project-sk-contract.md) | 最终本地候选：47条路由、锁定SDK、VID-G5/IMG-G6兼容及完整MySQL/Linux race已同源通过；等待新SOURCE_STATE下四轴独立终审与Git/Ready CI，真实Provider、测试服和生产均未开始 |
+| [视频网关 VID-G6 HTTP 开发合同](docs/video-gateway-vid-g6-http-project-sk-contract.md) | PR #422 已合并：47条路由、锁定SDK、兼容回归、MySQL/Linux race、五轴独立终审及精确HEAD Ready CI通过；默认视频关闭，真实Provider、测试服和生产均未开始 |
+| [视频网关 VID-G7 基础设施与恢复](docs/video-gateway-vid-g7-infra-recovery.md) | 本地已完成容量、2/4/8进程、Rabbit终态财务Worker、DLQ Outbox恢复、毒消息持久熔断、跨进程Native Fetch、共享MinIO封存、持久分页双向对账、会话/输入/输出公平留存、API/Worker优雅停机、10条告警、8面板、119–121重入及110–122保留式回滚；最终运行数量以同源证据为准，测试服实际回滚仍未授权 |
 | [视频网关 VID-G6 管理员只读查询](docs/video-gateway-vid-g6-admin-read-contract.md) | 真实JWT、实时权限及手机/邮箱MFA；任务、输入/输出列表与运行汇总已有局部验证，完整矩阵仍在开发 |
 | [视频网关 VID-G6 管理员取消](docs/video-gateway-vid-g6-admin-cancel-contract.md) | 显式专用原因加密、事务内权限/CAS/前后审计及原G5取消；局部验证中，不开放真实业务 |
 | [视频网关 VID-G6 管理员输入隔离](docs/video-gateway-vid-g6-admin-input-quarantine-contract.md) | 保留原审核、输入快照、在途租约与资金，仅推进隔离CAS并记录加密原因/审计；本地验证中 |

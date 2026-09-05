@@ -138,7 +138,7 @@ func (r *VideoProviderCallbackEventRepository) RecordAndApply(ctx context.Contex
 				if err := tx.Model(&model.AIRequest{}).
 					Where("request_id=? AND user_id=? AND project_id=? AND modality='video' AND capability=?", task.RequestID, task.UserID, task.ProjectID, model.AIVideoCapability).
 					Updates(map[string]interface{}{
-						"execution_status": videoRequestExecutionStatus(command.ToStatus),
+						"execution_status": VideoRequestExecutionStatus(command.ToStatus),
 						"version_no":       gorm.Expr("version_no + 1"),
 						"updated_at":       command.ReceivedAt,
 					}).Error; err != nil {

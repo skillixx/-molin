@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "scope": "完整MySQL账本快照到Redis staged、MySQL ready和Redis activate的关闭态恢复协调",
+  "status": "LOCAL_MYSQL_REDIS_COORDINATOR_VERIFIED_RUNTIME_PENDING",
+  "base_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "source_server_sha256": "53c692bbda4e4cf93f4d002f2d7cbaed56e9162116e3c186e36b58f8a6e0023c",
+  "red": {
+    "session": 61324,
+    "result": "旧prepared配新proof先污染MySQL ready，双侧零写断言失败"
+  },
+  "native": {
+    "session": 54386,
+    "required": 1,
+    "run": 1,
+    "pass": 1,
+    "skip": 0,
+    "cleanup": "PASS"
+  },
+  "linux_race": {
+    "session": 98536,
+    "required": 1,
+    "run": 1,
+    "pass": 1,
+    "skip": 0,
+    "cleanup": "PASS"
+  },
+  "redis_recovery_regression": {
+    "session": 24207,
+    "required": 4,
+    "run": 4,
+    "pass": 4,
+    "skip": 0,
+    "cleanup": "PASS"
+  },
+  "covered": [
+    "BuildSnapshot到StageRecovery到PublishReady到ActivateRecovery固定顺序",
+    "proof、prepared、store和MySQL当前epoch/policy/run_id/摘要/数量绑定",
+    "旧prepared配新proof在任何写入前拒绝",
+    "Prepare后Redis固定键TTL漂移在MySQL ready前拒绝",
+    "Stage执行成功但EVAL回执丢失后Inspect查明",
+    "MySQL COMMIT成功但回执丢失后ValidateReady查明",
+    "Activate执行成功但EVAL回执丢失后Inspect查明",
+    "Activate执行前失败留下DB ready与Redis rebuilding后同prepared重试收敛",
+    "ready重放MySQL和Redis双侧零写",
+    "prepared与snapshot的JSON及格式化输出脱敏",
+    "独立容量HMAC密钥替代单恢复进程临时proof nonce，恢复快照可由多进程稳定重建"
+  ],
+  "independent_review": {
+    "agents": [
+      "g7_outbox_finance_audit",
+      "g7_outbox_safety_check"
+    ],
+    "initial_findings": [
+      "旧prepared与新proof错配",
+      "Prepare后Redis漂移",
+      "DB ready加Redis rebuilding无法重试收敛",
+      "NULL租期CHECK UNKNOWN",
+      "000113 CHECK替换部分重入",
+      "all与Finance隔离分组"
+    ],
+    "resolution": "FIXED_NATIVE_LINUX_AND_INDEPENDENT_REREVIEW_VERIFIED",
+    "boundary": "恢复协调切片，不是完整G7终审"
+  },
+  "not_yet_verified": [
+    "容量准入与业务Worker完整装配",
+    "2/4/8真实进程",
+    "实际Redis进程重启",
+    "测试服关闭态安装和回滚",
+    "完整VID-G7验收"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false
+}

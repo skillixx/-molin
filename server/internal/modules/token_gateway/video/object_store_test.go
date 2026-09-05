@@ -19,7 +19,7 @@ func TestFakeVideoObjectStoreGeneratesLocationAndStreamsRanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.Ref.Bucket != "video-result" || stored.Ref.ObjectKey != "vid_task_1/vasset_1/content.bin" || len(stored.SHA256) != 64 {
+	if stored.Ref.Bucket != "ai-result" || stored.Ref.ObjectKey != "vid_task_1/vasset_1/content.bin" || len(stored.SHA256) != 64 {
 		t.Fatalf("服务端对象定位不符合合同: %+v", stored)
 	}
 	reader, err := store.GetRange(context.Background(), stored.Ref, 5, 5)
@@ -61,7 +61,7 @@ func TestFakeVideoObjectStoreQuarantineAndDeleteAreSafe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if quarantined.Ref.Bucket != "video-quarantine" || quarantined.SHA256 != stored.SHA256 {
+	if quarantined.Ref.Bucket != "ai-quarantine" || quarantined.SHA256 != stored.SHA256 {
 		t.Fatalf("隔离迁移必须保留内容事实: %+v", quarantined)
 	}
 	if _, err := store.Head(context.Background(), stored.Ref); !errors.Is(err, ErrVideoObjectNotFound) {

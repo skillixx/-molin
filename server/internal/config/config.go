@@ -106,6 +106,9 @@ type Config struct {
 	// AIGatewayTrafficEnabled 是文字模型商业流量总闸；生产默认关闭，必须由受控发布显式开启。
 	AIGatewayTrafficEnabled bool
 
+	// 视频配置独立于Chat/Image加载；三层开关默认关闭，不读取上游凭据。
+	VideoGateway VideoGatewayConfig
+
 	// 图片网关默认关闭；G7只允许本地Fake流量，OpenRouter真实执行继续由G9独立授权。
 	ImageGatewayEnabled               bool
 	ImageGatewayTrafficEnabled        bool
@@ -274,6 +277,7 @@ func Load() Config {
 		BifrostInternalToken:             getenv("BIFROST_INTERNAL_TOKEN", ""),
 		AIGatewayHealthInternalAllowlist: splitCSV(getenv("AI_GATEWAY_HEALTH_INTERNAL_ALLOWLIST", "")),
 		AIGatewayTrafficEnabled:          getenvBool("AI_GATEWAY_TRAFFIC_ENABLED", appEnv != "production"),
+		VideoGateway:                     LoadVideoGatewayConfig(os.LookupEnv),
 
 		ImageGatewayEnabled:                     getenvBool("IMAGE_GATEWAY_ENABLED", false),
 		ImageGatewayTrafficEnabled:              getenvBool("IMAGE_GATEWAY_TRAFFIC_ENABLED", false),

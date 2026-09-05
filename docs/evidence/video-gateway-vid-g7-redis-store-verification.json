@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "status": "PASS_REDIS_STORAGE_COMPONENT_NOT_RUNTIME",
+  "scope": "固定单Fake Provider的Redis原子容量存储与confirm/release动作；不含MySQL业务授权或多进程闭环",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "uncommitted_changes": true,
+  "source_server_execution_sha256": "218f7ee7c5911d988667e8732f8eb1d8792f26156722d39bc2a0e195ef2d8d69",
+  "files": [
+    "server/internal/modules/token_gateway/service/video_redis_capacity.go",
+    "server/internal/modules/token_gateway/service/video_redis_capacity.lua",
+    "server/internal/modules/token_gateway/service/video_redis_capacity_test.go",
+    "infra/scripts/verify-video-gateway-vid-g7-redis.ps1"
+  ],
+  "red_green_history": [
+    {
+      "session": 8250,
+      "server_sha256": "4d989029a0300a9c7d6f2b4c07d7033f16f392da726b2037c8b51e0ffb5689ce",
+      "exit_code": 2,
+      "result": "未实现ReserveQueued拒绝合法真实Redis预留"
+    },
+    {
+      "session": 6703,
+      "server_sha256": "7463c8790a97e79df89eb78818fd8b8922be7c4932a00e3a47cab9589857bf90",
+      "exit_code": 0,
+      "result": "排队预留首项真实Redis通过"
+    },
+    {
+      "session": 68665,
+      "server_sha256": "5e8ccb6180d45e4960c97fe76c914c62b50076e212ff0d0db7851214d601eb73",
+      "exit_code": 2,
+      "result": "promoting未实现；同时复现空库测试继承其他用例状态"
+    },
+    {
+      "session": 92079,
+      "server_sha256": "dbe384d206e90254d61e2e929dd03cc0f6c81240a56b1d2144431613995a6163",
+      "exit_code": 0,
+      "result": "四项native通过，实际到期30.13秒"
+    },
+    {
+      "session": 15789,
+      "server_sha256": "1845765906e51723da190cbeacfbb1227e7c78db95352c4a9060babb2e496965",
+      "exit_code": 2,
+      "result": "同Request异Task错误返回nil，唯一绑定反例"
+    },
+    {
+      "session": 60455,
+      "server_sha256": "f5c5641f7eebb98217578396ecc5ee28c32fdb79c00cad2c4b9276e40cb7fda2",
+      "exit_code": 0,
+      "result": "唯一绑定修复后七项native通过"
+    }
+  ],
+  "verification": {
+    "native_session": 80555,
+    "linux_session": 56671,
+    "commands": [
+      "verify-video-gateway-vid-g7-redis.ps1",
+      "verify-video-gateway-vid-g7-redis.ps1 -LinuxRace"
+    ],
+    "redis_image": "redis@sha256:e9b2e45ecd47fbb69b877cf8d045d5cccaaaed52524b6e098b4abe8212994f73",
+    "go_image": "golang@sha256:908f8ff2ec296df2f349563072c7925775cd28b50361a52ed834a8a37399b9bf",
+    "native": {
+      "required": 14,
+      "run": 14,
+      "pass": 14,
+      "skip": 0,
+      "expiry_seconds": 30.13,
+      "cleanup": "PASS"
+    },
+    "linux_race": {
+      "required": 14,
+      "run": 14,
+      "pass": 14,
+      "skip": 0,
+      "expiry_seconds": 30.13,
+      "cleanup": "PASS"
+    },
+    "source_before_after": "UNCHANGED",
+    "exit_code": 0,
+    "test_names": [
+      "TestVideoG7RedisCapacityConcurrent",
+      "TestVideoG7RedisCapacityMalformed",
+      "TestVideoG7RedisCapacityPromoting",
+      "TestVideoG7RedisCapacityConfirmRelease",
+      "TestVideoG7RedisCapacityExpiredRelease",
+      "TestVideoG7RedisCapacityQueued",
+      "TestVideoG7RedisCapacityRequestBinding",
+      "TestVideoG7RedisCapacityScopes",
+      "TestVideoG7RedisCapacityLostReply",
+      "TestVideoG7RedisCapacityAttemptBoundary"
+    ]
+  },
+  "toolchain": {
+    "session": 87021,
+    "exit_code": 0,
+    "go_test_all": "PASS_DEFAULT_ENV",
+    "go_vet": "PASS",
+    "go_mod_verify": "PASS",
+    "boundary": "默认环境不连接真实MySQL/Redis，不能替代完整集成",
+    "sensitive_scan": {
+      "files": 104,
+      "fail": 0,
+      "review": 0
+    },
+    "powershell_parse": "PASS",
+    "diff_check": "PASS"
+  },
+  "assertions": [
+    "100个goroutine对真实Redis竞争，两个operation合计2个赢家和98个拒绝",
+    "14类损坏快照、TTL、epoch/policy/run_id不符与过大数据拒绝且零写入",
+    "Task/Request唯一绑定；同nonce重放不续期、不新增占用，异身份或新nonce拒绝",
+    "四个queued收紧轴独立命中；最大相邻uint64及最大epoch不被浮点合并",
+    "JWT按稳定User/Project主体，不能按每个请求新建容量桶",
+    "promoting保留queued并占running；confirm原子转running并移除queued；其他模型/operation共用Provider=2",
+    "release只接受同identity/nonce，实际完成后丢回执可用原尝试只读重放且不会重复写",
+    "过期promoting/running不能confirm，不同nonce不能清债；exact release允许上层清理保守保留的过期债务",
+    "真实30秒失效后仍保留容量债务；旧许可不能续期，新鲜许可仍被Provider占用拒绝",
+    "真实EVAL成功后客户端Hook丢弃结果，禁自动重试，原尝试恢复不多占容量",
+    "尝试对象指针/值JSON和格式化脱敏，入口拒绝无写入，不接受默认重试客户端"
+  ],
+  "review": {
+    "qa_agent": "g7_outbox_finance_audit",
+    "qa_result": "有界只读复核未发现新增具体P0/P1/P2；Request唯一性缺口已修，不是完整阶段QA",
+    "engineering_agent": "g7_outbox_safety_check",
+    "engineering_scope": "组件边界认可；要求实际连接run_id、过期债务、完整快照校验及不冒充MySQL提交证明",
+    "remaining_review_boundaries": [
+      "真实TCP故障及Redis重启",
+      "全部running轴独立边界",
+      "MySQL协调与恢复证明",
+      "2/4/8个Go进程",
+      "完整阶段五轴验收"
+    ]
+  },
+  "limitations": [
+    "测试在本轮隔离Redis手工seed已知初始快照，不把该夹具当成MySQL恢复器",
+    "ready发布与重建由独立MySQL/Redis协调器负责；ConfirmRunning和Release尚未由MySQL业务证明包装",
+    "身份只在存储层绑定，未验证真实数据库用户/Project/Key授权链",
+    "Hook丢弃结果不是TCP断连；100个goroutine不是多进程验证",
+    "历史135项MySQL/RabbitMQ组合固定f6372389，不重新绑定当前新增源码"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false,
+  "source_state_id": "3e2a36a717203f95abe11e22212bfd1b1da9bf8ac8113eba90ecbd0d24794f5e"
+}

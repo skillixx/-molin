@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "target_goal": "VID-G7",
+  "scope": "原G5基础取消事务的条件Worker首尾围栏，保留用户准入及只读重放",
+  "status": "PASS_LOCAL_BASE_CANCEL_AND_COMBINED",
+  "source_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
+  "source_state_id": "764dae9bd671de9c2a0dd8a647fa23eecc0cc5d6659f436728a7f30e767f321a",
+  "source_server_execution_sha256": "36d78f7d83d0b31011930be353e91789b52c82a3ea4a5cc468cc3982685b5a6a",
+  "uncommitted_changes": true,
+  "tests": {
+    "red": {
+      "session": 97947,
+      "server_sha256": "f7f27f51fbc2ac9b1451b143d5129e62161a17125ffa3373c05ebf0d255e44df",
+      "cases": 2,
+      "reason": "T2V/I2V取消尾部跨实际租约截止，写完退款后仍错误返回nil",
+      "seconds": [
+        30.51,
+        30.54
+      ]
+    },
+    "repository_unit": {
+      "name": "TestVideoG7WorkerContextLeaseInvalid",
+      "result": "PASS",
+      "coverage": "nil参数、错类型、typed nil、零值/部分证明拒绝，无key不新增授权"
+    },
+    "focused_race": {
+      "session": 12746,
+      "command": "verify-video-gateway-vid-g7-outbox.ps1 -Focus cancel_fence -LinuxRace",
+      "migration_up_count": 110,
+      "required_top_level": 1,
+      "subcases": 6,
+      "run": 1,
+      "pass": 1,
+      "skip": 0,
+      "race": "PASS",
+      "exit_code": 0,
+      "source_before_after": "UNCHANGED",
+      "cleanup": "PASS",
+      "timing_note": "并行父测试不包含子例等待；同源组合输出已确认六子例耗时。"
+    },
+    "combined": {
+      "session": 66425,
+      "status": "PASS",
+      "command": "verify-video-gateway-vid-g7-outbox.ps1 -Broker -LinuxRace",
+      "migration_up_count": 110,
+      "required": 36,
+      "run": 36,
+      "pass": 36,
+      "skip": 0,
+      "race": "PASS",
+      "exit_code": 0,
+      "source_before_after": "UNCHANGED",
+      "cleanup": "PASS",
+      "cancel_subcase_seconds": {
+        "t2v_current": 0.4,
+        "i2v_current": 0.4,
+        "t2v_user": 0.4,
+        "i2v_user": 0.46,
+        "t2v_tail": 30.64,
+        "i2v_tail": 30.7
+      },
+      "relay_seconds": 3.54
+    }
+  },
+  "assertions": [
+    "Worker尾部LeaseLost不是context超时，取消意图/Task/事件/八表/Input全回滚",
+    "原Key revoked时无proof用户仍被G5数据库准入拒绝",
+    "原授权用户无proof在G7租约存在或已过期时仍可取消",
+    "当前Worker合法取消",
+    "已取消的旧proof只读重放零写入"
+  ],
+  "reviews": {
+    "qa_agent": "g7_outbox_finance_audit",
+    "qa_scope": "只读基础取消与条件proof审查，非完整QA",
+    "pm_agent": "g7_late_observation_policy",
+    "pm_decision": "保持可信迟到观察与限定P/C原子保留，不能用旧proof全拒绝重现G5-CANCEL-005；需专用观察接收权，不恢复执行权",
+    "pm_scope": "有界产品/Spec建议，非完整PM PASS"
+  },
+  "toolchain": {
+    "session": 92878,
+    "go_test_all": "PASS_DEFAULT_ENV",
+    "go_vet": "PASS",
+    "go_mod_verify": "PASS",
+    "repository_unit": "PASS",
+    "powershell_parse": "PASS",
+    "sensitive_scan": {
+      "files": 90,
+      "fail": 0,
+      "review": 0
+    }
+  },
+  "remaining": [
+    "G6用户/管理员外层取消事务的提交边界",
+    "独立可信观察接收路径与普通Worker恢复权限区分",
+    "IO、业务消费者、native_async Fake HTTP、Redis/MinIO",
+    "多实例kill、监控、回滚、完整独立验收与测试服授权"
+  ],
+  "real_provider_requests": 0,
+  "real_provider_keys": 0,
+  "real_wallet_writes": 0,
+  "provider_cost_cny": 0,
+  "test_server_writes": 0,
+  "production_operations": 0,
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false
+}

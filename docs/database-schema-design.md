@@ -1,5 +1,7 @@
 # 数据库表设计
 
+VID-G7在途增量：000110扩展Worker租约，000111增加容量恢复代次，000112冻结Provider UUIDv4计划，000113绑定ready摘要，000114绑定首次容量epoch，000115增加一次性Provider发送权和回执UUID一致性，000116允许共享AI Bucket的同键晋级并兼容历史位置，000117追加双向对象观察与迟到绑定守卫，000118增加已到期输入retention清理凭据，000119增加对象/retention持久游标，000120追加24小时未完成上传会话清理事实，000121追加输出父子资产到期清理事实；均复用原Task/Event/资产/媒体删除账本且down保留事实。它们只在本机隔离MySQL验证，尚未安装测试服，也不代表完整阶段验收。
+
 ## 1. 数据库基础约定
 
 数据库使用 MySQL 8。
@@ -1013,3 +1015,49 @@ MYSQL_PASSWORD
 
 新增权限为 `sms:template:view`、`sms:template:manage`、`sms:template:sync`、`sms:template:test`。生产迁移前必须在 MySQL 8 隔离库验证 `1→59` 与 `58→59→58→59`；本地无 MySQL/Docker 时，静态契约测试不能替代该门禁。
 - 手机验证码状态复用 `pending → accepted/failed`；只有 `accepted`、未使用且未过期的记录可以被消费。
+
+## VID-G7 共享Outbox运行租约增量
+
+本切片不新增migration或表。`ai_outbox_events`仍是唯一事件事实：旧领取器继续排除视频，视频显式入口仅领取精确`video_request`聚合和`video_`前缀。同聚合未发布前序仍阻断后序，视频状态回写额外限制范围。
+
+视频pending/dead保留`locked_at`作为上一租约令牌；只有publishing才表示活动租约。下一次认领在行锁事务内取当前秒与上一令牌加一秒的较大值，防止同秒重排或时钟回退复用令牌。旧管理重排也保留精确视频高水位；Chat/Image保持原清空语义。published不可重排，可以清空令牌。详见[VID-G7共享Outbox合同](video-gateway-vid-g7-outbox-contract.md)。该实现不证明发布器、业务恢复或测试服已装配。
+
+G7投影器只读原Task/Request/Quote/Hold/Input及原补偿/流水，不新增消息或金融表。Task细粒度状态与Request粗粒度状态按原Repository映射核对，G5初始reserved/pending单独识别。S/R/A/J必须有真实原资金终态，P/C必须有原补偿；仅伪造正确事件ID和六字段金额不能生成消息。历史输入仍按原来源Key追溯，但投影不授予当前媒体读取/执行资格。校验器要求dead保留非空历史租约；没有可信令牌不能作为正常重排事实。
+
+发布桥接继续复用同一Outbox表：Broker确认后才按原租约标记published；发布未知保持原事件待重试，Broker成功而确认写入失败保留publishing并允许过期接管。运输恢复不新增Task、Quote、Hold或资金动作，不引入另一套消息账本。当前联合测试的数据库故障为更新前注入，不能替代真实断连/kill恢复验收。
+
+## VID-G7 Redis容量存储组件增量
+
+当前新增的是可重建的Redis活动容量快照，不新增MySQL任务、资产、消息或财务账本。固定STRING键为`molin:{video-g7}:capacity:active-v1`，schema/epoch/policy/run_id/status/count/records完整校验后以单次SET原子替换；uint64身份与epoch用字符串，Request与Task一对一。v1单Fake Provider的活动上界102、快照上界128KiB，键不设自动删除TTL，技术到期仍保留业务容量债务。
+
+原MySQL Task/Request、Hold、Usage和Outbox继续作为持久事实。计划Provider字段、恢复代次、提交证明、清理锁序及Redis ready协调已经实现并在本地隔离环境验证；仍不得用手工Redis快照替代数据库恢复。测试服装配边界见[Redis合同](video-gateway-vid-g7-redis-capacity-contract.md)。
+
+## VID-G7 持久恢复代次扩展（111—115，本地已验证）
+
+112提交计划扩展原`ai_gateway_tasks`：`planned_provider_code`、`submission_intent_id`、`submission_claim_version`、`submission_worker_version`及`submission_capacity_epoch`。初态全NULL；首次计划只在原submitting与有效submit Worker下写入，version_no CAS增加一次并追加唯一计划事件。计划字段写入后不可改，普通JSON隐藏；113—115依次提供ready、容量epoch和一次性发送证明。`provider_code/provider_task_id/attempt_count`仍只表达实际回执，不提前修改；Expand-only down保留全部事实。
+
+112同时冻结首次/已有计划的原Task `id/public_id/request_id/user_id/project_id/api_key_id/quote_id/logical_model_code/capability/operation/input_json`；不能通过改变非计划列偷换原身份、报价或执行规格。字符串使用字节级NULL安全比较，输入JSON按MySQL规范内容比较。正常状态、进度、业务版本、时间、Worker租约、归档、Provider回执和结果仍由原规则治理；无计划的旧Task不受该新增条件影响。意图列保留原RequestID的128字符上限。
+
+G7 RR快照不新增表。恢复Builder读取原Task/Request/Quote/Hold/Link/Usage/Input/Event/Outbox/Wallet事实，并使用111门闩proof稳定派生仅驻内存和Redis的nonce。安全终态逐项验证后不进入活动快照，累计历史可以超过102；只有最终queued/running记录受Redis结构和hard cap限制。
+
+原`ai_video_queue_admission_guard`由111增加capacity_epoch、capacity_state、capacity_policy_sha256、capacity_redis_run_id、capacity_recovery_owner、capacity_token_sha256、capacity_heartbeat_at和capacity_lease_until；000113再增加capacity_snapshot_sha256、capacity_snapshot_count和capacity_ready_at，并允许严格的ready终态。初态仍全空/epoch0。租期两端显式非空且固定相差30秒，避免MySQL CHECK的UNKNOWN接受损坏行。
+
+原`audit_logs`先保护claimed/blocked，000113再增加仅针对`video_capacity_recovery_ready`的nullable生成唯一键、当前门闩绑定及UPDATE/DELETE禁止。生成列和唯一索引分别检测，三个Trigger创建前分别DROP IF EXISTS，允许DDL中途失败后重跑恢复。原生与Linux隔离测试实际移除ready索引/Trigger后重放000113，恢复为索引1、Trigger3；其他模块审计行为保留。
+
+字段、版本、根事务边界和审计负例详见[持久恢复租约合同](video-gateway-vid-g7-capacity-recovery-epoch.md)。111审计绑定已加入七字段存在性和NULL安全类型判断，原生17例及同源码Linux回归通过，绑定33cc1706；down保留所有字段、代次和审计事实，不据此声称已完成部署回滚。
+
+000114允许原提交计划把`submission_capacity_epoch`从NULL只写一次为当前ready代次，并追加`video_submission_capacity_bound`；旧计划可在当前Worker与held财务事实完整时补绑。000115增加`submission_send_token_sha256`、`submission_send_worker_version`和`submission_send_started_at`及唯一`video_submission_send_claimed`事件；明文permit不落库，只有赢得Task CAS的进程能够消费一次。两项CHECK和Trigger均有部分DDL重入验证，down不删除计划、发送权或事件。下一恢复epoch只重建Redis nonce，不覆盖Task记录的首次授权epoch。
+
+## VID-G7共享MinIO与对象观察扩展（116—117）
+
+000116更新原视频资产不可变位置触发器：只允许同一对象键从历史`video-temp`晋级到历史结果/隔离Bucket，或从共享`ai-upload-temp`晋级到`ai-result/ai-quarantine`。跨键、跨归属和其他Bucket变更仍拒绝；不批量迁移历史记录。
+
+000117新增`ai_video_object_reconciliation_observations`。一次暂时不可见只写`observing`，同一摘要跨静默窗再次出现才进入`confirmed`并生成共享`ai_compensation_tasks`任务；恢复后只推进`resolved`且历史禁止删除。活动观察使用生成列唯一键，resolved后同一位置再次异常会创建新episode。confirmed期间，资产、InputAsset、UploadSession及保存计划触发器拒绝迟到绑定，保证孤儿清理Worker删除前后不会把新引用正文删除。down为Expand-only，不删除观察、补偿或触发器事实。
+
+000118在原`ai_video_input_deletion_requests`增加`request_kind=user|retention`。用户请求仍必须发生在输入到期前；后台retention请求只允许输入已经到期且命令hash与Input ID/原版本确定性匹配。两类请求都复用原pending_delete、TaskInput租约、legal hold、来源归属和`ai_video_input_cleanup_facts`，不建立平行清理账本。down保留列、请求和清理事实。
+
+000119新增`ai_video_object_scan_cursors`，只保存数据库权威清单、冻结MinIO前缀和retention分页的低敏游标、版本与完整轮次。游标使用CAS推进，到尾页回卷；进程重启继续原位置，避免固定首页和受保护记录永久饿死尾部。down保留游标事实。
+
+000120新增追加式`ai_video_upload_session_retention_facts`。只有创建后24小时仍未形成InputAsset、对象墓碑已确认、原UploadSession已进入expired且control已写cleaned_at时才能插入；原会话、归属、hash和控制记录继续保留。down不删除事实。
+
+000121新增追加式`ai_video_output_retention_facts`。输出六项父子资产全部到期后复用原`ai_video_media_deletions`删除五个交付对象，保留`moderation_copy`；事实插入必须证明原媒体删除已completed且交付对象正文均已删除。钱包、Quote、Usage和结算事实不变，down不删除事实。

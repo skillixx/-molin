@@ -1,6 +1,9 @@
 # Go API 服务生产镜像 — 多阶段构建
 # 构建命令：docker build -f infra/Dockerfile.server -t molin-api .
 
+ARG SOURCE_COMMIT=UNSET
+ARG SOURCE_STATE_ID=UNSET
+
 # ---- 构建阶段 ----
 FROM golang:1.25-alpine AS builder
 
@@ -22,6 +25,11 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 
 # ---- 运行阶段 ----
 FROM alpine:3.19
+
+ARG SOURCE_COMMIT
+ARG SOURCE_STATE_ID
+LABEL org.opencontainers.image.revision=$SOURCE_COMMIT \
+      com.molin.source_state_id=$SOURCE_STATE_ID
 
 # 时区和 HTTPS 证书
 RUN apk add --no-cache tzdata ca-certificates && \

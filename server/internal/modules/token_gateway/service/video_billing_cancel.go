@@ -79,6 +79,10 @@ func (s *VideoBillingService) cancelBeforeSubmitAuthorized(ctx context.Context, 
 		if err := verifyVideoNeverSubmittedTx(tx, task); err != nil {
 			return err
 		}
+		// 原用户/私有管理授权已完成；只有实际携带Worker证明的调用附加执行租约约束。
+		if err := repository.CheckVideoWorkerContextLeaseTx(ctx, tx, task); err != nil {
+			return err
+		}
 		task, err = tasks.RequestCancellation(ctx, taskID, owner, now)
 		if err != nil {
 			return err
@@ -184,6 +188,10 @@ func (s *VideoBillingService) cancelBeforeSubmitAuthorized(ctx context.Context, 
 		if err := validateVideoCancelledFactsTx(tx, task, *finalRequest, *finalLink, *finalHold); err != nil {
 			return err
 		}
+		// 取消意图、退款、Usage、输入释放和Outbox全部写完后再检查，不能用入口时的有效性提交过期事务。
+		if err := repository.CheckVideoWorkerContextLeaseTx(ctx, tx, task); err != nil {
+			return err
+		}
 		result = videoCancelledResult(task, hold.HoldAmount, false)
 		return nil
 	}
@@ -203,6 +211,15 @@ func (s *VideoBillingService) cancelBeforeSubmitAuthorized(ctx context.Context, 
 
 // loadVideoFinancialFactsTx 使用已锁定的Task解析唯一财务链，不允许把另一请求的Hold或Quote带入释放。
 func loadVideoFinancialFactsTx(tx *gorm.DB, task *repository.VideoTaskRecord, owner repository.VideoOwner) (*model.VideoBillingRequest, *model.AIGatewayQuote, *model.AIRequestWalletLink, *billingmodel.WalletHold, error) {
+	return loadVideoFinancialFactsWithHoldLockTx(tx, task, owner, true)
+}
+
+// loadVideoFinancialFactsReadTx用于Provider紧前的只读一致性复核；写资金的调用仍使用上方Hold行锁版本。
+func loadVideoFinancialFactsReadTx(tx *gorm.DB, task *repository.VideoTaskRecord, owner repository.VideoOwner) (*model.VideoBillingRequest, *model.AIGatewayQuote, *model.AIRequestWalletLink, *billingmodel.WalletHold, error) {
+	return loadVideoFinancialFactsWithHoldLockTx(tx, task, owner, false)
+}
+
+func loadVideoFinancialFactsWithHoldLockTx(tx *gorm.DB, task *repository.VideoTaskRecord, owner repository.VideoOwner, lockHold bool) (*model.VideoBillingRequest, *model.AIGatewayQuote, *model.AIRequestWalletLink, *billingmodel.WalletHold, error) {
 	var request model.VideoBillingRequest
 	var quote model.AIGatewayQuote
 	var link model.AIRequestWalletLink
@@ -216,7 +233,11 @@ func loadVideoFinancialFactsTx(tx *gorm.DB, task *repository.VideoTaskRecord, ow
 	if err := tx.Where("request_id=?", task.RequestID).First(&link).Error; err != nil {
 		return nil, nil, nil, nil, ErrVideoBillingState
 	}
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&hold, link.WalletHoldID).Error; err != nil {
+	holdQuery := tx
+	if lockHold {
+		holdQuery = holdQuery.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	if err := holdQuery.First(&hold, link.WalletHoldID).Error; err != nil {
 		return nil, nil, nil, nil, ErrVideoBillingState
 	}
 	if request.UserID != owner.UserID || request.ProjectID == nil || *request.ProjectID != owner.ProjectID || !equalOptionalUint64(request.APIKeyID, owner.APIKeyID) || request.Operation == nil || task.Operation == nil || quote.Operation == nil || *request.Operation != *task.Operation || *quote.Operation != *task.Operation || request.LogicalModelCode != task.LogicalModelCode || quote.LogicalModelCode != task.LogicalModelCode || quote.UserID != owner.UserID || quote.ProjectID != owner.ProjectID || !equalOptionalUint64(quote.APIKeyID, owner.APIKeyID) || quote.ConsumedRequestID == nil || *quote.ConsumedRequestID != task.RequestID || request.HeldAmount == nil || request.QuotedAmount == nil || !request.HeldAmount.Equal(quote.QuotedAmount) || !request.QuotedAmount.Equal(quote.QuotedAmount) || !link.HeldAmount.Equal(quote.QuotedAmount) || !link.QuotedAmount.Equal(quote.QuotedAmount) || !hold.HoldAmount.Equal(quote.QuotedAmount) || hold.WalletID != link.WalletID || hold.UserID != owner.UserID || hold.FreezeTxnID == nil || *hold.FreezeTxnID != link.HoldTransactionID || hold.IdempotencyKey != task.RequestID+":video-hold" {
@@ -246,8 +267,20 @@ func videoCancelledResult(task *repository.VideoTaskRecord, held decimal.Decimal
 
 // validateVideoCancelledFactsTx 幂等重放必须读到真实的释放流水和终态，不因看到cancelled就虚构成功。
 func validateVideoCancelledFactsTx(tx *gorm.DB, task *repository.VideoTaskRecord, r model.VideoBillingRequest, link model.AIRequestWalletLink, hold billingmodel.WalletHold) error {
-	if err := validateVideoAdjustmentsTx(tx, task); err != nil {
-		return err
+	return validateVideoCancelledFacts(tx, task, r, link, hold, false)
+}
+
+func validateVideoCancelledFactsSnapshotTx(tx *gorm.DB, task *repository.VideoTaskRecord, r model.VideoBillingRequest, link model.AIRequestWalletLink, hold billingmodel.WalletHold) error {
+	return validateVideoCancelledFacts(tx, task, r, link, hold, true)
+}
+
+func validateVideoCancelledFacts(tx *gorm.DB, task *repository.VideoTaskRecord, r model.VideoBillingRequest, link model.AIRequestWalletLink, hold billingmodel.WalletHold, readOnly bool) error {
+	adjustmentErr := validateVideoAdjustmentsTx(tx, task)
+	if readOnly {
+		adjustmentErr = validateVideoAdjustmentsSnapshotTx(tx, task)
+	}
+	if adjustmentErr != nil {
+		return adjustmentErr
 	}
 	submitted := task.ProviderTaskID != nil
 	if submitted {
@@ -255,7 +288,13 @@ func validateVideoCancelledFactsTx(tx *gorm.DB, task *repository.VideoTaskRecord
 		if tx.First(&quote, task.QuoteID).Error != nil {
 			return ErrVideoBillingState
 		}
-		if _, err := loadVideoProviderReleaseProofTx(tx, task, &quote); err != nil {
+		var err error
+		if readOnly {
+			_, err = loadVideoProviderReleaseProofSnapshotTx(tx, task, &quote)
+		} else {
+			_, err = loadVideoProviderReleaseProofTx(tx, task, &quote)
+		}
+		if err != nil {
 			return err
 		}
 	} else {
@@ -353,7 +392,7 @@ func validateVideoCancelledFactsTx(tx *gorm.DB, task *repository.VideoTaskRecord
 	}
 	for _, event := range events {
 		status, ok := expected[event.EventType]
-		if !ok || event.AggregateType != "video_request" || event.EventID != "vg5_"+videoBillingDigest(task.RequestID+":"+event.EventType) || event.Status != model.AIOutboxPending || event.LockedAt != nil {
+		if !ok || event.AggregateType != "video_request" || event.AggregateID != task.RequestID || event.EventID != "vg5_"+videoBillingDigest(task.RequestID+":"+event.EventType) || !validVideoOutboxTransportState(event) {
 			return ErrVideoBillingState
 		}
 		var payload map[string]json.RawMessage

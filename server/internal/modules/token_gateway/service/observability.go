@@ -34,6 +34,7 @@ var (
 	differenceKinds      = []string{"request_usage", "request_hold", "request_wallet"}
 	imageTaskStatuses    = []string{"created", "reserved", "submitted", "processing", "storing", "moderating", "succeeded", "failed", "cancelled", "expired", "pending_reconcile"}
 	imageAssetStates     = []string{"temporary", "available", "quarantined", "expiring", "deleting", "deleted", "delete_failed"}
+	videoTaskStatuses    = []string{"created", "reserved", "queued", "submitting", "submitted", "processing", "fetching", "storing", "moderating", "labeling", "succeeded", "failed", "cancelled", "expired", "pending_reconcile"}
 	billingAnomalyKinds  = []string{"duplicate_settlement", "unbilled_execution", "missing_price_snapshot", "missing_wallet_transaction", "missing_usage", "completed_pending", "billing_exception"}
 )
 
@@ -80,6 +81,25 @@ type ImageQueueGaugeCollector interface {
 	CollectImageQueueDepths(ctx context.Context) (map[string]uint64, error)
 }
 
+type VideoGaugeSnapshot struct {
+	Tasks                          map[string]uint64
+	TaskOldestAgeSeconds           map[string]uint64
+	Queues                         map[string]uint64
+	Capacity                       map[string]uint64
+	UnsettledHolds                 AIGatewayAmountGauge
+	ObjectObservations             map[string]uint64
+	ObjectCompensations            map[string]uint64
+	ComponentUp                    map[string]uint64
+	ComponentFailures              map[string]uint64
+	ComponentLastSuccessAgeSeconds map[string]uint64
+	ObjectBytes                    map[string]uint64
+	CleanupFailures                map[string]uint64
+}
+
+type VideoGaugeCollector interface {
+	CollectVideoGauges(context.Context, time.Time) (VideoGaugeSnapshot, error)
+}
+
 type requestMetricKey struct {
 	Model       string
 	RequestType string
@@ -111,6 +131,7 @@ type AIGatewayMetrics struct {
 	collector            AIGatewayGaugeCollector
 	concurrencyCollector AIGatewayConcurrencyGaugeCollector
 	imageQueueCollector  ImageQueueGaugeCollector
+	videoGaugeCollector  VideoGaugeCollector
 	models               map[string]struct{}
 
 	requests              map[requestMetricKey]uint64
@@ -126,6 +147,16 @@ type AIGatewayMetrics struct {
 	concurrencyRejections map[string]uint64
 	heartbeatFailures     uint64
 	ghostLeases           uint64
+}
+
+func (m *AIGatewayMetrics) WithVideoGaugeCollector(collector VideoGaugeCollector) *AIGatewayMetrics {
+	if m == nil {
+		return m
+	}
+	m.mu.Lock()
+	m.videoGaugeCollector = collector
+	m.mu.Unlock()
+	return m
 }
 
 func (m *AIGatewayMetrics) WithImageQueueGaugeCollector(collector ImageQueueGaugeCollector) *AIGatewayMetrics {
@@ -356,6 +387,7 @@ func (m *AIGatewayMetrics) AIGatewayPrometheus(ctx context.Context) (string, err
 	m.mu.RLock()
 	concurrencyCollector := m.concurrencyCollector
 	imageQueueCollector := m.imageQueueCollector
+	videoGaugeCollector := m.videoGaugeCollector
 	m.mu.RUnlock()
 	var sharedConcurrencyLeases map[string]uint64
 	if concurrencyCollector != nil {
@@ -369,6 +401,14 @@ func (m *AIGatewayMetrics) AIGatewayPrometheus(ctx context.Context) (string, err
 	if imageQueueCollector != nil {
 		var err error
 		imageQueueDepths, err = imageQueueCollector.CollectImageQueueDepths(ctx)
+		if err != nil {
+			return "", err
+		}
+	}
+	videoGauges := VideoGaugeSnapshot{}
+	if videoGaugeCollector != nil {
+		var err error
+		videoGauges, err = videoGaugeCollector.CollectVideoGauges(ctx, time.Now().UTC())
 		if err != nil {
 			return "", err
 		}
@@ -422,6 +462,59 @@ func (m *AIGatewayMetrics) AIGatewayPrometheus(ctx context.Context) (string, err
 	writeGaugeHeader(&out, "molin_ai_gateway_image_queue_depth", "图片网关RabbitMQ主队列和死信队列深度。")
 	for _, queueName := range []string{"main", "dead"} {
 		fmt.Fprintf(&out, "molin_ai_gateway_image_queue_depth{queue=%q} %d\n", queueName, imageQueueDepths[queueName])
+	}
+	writeGaugeHeader(&out, "molin_ai_gateway_video_tasks", "视频网关当前任务状态数量。")
+	writeGaugeHeader(&out, "molin_ai_gateway_video_task_oldest_age_seconds", "视频网关当前状态最老任务年龄秒数。")
+	for _, operation := range []string{"text_to_video", "image_to_video"} {
+		for _, status := range videoTaskStatuses {
+			key := operation + ":" + status
+			fmt.Fprintf(&out, "molin_ai_gateway_video_tasks{operation=%q,status=%q} %d\n", operation, status, videoGauges.Tasks[key])
+			fmt.Fprintf(&out, "molin_ai_gateway_video_task_oldest_age_seconds{operation=%q,status=%q} %d\n", operation, status, videoGauges.TaskOldestAgeSeconds[key])
+		}
+	}
+	writeGaugeHeader(&out, "molin_ai_gateway_video_queue_depth", "视频网关RabbitMQ工作、延迟和死信队列深度。")
+	for _, stage := range []string{"submit", "poll", "fetch"} {
+		for _, kind := range []string{"work", "delay", "dead"} {
+			fmt.Fprintf(&out, "molin_ai_gateway_video_queue_depth{stage=%q,kind=%q} %d\n", stage, kind, videoGauges.Queues[stage+":"+kind])
+		}
+	}
+	writeGaugeHeader(&out, "molin_ai_gateway_video_capacity_leases", "视频网关Redis容量租约数量。")
+	for _, phase := range []string{"queued", "promoting", "running"} {
+		fmt.Fprintf(&out, "molin_ai_gateway_video_capacity_leases{phase=%q} %d\n", phase, videoGauges.Capacity[phase])
+	}
+	writeGaugeHeader(&out, "molin_ai_gateway_video_unsettled_holds", "视频任务未结算冻结数量。")
+	fmt.Fprintf(&out, "molin_ai_gateway_video_unsettled_holds %d\n", videoGauges.UnsettledHolds.Count)
+	writeGaugeHeader(&out, "molin_ai_gateway_video_unsettled_holds_amount_cny", "视频任务未结算冻结金额。")
+	fmt.Fprintf(&out, "molin_ai_gateway_video_unsettled_holds_amount_cny %s\n", videoGauges.UnsettledHolds.Amount.StringFixed(8))
+	writeGaugeHeader(&out, "molin_ai_gateway_video_unsettled_holds_oldest_age_seconds", "视频任务最老未结算冻结年龄秒数。")
+	fmt.Fprintf(&out, "molin_ai_gateway_video_unsettled_holds_oldest_age_seconds %d\n", videoGauges.UnsettledHolds.OldestAgeSeconds)
+	writeGaugeHeader(&out, "molin_ai_gateway_video_object_observations", "视频对象双向对账观察数量。")
+	for _, direction := range []string{"db_missing_object", "storage_unreferenced_object"} {
+		for _, status := range []string{"observing", "confirmed"} {
+			fmt.Fprintf(&out, "molin_ai_gateway_video_object_observations{direction=%q,status=%q} %d\n", direction, status, videoGauges.ObjectObservations[direction+":"+status])
+		}
+	}
+	writeGaugeHeader(&out, "molin_ai_gateway_video_object_compensations", "视频对象缺失与孤儿清理补偿数量。")
+	for _, taskType := range []string{"video_object_missing_reconcile", "video_orphan_cleanup"} {
+		for _, status := range []string{"pending", "running", "retry", "dead", "manual_review"} {
+			fmt.Fprintf(&out, "molin_ai_gateway_video_object_compensations{task_type=%q,status=%q} %d\n", taskType, status, videoGauges.ObjectCompensations[taskType+":"+status])
+		}
+	}
+	writeGaugeHeader(&out, "molin_ai_gateway_video_component_up", "视频运行组件最近一次状态，1为可用、0为失败或尚未成功。")
+	writeCounterHeader(&out, "molin_ai_gateway_video_component_failures_total", "视频运行组件累计失败次数。")
+	writeGaugeHeader(&out, "molin_ai_gateway_video_component_last_success_age_seconds", "视频运行组件距离最近成功的秒数。")
+	for _, component := range []string{"mysql", "redis", "rabbitmq", "outbox", "orphan_cleanup", "missing_repair", "input_retention", "output_retention", "object_scanner", "consumer_submit", "consumer_poll", "consumer_fetch"} {
+		fmt.Fprintf(&out, "molin_ai_gateway_video_component_up{component=%q} %d\n", component, videoGauges.ComponentUp[component])
+		fmt.Fprintf(&out, "molin_ai_gateway_video_component_failures_total{component=%q} %d\n", component, videoGauges.ComponentFailures[component])
+		fmt.Fprintf(&out, "molin_ai_gateway_video_component_last_success_age_seconds{component=%q} %d\n", component, videoGauges.ComponentLastSuccessAgeSeconds[component])
+	}
+	writeGaugeHeader(&out, "molin_ai_gateway_video_object_bytes", "视频网关数据库仍引用的对象字节数。")
+	for _, bucket := range []string{"ai-upload-temp", "ai-result", "ai-quarantine", "ai-user-assets"} {
+		fmt.Fprintf(&out, "molin_ai_gateway_video_object_bytes{bucket=%q} %d\n", bucket, videoGauges.ObjectBytes[bucket])
+	}
+	writeGaugeHeader(&out, "molin_ai_gateway_video_cleanup_failures", "视频对象、输入和资产当前清理失败数量。")
+	for _, kind := range []string{"object_compensation", "input_cleanup", "asset_delete"} {
+		fmt.Fprintf(&out, "molin_ai_gateway_video_cleanup_failures{kind=%q} %d\n", kind, videoGauges.CleanupFailures[kind])
 	}
 	writeGaugeHeader(&out, "molin_ai_gateway_billing_difference_cny", "AI 网关账单聚合差额。")
 	for _, kind := range differenceKinds {

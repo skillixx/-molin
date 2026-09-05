@@ -1,0 +1,20 @@
+{
+  "target_goal": "VID-G7",
+  "role": "independent_qa",
+"reviewed_source_state": "e041a6d768afc85a5684ae9c46713ea26fac1813462f03faab62a27b3737dea0",
+  "read_only": true,
+  "acceptance": "PASS",
+  "p0": 0,
+  "p1": 0,
+  "p2": 0,
+  "verified": {
+    "runtime": "22/22",
+    "finance": "166/166",
+    "fact_snapshot": "2/2",
+    "sensitive_scan": "268/268",
+    "defect_ledger_transition_authorized": 164
+  },
+  "external_gate": "TEST_SERVER_AUTHORIZATION_NOT_GRANTED",
+  "g7_acceptance": "INCOMPLETE",
+  "vid_g8_started": false
+}

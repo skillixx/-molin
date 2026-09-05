@@ -1,5 +1,7 @@
 # 完整接口设计
 
+VID-G7执行租约是内部Worker能力，不增加HTTP字段或路由，也不改变OpenAI视频响应。租约证明、持有者和内部代次不作为客户端授权输入；本地关闭态运行时已装配验证，测试服仍未授权。参见[内部租约合同](video-gateway-vid-g7-worker-lease-contract.md)。
+
 > 实现状态说明：本文负责接口字段、请求响应和错误码契约；“当前代码是否已注册、是否依赖配置、测试/验收到了哪一层”统一查看 [后端开发进度与接口现状](./backend-development-progress-and-api-status.md)。设计条目不应自动理解为已部署或已开放。
 
 ## 1. 通用约定
@@ -2822,3 +2824,35 @@ G5 路由仅在确认请求未发送时按 `max_retries` 重试；超时、结�
 请求详情的 `price_lines[]` 包含 `meter_type/meter_source/quantity/sale_unit_price/scale/amount/currency`；`meter_source=provider_confirmed` 表示上游确认用量。金额和 Token 数量使用 Decimal JSON 字符串。详情不返回提示词、响应正文、完整 SK、内部执行模型或上游响应头。
 
 CSV 使用 UTF-8 BOM，任何以 `= + - @` 开头的单元格增加安全前缀；导出和申诉均写审计。申诉按 `(request_id,user_id)` 幂等，重复提交返回 409。未实名用户不能签发或轮换可调用平台 SK；吊销仍允许，以便用户及时止损。
+
+## VID-G7 Outbox内部接线边界
+
+本切片不新增或开放视频HTTP路由。既有管理员Outbox重排接口继续要求原权限、双重认证、非空原因和前置审计，仅重排原dead事件。对精确视频事件，重排保留最后租约令牌，防止同秒旧Worker回写；不创建新任务、不再次调用Provider，也不执行退款或结算。内部`locked_at`高水位不能当作用户可见执行状态。本地关闭态运行时已装配，是否可调用仍由三层开关和部署门禁决定。
+
+内部`VideoOutboxProjector.Project`生成`task_id/request_id/input_asset_id/attempt`引用，T2V省略输入ID，发布重试始终不转成业务attempt。它不接收用户请求、不返回Prompt/对象定位/Provider正文，也不签发媒体能力；迟到事件只能唤醒原任务，后续处理器仍须重新读取任务状态、权限和输入资格。对外OpenAPI、错误信封和SDK合同不变。
+
+`VideoOutboxPublisher`将该引用交给生产RabbitMQ发布器，Broker明确确认后才由共享Worker更新原Outbox。不可路由、确认丢失或数据库确认失败不改变原Task/Quote/Hold；重投允许相同消息再次出现。本地已验证发布、业务消费和submit/poll/fetch闭环；测试观察通道的ACK仍不是业务任务完成证明，公开视频流量默认关闭。
+
+VID-G7新增两个默认关闭的运维恢复入口，使Rabbit故障不能靠人工直接改队列绕过账本。`POST /api/admin/token/video-tasks/{task_id}/dlq/{stage}/recover`使用管理员JWT、双MFA、`ai_gateway:reconcile_manage`、幂等头及严格`reason/version_no`，其中version是原Task恢复前版本；服务端读取DLQ头并核对Task、Request、operation、InputAsset、状态、Provider绑定与attempt，随后原子写requested TaskEvent和`video_dlq_recovery_dispatch`共享Outbox。Outbox relay负责publisher confirm、未知重试和最终published；管理重放观察published后补完成事件并ACK原DLQ。发布后Task可被Worker并发推进，完成审计以冻结请求事件为依据，不要求Task仍停在旧版本；ACK未知重放只补ACK。同管理员+Key通过用户行锁冻结跨两个入口的唯一意图，异Task/stage/fuse/body重放409。`POST /api/admin/token/video-rabbit/{stage}/poison/discard`的version是精确MySQL熔断审计ID，仅允许处置同stage、同正文SHA-256的非法消息；122号状态表与Trigger防止裸审计解封，处置连接以prefetch=9暂存最多8条多进程重排合法消息，ACK毒消息后原样回队。两者均不返回消息正文、Prompt、对象位置或Provider信息；首次DLQ调度返回200且`pending=true`，冲突返回409，权限/MFA失败返回403，依赖不确定返回503。
+
+## VID-G7 Redis容量组件的接口边界
+
+Redis组件只提供内部Go存储方法，不新增或注册HTTP接口。容量错误通过原G6 HTTP边界映射稳定429与Retry-After，治理不可用仍返回稳定503；用户身份、Project/Key归属、Quote、输入权利和钱包事务继续由原G5/G6协调器验证。
+
+组件的ReserveQueued、PrepareRunning、Renew、Read只操作Redis快照；promoting不是公开Video Job状态，Read返回的技术到期信息也不是Provider/结算授权。初始化、确认提交、释放、重建和本地运行时装配均已验证，测试服装配仍未授权，见[Redis容量合同](video-gateway-vid-g7-redis-capacity-contract.md)。
+
+## VID-G7 恢复租约不是HTTP授权
+
+`VideoRepositoryTaskLedger.RecordSubmissionPlan`保留旧计划兼容；G7运行时改由`VideoCapacityTaskLedger`统一完成promoting、MySQL计划/容量epoch/一次性发送权和running确认，不注册公开路由。计划、claim版本、首次容量epoch及发送token摘要均在普通Task JSON中隐藏。Gateway把当前CAS版本与冻结claim版本分离，并只在全部claim校验后消费一次permit；并发输家不得进入Provider。permit消费后崩溃不重提，原任务按观察窗进入pending_reconcile。
+
+`VideoProviderSubmissionGate`同样是内部接口，不新增HTTP字段。持久Ledger在Provider RPC紧前核对Task状态、版本、回执空值、取消/归档、Worker证明和容量门闩；recovering/blocked/未来ready下旧路径返回治理不可用，不映射为用户容量429。RecordSubmissionReceipt仍可在恢复态保存已经发生的可信回执，避免因关闸丢失原Provider身份。
+
+`RedisVideoCapacityStore.StageRecovery/ActivateRecovery`为包内恢复协调使用，不注册HTTP接口。调用方不能提供原始JSON或Redis key，只能使用不可变恢复快照；公开视图仅含`rebuilding|ready`和记录数。stage不是准入证明，只有后续MySQL ready确定提交并核对同一快照后才允许调用activate。
+
+`VideoCapacityRecoveryRepository`的Current、Begin、Renew、Block和Validate为内部基础能力，不新增HTTP接口。Current/Validate不发布ready，恢复证明不可通过JSON构造或作为Provider/结算许可；根COMMIT未确认时不返回可用证明。原用户、Project、Key、钱包与视频任务API合同保持不变。当前状态及验证缺口见[持久恢复租约合同](video-gateway-vid-g7-capacity-recovery-epoch.md)。
+
+## VID-G7对象缺失与留存不新增公开接口
+
+公开OpenAI-compatible视频路由和响应字段保持G6合同不变。confirmed `db_missing_object`观察是内部使用围栏：对应InputAsset不能新绑定或提交Provider，对应输出资产不能下载；对象按原hash和大小恢复、观察进入resolved后才解除。错误仍使用原404/409/503语义，不暴露Bucket、object_key或观察记录。
+
+24小时未完成UploadSession、7天输入与到期输出父子资产均由后台Worker处理，不新增客户端清理参数。输出只在六项父子资产全部到期且财务、安全、legal hold、争议和长期保存引用检查通过后，复用原媒体删除账本删除五个交付对象并保留审核副本。用户不能通过请求正文指定retention时钟、Bucket、对象键或内部策略版本。

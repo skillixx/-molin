@@ -1,0 +1,34 @@
+{
+  "target_goal": "VID-G7",
+  "captured_at": "2026-09-04T07:05:00Z",
+  "source_tree_sha256": "4efe695fd0de78893d9eb9dd49b827b9bc3aed976f91bbcec14aab10a37f7482",
+  "scope": "Provider create已发生而ACK未返回时强制终止真实Go Worker子进程",
+  "runs": [
+    {"platform": "windows-native", "elapsed_seconds": 32.99, "required": 1, "run": 1, "pass": 1, "skip": 0, "exit_code": 0},
+    {"platform": "linux-amd64-race", "elapsed_seconds": 32.05, "required": 1, "run": 1, "pass": 1, "skip": 0, "exit_code": 0}
+  ],
+  "verified": {
+    "child_process_force_killed": true,
+    "provider_create_before_kill": true,
+    "provider_ack_not_received": true,
+    "task_status_after_kill": "submitting",
+    "provider_receipt_after_kill": false,
+    "persisted_task_uuid_retained": true,
+    "send_permit_fact_retained": true,
+    "real_worker_lease_expiry_seconds": 30,
+    "restart_worker_new_lease": true,
+    "restart_provider_entry_blocked": true,
+    "provider_tasks_per_intent": 1,
+    "cleanup": "PASS"
+  },
+  "boundaries": {
+    "two_minute_pending_reconcile": "已由独立capacity_send_crash故障窗测试覆盖",
+    "real_provider_requests": 0,
+    "real_provider_keys": 0,
+    "real_wallet_writes": 0,
+    "provider_cost_cny": 0,
+    "test_server_writes": 0,
+    "production_operations": 0
+  },
+  "decision": "LOCAL_PROCESS_KILL_PASS_STAGE_INCOMPLETE"
+}
