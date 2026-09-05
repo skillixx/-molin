@@ -231,3 +231,4 @@ Redis确认与释放增量：
 - `G7-FUSE-RECOVERY-CHAIN-032 / P1`：migration122原只要求恢复审计带operator，任意主体可直接插入最小审计并更新fuse，旁路受控管理入口。更新Trigger强制恢复事实按ID顺序绑定同一操作者、同一command key摘要、reason HMAC、fuse、stage和body的before/after/recovered三段链；新增“有operator但缺链”数据库反例。修复后runtime 22/22、Finance 166/166、Fact 2/2通过。状态`FIXED_PENDING_VERIFY`。
 - `G7-SOURCE-DESCENDANT-033 / P1`：证据后代规则的diff-filter漏掉删除状态D，后续证据提交可能删除未进入阶段manifest的基础文件。校验器现同时纳入D并用排除`docs/evidence/**`后的内容diff作第二道拒绝；临时后代真实删除`server/go.mod`时稳定失败，临时工作树清理通过。状态`FIXED_PENDING_VERIFY`。
 - `G7-CI-DIFF-FORMAT-034 / P2`：本地仅对未提交工作树执行`git diff --check`，未按CI的`origin/main...HEAD`范围检查；PowerShell生成JSON使用CRLF并有四个Expand-only migration多余尾空行。生成器现固定UTF-8无BOM和LF，全部46个证据文件机械规范化，四个SQL仅删除尾空行；本地分支全量diff检查通过。状态`FIXED_PENDING_VERIFY`。
+- `G7-LINUX-CONFIG-FIXTURE-035 / P1`：Linux专属十用途Secret测试开启视频模块却未构造必需的MinIO、RabbitMQ、Redis和Worker低敏配置，CI在`VIDEO_GATEWAY_MINIO_ENDPOINT`失败，而Windows本地因构建约束未执行该用例。测试夹具现提供完整合法基础设施字段，Go 1.26.5 Linux容器同名用例通过。状态`FIXED_PENDING_VERIFY`。

@@ -1,10 +1,10 @@
 {
   "target_goal": "VID-G7",
   "captured_at": "2026-09-05T07:14:56Z",
-"source_state_id": "e8b35c10978c55e2eca839c87bba180029646e34aeb3a180ef8d19dd4a544c1e",
+"source_state_id": "fdd207bf23973880b06bd0d3afb406ce436317db5759a683e4ab3b0aa0a413ec",
   "session": 92406,
   "scope": "本地一次性隔离MySQL、Redis、RabbitMQ、MinIO上的Linux关闭态视频运行时",
-  "source_tree_sha256": "4f10ff8019012bd118ffbf3577a96034be1b3e21bc2ba08169addfb260f5a13f",
+  "source_tree_sha256": "c5c7e1c8175384d5ce99a214ba645aa6cf3aa9389f9efcd3cd2555f71fff0784",
   "source_hash_scope": [
     "server",
     "infra/scripts/verify-video-gateway-vid-g7-runtime.ps1",

@@ -1,12 +1,12 @@
 {
   "target_goal": "VID-G7",
   "captured_at": "2026-09-05T07:14:56Z",
-"source_state_id": "e8b35c10978c55e2eca839c87bba180029646e34aeb3a180ef8d19dd4a544c1e",
+"source_state_id": "fdd207bf23973880b06bd0d3afb406ce436317db5759a683e4ab3b0aa0a413ec",
   "command": "$env:VIDEO_GATEWAY_G7_MYSQL_ISOLATED_APPROVED='YES'; .\\infra\\scripts\\verify-video-gateway-vid-g7-fact-snapshot.ps1",
   "session": 13495,
   "runner_sha256": "7f4884d0ded3eafe631c23da0d07db08bdab9cd4c9c166c74f8c91badc6cad16",
   "snapshot_script_sha256": "92c235fce926f7261a367af4c1544bb1e4036f83a7a426d9f027156f69d2b6f5",
-  "source_scope_sha256": "0134e02cd3a1ce2175b5d5b36157d636edc02404f3abf2487acce25a81993b51",
+  "source_scope_sha256": "74aa6320d28228900f5f5a6e5f0d4114d58d2afe1d8bf2bb39a883e5d2220630",
   "mysql_image_digest": "mysql@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b",
   "go_image_digest": "golang@sha256:908f8ff2ec296df2f349563072c7925775cd28b50361a52ed834a8a37399b9bf",
   "result": {

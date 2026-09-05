@@ -2,19 +2,19 @@
   "schema_version": 3,
   "target_goal": "VID-G7",
   "status": "WORKTREE_SNAPSHOT",
-  "source_state_id": "e8b35c10978c55e2eca839c87bba180029646e34aeb3a180ef8d19dd4a544c1e",
-  "head_commit": "ab61935afa4b1a777490efc00d4d01889919b4b2",
+  "source_state_id": "fdd207bf23973880b06bd0d3afb406ce436317db5759a683e4ab3b0aa0a413ec",
+  "head_commit": "9654f26a256a4a4320170a0903dfe97a712751b9",
   "base_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
   "origin_main_commit": "4d80d1cf0966d876c6c2171dce1a337afd2aa05b",
   "origin_main_remote_url": "ssh://github.com/skillixx/-molin.git",
   "origin_main_provenance": "FRESH_FETCH",
-  "origin_main_observed_at": "2026-09-05T07:34:02.1237755Z",
+  "origin_main_observed_at": "2026-09-05T07:52:59.3215500Z",
   "tracked_patch_sha256": "EMPTY",
   "untracked_manifest_sha256": "EMPTY",
-  "evidence_captured_at": "2026-09-05T07:34:03.5479706Z",
+  "evidence_captured_at": "2026-09-05T07:53:00.7999774Z",
   "branch": "codex/video-gateway-vid-g7-infra-recovery",
   "uncommitted_changes": true,
-  "manifest_sha256": "02c280eab92d7a27534d305e27de267349f9fed0828e73ae81bd549076bbd037",
+  "manifest_sha256": "79dea90b035d0a9a03ab6dd901bd7740b2fe1344a52dd5cddd0225963982be1f",
   "manifest_count": 222,
   "manifest": [
     {
@@ -171,7 +171,7 @@
     },
     {
       "path": "server/internal/config/video_gateway_linux_test.go",
-      "sha256": "aed2d86f489a55a4253b743bcde24252a2f1dc06687452f04d76bd8eb05c93da"
+      "sha256": "4ac0f9124e91b5e7c2c9b81da79a73a5f357de625c1af5753ae89a87cd67333e"
     },
     {
       "path": "server/internal/config/video_gateway_test.go",

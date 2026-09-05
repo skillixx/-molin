@@ -1,11 +1,11 @@
 {
   "target_goal": "VID-G7",
   "captured_at": "2026-09-05T07:14:56Z",
-"source_state_id": "e8b35c10978c55e2eca839c87bba180029646e34aeb3a180ef8d19dd4a544c1e",
+"source_state_id": "fdd207bf23973880b06bd0d3afb406ce436317db5759a683e4ab3b0aa0a413ec",
   "session": 88948,
   "runner_sha256": "1c96e3b6c2f08407821a91e86cb83506fd73b44efde90f23e52d6d3acb621005",
   "scope": "本地隔离MySQL、Redis、RabbitMQ上的G5财务兼容与G7异步执行Linux race组合",
-  "source_server_sha256": "bf1cf81dd1c29c6d101f1fc6c2b5f4e07afd4f936e56e4e37e70c5c5c02cb00a",
+  "source_server_sha256": "e06ebbe2c28e7c8d18742287fdf8255da149926104420986a972b51ce30ccd78",
   "command": "$env:VIDEO_GATEWAY_G7_MYSQL_ISOLATED_APPROVED='YES'; $env:VIDEO_GATEWAY_G7_REDIS_ISOLATED_APPROVED='YES'; $env:VIDEO_GATEWAY_G7_RABBIT_ISOLATED_APPROVED='YES'; .\\infra\\scripts\\verify-video-gateway-vid-g7-outbox.ps1 -FinanceRegression -Broker -Redis -LinuxRace",
   "result": {
     "groups": 22,
